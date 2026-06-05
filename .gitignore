@@ -141,3 +141,15 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Spirit of Kiro supplemental ignores
+bun-tests.xml
+*.spec.md
+*.code-workspace
+dev.env
+
+# Agent-local config (not committed)
+.agents/
+
+# Claude Code local files
+.claude/worktrees/
