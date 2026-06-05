@@ -61,16 +61,21 @@ export class SequentialFrameSource {
       this.anchor = time;
     }
     const iterator = this.iterator!;
-    while (!this.current || this.endOf(this.current) <= time) {
-      const next = await iterator.next();
-      if (next.done) {
+    try {
+      while (!this.current || this.endOf(this.current) <= time) {
+        const next = await iterator.next();
+        if (next.done) {
+          this.current?.close();
+          this.current = null;
+          break;
+        }
         this.current?.close();
-        this.current = null;
-        break;
+        this.current = next.value;
+        this.anchor = next.value.timestamp;
       }
-      this.current?.close();
-      this.current = next.value;
-      this.anchor = next.value.timestamp;
+    } catch (error) {
+      this.reset();
+      throw error;
     }
     return this.current ? this.current.clone() : null;
   }

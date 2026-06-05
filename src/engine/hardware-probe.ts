@@ -24,14 +24,9 @@ function probeDimensions(srcWidth: number, srcHeight: number): { width: number; 
 /** A static RGBA test pattern (no Canvas2D — keeps the engine readback-free). */
 function buildTestFrameBuffer(width: number, height: number): Uint8Array {
   const buffer = new Uint8Array(width * height * 4);
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const i = (y * width + x) * 4;
-      buffer[i] = (x * 255) / width;
-      buffer[i + 1] = (y * 255) / height;
-      buffer[i + 2] = ((x ^ y) & 0xff) as number;
-      buffer[i + 3] = 255;
-    }
+  const view = new Uint32Array(buffer.buffer);
+  for (let i = 0; i < view.length; i++) {
+    view[i] = 0xff000000 | (i & 0xff);
   }
   return buffer;
 }

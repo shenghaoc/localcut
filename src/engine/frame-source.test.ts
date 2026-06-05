@@ -104,6 +104,33 @@ describe('SequentialFrameSource', () => {
     expect(await fs.frameAt(0)).toBeNull();
   });
 
+  it('returns null when advancing past the last frame', async () => {
+    const fs = new SequentialFrameSource(new FakeSource(makeFrames()));
+
+    await fs.frameAt(2.0); // last frame @2.0
+    expect(await fs.frameAt(3.0)).toBeNull();
+  });
+
+  it('resets the iterator when advancing fails and can recover on the next read', async () => {
+    const frames = makeFrames();
+    let calls = 0;
+    const source: SequentialVideoSource = {
+      async *samples(startTimestamp = 0) {
+        for (const frame of frames) {
+          if (frame.timestamp + frame.duration <= startTimestamp) continue;
+          calls += 1;
+          if (calls === 2) throw new Error('decode failed');
+          yield frame;
+        }
+      },
+    };
+    const fs = new SequentialFrameSource(source);
+
+    await fs.frameAt(0);
+    await expect(fs.frameAt(1.1)).rejects.toThrow('decode failed');
+    expect(await fs.frameAt(1.1)).not.toBeNull();
+  });
+
   it('reset() closes the held frame and forces a re-seek', async () => {
     const frames = makeFrames();
     const source = new FakeSource(frames);

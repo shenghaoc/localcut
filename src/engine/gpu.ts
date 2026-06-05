@@ -25,6 +25,7 @@ function unavailable(reason: string): GpuInit {
 export class PreviewRenderer {
   private readonly device: GPUDevice;
   private readonly context: GPUCanvasContext;
+  private readonly format: GPUTextureFormat;
   private readonly canvas: OffscreenCanvas;
 
   private readonly computePipeline: GPUComputePipeline;
@@ -45,6 +46,7 @@ export class PreviewRenderer {
   ) {
     this.device = device;
     this.context = context;
+    this.format = format;
     this.canvas = canvas;
 
     const passthroughModule = device.createShaderModule({ code: passthroughSource });
@@ -86,6 +88,11 @@ export class PreviewRenderer {
     this.height = h;
     this.canvas.width = w;
     this.canvas.height = h;
+    this.context.configure({
+      device: this.device,
+      format: this.format,
+      alphaMode: 'premultiplied',
+    });
 
     this.storageTexture?.destroy();
     this.storageTexture = this.device.createTexture({
