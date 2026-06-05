@@ -33,7 +33,7 @@ export type WorkerCommand =
   | { type: 'dispose' };
 
 export type WorkerStateMessage =
-  | { type: 'ready'; webgpu: boolean; features: string[] }
+  | { type: 'ready'; webgpu: boolean; features: string[]; gpuUnavailableReason: string | null }
   | { type: 'import-progress'; stage: 'reading' | 'metadata' }
   | { type: 'import-complete'; metadata: MediaMetadata }
   | { type: 'import-error'; message: string }

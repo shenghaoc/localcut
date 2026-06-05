@@ -33,7 +33,7 @@ export function App() {
         setStatusLine(
           msg.webgpu
             ? `Pipeline ready · WebGPU (${msg.features.join(', ') || 'default'})`
-            : 'Pipeline ready · WebGPU unavailable (Phase 2)',
+            : `Pipeline ready · ${msg.gpuUnavailableReason ?? 'WebGPU unavailable'}`,
         );
         break;
       case 'import-progress':
@@ -179,6 +179,7 @@ export function App() {
         <Timeline
           currentTime={clock.currentTime}
           duration={clock.duration}
+          frameRate={() => metadata()?.video?.frameRate ?? null}
           hasMedia={metadata() !== null}
           onSeek={(t) => bridge?.send({ type: 'seek', time: t })}
         />

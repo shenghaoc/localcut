@@ -15,11 +15,22 @@ function post(msg: WorkerStateMessage) {
   self.postMessage(msg);
 }
 
+// Clock SAB layout: [0] currentTime, [1] duration, [2] playState (0/1).
+// Each writer below mutates only the field(s) it owns so intent is explicit
+// and a play/pause never has to round-trip currentTime or duration.
 function writeClock(currentTime: number, duration: number, playing: boolean) {
   if (!clockView) return;
   clockView[0] = currentTime;
   clockView[1] = duration;
   clockView[2] = playing ? 1 : 0;
+}
+
+function setCurrentTime(seconds: number) {
+  if (clockView) clockView[0] = seconds;
+}
+
+function setPlaying(playing: boolean) {
+  if (clockView) clockView[2] = playing ? 1 : 0;
 }
 
 async function handleInit(canvas: OffscreenCanvas, sab: SharedArrayBuffer) {
@@ -32,6 +43,7 @@ async function handleInit(canvas: OffscreenCanvas, sab: SharedArrayBuffer) {
     type: 'ready',
     webgpu: gpu.device !== null,
     features: gpu.features,
+    gpuUnavailableReason: gpu.unavailableReason,
   });
 }
 
@@ -52,17 +64,17 @@ async function handleImport(file: File) {
 }
 
 function handlePlay() {
-  writeClock(clockView?.[0] ?? 0, clockView?.[1] ?? 0, true);
+  setPlaying(true);
 }
 
 function handlePause() {
-  writeClock(clockView?.[0] ?? 0, clockView?.[1] ?? 0, false);
+  setPlaying(false);
 }
 
 function handleSeek(time: number) {
   const duration = clockView?.[1] ?? 0;
   const clamped = Math.max(0, duration > 0 ? Math.min(time, duration) : time);
-  writeClock(clamped, duration, (clockView?.[2] ?? 0) === 1);
+  setCurrentTime(clamped);
 }
 
 function handleDispose() {
