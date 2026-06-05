@@ -52,7 +52,7 @@ export function Toolbar(props: ToolbarProps) {
       <div class="toolbar-center">
         <span class="file-name">
           <Show when={props.metadata} fallback="No media loaded">
-            {props.metadata!.fileName}
+            {(meta) => meta().fileName}
           </Show>
         </span>
       </div>

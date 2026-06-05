@@ -52,6 +52,7 @@ export function ExportDialog(props: ExportDialogProps) {
             <button
               type="button"
               class={`segmented-btn${preset() === 'quality' ? ' is-active' : ''}`}
+              aria-pressed={preset() === 'quality'}
               disabled={props.exporting}
               onClick={() => setPreset('quality')}
             >
@@ -60,6 +61,7 @@ export function ExportDialog(props: ExportDialogProps) {
             <button
               type="button"
               class={`segmented-btn${preset() === 'fast' ? ' is-active' : ''}`}
+              aria-pressed={preset() === 'fast'}
               disabled={props.exporting}
               onClick={() => setPreset('fast')}
             >
