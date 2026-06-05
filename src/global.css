@@ -353,7 +353,9 @@ body {
   pointer-events: none;
 }
 
-.preview-empty .import-picker {
+/* Re-enable clicks on the import label (the empty-state container is
+   pointer-events:none) — but not while disabled, so the guard above wins. */
+.preview-empty .import-picker:not(.is-disabled) {
   pointer-events: auto;
 }
 

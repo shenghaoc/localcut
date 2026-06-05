@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createSignal, Show } from 'solid-js';
 import { Popover } from '@kobalte/core/popover';
 import { Download } from 'lucide-solid';
-import { buttonVariants } from './components/button';
+import { Button } from './components/button';
 import type { ExportPreset, ExportProgress } from '../protocol';
 
 interface ExportDialogProps {
@@ -42,7 +42,7 @@ export function ExportDialog(props: ExportDialogProps) {
 
   return (
     <Popover open={open()} onOpenChange={handleOpenChange} placement="bottom-end" gutter={7}>
-      <Popover.Trigger type="button" class={buttonVariants()} disabled={!props.hasMedia}>
+      <Popover.Trigger as={Button} disabled={!props.hasMedia}>
         <Download size={14} aria-hidden="true" />
         Export
       </Popover.Trigger>
@@ -95,20 +95,17 @@ export function ExportDialog(props: ExportDialogProps) {
           </Show>
 
           <div class="export-actions">
-            <button
-              type="button"
-              class={buttonVariants({ variant: 'default' })}
+            <Button
+              variant="default"
               disabled={props.exporting || !props.hasMedia}
               onClick={() => props.onStart(preset())}
             >
               Start
-            </button>
+            </Button>
             <Show when={props.exporting}>
-              <button type="button" class={buttonVariants()} onClick={() => props.onCancel()}>
-                Cancel
-              </button>
+              <Button onClick={() => props.onCancel()}>Cancel</Button>
             </Show>
-            <Popover.CloseButton type="button" class={buttonVariants()} disabled={props.exporting}>
+            <Popover.CloseButton as={Button} disabled={props.exporting}>
               Close
             </Popover.CloseButton>
           </div>

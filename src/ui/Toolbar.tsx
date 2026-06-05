@@ -34,7 +34,7 @@ export function Toolbar(props: ToolbarProps) {
           class={cn(
             buttonVariants({ variant: 'default' }),
             'import-picker',
-            props.disabled && 'is-disabled',
+            props.disabled && 'is-disabled pointer-events-none',
           )}
         >
           <FolderOpen size={14} aria-hidden="true" />

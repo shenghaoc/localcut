@@ -377,7 +377,7 @@ export function App() {
                   class={cn(
                     buttonVariants({ variant: 'default' }),
                     'import-picker',
-                    !workerReady() && 'is-disabled',
+                    !workerReady() && 'is-disabled pointer-events-none',
                   )}
                 >
                   Import
