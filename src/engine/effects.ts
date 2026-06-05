@@ -93,6 +93,28 @@ export function getEffectLabel(id: EffectId): string {
 }
 
 /** Packs one effect's uniform buffer from clip parameters (testable without GPU). */
+export function isBrightnessContrastActive(params: ClipEffectParams): boolean {
+  return params.brightness !== 0 || params.contrast !== 1;
+}
+
+export function isSaturationActive(params: ClipEffectParams): boolean {
+  return params.saturation !== 1;
+}
+
+export function isColourTemperatureActive(params: ClipEffectParams): boolean {
+  return params.temperatureStrength !== 0 && params.temperature !== DEFAULT_CLIP_EFFECTS.temperature;
+}
+
+export function clipEffectsEqual(a: ClipEffectParams, b: ClipEffectParams): boolean {
+  return (
+    a.brightness === b.brightness &&
+    a.contrast === b.contrast &&
+    a.saturation === b.saturation &&
+    a.temperature === b.temperature &&
+    a.temperatureStrength === b.temperatureStrength
+  );
+}
+
 export function packEffectUniform(
   effectId: EffectId,
   params: ClipEffectParams,
@@ -159,19 +181,25 @@ export class EffectChain {
   }
 
   setParams(params: ClipEffectParams): void {
-    this.params = normalizeClipEffects(params);
+    const next = normalizeClipEffects(params);
+    if (clipEffectsEqual(this.params, next)) return;
+    this.params = next;
     this.writeAllUniforms(this.params);
   }
 
   /** Updates one scalar without recompiling pipelines. */
   setParam(key: keyof ClipEffectParams, value: number): void {
+    if (this.params[key] === value) return;
     this.params = { ...this.params, [key]: value };
     for (const effect of this.effects) {
       const entry = EFFECT_REGISTRY.find((e) => e.id === effect.id)!;
       const field = entry.fields.find((f) => f.key === key);
       if (!field) continue;
-      const slice = packEffectUniform(effect.id, this.params);
-      this.device.queue.writeBuffer(effect.uniformBuffer, field.offset, slice.buffer, field.offset, 4);
+      this.device.queue.writeBuffer(
+        effect.uniformBuffer,
+        field.offset,
+        new Float32Array([value]),
+      );
     }
   }
 
@@ -210,29 +238,37 @@ export class EffectChain {
       pass.end();
     }
 
-    const routes: Array<{ effect: CompiledEffect; src: GPUTextureView; dst: GPUTextureView }> = [
-      { effect: this.effects[0]!, src: storage.a, dst: storage.b },
-      { effect: this.effects[1]!, src: storage.b, dst: storage.c },
-      { effect: this.effects[2]!, src: storage.c, dst: storage.a },
-    ];
+    const activeEffects: CompiledEffect[] = [];
+    if (isBrightnessContrastActive(this.params)) activeEffects.push(this.effects[0]!);
+    if (isSaturationActive(this.params)) activeEffects.push(this.effects[1]!);
+    if (isColourTemperatureActive(this.params)) activeEffects.push(this.effects[2]!);
 
-    for (const route of routes) {
+    let currentSrc = storage.a;
+    const pingPong = [storage.b, storage.c, storage.a];
+    let bufIdx = 0;
+
+    for (const effect of activeEffects) {
+      const currentDst = pingPong[bufIdx]!;
+      bufIdx = (bufIdx + 1) % 3;
+
       const bindGroup = this.device.createBindGroup({
-        layout: route.effect.bindGroupLayout,
+        layout: effect.bindGroupLayout,
         entries: [
-          { binding: 0, resource: { buffer: route.effect.uniformBuffer } },
-          { binding: 1, resource: route.src },
-          { binding: 2, resource: route.dst },
+          { binding: 0, resource: { buffer: effect.uniformBuffer } },
+          { binding: 1, resource: currentSrc },
+          { binding: 2, resource: currentDst },
         ],
       });
       const pass = encoder.beginComputePass();
-      pass.setPipeline(route.effect.pipeline);
+      pass.setPipeline(effect.pipeline);
       pass.setBindGroup(0, bindGroup);
       pass.dispatchWorkgroups(wgX, wgY);
       pass.end();
+
+      currentSrc = currentDst;
     }
 
-    return storage.a;
+    return currentSrc;
   }
 
   destroy(): void {

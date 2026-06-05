@@ -386,8 +386,8 @@ function setupPlayback() {
     duration: getTimelineDuration(timeline),
     frameRate: handle.frameRate,
     getFrame,
-    renderFrame: (frame) => {
-      const resolved = resolveAt(timeline, playback?.getCurrentTime() ?? clockView?.[0] ?? 0);
+    renderFrame: (frame, timestamp) => {
+      const resolved = resolveAt(timeline, timestamp);
       renderer?.present(frame, resolved?.clip.effects);
     },
     writeClock: writeTransport,

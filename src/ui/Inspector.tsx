@@ -53,9 +53,22 @@ const SLIDERS: SliderSpec[] = [
 
 export function Inspector(props: InspectorProps) {
   const [draft, setDraft] = createSignal<ClipEffectParamsSnapshot | null>(null);
-  let debounce: ReturnType<typeof setTimeout> | null = null;
+  const pending = new Map<keyof ClipEffectParamsSnapshot, number>();
+  const debouncers = new Map<keyof ClipEffectParamsSnapshot, ReturnType<typeof setTimeout>>();
+
+  function flushPending() {
+    const clip = props.selectedClip;
+    if (!clip || pending.size === 0) return;
+    for (const handle of debouncers.values()) clearTimeout(handle);
+    debouncers.clear();
+    for (const [key, value] of pending) {
+      props.onEffectParam(clip.trackId, clip.clipId, key, value);
+    }
+    pending.clear();
+  }
 
   createEffect(() => {
+    flushPending();
     const clip = props.selectedClip;
     if (!clip) {
       setDraft(null);
@@ -65,18 +78,27 @@ export function Inspector(props: InspectorProps) {
   });
 
   onCleanup(() => {
-    if (debounce) clearTimeout(debounce);
+    flushPending();
   });
 
   function scheduleParam(key: keyof ClipEffectParamsSnapshot, value: number) {
     const clip = props.selectedClip;
     if (!clip) return;
     setDraft((prev) => (prev ? { ...prev, [key]: value } : prev));
-    if (debounce) clearTimeout(debounce);
-    debounce = setTimeout(() => {
-      props.onEffectParam(clip.trackId, clip.clipId, key, value);
-      debounce = null;
-    }, PARAM_DEBOUNCE_MS);
+    pending.set(key, value);
+    const existing = debouncers.get(key);
+    if (existing) clearTimeout(existing);
+    debouncers.set(
+      key,
+      setTimeout(() => {
+        debouncers.delete(key);
+        const latest = pending.get(key);
+        pending.delete(key);
+        if (latest !== undefined) {
+          props.onEffectParam(clip.trackId, clip.clipId, key, latest);
+        }
+      }, PARAM_DEBOUNCE_MS),
+    );
   }
 
   return (

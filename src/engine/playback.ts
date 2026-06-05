@@ -127,8 +127,8 @@ export interface PlaybackDeps {
   frameRate: number;
   /** Decode the frame at `timestamp` (keyframe-accurate); null if unavailable. */
   getFrame: (timestamp: number) => Promise<DecodedFrame | null>;
-  /** Present a decoded frame to the canvas. */
-  renderFrame: (frame: VideoFrame) => void;
+  /** Present a decoded frame to the canvas at `timestamp` (timeline seconds). */
+  renderFrame: (frame: VideoFrame, timestamp: number) => void;
   /** Write [currentTime, playing] to the shared clock. */
   writeClock: (currentTime: number, playing: boolean) => void;
   /** Per-frame wall time (decode + render), for adaptive resolution. */
@@ -222,7 +222,7 @@ export class PlaybackController {
     try {
       const videoFrame = frame.toVideoFrame();
       try {
-        this.deps.renderFrame(videoFrame);
+        this.deps.renderFrame(videoFrame, time);
       } finally {
         videoFrame.close();
       }
@@ -283,10 +283,14 @@ export class PlaybackController {
     this.renderOnce(target);
   }
 
-  /** Render the current position once (e.g. first frame after import). */
+  /** Render the current position once; restarts the loop when transport is playing. */
   refresh(): void {
-    this.generation += 1;
-    this.renderOnce(this.currentTime);
+    if (this.playing) {
+      this.runLoop();
+    } else {
+      this.generation += 1;
+      this.renderOnce(this.currentTime);
+    }
   }
 
   dispose(): void {

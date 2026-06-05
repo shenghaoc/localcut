@@ -3,6 +3,7 @@
 import presentSource from './shaders/present.wgsl?raw';
 import {
   EffectChain,
+  clipEffectsEqual,
   type ClipEffectParams,
   DEFAULT_CLIP_EFFECTS,
   normalizeClipEffects,
@@ -93,7 +94,9 @@ export class PreviewRenderer {
   }
 
   setClipEffects(params: Partial<ClipEffectParams> | undefined): void {
-    this.clipEffects = normalizeClipEffects(params);
+    const next = normalizeClipEffects(params);
+    if (clipEffectsEqual(next, this.clipEffects)) return;
+    this.clipEffects = next;
     this.effectChain.setParams(this.clipEffects);
   }
 
@@ -142,9 +145,7 @@ export class PreviewRenderer {
       return;
     }
 
-    if (effects !== undefined) {
-      this.setClipEffects(effects);
-    }
+    this.setClipEffects(effects);
 
     const external = this.device.importExternalTexture({ source: frame });
     const encoder = this.device.createCommandEncoder();

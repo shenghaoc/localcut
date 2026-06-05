@@ -3,6 +3,9 @@ import {
   DEFAULT_CLIP_EFFECTS,
   EFFECT_IDS,
   getEffectLabel,
+  isBrightnessContrastActive,
+  isColourTemperatureActive,
+  isSaturationActive,
   normalizeClipEffects,
   packEffectUniform,
 } from './effects';
@@ -37,6 +40,20 @@ describe('effects', () => {
       saturation: 0.75,
     });
     expect(packed[0]).toBeCloseTo(0.75);
+  });
+
+  it('detects default params as inactive', () => {
+    expect(isBrightnessContrastActive(DEFAULT_CLIP_EFFECTS)).toBe(false);
+    expect(isSaturationActive(DEFAULT_CLIP_EFFECTS)).toBe(false);
+    expect(isColourTemperatureActive(DEFAULT_CLIP_EFFECTS)).toBe(false);
+  });
+
+  it('detects non-default params as active', () => {
+    expect(isBrightnessContrastActive({ ...DEFAULT_CLIP_EFFECTS, contrast: 1.2 })).toBe(true);
+    expect(isSaturationActive({ ...DEFAULT_CLIP_EFFECTS, saturation: 0.5 })).toBe(true);
+    expect(
+      isColourTemperatureActive({ ...DEFAULT_CLIP_EFFECTS, temperature: 3200, temperatureStrength: 1 }),
+    ).toBe(true);
   });
 
   it('packs colour-temperature uniforms', () => {
