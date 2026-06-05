@@ -52,7 +52,9 @@ export function App() {
         setImporting(false);
         setMetadata(msg.metadata);
         setPreviewLabel(null);
-        setTimeline([]);
+        // Do NOT clear the timeline here: the worker posts `timeline-state` (with
+        // the new track for this import) *before* `import-complete`, so clearing
+        // it now would erase the snapshot that just arrived.
         // Duration is written to the shared clock by the worker; the rAF reader
         // in createSharedClock() surfaces it. Main thread never writes the SAB.
         setStatusLine(`Loaded ${msg.metadata.fileName}`);
