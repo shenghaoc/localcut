@@ -103,6 +103,11 @@ async function handleImport(file: File) {
   post({ type: 'import-progress', stage: 'metadata' });
   try {
     const handle = await openMediaFile(file);
+    // A second import can resolve and install its media while we were awaiting
+    // openMediaFile (the teardown at the top of this call ran before that handle
+    // existed). Tear down whatever is current now so we never overwrite — and
+    // leak — a handle set by a racing import. No-op when nothing raced.
+    teardownMedia();
     mediaHandle = handle;
     writeClockFull(0, handle.metadata.duration, false);
     post({ type: 'import-complete', metadata: handle.metadata });

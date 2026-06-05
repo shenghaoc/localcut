@@ -190,4 +190,33 @@ describe('PlaybackController', () => {
     controller.seek(3);
     await vi.waitFor(() => expect(onPlaybackError).toHaveBeenCalledOnce());
   });
+
+  it('renders and closes both frames on a successful tick', async () => {
+    const frame = mockFrame();
+    const videoFrame = frame.toVideoFrame() as unknown as { close: ReturnType<typeof vi.fn> };
+    const renderFrame = vi.fn();
+    const scheduled: Array<() => void> = [];
+
+    const controller = new PlaybackController({
+      duration: 10,
+      frameRate: 30,
+      getFrame: () => Promise.resolve(frame),
+      renderFrame,
+      writeClock: vi.fn(),
+      now: () => 0,
+      scheduler: (cb) => {
+        scheduled.push(cb);
+        return 0 as ReturnType<typeof setTimeout>;
+      },
+      clearScheduler: vi.fn(),
+    });
+
+    controller.play();
+    scheduled[0]!(); // run one tick
+    await vi.waitFor(() => expect(renderFrame).toHaveBeenCalledOnce());
+
+    // The DecodedFrame and the derived VideoFrame are both closed exactly once.
+    expect((frame.close as ReturnType<typeof vi.fn>)).toHaveBeenCalledOnce();
+    expect(videoFrame.close).toHaveBeenCalledOnce();
+  });
 });
