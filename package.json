@@ -8,9 +8,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview",
+    "preview": "npm run build && wrangler dev",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
     "mediabunny": "^1.46.0",
@@ -22,6 +23,7 @@
     "vite": "^6.3.5",
     "vite-plugin-pwa": "^0.21.2",
     "vite-plugin-solid": "^2.11.6",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "wrangler": "^4.98.0"
   }
 }
