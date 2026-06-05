@@ -214,9 +214,41 @@ describe('PlaybackController', () => {
     controller.play();
     scheduled[0]!(); // run one tick
     await vi.waitFor(() => expect(renderFrame).toHaveBeenCalledOnce());
+    expect(renderFrame).toHaveBeenCalledWith(videoFrame, expect.any(Number));
 
     // The DecodedFrame and the derived VideoFrame are both closed exactly once.
     expect((frame.close as ReturnType<typeof vi.fn>)).toHaveBeenCalledOnce();
     expect(videoFrame.close).toHaveBeenCalledOnce();
+  });
+
+  it('refresh() is a no-op when transport is playing', async () => {
+    const frame = mockFrame();
+    const renderFrame = vi.fn();
+    const scheduled: Array<() => void> = [];
+
+    const controller = new PlaybackController({
+      duration: 10,
+      frameRate: 30,
+      getFrame: () => Promise.resolve(frame),
+      renderFrame,
+      writeClock: vi.fn(),
+      now: () => 0,
+      scheduler: (cb) => {
+        scheduled.push(cb);
+        return 0 as ReturnType<typeof setTimeout>;
+      },
+      clearScheduler: vi.fn(),
+    });
+
+    controller.play();
+    scheduled[0]!();
+    await vi.waitFor(() => expect(renderFrame).toHaveBeenCalledOnce());
+
+    const callsBeforeRefresh = scheduled.length;
+    const renderCallsBefore = renderFrame.mock.calls.length;
+    controller.refresh();
+    expect(scheduled.length).toBe(callsBeforeRefresh);
+    expect(renderFrame.mock.calls.length).toBe(renderCallsBefore);
+    expect(controller.isPlaying()).toBe(true);
   });
 });

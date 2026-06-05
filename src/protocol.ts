@@ -24,12 +24,21 @@ export interface MediaMetadata {
   trackCount: number;
 }
 
+export interface ClipEffectParamsSnapshot {
+  brightness: number;
+  contrast: number;
+  saturation: number;
+  temperature: number;
+  temperatureStrength: number;
+}
+
 export interface TimelineClipSnapshot {
   id: string;
   sourceId: string;
   start: number;
   duration: number;
   inPoint: number;
+  effects: ClipEffectParamsSnapshot;
 }
 
 export interface TimelineTrackSnapshot {
@@ -66,6 +75,14 @@ interface TrimTimelineClipCommand {
   time: number;
 }
 
+interface SetEffectParamCommand {
+  type: 'set-effect-param';
+  trackId: string;
+  clipId: string;
+  key: keyof ClipEffectParamsSnapshot;
+  value: number;
+}
+
 export type WorkerCommand =
   | { type: 'init'; canvas: OffscreenCanvas; sab: SharedArrayBuffer }
   | { type: 'import'; file: File }
@@ -77,6 +94,7 @@ export type WorkerCommand =
   | DeleteTimelineClipCommand
   | MoveTimelineClipCommand
   | TrimTimelineClipCommand
+  | SetEffectParamCommand
   | { type: 'dispose' };
 
 /** A measured preview resolution tier (adaptive downscale of the decode path). */

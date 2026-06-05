@@ -249,6 +249,61 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.timeline-clip.is-selected {
+  outline: 2px solid #fff;
+  outline-offset: -1px;
+  z-index: 1;
+}
+
+.panel-subtitle {
+  margin: 1rem 0 0.5rem;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.inspector-section {
+  margin-bottom: 0.75rem;
+}
+
+.inspector-clip-id {
+  margin: 0 0 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.effect-sliders {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.effect-slider {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.effect-slider-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.effect-slider-value {
+  color: var(--text);
+}
+
+.effect-slider input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
 }
 
 .timeline-ruler-wrap {

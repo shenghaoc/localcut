@@ -2,6 +2,7 @@ import { createSignal, For, Show } from 'solid-js';
 import { TimelineClip } from './TimelineClip';
 import { TimelineTrack } from './TimelineTrack';
 import {
+  type ClipEffectParamsSnapshot,
   type TimelineTrackSnapshot as ProtocolTimelineTrack,
   type TimelineClipSnapshot as ProtocolTimelineClip,
 } from '../protocol';
@@ -23,6 +24,8 @@ interface TimelineProps {
     toIndex: number,
   ) => void;
   onTrim: (trackId: string, clipId: string, edge: 'in' | 'out', time: number) => void;
+  selectedClipId: string | null;
+  onSelectClip: (trackId: string, clipId: string, effects: ClipEffectParamsSnapshot) => void;
 }
 
 const DEFAULT_FPS = 30;
@@ -109,10 +112,12 @@ export function Timeline(props: TimelineProps) {
                       trackId={track.id}
                       clip={clip}
                       totalDuration={props.duration()}
+                      selected={props.selectedClipId === clip.id}
                       onSplit={props.onSplit}
                       onDelete={props.onDelete}
                       onTrim={props.onTrim}
                       onMoveStart={onClipMoveStart}
+                      onSelect={() => props.onSelectClip(track.id, clip.id, clip.effects)}
                     />
                   )}
                 </For>
