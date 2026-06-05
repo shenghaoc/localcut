@@ -78,7 +78,9 @@ export function TimelineTrack(props: TimelineTrackProps) {
 
   return (
     <div class="timeline-track-row">
-      <div class="track-label">{props.track.id}</div>
+      <div class="track-label">
+        {props.track.id} · {props.track.type}
+      </div>
       <div
         class="track-surface"
         ref={(el) => (surfaceEl = el)}

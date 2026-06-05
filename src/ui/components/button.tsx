@@ -10,22 +10,22 @@ import { cn } from '../../lib/utils';
  * `secondary` is the default for neutral chrome; `default` is the primary accent CTA.
  */
 export const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-45',
+  'be-button',
   {
     variants: {
       variant: {
-        default: 'bg-primary text-primary-foreground hover:bg-primary/90',
-        destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
-        outline: 'border border-input bg-card hover:border-ring',
-        secondary: 'border border-border bg-secondary text-secondary-foreground hover:border-ring',
-        ghost: 'hover:bg-accent hover:text-accent-foreground',
-        link: 'text-primary underline-offset-4 hover:underline',
+        default: 'be-button--primary',
+        destructive: 'be-button--destructive',
+        outline: 'be-button--outline',
+        secondary: 'be-button--secondary',
+        ghost: 'be-button--ghost',
+        link: 'be-button--link',
       },
       size: {
-        default: 'h-8 px-3 py-1.5',
-        sm: 'h-7 rounded-sm px-2',
-        lg: 'h-10 px-6',
-        icon: 'size-8',
+        default: 'be-button--md',
+        sm: 'be-button--sm',
+        lg: 'be-button--lg',
+        icon: 'be-button--icon',
       },
     },
     defaultVariants: {

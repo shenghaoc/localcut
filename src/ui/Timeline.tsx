@@ -95,7 +95,7 @@ export function Timeline(props: TimelineProps) {
   return (
     <section class="timeline panel">
       <div class="timeline-header">
-        <span class="timecode tabular-nums">{formatTimecode(props.currentTime(), fps())}</span>
+        <span class="timecode cur tabular-nums">{formatTimecode(props.currentTime(), fps())}</span>
         <span class="timecode-sep">/</span>
         <span class="timecode tabular-nums muted">{formatTimecode(props.duration(), fps())}</span>
       </div>
@@ -133,6 +133,9 @@ export function Timeline(props: TimelineProps) {
             onPointerDown={onScrubPointerDown}
             role="slider"
             aria-label="Timeline"
+            aria-valuemin={0}
+            aria-valuemax={props.duration()}
+            aria-valuenow={props.currentTime()}
           >
             <div class="timeline-ruler" />
             <div class="scrubhead" style={{ left: `${progress() * 100}%` }} />
