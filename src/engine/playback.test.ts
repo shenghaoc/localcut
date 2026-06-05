@@ -221,7 +221,7 @@ describe('PlaybackController', () => {
     expect(videoFrame.close).toHaveBeenCalledOnce();
   });
 
-  it('refresh() restarts the loop when transport is playing', async () => {
+  it('refresh() is a no-op when transport is playing', async () => {
     const frame = mockFrame();
     const renderFrame = vi.fn();
     const scheduled: Array<() => void> = [];
@@ -245,8 +245,10 @@ describe('PlaybackController', () => {
     await vi.waitFor(() => expect(renderFrame).toHaveBeenCalledOnce());
 
     const callsBeforeRefresh = scheduled.length;
+    const renderCallsBefore = renderFrame.mock.calls.length;
     controller.refresh();
-    expect(scheduled.length).toBeGreaterThan(callsBeforeRefresh);
+    expect(scheduled.length).toBe(callsBeforeRefresh);
+    expect(renderFrame.mock.calls.length).toBe(renderCallsBefore);
     expect(controller.isPlaying()).toBe(true);
   });
 });

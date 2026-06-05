@@ -283,14 +283,11 @@ export class PlaybackController {
     this.renderOnce(target);
   }
 
-  /** Render the current position once; restarts the loop when transport is playing. */
+  /** Re-render the current frame when paused; no-op while playing (the loop picks up edits). */
   refresh(): void {
-    if (this.playing) {
-      this.runLoop();
-    } else {
-      this.generation += 1;
-      this.renderOnce(this.currentTime);
-    }
+    if (this.playing) return;
+    this.generation += 1;
+    this.renderOnce(this.currentTime);
   }
 
   dispose(): void {

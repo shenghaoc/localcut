@@ -281,7 +281,7 @@ export class EffectChain {
   private writeAllUniforms(params: ClipEffectParams): void {
     for (const effect of this.effects) {
       const packed = packEffectUniform(effect.id, params);
-      this.device.queue.writeBuffer(effect.uniformBuffer, 0, packed.buffer, packed.byteOffset, packed.byteLength);
+      this.device.queue.writeBuffer(effect.uniformBuffer, 0, packed);
     }
   }
 }

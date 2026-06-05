@@ -85,6 +85,7 @@ export function Inspector(props: InspectorProps) {
     const clip = props.selectedClip;
     if (!clip) {
       flushPending();
+      pendingTarget.trackId = '';
       pendingTarget.clipId = '';
       setDraft(null);
       return;
@@ -92,6 +93,8 @@ export function Inspector(props: InspectorProps) {
     if (pendingTarget.clipId && pendingTarget.clipId !== clip.clipId) {
       flushPending();
     }
+    pendingTarget.trackId = clip.trackId;
+    pendingTarget.clipId = clip.clipId;
     syncDraftFromClip(clip);
   });
 

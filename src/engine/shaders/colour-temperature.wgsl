@@ -13,11 +13,16 @@ struct Params {
 const NEUTRAL_K : f32 = 6500.0;
 
 fn temperatureTint(kelvin : f32) -> vec3<f32> {
-  let t = clamp(kelvin, 2000.0, 10000.0) / 10000.0;
-  // Warm (low K) biases red; cool (high K) biases blue.
+  let k = clamp(kelvin, 2000.0, 10000.0);
   let warm = vec3<f32>(1.08, 0.96, 0.82);
   let cool = vec3<f32>(0.88, 0.96, 1.12);
-  return mix(warm, cool, t);
+  let neutral = vec3<f32>(1.0, 1.0, 1.0);
+  if (k < NEUTRAL_K) {
+    let t = (k - 2000.0) / (NEUTRAL_K - 2000.0);
+    return mix(warm, neutral, clamp(t, 0.0, 1.0));
+  }
+  let t = (k - NEUTRAL_K) / (10000.0 - NEUTRAL_K);
+  return mix(neutral, cool, clamp(t, 0.0, 1.0));
 }
 
 @compute @workgroup_size(8, 8, 1)
