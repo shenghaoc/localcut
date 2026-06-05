@@ -136,11 +136,47 @@ describe('timeline', () => {
     const next = reorderClip(timeline, 'video-track', 'b', 'video-track-2', 1);
     expect(next[0]!.clips.map((clip) => clip.id)).toEqual(['a']);
     expect(next[1]!.clips.map((clip) => clip.id)).toEqual(['c', 'b', 'd']);
+    expect(next[1]!.clips[0]).toMatchObject({ id: 'c', start: 0, duration: 3 });
     expect(next[1]!.clips[1]).toMatchObject({
       id: 'b',
       start: 3, // follows c
       duration: 2,
     });
+    // d must shift past the inserted clip instead of overlapping it at start 3.
+    expect(next[1]!.clips[2]).toMatchObject({ id: 'd', start: 5, duration: 1 });
+  });
+
+  it('moves a clip to the end of its own track without overlap', () => {
+    const timeline: TimelineTrack[] = [
+      {
+        id: 'video-track',
+        type: 'video',
+        clips: [
+          { id: 'a', sourceId: 'src-1', start: 0, duration: 1, inPoint: 0 },
+          { id: 'b', sourceId: 'src-1', start: 1, duration: 1, inPoint: 0 },
+          { id: 'c', sourceId: 'src-1', start: 2, duration: 1, inPoint: 0 },
+        ],
+      },
+    ];
+
+    // Drop past the last clip -> toIndex === clips.length.
+    const next = reorderClip(timeline, 'video-track', 'a', 'video-track', 3);
+    expect(next[0]!.clips.map((clip) => clip.id)).toEqual(['b', 'c', 'a']);
+    expect(next[0]!.clips.map((clip) => clip.start)).toEqual([0, 1, 2]);
+  });
+
+  it('returns the original timeline reference on no-op edits', () => {
+    const timeline: TimelineTrack[] = [
+      {
+        id: 'video-track',
+        type: 'video',
+        clips: [{ id: 'a', sourceId: 'src-1', start: 0, duration: 10, inPoint: 0 }],
+      },
+    ];
+    expect(splitClipAt(timeline, 'video-track', 10)).toBe(timeline);
+    expect(removeClip(timeline, 'video-track', 'missing')).toBe(timeline);
+    expect(reorderClip(timeline, 'video-track', 'missing', 'video-track', 0)).toBe(timeline);
+    expect(trimClip(timeline, 'video-track', 'a', { edge: 'in', time: 0 })).toBe(timeline);
   });
 
   it('supports in/out trim boundaries as absolute timeline times', () => {

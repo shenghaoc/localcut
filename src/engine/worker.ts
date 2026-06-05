@@ -194,23 +194,28 @@ function wrapDecodedFrameForPlayback(frameSource: MediaInputHandle, sourceTimest
   if (!frameSource.frameSource) {
     return Promise.resolve(null);
   }
+  // Capture the controller that requested this decode. If playback is disposed or
+  // rebuilt (re-import, teardown) before the decode resolves, the old controller
+  // will never receive or close this frame — drop it here so it can't leak.
+  const activePlayback = playback;
   return frameSource.frameSource.frameAt(sourceTimestamp).then((decoded) => {
     if (!decoded) return null;
-    const videoFrame = decoded.toVideoFrame();
+    const base = decoded.toVideoFrame();
     decoded.close();
 
-    const cache = frameCache;
-    if (!cache) {
-      return {
-        toVideoFrame: () => videoFrame,
-        close: () => videoFrame.close(),
-      };
+    if (playback !== activePlayback) {
+      base.close();
+      return null;
     }
 
-    cache.set(makeFrameCacheKey(frameSource.sourceId, sourceTimestamp), videoFrame.clone());
+    // The cache owns its own clone; the wrapper owns `base`. `toVideoFrame()` hands
+    // the caller a *distinct* clone to render and close. Each VideoFrame here is
+    // closed exactly once: the caller's clone by the caller, `base` by close(),
+    // the cache's clone on eviction.
+    frameCache?.set(makeFrameCacheKey(frameSource.sourceId, sourceTimestamp), base.clone());
     return {
-      toVideoFrame: () => videoFrame,
-      close: () => videoFrame.close(),
+      toVideoFrame: () => base.clone(),
+      close: () => base.close(),
     };
   });
 }
@@ -228,10 +233,13 @@ function makeGetFrame() {
     }
 
     const key = makeFrameCacheKey(resolved.clip.sourceId, resolved.sourceTime);
+    // FrameCache.get() returns a caller-owned clone. The wrapper owns it (closed via
+    // close()) and hands the renderer a further clone, keeping the two close paths on
+    // distinct frames so neither the wrapper nor the cache's own copy is closed twice.
     const cached = frameCache.get(key);
     if (cached) {
       return {
-        toVideoFrame: () => cached,
+        toVideoFrame: () => cached.clone(),
         close: () => cached.close(),
       };
     }
@@ -279,6 +287,10 @@ async function handleImport(file: File) {
 
 function applyTimelineCommand(): void {
   ensureClockAndTimeline();
+  // The controller was built with the pre-edit duration; refresh it so the loop and
+  // clamps respect a timeline that an edit may have shortened, then re-seek to
+  // re-render the (possibly changed) frame under the playhead.
+  playback?.setDuration(getTimelineDuration(timeline));
   playback?.seek(clockView?.[0] ?? 0);
 }
 

@@ -32,9 +32,12 @@ function makeTrimTime(clip: ProtocolTimelineClip, edge: 'in' | 'out', clientX: n
 
 /** Clip block renderer from mirrored timeline data. */
 export function TimelineClip(props: TimelineClipProps) {
-  const left = safePercent(props.clip.start, props.totalDuration);
-  const width = safePercent(props.clip.duration, props.totalDuration);
-  const dragText = `${props.clip.id} (${props.clip.sourceId})`;
+  // Derived accessors (not one-shot values): a SolidJS component body runs once,
+  // so reading props.* here directly would freeze position/size at first render and
+  // never reflect a move/trim/duration change. Evaluate inside the tracking context.
+  const left = () => safePercent(props.clip.start, props.totalDuration);
+  const width = () => safePercent(props.clip.duration, props.totalDuration);
+  const dragText = () => `${props.clip.id} (${props.clip.sourceId})`;
   let trimDebounce: ReturnType<typeof setTimeout> | null = null;
   let pendingTrimTime = props.clip.start;
   let activeTrimEdge: 'in' | 'out' | null = null;
@@ -118,8 +121,8 @@ export function TimelineClip(props: TimelineClipProps) {
   return (
     <div
       class="timeline-clip"
-      style={{ left, width }}
-      title={dragText}
+      style={{ left: left(), width: width() }}
+      title={dragText()}
       draggable="true"
       onDragStart={(event: DragEvent) => props.onMoveStart?.(props.trackId, props.clip.id, event)}
       onPointerDown={onPointerDown}
