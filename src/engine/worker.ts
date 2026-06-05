@@ -178,7 +178,7 @@ function hasAudioTimeline(): boolean {
 }
 
 function getMasterTime(): number | null {
-  if (!clockView || !hasAudioTimeline()) return null;
+  if (!clockView || !audioRing || !hasAudioTimeline()) return null;
   if ((clockView[ClockIndex.PLAY_STATE] ?? 0) !== 1) return null;
   const t = clockView[ClockIndex.AUDIO_CLOCK];
   return Number.isFinite(t) ? t : null;
@@ -247,6 +247,7 @@ async function pumpAudioOnce(): Promise<void> {
 }
 
 function startAudioPump(): void {
+  if (!audioRing) return;
   const gen = ++audioPumpGen;
   const loop = async () => {
     while (gen === audioPumpGen && playback?.isPlaying()) {
@@ -305,19 +306,19 @@ function writeClockFull(currentTime: number, duration: number, playing: boolean)
 /** Playback's per-frame writer: owns currentTime and playState, leaves duration. */
 function writeTransport(currentTime: number, playing: boolean) {
   if (!clockView) return;
-  if (!hasAudioTimeline()) clockView[ClockIndex.CURRENT_TIME] = currentTime;
+  if (!audioRing || !hasAudioTimeline()) clockView[ClockIndex.CURRENT_TIME] = currentTime;
   clockView[ClockIndex.PLAY_STATE] = playing ? 1 : 0;
 }
 
 async function handleInit(
   canvas: OffscreenCanvas,
   sab: SharedArrayBuffer,
-  audioSab: SharedArrayBuffer,
+  audioSab?: SharedArrayBuffer | null,
 ) {
   assertCrossOriginIsolated('Pipeline worker');
   clockView = new Float64Array(sab);
   writeClockFull(0, 0, false);
-  audioRing = mapAudioRing(audioSab);
+  audioRing = audioSab ? mapAudioRing(audioSab) : null;
 
   // initGpu() resolves with an unavailableReason for expected failures, but shader
   // module / pipeline compilation can still throw; catch so the worker always posts

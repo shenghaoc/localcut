@@ -10,7 +10,8 @@ import {
 } from '../engine/audio-ring';
 import { AUDIO_RING_BYTES } from '../engine/audio-ring';
 import { ClockIndex } from '../protocol';
-import workletUrl from './audio-playback.worklet.ts?url';
+
+const WORKLET_URL = `${import.meta.env.BASE_URL}audio-playback.worklet.js`;
 
 export class AudioEngine {
   private context: AudioContext | null = null;
@@ -19,39 +20,41 @@ export class AudioEngine {
   private ringSab: SharedArrayBuffer | null = null;
   private ring: AudioRingViews | null = null;
   private clockView: Float64Array | null = null;
-  private ready: Promise<void> | null = null;
+  private ready: Promise<SharedArrayBuffer | null> | null = null;
 
-  async init(clockSab: SharedArrayBuffer, sampleRate = 48_000, channels = 2): Promise<void> {
+  async init(clockSab: SharedArrayBuffer, sampleRate = 48_000, channels = 2): Promise<SharedArrayBuffer | null> {
     if (this.ready) return this.ready;
     this.ready = this.setup(clockSab, sampleRate, channels);
     return this.ready;
   }
 
-  private async setup(clockSab: SharedArrayBuffer, sampleRate: number, channels: number): Promise<void> {
+  private async setup(clockSab: SharedArrayBuffer, sampleRate: number, channels: number): Promise<SharedArrayBuffer | null> {
     this.clockView = new Float64Array(clockSab);
     this.ringSab = new SharedArrayBuffer(AUDIO_RING_BYTES);
     this.ring = initAudioRing(this.ringSab, sampleRate, channels);
 
-    this.context = new AudioContext({ sampleRate });
-    await this.context.audioWorklet.addModule(workletUrl);
+    try {
+      this.context = new AudioContext({ sampleRate });
+      await this.context.audioWorklet.addModule(WORKLET_URL);
 
-    this.worklet = new AudioWorkletNode(this.context, 'audio-playback', {
-      numberOfInputs: 0,
-      numberOfOutputs: 1,
-      outputChannelCount: [channels],
-      processorOptions: {
-        ringSab: this.ringSab,
-        clockSab,
-      },
-    });
+      this.worklet = new AudioWorkletNode(this.context, 'audio-playback', {
+        numberOfInputs: 0,
+        numberOfOutputs: 1,
+        outputChannelCount: [channels],
+        processorOptions: {
+          ringSab: this.ringSab,
+          clockSab,
+        },
+      });
 
-    this.masterGain = this.context.createGain();
-    this.worklet.connect(this.masterGain);
-    this.masterGain.connect(this.context.destination);
-  }
-
-  getRingBuffer(): SharedArrayBuffer | null {
-    return this.ringSab;
+      this.masterGain = this.context.createGain();
+      this.worklet.connect(this.masterGain);
+      this.masterGain.connect(this.context.destination);
+      return this.ringSab;
+    } catch (error) {
+      this.dispose();
+      throw error;
+    }
   }
 
   async play(fromSeconds: number): Promise<void> {
