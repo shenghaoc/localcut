@@ -28,9 +28,11 @@ Top-level Markdown: [`AGENTS.md`](AGENTS.md) is canonical; [`CLAUDE.md`](CLAUDE.
 
 **Phase 2 (done):** zero-copy decode → WebGPU preview, playback loop, adaptive resolution — see [`.kiro/specs/phase-2-zero-copy-preview/`](.kiro/specs/phase-2-zero-copy-preview/tasks.md) (manual GPU browser verify pending).
 
-**Phase 3 (next):** [timeline + editing](.kiro/specs/phase-3-timeline-editing/tasks.md).
+**Phase 3 (done):** [timeline + editing](.kiro/specs/phase-3-timeline-editing/tasks.md).
 
-**Phases 4–7 (planned):** [effect chain](.kiro/specs/phase-4-effect-chain/tasks.md), [audio](.kiro/specs/phase-5-audio/tasks.md), [export](.kiro/specs/phase-6-export/tasks.md), [PWA + deployment](.kiro/specs/phase-7-pwa-deployment/tasks.md).
+**Phases 4–6 (done):** [effect chain](.kiro/specs/phase-4-effect-chain/tasks.md), [audio](.kiro/specs/phase-5-audio/tasks.md), [export](.kiro/specs/phase-6-export/tasks.md).
+
+**Phase 7 (done):** [PWA + deployment](.kiro/specs/phase-7-pwa-deployment/tasks.md).
 
 ## Requirements
 
@@ -46,6 +48,19 @@ npm run build
 npm run preview
 npm test
 ```
+
+## PWA & Deployment
+
+This project is configured as an installable Progressive Web App (PWA) and is designed to be deployed to **Cloudflare Pages**.
+
+1. **Build**: `npm run build` generates static files in `dist/`.
+2. **Service Worker**: `vite-plugin-pwa` auto-generates a service worker that precaches the app shell, allowing full offline use after the first load.
+3. **COOP/COEP**: Cross-Origin Isolation headers are enforced via `public/_headers`, ensuring the `SharedArrayBuffer` clock works in production.
+4. **Deploy**:
+   ```bash
+   npm run deploy
+   ```
+   *This uses Wrangler to deploy the `dist/` folder to Cloudflare Pages based on `wrangler.jsonc`.*
 
 ## License
 

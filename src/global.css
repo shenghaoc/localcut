@@ -524,3 +524,7 @@ body {
 .status-ok {
   color: #6bcf8a;
 }
+
+.status-warn {
+  color: var(--danger);
+}
