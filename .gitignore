@@ -153,3 +153,8 @@ dev.env
 
 # Claude Code local files
 .claude/worktrees/
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
