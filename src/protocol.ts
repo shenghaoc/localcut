@@ -12,6 +12,7 @@ export const ClockIndex = {
 } as const;
 
 export type PlayState = 'paused' | 'playing';
+export type ExportPreset = 'quality' | 'fast';
 
 export interface MediaMetadata {
   fileName: string;
@@ -123,6 +124,8 @@ export type WorkerCommand =
   | { type: 'pause' }
   | { type: 'seek'; time: number }
   | { type: 'step'; direction: 1 | -1 }
+  | { type: 'export-start'; preset: ExportPreset; output: FileSystemFileHandle }
+  | { type: 'export-cancel' }
   | SplitTimelineCommand
   | DeleteTimelineClipCommand
   | MoveTimelineClipCommand
@@ -149,6 +152,17 @@ export interface ThroughputProbe {
   height: number;
 }
 
+export interface ExportProgress {
+  preset: ExportPreset;
+  phase: 'video' | 'audio' | 'finalizing';
+  doneFrames: number;
+  totalFrames: number;
+  percent: number;
+  etaSeconds: number | null;
+  elapsedSeconds: number;
+  subRealtime: boolean;
+}
+
 export type WorkerStateMessage =
   | { type: 'ready'; webgpu: boolean; features: string[]; gpuUnavailableReason: string | null }
   | { type: 'import-progress'; stage: 'reading' | 'metadata' }
@@ -158,6 +172,10 @@ export type WorkerStateMessage =
   | { type: 'probe-result'; probe: ThroughputProbe }
   | { type: 'timeline-state'; timeline: TimelineTrackSnapshot[] }
   | { type: 'waveform-peaks'; trackId: string; clipId: string; peaks: WaveformPeaks }
+  | { type: 'export-progress'; progress: ExportProgress }
+  | { type: 'export-complete'; fileName: string; mimeType: string }
+  | { type: 'export-canceled' }
+  | { type: 'export-error'; message: string }
   | { type: 'error'; message: string };
 
 export function assertCrossOriginIsolated(context: string): void {

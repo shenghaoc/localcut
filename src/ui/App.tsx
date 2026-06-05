@@ -2,6 +2,8 @@ import { createMemo, createSignal, Show, onMount, onCleanup } from 'solid-js';
 import {
   assertCrossOriginIsolated,
   CLOCK_BUFFER_BYTES,
+  type ExportPreset,
+  type ExportProgress,
   type MediaMetadata,
   type TimelineTrackSnapshot,
   type WaveformPeaks,
@@ -13,6 +15,7 @@ import { Toolbar } from './Toolbar';
 import { Timeline } from './Timeline';
 import { Inspector, type SelectedClip } from './Inspector';
 import { AudioEngine } from './audio-engine';
+import { ExportDialog } from './ExportDialog';
 import PipelineWorker from '../engine/worker.ts?worker';
 
 const VIDEO_ACCEPT = 'video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm';
@@ -28,6 +31,10 @@ export function App() {
   const [timeline, setTimeline] = createSignal<TimelineTrackSnapshot[]>([]);
   const [selectedClip, setSelectedClip] = createSignal<SelectedClip | null>(null);
   const [waveformPeaks, setWaveformPeaks] = createSignal<Record<string, WaveformPeaks>>({});
+  const [exporting, setExporting] = createSignal(false);
+  const [exportProgress, setExportProgress] = createSignal<ExportProgress | null>(null);
+  const [exportResult, setExportResult] = createSignal<string | null>(null);
+  const [exportError, setExportError] = createSignal<string | null>(null);
 
   let sab: SharedArrayBuffer;
   let bridge: ReturnType<typeof createWorkerBridge> | null = null;
@@ -103,6 +110,34 @@ export function App() {
           [`${msg.trackId}:${msg.clipId}`]: msg.peaks,
         }));
         break;
+      case 'export-progress':
+        setExporting(true);
+        setExportError(null);
+        setExportResult(null);
+        setExportProgress(msg.progress);
+        setStatusLine(`Exporting MP4 · ${Math.round(msg.progress.percent * 100)}%`);
+        break;
+      case 'export-complete':
+        setExporting(false);
+        setExportProgress(null);
+        setExportError(null);
+        setExportResult(`Exported ${msg.fileName}`);
+        setStatusLine(`Export complete · ${msg.mimeType}`);
+        break;
+      case 'export-canceled':
+        setExporting(false);
+        setExportProgress(null);
+        setExportError(null);
+        setExportResult('Export canceled');
+        setStatusLine('Export canceled');
+        break;
+      case 'export-error':
+        setExporting(false);
+        setExportProgress(null);
+        setExportResult(null);
+        setExportError(msg.message);
+        setStatusLine(`Export failed: ${msg.message}`);
+        break;
       case 'import-error':
       case 'error':
         setImporting(false);
@@ -175,6 +210,54 @@ export function App() {
     b.send({ type: 'import', file });
   }
 
+  function exportFileName(): string {
+    const sourceName = metadata()?.fileName.replace(/\.[^.]+$/, '') || 'export';
+    return `${sourceName}.mp4`;
+  }
+
+  async function pickOutputHandle(): Promise<FileSystemFileHandle | null> {
+    if (typeof window.showSaveFilePicker !== 'function') {
+      throw new Error('Export requires the File System Access API in a Chromium desktop browser.');
+    }
+    try {
+      return await window.showSaveFilePicker({
+        suggestedName: exportFileName(),
+        types: [
+          {
+            description: 'MP4 video',
+            accept: { 'video/mp4': ['.mp4'] },
+          },
+        ],
+      });
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return null;
+      throw e;
+    }
+  }
+
+  async function startExport(preset: ExportPreset) {
+    if (!metadata()) return;
+    if (!initSent) {
+      setExportError('Waiting for preview canvas before export can start.');
+      return;
+    }
+    try {
+      const output = await pickOutputHandle();
+      if (!output) return;
+      const { bridge: b } = ensureWorker();
+      setExporting(true);
+      setExportProgress(null);
+      setExportResult(null);
+      setExportError(null);
+      setStatusLine('Starting export…');
+      b.send({ type: 'export-start', preset, output });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      setExportError(message);
+      setStatusLine(`Export failed: ${message}`);
+    }
+  }
+
   function onFileDrop(file: File) {
     const { bridge: b } = ensureWorker();
     if (!initSent) {
@@ -240,6 +323,17 @@ export function App() {
             audioEngine.pause();
           }}
           onStep={(direction) => bridge?.send({ type: 'step', direction })}
+          exportControl={
+            <ExportDialog
+              hasMedia={metadata() !== null}
+              exporting={exporting()}
+              progress={exportProgress()}
+              lastResult={exportResult()}
+              error={exportError()}
+              onStart={startExport}
+              onCancel={() => bridge?.send({ type: 'export-cancel' })}
+            />
+          }
         />
         <main class="workspace">
           <section class="preview panel">

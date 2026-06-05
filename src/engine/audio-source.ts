@@ -4,6 +4,7 @@ export interface AudioSampleLike {
   readonly timestamp: number;
   readonly duration: number;
   readonly numberOfFrames: number;
+  readonly sampleRate: number;
   allocationSize(options: { format: 'f32'; planeIndex: number }): number;
   copyTo(destination: Float32Array, options: { format: 'f32'; planeIndex: number }): void;
   close(): void;
@@ -99,6 +100,100 @@ export class SequentialAudioSource {
       }
     }
     return out;
+  }
+
+  /**
+   * Returns an exact interleaved PCM window starting at `time`. Gaps and EOF are
+   * filled with silence; available decoded samples are sliced to the requested
+   * frame boundaries so export timestamps stay aligned.
+   */
+  async pcmWindowAt(time: number, frameCount: number, channels: number): Promise<Float32Array> {
+    const out = new Float32Array(Math.max(0, frameCount) * channels);
+    if (frameCount <= 0 || channels <= 0) return out;
+
+    if (this.needsResync(time)) {
+      this.reset();
+      this.iterator = this.source.samples(time);
+      this.anchor = time;
+    }
+
+    let written = 0;
+    let cursor = time;
+    const epsilon = 1e-6;
+
+    while (written < frameCount) {
+      await this.advanceTo(cursor);
+      if (!this.current) break;
+
+      const rate = this.current.sampleRate || this.sampleRate;
+      const currentStart = this.current.timestamp;
+      const currentEnd = currentStart + this.current.numberOfFrames / rate;
+
+      if (cursor + epsilon < currentStart) {
+        const silentFrames = Math.min(
+          frameCount - written,
+          Math.max(1, Math.floor((currentStart - cursor) * this.sampleRate)),
+        );
+        written += silentFrames;
+        cursor += silentFrames / this.sampleRate;
+        continue;
+      }
+
+      if (cursor >= currentEnd - epsilon) {
+        this.current.close();
+        this.current = null;
+        continue;
+      }
+
+      const bytes = this.current.allocationSize({ format: 'f32', planeIndex: 0 });
+      const floats = new Float32Array(bytes / 4);
+      this.current.copyTo(floats, { format: 'f32', planeIndex: 0 });
+      const sourceChannels = Math.max(1, Math.round(floats.length / this.current.numberOfFrames));
+      const sourceOffset = Math.max(0, Math.floor((cursor - currentStart) * rate + epsilon));
+      const available = Math.max(0, this.current.numberOfFrames - sourceOffset);
+      const take = Math.min(frameCount - written, available);
+
+      for (let frame = 0; frame < take; frame += 1) {
+        for (let channel = 0; channel < channels; channel += 1) {
+          const srcChannel = Math.min(channel, sourceChannels - 1);
+          out[(written + frame) * channels + channel] =
+            floats[(sourceOffset + frame) * sourceChannels + srcChannel] ?? 0;
+        }
+      }
+
+      written += take;
+      cursor += take / rate;
+      if (take >= available) {
+        this.current.close();
+        this.current = null;
+      }
+    }
+
+    return out;
+  }
+
+  private async advanceTo(time: number): Promise<void> {
+    if (!this.iterator) {
+      this.iterator = this.source.samples(time);
+      this.anchor = time;
+    }
+    const iterator = this.iterator;
+    try {
+      while (!this.current || this.current.timestamp + this.current.duration <= time + 1e-6) {
+        const next = await iterator.next();
+        if (next.done) {
+          this.current?.close();
+          this.current = null;
+          break;
+        }
+        this.current?.close();
+        this.current = next.value;
+        this.anchor = next.value.timestamp;
+      }
+    } catch (error) {
+      this.reset();
+      throw error;
+    }
   }
 
   dispose(): void {
