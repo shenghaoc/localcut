@@ -175,4 +175,19 @@ describe('PlaybackController', () => {
     expect(onPlaybackError).toHaveBeenCalledOnce();
     expect(writeClock).toHaveBeenCalledWith(expect.any(Number), false);
   });
+
+  it('routes a paused-seek decode failure to onPlaybackError', async () => {
+    const onPlaybackError = vi.fn();
+    const controller = new PlaybackController({
+      duration: 10,
+      frameRate: 30,
+      getFrame: () => Promise.reject(new Error('seek decode failed')),
+      renderFrame: vi.fn(),
+      writeClock: vi.fn(),
+      onPlaybackError,
+    });
+
+    controller.seek(3);
+    await vi.waitFor(() => expect(onPlaybackError).toHaveBeenCalledOnce());
+  });
 });

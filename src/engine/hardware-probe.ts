@@ -91,6 +91,11 @@ export async function probeEncodeThroughput(
   const start = performance.now();
   try {
     encoder.configure(chosen.config);
+    // Queue the whole burst synchronously, then await flush. Yielding to a
+    // setTimeout between frames would hit the browser's nested-timer clamp
+    // (~4ms after 5 nested calls), capping the measurable throughput. The burst
+    // is small and each VideoFrame is closed immediately, so the queue stays
+    // bounded without manual backpressure.
     for (let i = 0; i < PROBE_FRAMES && !failed; i++) {
       const frame = new VideoFrame(buffer, {
         format: 'RGBA',
@@ -102,10 +107,6 @@ export async function probeEncodeThroughput(
         encoder.encode(frame, { keyFrame: i === 0 });
       } finally {
         frame.close();
-      }
-      // Bounded queue: don't outrun the encoder while measuring it.
-      if (encoder.encodeQueueSize > 4) {
-        await new Promise((resolve) => setTimeout(resolve));
       }
     }
     await encoder.flush();

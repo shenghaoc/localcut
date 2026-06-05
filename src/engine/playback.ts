@@ -220,6 +220,11 @@ export class PlaybackController {
     }
   }
 
+  /** Fire-and-forget render that routes failures to {@link PlaybackDeps.onPlaybackError}. */
+  private renderOnce(time: number): void {
+    this.renderAt(time).catch((e) => this.deps.onPlaybackError?.(e));
+  }
+
   play(): void {
     if (this.playing) return;
     if (this.currentTime >= this.deps.duration && this.deps.duration > 0) {
@@ -246,7 +251,7 @@ export class PlaybackController {
       this.runLoop(); // re-anchor from the seeked position
     } else {
       this.generation += 1;
-      void this.renderAt(clamped);
+      this.renderOnce(clamped);
     }
   }
 
@@ -263,13 +268,13 @@ export class PlaybackController {
     );
     this.currentTime = target;
     this.deps.writeClock(target, false);
-    void this.renderAt(target);
+    this.renderOnce(target);
   }
 
   /** Render the current position once (e.g. first frame after import). */
   refresh(): void {
     this.generation += 1;
-    void this.renderAt(this.currentTime);
+    this.renderOnce(this.currentTime);
   }
 
   dispose(): void {
