@@ -37,6 +37,7 @@ class AudioPlaybackProcessor extends AudioWorkletProcessor {
   }
 
   syncGeneration() {
+    if (!this.initialized) return;
     const gen = Atomics.load(this.header, RING_GENERATION);
     if (gen === this.generation) return;
     this.generation = gen;

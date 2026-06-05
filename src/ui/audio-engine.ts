@@ -58,10 +58,6 @@ export class AudioEngine {
     }
   }
 
-  getRingBuffer(): SharedArrayBuffer | null {
-    return this.ringSab;
-  }
-
   async play(fromSeconds: number): Promise<void> {
     if (!this.context || !this.ring || !this.worklet) return;
     if (this.context.state === 'suspended') await this.context.resume();

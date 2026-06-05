@@ -306,7 +306,7 @@ function writeClockFull(currentTime: number, duration: number, playing: boolean)
 /** Playback's per-frame writer: owns currentTime and playState, leaves duration. */
 function writeTransport(currentTime: number, playing: boolean) {
   if (!clockView) return;
-  if (!hasAudioTimeline()) clockView[ClockIndex.CURRENT_TIME] = currentTime;
+  if (!audioRing || !hasAudioTimeline()) clockView[ClockIndex.CURRENT_TIME] = currentTime;
   clockView[ClockIndex.PLAY_STATE] = playing ? 1 : 0;
 }
 
