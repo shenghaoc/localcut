@@ -58,7 +58,6 @@
   --text: var(--foreground);
   --text-muted: var(--muted-foreground);
   --accent-strong: var(--primary);
-  --accent-soft: var(--primary-soft);
   --danger: var(--destructive);
   --success: var(--accent);
 
@@ -98,8 +97,7 @@
   --icon-btn-w: 36px;
 }
 
-:root[data-theme='dark'],
-[data-theme='dark'] {
+:root[data-theme='dark'] {
   color-scheme: dark;
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
   --shadow-md: 0 2px 6px rgb(0 0 0 / 40%), 0 12px 28px -10px rgb(0 0 0 / 60%);

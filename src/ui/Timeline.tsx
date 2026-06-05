@@ -136,6 +136,7 @@ export function Timeline(props: TimelineProps) {
             aria-valuemin={0}
             aria-valuemax={props.duration()}
             aria-valuenow={props.currentTime()}
+            aria-valuetext={formatTimecode(props.currentTime(), fps())}
           >
             <div class="timeline-ruler" />
             <div class="scrubhead" style={{ left: `${progress() * 100}%` }} />
