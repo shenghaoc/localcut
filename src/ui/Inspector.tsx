@@ -55,26 +55,44 @@ export function Inspector(props: InspectorProps) {
   const [draft, setDraft] = createSignal<ClipEffectParamsSnapshot | null>(null);
   const pending = new Map<keyof ClipEffectParamsSnapshot, number>();
   const debouncers = new Map<keyof ClipEffectParamsSnapshot, ReturnType<typeof setTimeout>>();
+  const pendingTarget = { trackId: '', clipId: '' };
 
   function flushPending() {
-    const clip = props.selectedClip;
-    if (!clip || pending.size === 0) return;
+    if (!pendingTarget.clipId || pending.size === 0) return;
     for (const handle of debouncers.values()) clearTimeout(handle);
     debouncers.clear();
     for (const [key, value] of pending) {
-      props.onEffectParam(clip.trackId, clip.clipId, key, value);
+      props.onEffectParam(pendingTarget.trackId, pendingTarget.clipId, key, value);
     }
     pending.clear();
   }
 
+  function syncDraftFromClip(clip: SelectedClip) {
+    setDraft((prev) => {
+      const base = { ...clip.effects };
+      if (!prev) return base;
+      const next = { ...base };
+      for (const spec of SLIDERS) {
+        if (pending.has(spec.key) || debouncers.has(spec.key)) {
+          next[spec.key] = prev[spec.key];
+        }
+      }
+      return next;
+    });
+  }
+
   createEffect(() => {
-    flushPending();
     const clip = props.selectedClip;
     if (!clip) {
+      flushPending();
+      pendingTarget.clipId = '';
       setDraft(null);
       return;
     }
-    setDraft({ ...clip.effects });
+    if (pendingTarget.clipId && pendingTarget.clipId !== clip.clipId) {
+      flushPending();
+    }
+    syncDraftFromClip(clip);
   });
 
   onCleanup(() => {
@@ -84,6 +102,8 @@ export function Inspector(props: InspectorProps) {
   function scheduleParam(key: keyof ClipEffectParamsSnapshot, value: number) {
     const clip = props.selectedClip;
     if (!clip) return;
+    pendingTarget.trackId = clip.trackId;
+    pendingTarget.clipId = clip.clipId;
     setDraft((prev) => (prev ? { ...prev, [key]: value } : prev));
     pending.set(key, value);
     const existing = debouncers.get(key);

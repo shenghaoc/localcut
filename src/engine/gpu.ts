@@ -45,6 +45,8 @@ export class PreviewRenderer {
   private storageBView: GPUTextureView | null = null;
   private storageCView: GPUTextureView | null = null;
   private presentBindGroup: GPUBindGroup | null = null;
+  /** Texture view last written by the effect chain (A, B, or C depending on active passes). */
+  private lastPresentView: GPUTextureView | null = null;
   private width = 0;
   private height = 0;
   private submissionCount = 0;
@@ -90,7 +92,7 @@ export class PreviewRenderer {
 
   /** Processed output view from the most recent frame (preview + export share this). */
   getProcessedTextureView(): GPUTextureView | null {
-    return this.storageAView;
+    return this.lastPresentView ?? this.storageAView;
   }
 
   setClipEffects(params: Partial<ClipEffectParams> | undefined): void {
@@ -133,6 +135,7 @@ export class PreviewRenderer {
     this.storageBView = this.storageB.createView();
     this.storageCView = this.storageC.createView();
 
+    this.lastPresentView = null;
     this.rebuildPresentBindGroup();
   }
 
@@ -158,8 +161,9 @@ export class PreviewRenderer {
       this.height,
     );
 
-    if (outputView !== this.storageAView) {
+    if (outputView !== this.lastPresentView) {
       this.rebuildPresentBindGroup(outputView);
+      this.lastPresentView = outputView;
     }
 
     const render = encoder.beginRenderPass({
@@ -194,6 +198,7 @@ export class PreviewRenderer {
     this.storageBView = null;
     this.storageCView = null;
     this.presentBindGroup = null;
+    this.lastPresentView = null;
     this.device.destroy();
   }
 

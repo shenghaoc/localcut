@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  clipEffectsEqual,
   DEFAULT_CLIP_EFFECTS,
   EFFECT_IDS,
   getEffectLabel,
@@ -40,6 +41,13 @@ describe('effects', () => {
       saturation: 0.75,
     });
     expect(packed[0]).toBeCloseTo(0.75);
+  });
+
+  it('compares clip effect params field-wise', () => {
+    expect(clipEffectsEqual(DEFAULT_CLIP_EFFECTS, { ...DEFAULT_CLIP_EFFECTS })).toBe(true);
+    expect(clipEffectsEqual(DEFAULT_CLIP_EFFECTS, { ...DEFAULT_CLIP_EFFECTS, brightness: 0.1 })).toBe(
+      false,
+    );
   });
 
   it('detects default params as inactive', () => {

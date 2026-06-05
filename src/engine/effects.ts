@@ -101,6 +101,7 @@ export function isSaturationActive(params: ClipEffectParams): boolean {
   return params.saturation !== 1;
 }
 
+/** Strength 0 is an explicit bypass; other effects use their neutral scalar instead. */
 export function isColourTemperatureActive(params: ClipEffectParams): boolean {
   return params.temperatureStrength !== 0 && params.temperature !== DEFAULT_CLIP_EFFECTS.temperature;
 }
