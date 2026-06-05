@@ -48,6 +48,7 @@ export function ExportDialog(props: ExportDialogProps) {
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content class="export-popover panel" aria-label="Export">
+          <p class="export-eyebrow">Export preset</p>
           <div class="export-presets" role="group" aria-label="Export preset">
             <button
               type="button"

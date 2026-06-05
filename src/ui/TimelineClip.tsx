@@ -149,7 +149,7 @@ export function TimelineClip(props: TimelineClipProps) {
 
   return (
     <div
-      class={`timeline-clip${props.selected ? ' is-selected' : ''}`}
+      class={`timeline-clip${props.isAudio ? ' is-audio' : ''}${props.selected ? ' is-selected' : ''}`}
       style={{ left: left(), width: width() }}
       title={dragText()}
       draggable="true"

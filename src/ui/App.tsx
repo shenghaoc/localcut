@@ -1,4 +1,4 @@
-import { createMemo, createSignal, Show, onMount, onCleanup } from 'solid-js';
+import { createEffect, createMemo, createSignal, Show, onMount, onCleanup } from 'solid-js';
 import { useRegisterSW } from 'virtual:pwa-register/solid';
 import {
   assertCrossOriginIsolated,
@@ -22,6 +22,25 @@ import { cn } from '../lib/utils';
 import PipelineWorker from '../engine/worker.ts?worker';
 
 const VIDEO_ACCEPT = 'video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm';
+type Theme = 'light' | 'dark';
+
+function initialTheme(): Theme {
+  if (typeof window === 'undefined') return 'light';
+  try {
+    const stored = window.localStorage.getItem('browser-editor-theme');
+    if (stored === 'light' || stored === 'dark') return stored;
+  } catch {
+    // Local storage is cosmetic; the editor remains fully functional without it.
+  }
+  if (typeof window.matchMedia === 'function') {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  return 'light';
+}
+
+function initialOnlineStatus(): boolean {
+  return typeof navigator === 'undefined' ? true : navigator.onLine;
+}
 
 export function App() {
   const [fatalError, setFatalError] = createSignal<string | null>(null);
@@ -38,10 +57,11 @@ export function App() {
   const [exportProgress, setExportProgress] = createSignal<ExportProgress | null>(null);
   const [exportResult, setExportResult] = createSignal<string | null>(null);
   const [exportError, setExportError] = createSignal<string | null>(null);
-  const [isOffline, setIsOffline] = createSignal(!navigator.onLine);
+  const [isOffline, setIsOffline] = createSignal(!initialOnlineStatus());
   const [hasActiveSW, setHasActiveSW] = createSignal(false);
   const [audioWarning, setAudioWarning] = createSignal<string | null>(null);
   const [isDraggingFile, setIsDraggingFile] = createSignal(false);
+  const [theme, setTheme] = createSignal<Theme>(initialTheme());
 
   const {
     offlineReady: [offlineReady],
@@ -77,6 +97,22 @@ export function App() {
   });
 
   const clock = createSharedClock(sab);
+
+  createEffect(() => {
+    document.documentElement.dataset.theme = theme();
+  });
+
+  function toggleTheme() {
+    setTheme((current) => {
+      const next = current === 'dark' ? 'light' : 'dark';
+      try {
+        window.localStorage.setItem('browser-editor-theme', next);
+      } catch {
+        // Persistence is optional; avoid turning a storage denial into UI failure.
+      }
+      return next;
+    });
+  }
 
   function handleState(msg: import('../protocol').WorkerStateMessage) {
     switch (msg.type) {
@@ -352,6 +388,8 @@ export function App() {
           }}
           onStep={(direction) => bridge?.send({ type: 'step', direction })}
           disabled={!workerReady()}
+          theme={theme()}
+          onToggleTheme={toggleTheme}
           exportControl={
             <ExportDialog
               hasMedia={metadata() !== null}
@@ -370,6 +408,7 @@ export function App() {
             <Show when={!metadata() && !importing()}>
               <div class="preview-empty">
                 <div>
+                  <p class="preview-empty-eyebrow">Preview</p>
                   <p class="preview-empty-title">No source loaded</p>
                   <p class="preview-empty-copy">Drop an MP4, MOV, or WebM here.</p>
                 </div>

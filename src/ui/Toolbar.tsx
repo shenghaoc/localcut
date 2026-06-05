@@ -1,5 +1,5 @@
 import { Show, type JSX } from 'solid-js';
-import { FolderOpen, Pause, Play, SkipBack, SkipForward } from 'lucide-solid';
+import { FolderOpen, Moon, Pause, Play, SkipBack, SkipForward, Sun } from 'lucide-solid';
 import { cn } from '../lib/utils';
 import { Button, buttonVariants } from './components/button';
 import type { MediaMetadata } from '../protocol';
@@ -14,6 +14,8 @@ interface ToolbarProps {
   onStep: (direction: 1 | -1) => void;
   disabled?: boolean;
   exportControl?: JSX.Element;
+  theme: 'light' | 'dark';
+  onToggleTheme: () => void;
 }
 
 export function Toolbar(props: ToolbarProps) {
@@ -29,7 +31,10 @@ export function Toolbar(props: ToolbarProps) {
   return (
     <header class="toolbar">
       <div class="toolbar-left">
-        <h1 class="app-title">Browser Editor</h1>
+        <div class="app-brand">
+          <span class="app-glyph" aria-hidden="true" />
+          <h1 class="app-title">Browser Editor</h1>
+        </div>
         <label
           class={cn(
             buttonVariants({ variant: 'default' }),
@@ -93,6 +98,18 @@ export function Toolbar(props: ToolbarProps) {
           </Button>
         </div>
         {props.exportControl}
+        <Button
+          size="icon"
+          onClick={() => props.onToggleTheme()}
+          aria-label={props.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+          title={props.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+        >
+          {props.theme === 'dark' ? (
+            <Sun size={14} aria-hidden="true" />
+          ) : (
+            <Moon size={14} aria-hidden="true" />
+          )}
+        </Button>
       </div>
     </header>
   );

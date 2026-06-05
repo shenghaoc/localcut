@@ -64,6 +64,42 @@ export function Timeline(props: TimelineProps) {
     if (duration > 0) props.onSeek(ratio * duration);
   }
 
+  function seekTo(time: number) {
+    const duration = props.duration();
+    if (duration <= 0) return;
+    props.onSeek(Math.max(0, Math.min(duration, time)));
+  }
+
+  function onScrubKeyDown(event: KeyboardEvent) {
+    const frameStep = 1 / (fps() > 0 ? fps() : DEFAULT_FPS);
+    switch (event.key) {
+      case 'ArrowLeft':
+        event.preventDefault();
+        seekTo(props.currentTime() - frameStep);
+        break;
+      case 'ArrowRight':
+        event.preventDefault();
+        seekTo(props.currentTime() + frameStep);
+        break;
+      case 'PageDown':
+        event.preventDefault();
+        seekTo(props.currentTime() - 1);
+        break;
+      case 'PageUp':
+        event.preventDefault();
+        seekTo(props.currentTime() + 1);
+        break;
+      case 'Home':
+        event.preventDefault();
+        seekTo(0);
+        break;
+      case 'End':
+        event.preventDefault();
+        seekTo(props.duration());
+        break;
+    }
+  }
+
   function onScrubPointerDown(event: PointerEvent) {
     const target = event.currentTarget as HTMLElement;
     event.preventDefault();
@@ -95,7 +131,7 @@ export function Timeline(props: TimelineProps) {
   return (
     <section class="timeline panel">
       <div class="timeline-header">
-        <span class="timecode tabular-nums">{formatTimecode(props.currentTime(), fps())}</span>
+        <span class="timecode cur tabular-nums">{formatTimecode(props.currentTime(), fps())}</span>
         <span class="timecode-sep">/</span>
         <span class="timecode tabular-nums muted">{formatTimecode(props.duration(), fps())}</span>
       </div>
@@ -131,8 +167,14 @@ export function Timeline(props: TimelineProps) {
           <div
             class={`timeline-ruler-wrap ${isScrubbing() ? 'is-scrubbing' : ''}`}
             onPointerDown={onScrubPointerDown}
+            onKeyDown={onScrubKeyDown}
+            tabIndex={0}
             role="slider"
             aria-label="Timeline"
+            aria-valuemin={0}
+            aria-valuemax={props.duration()}
+            aria-valuenow={props.currentTime()}
+            aria-valuetext={formatTimecode(props.currentTime(), fps())}
           >
             <div class="timeline-ruler" />
             <div class="scrubhead" style={{ left: `${progress() * 100}%` }} />
