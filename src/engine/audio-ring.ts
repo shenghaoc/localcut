@@ -48,15 +48,15 @@ export function initAudioRing(
   channels: number,
   capacitySamples = DEFAULT_RING_CAPACITY_SAMPLES,
 ): AudioRingViews {
-  const views = mapAudioRing(sab);
-  Atomics.store(views.header, RingHeader.WRITE_SAMPLES, 0);
-  Atomics.store(views.header, RingHeader.READ_SAMPLES, 0);
-  Atomics.store(views.header, RingHeader.SAMPLE_RATE, sampleRate);
-  Atomics.store(views.header, RingHeader.CHANNELS, channels);
-  Atomics.store(views.header, RingHeader.CAPACITY_SAMPLES, capacitySamples);
-  Atomics.store(views.header, RingHeader.GENERATION, 0);
-  Atomics.store(views.header, RingHeader.STATE, RingState.IDLE);
-  return views;
+  const header = new Int32Array(sab, 0, RING_HEADER_INTS);
+  Atomics.store(header, RingHeader.WRITE_SAMPLES, 0);
+  Atomics.store(header, RingHeader.READ_SAMPLES, 0);
+  Atomics.store(header, RingHeader.SAMPLE_RATE, sampleRate);
+  Atomics.store(header, RingHeader.CHANNELS, channels);
+  Atomics.store(header, RingHeader.CAPACITY_SAMPLES, capacitySamples);
+  Atomics.store(header, RingHeader.GENERATION, 0);
+  Atomics.store(header, RingHeader.STATE, RingState.IDLE);
+  return mapAudioRing(sab);
 }
 
 function capacityFrames(views: AudioRingViews): number {

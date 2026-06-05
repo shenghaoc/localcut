@@ -49,6 +49,7 @@ class AudioPlaybackProcessor extends AudioWorkletProcessor {
     if (gen === this.generation) return;
     this.generation = gen;
     this.framesConsumed = 0;
+    this.timelineAnchor = this.clock[CLOCK_AUDIO];
     Atomics.store(this.header, RING_READ, 0);
   }
 
@@ -66,15 +67,15 @@ class AudioPlaybackProcessor extends AudioWorkletProcessor {
     const frames = output[0]?.length ?? 0;
     const write = Atomics.load(this.header, RING_WRITE);
     let read = Atomics.load(this.header, RING_READ);
-    const available = write - read;
+    const available = (write - read) | 0;
     const rate = Atomics.load(this.header, RING_SAMPLE_RATE) || sampleRate;
 
     for (let frame = 0; frame < frames; frame += 1) {
-      if (read >= write) {
+      if (((write - read) | 0) <= 0) {
         for (let ch = 0; ch < outChannels; ch += 1) output[ch]![frame] = 0;
         continue;
       }
-      const ringFrame = read % this.capacityFrames;
+      const ringFrame = ((read % this.capacityFrames) + this.capacityFrames) % this.capacityFrames;
       const src = ringFrame * this.channels;
       for (let ch = 0; ch < outChannels; ch += 1) {
         const srcCh = Math.min(ch, this.channels - 1);

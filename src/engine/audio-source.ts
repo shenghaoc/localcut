@@ -70,6 +70,9 @@ export class SequentialAudioSource {
       throw error;
     }
     if (!this.current) return null;
+    if (time + 1e-6 < this.current.timestamp) {
+      return null;
+    }
 
     const bytes = this.current.allocationSize({ format: 'f32', planeIndex: 0 });
     const floats = new Float32Array(bytes / 4);
@@ -105,7 +108,7 @@ export class SequentialAudioSource {
   /** Samples the start of the stream for waveform peak buckets. */
   async collectPeaks(maxSeconds: number, bucketCount: number): Promise<Float32Array> {
     const { computeWaveformPeaks } = await import('./waveform');
-    const chunks: number[] = [];
+    const chunks: Float32Array[] = [];
     let totalFrames = 0;
     const maxFrames = Math.max(1, Math.floor(maxSeconds * this.sampleRate));
     let channels = 2;
@@ -116,7 +119,7 @@ export class SequentialAudioSource {
         const buf = new Float32Array(bytes / 4);
         sample.copyTo(buf, { format: 'f32', planeIndex: 0 });
         channels = Math.round(buf.length / sample.numberOfFrames);
-        for (let i = 0; i < buf.length; i += 1) chunks.push(buf[i]!);
+        chunks.push(buf);
         totalFrames += sample.numberOfFrames;
         sample.close();
         if (totalFrames >= maxFrames) break;
@@ -124,6 +127,13 @@ export class SequentialAudioSource {
     } catch {
       return computeWaveformPeaks(new Float32Array(0), bucketCount, channels);
     }
-    return computeWaveformPeaks(new Float32Array(chunks), bucketCount, channels);
+    const totalSamples = chunks.reduce((acc, c) => acc + c.length, 0);
+    const merged = new Float32Array(totalSamples);
+    let offset = 0;
+    for (const chunk of chunks) {
+      merged.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return computeWaveformPeaks(merged, bucketCount, channels);
   }
 }

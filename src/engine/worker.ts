@@ -58,6 +58,7 @@ const FRAME_CACHE_BUDGET_BYTES = 64 * 1024 * 1024;
 let audioRing: AudioRingViews | null = null;
 let audioWriteAnchor = 0;
 let audioWriteFrames = 0;
+let pcmRemainder: Float32Array | null = null;
 let audioPumpGen = 0;
 
 function makeSourceId(): string {
@@ -213,12 +214,18 @@ async function pumpAudioOnce(): Promise<void> {
   }
 
   const channels = Math.max(1, Atomics.load(audioRing.header, RingHeader.CHANNELS));
-  const pcm = await handle.audioSource.pcmAt(resolved.sourceTime, channels);
-  if (!pcm) {
-    const silenceFrames = Math.min(freeFrames, 1024);
-    const written = writeRingPcm(audioRing, new Float32Array(silenceFrames * channels));
-    audioWriteFrames += written;
-    return;
+  let pcm: Float32Array | null;
+  if (pcmRemainder) {
+    pcm = pcmRemainder;
+    pcmRemainder = null;
+  } else {
+    pcm = await handle.audioSource.pcmAt(resolved.sourceTime, channels);
+    if (!pcm) {
+      const silenceFrames = Math.min(freeFrames, 1024);
+      const written = writeRingPcm(audioRing, new Float32Array(silenceFrames * channels));
+      audioWriteFrames += written;
+      return;
+    }
   }
 
   const gain = trackAudible(resolved.trackId);
@@ -229,6 +236,10 @@ async function pumpAudioOnce(): Promise<void> {
   }
   const written = writeRingPcm(audioRing, pcm);
   audioWriteFrames += written;
+  const totalFrames = pcm.length / channels;
+  if (written < totalFrames) {
+    pcmRemainder = pcm.subarray(written * channels);
+  }
 }
 
 function startAudioPump(): void {
@@ -256,6 +267,7 @@ function resetAudioRingForSeek(time: number): void {
   resetRingPointers(audioRing);
   audioWriteAnchor = time;
   audioWriteFrames = 0;
+  pcmRemainder = null;
   if (clockView) {
     clockView[ClockIndex.AUDIO_CLOCK] = time;
     clockView[ClockIndex.CURRENT_TIME] = time;
@@ -444,6 +456,11 @@ async function handleImport(file: File) {
     appendAudioTrackForSource(handle, start);
     ensureClockAndTimeline();
 
+    if (handle.audioSource && audioRing) {
+      Atomics.store(audioRing.header, RingHeader.SAMPLE_RATE, handle.audioSampleRate);
+      Atomics.store(audioRing.header, RingHeader.CHANNELS, handle.audioChannels);
+    }
+
     post({ type: 'import-complete', metadata: handle.metadata });
 
     const playbackHandle = getPlaybackSource();
@@ -607,7 +624,11 @@ async function runProbeOnce(handle: MediaInputHandle) {
 
 function handlePlay() {
   playback?.play();
-  if (audioRing) Atomics.store(audioRing.header, RingHeader.STATE, RingState.PLAYING);
+  if (audioRing) {
+    audioWriteAnchor = clockView?.[ClockIndex.CURRENT_TIME] ?? 0;
+    audioWriteFrames = 0;
+    Atomics.store(audioRing.header, RingHeader.STATE, RingState.PLAYING);
+  }
   startAudioPump();
 }
 
