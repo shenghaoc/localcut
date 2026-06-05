@@ -98,8 +98,11 @@ export async function probeEncodeThroughput(
         codedHeight: height,
         timestamp: Math.round(i * microPerFrame),
       });
-      encoder.encode(frame, { keyFrame: i === 0 });
-      frame.close();
+      try {
+        encoder.encode(frame, { keyFrame: i === 0 });
+      } finally {
+        frame.close();
+      }
       // Bounded queue: don't outrun the encoder while measuring it.
       if (encoder.encodeQueueSize > 4) {
         await new Promise((resolve) => setTimeout(resolve));

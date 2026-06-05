@@ -183,10 +183,16 @@ export class PlaybackController {
   /**
    * Decode + render a single frame at `time`, closing every resource it touches.
    * Calls are serialized through {@link decodeChain} so a seek can never trigger a
-   * concurrent read on the (non-reentrant) sink.
+   * concurrent read on the (non-reentrant) sink. The generation captured here is
+   * re-checked once the chain reaches this request, so obsolete decodes queued
+   * during rapid scrubbing are skipped instead of run.
    */
   private renderAt(time: number): Promise<void> {
-    const next = this.decodeChain.then(() => this.decodeAndRender(time));
+    const gen = this.generation;
+    const next = this.decodeChain.then(() => {
+      if (gen !== this.generation) return;
+      return this.decodeAndRender(time);
+    });
     this.decodeChain = next.catch(() => {}); // keep the chain alive past failures
     return next;
   }
@@ -195,11 +201,14 @@ export class PlaybackController {
     const frame = await this.deps.getFrame(time);
     if (!frame) return;
     const id = this.leaks.track();
-    const videoFrame = frame.toVideoFrame();
     try {
-      this.deps.renderFrame(videoFrame);
+      const videoFrame = frame.toVideoFrame();
+      try {
+        this.deps.renderFrame(videoFrame);
+      } finally {
+        videoFrame.close();
+      }
     } finally {
-      videoFrame.close();
       frame.close();
       this.leaks.release(id);
     }

@@ -32,6 +32,7 @@ export class PreviewRenderer {
   private readonly sampler: GPUSampler;
 
   private storageTexture: GPUTexture | null = null;
+  private storageTextureView: GPUTextureView | null = null;
   private presentBindGroup: GPUBindGroup | null = null;
   private width = 0;
   private height = 0;
@@ -92,10 +93,11 @@ export class PreviewRenderer {
       format: 'rgba8unorm',
       usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING,
     });
+    this.storageTextureView = this.storageTexture.createView();
     this.presentBindGroup = this.device.createBindGroup({
       layout: this.presentPipeline.getBindGroupLayout(0),
       entries: [
-        { binding: 0, resource: this.storageTexture.createView() },
+        { binding: 0, resource: this.storageTextureView },
         { binding: 1, resource: this.sampler },
       ],
     });
@@ -106,14 +108,14 @@ export class PreviewRenderer {
    * the external texture is only valid for the submission issued here.
    */
   present(frame: VideoFrame): void {
-    if (!this.storageTexture || !this.presentBindGroup) return;
+    if (!this.storageTextureView || !this.presentBindGroup) return;
 
     const external = this.device.importExternalTexture({ source: frame });
     const computeBindGroup = this.device.createBindGroup({
       layout: this.computePipeline.getBindGroupLayout(0),
       entries: [
         { binding: 0, resource: external },
-        { binding: 1, resource: this.storageTexture.createView() },
+        { binding: 1, resource: this.storageTextureView },
       ],
     });
 
@@ -147,6 +149,7 @@ export class PreviewRenderer {
   destroy(): void {
     this.storageTexture?.destroy();
     this.storageTexture = null;
+    this.storageTextureView = null;
     this.presentBindGroup = null;
     this.device.destroy();
   }

@@ -79,6 +79,8 @@ async function handleImport(file: File) {
     setupPlayback(handle);
     void runProbeOnce(handle);
   } catch (e) {
+    // Tear down any partially-initialized media so a failed import never leaks.
+    teardownMedia();
     const message = e instanceof Error ? e.message : String(e);
     post({ type: 'import-error', message });
   }
@@ -122,7 +124,9 @@ function handleFrameTime(frameMs: number) {
 }
 
 async function runProbeOnce(handle: MediaInputHandle) {
-  if (probeDone) return;
+  // The probe measures video-encode throughput; skip audio-only imports and defer
+  // until a video file arrives so the estimate reflects a real encode workload.
+  if (probeDone || !handle.videoSink) return;
   probeDone = true;
   const probe = await probeEncodeThroughput(handle.displayWidth, handle.displayHeight);
   if (probe) post({ type: 'probe-result', probe });

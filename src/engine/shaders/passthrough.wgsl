@@ -26,5 +26,5 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
   let clamped = min(srcCoord, srcSize - vec2<u32>(1u, 1u));
 
   let color = textureLoad(srcTexture, vec2<i32>(clamped));
-  textureStore(dstTexture, gid.xy, color);
+  textureStore(dstTexture, vec2<i32>(gid.xy), color);
 }
