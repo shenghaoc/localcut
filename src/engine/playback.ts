@@ -135,6 +135,8 @@ export interface PlaybackDeps {
   onFrameTime?: (ms: number) => void;
   /** Called when decode/render fails during playback so transport can recover. */
   onPlaybackError?: (error: unknown) => void;
+  /** When set, drives video frame selection (audio master clock in Phase 5). */
+  getMasterTime?: () => number | null;
   /** Injectable for tests. */
   now?: () => number;
   scheduler?: (cb: () => void, ms: number) => ReturnType<typeof setTimeout>;
@@ -317,8 +319,11 @@ export class PlaybackController {
     const tick = async () => {
       if (!this.playing || gen !== this.generation) return;
       const start = this.now();
-      const elapsed = (start - anchorWall) / 1000;
-      let target = anchorMedia + elapsed;
+      const master = this.deps.getMasterTime?.();
+      let target =
+        master !== null && master !== undefined && Number.isFinite(master)
+          ? master
+          : anchorMedia + (start - anchorWall) / 1000;
 
       if (this.deps.duration > 0 && target >= this.deps.duration) {
         target = this.deps.duration;

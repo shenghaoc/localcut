@@ -7,15 +7,26 @@ export interface SelectedClip {
   effects: ClipEffectParamsSnapshot;
 }
 
+export interface SelectedTrackMix {
+  trackId: string;
+  gain: number;
+  muted: boolean;
+  solo: boolean;
+}
+
 interface InspectorProps {
   metadata: MediaMetadata | null;
   selectedClip: SelectedClip | null;
+  selectedTrackMix: SelectedTrackMix | null;
   onEffectParam: (
     trackId: string,
     clipId: string,
     key: keyof ClipEffectParamsSnapshot,
     value: number,
   ) => void;
+  onTrackGain: (trackId: string, gain: number) => void;
+  onTrackMute: (trackId: string, muted: boolean) => void;
+  onTrackSolo: (trackId: string, solo: boolean) => void;
 }
 
 const PARAM_DEBOUNCE_MS = 80;
@@ -129,14 +140,58 @@ export function Inspector(props: InspectorProps) {
       <h2 class="panel-title">Inspector</h2>
       <Show
         when={props.selectedClip}
-        fallback={<p class="placeholder-text">Select a clip to edit effects</p>}
+        fallback={<p class="placeholder-text">Select a clip to edit</p>}
       >
         {(clip) => (
           <div class="inspector-section">
             <p class="inspector-clip-id">{clip().clipId}</p>
+            <Show when={props.selectedTrackMix}>
+              {(mix) => (
+                <div class="track-mix-controls">
+                  <h3 class="panel-subtitle">Track mix</h3>
+                  <label class="effect-slider">
+                    <span class="effect-slider-label">
+                      Gain
+                      <span class="effect-slider-value tabular-nums">{mix().gain.toFixed(2)}</span>
+                    </span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={2}
+                      step={0.01}
+                      value={mix().gain}
+                      onInput={(e) =>
+                        props.onTrackGain(mix().trackId, Number((e.currentTarget as HTMLInputElement).value))
+                      }
+                    />
+                  </label>
+                  <label class="mix-toggle">
+                    <input
+                      type="checkbox"
+                      checked={mix().muted}
+                      onChange={(e) =>
+                        props.onTrackMute(mix().trackId, (e.currentTarget as HTMLInputElement).checked)
+                      }
+                    />
+                    Mute
+                  </label>
+                  <label class="mix-toggle">
+                    <input
+                      type="checkbox"
+                      checked={mix().solo}
+                      onChange={(e) =>
+                        props.onTrackSolo(mix().trackId, (e.currentTarget as HTMLInputElement).checked)
+                      }
+                    />
+                    Solo
+                  </label>
+                </div>
+              )}
+            </Show>
             <Show when={draft()}>
               {(effects) => (
                 <div class="effect-sliders">
+                  <h3 class="panel-subtitle">Effects</h3>
                   <For each={SLIDERS}>
                     {(spec) => (
                       <label class="effect-slider">

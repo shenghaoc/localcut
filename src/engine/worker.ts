@@ -1,22 +1,38 @@
 /// <reference lib="webworker" />
 import {
   assertCrossOriginIsolated,
+  ClockIndex,
   type TimelineTrackSnapshot,
   type WorkerCommand,
   type WorkerStateMessage,
 } from '../protocol';
 import {
   createEmptyTimeline,
+  DEFAULT_TRACK_MIX,
   getTimelineDuration,
   reorderClip,
   removeClip,
   resolveAt,
+  resolveAudioAt,
   splitClipAt,
   trimClip,
   setClipEffectParam,
+  setTrackGain,
+  setTrackMute,
+  setTrackSolo,
   defaultClipEffects,
   type Timeline,
 } from './timeline';
+import {
+  mapAudioRing,
+  ringFreeSamples,
+  writeRingPcm,
+  RingHeader,
+  RingState,
+  bumpRingGeneration,
+  resetRingPointers,
+  type AudioRingViews,
+} from './audio-ring';
 import { openMediaFile, type MediaInputHandle } from './media-io';
 import { initGpu, type PreviewRenderer } from './gpu';
 import {
@@ -39,6 +55,11 @@ let nextSourceId = 1;
 const sourceInputs = new Map<string, MediaInputHandle>();
 let frameCache: FrameCache | null = null;
 const FRAME_CACHE_BUDGET_BYTES = 64 * 1024 * 1024;
+let audioRing: AudioRingViews | null = null;
+let audioWriteAnchor = 0;
+let audioWriteFrames = 0;
+let pcmRemainder: Float32Array | null = null;
+let audioPumpGen = 0;
 
 function makeSourceId(): string {
   return `source-${nextSourceId++}`;
@@ -52,6 +73,9 @@ function postTimelineState() {
   const snapshot: TimelineTrackSnapshot[] = timeline.map((track) => ({
     id: track.id,
     type: track.type,
+    gain: track.gain,
+    muted: track.muted,
+    solo: track.solo,
     clips: track.clips.map((clip) => ({
       id: clip.id,
       sourceId: clip.sourceId,
@@ -84,20 +108,21 @@ function getPlaybackSource(): MediaInputHandle | null {
   return null;
 }
 
-function appendTrackForSource(handle: MediaInputHandle) {
+function appendTrackForSource(handle: MediaInputHandle, start?: number) {
   if (!handle.frameSource || !handle.metadata.video) return;
   const trackId = `track-video-${handle.sourceId}`;
   if (timeline.some((track) => track.id === trackId)) return;
 
-  const start = getTimelineDuration(timeline);
+  const clipStart = start ?? getTimelineDuration(timeline);
   const nextTrack = {
     id: trackId,
     type: 'video' as const,
+    ...DEFAULT_TRACK_MIX,
     clips: [
       {
         id: `clip-${handle.sourceId}`,
         sourceId: handle.sourceId,
-        start,
+        start: clipStart,
         duration: handle.duration,
         inPoint: 0,
         effects: defaultClipEffects(),
@@ -106,6 +131,147 @@ function appendTrackForSource(handle: MediaInputHandle) {
   };
 
   timeline = [...timeline, nextTrack];
+}
+
+function appendAudioTrackForSource(handle: MediaInputHandle, start?: number) {
+  if (!handle.audioSource || !handle.metadata.audio) return;
+  const trackId = `track-audio-${handle.sourceId}`;
+  if (timeline.some((track) => track.id === trackId)) return;
+
+  const clipStart = start ?? getTimelineDuration(timeline);
+  const clipId = `clip-audio-${handle.sourceId}`;
+  const nextTrack = {
+    id: trackId,
+    type: 'audio' as const,
+    ...DEFAULT_TRACK_MIX,
+    clips: [
+      {
+        id: clipId,
+        sourceId: handle.sourceId,
+        start: clipStart,
+        duration: handle.duration,
+        inPoint: 0,
+        effects: defaultClipEffects(),
+      },
+    ],
+  };
+  timeline = [...timeline, nextTrack];
+  void computeAndPostWaveform(handle, trackId, clipId);
+}
+
+async function computeAndPostWaveform(
+  handle: MediaInputHandle,
+  trackId: string,
+  clipId: string,
+) {
+  if (!handle.audioSource) return;
+  const peaks = await handle.audioSource.collectPeaks(30, 256);
+  post({ type: 'waveform-peaks', trackId, clipId, peaks });
+}
+
+function hasAudioTimeline(): boolean {
+  return timeline.some((track) => track.type === 'audio' && track.clips.length > 0);
+}
+
+function getMasterTime(): number | null {
+  if (!clockView || !hasAudioTimeline()) return null;
+  if ((clockView[ClockIndex.PLAY_STATE] ?? 0) !== 1) return null;
+  const t = clockView[ClockIndex.AUDIO_CLOCK];
+  return Number.isFinite(t) ? t : null;
+}
+
+function trackAudible(trackId: string): number {
+  const track = timeline.find((t) => t.id === trackId);
+  if (!track || track.muted) return 0;
+  const anySolo = timeline.some((t) => t.solo);
+  if (anySolo && !track.solo) return 0;
+  return track.gain;
+}
+
+async function pumpAudioOnce(): Promise<void> {
+  if (!audioRing || !clockView) return;
+  if (Atomics.load(audioRing.header, RingHeader.STATE) !== RingState.PLAYING) return;
+  const freeFrames = ringFreeSamples(audioRing);
+  if (freeFrames < 256) return;
+
+  const sampleRate = Atomics.load(audioRing.header, RingHeader.SAMPLE_RATE) || 48_000;
+  const timelineTime = audioWriteAnchor + audioWriteFrames / sampleRate;
+  const resolved = resolveAudioAt(timeline, timelineTime);
+  if (!resolved) {
+    const channels = Math.max(1, Atomics.load(audioRing.header, RingHeader.CHANNELS));
+    const silenceFrames = Math.min(freeFrames, 1024);
+    const written = writeRingPcm(audioRing, new Float32Array(silenceFrames * channels));
+    audioWriteFrames += written;
+    return;
+  }
+  const handle = sourceInputs.get(resolved.clip.sourceId);
+  if (!handle?.audioSource) {
+    const channels = Math.max(1, Atomics.load(audioRing.header, RingHeader.CHANNELS));
+    const silenceFrames = Math.min(freeFrames, 1024);
+    const written = writeRingPcm(audioRing, new Float32Array(silenceFrames * channels));
+    audioWriteFrames += written;
+    return;
+  }
+
+  const channels = Math.max(1, Atomics.load(audioRing.header, RingHeader.CHANNELS));
+  let pcm: Float32Array | null;
+  if (pcmRemainder) {
+    pcm = pcmRemainder;
+    pcmRemainder = null;
+  } else {
+    pcm = await handle.audioSource.pcmAt(resolved.sourceTime, channels);
+    if (!pcm) {
+      const silenceFrames = Math.min(freeFrames, 1024);
+      const written = writeRingPcm(audioRing, new Float32Array(silenceFrames * channels));
+      audioWriteFrames += written;
+      return;
+    }
+  }
+
+  const gain = trackAudible(resolved.trackId);
+  if (gain <= 0) {
+    pcm.fill(0);
+  } else if (gain !== 1) {
+    for (let i = 0; i < pcm.length; i += 1) pcm[i] = (pcm[i] ?? 0) * gain;
+  }
+  const written = writeRingPcm(audioRing, pcm);
+  audioWriteFrames += written;
+  const totalFrames = pcm.length / channels;
+  if (written < totalFrames) {
+    pcmRemainder = pcm.subarray(written * channels);
+  }
+}
+
+function startAudioPump(): void {
+  const gen = ++audioPumpGen;
+  const loop = async () => {
+    while (gen === audioPumpGen && playback?.isPlaying()) {
+      try {
+        await pumpAudioOnce();
+      } catch {
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 4));
+    }
+  };
+  void loop();
+}
+
+function stopAudioPump(): void {
+  audioPumpGen += 1;
+}
+
+function resetAudioRingForSeek(time: number): void {
+  if (!audioRing) return;
+  bumpRingGeneration(audioRing);
+  resetRingPointers(audioRing);
+  audioWriteAnchor = time;
+  audioWriteFrames = 0;
+  pcmRemainder = null;
+  if (clockView) {
+    clockView[ClockIndex.AUDIO_CLOCK] = time;
+    clockView[ClockIndex.CURRENT_TIME] = time;
+  }
 }
 
 function ensureClockAndTimeline() {
@@ -135,14 +301,19 @@ function writeClockFull(currentTime: number, duration: number, playing: boolean)
 /** Playback's per-frame writer: owns currentTime and playState, leaves duration. */
 function writeTransport(currentTime: number, playing: boolean) {
   if (!clockView) return;
-  clockView[0] = currentTime;
-  clockView[2] = playing ? 1 : 0;
+  if (!hasAudioTimeline()) clockView[ClockIndex.CURRENT_TIME] = currentTime;
+  clockView[ClockIndex.PLAY_STATE] = playing ? 1 : 0;
 }
 
-async function handleInit(canvas: OffscreenCanvas, sab: SharedArrayBuffer) {
+async function handleInit(
+  canvas: OffscreenCanvas,
+  sab: SharedArrayBuffer,
+  audioSab: SharedArrayBuffer,
+) {
   assertCrossOriginIsolated('Pipeline worker');
   clockView = new Float64Array(sab);
   writeClockFull(0, 0, false);
+  audioRing = mapAudioRing(audioSab);
 
   // initGpu() resolves with an unavailableReason for expected failures, but shader
   // module / pipeline compilation can still throw; catch so the worker always posts
@@ -280,8 +451,15 @@ async function handleImport(file: File) {
       primaryHandle = handle;
     }
 
-    appendTrackForSource(handle);
+    const start = getTimelineDuration(timeline);
+    appendTrackForSource(handle, start);
+    appendAudioTrackForSource(handle, start);
     ensureClockAndTimeline();
+
+    if (handle.audioSource && audioRing) {
+      Atomics.store(audioRing.header, RingHeader.SAMPLE_RATE, handle.audioSampleRate);
+      Atomics.store(audioRing.header, RingHeader.CHANNELS, handle.audioChannels);
+    }
 
     post({ type: 'import-complete', metadata: handle.metadata });
 
@@ -351,6 +529,21 @@ function handleSetEffectParam(cmd: Extract<WorkerCommand, { type: 'set-effect-pa
   playback?.refresh();
 }
 
+function handleSetTrackGain(cmd: Extract<WorkerCommand, { type: 'set-track-gain' }>) {
+  timeline = setTrackGain(timeline, cmd.trackId, cmd.gain);
+  postTimelineState();
+}
+
+function handleSetTrackMute(cmd: Extract<WorkerCommand, { type: 'set-track-mute' }>) {
+  timeline = setTrackMute(timeline, cmd.trackId, cmd.muted);
+  postTimelineState();
+}
+
+function handleSetTrackSolo(cmd: Extract<WorkerCommand, { type: 'set-track-solo' }>) {
+  timeline = setTrackSolo(timeline, cmd.trackId, cmd.solo);
+  postTimelineState();
+}
+
 function handleTrim(cmd: Extract<WorkerCommand, { type: 'trim-clip' }>) {
   // Look up the underlying source's duration so trimClip can bound an outward
   // extension. Without it, trimClip would refuse to grow the clip past its
@@ -396,6 +589,7 @@ function setupPlayback() {
       const message = e instanceof Error ? e.message : String(e);
       post({ type: 'error', message: `Playback error: ${message}` });
     },
+    getMasterTime,
   });
 
   const clamped = Math.min(priorTime, getTimelineDuration(timeline));
@@ -428,30 +622,53 @@ async function runProbeOnce(handle: MediaInputHandle) {
   if (probe) post({ type: 'probe-result', probe });
 }
 
+function handlePlay() {
+  playback?.play();
+  if (audioRing) {
+    audioWriteAnchor = clockView?.[ClockIndex.CURRENT_TIME] ?? 0;
+    audioWriteFrames = 0;
+    Atomics.store(audioRing.header, RingHeader.STATE, RingState.PLAYING);
+  }
+  startAudioPump();
+}
+
+function handlePause() {
+  playback?.pause();
+  stopAudioPump();
+  if (audioRing) Atomics.store(audioRing.header, RingHeader.STATE, RingState.PAUSED);
+}
+
+function handleSeek(time: number) {
+  resetAudioRingForSeek(time);
+  playback?.seek(time);
+}
+
 function handleDispose() {
+  stopAudioPump();
   teardownMedia();
   renderer?.destroy();
   renderer = null;
   clockView = null;
+  audioRing = null;
 }
 
 self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
   const cmd = event.data;
   switch (cmd.type) {
     case 'init':
-      void handleInit(cmd.canvas, cmd.sab);
+      void handleInit(cmd.canvas, cmd.sab, cmd.audioSab);
       break;
     case 'import':
       void handleImport(cmd.file);
       break;
     case 'play':
-      playback?.play();
+      handlePlay();
       break;
     case 'pause':
-      playback?.pause();
+      handlePause();
       break;
     case 'seek':
-      playback?.seek(cmd.time);
+      handleSeek(cmd.time);
       break;
     case 'step':
       playback?.step(cmd.direction);
@@ -470,6 +687,15 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
       break;
     case 'set-effect-param':
       handleSetEffectParam(cmd);
+      break;
+    case 'set-track-gain':
+      handleSetTrackGain(cmd);
+      break;
+    case 'set-track-mute':
+      handleSetTrackMute(cmd);
+      break;
+    case 'set-track-solo':
+      handleSetTrackSolo(cmd);
       break;
     case 'dispose':
       handleDispose();

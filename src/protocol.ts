@@ -1,6 +1,15 @@
 /** Shared types for main ↔ pipeline worker messages. */
 
-export const CLOCK_BUFFER_BYTES = 3 * Float64Array.BYTES_PER_ELEMENT;
+/** Clock SAB layout: [0] currentTime, [1] duration, [2] playState, [3] audioClock. */
+export const CLOCK_FIELD_COUNT = 4;
+export const CLOCK_BUFFER_BYTES = CLOCK_FIELD_COUNT * Float64Array.BYTES_PER_ELEMENT;
+
+export const ClockIndex = {
+  CURRENT_TIME: 0,
+  DURATION: 1,
+  PLAY_STATE: 2,
+  AUDIO_CLOCK: 3,
+} as const;
 
 export type PlayState = 'paused' | 'playing';
 
@@ -45,7 +54,13 @@ export interface TimelineTrackSnapshot {
   id: string;
   type: 'video' | 'audio';
   clips: TimelineClipSnapshot[];
+  gain: number;
+  muted: boolean;
+  solo: boolean;
 }
+
+/** Min/max peak pairs (2 floats per bucket) for waveform rendering. */
+export type WaveformPeaks = Float32Array;
 
 interface SplitTimelineCommand {
   type: 'split';
@@ -83,8 +98,26 @@ interface SetEffectParamCommand {
   value: number;
 }
 
+interface SetTrackGainCommand {
+  type: 'set-track-gain';
+  trackId: string;
+  gain: number;
+}
+
+interface SetTrackMuteCommand {
+  type: 'set-track-mute';
+  trackId: string;
+  muted: boolean;
+}
+
+interface SetTrackSoloCommand {
+  type: 'set-track-solo';
+  trackId: string;
+  solo: boolean;
+}
+
 export type WorkerCommand =
-  | { type: 'init'; canvas: OffscreenCanvas; sab: SharedArrayBuffer }
+  | { type: 'init'; canvas: OffscreenCanvas; sab: SharedArrayBuffer; audioSab: SharedArrayBuffer }
   | { type: 'import'; file: File }
   | { type: 'play' }
   | { type: 'pause' }
@@ -95,6 +128,9 @@ export type WorkerCommand =
   | MoveTimelineClipCommand
   | TrimTimelineClipCommand
   | SetEffectParamCommand
+  | SetTrackGainCommand
+  | SetTrackMuteCommand
+  | SetTrackSoloCommand
   | { type: 'dispose' };
 
 /** A measured preview resolution tier (adaptive downscale of the decode path). */
@@ -121,6 +157,7 @@ export type WorkerStateMessage =
   | { type: 'preview-resolution'; resolution: PreviewResolution }
   | { type: 'probe-result'; probe: ThroughputProbe }
   | { type: 'timeline-state'; timeline: TimelineTrackSnapshot[] }
+  | { type: 'waveform-peaks'; trackId: string; clipId: string; peaks: WaveformPeaks }
   | { type: 'error'; message: string };
 
 export function assertCrossOriginIsolated(context: string): void {
