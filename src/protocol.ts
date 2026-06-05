@@ -30,13 +30,32 @@ export type WorkerCommand =
   | { type: 'play' }
   | { type: 'pause' }
   | { type: 'seek'; time: number }
+  | { type: 'step'; direction: 1 | -1 }
   | { type: 'dispose' };
+
+/** A measured preview resolution tier (adaptive downscale of the decode path). */
+export interface PreviewResolution {
+  width: number;
+  height: number;
+  /** Human label, e.g. "1080p". */
+  label: string;
+}
+
+/** Result of the one-shot startup encode-throughput probe (session ETA hint). */
+export interface ThroughputProbe {
+  encodeFps: number;
+  codec: string;
+  width: number;
+  height: number;
+}
 
 export type WorkerStateMessage =
   | { type: 'ready'; webgpu: boolean; features: string[]; gpuUnavailableReason: string | null }
   | { type: 'import-progress'; stage: 'reading' | 'metadata' }
   | { type: 'import-complete'; metadata: MediaMetadata }
   | { type: 'import-error'; message: string }
+  | { type: 'preview-resolution'; resolution: PreviewResolution }
+  | { type: 'probe-result'; probe: ThroughputProbe }
   | { type: 'error'; message: string };
 
 export function assertCrossOriginIsolated(context: string): void {

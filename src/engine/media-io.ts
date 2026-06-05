@@ -1,17 +1,31 @@
-import { BlobSource, Input, MP4, QTFF, WEBM } from 'mediabunny';
+import { BlobSource, Input, MP4, QTFF, VideoSampleSink, WEBM } from 'mediabunny';
 import type { MediaMetadata } from '../protocol';
+import { SequentialFrameSource } from './frame-source';
 
-/** Formats included in the Phase 1 bundle (tree-shaken). */
+/** Formats included in the bundle (tree-shaken). */
 const IMPORT_FORMATS = [MP4, QTFF, WEBM];
+
+/** Fallback frame rate when packet stats can't establish one. */
+const DEFAULT_FRAME_RATE = 30;
 
 export interface MediaInputHandle {
   metadata: MediaMetadata;
+  /** Sequential decoded-frame source for the primary video track; null if none/undecodable. */
+  frameSource: SequentialFrameSource | null;
+  /** Source display dimensions (after rotation/aspect), or 0 when no video. */
+  displayWidth: number;
+  displayHeight: number;
+  /** Effective frame rate used for frame-step and the playback cadence. */
+  frameRate: number;
+  duration: number;
   dispose: () => void;
 }
 
 /**
  * Opens a user file via BlobSource (lazy disk reads — never buffers the whole file).
- * Returns metadata and a dispose hook; keeps the Input alive for Phase 2 decode.
+ * Keeps the `Input` alive so the worker can decode frames on demand; `dispose()`
+ * releases it. The returned {@link VideoSampleSink} decodes from the nearest
+ * preceding keyframe internally, so seeks are keyframe-accurate.
  */
 export async function openMediaFile(file: File): Promise<MediaInputHandle> {
   const source = new BlobSource(file);
@@ -36,15 +50,30 @@ export async function openMediaFile(file: File): Promise<MediaInputHandle> {
     const audioTrack = await input.getPrimaryAudioTrack();
 
     let video: MediaMetadata['video'] = null;
+    let frameSource: SequentialFrameSource | null = null;
+    let displayWidth = 0;
+    let displayHeight = 0;
+    let frameRate = DEFAULT_FRAME_RATE;
+
     if (videoTrack) {
       const stats = await videoTrack.computePacketStats(100);
+      const canDecode = await videoTrack.canDecode();
+      displayWidth = await videoTrack.getDisplayWidth();
+      displayHeight = await videoTrack.getDisplayHeight();
+      if (stats.averagePacketRate && stats.averagePacketRate > 0) {
+        frameRate = stats.averagePacketRate;
+      }
       video = {
         codec: await videoTrack.getCodecParameterString(),
-        width: await videoTrack.getDisplayWidth(),
-        height: await videoTrack.getDisplayHeight(),
+        width: displayWidth,
+        height: displayHeight,
         frameRate: stats.averagePacketRate,
-        canDecode: await videoTrack.canDecode(),
+        canDecode,
       };
+      if (canDecode) {
+        const sink = new VideoSampleSink(videoTrack);
+        frameSource = new SequentialFrameSource(sink, frameRate > 0 ? 1 / frameRate : 0);
+      }
     }
 
     let audio: MediaMetadata['audio'] = null;
@@ -68,7 +97,15 @@ export async function openMediaFile(file: File): Promise<MediaInputHandle> {
 
     return {
       metadata,
-      dispose: () => input.dispose(),
+      frameSource,
+      displayWidth,
+      displayHeight,
+      frameRate,
+      duration,
+      dispose: () => {
+        frameSource?.reset();
+        input.dispose();
+      },
     };
   } catch (e) {
     input.dispose();
