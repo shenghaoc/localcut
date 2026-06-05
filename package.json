@@ -1,0 +1,27 @@
+{
+  "name": "browser-editor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "packageManager": "npm@10.9.2",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "mediabunny": "^1.46.0",
+    "solid-js": "^1.9.7"
+  },
+  "devDependencies": {
+    "@webgpu/types": "^0.1.70",
+    "typescript": "~5.8.3",
+    "vite": "^6.3.5",
+    "vite-plugin-pwa": "^0.21.2",
+    "vite-plugin-solid": "^2.11.6",
+    "vitest": "^3.2.4"
+  }
+}
