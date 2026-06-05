@@ -238,6 +238,21 @@ body {
   color: var(--text-muted);
 }
 
+.status-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.status-badge {
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
 .status-ok {
   color: #6bcf8a;
 }

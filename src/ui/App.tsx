@@ -16,6 +16,8 @@ export function App() {
   const [metadata, setMetadata] = createSignal<MediaMetadata | null>(null);
   const [importing, setImporting] = createSignal(false);
   const [statusLine, setStatusLine] = createSignal('Checking environment…');
+  const [previewLabel, setPreviewLabel] = createSignal<string | null>(null);
+  const [encodeFps, setEncodeFps] = createSignal<number | null>(null);
 
   let sab: SharedArrayBuffer;
   let bridge: ReturnType<typeof createWorkerBridge> | null = null;
@@ -43,9 +45,16 @@ export function App() {
       case 'import-complete':
         setImporting(false);
         setMetadata(msg.metadata);
+        setPreviewLabel(null);
         // Duration is written to the shared clock by the worker; the rAF reader
         // in createSharedClock() surfaces it. Main thread never writes the SAB.
         setStatusLine(`Loaded ${msg.metadata.fileName}`);
+        break;
+      case 'preview-resolution':
+        setPreviewLabel(msg.resolution.label);
+        break;
+      case 'probe-result':
+        setEncodeFps(msg.probe.encodeFps);
         break;
       case 'import-error':
       case 'error':
@@ -166,6 +175,7 @@ export function App() {
           onImport={importMedia}
           onPlay={() => bridge?.send({ type: 'play' })}
           onPause={() => bridge?.send({ type: 'pause' })}
+          onStep={(direction) => bridge?.send({ type: 'step', direction })}
         />
         <main class="workspace">
           <section class="preview panel">
@@ -185,9 +195,21 @@ export function App() {
         />
         <footer class="status-bar">
           <span>{statusLine()}</span>
-          <Show when={workerReady()}>
-            <span class="status-ok">crossOriginIsolated</span>
-          </Show>
+          <span class="status-meta">
+            <Show when={previewLabel()}>
+              <span class="status-badge" title="Adaptive preview resolution">
+                Preview: {previewLabel()}
+              </span>
+            </Show>
+            <Show when={encodeFps()}>
+              <span class="status-badge" title="Estimated encode throughput (session)">
+                Encode: {Math.round(encodeFps()!)} fps
+              </span>
+            </Show>
+            <Show when={workerReady()}>
+              <span class="status-ok">crossOriginIsolated</span>
+            </Show>
+          </span>
         </footer>
       </Show>
     </div>

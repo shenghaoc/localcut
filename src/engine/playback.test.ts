@@ -1,0 +1,106 @@
+import { describe, expect, it } from 'vitest';
+import {
+  AdaptiveResolution,
+  buildPreviewLadder,
+  clampTime,
+  frameStepTarget,
+} from './playback';
+
+describe('clampTime', () => {
+  it('clamps into [0, duration]', () => {
+    expect(clampTime(-5, 10)).toBe(0);
+    expect(clampTime(5, 10)).toBe(5);
+    expect(clampTime(15, 10)).toBe(10);
+  });
+
+  it('treats non-finite times as 0', () => {
+    expect(clampTime(NaN, 10)).toBe(0);
+    expect(clampTime(Infinity, 10)).toBe(10);
+  });
+
+  it('clamps to 0 when duration is unknown', () => {
+    expect(clampTime(5, 0)).toBe(0);
+    expect(clampTime(5, -1)).toBe(0);
+  });
+});
+
+describe('frameStepTarget', () => {
+  it('steps forward and back by one frame period', () => {
+    expect(frameStepTarget(1, 1, 30, 10)).toBeCloseTo(1 + 1 / 30, 6);
+    expect(frameStepTarget(1, -1, 30, 10)).toBeCloseTo(1 - 1 / 30, 6);
+  });
+
+  it('clamps at the ends', () => {
+    expect(frameStepTarget(0, -1, 30, 10)).toBe(0);
+    expect(frameStepTarget(10, 1, 30, 10)).toBe(10);
+  });
+
+  it('falls back to 30fps for invalid frame rates', () => {
+    expect(frameStepTarget(1, 1, 0, 10)).toBeCloseTo(1 + 1 / 30, 6);
+  });
+});
+
+describe('buildPreviewLadder', () => {
+  it('caps preview at 1080p for a 4K source', () => {
+    const ladder = buildPreviewLadder(3840, 2160);
+    expect(ladder.map((t) => t.label)).toEqual(['1080p', '720p', '540p']);
+    expect(ladder[0]).toMatchObject({ width: 1920, height: 1080 });
+  });
+
+  it('never upscales above the source', () => {
+    const ladder = buildPreviewLadder(1280, 720);
+    expect(ladder.map((t) => t.label)).toEqual(['720p', '540p']);
+  });
+
+  it('returns the source itself when below the ladder', () => {
+    const ladder = buildPreviewLadder(640, 480);
+    expect(ladder).toHaveLength(1);
+    expect(ladder[0]).toMatchObject({ width: 640, height: 480 });
+  });
+
+  it('produces even dimensions', () => {
+    const ladder = buildPreviewLadder(1919, 1079);
+    for (const tier of ladder) {
+      expect(tier.width % 2).toBe(0);
+      expect(tier.height % 2).toBe(0);
+    }
+  });
+
+  it('falls back to 720p for an unknown source size', () => {
+    expect(buildPreviewLadder(0, 0)).toEqual([{ width: 1280, height: 720, label: '720p' }]);
+  });
+});
+
+describe('AdaptiveResolution', () => {
+  const tiers = [
+    { width: 1920, height: 1080, label: '1080p' },
+    { width: 1280, height: 720, label: '720p' },
+    { width: 960, height: 540, label: '540p' },
+  ];
+
+  it('downgrades after a sustained slow streak', () => {
+    const adaptive = new AdaptiveResolution(tiers, 33, 4);
+    expect(adaptive.record(50)).toBeNull();
+    expect(adaptive.record(50)).toBeNull();
+    expect(adaptive.record(50)).toBeNull();
+    expect(adaptive.record(50)).toMatchObject({ label: '720p' });
+    expect(adaptive.current().label).toBe('720p');
+  });
+
+  it('does not downgrade on transient spikes', () => {
+    const adaptive = new AdaptiveResolution(tiers, 33, 4);
+    adaptive.record(50);
+    adaptive.record(10); // fast frame relaxes the streak
+    adaptive.record(50);
+    adaptive.record(50);
+    expect(adaptive.current().label).toBe('1080p');
+  });
+
+  it('never drops below the lowest tier', () => {
+    const adaptive = new AdaptiveResolution(tiers, 33, 1);
+    adaptive.record(100); // -> 720p
+    adaptive.record(100); // -> 540p
+    expect(adaptive.record(100)).toBeNull();
+    expect(adaptive.current().label).toBe('540p');
+  });
+});

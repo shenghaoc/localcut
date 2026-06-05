@@ -5,83 +5,133 @@ import {
   type WorkerStateMessage,
 } from '../protocol';
 import { openMediaFile, type MediaInputHandle } from './media-io';
-import { destroyGpu, initGpu, type GpuContext } from './gpu';
+import { initGpu, type PreviewRenderer } from './gpu';
+import {
+  AdaptiveResolution,
+  buildPreviewLadder,
+  PlaybackController,
+  type DecodedFrame,
+} from './playback';
+import { probeEncodeThroughput } from './hardware-probe';
 
 let clockView: Float64Array | null = null;
-let gpu: GpuContext | null = null;
+let renderer: PreviewRenderer | null = null;
 let mediaHandle: MediaInputHandle | null = null;
+let playback: PlaybackController | null = null;
+let adaptive: AdaptiveResolution | null = null;
+let probeDone = false;
 
 function post(msg: WorkerStateMessage) {
   self.postMessage(msg);
 }
 
 // Clock SAB layout: [0] currentTime, [1] duration, [2] playState (0/1).
-// Each writer below mutates only the field(s) it owns so intent is explicit
-// and a play/pause never has to round-trip currentTime or duration.
-function writeClock(currentTime: number, duration: number, playing: boolean) {
+// The worker is the sole writer. Each writer below mutates only the field(s) it
+// owns so a play/pause never has to round-trip currentTime or duration.
+function writeClockFull(currentTime: number, duration: number, playing: boolean) {
   if (!clockView) return;
   clockView[0] = currentTime;
   clockView[1] = duration;
   clockView[2] = playing ? 1 : 0;
 }
 
-function setCurrentTime(seconds: number) {
-  if (clockView) clockView[0] = seconds;
-}
-
-function setPlaying(playing: boolean) {
-  if (clockView) clockView[2] = playing ? 1 : 0;
+/** Playback's per-frame writer: owns currentTime and playState, leaves duration. */
+function writeTransport(currentTime: number, playing: boolean) {
+  if (!clockView) return;
+  clockView[0] = currentTime;
+  clockView[2] = playing ? 1 : 0;
 }
 
 async function handleInit(canvas: OffscreenCanvas, sab: SharedArrayBuffer) {
   assertCrossOriginIsolated('Pipeline worker');
   clockView = new Float64Array(sab);
-  writeClock(0, 0, false);
+  writeClockFull(0, 0, false);
 
-  gpu = await initGpu(canvas);
+  const gpu = await initGpu(canvas);
+  renderer = gpu.renderer;
   post({
     type: 'ready',
-    webgpu: gpu.device !== null,
+    webgpu: renderer !== null,
     features: gpu.features,
     gpuUnavailableReason: gpu.unavailableReason,
   });
 }
 
-async function handleImport(file: File) {
-  post({ type: 'import-progress', stage: 'reading' });
+function teardownMedia() {
+  playback?.dispose();
+  playback = null;
+  adaptive = null;
   mediaHandle?.dispose();
   mediaHandle = null;
+}
+
+async function handleImport(file: File) {
+  post({ type: 'import-progress', stage: 'reading' });
+  teardownMedia();
 
   post({ type: 'import-progress', stage: 'metadata' });
   try {
-    mediaHandle = await openMediaFile(file);
-    writeClock(0, mediaHandle.metadata.duration, false);
-    post({ type: 'import-complete', metadata: mediaHandle.metadata });
+    const handle = await openMediaFile(file);
+    mediaHandle = handle;
+    writeClockFull(0, handle.metadata.duration, false);
+    post({ type: 'import-complete', metadata: handle.metadata });
+
+    setupPlayback(handle);
+    void runProbeOnce(handle);
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     post({ type: 'import-error', message });
   }
 }
 
-function handlePlay() {
-  setPlaying(true);
+function setupPlayback(handle: MediaInputHandle) {
+  const ladder = buildPreviewLadder(handle.displayWidth, handle.displayHeight);
+  adaptive = new AdaptiveResolution(ladder);
+  const initial = adaptive.current();
+  if (renderer && handle.videoSink) {
+    renderer.setPreviewSize(initial.width, initial.height);
+    post({ type: 'preview-resolution', resolution: initial });
+  }
+
+  const getFrame = async (timestamp: number): Promise<DecodedFrame | null> => {
+    if (!handle.videoSink) return null;
+    return handle.videoSink.getSample(timestamp);
+  };
+
+  playback = new PlaybackController({
+    duration: handle.duration,
+    frameRate: handle.frameRate,
+    getFrame,
+    renderFrame: (frame) => renderer?.present(frame),
+    writeClock: writeTransport,
+    onFrameTime: handleFrameTime,
+  });
+
+  // Render the first frame so the preview isn't blank before the user hits play.
+  if (handle.videoSink) playback.refresh();
 }
 
-function handlePause() {
-  setPlaying(false);
+/** Adaptive resolution: downgrade the preview when frames blow the budget. */
+function handleFrameTime(frameMs: number) {
+  if (!adaptive || !renderer) return;
+  const next = adaptive.record(frameMs);
+  if (next) {
+    renderer.setPreviewSize(next.width, next.height);
+    post({ type: 'preview-resolution', resolution: next });
+  }
 }
 
-function handleSeek(time: number) {
-  const duration = clockView?.[1] ?? 0;
-  const clamped = Math.max(0, duration > 0 ? Math.min(time, duration) : time);
-  setCurrentTime(clamped);
+async function runProbeOnce(handle: MediaInputHandle) {
+  if (probeDone) return;
+  probeDone = true;
+  const probe = await probeEncodeThroughput(handle.displayWidth, handle.displayHeight);
+  if (probe) post({ type: 'probe-result', probe });
 }
 
 function handleDispose() {
-  mediaHandle?.dispose();
-  mediaHandle = null;
-  destroyGpu(gpu);
-  gpu = null;
+  teardownMedia();
+  renderer?.destroy();
+  renderer = null;
   clockView = null;
 }
 
@@ -95,13 +145,16 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
       void handleImport(cmd.file);
       break;
     case 'play':
-      handlePlay();
+      playback?.play();
       break;
     case 'pause':
-      handlePause();
+      playback?.pause();
       break;
     case 'seek':
-      handleSeek(cmd.time);
+      playback?.seek(cmd.time);
+      break;
+    case 'step':
+      playback?.step(cmd.direction);
       break;
     case 'dispose':
       handleDispose();
