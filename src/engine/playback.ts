@@ -133,6 +133,8 @@ export interface PlaybackDeps {
   writeClock: (currentTime: number, playing: boolean) => void;
   /** Per-frame wall time (decode + render), for adaptive resolution. */
   onFrameTime?: (ms: number) => void;
+  /** Called when decode/render fails during playback so transport can recover. */
+  onPlaybackError?: (error: unknown) => void;
   /** Injectable for tests. */
   now?: () => number;
   scheduler?: (cb: () => void, ms: number) => ReturnType<typeof setTimeout>;
@@ -191,15 +193,19 @@ export class PlaybackController {
     const gen = this.generation;
     const next = this.decodeChain.then(() => {
       if (gen !== this.generation) return;
-      return this.decodeAndRender(time);
+      return this.decodeAndRender(time, gen);
     });
     this.decodeChain = next.catch(() => {}); // keep the chain alive past failures
     return next;
   }
 
-  private async decodeAndRender(time: number): Promise<void> {
+  private async decodeAndRender(time: number, gen: number): Promise<void> {
     const frame = await this.deps.getFrame(time);
     if (!frame) return;
+    if (gen !== this.generation) {
+      frame.close();
+      return;
+    }
     const id = this.leaks.track();
     try {
       const videoFrame = frame.toVideoFrame();
@@ -298,7 +304,15 @@ export class PlaybackController {
 
       if (this.deps.duration > 0 && target >= this.deps.duration) {
         target = this.deps.duration;
-        await this.renderAt(target);
+        try {
+          await this.renderAt(target);
+        } catch (e) {
+          if (gen !== this.generation) return;
+          this.playing = false;
+          this.deps.writeClock(this.currentTime, false);
+          this.deps.onPlaybackError?.(e);
+          return;
+        }
         if (gen !== this.generation) return;
         this.currentTime = target;
         this.playing = false;
@@ -306,7 +320,15 @@ export class PlaybackController {
         return;
       }
 
-      await this.renderAt(target);
+      try {
+        await this.renderAt(target);
+      } catch (e) {
+        if (gen !== this.generation) return;
+        this.playing = false;
+        this.deps.writeClock(this.currentTime, false);
+        this.deps.onPlaybackError?.(e);
+        return;
+      }
       if (gen !== this.generation) return;
       this.currentTime = target;
       this.deps.writeClock(target, true);

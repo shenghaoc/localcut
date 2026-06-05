@@ -107,6 +107,10 @@ function setupPlayback(handle: MediaInputHandle) {
     renderFrame: (frame) => renderer?.present(frame),
     writeClock: writeTransport,
     onFrameTime: handleFrameTime,
+    onPlaybackError: (e) => {
+      const message = e instanceof Error ? e.message : String(e);
+      post({ type: 'error', message: `Playback error: ${message}` });
+    },
   });
 
   // Render the first frame so the preview isn't blank before the user hits play.

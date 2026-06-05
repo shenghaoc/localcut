@@ -1,10 +1,20 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   AdaptiveResolution,
   buildPreviewLadder,
   clampTime,
   frameStepTarget,
+  PlaybackController,
+  type DecodedFrame,
 } from './playback';
+
+function mockFrame(): DecodedFrame {
+  const videoFrame = { close: vi.fn() } as unknown as VideoFrame;
+  return {
+    toVideoFrame: () => videoFrame,
+    close: vi.fn(),
+  };
+}
 
 describe('clampTime', () => {
   it('clamps into [0, duration]', () => {
@@ -102,5 +112,67 @@ describe('AdaptiveResolution', () => {
     adaptive.record(100); // -> 540p
     expect(adaptive.record(100)).toBeNull();
     expect(adaptive.current().label).toBe('540p');
+  });
+});
+
+describe('PlaybackController', () => {
+  it('drops a stale decode when generation changes during getFrame', async () => {
+    const pending: Array<(frame: DecodedFrame | null) => void> = [];
+    const frame = mockFrame();
+    const writeClock = vi.fn();
+    const renderFrame = vi.fn();
+
+    const controller = new PlaybackController({
+      duration: 10,
+      frameRate: 30,
+      getFrame: () =>
+        new Promise((resolve) => {
+          pending.push(resolve);
+        }),
+      renderFrame,
+      writeClock,
+    });
+
+    controller.seek(1);
+    await Promise.resolve();
+    expect(pending).toHaveLength(1);
+
+    controller.seek(5);
+    pending[0]!(frame);
+    await Promise.resolve();
+
+    expect(frame.close).toHaveBeenCalledOnce();
+    expect(renderFrame).not.toHaveBeenCalled();
+  });
+
+  it('pauses and reports when renderAt rejects during playback', async () => {
+    const writeClock = vi.fn();
+    const onPlaybackError = vi.fn();
+    let now = 0;
+    const scheduled: Array<() => void> = [];
+
+    const controller = new PlaybackController({
+      duration: 10,
+      frameRate: 30,
+      getFrame: () => Promise.reject(new Error('decode failed')),
+      renderFrame: vi.fn(),
+      writeClock,
+      onPlaybackError,
+      now: () => now,
+      scheduler: (cb) => {
+        scheduled.push(cb);
+        return setTimeout(cb, 0) as ReturnType<typeof setTimeout>;
+      },
+      clearScheduler: (h) => clearTimeout(h),
+    });
+
+    controller.play();
+    expect(scheduled).toHaveLength(1);
+    scheduled[0]!();
+    await vi.waitFor(() => expect(onPlaybackError).toHaveBeenCalled());
+
+    expect(controller.isPlaying()).toBe(false);
+    expect(onPlaybackError).toHaveBeenCalledOnce();
+    expect(writeClock).toHaveBeenCalledWith(expect.any(Number), false);
   });
 });
