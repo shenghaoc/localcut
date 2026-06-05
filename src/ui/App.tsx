@@ -25,13 +25,21 @@ const VIDEO_ACCEPT = 'video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm';
 type Theme = 'light' | 'dark';
 
 function initialTheme(): Theme {
+  if (typeof window === 'undefined') return 'light';
   try {
     const stored = window.localStorage.getItem('browser-editor-theme');
     if (stored === 'light' || stored === 'dark') return stored;
   } catch {
     // Local storage is cosmetic; the editor remains fully functional without it.
   }
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  if (typeof window.matchMedia === 'function') {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  return 'light';
+}
+
+function initialOnlineStatus(): boolean {
+  return typeof navigator === 'undefined' ? true : navigator.onLine;
 }
 
 export function App() {
@@ -49,7 +57,7 @@ export function App() {
   const [exportProgress, setExportProgress] = createSignal<ExportProgress | null>(null);
   const [exportResult, setExportResult] = createSignal<string | null>(null);
   const [exportError, setExportError] = createSignal<string | null>(null);
-  const [isOffline, setIsOffline] = createSignal(!navigator.onLine);
+  const [isOffline, setIsOffline] = createSignal(!initialOnlineStatus());
   const [hasActiveSW, setHasActiveSW] = createSignal(false);
   const [audioWarning, setAudioWarning] = createSignal<string | null>(null);
   const [isDraggingFile, setIsDraggingFile] = createSignal(false);

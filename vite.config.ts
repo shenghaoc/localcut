@@ -11,7 +11,7 @@ export default defineConfig({
       registerType: 'prompt',
       manifest: {
         name: 'Browser Editor',
-        short_name: 'Editor',
+        short_name: 'BrEditor',
         start_url: '/',
         display: 'standalone',
         background_color: '#f4f5f7',

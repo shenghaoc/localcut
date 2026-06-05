@@ -171,7 +171,7 @@ body {
   background-image:
     radial-gradient(1200px 600px at 100% -10%, color-mix(in srgb, var(--waveform) 8%, transparent), transparent 60%),
     radial-gradient(900px 500px at -10% 0%, color-mix(in srgb, var(--primary) 7%, transparent), transparent 55%);
-  background-attachment: fixed;
+  background-attachment: scroll;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -671,6 +671,11 @@ body {
 
 .timeline-clip.is-audio.is-selected {
   box-shadow: 0 0 0 4px color-mix(in oklab, var(--clip-audio) 55%, transparent), var(--shadow-md);
+}
+
+.timeline-clip:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
 }
 
 .panel-subtitle {
