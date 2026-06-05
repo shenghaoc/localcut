@@ -55,6 +55,24 @@ async function handleInit(canvas: OffscreenCanvas, sab: SharedArrayBuffer) {
     features: gpu.features,
     gpuUnavailableReason: gpu.unavailableReason,
   });
+
+  // An import can arrive after `init` is sent but before `initGpu()` resolves
+  // (the UI gates imports on `initSent`, not on `ready`). In that case the media
+  // was set up with no renderer; wire up its preview now that the GPU is ready.
+  ensurePreview();
+}
+
+/**
+ * Sizes the preview to the current adaptive tier and renders the current frame.
+ * Safe to call repeatedly and before the renderer or media exist (no-op until both
+ * are ready), so it reconciles whichever of GPU-init / import completes last.
+ */
+function ensurePreview() {
+  if (!renderer || !adaptive || !mediaHandle?.frameSource) return;
+  const tier = adaptive.current();
+  renderer.setPreviewSize(tier.width, tier.height);
+  post({ type: 'preview-resolution', resolution: tier });
+  playback?.refresh();
 }
 
 function teardownMedia() {
@@ -89,11 +107,6 @@ async function handleImport(file: File) {
 function setupPlayback(handle: MediaInputHandle) {
   const ladder = buildPreviewLadder(handle.displayWidth, handle.displayHeight);
   adaptive = new AdaptiveResolution(ladder);
-  const initial = adaptive.current();
-  if (renderer && handle.frameSource) {
-    renderer.setPreviewSize(initial.width, initial.height);
-    post({ type: 'preview-resolution', resolution: initial });
-  }
 
   const getFrame = (timestamp: number): Promise<DecodedFrame | null> =>
     handle.frameSource ? handle.frameSource.frameAt(timestamp) : Promise.resolve(null);
@@ -111,8 +124,9 @@ function setupPlayback(handle: MediaInputHandle) {
     },
   });
 
-  // Render the first frame so the preview isn't blank before the user hits play.
-  if (handle.frameSource) playback.refresh();
+  // Size the preview and render the first frame so it isn't blank before play.
+  // No-op until the renderer is ready; handleInit re-runs this when GPU init lands.
+  ensurePreview();
 }
 
 /** Adaptive resolution: downgrade the preview when frames blow the budget. */
