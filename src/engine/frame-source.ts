@@ -63,7 +63,11 @@ export class SequentialFrameSource {
     const iterator = this.iterator!;
     while (!this.current || this.endOf(this.current) <= time) {
       const next = await iterator.next();
-      if (next.done) break;
+      if (next.done) {
+        this.current?.close();
+        this.current = null;
+        break;
+      }
       this.current?.close();
       this.current = next.value;
       this.anchor = next.value.timestamp;
