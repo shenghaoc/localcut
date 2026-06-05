@@ -200,8 +200,15 @@ function wrapDecodedFrameForPlayback(frameSource: MediaInputHandle, sourceTimest
   const activePlayback = playback;
   return frameSource.frameSource.frameAt(sourceTimestamp).then((decoded) => {
     if (!decoded) return null;
-    const base = decoded.toVideoFrame();
-    decoded.close();
+    // Close the decoded sample even if toVideoFrame() throws on a corrupt
+    // sample — otherwise the underlying decoder resource leaks. The thrown
+    // error still propagates to the caller via the .then() chain.
+    let base: VideoFrame;
+    try {
+      base = decoded.toVideoFrame();
+    } finally {
+      decoded.close();
+    }
 
     if (playback !== activePlayback) {
       base.close();

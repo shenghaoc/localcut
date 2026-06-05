@@ -240,6 +240,46 @@ describe('timeline', () => {
     expect(next[0]!.clips[0]).toMatchObject({ start: 0, duration: 9, inPoint: 10 });
   });
 
+  it('refuses an out-edge extension that would overlap the next same-track clip', () => {
+    const timeline: TimelineTrack[] = [
+      {
+        id: 'video-track',
+        type: 'video',
+        clips: [
+          { id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 0 },
+          { id: 'b', sourceId: 'src-1', start: 8, duration: 2, inPoint: 0 },
+        ],
+      },
+    ];
+    // Source has plenty of headroom but the neighbor would be shadowed.
+    expect(
+      trimClip(timeline, 'video-track', 'a', { edge: 'out', time: 9, sourceDuration: 100 }),
+    ).toBe(timeline);
+    // Extending exactly up to the neighbor's start is OK.
+    const next = trimClip(timeline, 'video-track', 'a', { edge: 'out', time: 8, sourceDuration: 100 });
+    expect(next[0]!.clips[0]).toMatchObject({ start: 0, duration: 8 });
+  });
+
+  it('refuses an in-edge extension that would overlap the previous same-track clip', () => {
+    const timeline: TimelineTrack[] = [
+      {
+        id: 'video-track',
+        type: 'video',
+        clips: [
+          { id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 0 },
+          { id: 'b', sourceId: 'src-1', start: 8, duration: 5, inPoint: 10 },
+        ],
+      },
+    ];
+    // Pulling b's in-edge back to t=4 would overlap a (which ends at 5).
+    expect(
+      trimClip(timeline, 'video-track', 'b', { edge: 'in', time: 4, sourceDuration: 100 }),
+    ).toBe(timeline);
+    // Pulling back to exactly t=5 (touching a's out-edge) is OK.
+    const next = trimClip(timeline, 'video-track', 'b', { edge: 'in', time: 5, sourceDuration: 100 });
+    expect(next[0]!.clips[1]).toMatchObject({ start: 5, duration: 8, inPoint: 7 });
+  });
+
   it('refuses an out-edge extension past the source duration', () => {
     const timeline: TimelineTrack[] = [
       {

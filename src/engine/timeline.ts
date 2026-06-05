@@ -237,7 +237,18 @@ export function trimClip(timeline: Timeline, trackId: string, clipId: string, op
     return timeline;
   }
 
-  let nextStart: number;
+  // Bound against same-track neighbors: outward extension must not overlap them
+  // (resolveAt walks clips in order; an overlap would shadow the later clip).
+  let prevEnd = 0;
+  let nextStart = Number.POSITIVE_INFINITY;
+  for (const other of timeline[loc.trackIndex]!.clips) {
+    if (other.id === clip.id) continue;
+    const otherEnd = other.start + other.duration;
+    if (otherEnd <= clip.start && otherEnd > prevEnd) prevEnd = otherEnd;
+    if (other.start >= clipEnd && other.start < nextStart) nextStart = other.start;
+  }
+
+  let nextStartOut: number;
   let nextDuration: number;
   let nextInPoint: number;
 
@@ -246,15 +257,19 @@ export function trimClip(timeline: Timeline, trackId: string, clipId: string, op
     if (time >= clipEnd) return timeline;
     // Timeline times can't go negative.
     if (time < 0) return timeline;
+    // Must not overlap the previous neighbor.
+    if (time < prevEnd) return timeline;
     const offset = time - clip.start;
     const candidateInPoint = clip.inPoint + offset;
     // The new source-side in-point can't be negative.
     if (candidateInPoint < 0) return timeline;
-    nextStart = time;
+    nextStartOut = time;
     nextDuration = clip.duration - offset;
     nextInPoint = candidateInPoint;
   } else {
     if (time <= clip.start) return timeline;
+    // Must not overlap the next neighbor.
+    if (time > nextStart) return timeline;
     if (sourceDuration !== undefined && finite(sourceDuration)) {
       // Out-edge extension is bounded by available source content.
       const maxOutTime = clip.start + (sourceDuration - clip.inPoint);
@@ -263,7 +278,7 @@ export function trimClip(timeline: Timeline, trackId: string, clipId: string, op
       // Without source-duration knowledge, refuse to extend past the current end.
       return timeline;
     }
-    nextStart = clip.start;
+    nextStartOut = clip.start;
     nextDuration = time - clip.start;
     nextInPoint = clip.inPoint;
   }
@@ -273,7 +288,7 @@ export function trimClip(timeline: Timeline, trackId: string, clipId: string, op
   const next = cloneTimeline(timeline);
   next[loc.trackIndex]!.clips[loc.clipIndex] = {
     ...clip,
-    start: nextStart,
+    start: nextStartOut,
     duration: nextDuration,
     inPoint: nextInPoint,
   };
