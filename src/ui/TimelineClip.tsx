@@ -22,12 +22,16 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-function makeTrimTime(clip: ProtocolTimelineClip, edge: 'in' | 'out', clientX: number, widthPx: number, leftPx: number): number {
-  const ratio = clamp((clientX - leftPx) / widthPx, 0, 1);
-  const candidate = clip.start + ratio * clip.duration;
-  const start = clip.start;
-  const end = start + clip.duration;
-  return edge === 'in' ? clamp(candidate, start, end - 0.001) : clamp(candidate, start + 0.001, end);
+/**
+ * Maps a pointer x-coordinate against the *track surface* (not the clip) into a
+ * timeline time. Track-relative drags let the user pull the in/out edge past
+ * the clip's current bounds to extend it back out; the worker validates the
+ * result against source-media bounds.
+ */
+function trackTimeAt(clientX: number, trackRect: DOMRect, totalDuration: number): number | null {
+  if (trackRect.width <= 0 || totalDuration <= 0) return null;
+  const ratio = (clientX - trackRect.left) / trackRect.width;
+  return Math.max(0, ratio * totalDuration);
 }
 
 /** Clip block renderer from mirrored timeline data. */
@@ -42,12 +46,13 @@ export function TimelineClip(props: TimelineClipProps) {
   let pendingTrimTime = props.clip.start;
   let activeTrimEdge: 'in' | 'out' | null = null;
 
-  function scheduleTrim(clientX: number, rect: DOMRect) {
+  function scheduleTrim(clientX: number, trackRect: DOMRect) {
     if (!activeTrimEdge || !props.onTrim) return;
-    pendingTrimTime = makeTrimTime(props.clip, activeTrimEdge, clientX, rect.width, rect.left);
+    const time = trackTimeAt(clientX, trackRect, props.totalDuration);
+    if (time === null) return;
+    pendingTrimTime = time;
     if (trimDebounce) clearTimeout(trimDebounce);
     const edge = activeTrimEdge;
-    const time = pendingTrimTime;
     trimDebounce = setTimeout(() => {
       props.onTrim?.(props.trackId, props.clip.id, edge, time);
       trimDebounce = null;
@@ -69,18 +74,21 @@ export function TimelineClip(props: TimelineClipProps) {
     event.preventDefault();
     event.stopPropagation();
     const clipEl = event.currentTarget as HTMLElement;
-    if (!clipEl) return;
-    const rect = clipEl.getBoundingClientRect();
-    if (rect.width <= 0) return;
+    // Sample against the track surface so the cursor can leave the clip in
+    // either direction during the drag — required for outward trims.
+    const trackEl = clipEl?.closest('.track-surface') as HTMLElement | null;
+    if (!trackEl) return;
+    const trackRect = trackEl.getBoundingClientRect();
+    if (trackRect.width <= 0) return;
 
     activeTrimEdge = edge;
-    scheduleTrim(event.clientX, rect);
+    scheduleTrim(event.clientX, trackRect);
 
     const onMove = (move: PointerEvent) => {
-      scheduleTrim(move.clientX, rect);
+      scheduleTrim(move.clientX, trackRect);
     };
     const onUp = (up: PointerEvent) => {
-      scheduleTrim(up.clientX, rect);
+      scheduleTrim(up.clientX, trackRect);
       finalizeTrim();
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
@@ -90,6 +98,16 @@ export function TimelineClip(props: TimelineClipProps) {
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onUp);
+  }
+
+  /** Keyboard delete so clips of any duration (including those without the
+   *  on-clip × button) can be removed when focused. */
+  function onKeyDown(event: KeyboardEvent) {
+    if (!props.onDelete) return;
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+      event.preventDefault();
+      props.onDelete(props.trackId, props.clip.id);
+    }
   }
 
   function onSplit(event: MouseEvent) {
@@ -124,6 +142,8 @@ export function TimelineClip(props: TimelineClipProps) {
       style={{ left: left(), width: width() }}
       title={dragText()}
       draggable="true"
+      tabindex="0"
+      onKeyDown={onKeyDown}
       onDragStart={(event: DragEvent) => props.onMoveStart?.(props.trackId, props.clip.id, event)}
       onPointerDown={onPointerDown}
       onDblClick={onSplit}

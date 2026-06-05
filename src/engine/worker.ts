@@ -285,7 +285,26 @@ async function handleImport(file: File) {
   }
 }
 
+/**
+ * Disposes `MediaInputHandle`s for sources no longer referenced by any clip,
+ * releasing their decoder resources. Cheap to call after every edit; safe to
+ * call when nothing changes (set lookup misses, no disposes).
+ */
+function pruneUnusedSources(): void {
+  const inUse = new Set<string>();
+  for (const track of timeline) {
+    for (const clip of track.clips) inUse.add(clip.sourceId);
+  }
+  for (const [id, handle] of [...sourceInputs.entries()]) {
+    if (inUse.has(id)) continue;
+    handle.dispose();
+    sourceInputs.delete(id);
+    if (primaryHandle === handle) primaryHandle = null;
+  }
+}
+
 function applyTimelineCommand(): void {
+  pruneUnusedSources();
   ensureClockAndTimeline();
   // The controller was built with the pre-edit duration; refresh it so the loop and
   // clamps respect a timeline that an edit may have shortened, then re-seek to
@@ -310,7 +329,17 @@ function handleMove(cmd: Extract<WorkerCommand, { type: 'move-clip' }>) {
 }
 
 function handleTrim(cmd: Extract<WorkerCommand, { type: 'trim-clip' }>) {
-  timeline = trimClip(timeline, cmd.trackId, cmd.clipId, { edge: cmd.edge, time: cmd.time });
+  // Look up the underlying source's duration so trimClip can bound an outward
+  // extension. Without it, trimClip would refuse to grow the clip past its
+  // current edge — preventing the user from restoring a previously-shrunk clip.
+  const track = timeline.find((t) => t.id === cmd.trackId);
+  const clip = track?.clips.find((c) => c.id === cmd.clipId);
+  const sourceDuration = clip ? sourceInputs.get(clip.sourceId)?.duration : undefined;
+  timeline = trimClip(timeline, cmd.trackId, cmd.clipId, {
+    edge: cmd.edge,
+    time: cmd.time,
+    sourceDuration,
+  });
   applyTimelineCommand();
 }
 

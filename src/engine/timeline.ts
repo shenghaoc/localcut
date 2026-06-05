@@ -206,36 +206,76 @@ export function reorderClip(
 export interface TrimClipOptions {
   edge: 'in' | 'out';
   time: number;
+  /**
+   * Source media duration in seconds. Optional but required to extend a clip's
+   * out-edge past its current end, and to know how far in-edge extension is
+   * safe. When omitted, the trim is restricted to the clip's current bounds —
+   * i.e. inward only.
+   */
+  sourceDuration?: number;
 }
 
-/** Trims a clip boundary to an absolute timeline time. */
+/**
+ * Trims a clip boundary to an absolute timeline time. Supports inward shrinking
+ * (always) and outward extension up to the source media bounds (when
+ * `sourceDuration` is known). Returns the original timeline reference on no-op
+ * or out-of-bounds requests so the UI mirror doesn't churn.
+ */
 export function trimClip(timeline: Timeline, trackId: string, clipId: string, options: TrimClipOptions): Timeline {
   if (!finite(options.time)) return timeline;
   const loc = trackWithClip(timeline, trackId, clipId);
   if (!loc) return timeline;
 
-  // Validate against the original timeline before cloning so no-ops stay cheap.
   const clip = timeline[loc.trackIndex]!.clips[loc.clipIndex]!;
   if (clip.duration <= 0) return timeline;
-  if (options.time <= clip.start || options.time >= clip.start + clip.duration) return timeline;
 
-  const next = cloneTimeline(timeline);
-  const track = next[loc.trackIndex]!;
+  const { edge, time, sourceDuration } = options;
+  const clipEnd = clip.start + clip.duration;
 
-  if (options.edge === 'in') {
-    const offset = options.time - clip.start;
-    track.clips[loc.clipIndex] = {
-      ...clip,
-      start: options.time,
-      duration: clip.duration - offset,
-      inPoint: clip.inPoint + offset,
-    };
-    return next;
+  // No-op: trim to the edge that's already there.
+  if ((edge === 'in' && time === clip.start) || (edge === 'out' && time === clipEnd)) {
+    return timeline;
   }
 
-  track.clips[loc.clipIndex] = {
+  let nextStart: number;
+  let nextDuration: number;
+  let nextInPoint: number;
+
+  if (edge === 'in') {
+    // Must not collapse or cross the out-edge.
+    if (time >= clipEnd) return timeline;
+    // Timeline times can't go negative.
+    if (time < 0) return timeline;
+    const offset = time - clip.start;
+    const candidateInPoint = clip.inPoint + offset;
+    // The new source-side in-point can't be negative.
+    if (candidateInPoint < 0) return timeline;
+    nextStart = time;
+    nextDuration = clip.duration - offset;
+    nextInPoint = candidateInPoint;
+  } else {
+    if (time <= clip.start) return timeline;
+    if (sourceDuration !== undefined && finite(sourceDuration)) {
+      // Out-edge extension is bounded by available source content.
+      const maxOutTime = clip.start + (sourceDuration - clip.inPoint);
+      if (time > maxOutTime) return timeline;
+    } else if (time > clipEnd) {
+      // Without source-duration knowledge, refuse to extend past the current end.
+      return timeline;
+    }
+    nextStart = clip.start;
+    nextDuration = time - clip.start;
+    nextInPoint = clip.inPoint;
+  }
+
+  if (nextDuration <= 0) return timeline;
+
+  const next = cloneTimeline(timeline);
+  next[loc.trackIndex]!.clips[loc.clipIndex] = {
     ...clip,
-    duration: options.time - clip.start,
+    start: nextStart,
+    duration: nextDuration,
+    inPoint: nextInPoint,
   };
   return next;
 }

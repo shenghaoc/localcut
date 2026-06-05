@@ -203,6 +203,65 @@ describe('timeline', () => {
     });
   });
 
+  it('extends the in-edge backward when the source has earlier content', () => {
+    const timeline: TimelineTrack[] = [
+      {
+        id: 'video-track',
+        type: 'video',
+        clips: [{ id: 'a', sourceId: 'src-1', start: 5, duration: 5, inPoint: 100 }],
+      },
+    ];
+    // Drag the in-edge from t=5 back to t=3; source-time 98 still in bounds.
+    const next = trimClip(timeline, 'video-track', 'a', { edge: 'in', time: 3, sourceDuration: 200 });
+    expect(next[0]!.clips[0]).toMatchObject({ start: 3, duration: 7, inPoint: 98 });
+  });
+
+  it('refuses an in-edge extension that would require negative source time', () => {
+    const timeline: TimelineTrack[] = [
+      {
+        id: 'video-track',
+        type: 'video',
+        clips: [{ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 2 }],
+      },
+    ];
+    expect(trimClip(timeline, 'video-track', 'a', { edge: 'in', time: -3, sourceDuration: 200 })).toBe(timeline);
+  });
+
+  it('extends the out-edge forward up to the source duration', () => {
+    const timeline: TimelineTrack[] = [
+      {
+        id: 'video-track',
+        type: 'video',
+        clips: [{ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 10 }],
+      },
+    ];
+    // Source ends at 20; clip uses inPoint=10, so out can extend to t=0+(20-10)=10.
+    const next = trimClip(timeline, 'video-track', 'a', { edge: 'out', time: 9, sourceDuration: 20 });
+    expect(next[0]!.clips[0]).toMatchObject({ start: 0, duration: 9, inPoint: 10 });
+  });
+
+  it('refuses an out-edge extension past the source duration', () => {
+    const timeline: TimelineTrack[] = [
+      {
+        id: 'video-track',
+        type: 'video',
+        clips: [{ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 10 }],
+      },
+    ];
+    expect(trimClip(timeline, 'video-track', 'a', { edge: 'out', time: 15, sourceDuration: 20 })).toBe(timeline);
+  });
+
+  it('without sourceDuration, refuses to extend past the current clip end', () => {
+    const timeline: TimelineTrack[] = [
+      {
+        id: 'video-track',
+        type: 'video',
+        clips: [{ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 0 }],
+      },
+    ];
+    expect(trimClip(timeline, 'video-track', 'a', { edge: 'out', time: 10 })).toBe(timeline);
+  });
+
   it('keeps no-op trims when time is on clip edges', () => {
     const timeline: TimelineTrack[] = [
       {
