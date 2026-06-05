@@ -1,4 +1,5 @@
 import { Show, type JSX } from 'solid-js';
+import { FolderOpen, Pause, Play, SkipBack, SkipForward } from 'lucide-solid';
 import type { MediaMetadata } from '../protocol';
 
 interface ToolbarProps {
@@ -28,6 +29,7 @@ export function Toolbar(props: ToolbarProps) {
       <div class="toolbar-left">
         <h1 class="app-title">Browser Editor</h1>
         <label class={`btn btn-primary import-picker${props.disabled ? ' is-disabled' : ''}`}>
+          <FolderOpen size={14} aria-hidden="true" />
           Import
           <input
             class="import-picker-input"
@@ -56,7 +58,7 @@ export function Toolbar(props: ToolbarProps) {
             aria-label="Step back one frame"
             title="Step back one frame"
           >
-            ⏮
+            <SkipBack size={14} aria-hidden="true" />
           </button>
           <button
             type="button"
@@ -64,6 +66,7 @@ export function Toolbar(props: ToolbarProps) {
             onClick={() => props.onPlay()}
             disabled={transportDisabled() || props.playing()}
           >
+            <Play size={14} aria-hidden="true" />
             Play
           </button>
           <button
@@ -72,6 +75,7 @@ export function Toolbar(props: ToolbarProps) {
             onClick={() => props.onPause()}
             disabled={props.disabled || !props.playing()}
           >
+            <Pause size={14} aria-hidden="true" />
             Pause
           </button>
           <button
@@ -82,7 +86,7 @@ export function Toolbar(props: ToolbarProps) {
             aria-label="Step forward one frame"
             title="Step forward one frame"
           >
-            ⏭
+            <SkipForward size={14} aria-hidden="true" />
           </button>
         </div>
         {props.exportControl}
