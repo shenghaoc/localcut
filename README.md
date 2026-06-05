@@ -60,7 +60,7 @@ This project is configured as an installable Progressive Web App (PWA) and is de
    ```bash
    npm run deploy
    ```
-   *This uses Wrangler to deploy the `dist/` folder to Cloudflare Pages based on `wrangler.jsonc`.*
+   *This uses Wrangler to deploy the `dist/` folder to Cloudflare Pages.*
 
 ## License
 
