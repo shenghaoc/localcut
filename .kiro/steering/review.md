@@ -12,6 +12,8 @@ Applies to **all review agents** (Claude, Gemini, Kiro, Codex).
 
 ## What to Check
 
+Severities map to Codex priorities for PR reviews: **critical → P0**, **high → P1** (GitHub surfaces only P0/P1). See [AGENTS.md → Review guidelines](../../AGENTS.md#review-guidelines) for the priority-classified checklist.
+
 **Architecture (hard gates — violation blocks merge)**
 
 - Media decode/encode/GPU work on main thread — **critical**

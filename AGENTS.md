@@ -68,6 +68,45 @@ npm test       # Vitest
 3. `crossOriginIsolated` must remain `true` in dev and production (COOP/COEP).
 4. Every `VideoFrame` `.close()`d exactly once in engine code paths.
 
+## Review guidelines
+
+These guidelines drive **Codex** PR reviews (`@codex review`, or automatic reviews) and apply to every other review agent too. Codex reads this section per the [GitHub integration docs](https://developers.openai.com/codex/integrations/github), applying the closest `AGENTS.md` to each changed file. Full policy: [`.kiro/steering/review.md`](.kiro/steering/review.md).
+
+**Match the depth of Claude's [code-review](https://github.com/anthropics/claude-code/blob/main/plugins/code-review/README.md) and [pr-review-toolkit](https://github.com/anthropics/claude-code/blob/main/plugins/pr-review-toolkit/README.md) plugins.** Do **not** stop after one or two findings: review every changed file in full and run all the lenses below before concluding.
+
+### Method (mirror Claude's multi-agent review)
+
+1. Read **all** changed files end to end — never just the diff hunks.
+2. Run each lens as an independent pass: guideline compliance, bug detection, resource/lifetime, error handling, tests, type design, comment accuracy, simplification.
+3. Trace consumers when a `postMessage` protocol or `SharedArrayBuffer` layout changes; verify CSS selectors match the actual SolidJS DOM.
+4. Report one finding per concrete issue with `file:line`, the impact, and a concrete fix — not a vague summary.
+
+### Priorities (GitHub surfaces only P0 and P1 — classify accordingly)
+
+**P0 — blocks merge (architectural hard-gate violations):**
+
+- Media decode/encode/GPU work on the main thread (must live in `src/engine/worker.ts`).
+- `getImageData`, Canvas2D readback, or any CPU pixel round-trip on the preview/export hot path.
+- Per-frame `postMessage` for the playback clock instead of the `SharedArrayBuffer` clock.
+- Missing COOP/COEP headers or `crossOriginIsolated` check.
+- Server runtime, external API calls, telemetry, or cloud dependencies (v1 non-goal).
+- `yarn.lock`, `pnpm-lock.yaml`, or `bun.lock` added (npm only).
+- A `VideoFrame` not `.close()`d, or closed twice.
+- Logic bugs, crashes, data loss, race conditions, or security issues introduced by the change.
+
+**P1 — should fix this cycle:**
+
+- Multiple `queue.submit` per frame for the effect chain (Phase 4+).
+- `importExternalTexture` cached across frames.
+- Unbounded frame queues without `encodeQueueSize` backpressure; frame cache without LRU + `.close()` on eviction.
+- Effect chain run twice for preview vs export instead of sharing one processed texture.
+- Media objects or WebGPU handles leaking into `src/ui/`; missing `onCleanup` for rAF/listeners.
+- Silent failures: swallowed errors, empty catch blocks, missing handling on critical paths.
+- Missing tests for timeline model, seek logic, or protocol types on non-trivial changes; tests that mock away the invariant under test.
+- Inaccurate/outdated comments, weak types that fail to encode invariants, and dead code.
+
+Be thorough but not noisy: surface every P0/P1 you can substantiate, and skip pedantic nits, pre-existing issues the PR didn't touch, and anything a linter already catches.
+
 ## Cursor Cloud specific instructions
 
 - **COOP/COEP** are load-bearing: `public/_headers` and `vite.config.ts` `server.headers` / `preview.headers`.
