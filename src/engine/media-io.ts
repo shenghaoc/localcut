@@ -9,6 +9,7 @@ const IMPORT_FORMATS = [MP4, QTFF, WEBM];
 const DEFAULT_FRAME_RATE = 30;
 
 export interface MediaInputHandle {
+  sourceId: string;
   metadata: MediaMetadata;
   /** Sequential decoded-frame source for the primary video track; null if none/undecodable. */
   frameSource: SequentialFrameSource | null;
@@ -27,7 +28,7 @@ export interface MediaInputHandle {
  * releases it. The returned {@link VideoSampleSink} decodes from the nearest
  * preceding keyframe internally, so seeks are keyframe-accurate.
  */
-export async function openMediaFile(file: File): Promise<MediaInputHandle> {
+export async function openMediaFile(file: File, sourceId: string): Promise<MediaInputHandle> {
   const source = new BlobSource(file);
   const input = new Input({
     formats: IMPORT_FORMATS,
@@ -96,6 +97,7 @@ export async function openMediaFile(file: File): Promise<MediaInputHandle> {
     };
 
     return {
+      sourceId,
       metadata,
       frameSource,
       displayWidth,

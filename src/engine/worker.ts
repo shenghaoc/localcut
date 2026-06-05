@@ -1,9 +1,20 @@
 /// <reference lib="webworker" />
 import {
   assertCrossOriginIsolated,
+  type TimelineTrackSnapshot,
   type WorkerCommand,
   type WorkerStateMessage,
 } from '../protocol';
+import {
+  createEmptyTimeline,
+  getTimelineDuration,
+  reorderClip,
+  removeClip,
+  resolveAt,
+  splitClipAt,
+  trimClip,
+  type Timeline,
+} from './timeline';
 import { openMediaFile, type MediaInputHandle } from './media-io';
 import { initGpu, type PreviewRenderer } from './gpu';
 import {
@@ -13,16 +24,92 @@ import {
   type DecodedFrame,
 } from './playback';
 import { probeEncodeThroughput } from './hardware-probe';
+import { FrameCache, makeFrameCacheKey } from './frame-cache';
 
 let clockView: Float64Array | null = null;
 let renderer: PreviewRenderer | null = null;
-let mediaHandle: MediaInputHandle | null = null;
+let primaryHandle: MediaInputHandle | null = null;
 let playback: PlaybackController | null = null;
 let adaptive: AdaptiveResolution | null = null;
 let probeDone = false;
+let timeline: Timeline = createEmptyTimeline();
+let nextSourceId = 1;
+const sourceInputs = new Map<string, MediaInputHandle>();
+let frameCache: FrameCache | null = null;
+const FRAME_CACHE_BUDGET_BYTES = 64 * 1024 * 1024;
+
+function makeSourceId(): string {
+  return `source-${nextSourceId++}`;
+}
 
 function post(msg: WorkerStateMessage) {
   self.postMessage(msg);
+}
+
+function postTimelineState() {
+  const snapshot: TimelineTrackSnapshot[] = timeline.map((track) => ({
+    id: track.id,
+    type: track.type,
+    clips: [...track.clips],
+  }));
+  post({ type: 'timeline-state', timeline: snapshot });
+}
+
+function publishClockFromTimeline() {
+  if (!clockView) return;
+  const duration = getTimelineDuration(timeline);
+  const wasPlaying = clockView[2] === 1;
+  const clampedTime = Math.min(clockView[0] ?? 0, duration);
+  clockView[0] = clampedTime;
+  clockView[1] = duration;
+  if (!wasPlaying) {
+    clockView[2] = 0;
+  }
+}
+
+function getPlaybackSource(): MediaInputHandle | null {
+  if (primaryHandle?.frameSource) return primaryHandle;
+  for (const handle of sourceInputs.values()) {
+    if (handle.frameSource) return handle;
+  }
+  return null;
+}
+
+function appendTrackForSource(handle: MediaInputHandle) {
+  if (!handle.frameSource || !handle.metadata.video) return;
+  const trackId = `track-video-${handle.sourceId}`;
+  if (timeline.some((track) => track.id === trackId)) return;
+
+  const start = getTimelineDuration(timeline);
+  const nextTrack = {
+    id: trackId,
+    type: 'video' as const,
+    clips: [
+      {
+        id: `clip-${handle.sourceId}`,
+        sourceId: handle.sourceId,
+        start,
+        duration: handle.duration,
+        inPoint: 0,
+      },
+    ],
+  };
+
+  timeline = [...timeline, nextTrack];
+}
+
+function ensureClockAndTimeline() {
+  publishClockFromTimeline();
+  postTimelineState();
+}
+
+function ensureFrameCache() {
+  if (frameCache) return frameCache;
+  frameCache = new FrameCache({
+    maxBytes: FRAME_CACHE_BUDGET_BYTES,
+    estimateBytes: (frame) => frame.codedWidth * frame.codedHeight * 4,
+  });
+  return frameCache;
 }
 
 // Clock SAB layout: [0] currentTime, [1] duration, [2] playState (0/1).
@@ -69,7 +156,7 @@ async function handleInit(canvas: OffscreenCanvas, sab: SharedArrayBuffer) {
     });
   }
 
-  // An import can arrive after `init` is sent but before `initGpu()` resolves
+  // An import can arrive after `init` is sent but before `ready` is resolved
   // (the UI gates imports on `initSent`, not on `ready`). In that case the media
   // was set up with no renderer; wire up its preview now that the GPU is ready.
   ensurePreview();
@@ -81,7 +168,8 @@ async function handleInit(canvas: OffscreenCanvas, sab: SharedArrayBuffer) {
  * are ready), so it reconciles whichever of GPU-init / import completes last.
  */
 function ensurePreview() {
-  if (!renderer || !adaptive || !mediaHandle?.frameSource) return;
+  const source = getPlaybackSource();
+  if (!renderer || !adaptive || !source?.frameSource) return;
   const tier = adaptive.current();
   renderer.setPreviewSize(tier.width, tier.height);
   post({ type: 'preview-resolution', resolution: tier });
@@ -92,48 +180,194 @@ function teardownMedia() {
   playback?.dispose();
   playback = null;
   adaptive = null;
-  mediaHandle?.dispose();
-  mediaHandle = null;
+  frameCache?.clear();
+  frameCache = null;
+  for (const handle of sourceInputs.values()) {
+    handle.dispose();
+  }
+  sourceInputs.clear();
+  primaryHandle = null;
+  timeline = createEmptyTimeline();
+}
+
+function wrapDecodedFrameForPlayback(frameSource: MediaInputHandle, sourceTimestamp: number): Promise<DecodedFrame | null> {
+  if (!frameSource.frameSource) {
+    return Promise.resolve(null);
+  }
+  // Capture the controller that requested this decode. If playback is disposed or
+  // rebuilt (re-import, teardown) before the decode resolves, the old controller
+  // will never receive or close this frame — drop it here so it can't leak.
+  const activePlayback = playback;
+  return frameSource.frameSource.frameAt(sourceTimestamp).then((decoded) => {
+    if (!decoded) return null;
+    // Close the decoded sample even if toVideoFrame() throws on a corrupt
+    // sample — otherwise the underlying decoder resource leaks. The thrown
+    // error still propagates to the caller via the .then() chain.
+    let base: VideoFrame;
+    try {
+      base = decoded.toVideoFrame();
+    } finally {
+      decoded.close();
+    }
+
+    if (playback !== activePlayback) {
+      base.close();
+      return null;
+    }
+
+    // The cache owns its own clone; the wrapper owns `base`. `toVideoFrame()` hands
+    // the caller a *distinct* clone to render and close. Each VideoFrame here is
+    // closed exactly once: the caller's clone by the caller, `base` by close(),
+    // the cache's clone on eviction.
+    frameCache?.set(makeFrameCacheKey(frameSource.sourceId, sourceTimestamp), base.clone());
+    return {
+      toVideoFrame: () => base.clone(),
+      close: () => base.close(),
+    };
+  });
+}
+
+function makeGetFrame() {
+  return async (timestamp: number): Promise<DecodedFrame | null> => {
+    const resolved = resolveAt(timeline, timestamp);
+    if (!resolved) return null;
+
+    const sourceHandle = sourceInputs.get(resolved.clip.sourceId);
+    if (!sourceHandle) return null;
+
+    if (!frameCache) {
+      return wrapDecodedFrameForPlayback(sourceHandle, resolved.sourceTime);
+    }
+
+    const key = makeFrameCacheKey(resolved.clip.sourceId, resolved.sourceTime);
+    // FrameCache.get() returns a caller-owned clone. The wrapper owns it (closed via
+    // close()) and hands the renderer a further clone, keeping the two close paths on
+    // distinct frames so neither the wrapper nor the cache's own copy is closed twice.
+    const cached = frameCache.get(key);
+    if (cached) {
+      return {
+        toVideoFrame: () => cached.clone(),
+        close: () => cached.close(),
+      };
+    }
+
+    return wrapDecodedFrameForPlayback(sourceHandle, resolved.sourceTime);
+  };
 }
 
 async function handleImport(file: File) {
   post({ type: 'import-progress', stage: 'reading' });
-  teardownMedia();
 
   post({ type: 'import-progress', stage: 'metadata' });
+  let sourceId: string | null = null;
+  let handle: MediaInputHandle | null = null;
   try {
-    const handle = await openMediaFile(file);
-    // A second import can resolve and install its media while we were awaiting
-    // openMediaFile (the teardown at the top of this call ran before that handle
-    // existed). Tear down whatever is current now so we never overwrite — and
-    // leak — a handle set by a racing import. No-op when nothing raced.
-    teardownMedia();
-    mediaHandle = handle;
-    writeClockFull(0, handle.metadata.duration, false);
+    sourceId = makeSourceId();
+    handle = await openMediaFile(file, sourceId);
+    sourceInputs.set(sourceId, handle);
+
+    if (!primaryHandle && handle.frameSource) {
+      primaryHandle = handle;
+    }
+
+    appendTrackForSource(handle);
+    ensureClockAndTimeline();
+
     post({ type: 'import-complete', metadata: handle.metadata });
 
-    setupPlayback(handle);
-    void runProbeOnce(handle);
+    const playbackHandle = getPlaybackSource();
+    if (playbackHandle && playbackHandle.metadata.video) {
+      setupPlayback();
+      void runProbeOnce(playbackHandle);
+    }
   } catch (e) {
-    // Tear down any partially-initialized media so a failed import never leaks.
-    teardownMedia();
+    if (handle) {
+      handle.dispose();
+    }
+    if (sourceId) {
+      sourceInputs.delete(sourceId);
+    }
     const message = e instanceof Error ? e.message : String(e);
     post({ type: 'import-error', message });
   }
 }
 
-function setupPlayback(handle: MediaInputHandle) {
+/**
+ * Disposes `MediaInputHandle`s for sources no longer referenced by any clip,
+ * releasing their decoder resources. Cheap to call after every edit; safe to
+ * call when nothing changes (set lookup misses, no disposes).
+ */
+function pruneUnusedSources(): void {
+  const inUse = new Set<string>();
+  for (const track of timeline) {
+    for (const clip of track.clips) inUse.add(clip.sourceId);
+  }
+  for (const [id, handle] of [...sourceInputs.entries()]) {
+    if (inUse.has(id)) continue;
+    handle.dispose();
+    sourceInputs.delete(id);
+    if (primaryHandle === handle) primaryHandle = null;
+  }
+}
+
+function applyTimelineCommand(): void {
+  pruneUnusedSources();
+  ensureClockAndTimeline();
+  // The controller was built with the pre-edit duration; refresh it so the loop and
+  // clamps respect a timeline that an edit may have shortened, then re-seek to
+  // re-render the (possibly changed) frame under the playhead.
+  playback?.setDuration(getTimelineDuration(timeline));
+  playback?.seek(clockView?.[0] ?? 0);
+}
+
+function handleSplit(cmd: Extract<WorkerCommand, { type: 'split' }>) {
+  timeline = splitClipAt(timeline, cmd.trackId, cmd.time);
+  applyTimelineCommand();
+}
+
+function handleDelete(cmd: Extract<WorkerCommand, { type: 'delete-clip' }>) {
+  timeline = removeClip(timeline, cmd.trackId, cmd.clipId);
+  applyTimelineCommand();
+}
+
+function handleMove(cmd: Extract<WorkerCommand, { type: 'move-clip' }>) {
+  timeline = reorderClip(timeline, cmd.fromTrackId, cmd.clipId, cmd.toTrackId, cmd.toIndex);
+  applyTimelineCommand();
+}
+
+function handleTrim(cmd: Extract<WorkerCommand, { type: 'trim-clip' }>) {
+  // Look up the underlying source's duration so trimClip can bound an outward
+  // extension. Without it, trimClip would refuse to grow the clip past its
+  // current edge — preventing the user from restoring a previously-shrunk clip.
+  const track = timeline.find((t) => t.id === cmd.trackId);
+  const clip = track?.clips.find((c) => c.id === cmd.clipId);
+  const sourceDuration = clip ? sourceInputs.get(clip.sourceId)?.duration : undefined;
+  timeline = trimClip(timeline, cmd.trackId, cmd.clipId, {
+    edge: cmd.edge,
+    time: cmd.time,
+    sourceDuration,
+  });
+  applyTimelineCommand();
+}
+
+function setupPlayback() {
+  const handle = getPlaybackSource();
+  if (!handle?.frameSource) return;
+
   const ladder = buildPreviewLadder(handle.displayWidth, handle.displayHeight);
   // Budget the adaptive downgrade to the source frame period (e.g. ~16.6ms at
   // 60fps, ~41.6ms at 24fps), falling back to 33ms (~30fps) for unknown rates.
   const budgetMs = handle.frameRate > 0 ? 1000 / handle.frameRate : 33;
   adaptive = new AdaptiveResolution(ladder, budgetMs);
+  ensureFrameCache();
 
-  const getFrame = (timestamp: number): Promise<DecodedFrame | null> =>
-    handle.frameSource ? handle.frameSource.frameAt(timestamp) : Promise.resolve(null);
+  const priorTime = playback?.getCurrentTime() ?? 0;
+  const wasPlaying = playback?.isPlaying() ?? false;
+  playback?.dispose();
 
+  const getFrame = makeGetFrame();
   playback = new PlaybackController({
-    duration: handle.duration,
+    duration: getTimelineDuration(timeline),
     frameRate: handle.frameRate,
     getFrame,
     renderFrame: (frame) => renderer?.present(frame),
@@ -144,6 +378,12 @@ function setupPlayback(handle: MediaInputHandle) {
       post({ type: 'error', message: `Playback error: ${message}` });
     },
   });
+
+  const clamped = Math.min(priorTime, getTimelineDuration(timeline));
+  playback.seek(clamped);
+  if (wasPlaying) {
+    playback.play();
+  }
 
   // Size the preview and render the first frame so it isn't blank before play.
   // No-op until the renderer is ready; handleInit re-runs this when GPU init lands.
@@ -196,6 +436,18 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
       break;
     case 'step':
       playback?.step(cmd.direction);
+      break;
+    case 'split':
+      handleSplit(cmd);
+      break;
+    case 'delete-clip':
+      handleDelete(cmd);
+      break;
+    case 'move-clip':
+      handleMove(cmd);
+      break;
+    case 'trim-clip':
+      handleTrim(cmd);
       break;
     case 'dispose':
       handleDispose();

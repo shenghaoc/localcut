@@ -183,6 +183,18 @@ export class PlaybackController {
   }
 
   /**
+   * Updates the timeline duration after an edit (split/delete/move/trim) so the
+   * real-time loop and seek/play clamps track the new end. Without this the loop
+   * keeps advancing to the stale duration and writes clock times past the timeline.
+   */
+  setDuration(duration: number): void {
+    this.deps.duration = Number.isFinite(duration) && duration > 0 ? duration : 0;
+    if (this.currentTime > this.deps.duration) {
+      this.currentTime = this.deps.duration;
+    }
+  }
+
+  /**
    * Decode + render a single frame at `time`, closing every resource it touches.
    * Calls are serialized through {@link decodeChain} so a seek can never trigger a
    * concurrent read on the (non-reentrant) sink. The generation captured here is

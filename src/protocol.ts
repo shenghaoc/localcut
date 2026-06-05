@@ -24,6 +24,48 @@ export interface MediaMetadata {
   trackCount: number;
 }
 
+export interface TimelineClipSnapshot {
+  id: string;
+  sourceId: string;
+  start: number;
+  duration: number;
+  inPoint: number;
+}
+
+export interface TimelineTrackSnapshot {
+  id: string;
+  type: 'video' | 'audio';
+  clips: TimelineClipSnapshot[];
+}
+
+interface SplitTimelineCommand {
+  type: 'split';
+  trackId: string;
+  time: number;
+}
+
+interface DeleteTimelineClipCommand {
+  type: 'delete-clip';
+  trackId: string;
+  clipId: string;
+}
+
+interface MoveTimelineClipCommand {
+  type: 'move-clip';
+  fromTrackId: string;
+  toTrackId: string;
+  clipId: string;
+  toIndex: number;
+}
+
+interface TrimTimelineClipCommand {
+  type: 'trim-clip';
+  trackId: string;
+  clipId: string;
+  edge: 'in' | 'out';
+  time: number;
+}
+
 export type WorkerCommand =
   | { type: 'init'; canvas: OffscreenCanvas; sab: SharedArrayBuffer }
   | { type: 'import'; file: File }
@@ -31,6 +73,10 @@ export type WorkerCommand =
   | { type: 'pause' }
   | { type: 'seek'; time: number }
   | { type: 'step'; direction: 1 | -1 }
+  | SplitTimelineCommand
+  | DeleteTimelineClipCommand
+  | MoveTimelineClipCommand
+  | TrimTimelineClipCommand
   | { type: 'dispose' };
 
 /** A measured preview resolution tier (adaptive downscale of the decode path). */
@@ -56,6 +102,7 @@ export type WorkerStateMessage =
   | { type: 'import-error'; message: string }
   | { type: 'preview-resolution'; resolution: PreviewResolution }
   | { type: 'probe-result'; probe: ThroughputProbe }
+  | { type: 'timeline-state'; timeline: TimelineTrackSnapshot[] }
   | { type: 'error'; message: string };
 
 export function assertCrossOriginIsolated(context: string): void {

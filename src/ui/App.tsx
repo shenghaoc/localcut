@@ -1,5 +1,10 @@
 import { createSignal, Show, onMount, onCleanup } from 'solid-js';
-import { assertCrossOriginIsolated, CLOCK_BUFFER_BYTES, type MediaMetadata } from '../protocol';
+import {
+  assertCrossOriginIsolated,
+  CLOCK_BUFFER_BYTES,
+  type MediaMetadata,
+  type TimelineTrackSnapshot,
+} from '../protocol';
 import { createSharedClock } from './clock';
 import { createWorkerBridge } from './worker-bridge';
 import { PreviewCanvas } from './PreviewCanvas';
@@ -18,6 +23,7 @@ export function App() {
   const [statusLine, setStatusLine] = createSignal('Checking environment…');
   const [previewLabel, setPreviewLabel] = createSignal<string | null>(null);
   const [encodeFps, setEncodeFps] = createSignal<number | null>(null);
+  const [timeline, setTimeline] = createSignal<TimelineTrackSnapshot[]>([]);
 
   let sab: SharedArrayBuffer;
   let bridge: ReturnType<typeof createWorkerBridge> | null = null;
@@ -46,9 +52,15 @@ export function App() {
         setImporting(false);
         setMetadata(msg.metadata);
         setPreviewLabel(null);
+        // Do NOT clear the timeline here: the worker posts `timeline-state` (with
+        // the new track for this import) *before* `import-complete`, so clearing
+        // it now would erase the snapshot that just arrived.
         // Duration is written to the shared clock by the worker; the rAF reader
         // in createSharedClock() surfaces it. Main thread never writes the SAB.
         setStatusLine(`Loaded ${msg.metadata.fileName}`);
+        break;
+      case 'timeline-state':
+        setTimeline(msg.timeline);
         break;
       case 'preview-resolution':
         setPreviewLabel(msg.resolution.label);
@@ -191,7 +203,16 @@ export function App() {
           duration={clock.duration}
           frameRate={() => metadata()?.video?.frameRate ?? null}
           hasMedia={metadata() !== null}
+          timeline={timeline}
           onSeek={(t) => bridge?.send({ type: 'seek', time: t })}
+          onSplit={(trackId, _clipId, time) => bridge?.send({ type: 'split', trackId, time })}
+          onDelete={(trackId, clipId) => bridge?.send({ type: 'delete-clip', trackId, clipId })}
+          onMoveClip={(fromTrackId, clipId, toTrackId, toIndex) =>
+            bridge?.send({ type: 'move-clip', fromTrackId, clipId, toTrackId, toIndex })
+          }
+          onTrim={(trackId, clipId, edge, time) =>
+            bridge?.send({ type: 'trim-clip', trackId, clipId, edge, time })
+          }
         />
         <footer class="status-bar">
           <span>{statusLine()}</span>
