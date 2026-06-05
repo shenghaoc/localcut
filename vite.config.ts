@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [
     solid(),
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
       manifest: {
         name: 'Video Editor',
         short_name: 'Editor',

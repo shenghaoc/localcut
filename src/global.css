@@ -528,3 +528,15 @@ body {
 .status-warn {
   color: var(--danger);
 }
+
+button.status-badge {
+  background: var(--bg-elevated);
+  cursor: pointer;
+  outline: none;
+}
+
+button.status-badge:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+

@@ -413,7 +413,7 @@ export function App() {
           <span>{statusLine()}</span>
           <span class="status-meta">
             <Show when={needRefresh()}>
-              <button class="status-badge" style="cursor:pointer" onClick={() => updateServiceWorker(true)} title="Click to update app">
+              <button class="status-badge" onClick={() => updateServiceWorker(true)} title="Click to update app">
                 Update Available
               </button>
             </Show>
