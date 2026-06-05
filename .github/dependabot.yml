@@ -13,6 +13,43 @@ updates:
     commit-message:
       prefix: 'deps'
     groups:
+      # vite-plugin-solid major bumps track Vite majors; land together.
+      vite-solid-toolchain:
+        patterns:
+          - 'vite'
+          - 'vite-plugin-solid'
+        update-types:
+          - 'major'
+      solid:
+        patterns:
+          - 'solid-js'
+          - 'vite-plugin-solid'
+        update-types:
+          - 'minor'
+          - 'patch'
+      vite:
+        patterns:
+          - 'vite'
+          - 'vitest'
+          - '@vitest/*'
+          - 'vite-plugin-pwa'
+        update-types:
+          - 'minor'
+          - 'patch'
+      typescript:
+        patterns:
+          - 'typescript'
+          - 'tslib'
+        update-types:
+          - 'minor'
+          - 'patch'
+      types:
+        patterns:
+          - '@types/*'
+          - '@webgpu/types'
+        update-types:
+          - 'minor'
+          - 'patch'
       miscellaneous:
         patterns:
           - '*'
