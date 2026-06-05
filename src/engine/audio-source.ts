@@ -126,6 +126,11 @@ export class SequentialAudioSource {
       if (!this.current) break;
 
       const rate = this.current.sampleRate || this.sampleRate;
+      if (rate !== this.sampleRate) {
+        throw new Error(
+          `Sample rate mismatch: source has ${rate} Hz but export expects ${this.sampleRate} Hz. Resampling is not supported.`,
+        );
+      }
       const currentStart = this.current.timestamp;
       const currentEnd = currentStart + this.current.numberOfFrames / rate;
 

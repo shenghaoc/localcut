@@ -695,6 +695,7 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
     }
   } finally {
     exportAbort = null;
+    pruneUnusedSources();
     playback?.refresh();
   }
 }

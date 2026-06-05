@@ -451,58 +451,71 @@ export async function exportTimelineToMp4(
   await assertVideoEncoderSupported(plan);
   await assertAudioEncoderSupported(plan);
 
-  const writable = await options.outputHandle.createWritable();
-  const target = new StreamTarget(
-    writable as unknown as WritableStream<StreamTargetChunk>,
-    { chunked: true, chunkSize: MP4_CHUNK_BYTES },
-  );
-  const output = new Output({
-    format: new Mp4OutputFormat({ fastStart: false }),
-    target,
-  });
-
-  const videoSource = new VideoSampleSource({
-    codec: 'avc',
-    fullCodecString: H264_CODEC,
-    bitrate: plan.videoBitrate,
-    bitrateMode: 'variable',
-    keyFrameInterval: 2,
-    hardwareAcceleration: 'prefer-hardware',
-    latencyMode: plan.preset === 'fast' ? 'realtime' : 'quality',
-  });
-  output.addVideoTrack(videoSource, { frameRate: plan.frameRate });
-
-  const audioSource = plan.hasAudio
-    ? new AudioSampleSource({
-        codec: 'aac',
-        fullCodecString: AAC_CODEC,
-        bitrate: plan.audioBitrate,
-        bitrateMode: 'variable',
-      })
-    : null;
-  if (audioSource) output.addAudioTrack(audioSource);
-
-  const startedAt = performance.now();
-  options.onProgress(makeProgress(plan, 'video', 0, startedAt, options.throughputProbe));
+  let writable: FileSystemWritableFileStream | null = null;
+  let output: Output<Mp4OutputFormat, StreamTarget> | null = null;
+  let videoSource: VideoSampleSource | null = null;
+  let audioSource: AudioSampleSource | null = null;
 
   try {
+    writable = await options.outputHandle.createWritable();
+    const target = new StreamTarget(
+      writable as unknown as WritableStream<StreamTargetChunk>,
+      { chunked: true, chunkSize: MP4_CHUNK_BYTES },
+    );
+    output = new Output({
+      format: new Mp4OutputFormat({ fastStart: false }),
+      target,
+    });
+
+    videoSource = new VideoSampleSource({
+      codec: 'avc',
+      fullCodecString: H264_CODEC,
+      bitrate: plan.videoBitrate,
+      bitrateMode: 'variable',
+      keyFrameInterval: 2,
+      hardwareAcceleration: 'prefer-hardware',
+      latencyMode: plan.preset === 'fast' ? 'realtime' : 'quality',
+    });
+    output.addVideoTrack(videoSource, { frameRate: plan.frameRate });
+
+    audioSource = plan.hasAudio
+      ? new AudioSampleSource({
+          codec: 'aac',
+          fullCodecString: AAC_CODEC,
+          bitrate: plan.audioBitrate,
+          bitrateMode: 'variable',
+        })
+      : null;
+    if (audioSource) output.addAudioTrack(audioSource);
+
+    const startedAt = performance.now();
+    options.onProgress(makeProgress(plan, 'video', 0, startedAt, options.throughputProbe));
+
     await output.start();
     await encodeVideo(options, plan, videoSource, startedAt);
     videoSource.close();
+    videoSource = null;
 
     if (audioSource) {
       await encodeAudio(options, plan, audioSource, startedAt);
       audioSource.close();
+      audioSource = null;
     }
 
     options.onProgress(makeProgress(plan, 'finalizing', plan.totalFrames, startedAt, options.throughputProbe));
     const mimeType = await output.getMimeType().catch(() => 'video/mp4');
     await output.finalize();
+    output = null;
+    writable = null;
     return { mimeType };
   } catch (error) {
-    videoSource.close();
+    videoSource?.close();
     audioSource?.close();
-    await output.cancel().catch(() => {});
+    if (output) {
+      await output.cancel().catch(() => {});
+    } else {
+      await writable?.abort().catch(() => {});
+    }
     if (error instanceof ExportCancelledError) {
       throw error;
     }
