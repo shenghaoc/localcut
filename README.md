@@ -28,6 +28,8 @@ Top-level Markdown: [`AGENTS.md`](AGENTS.md) is canonical; [`CLAUDE.md`](CLAUDE.
 
 **Phase 2 (active):** zero-copy decode → WebGPU preview — see [`.kiro/specs/phase-2-zero-copy-preview/`](.kiro/specs/phase-2-zero-copy-preview/tasks.md).
 
+**Phases 3–7 (planned):** [timeline + editing](.kiro/specs/phase-3-timeline-editing/tasks.md), [effect chain](.kiro/specs/phase-4-effect-chain/tasks.md), [audio](.kiro/specs/phase-5-audio/tasks.md), [export](.kiro/specs/phase-6-export/tasks.md), [PWA + deployment](.kiro/specs/phase-7-pwa-deployment/tasks.md).
+
 ## Requirements
 
 - Modern Chromium desktop browser (WebCodecs + WebGPU for full functionality)

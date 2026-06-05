@@ -30,6 +30,14 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 
 - [**Phase 2: Zero-copy preview**](.kiro/specs/phase-2-zero-copy-preview/tasks.md) — decode → `importExternalTexture` → OffscreenCanvas; playback loop; adaptive preview resolution; throughput probe.
 
+**Planned:**
+
+- [**Phase 3: Timeline + editing**](.kiro/specs/phase-3-timeline-editing/tasks.md) — authoritative timeline model + mirror; split/delete/reorder/trim; seamless playback; frame cache.
+- [**Phase 4: Effect chain**](.kiro/specs/phase-4-effect-chain/tasks.md) — WGSL compute effects; single-submission chain; per-clip params; f16/f32 variants.
+- [**Phase 5: Audio**](.kiro/specs/phase-5-audio/tasks.md) — AudioWorklet graph; audio as master clock; per-track gain/mute/solo; waveforms.
+- [**Phase 6: Export**](.kiro/specs/phase-6-export/tasks.md) — pipelined decode → effects → encode → mux; backpressure; quality/speed presets; ETA.
+- [**Phase 7: PWA + deployment**](.kiro/specs/phase-7-pwa-deployment/tasks.md) — installable offline PWA; Cloudflare Pages; production `crossOriginIsolated`.
+
 **Completed:**
 
 - [**Phase 1: Scaffolding**](.kiro/specs/phase-1-scaffolding/tasks.md) — Vite + Solid, COOP/COEP, worker skeleton, SAB clock, Mediabunny metadata import.
