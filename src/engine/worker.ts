@@ -47,14 +47,27 @@ async function handleInit(canvas: OffscreenCanvas, sab: SharedArrayBuffer) {
   clockView = new Float64Array(sab);
   writeClockFull(0, 0, false);
 
-  const gpu = await initGpu(canvas);
-  renderer = gpu.renderer;
-  post({
-    type: 'ready',
-    webgpu: renderer !== null,
-    features: gpu.features,
-    gpuUnavailableReason: gpu.unavailableReason,
-  });
+  // initGpu() resolves with an unavailableReason for expected failures, but shader
+  // module / pipeline compilation can still throw; catch so the worker always posts
+  // `ready` (the UI would otherwise hang in a loading state).
+  try {
+    const gpu = await initGpu(canvas);
+    renderer = gpu.renderer;
+    post({
+      type: 'ready',
+      webgpu: renderer !== null,
+      features: gpu.features,
+      gpuUnavailableReason: gpu.unavailableReason,
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    post({
+      type: 'ready',
+      webgpu: false,
+      features: [],
+      gpuUnavailableReason: `WebGPU initialization failed: ${message}`,
+    });
+  }
 
   // An import can arrive after `init` is sent but before `initGpu()` resolves
   // (the UI gates imports on `initSent`, not on `ready`). In that case the media
@@ -106,7 +119,10 @@ async function handleImport(file: File) {
 
 function setupPlayback(handle: MediaInputHandle) {
   const ladder = buildPreviewLadder(handle.displayWidth, handle.displayHeight);
-  adaptive = new AdaptiveResolution(ladder);
+  // Budget the adaptive downgrade to the source frame period (e.g. ~16.6ms at
+  // 60fps, ~41.6ms at 24fps), falling back to 33ms (~30fps) for unknown rates.
+  const budgetMs = handle.frameRate > 0 ? 1000 / handle.frameRate : 33;
+  adaptive = new AdaptiveResolution(ladder, budgetMs);
 
   const getFrame = (timestamp: number): Promise<DecodedFrame | null> =>
     handle.frameSource ? handle.frameSource.frameAt(timestamp) : Promise.resolve(null);
