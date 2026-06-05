@@ -74,8 +74,14 @@ export class SequentialAudioSource {
     const floats = new Float32Array(bytes / 4);
     this.current.copyTo(floats, { format: 'f32', planeIndex: 0 });
     if (channels <= 1) {
+      const sourceChannels = Math.round(floats.length / this.current.numberOfFrames);
+      if (sourceChannels <= 1) {
+        return floats;
+      }
       const mono = new Float32Array(this.current.numberOfFrames);
-      for (let i = 0; i < mono.length; i += 1) mono[i] = floats[i * 2] ?? floats[i] ?? 0;
+      for (let i = 0; i < mono.length; i += 1) {
+        mono[i] = floats[i * sourceChannels] ?? 0;
+      }
       return mono;
     }
     if (floats.length >= this.current.numberOfFrames * channels) {

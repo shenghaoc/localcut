@@ -105,12 +105,12 @@ function getPlaybackSource(): MediaInputHandle | null {
   return null;
 }
 
-function appendTrackForSource(handle: MediaInputHandle) {
+function appendTrackForSource(handle: MediaInputHandle, start?: number) {
   if (!handle.frameSource || !handle.metadata.video) return;
   const trackId = `track-video-${handle.sourceId}`;
   if (timeline.some((track) => track.id === trackId)) return;
 
-  const start = getTimelineDuration(timeline);
+  const clipStart = start ?? getTimelineDuration(timeline);
   const nextTrack = {
     id: trackId,
     type: 'video' as const,
@@ -119,7 +119,7 @@ function appendTrackForSource(handle: MediaInputHandle) {
       {
         id: `clip-${handle.sourceId}`,
         sourceId: handle.sourceId,
-        start,
+        start: clipStart,
         duration: handle.duration,
         inPoint: 0,
         effects: defaultClipEffects(),
@@ -130,12 +130,12 @@ function appendTrackForSource(handle: MediaInputHandle) {
   timeline = [...timeline, nextTrack];
 }
 
-function appendAudioTrackForSource(handle: MediaInputHandle) {
+function appendAudioTrackForSource(handle: MediaInputHandle, start?: number) {
   if (!handle.audioSource || !handle.metadata.audio) return;
   const trackId = `track-audio-${handle.sourceId}`;
   if (timeline.some((track) => track.id === trackId)) return;
 
-  const start = getTimelineDuration(timeline);
+  const clipStart = start ?? getTimelineDuration(timeline);
   const clipId = `clip-audio-${handle.sourceId}`;
   const nextTrack = {
     id: trackId,
@@ -145,7 +145,7 @@ function appendAudioTrackForSource(handle: MediaInputHandle) {
       {
         id: clipId,
         sourceId: handle.sourceId,
-        start,
+        start: clipStart,
         duration: handle.duration,
         inPoint: 0,
         effects: defaultClipEffects(),
@@ -197,13 +197,14 @@ async function pumpAudioOnce(): Promise<void> {
   const handle = sourceInputs.get(resolved.clip.sourceId);
   if (!handle?.audioSource) return;
 
-  const channels = Math.max(1, handle.audioChannels);
+  const channels = Math.max(1, Atomics.load(audioRing.header, RingHeader.CHANNELS));
   const pcm = await handle.audioSource.pcmAt(resolved.sourceTime, channels);
   if (!pcm) return;
 
   const gain = trackAudible(resolved.trackId);
-  if (gain <= 0) return;
-  if (gain !== 1) {
+  if (gain <= 0) {
+    pcm.fill(0);
+  } else if (gain !== 1) {
     for (let i = 0; i < pcm.length; i += 1) pcm[i] = (pcm[i] ?? 0) * gain;
   }
   writeRingPcm(audioRing, pcm);
@@ -415,8 +416,9 @@ async function handleImport(file: File) {
       primaryHandle = handle;
     }
 
-    appendTrackForSource(handle);
-    appendAudioTrackForSource(handle);
+    const start = getTimelineDuration(timeline);
+    appendTrackForSource(handle, start);
+    appendAudioTrackForSource(handle, start);
     ensureClockAndTimeline();
 
     post({ type: 'import-complete', metadata: handle.metadata });
@@ -652,8 +654,6 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
       handleSetTrackSolo(cmd);
       break;
     case 'dispose':
-      handleDispose();
-      break;
       handleDispose();
       break;
     default: {
