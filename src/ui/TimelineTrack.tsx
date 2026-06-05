@@ -1,5 +1,5 @@
 import { type JSX } from 'solid-js';
-import { type TimelineTrack as ProtocolTimelineTrack } from '../protocol';
+import { type TimelineTrackSnapshot as ProtocolTimelineTrack } from '../protocol';
 
 interface TimelineTrackProps {
   track: ProtocolTimelineTrack;
@@ -34,6 +34,8 @@ export function TimelineTrack(props: TimelineTrackProps) {
 
   function onDrop(event: DragEvent) {
     event.preventDefault();
+    const target = event.currentTarget as HTMLDivElement | null;
+    if (!target) return;
     const data = event.dataTransfer?.getData('application/x-be-timeline-clip');
     if (!data) return;
     let payload: { fromTrackId: string; clipId: string } | null = null;
@@ -43,7 +45,7 @@ export function TimelineTrack(props: TimelineTrackProps) {
       return;
     }
 
-    const rect = event.currentTarget.getBoundingClientRect();
+    const rect = target.getBoundingClientRect();
     if (rect.width <= 0) return;
     const time = props.totalDuration <= 0 ? 0 : clamp((event.clientX - rect.left) / rect.width, 0, 1) * props.totalDuration;
     const index = computeInsertIndex(time, props.track.clips);
@@ -52,17 +54,24 @@ export function TimelineTrack(props: TimelineTrackProps) {
 
   function onDragOver(event: DragEvent) {
     event.preventDefault();
+    const target = event.currentTarget as HTMLDivElement | null;
+    if (!target) return;
+    target.classList.add('is-over');
   }
 
   function onDragEnter(event: DragEvent) {
     event.preventDefault();
+    const target = event.currentTarget as HTMLDivElement | null;
+    if (!target) return;
     surfaceEl?.classList.add('is-over');
   }
 
   function onDragLeave(event: DragEvent) {
+    const target = event.currentTarget as HTMLDivElement | null;
+    if (!target) return;
     if (!surfaceEl) return;
     const next = event.relatedTarget as Node | null;
-    if (!next || (next !== surfaceEl && !surfaceEl.contains(next))) {
+    if (!next || (next !== target && !target.contains(next))) {
       surfaceEl.classList.remove('is-over');
     }
   }
@@ -72,7 +81,7 @@ export function TimelineTrack(props: TimelineTrackProps) {
       <div class="track-label">{props.track.id}</div>
       <div
         class="track-surface"
-        ref={surfaceEl}
+        ref={(el) => (surfaceEl = el)}
         onDragOver={onDragOver}
         onDragEnter={onDragEnter}
         onDragLeave={onDragLeave}

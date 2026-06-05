@@ -1,7 +1,10 @@
 import { createSignal, For, Show } from 'solid-js';
 import { TimelineClip } from './TimelineClip';
 import { TimelineTrack } from './TimelineTrack';
-import { type TimelineTrack as ProtocolTimelineTrack } from '../protocol';
+import {
+  type TimelineTrackSnapshot as ProtocolTimelineTrack,
+  type TimelineClipSnapshot as ProtocolTimelineClip,
+} from '../protocol';
 
 interface TimelineProps {
   currentTime: () => number;
@@ -100,7 +103,7 @@ export function Timeline(props: TimelineProps) {
                 totalDuration={props.duration()}
                 onMoveClip={props.onMoveClip}
               >
-                <For each={track.clips}>
+                <For each={track.clips as ProtocolTimelineClip[]}>
                   {(clip) => (
                     <TimelineClip
                       trackId={track.id}

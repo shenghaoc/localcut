@@ -203,9 +203,7 @@ export function App() {
           hasMedia={metadata() !== null}
           timeline={timeline}
           onSeek={(t) => bridge?.send({ type: 'seek', time: t })}
-          onSplit={(trackId, clipId, time) =>
-            bridge?.send({ type: 'split', trackId, time })
-          }
+          onSplit={(trackId, _clipId, time) => bridge?.send({ type: 'split', trackId, time })}
           onDelete={(trackId, clipId) => bridge?.send({ type: 'delete-clip', trackId, clipId })}
           onMoveClip={(fromTrackId, clipId, toTrackId, toIndex) =>
             bridge?.send({ type: 'move-clip', fromTrackId, clipId, toTrackId, toIndex })

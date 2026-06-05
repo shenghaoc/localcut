@@ -1,4 +1,4 @@
-import { type TimelineClip as ProtocolTimelineClip } from '../protocol';
+import { type TimelineClipSnapshot as ProtocolTimelineClip } from '../protocol';
 
 interface TimelineClipProps {
   trackId: string;
