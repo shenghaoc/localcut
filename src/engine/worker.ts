@@ -90,15 +90,13 @@ function setupPlayback(handle: MediaInputHandle) {
   const ladder = buildPreviewLadder(handle.displayWidth, handle.displayHeight);
   adaptive = new AdaptiveResolution(ladder);
   const initial = adaptive.current();
-  if (renderer && handle.videoSink) {
+  if (renderer && handle.frameSource) {
     renderer.setPreviewSize(initial.width, initial.height);
     post({ type: 'preview-resolution', resolution: initial });
   }
 
-  const getFrame = async (timestamp: number): Promise<DecodedFrame | null> => {
-    if (!handle.videoSink) return null;
-    return handle.videoSink.getSample(timestamp);
-  };
+  const getFrame = (timestamp: number): Promise<DecodedFrame | null> =>
+    handle.frameSource ? handle.frameSource.frameAt(timestamp) : Promise.resolve(null);
 
   playback = new PlaybackController({
     duration: handle.duration,
@@ -114,7 +112,7 @@ function setupPlayback(handle: MediaInputHandle) {
   });
 
   // Render the first frame so the preview isn't blank before the user hits play.
-  if (handle.videoSink) playback.refresh();
+  if (handle.frameSource) playback.refresh();
 }
 
 /** Adaptive resolution: downgrade the preview when frames blow the budget. */
@@ -130,7 +128,7 @@ function handleFrameTime(frameMs: number) {
 async function runProbeOnce(handle: MediaInputHandle) {
   // The probe measures video-encode throughput; skip audio-only imports and defer
   // until a video file arrives so the estimate reflects a real encode workload.
-  if (probeDone || !handle.videoSink) return;
+  if (probeDone || !handle.frameSource) return;
   probeDone = true;
   const probe = await probeEncodeThroughput(handle.displayWidth, handle.displayHeight);
   if (probe) post({ type: 'probe-result', probe });

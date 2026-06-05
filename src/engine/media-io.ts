@@ -1,5 +1,6 @@
 import { BlobSource, Input, MP4, QTFF, VideoSampleSink, WEBM } from 'mediabunny';
 import type { MediaMetadata } from '../protocol';
+import { SequentialFrameSource } from './frame-source';
 
 /** Formats included in the bundle (tree-shaken). */
 const IMPORT_FORMATS = [MP4, QTFF, WEBM];
@@ -9,8 +10,8 @@ const DEFAULT_FRAME_RATE = 30;
 
 export interface MediaInputHandle {
   metadata: MediaMetadata;
-  /** Decoded-frame source for the primary video track; null if none/undecodable. */
-  videoSink: VideoSampleSink | null;
+  /** Sequential decoded-frame source for the primary video track; null if none/undecodable. */
+  frameSource: SequentialFrameSource | null;
   /** Source display dimensions (after rotation/aspect), or 0 when no video. */
   displayWidth: number;
   displayHeight: number;
@@ -49,7 +50,7 @@ export async function openMediaFile(file: File): Promise<MediaInputHandle> {
     const audioTrack = await input.getPrimaryAudioTrack();
 
     let video: MediaMetadata['video'] = null;
-    let videoSink: VideoSampleSink | null = null;
+    let frameSource: SequentialFrameSource | null = null;
     let displayWidth = 0;
     let displayHeight = 0;
     let frameRate = DEFAULT_FRAME_RATE;
@@ -70,7 +71,8 @@ export async function openMediaFile(file: File): Promise<MediaInputHandle> {
         canDecode,
       };
       if (canDecode) {
-        videoSink = new VideoSampleSink(videoTrack);
+        const sink = new VideoSampleSink(videoTrack);
+        frameSource = new SequentialFrameSource(sink, frameRate > 0 ? 1 / frameRate : 0);
       }
     }
 
@@ -95,12 +97,15 @@ export async function openMediaFile(file: File): Promise<MediaInputHandle> {
 
     return {
       metadata,
-      videoSink,
+      frameSource,
       displayWidth,
       displayHeight,
       frameRate,
       duration,
-      dispose: () => input.dispose(),
+      dispose: () => {
+        frameSource?.reset();
+        input.dispose();
+      },
     };
   } catch (e) {
     input.dispose();
