@@ -53,7 +53,6 @@ export class AudioEngine {
       return this.ringSab;
     } catch (error) {
       this.dispose();
-      this.ready = null;
       throw error;
     }
   }
