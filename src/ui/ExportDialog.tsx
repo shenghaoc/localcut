@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, Show } from 'solid-js';
 import { Popover } from '@kobalte/core/popover';
+import { Download } from 'lucide-solid';
 import { Button } from './components/button';
 import type { ExportPreset, ExportProgress } from '../protocol';
 
@@ -42,6 +43,7 @@ export function ExportDialog(props: ExportDialogProps) {
   return (
     <Popover open={open()} onOpenChange={handleOpenChange} placement="bottom-end" gutter={7}>
       <Popover.Trigger as={Button} disabled={!props.hasMedia}>
+        <Download size={14} aria-hidden="true" />
         Export
       </Popover.Trigger>
       <Popover.Portal>

@@ -1,4 +1,5 @@
 import { Show, type JSX } from 'solid-js';
+import { FolderOpen, Moon, Pause, Play, SkipBack, SkipForward, Sun } from 'lucide-solid';
 import { cn } from '../lib/utils';
 import { Button, buttonVariants } from './components/button';
 import type { MediaMetadata } from '../protocol';
@@ -41,6 +42,7 @@ export function Toolbar(props: ToolbarProps) {
             props.disabled && 'is-disabled pointer-events-none',
           )}
         >
+          <FolderOpen size={14} aria-hidden="true" />
           Import
           <input
             class="import-picker-input"
@@ -68,19 +70,21 @@ export function Toolbar(props: ToolbarProps) {
             aria-label="Step back one frame"
             title="Step back one frame"
           >
-            ⏮
+            <SkipBack size={14} aria-hidden="true" />
           </Button>
           <Button
             class="transport-play"
             onClick={() => props.onPlay()}
             disabled={transportDisabled() || props.playing()}
           >
+            <Play size={14} aria-hidden="true" />
             Play
           </Button>
           <Button
             onClick={() => props.onPause()}
             disabled={props.disabled || !props.playing()}
           >
+            <Pause size={14} aria-hidden="true" />
             Pause
           </Button>
           <Button
@@ -90,7 +94,7 @@ export function Toolbar(props: ToolbarProps) {
             aria-label="Step forward one frame"
             title="Step forward one frame"
           >
-            ⏭
+            <SkipForward size={14} aria-hidden="true" />
           </Button>
         </div>
         {props.exportControl}
@@ -100,7 +104,11 @@ export function Toolbar(props: ToolbarProps) {
           aria-label={props.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
           title={props.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
         >
-          {props.theme === 'dark' ? '☀' : '☾'}
+          {props.theme === 'dark' ? (
+            <Sun size={14} aria-hidden="true" />
+          ) : (
+            <Moon size={14} aria-hidden="true" />
+          )}
         </Button>
       </div>
     </header>
