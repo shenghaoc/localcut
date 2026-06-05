@@ -119,6 +119,93 @@ body {
   cursor: default;
 }
 
+.export-control {
+  position: relative;
+}
+
+.export-popover {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  right: 0;
+  z-index: 5;
+  width: min(320px, calc(100vw - 1rem));
+  padding: 0.75rem;
+  box-shadow: 0 12px 28px rgb(0 0 0 / 35%);
+}
+
+.export-presets {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin-bottom: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.segmented-btn {
+  min-width: 0;
+  padding: 0.4rem 0.55rem;
+  border: 0;
+  border-right: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+}
+
+.segmented-btn:last-child {
+  border-right: 0;
+}
+
+.segmented-btn.is-active {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 34%, var(--bg-elevated));
+}
+
+.segmented-btn:disabled {
+  cursor: default;
+}
+
+.export-progress {
+  display: grid;
+  gap: 0.45rem;
+  margin-bottom: 0.75rem;
+}
+
+.export-progress-row,
+.export-estimate,
+.export-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.export-progress progress {
+  width: 100%;
+  height: 8px;
+  accent-color: var(--accent);
+}
+
+.export-estimate {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.export-note,
+.export-error {
+  margin: 0 0 0.75rem;
+  font-size: 12px;
+}
+
+.export-note {
+  color: var(--text-muted);
+}
+
+.export-error {
+  color: var(--danger);
+}
+
 .workspace {
   display: grid;
   grid-template-columns: 1fr 240px;

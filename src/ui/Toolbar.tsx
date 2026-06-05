@@ -1,4 +1,4 @@
-import { Show } from 'solid-js';
+import { Show, type JSX } from 'solid-js';
 import type { MediaMetadata } from '../protocol';
 
 interface ToolbarProps {
@@ -8,6 +8,7 @@ interface ToolbarProps {
   onPlay: () => void;
   onPause: () => void;
   onStep: (direction: 1 | -1) => void;
+  exportControl?: JSX.Element;
 }
 
 export function Toolbar(props: ToolbarProps) {
@@ -54,6 +55,7 @@ export function Toolbar(props: ToolbarProps) {
             ⏭
           </button>
         </Show>
+        {props.exportControl}
       </div>
     </header>
   );

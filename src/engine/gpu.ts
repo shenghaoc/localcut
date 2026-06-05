@@ -186,6 +186,46 @@ export class PreviewRenderer {
     this.submissionCount = 1;
   }
 
+  /**
+   * Renders through the same importExternalTexture → effect chain → present path,
+   * then captures the compositor-backed canvas as the frame handed to the encoder.
+   */
+  async renderForExport(
+    frame: VideoFrame,
+    timestamp: number,
+    duration: number,
+    effects?: Partial<ClipEffectParams>,
+  ): Promise<VideoFrame> {
+    this.present(frame, effects);
+    await this.device.queue.onSubmittedWorkDone();
+    return this.captureCanvasFrame(timestamp, duration);
+  }
+
+  /** Emits a GPU-cleared black frame for gaps in the timeline. */
+  async renderBlackForExport(timestamp: number, duration: number): Promise<VideoFrame> {
+    if (this.width <= 0 || this.height <= 0) {
+      throw new Error('Export renderer has not been sized.');
+    }
+
+    const encoder = this.device.createCommandEncoder();
+    const render = encoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view: this.context.getCurrentTexture().createView(),
+          loadOp: 'clear',
+          storeOp: 'store',
+          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+        },
+      ],
+    });
+    render.end();
+
+    this.device.queue.submit([encoder.finish()]);
+    this.submissionCount = 1;
+    await this.device.queue.onSubmittedWorkDone();
+    return this.captureCanvasFrame(timestamp, duration);
+  }
+
   destroy(): void {
     this.effectChain.destroy();
     this.storageA?.destroy();
@@ -210,6 +250,13 @@ export class PreviewRenderer {
         { binding: 0, resource: source },
         { binding: 1, resource: this.sampler },
       ],
+    });
+  }
+
+  private captureCanvasFrame(timestamp: number, duration: number): VideoFrame {
+    return new VideoFrame(this.canvas, {
+      timestamp: Math.round(timestamp * 1_000_000),
+      duration: Math.max(1, Math.round(duration * 1_000_000)),
     });
   }
 }

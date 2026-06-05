@@ -2,6 +2,7 @@
 import {
   assertCrossOriginIsolated,
   ClockIndex,
+  type ThroughputProbe,
   type TimelineTrackSnapshot,
   type WorkerCommand,
   type WorkerStateMessage,
@@ -43,6 +44,7 @@ import {
 } from './playback';
 import { probeEncodeThroughput } from './hardware-probe';
 import { FrameCache, makeFrameCacheKey } from './frame-cache';
+import { ExportCancelledError, exportTimelineToMp4 } from './export';
 
 let clockView: Float64Array | null = null;
 let renderer: PreviewRenderer | null = null;
@@ -54,6 +56,8 @@ let timeline: Timeline = createEmptyTimeline();
 let nextSourceId = 1;
 const sourceInputs = new Map<string, MediaInputHandle>();
 let frameCache: FrameCache | null = null;
+let currentProbe: ThroughputProbe | null = null;
+let exportAbort: AbortController | null = null;
 const FRAME_CACHE_BUDGET_BYTES = 64 * 1024 * 1024;
 let audioRing: AudioRingViews | null = null;
 let audioWriteAnchor = 0;
@@ -358,6 +362,8 @@ function ensurePreview() {
 }
 
 function teardownMedia() {
+  exportAbort?.abort();
+  exportAbort = null;
   playback?.dispose();
   playback = null;
   adaptive = null;
@@ -486,6 +492,7 @@ async function handleImport(file: File) {
  * call when nothing changes (set lookup misses, no disposes).
  */
 function pruneUnusedSources(): void {
+  if (exportAbort) return;
   const inUse = new Set<string>();
   for (const track of timeline) {
     for (const clip of track.clips) inUse.add(clip.sourceId);
@@ -619,7 +626,10 @@ async function runProbeOnce(handle: MediaInputHandle) {
   if (probeDone || !handle.frameSource) return;
   probeDone = true;
   const probe = await probeEncodeThroughput(handle.displayWidth, handle.displayHeight);
-  if (probe) post({ type: 'probe-result', probe });
+  if (probe) {
+    currentProbe = probe;
+    post({ type: 'probe-result', probe });
+  }
 }
 
 function handlePlay() {
@@ -641,6 +651,57 @@ function handlePause() {
 function handleSeek(time: number) {
   resetAudioRingForSeek(time);
   playback?.seek(time);
+}
+
+function cloneTimelineForExport(): Timeline {
+  return timeline.map((track) => ({
+    ...track,
+    clips: track.clips.map((clip) => ({ ...clip, effects: { ...clip.effects } })),
+  }));
+}
+
+async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-start' }>) {
+  if (exportAbort) {
+    post({ type: 'export-error', message: 'An export is already running.' });
+    return;
+  }
+  if (!renderer) {
+    post({ type: 'export-error', message: 'Export requires WebGPU preview to be available.' });
+    return;
+  }
+
+  handlePause();
+  const controller = new AbortController();
+  exportAbort = controller;
+
+  try {
+    const result = await exportTimelineToMp4({
+      timeline: cloneTimelineForExport(),
+      sources: sourceInputs,
+      renderer,
+      outputHandle: cmd.output,
+      preset: cmd.preset,
+      throughputProbe: currentProbe,
+      signal: controller.signal,
+      onProgress: (progress) => post({ type: 'export-progress', progress }),
+    });
+    post({ type: 'export-complete', fileName: cmd.output.name, mimeType: result.mimeType });
+  } catch (error) {
+    if (error instanceof ExportCancelledError) {
+      post({ type: 'export-canceled' });
+    } else {
+      const message = error instanceof Error ? error.message : String(error);
+      post({ type: 'export-error', message });
+    }
+  } finally {
+    exportAbort = null;
+    pruneUnusedSources();
+    ensurePreview();
+  }
+}
+
+function handleExportCancel() {
+  exportAbort?.abort();
 }
 
 function handleDispose() {
@@ -672,6 +733,12 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
       break;
     case 'step':
       playback?.step(cmd.direction);
+      break;
+    case 'export-start':
+      void handleExportStart(cmd);
+      break;
+    case 'export-cancel':
+      handleExportCancel();
       break;
     case 'split':
       handleSplit(cmd);
