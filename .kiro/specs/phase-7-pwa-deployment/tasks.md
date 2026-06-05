@@ -4,7 +4,7 @@
 
 ## PWA hardening
 
-- [x] **T1.1** Verify `vite-plugin-pwa` manifest (icons, name, theme/background) and `registerType: 'autoUpdate'`.
+- [x] **T1.1** Verify `vite-plugin-pwa` manifest (icons, name, theme/background) and `registerType: 'prompt'`.
 - [x] **T1.2** Confirm `workbox.globPatterns` precaches worker chunk + `wgsl`/`wasm` assets.
 - [x] **T1.3** Offline reload serves full app shell after first load.
 - [x] **T1.4** Optional non-blocking "reload to update" affordance on new SW.

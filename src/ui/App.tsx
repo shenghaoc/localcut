@@ -37,6 +37,7 @@ export function App() {
   const [exportResult, setExportResult] = createSignal<string | null>(null);
   const [exportError, setExportError] = createSignal<string | null>(null);
   const [isOffline, setIsOffline] = createSignal(!navigator.onLine);
+  const [hasActiveSW, setHasActiveSW] = createSignal(false);
 
   const {
     offlineReady: [offlineReady],
@@ -299,6 +300,10 @@ export function App() {
     window.addEventListener('offline', handleOffline);
     window.addEventListener('online', handleOnline);
 
+    if ('serviceWorker' in navigator) {
+      setHasActiveSW(!!navigator.serviceWorker.controller);
+    }
+
     const onDragOver = (e: DragEvent) => {
       e.preventDefault();
     };
@@ -413,11 +418,11 @@ export function App() {
           <span>{statusLine()}</span>
           <span class="status-meta">
             <Show when={needRefresh()}>
-              <button class="status-badge" onClick={() => updateServiceWorker(true)} title="Click to update app">
+              <button type="button" class="status-badge" onClick={() => updateServiceWorker(true)} title="Click to update app">
                 Update Available
               </button>
             </Show>
-            <Show when={offlineReady() && !isOffline()}>
+            <Show when={(offlineReady() || hasActiveSW()) && !isOffline()}>
               <span class="status-badge" title="App ready to work offline">
                 Ready Offline
               </span>

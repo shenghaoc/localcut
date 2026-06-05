@@ -531,8 +531,13 @@ body {
 
 button.status-badge {
   background: var(--bg-elevated);
+  font: inherit;
   cursor: pointer;
-  outline: none;
+}
+
+button.status-badge:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 button.status-badge:hover {

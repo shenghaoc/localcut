@@ -51,7 +51,7 @@ npm test
 
 ## PWA & Deployment
 
-This project is configured as an installable Progressive Web App (PWA) and is designed to be deployed to **Cloudflare Pages**.
+This project is configured as an installable Progressive Web App (PWA) and is designed to be deployed to **Cloudflare Workers with Static Assets**.
 
 1. **Build**: `npm run build` generates static files in `dist/`.
 2. **Service Worker**: `vite-plugin-pwa` auto-generates a service worker that precaches the app shell, allowing full offline use after the first load.
@@ -60,7 +60,7 @@ This project is configured as an installable Progressive Web App (PWA) and is de
    ```bash
    npm run deploy
    ```
-   *This uses Wrangler to deploy the `dist/` folder to Cloudflare Pages.*
+   *This uses Wrangler to deploy the `dist/` folder to Cloudflare Workers based on `wrangler.jsonc`.*
 
 ## License
 
