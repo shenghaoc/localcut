@@ -33,8 +33,15 @@ export function ExportDialog(props: ExportDialogProps) {
     if (props.exporting || props.error || props.lastResult) setOpen(true);
   });
 
+  // Keep progress + Cancel reachable mid-export: ignore Escape / outside-click
+  // dismissals while an export is in flight (the Close button is disabled too).
+  const handleOpenChange = (next: boolean) => {
+    if (!next && props.exporting) return;
+    setOpen(next);
+  };
+
   return (
-    <Popover open={open()} onOpenChange={setOpen} placement="bottom-end" gutter={7}>
+    <Popover open={open()} onOpenChange={handleOpenChange} placement="bottom-end" gutter={7}>
       <Popover.Trigger type="button" class={buttonVariants()} disabled={!props.hasMedia}>
         <Download size={14} aria-hidden="true" />
         Export
@@ -88,18 +95,18 @@ export function ExportDialog(props: ExportDialogProps) {
           <div class="export-actions">
             <button
               type="button"
-              class="btn"
+              class={buttonVariants({ variant: 'default' })}
               disabled={props.exporting || !props.hasMedia}
               onClick={() => props.onStart(preset())}
             >
               Start
             </button>
             <Show when={props.exporting}>
-              <button type="button" class="btn" onClick={() => props.onCancel()}>
+              <button type="button" class={buttonVariants()} onClick={() => props.onCancel()}>
                 Cancel
               </button>
             </Show>
-            <Popover.CloseButton type="button" class="btn" disabled={props.exporting}>
+            <Popover.CloseButton type="button" class={buttonVariants()} disabled={props.exporting}>
               Close
             </Popover.CloseButton>
           </div>

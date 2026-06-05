@@ -169,46 +169,10 @@ body {
   white-space: nowrap;
 }
 
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  min-height: 30px;
-  padding: 0.35rem 0.72rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg-control);
-  color: var(--text);
-  cursor: pointer;
-  font: inherit;
-  line-height: 1;
-}
-
-.btn:hover:not(:disabled):not(.is-disabled) {
-  border-color: var(--accent-strong);
-  background: var(--bg-control-hover);
-}
-
-.btn:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-.btn:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.btn-primary {
-  border-color: color-mix(in srgb, var(--accent) 72%, var(--border));
-  background: color-mix(in srgb, var(--accent) 28%, var(--bg-control));
-}
-
+/* Button styling lives in the solid-ui `buttonVariants` (src/ui/components/button.tsx);
+   these rules only cover the file-input import affordance's layout + disabled state. */
 .import-picker {
   position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   overflow: hidden;
 }
 
@@ -228,12 +192,6 @@ body {
 
 .import-picker-input:disabled {
   cursor: default;
-}
-
-.btn-icon {
-  width: 34px;
-  padding-inline: 0;
-  text-align: center;
 }
 
 .transport-controls {
@@ -386,7 +344,7 @@ body {
   pointer-events: none;
 }
 
-.preview-empty .btn {
+.preview-empty .import-picker {
   pointer-events: auto;
 }
 

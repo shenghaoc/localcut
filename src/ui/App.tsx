@@ -17,6 +17,8 @@ import { Timeline } from './Timeline';
 import { Inspector, type SelectedClip } from './Inspector';
 import { AudioEngine } from './audio-engine';
 import { ExportDialog } from './ExportDialog';
+import { buttonVariants } from './components/button';
+import { cn } from '../lib/utils';
 import PipelineWorker from '../engine/worker.ts?worker';
 
 const VIDEO_ACCEPT = 'video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm';
@@ -371,7 +373,13 @@ export function App() {
                   <p class="preview-empty-title">No source loaded</p>
                   <p class="preview-empty-copy">Drop an MP4, MOV, or WebM here.</p>
                 </div>
-                <label class={`btn btn-primary import-picker${!workerReady() ? ' is-disabled' : ''}`}>
+                <label
+                  class={cn(
+                    buttonVariants({ variant: 'default' }),
+                    'import-picker',
+                    !workerReady() && 'is-disabled',
+                  )}
+                >
                   Import
                   <input
                     class="import-picker-input"
