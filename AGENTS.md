@@ -113,3 +113,8 @@ Be thorough but not noisy: surface every P0/P1 you can substantiate, and skip pe
 - **COOP/COEP** are load-bearing: `public/_headers` and `vite.config.ts` `server.headers` / `preview.headers`.
 - **WebGPU + WebCodecs** require a modern Chromium browser; engine code runs in the pipeline worker, not on main.
 - **Phase 1** proves threading + import only; do not add Canvas2D preview or main-thread decode as a shortcut.
+- **Single dev process** — no backend, database, Docker, or `.env` secrets. Only `npm run dev` (port **5173**) is required for interactive work; the pipeline worker is spawned automatically by the UI.
+- **Remote browser access** — when testing via the Desktop pane, start Vite with `npm run dev -- --host 0.0.0.0` so Chrome can reach the server.
+- **Quality gate in CI-like runs** — there is no separate lint script; use `npm run build` (strict `tsc` + Vite) and `npm test` (Vitest, Node environment).
+- **Manual E2E smoke test** — open Chromium to `http://localhost:5173`, confirm the status bar shows the `crossOriginIsolated` badge, click **Import**, and load a local MP4/MOV/WebM. A tiny test clip can be generated with `ffmpeg` if none is checked in.
+- **WebGPU in cloud VMs** — headless or software-rendered environments may report “No WebGPU adapter”; metadata import and the SAB clock still work. Full zero-copy preview requires hardware WebGPU.
