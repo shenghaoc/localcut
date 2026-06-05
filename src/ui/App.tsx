@@ -10,7 +10,7 @@ import { createWorkerBridge } from './worker-bridge';
 import { PreviewCanvas } from './PreviewCanvas';
 import { Toolbar } from './Toolbar';
 import { Timeline } from './Timeline';
-import { Inspector } from './Inspector';
+import { Inspector, type SelectedClip } from './Inspector';
 import PipelineWorker from '../engine/worker.ts?worker';
 
 const VIDEO_ACCEPT = 'video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm';
@@ -24,6 +24,7 @@ export function App() {
   const [previewLabel, setPreviewLabel] = createSignal<string | null>(null);
   const [encodeFps, setEncodeFps] = createSignal<number | null>(null);
   const [timeline, setTimeline] = createSignal<TimelineTrackSnapshot[]>([]);
+  const [selectedClip, setSelectedClip] = createSignal<SelectedClip | null>(null);
 
   let sab: SharedArrayBuffer;
   let bridge: ReturnType<typeof createWorkerBridge> | null = null;
@@ -61,6 +62,16 @@ export function App() {
         break;
       case 'timeline-state':
         setTimeline(msg.timeline);
+        setSelectedClip((prev) => {
+          if (!prev) return prev;
+          for (const track of msg.timeline) {
+            const clip = track.clips.find((c) => c.id === prev.clipId);
+            if (clip) {
+              return { trackId: track.id, clipId: clip.id, effects: { ...clip.effects } };
+            }
+          }
+          return null;
+        });
         break;
       case 'preview-resolution':
         setPreviewLabel(msg.resolution.label);
@@ -196,7 +207,13 @@ export function App() {
               <div class="preview-overlay">Importing…</div>
             </Show>
           </section>
-          <Inspector metadata={metadata()} />
+          <Inspector
+            metadata={metadata()}
+            selectedClip={selectedClip()}
+            onEffectParam={(trackId, clipId, key, value) =>
+              bridge?.send({ type: 'set-effect-param', trackId, clipId, key, value })
+            }
+          />
         </main>
         <Timeline
           currentTime={clock.currentTime}
@@ -212,6 +229,10 @@ export function App() {
           }
           onTrim={(trackId, clipId, edge, time) =>
             bridge?.send({ type: 'trim-clip', trackId, clipId, edge, time })
+          }
+          selectedClipId={selectedClip()?.clipId ?? null}
+          onSelectClip={(trackId, clipId, effects) =>
+            setSelectedClip({ trackId, clipId, effects: { ...effects } })
           }
         />
         <footer class="status-bar">

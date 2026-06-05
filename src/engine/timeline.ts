@@ -1,10 +1,17 @@
-/** Authoritative timeline model — Phase 3. */
+import {
+  DEFAULT_CLIP_EFFECTS,
+  normalizeClipEffects,
+  type ClipEffectParams,
+} from './effects';
+
+/** Authoritative timeline model — Phase 3+. */
 export interface TimelineClip {
   id: string;
   sourceId: string;
   start: number;
   duration: number;
   inPoint: number;
+  effects: ClipEffectParams;
 }
 
 export interface TimelineTrack {
@@ -22,7 +29,10 @@ export interface ResolveResult {
 }
 
 function cloneTimeline(timeline: Timeline): Timeline {
-  return timeline.map((track) => ({ ...track, clips: [...track.clips] }));
+  return timeline.map((track) => ({
+    ...track,
+    clips: track.clips.map((clip) => ({ ...clip, effects: { ...clip.effects } })),
+  }));
 }
 
 function finite(value: number): boolean {
@@ -294,3 +304,30 @@ export function trimClip(timeline: Timeline, trackId: string, clipId: string, op
   };
   return next;
 }
+
+/** Updates one effect scalar on a clip; returns the original timeline on no-op. */
+export function setClipEffectParam(
+  timeline: Timeline,
+  trackId: string,
+  clipId: string,
+  key: keyof ClipEffectParams,
+  value: number,
+): Timeline {
+  if (!finite(value)) return timeline;
+  const loc = trackWithClip(timeline, trackId, clipId);
+  if (!loc) return timeline;
+
+  const clip = timeline[loc.trackIndex]!.clips[loc.clipIndex]!;
+  if (clip.effects[key] === value) return timeline;
+
+  const next = cloneTimeline(timeline);
+  const nextClip = next[loc.trackIndex]!.clips[loc.clipIndex]!;
+  nextClip.effects = { ...nextClip.effects, [key]: value };
+  return next;
+}
+
+export function defaultClipEffects(): ClipEffectParams {
+  return { ...DEFAULT_CLIP_EFFECTS };
+}
+
+export { normalizeClipEffects, type ClipEffectParams };

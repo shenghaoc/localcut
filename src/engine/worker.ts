@@ -13,6 +13,8 @@ import {
   resolveAt,
   splitClipAt,
   trimClip,
+  setClipEffectParam,
+  defaultClipEffects,
   type Timeline,
 } from './timeline';
 import { openMediaFile, type MediaInputHandle } from './media-io';
@@ -50,7 +52,14 @@ function postTimelineState() {
   const snapshot: TimelineTrackSnapshot[] = timeline.map((track) => ({
     id: track.id,
     type: track.type,
-    clips: [...track.clips],
+    clips: track.clips.map((clip) => ({
+      id: clip.id,
+      sourceId: clip.sourceId,
+      start: clip.start,
+      duration: clip.duration,
+      inPoint: clip.inPoint,
+      effects: { ...clip.effects },
+    })),
   }));
   post({ type: 'timeline-state', timeline: snapshot });
 }
@@ -91,6 +100,7 @@ function appendTrackForSource(handle: MediaInputHandle) {
         start,
         duration: handle.duration,
         inPoint: 0,
+        effects: defaultClipEffects(),
       },
     ],
   };
@@ -335,6 +345,12 @@ function handleMove(cmd: Extract<WorkerCommand, { type: 'move-clip' }>) {
   applyTimelineCommand();
 }
 
+function handleSetEffectParam(cmd: Extract<WorkerCommand, { type: 'set-effect-param' }>) {
+  timeline = setClipEffectParam(timeline, cmd.trackId, cmd.clipId, cmd.key, cmd.value);
+  postTimelineState();
+  playback?.refresh();
+}
+
 function handleTrim(cmd: Extract<WorkerCommand, { type: 'trim-clip' }>) {
   // Look up the underlying source's duration so trimClip can bound an outward
   // extension. Without it, trimClip would refuse to grow the clip past its
@@ -370,7 +386,10 @@ function setupPlayback() {
     duration: getTimelineDuration(timeline),
     frameRate: handle.frameRate,
     getFrame,
-    renderFrame: (frame) => renderer?.present(frame),
+    renderFrame: (frame) => {
+      const resolved = resolveAt(timeline, playback?.getCurrentTime() ?? clockView?.[0] ?? 0);
+      renderer?.present(frame, resolved?.clip.effects);
+    },
     writeClock: writeTransport,
     onFrameTime: handleFrameTime,
     onPlaybackError: (e) => {
@@ -448,6 +467,9 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
       break;
     case 'trim-clip':
       handleTrim(cmd);
+      break;
+    case 'set-effect-param':
+      handleSetEffectParam(cmd);
       break;
     case 'dispose':
       handleDispose();

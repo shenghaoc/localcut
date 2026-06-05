@@ -1,7 +1,12 @@
-/** WebGPU device, OffscreenCanvas, and the zero-copy preview renderer (Phase 2). */
+/** WebGPU device, OffscreenCanvas, and the zero-copy preview renderer (Phase 2+4). */
 
-import passthroughSource from './shaders/passthrough.wgsl?raw';
 import presentSource from './shaders/present.wgsl?raw';
+import {
+  EffectChain,
+  type ClipEffectParams,
+  DEFAULT_CLIP_EFFECTS,
+  normalizeClipEffects,
+} from './effects';
 
 export interface GpuInit {
   /** Ready renderer, or null when WebGPU is unavailable. */
@@ -18,9 +23,9 @@ function unavailable(reason: string): GpuInit {
 /**
  * Owns the WebGPU device and the per-frame zero-copy preview pipeline.
  *
- * Per frame: `importExternalTexture(VideoFrame)` → compute passthrough into a
- * storage texture → fullscreen-triangle present to the canvas — all inside a
- * single command submission. No CPU pixel readback ever happens.
+ * Per frame: `importExternalTexture(VideoFrame)` → colour-grade compute chain
+ * (ping-pong storage A/B/C) → fullscreen-triangle present — all inside a single
+ * command submission. No CPU pixel readback ever happens.
  */
 export class PreviewRenderer {
   private readonly device: GPUDevice;
@@ -28,34 +33,37 @@ export class PreviewRenderer {
   private readonly format: GPUTextureFormat;
   private readonly canvas: OffscreenCanvas;
 
-  private readonly computePipeline: GPUComputePipeline;
+  private readonly effectChain: EffectChain;
   private readonly presentPipeline: GPURenderPipeline;
   private readonly sampler: GPUSampler;
 
-  private storageTexture: GPUTexture | null = null;
-  private storageTextureView: GPUTextureView | null = null;
+  private storageA: GPUTexture | null = null;
+  private storageB: GPUTexture | null = null;
+  private storageC: GPUTexture | null = null;
+  private storageAView: GPUTextureView | null = null;
+  private storageBView: GPUTextureView | null = null;
+  private storageCView: GPUTextureView | null = null;
   private presentBindGroup: GPUBindGroup | null = null;
   private width = 0;
   private height = 0;
+  private submissionCount = 0;
+  private clipEffects: ClipEffectParams = { ...DEFAULT_CLIP_EFFECTS };
 
   constructor(
     device: GPUDevice,
     context: GPUCanvasContext,
     format: GPUTextureFormat,
     canvas: OffscreenCanvas,
+    useF16: boolean,
   ) {
     this.device = device;
     this.context = context;
     this.format = format;
     this.canvas = canvas;
 
-    const passthroughModule = device.createShaderModule({ code: passthroughSource });
-    const presentModule = device.createShaderModule({ code: presentSource });
+    this.effectChain = new EffectChain(device, useF16);
 
-    this.computePipeline = device.createComputePipeline({
-      layout: 'auto',
-      compute: { module: passthroughModule, entryPoint: 'main' },
-    });
+    const presentModule = device.createShaderModule({ code: presentSource });
     this.presentPipeline = device.createRenderPipeline({
       layout: 'auto',
       vertex: { module: presentModule, entryPoint: 'vs' },
@@ -74,15 +82,29 @@ export class PreviewRenderer {
     return { width: this.width, height: this.height };
   }
 
+  /** Submissions issued by the last `present()` call (always 1 when a frame rendered). */
+  get lastFrameSubmissionCount(): number {
+    return this.submissionCount;
+  }
+
+  /** Processed output view from the most recent frame (preview + export share this). */
+  getProcessedTextureView(): GPUTextureView | null {
+    return this.storageAView;
+  }
+
+  setClipEffects(params: Partial<ClipEffectParams> | undefined): void {
+    this.clipEffects = normalizeClipEffects(params);
+    this.effectChain.setParams(this.clipEffects);
+  }
+
   /**
-   * (Re)allocates the storage texture and resizes the canvas backing store to the
-   * preview resolution. Cheap no-op when the size is unchanged. Called on import
-   * and whenever the adaptive controller changes tiers.
+   * (Re)allocates storage textures A/B/C and resizes the canvas backing store.
+   * Cheap no-op when the size is unchanged.
    */
   setPreviewSize(width: number, height: number): void {
     const w = Math.max(2, width);
     const h = Math.max(2, height);
-    if (w === this.width && h === this.height && this.storageTexture) return;
+    if (w === this.width && h === this.height && this.storageA) return;
 
     this.width = w;
     this.height = h;
@@ -94,45 +116,50 @@ export class PreviewRenderer {
       alphaMode: 'premultiplied',
     });
 
-    this.storageTexture?.destroy();
-    this.storageTexture = this.device.createTexture({
-      size: { width: w, height: h },
-      format: 'rgba8unorm',
-      usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING,
-    });
-    this.storageTextureView = this.storageTexture.createView();
-    this.presentBindGroup = this.device.createBindGroup({
-      layout: this.presentPipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: this.storageTextureView },
-        { binding: 1, resource: this.sampler },
-      ],
-    });
+    const usage = GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING;
+    const size = { width: w, height: h };
+
+    this.storageA?.destroy();
+    this.storageB?.destroy();
+    this.storageC?.destroy();
+
+    this.storageA = this.device.createTexture({ size, format: 'rgba8unorm', usage });
+    this.storageB = this.device.createTexture({ size, format: 'rgba8unorm', usage });
+    this.storageC = this.device.createTexture({ size, format: 'rgba8unorm', usage });
+    this.storageAView = this.storageA.createView();
+    this.storageBView = this.storageB.createView();
+    this.storageCView = this.storageC.createView();
+
+    this.rebuildPresentBindGroup();
   }
 
   /**
    * Renders one frame. The caller owns `frame` and must `.close()` it afterwards;
    * the external texture is only valid for the submission issued here.
    */
-  present(frame: VideoFrame): void {
-    if (!this.storageTextureView || !this.presentBindGroup) return;
+  present(frame: VideoFrame, effects?: Partial<ClipEffectParams>): void {
+    if (!this.storageAView || !this.storageBView || !this.storageCView || !this.presentBindGroup) {
+      return;
+    }
+
+    if (effects !== undefined) {
+      this.setClipEffects(effects);
+    }
 
     const external = this.device.importExternalTexture({ source: frame });
-    const computeBindGroup = this.device.createBindGroup({
-      layout: this.computePipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: external },
-        { binding: 1, resource: this.storageTextureView },
-      ],
-    });
-
     const encoder = this.device.createCommandEncoder();
 
-    const compute = encoder.beginComputePass();
-    compute.setPipeline(this.computePipeline);
-    compute.setBindGroup(0, computeBindGroup);
-    compute.dispatchWorkgroups(Math.ceil(this.width / 8), Math.ceil(this.height / 8));
-    compute.end();
+    const outputView = this.effectChain.encodeColourChain(
+      encoder,
+      external,
+      { a: this.storageAView, b: this.storageBView, c: this.storageCView },
+      this.width,
+      this.height,
+    );
+
+    if (outputView !== this.storageAView) {
+      this.rebuildPresentBindGroup(outputView);
+    }
 
     const render = encoder.beginRenderPass({
       colorAttachments: [
@@ -149,16 +176,35 @@ export class PreviewRenderer {
     render.draw(3);
     render.end();
 
-    // Single submission per frame for the whole import → compute → present chain.
+    // Single submission per frame for import → effect chain → present.
     this.device.queue.submit([encoder.finish()]);
+    this.submissionCount = 1;
   }
 
   destroy(): void {
-    this.storageTexture?.destroy();
-    this.storageTexture = null;
-    this.storageTextureView = null;
+    this.effectChain.destroy();
+    this.storageA?.destroy();
+    this.storageB?.destroy();
+    this.storageC?.destroy();
+    this.storageA = null;
+    this.storageB = null;
+    this.storageC = null;
+    this.storageAView = null;
+    this.storageBView = null;
+    this.storageCView = null;
     this.presentBindGroup = null;
     this.device.destroy();
+  }
+
+  private rebuildPresentBindGroup(source: GPUTextureView | null = this.storageAView): void {
+    if (!source) return;
+    this.presentBindGroup = this.device.createBindGroup({
+      layout: this.presentPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: source },
+        { binding: 1, resource: this.sampler },
+      ],
+    });
   }
 }
 
@@ -177,7 +223,8 @@ export async function initGpu(canvas: OffscreenCanvas): Promise<GpuInit> {
   }
 
   const wantedFeatures: GPUFeatureName[] = [];
-  if (adapter.features.has('shader-f16')) wantedFeatures.push('shader-f16');
+  const useF16 = adapter.features.has('shader-f16');
+  if (useF16) wantedFeatures.push('shader-f16');
   if (adapter.features.has('subgroups')) wantedFeatures.push('subgroups');
   if (adapter.features.has('timestamp-query')) wantedFeatures.push('timestamp-query');
 
@@ -203,7 +250,7 @@ export async function initGpu(canvas: OffscreenCanvas): Promise<GpuInit> {
   });
 
   return {
-    renderer: new PreviewRenderer(device, context, format, canvas),
+    renderer: new PreviewRenderer(device, context, format, canvas, useF16),
     features: [...wantedFeatures],
     unavailableReason: null,
   };

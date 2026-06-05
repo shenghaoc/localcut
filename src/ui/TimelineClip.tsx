@@ -8,6 +8,8 @@ interface TimelineClipProps {
   onDelete?: (trackId: string, clipId: string) => void;
   onTrim?: (trackId: string, clipId: string, edge: 'in' | 'out', time: number) => void;
   onMoveStart?: (trackId: string, clipId: string, event: DragEvent) => void;
+  selected?: boolean;
+  onSelect?: () => void;
 }
 
 const EDGE_HANDLE_PX = 10;
@@ -132,13 +134,16 @@ export function TimelineClip(props: TimelineClipProps) {
 
   function onPointerDown(event: PointerEvent) {
     const edge = shouldSplitEdge(event);
-    if (!edge) return;
+    if (!edge) {
+      props.onSelect?.();
+      return;
+    }
     onTrimPointerDown(edge, event);
   }
 
   return (
     <div
-      class="timeline-clip"
+      class={`timeline-clip${props.selected ? ' is-selected' : ''}`}
       style={{ left: left(), width: width() }}
       title={dragText()}
       draggable="true"

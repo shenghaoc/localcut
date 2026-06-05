@@ -1,14 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import {
   createEmptyTimeline,
+  defaultClipEffects,
   getTimelineDuration,
   removeClip,
   reorderClip,
   resolveAt,
+  setClipEffectParam,
   splitClipAt,
   trimClip,
+  type TimelineClip,
   type TimelineTrack,
 } from './timeline';
+
+function clip(partial: Omit<TimelineClip, 'effects'> & { effects?: TimelineClip['effects'] }): TimelineClip {
+  return { effects: defaultClipEffects(), ...partial };
+}
 
 describe('timeline', () => {
   it('starts empty', () => {
@@ -21,8 +28,8 @@ describe('timeline', () => {
         id: 'video-track',
         type: 'video',
         clips: [
-          { id: 'a', sourceId: 'src-1', start: 2, duration: 3, inPoint: 0 },
-          { id: 'b', sourceId: 'src-1', start: 10, duration: 4, inPoint: 1 },
+          clip({ id: 'a', sourceId: 'src-1', start: 2, duration: 3, inPoint: 0 }),
+          clip({ id: 'b', sourceId: 'src-1', start: 10, duration: 4, inPoint: 1 }),
         ],
       },
     ];
@@ -35,8 +42,8 @@ describe('timeline', () => {
         id: 'video-track',
         type: 'video',
         clips: [
-          { id: 'a', sourceId: 'src-1', start: 1, duration: 2, inPoint: 10 },
-          { id: 'b', sourceId: 'src-1', start: 5, duration: 3, inPoint: 20 },
+          clip({ id: 'a', sourceId: 'src-1', start: 1, duration: 2, inPoint: 10 }),
+          clip({ id: 'b', sourceId: 'src-1', start: 5, duration: 3, inPoint: 20 }),
         ],
       },
     ];
@@ -52,7 +59,7 @@ describe('timeline', () => {
       {
         id: 'video-track',
         type: 'video',
-        clips: [{ id: 'a', sourceId: 'src-1', start: 0, duration: 1, inPoint: 0 }],
+        clips: [clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 1, inPoint: 0 })],
       },
     ];
     expect(resolveAt(timeline, 1)).toBeNull();
@@ -65,7 +72,7 @@ describe('timeline', () => {
       {
         id: 'video-track',
         type: 'video',
-        clips: [{ id: 'a', sourceId: 'src-1', start: 0, duration: 10, inPoint: 100 }],
+        clips: [clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 10, inPoint: 100 })],
       },
     ];
 
@@ -89,7 +96,7 @@ describe('timeline', () => {
       {
         id: 'video-track',
         type: 'video',
-        clips: [{ id: 'a', sourceId: 'src-1', start: 0, duration: 10, inPoint: 0 }],
+        clips: [clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 10, inPoint: 0 })],
       },
     ];
     expect(splitClipAt(timeline, 'video-track', -1)).toEqual(timeline);
@@ -102,9 +109,9 @@ describe('timeline', () => {
         id: 'video-track',
         type: 'video',
         clips: [
-          { id: 'a', sourceId: 'src-1', start: 0, duration: 2, inPoint: 0 },
-          { id: 'b', sourceId: 'src-1', start: 2, duration: 2, inPoint: 2 },
-          { id: 'c', sourceId: 'src-1', start: 4, duration: 2, inPoint: 4 },
+          clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 2, inPoint: 0 }),
+          clip({ id: 'b', sourceId: 'src-1', start: 2, duration: 2, inPoint: 2 }),
+          clip({ id: 'c', sourceId: 'src-1', start: 4, duration: 2, inPoint: 4 }),
         ],
       },
     ];
@@ -119,16 +126,16 @@ describe('timeline', () => {
         id: 'video-track',
         type: 'video',
         clips: [
-          { id: 'a', sourceId: 'src-1', start: 0, duration: 2, inPoint: 0 },
-          { id: 'b', sourceId: 'src-1', start: 2, duration: 2, inPoint: 2 },
+          clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 2, inPoint: 0 }),
+          clip({ id: 'b', sourceId: 'src-1', start: 2, duration: 2, inPoint: 2 }),
         ],
       },
       {
         id: 'video-track-2',
         type: 'video',
         clips: [
-          { id: 'c', sourceId: 'src-2', start: 0, duration: 3, inPoint: 0 },
-          { id: 'd', sourceId: 'src-2', start: 3, duration: 1, inPoint: 3 },
+          clip({ id: 'c', sourceId: 'src-2', start: 0, duration: 3, inPoint: 0 }),
+          clip({ id: 'd', sourceId: 'src-2', start: 3, duration: 1, inPoint: 3 }),
         ],
       },
     ];
@@ -152,9 +159,9 @@ describe('timeline', () => {
         id: 'video-track',
         type: 'video',
         clips: [
-          { id: 'a', sourceId: 'src-1', start: 0, duration: 1, inPoint: 0 },
-          { id: 'b', sourceId: 'src-1', start: 1, duration: 1, inPoint: 0 },
-          { id: 'c', sourceId: 'src-1', start: 2, duration: 1, inPoint: 0 },
+          clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 1, inPoint: 0 }),
+          clip({ id: 'b', sourceId: 'src-1', start: 1, duration: 1, inPoint: 0 }),
+          clip({ id: 'c', sourceId: 'src-1', start: 2, duration: 1, inPoint: 0 }),
         ],
       },
     ];
@@ -170,7 +177,7 @@ describe('timeline', () => {
       {
         id: 'video-track',
         type: 'video',
-        clips: [{ id: 'a', sourceId: 'src-1', start: 0, duration: 10, inPoint: 0 }],
+        clips: [clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 10, inPoint: 0 })],
       },
     ];
     expect(splitClipAt(timeline, 'video-track', 10)).toBe(timeline);
@@ -184,7 +191,7 @@ describe('timeline', () => {
       {
         id: 'video-track',
         type: 'video',
-        clips: [{ id: 'a', sourceId: 'src-1', start: 1, duration: 10, inPoint: 100 }],
+        clips: [clip({ id: 'a', sourceId: 'src-1', start: 1, duration: 10, inPoint: 100 })],
       },
     ];
 
@@ -208,7 +215,7 @@ describe('timeline', () => {
       {
         id: 'video-track',
         type: 'video',
-        clips: [{ id: 'a', sourceId: 'src-1', start: 5, duration: 5, inPoint: 100 }],
+        clips: [clip({ id: 'a', sourceId: 'src-1', start: 5, duration: 5, inPoint: 100 })],
       },
     ];
     // Drag the in-edge from t=5 back to t=3; source-time 98 still in bounds.
@@ -221,7 +228,7 @@ describe('timeline', () => {
       {
         id: 'video-track',
         type: 'video',
-        clips: [{ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 2 }],
+        clips: [clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 2 })],
       },
     ];
     expect(trimClip(timeline, 'video-track', 'a', { edge: 'in', time: -3, sourceDuration: 200 })).toBe(timeline);
@@ -232,7 +239,7 @@ describe('timeline', () => {
       {
         id: 'video-track',
         type: 'video',
-        clips: [{ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 10 }],
+        clips: [clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 10 })],
       },
     ];
     // Source ends at 20; clip uses inPoint=10, so out can extend to t=0+(20-10)=10.
@@ -246,8 +253,8 @@ describe('timeline', () => {
         id: 'video-track',
         type: 'video',
         clips: [
-          { id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 0 },
-          { id: 'b', sourceId: 'src-1', start: 8, duration: 2, inPoint: 0 },
+          clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 0 }),
+          clip({ id: 'b', sourceId: 'src-1', start: 8, duration: 2, inPoint: 0 }),
         ],
       },
     ];
@@ -266,8 +273,8 @@ describe('timeline', () => {
         id: 'video-track',
         type: 'video',
         clips: [
-          { id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 0 },
-          { id: 'b', sourceId: 'src-1', start: 8, duration: 5, inPoint: 10 },
+          clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 0 }),
+          clip({ id: 'b', sourceId: 'src-1', start: 8, duration: 5, inPoint: 10 }),
         ],
       },
     ];
@@ -285,7 +292,7 @@ describe('timeline', () => {
       {
         id: 'video-track',
         type: 'video',
-        clips: [{ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 10 }],
+        clips: [clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 10 })],
       },
     ];
     expect(trimClip(timeline, 'video-track', 'a', { edge: 'out', time: 15, sourceDuration: 20 })).toBe(timeline);
@@ -296,10 +303,27 @@ describe('timeline', () => {
       {
         id: 'video-track',
         type: 'video',
-        clips: [{ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 0 }],
+        clips: [clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 0 })],
       },
     ];
     expect(trimClip(timeline, 'video-track', 'a', { edge: 'out', time: 10 })).toBe(timeline);
+  });
+
+  it('updates one effect param on a clip', () => {
+    const custom = { ...defaultClipEffects(), saturation: 1.4 };
+    const timeline: TimelineTrack[] = [
+      {
+        id: 'video-track',
+        type: 'video',
+        clips: [clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 0, effects: custom })],
+      },
+    ];
+
+    const next = setClipEffectParam(timeline, 'video-track', 'a', 'saturation', 0.6);
+    expect(next).not.toBe(timeline);
+    expect(next[0]!.clips[0]!.effects.saturation).toBeCloseTo(0.6);
+    expect(timeline[0]!.clips[0]!.effects.saturation).toBeCloseTo(1.4);
+    expect(setClipEffectParam(timeline, 'video-track', 'a', 'saturation', 1.4)).toBe(timeline);
   });
 
   it('keeps no-op trims when time is on clip edges', () => {
@@ -307,7 +331,7 @@ describe('timeline', () => {
       {
         id: 'video-track',
         type: 'video',
-        clips: [{ id: 'a', sourceId: 'src-1', start: 1, duration: 10, inPoint: 100 }],
+        clips: [clip({ id: 'a', sourceId: 'src-1', start: 1, duration: 10, inPoint: 100 })],
       },
     ];
 
