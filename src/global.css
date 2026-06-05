@@ -54,7 +54,7 @@
   --bg-panel: var(--card);
   --bg-elevated: var(--muted);
   --bg-control: var(--secondary);
-  --bg-control-hover: color-mix(in oklab, var(--secondary) 78%, var(--foreground) 8%);
+  --bg-control-hover: color-mix(in oklab, var(--secondary), var(--foreground) 8%);
   --text: var(--foreground);
   --text-muted: var(--muted-foreground);
   --accent-strong: var(--primary);

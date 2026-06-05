@@ -31,7 +31,7 @@ function initialTheme(): Theme {
   } catch {
     // Local storage is cosmetic; the editor remains fully functional without it.
   }
-  return 'light';
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
 export function App() {
@@ -91,14 +91,20 @@ export function App() {
   const clock = createSharedClock(sab);
 
   createEffect(() => {
-    const next = theme();
-    document.documentElement.dataset.theme = next;
-    try {
-      window.localStorage.setItem('browser-editor-theme', next);
-    } catch {
-      // Persistence is optional; avoid turning a storage denial into UI failure.
-    }
+    document.documentElement.dataset.theme = theme();
   });
+
+  function toggleTheme() {
+    setTheme((current) => {
+      const next = current === 'dark' ? 'light' : 'dark';
+      try {
+        window.localStorage.setItem('browser-editor-theme', next);
+      } catch {
+        // Persistence is optional; avoid turning a storage denial into UI failure.
+      }
+      return next;
+    });
+  }
 
   function handleState(msg: import('../protocol').WorkerStateMessage) {
     switch (msg.type) {
@@ -375,7 +381,7 @@ export function App() {
           onStep={(direction) => bridge?.send({ type: 'step', direction })}
           disabled={!workerReady()}
           theme={theme()}
-          onToggleTheme={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
+          onToggleTheme={toggleTheme}
           exportControl={
             <ExportDialog
               hasMedia={metadata() !== null}
