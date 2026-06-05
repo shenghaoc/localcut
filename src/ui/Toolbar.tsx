@@ -1,4 +1,7 @@
 import { Show, type JSX } from 'solid-js';
+import { FolderOpen, Pause, Play, SkipBack, SkipForward } from 'lucide-solid';
+import { cn } from '../lib/utils';
+import { Button, buttonVariants } from './components/button';
 import type { MediaMetadata } from '../protocol';
 
 interface ToolbarProps {
@@ -27,7 +30,14 @@ export function Toolbar(props: ToolbarProps) {
     <header class="toolbar">
       <div class="toolbar-left">
         <h1 class="app-title">Browser Editor</h1>
-        <label class={`btn btn-primary import-picker${props.disabled ? ' is-disabled' : ''}`}>
+        <label
+          class={cn(
+            buttonVariants({ variant: 'default' }),
+            'import-picker',
+            props.disabled && 'is-disabled pointer-events-none',
+          )}
+        >
+          <FolderOpen size={14} aria-hidden="true" />
           Import
           <input
             class="import-picker-input"
@@ -42,48 +52,45 @@ export function Toolbar(props: ToolbarProps) {
       <div class="toolbar-center">
         <span class="file-name">
           <Show when={props.metadata} fallback="No media loaded">
-            {props.metadata!.fileName}
+            {(meta) => meta().fileName}
           </Show>
         </span>
       </div>
       <div class="toolbar-right">
         <div class="transport-controls" role="group" aria-label="Transport">
-          <button
-            type="button"
-            class="btn btn-icon"
+          <Button
+            size="icon"
             onClick={() => props.onStep(-1)}
             disabled={transportDisabled()}
             aria-label="Step back one frame"
             title="Step back one frame"
           >
-            ⏮
-          </button>
-          <button
-            type="button"
-            class="btn transport-play"
+            <SkipBack size={14} aria-hidden="true" />
+          </Button>
+          <Button
+            class="transport-play"
             onClick={() => props.onPlay()}
             disabled={transportDisabled() || props.playing()}
           >
+            <Play size={14} aria-hidden="true" />
             Play
-          </button>
-          <button
-            type="button"
-            class="btn"
+          </Button>
+          <Button
             onClick={() => props.onPause()}
             disabled={props.disabled || !props.playing()}
           >
+            <Pause size={14} aria-hidden="true" />
             Pause
-          </button>
-          <button
-            type="button"
-            class="btn btn-icon"
+          </Button>
+          <Button
+            size="icon"
             onClick={() => props.onStep(1)}
             disabled={transportDisabled()}
             aria-label="Step forward one frame"
             title="Step forward one frame"
           >
-            ⏭
-          </button>
+            <SkipForward size={14} aria-hidden="true" />
+          </Button>
         </div>
         {props.exportControl}
       </div>

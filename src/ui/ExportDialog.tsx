@@ -1,4 +1,7 @@
 import { createEffect, createMemo, createSignal, Show } from 'solid-js';
+import { Popover } from '@kobalte/core/popover';
+import { Download } from 'lucide-solid';
+import { Button } from './components/button';
 import type { ExportPreset, ExportProgress } from '../protocol';
 
 interface ExportDialogProps {
@@ -30,22 +33,26 @@ export function ExportDialog(props: ExportDialogProps) {
     if (props.exporting || props.error || props.lastResult) setOpen(true);
   });
 
+  // Keep progress + Cancel reachable mid-export: ignore Escape / outside-click
+  // dismissals while an export is in flight (the Close button is disabled too).
+  const handleOpenChange = (next: boolean) => {
+    if (!next && props.exporting) return;
+    setOpen(next);
+  };
+
   return (
-    <div class="export-control">
-      <button
-        type="button"
-        class="btn"
-        disabled={!props.hasMedia}
-        onClick={() => setOpen((value) => !value)}
-      >
+    <Popover open={open()} onOpenChange={handleOpenChange} placement="bottom-end" gutter={7}>
+      <Popover.Trigger as={Button} disabled={!props.hasMedia}>
+        <Download size={14} aria-hidden="true" />
         Export
-      </button>
-      <Show when={open()}>
-        <div class="export-popover panel" role="dialog" aria-label="Export">
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content class="export-popover panel" aria-label="Export">
           <div class="export-presets" role="group" aria-label="Export preset">
             <button
               type="button"
               class={`segmented-btn${preset() === 'quality' ? ' is-active' : ''}`}
+              aria-pressed={preset() === 'quality'}
               disabled={props.exporting}
               onClick={() => setPreset('quality')}
             >
@@ -54,6 +61,7 @@ export function ExportDialog(props: ExportDialogProps) {
             <button
               type="button"
               class={`segmented-btn${preset() === 'fast' ? ' is-active' : ''}`}
+              aria-pressed={preset() === 'fast'}
               disabled={props.exporting}
               onClick={() => setPreset('fast')}
             >
@@ -87,25 +95,22 @@ export function ExportDialog(props: ExportDialogProps) {
           </Show>
 
           <div class="export-actions">
-            <button
-              type="button"
-              class="btn"
+            <Button
+              variant="default"
               disabled={props.exporting || !props.hasMedia}
               onClick={() => props.onStart(preset())}
             >
               Start
-            </button>
+            </Button>
             <Show when={props.exporting}>
-              <button type="button" class="btn" onClick={() => props.onCancel()}>
-                Cancel
-              </button>
+              <Button onClick={() => props.onCancel()}>Cancel</Button>
             </Show>
-            <button type="button" class="btn" disabled={props.exporting} onClick={() => setOpen(false)}>
+            <Popover.CloseButton as={Button} disabled={props.exporting}>
               Close
-            </button>
+            </Popover.CloseButton>
           </div>
-        </div>
-      </Show>
-    </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover>
   );
 }

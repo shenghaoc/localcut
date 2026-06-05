@@ -1,3 +1,5 @@
+@import 'tailwindcss';
+
 :root {
   --bg-app: #16161a;
   --bg-app-top: #101116;
@@ -15,10 +17,53 @@
   --danger: #e85d5d;
   --success: #6bcf8a;
   --font-ui: system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: ui-monospace, 'Cascadia Code', 'SF Mono', monospace;
+  --font-mono-stack: ui-monospace, 'Cascadia Code', 'SF Mono', monospace;
+  --font-mono: var(--font-mono-stack);
   --toolbar-h: 48px;
   --status-h: 30px;
   --timeline-h: 190px;
+}
+
+/**
+ * solid-ui / shadcn token bridge.
+ * Maps the project's bespoke palette (above) onto the token names solid-ui
+ * components expect, so copy-pasted components render in the dark pro theme
+ * unchanged. `inline` keeps the var() references live for runtime theming.
+ */
+@theme inline {
+  --color-background: var(--bg-app);
+  --color-foreground: var(--text);
+
+  --color-card: var(--bg-panel);
+  --color-card-foreground: var(--text);
+  --color-popover: var(--bg-panel);
+  --color-popover-foreground: var(--text);
+
+  --color-primary: var(--accent);
+  --color-primary-foreground: #ffffff;
+
+  --color-secondary: var(--bg-elevated);
+  --color-secondary-foreground: var(--text);
+
+  --color-muted: var(--bg-elevated);
+  --color-muted-foreground: var(--text-muted);
+
+  --color-accent: var(--bg-elevated);
+  --color-accent-foreground: var(--text);
+
+  --color-destructive: var(--danger);
+  --color-destructive-foreground: #ffffff;
+
+  --color-border: var(--border);
+  --color-input: var(--border);
+  --color-ring: var(--accent);
+
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-mono-stack);
+
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
 }
 
 *,
@@ -37,6 +82,9 @@ body,
 body {
   font-family: var(--font-ui);
   font-size: 13px;
+  /* Restore the pre-Tailwind default; preflight sets 1.5, which can shift the
+     dense timeline layout. Component-level `leading-*` utilities still override. */
+  line-height: normal;
   color: var(--text);
   background:
     linear-gradient(180deg, var(--bg-app-top) 0, var(--bg-app) 140px),
@@ -125,43 +173,10 @@ body {
   white-space: nowrap;
 }
 
-.btn {
-  min-height: 30px;
-  padding: 0.35rem 0.72rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg-control);
-  color: var(--text);
-  cursor: pointer;
-  font: inherit;
-  line-height: 1;
-}
-
-.btn:hover:not(:disabled):not(.is-disabled) {
-  border-color: var(--accent-strong);
-  background: var(--bg-control-hover);
-}
-
-.btn:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-.btn:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.btn-primary {
-  border-color: color-mix(in srgb, var(--accent) 72%, var(--border));
-  background: color-mix(in srgb, var(--accent) 28%, var(--bg-control));
-}
-
+/* Button styling lives in the solid-ui `buttonVariants` (src/ui/components/button.tsx);
+   these rules only cover the file-input import affordance's layout + disabled state. */
 .import-picker {
   position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   overflow: hidden;
 }
 
@@ -183,12 +198,6 @@ body {
   cursor: default;
 }
 
-.btn-icon {
-  width: 34px;
-  padding-inline: 0;
-  text-align: center;
-}
-
 .transport-controls {
   display: flex;
   align-items: center;
@@ -203,14 +212,7 @@ body {
   min-width: 56px;
 }
 
-.export-control {
-  position: relative;
-}
-
 .export-popover {
-  position: absolute;
-  top: calc(100% + 0.45rem);
-  right: 0;
   z-index: 5;
   width: min(320px, calc(100vw - 1rem));
   padding: 0.75rem;
@@ -248,6 +250,11 @@ body {
 
 .segmented-btn:disabled {
   cursor: default;
+}
+
+.segmented-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .export-progress {
@@ -346,7 +353,9 @@ body {
   pointer-events: none;
 }
 
-.preview-empty .btn {
+/* Re-enable clicks on the import label (the empty-state container is
+   pointer-events:none) — but not while disabled, so the guard above wins. */
+.preview-empty .import-picker:not(.is-disabled) {
   pointer-events: auto;
 }
 

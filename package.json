@@ -14,11 +14,18 @@
     "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
+    "@kobalte/core": "^0.13.11",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-solid": "^1.17.0",
     "mediabunny": "^1.46.0",
-    "solid-js": "^1.9.7"
+    "solid-js": "^1.9.7",
+    "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.3.0",
     "@webgpu/types": "^0.1.70",
+    "tailwindcss": "^4.3.0",
     "typescript": "~5.8.3",
     "vite": "^6.3.5",
     "vite-plugin-pwa": "^0.21.2",
