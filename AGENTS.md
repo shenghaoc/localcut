@@ -9,7 +9,7 @@ Use this file as a **thin router**. Read steering before coding; specs live unde
 - [**Technical constraints**](.kiro/steering/tech.md) — SolidJS + Vite, Mediabunny, WebGPU/WebCodecs, Cloudflare Pages PWA.
 - [**Repository structure**](.kiro/steering/structure.md) — `src/ui/` vs `src/engine/`, naming, layout.
 - [**UI standards**](.kiro/steering/ui-standards.md) — dark professional-tool aesthetic, bespoke timeline.
-- [**Review policy**](.kiro/steering/review.md) — PR review workflow and hard architectural gates.
+- [**Review policy**](.kiro/steering/review.md) — Kiro/Claude review process + output format (`#review`); priorities live in [Review guidelines](#review-guidelines) below.
 
 ## Workspace MCP config
 
@@ -70,7 +70,7 @@ npm test       # Vitest
 
 ## Review guidelines
 
-These guidelines drive **Codex** PR reviews (`@codex review`, or automatic reviews) and apply to every other review agent too. Codex reads this section per the [GitHub integration docs](https://developers.openai.com/codex/integrations/github), applying the closest `AGENTS.md` to each changed file. Full policy: [`.kiro/steering/review.md`](.kiro/steering/review.md).
+These guidelines drive **Codex** PR reviews (`@codex review`, or automatic reviews) and apply to every other review agent too. Codex reads this section per the [GitHub integration docs](https://developers.openai.com/codex/integrations/github), applying the closest `AGENTS.md` to each changed file. **This section is the single source of truth for review priorities** — the Kiro/Claude review process and output format live in [`.kiro/steering/review.md`](.kiro/steering/review.md), which extends (never restates) this checklist.
 
 **Match the depth of Claude's [code-review](https://github.com/anthropics/claude-code/blob/main/plugins/code-review/README.md) and [pr-review-toolkit](https://github.com/anthropics/claude-code/blob/main/plugins/pr-review-toolkit/README.md) plugins.** Do **not** stop after one or two findings: review every changed file in full and run all the lenses below before concluding.
 
@@ -101,6 +101,7 @@ These guidelines drive **Codex** PR reviews (`@codex review`, or automatic revie
 - Unbounded frame queues without `encodeQueueSize` backpressure; frame cache without LRU + `.close()` on eviction.
 - Effect chain run twice for preview vs export instead of sharing one processed texture.
 - Media objects or WebGPU handles leaking into `src/ui/`; missing `onCleanup` for rAF/listeners.
+- Unstable references causing unnecessary re-renders in the rAF clock loop.
 - Silent failures: swallowed errors, empty catch blocks, missing handling on critical paths.
 - Missing tests for timeline model, seek logic, or protocol types on non-trivial changes; tests that mock away the invariant under test.
 - Inaccurate/outdated comments, weak types that fail to encode invariants, and dead code.
