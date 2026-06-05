@@ -118,7 +118,7 @@ interface SetTrackSoloCommand {
 }
 
 export type WorkerCommand =
-  | { type: 'init'; canvas: OffscreenCanvas; sab: SharedArrayBuffer; audioSab: SharedArrayBuffer }
+  | { type: 'init'; canvas: OffscreenCanvas; sab: SharedArrayBuffer; audioSab?: SharedArrayBuffer | null }
   | { type: 'import'; file: File }
   | { type: 'play' }
   | { type: 'pause' }

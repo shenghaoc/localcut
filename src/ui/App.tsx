@@ -38,6 +38,8 @@ export function App() {
   const [exportError, setExportError] = createSignal<string | null>(null);
   const [isOffline, setIsOffline] = createSignal(!navigator.onLine);
   const [hasActiveSW, setHasActiveSW] = createSignal(false);
+  const [audioWarning, setAudioWarning] = createSignal<string | null>(null);
+  const [isDraggingFile, setIsDraggingFile] = createSignal(false);
 
   const {
     offlineReady: [offlineReady],
@@ -49,12 +51,15 @@ export function App() {
     },
   });
 
-  let sab: SharedArrayBuffer;
+  const sab =
+    typeof SharedArrayBuffer === 'function'
+      ? new SharedArrayBuffer(CLOCK_BUFFER_BYTES)
+      : null;
   let bridge: ReturnType<typeof createWorkerBridge> | null = null;
   let worker: Worker | null = null;
   let initSent = false;
   const audioEngine = new AudioEngine();
-  let audioReady: Promise<void> | null = null;
+  let audioReady: Promise<SharedArrayBuffer | null> | null = null;
 
   const selectedTrackMix = createMemo(() => {
     const clip = selectedClip();
@@ -69,9 +74,7 @@ export function App() {
     };
   });
 
-  const clock = createSharedClock(
-    (sab = new SharedArrayBuffer(CLOCK_BUFFER_BYTES)),
-  );
+  const clock = createSharedClock(sab);
 
   function handleState(msg: import('../protocol').WorkerStateMessage) {
     switch (msg.type) {
@@ -168,59 +171,43 @@ export function App() {
 
   async function sendInit(canvas: OffscreenCanvas) {
     if (initSent) return;
+    if (!sab) {
+      setFatalError(
+        'Main thread: SharedArrayBuffer is unavailable. SharedArrayBuffer requires a secure, cross-origin-isolated origin with COOP/COEP headers.',
+      );
+      return;
+    }
     initSent = true;
     const { bridge: b } = ensureWorker();
+    let audioSab: SharedArrayBuffer | null = null;
     if (!audioReady) {
       audioReady = audioEngine.init(sab);
     }
-    await audioReady;
-    const audioSab = audioEngine.getRingBuffer();
-    if (!audioSab) {
-      setStatusLine('Audio engine failed to initialize');
-      return;
+    try {
+      audioSab = await audioReady;
+      setAudioWarning(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setAudioWarning(`Audio disabled: ${message}`);
+      setStatusLine('Audio disabled · starting video pipeline');
     }
     b.send({ type: 'init', canvas, sab, audioSab }, [canvas]);
   }
 
-  async function pickFile(): Promise<File | null> {
-    if (typeof window.showOpenFilePicker === 'function') {
-      try {
-        const [handle] = await window.showOpenFilePicker!({
-          types: [
-            {
-              description: 'Video',
-              accept: { 'video/*': ['.mp4', '.mov', '.webm', '.m4v'] },
-            },
-          ],
-          multiple: false,
-        });
-        return await handle.getFile();
-      } catch (e) {
-        if (e instanceof DOMException && e.name === 'AbortError') return null;
-        throw e;
-      }
-    }
-    return new Promise((resolve) => {
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.accept = VIDEO_ACCEPT;
-      input.onchange = () => resolve(input.files?.[0] ?? null);
-      // Without this, cancelling the dialog never settles the promise and
-      // importMedia() would await forever, wedging all future imports.
-      input.oncancel = () => resolve(null);
-      input.click();
-    });
-  }
-
-  async function importMedia() {
-    const file = await pickFile();
-    if (!file) return;
+  function importMedia(file: File) {
     const { bridge: b } = ensureWorker();
     if (!initSent) {
       setStatusLine('Waiting for preview canvas…');
       return;
     }
     b.send({ type: 'import', file });
+  }
+
+  function handleImportInput(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    input.value = '';
+    if (file) importMedia(file);
   }
 
   function exportFileName(): string {
@@ -278,6 +265,7 @@ export function App() {
   }
 
   function onFileDrop(file: File) {
+    setIsDraggingFile(false);
     const { bridge: b } = ensureWorker();
     if (!initSent) {
       setStatusLine('Drop again after preview is ready');
@@ -306,9 +294,14 @@ export function App() {
 
     const onDragOver = (e: DragEvent) => {
       e.preventDefault();
+      setIsDraggingFile(true);
+    };
+    const onDragLeave = (e: DragEvent) => {
+      if (e.relatedTarget === null) setIsDraggingFile(false);
     };
     const onDrop = (e: DragEvent) => {
       e.preventDefault();
+      setIsDraggingFile(false);
       const file = e.dataTransfer?.files[0];
       if (
         file &&
@@ -318,11 +311,13 @@ export function App() {
       }
     };
     window.addEventListener('dragover', onDragOver);
+    window.addEventListener('dragleave', onDragLeave);
     window.addEventListener('drop', onDrop);
     onCleanup(() => {
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('dragover', onDragOver);
+      window.removeEventListener('dragleave', onDragLeave);
       window.removeEventListener('drop', onDrop);
       bridge?.send({ type: 'dispose' });
       audioEngine.dispose();
@@ -331,7 +326,7 @@ export function App() {
   });
 
   return (
-    <div class="app">
+    <div class={`app${isDraggingFile() ? ' is-dragging-file' : ''}`}>
       <Show when={fatalError()}>
         <div class="fatal-banner" role="alert">
           <strong>Cannot start editor</strong>
@@ -342,7 +337,8 @@ export function App() {
         <Toolbar
           metadata={metadata()}
           playing={clock.playing}
-          onImport={importMedia}
+          importAccept={VIDEO_ACCEPT}
+          onImportFile={importMedia}
           onPlay={() => {
             const t = clock.currentTime();
             void audioEngine.play(t);
@@ -353,6 +349,7 @@ export function App() {
             audioEngine.pause();
           }}
           onStep={(direction) => bridge?.send({ type: 'step', direction })}
+          disabled={!workerReady()}
           exportControl={
             <ExportDialog
               hasMedia={metadata() !== null}
@@ -368,6 +365,25 @@ export function App() {
         <main class="workspace">
           <section class="preview panel">
             <PreviewCanvas onOffscreenReady={sendInit} />
+            <Show when={!metadata() && !importing()}>
+              <div class="preview-empty">
+                <div>
+                  <p class="preview-empty-title">No source loaded</p>
+                  <p class="preview-empty-copy">Drop an MP4, MOV, or WebM here.</p>
+                </div>
+                <label class={`btn btn-primary import-picker${!workerReady() ? ' is-disabled' : ''}`}>
+                  Import
+                  <input
+                    class="import-picker-input"
+                    type="file"
+                    accept={VIDEO_ACCEPT}
+                    onChange={handleImportInput}
+                    disabled={!workerReady()}
+                    aria-label="Import media"
+                  />
+                </label>
+              </div>
+            </Show>
             <Show when={importing()}>
               <div class="preview-overlay">Importing…</div>
             </Show>
@@ -440,6 +456,11 @@ export function App() {
             <Show when={encodeFps()}>
               <span class="status-badge" title="Estimated encode throughput (session)">
                 Encode: {Math.round(encodeFps()!)} fps
+              </span>
+            </Show>
+            <Show when={audioWarning()}>
+              <span class="status-badge status-warn" title={audioWarning()!}>
+                Audio Disabled
               </span>
             </Show>
             <Show when={workerReady()}>

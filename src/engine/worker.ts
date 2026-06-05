@@ -178,7 +178,7 @@ function hasAudioTimeline(): boolean {
 }
 
 function getMasterTime(): number | null {
-  if (!clockView || !hasAudioTimeline()) return null;
+  if (!clockView || !audioRing || !hasAudioTimeline()) return null;
   if ((clockView[ClockIndex.PLAY_STATE] ?? 0) !== 1) return null;
   const t = clockView[ClockIndex.AUDIO_CLOCK];
   return Number.isFinite(t) ? t : null;
@@ -312,12 +312,12 @@ function writeTransport(currentTime: number, playing: boolean) {
 async function handleInit(
   canvas: OffscreenCanvas,
   sab: SharedArrayBuffer,
-  audioSab: SharedArrayBuffer,
+  audioSab?: SharedArrayBuffer | null,
 ) {
   assertCrossOriginIsolated('Pipeline worker');
   clockView = new Float64Array(sab);
   writeClockFull(0, 0, false);
-  audioRing = mapAudioRing(audioSab);
+  audioRing = audioSab ? mapAudioRing(audioSab) : null;
 
   // initGpu() resolves with an unavailableReason for expected failures, but shader
   // module / pipeline compilation can still throw; catch so the worker always posts
