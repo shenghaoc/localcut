@@ -12,8 +12,13 @@ const CLOCK_AUDIO = 3;
 class AudioPlaybackProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
-    const ringSab = options.processorOptions?.ringSab;
-    const clockSab = options.processorOptions?.clockSab;
+    const ringSab = options?.processorOptions?.ringSab;
+    const clockSab = options?.processorOptions?.clockSab;
+    if (!ringSab || !clockSab) {
+      this.initialized = false;
+      return;
+    }
+    this.initialized = true;
     this.header = new Int32Array(ringSab, 0, RING_HEADER_INTS);
     this.channels = Math.max(1, Atomics.load(this.header, RING_CHANNELS));
     this.capacityFrames = Atomics.load(this.header, RING_CAPACITY) || 48_000;
@@ -41,6 +46,7 @@ class AudioPlaybackProcessor extends AudioWorkletProcessor {
   }
 
   process(_inputs, outputs) {
+    if (!this.initialized) return false;
     this.syncGeneration();
     const output = outputs[0];
     if (!output || output.length === 0) return true;

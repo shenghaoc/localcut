@@ -247,6 +247,7 @@ async function pumpAudioOnce(): Promise<void> {
 }
 
 function startAudioPump(): void {
+  if (!audioRing) return;
   const gen = ++audioPumpGen;
   const loop = async () => {
     while (gen === audioPumpGen && playback?.isPlaying()) {

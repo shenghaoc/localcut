@@ -11,7 +11,7 @@ import {
 import { AUDIO_RING_BYTES } from '../engine/audio-ring';
 import { ClockIndex } from '../protocol';
 
-const WORKLET_URL = '/audio-playback.worklet.js';
+const WORKLET_URL = `${import.meta.env.BASE_URL}audio-playback.worklet.js`;
 
 export class AudioEngine {
   private context: AudioContext | null = null;
