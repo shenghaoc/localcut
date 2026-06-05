@@ -524,3 +524,24 @@ body {
 .status-ok {
   color: #6bcf8a;
 }
+
+.status-warn {
+  color: var(--danger);
+}
+
+button.status-badge {
+  background: var(--bg-elevated);
+  font: inherit;
+  cursor: pointer;
+}
+
+button.status-badge:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+button.status-badge:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+

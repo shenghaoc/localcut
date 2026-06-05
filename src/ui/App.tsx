@@ -1,4 +1,5 @@
 import { createMemo, createSignal, Show, onMount, onCleanup } from 'solid-js';
+import { useRegisterSW } from 'virtual:pwa-register/solid';
 import {
   assertCrossOriginIsolated,
   CLOCK_BUFFER_BYTES,
@@ -35,6 +36,18 @@ export function App() {
   const [exportProgress, setExportProgress] = createSignal<ExportProgress | null>(null);
   const [exportResult, setExportResult] = createSignal<string | null>(null);
   const [exportError, setExportError] = createSignal<string | null>(null);
+  const [isOffline, setIsOffline] = createSignal(!navigator.onLine);
+  const [hasActiveSW, setHasActiveSW] = createSignal(false);
+
+  const {
+    offlineReady: [offlineReady],
+    needRefresh: [needRefresh],
+    updateServiceWorker,
+  } = useRegisterSW({
+    onRegisterError(error) {
+      console.error('SW registration error', error);
+    },
+  });
 
   let sab: SharedArrayBuffer;
   let bridge: ReturnType<typeof createWorkerBridge> | null = null;
@@ -282,6 +295,15 @@ export function App() {
       setFatalError(e instanceof Error ? e.message : String(e));
     }
 
+    const handleOffline = () => setIsOffline(true);
+    const handleOnline = () => setIsOffline(false);
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
+
+    if ('serviceWorker' in navigator) {
+      setHasActiveSW(!!navigator.serviceWorker.controller);
+    }
+
     const onDragOver = (e: DragEvent) => {
       e.preventDefault();
     };
@@ -298,6 +320,8 @@ export function App() {
     window.addEventListener('dragover', onDragOver);
     window.addEventListener('drop', onDrop);
     onCleanup(() => {
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
       window.removeEventListener('dragover', onDragOver);
       window.removeEventListener('drop', onDrop);
       bridge?.send({ type: 'dispose' });
@@ -393,6 +417,21 @@ export function App() {
         <footer class="status-bar">
           <span>{statusLine()}</span>
           <span class="status-meta">
+            <Show when={needRefresh()}>
+              <button type="button" class="status-badge" onClick={() => updateServiceWorker(true)} title="Click to update app">
+                Update Available
+              </button>
+            </Show>
+            <Show when={(offlineReady() || hasActiveSW()) && !isOffline()}>
+              <span class="status-badge" title="App ready to work offline">
+                Ready Offline
+              </span>
+            </Show>
+            <Show when={isOffline()}>
+              <span class="status-badge status-warn" title="No internet connection">
+                Offline
+              </span>
+            </Show>
             <Show when={previewLabel()}>
               <span class="status-badge" title="Adaptive preview resolution">
                 Preview: {previewLabel()}
