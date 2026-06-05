@@ -1,22 +1,38 @@
 /// <reference lib="webworker" />
 import {
   assertCrossOriginIsolated,
+  ClockIndex,
   type TimelineTrackSnapshot,
   type WorkerCommand,
   type WorkerStateMessage,
 } from '../protocol';
 import {
   createEmptyTimeline,
+  DEFAULT_TRACK_MIX,
   getTimelineDuration,
   reorderClip,
   removeClip,
   resolveAt,
+  resolveAudioAt,
   splitClipAt,
   trimClip,
   setClipEffectParam,
+  setTrackGain,
+  setTrackMute,
+  setTrackSolo,
   defaultClipEffects,
   type Timeline,
 } from './timeline';
+import {
+  mapAudioRing,
+  ringFreeSamples,
+  writeRingPcm,
+  RingHeader,
+  RingState,
+  bumpRingGeneration,
+  resetRingPointers,
+  type AudioRingViews,
+} from './audio-ring';
 import { openMediaFile, type MediaInputHandle } from './media-io';
 import { initGpu, type PreviewRenderer } from './gpu';
 import {
@@ -39,6 +55,8 @@ let nextSourceId = 1;
 const sourceInputs = new Map<string, MediaInputHandle>();
 let frameCache: FrameCache | null = null;
 const FRAME_CACHE_BUDGET_BYTES = 64 * 1024 * 1024;
+let audioRing: AudioRingViews | null = null;
+let audioPumpGen = 0;
 
 function makeSourceId(): string {
   return `source-${nextSourceId++}`;
@@ -52,6 +70,9 @@ function postTimelineState() {
   const snapshot: TimelineTrackSnapshot[] = timeline.map((track) => ({
     id: track.id,
     type: track.type,
+    gain: track.gain,
+    muted: track.muted,
+    solo: track.solo,
     clips: track.clips.map((clip) => ({
       id: clip.id,
       sourceId: clip.sourceId,
@@ -93,6 +114,7 @@ function appendTrackForSource(handle: MediaInputHandle) {
   const nextTrack = {
     id: trackId,
     type: 'video' as const,
+    ...DEFAULT_TRACK_MIX,
     clips: [
       {
         id: `clip-${handle.sourceId}`,
@@ -106,6 +128,114 @@ function appendTrackForSource(handle: MediaInputHandle) {
   };
 
   timeline = [...timeline, nextTrack];
+}
+
+function appendAudioTrackForSource(handle: MediaInputHandle) {
+  if (!handle.audioSource || !handle.metadata.audio) return;
+  const trackId = `track-audio-${handle.sourceId}`;
+  if (timeline.some((track) => track.id === trackId)) return;
+
+  const start = getTimelineDuration(timeline);
+  const clipId = `clip-audio-${handle.sourceId}`;
+  const nextTrack = {
+    id: trackId,
+    type: 'audio' as const,
+    ...DEFAULT_TRACK_MIX,
+    clips: [
+      {
+        id: clipId,
+        sourceId: handle.sourceId,
+        start,
+        duration: handle.duration,
+        inPoint: 0,
+        effects: defaultClipEffects(),
+      },
+    ],
+  };
+  timeline = [...timeline, nextTrack];
+  void computeAndPostWaveform(handle, trackId, clipId);
+}
+
+async function computeAndPostWaveform(
+  handle: MediaInputHandle,
+  trackId: string,
+  clipId: string,
+) {
+  if (!handle.audioSource) return;
+  const peaks = await handle.audioSource.collectPeaks(30, 256);
+  post({ type: 'waveform-peaks', trackId, clipId, peaks });
+}
+
+function hasAudioTimeline(): boolean {
+  return timeline.some((track) => track.type === 'audio' && track.clips.length > 0);
+}
+
+function getMasterTime(): number | null {
+  if (!clockView || !hasAudioTimeline()) return null;
+  if ((clockView[ClockIndex.PLAY_STATE] ?? 0) !== 1) return null;
+  const t = clockView[ClockIndex.AUDIO_CLOCK];
+  return Number.isFinite(t) ? t : null;
+}
+
+function trackAudible(trackId: string): number {
+  const track = timeline.find((t) => t.id === trackId);
+  if (!track || track.muted) return 0;
+  const anySolo = timeline.some((t) => t.solo);
+  if (anySolo && !track.solo) return 0;
+  return track.gain;
+}
+
+async function pumpAudioOnce(): Promise<void> {
+  if (!audioRing || !clockView) return;
+  if (Atomics.load(audioRing.header, RingHeader.STATE) !== RingState.PLAYING) return;
+  const freeFrames = ringFreeSamples(audioRing);
+  if (freeFrames < 256) return;
+
+  const timelineTime = clockView[ClockIndex.AUDIO_CLOCK] ?? clockView[0] ?? 0;
+  const resolved = resolveAudioAt(timeline, timelineTime);
+  if (!resolved) return;
+  const handle = sourceInputs.get(resolved.clip.sourceId);
+  if (!handle?.audioSource) return;
+
+  const channels = Math.max(1, handle.audioChannels);
+  const pcm = await handle.audioSource.pcmAt(resolved.sourceTime, channels);
+  if (!pcm) return;
+
+  const gain = trackAudible(resolved.trackId);
+  if (gain <= 0) return;
+  if (gain !== 1) {
+    for (let i = 0; i < pcm.length; i += 1) pcm[i] = (pcm[i] ?? 0) * gain;
+  }
+  writeRingPcm(audioRing, pcm);
+}
+
+function startAudioPump(): void {
+  const gen = ++audioPumpGen;
+  const loop = async () => {
+    while (gen === audioPumpGen && playback?.isPlaying()) {
+      try {
+        await pumpAudioOnce();
+      } catch {
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 4));
+    }
+  };
+  void loop();
+}
+
+function stopAudioPump(): void {
+  audioPumpGen += 1;
+}
+
+function resetAudioRingForSeek(time: number): void {
+  if (!audioRing) return;
+  bumpRingGeneration(audioRing);
+  resetRingPointers(audioRing);
+  if (clockView) {
+    clockView[ClockIndex.AUDIO_CLOCK] = time;
+    clockView[ClockIndex.CURRENT_TIME] = time;
+  }
 }
 
 function ensureClockAndTimeline() {
@@ -139,10 +269,15 @@ function writeTransport(currentTime: number, playing: boolean) {
   clockView[2] = playing ? 1 : 0;
 }
 
-async function handleInit(canvas: OffscreenCanvas, sab: SharedArrayBuffer) {
+async function handleInit(
+  canvas: OffscreenCanvas,
+  sab: SharedArrayBuffer,
+  audioSab: SharedArrayBuffer,
+) {
   assertCrossOriginIsolated('Pipeline worker');
   clockView = new Float64Array(sab);
   writeClockFull(0, 0, false);
+  audioRing = mapAudioRing(audioSab);
 
   // initGpu() resolves with an unavailableReason for expected failures, but shader
   // module / pipeline compilation can still throw; catch so the worker always posts
@@ -281,6 +416,7 @@ async function handleImport(file: File) {
     }
 
     appendTrackForSource(handle);
+    appendAudioTrackForSource(handle);
     ensureClockAndTimeline();
 
     post({ type: 'import-complete', metadata: handle.metadata });
@@ -351,6 +487,21 @@ function handleSetEffectParam(cmd: Extract<WorkerCommand, { type: 'set-effect-pa
   playback?.refresh();
 }
 
+function handleSetTrackGain(cmd: Extract<WorkerCommand, { type: 'set-track-gain' }>) {
+  timeline = setTrackGain(timeline, cmd.trackId, cmd.gain);
+  postTimelineState();
+}
+
+function handleSetTrackMute(cmd: Extract<WorkerCommand, { type: 'set-track-mute' }>) {
+  timeline = setTrackMute(timeline, cmd.trackId, cmd.muted);
+  postTimelineState();
+}
+
+function handleSetTrackSolo(cmd: Extract<WorkerCommand, { type: 'set-track-solo' }>) {
+  timeline = setTrackSolo(timeline, cmd.trackId, cmd.solo);
+  postTimelineState();
+}
+
 function handleTrim(cmd: Extract<WorkerCommand, { type: 'trim-clip' }>) {
   // Look up the underlying source's duration so trimClip can bound an outward
   // extension. Without it, trimClip would refuse to grow the clip past its
@@ -396,6 +547,7 @@ function setupPlayback() {
       const message = e instanceof Error ? e.message : String(e);
       post({ type: 'error', message: `Playback error: ${message}` });
     },
+    getMasterTime,
   });
 
   const clamped = Math.min(priorTime, getTimelineDuration(timeline));
@@ -428,30 +580,49 @@ async function runProbeOnce(handle: MediaInputHandle) {
   if (probe) post({ type: 'probe-result', probe });
 }
 
+function handlePlay() {
+  playback?.play();
+  if (audioRing) Atomics.store(audioRing.header, RingHeader.STATE, RingState.PLAYING);
+  startAudioPump();
+}
+
+function handlePause() {
+  playback?.pause();
+  stopAudioPump();
+  if (audioRing) Atomics.store(audioRing.header, RingHeader.STATE, RingState.PAUSED);
+}
+
+function handleSeek(time: number) {
+  resetAudioRingForSeek(time);
+  playback?.seek(time);
+}
+
 function handleDispose() {
+  stopAudioPump();
   teardownMedia();
   renderer?.destroy();
   renderer = null;
   clockView = null;
+  audioRing = null;
 }
 
 self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
   const cmd = event.data;
   switch (cmd.type) {
     case 'init':
-      void handleInit(cmd.canvas, cmd.sab);
+      void handleInit(cmd.canvas, cmd.sab, cmd.audioSab);
       break;
     case 'import':
       void handleImport(cmd.file);
       break;
     case 'play':
-      playback?.play();
+      handlePlay();
       break;
     case 'pause':
-      playback?.pause();
+      handlePause();
       break;
     case 'seek':
-      playback?.seek(cmd.time);
+      handleSeek(cmd.time);
       break;
     case 'step':
       playback?.step(cmd.direction);
@@ -471,7 +642,18 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
     case 'set-effect-param':
       handleSetEffectParam(cmd);
       break;
+    case 'set-track-gain':
+      handleSetTrackGain(cmd);
+      break;
+    case 'set-track-mute':
+      handleSetTrackMute(cmd);
+      break;
+    case 'set-track-solo':
+      handleSetTrackSolo(cmd);
+      break;
     case 'dispose':
+      handleDispose();
+      break;
       handleDispose();
       break;
     default: {

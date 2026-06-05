@@ -1,9 +1,10 @@
-import { createSignal, Show, onMount, onCleanup } from 'solid-js';
+import { createMemo, createSignal, Show, onMount, onCleanup } from 'solid-js';
 import {
   assertCrossOriginIsolated,
   CLOCK_BUFFER_BYTES,
   type MediaMetadata,
   type TimelineTrackSnapshot,
+  type WaveformPeaks,
 } from '../protocol';
 import { createSharedClock } from './clock';
 import { createWorkerBridge } from './worker-bridge';
@@ -11,6 +12,7 @@ import { PreviewCanvas } from './PreviewCanvas';
 import { Toolbar } from './Toolbar';
 import { Timeline } from './Timeline';
 import { Inspector, type SelectedClip } from './Inspector';
+import { AudioEngine } from './audio-engine';
 import PipelineWorker from '../engine/worker.ts?worker';
 
 const VIDEO_ACCEPT = 'video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm';
@@ -25,11 +27,27 @@ export function App() {
   const [encodeFps, setEncodeFps] = createSignal<number | null>(null);
   const [timeline, setTimeline] = createSignal<TimelineTrackSnapshot[]>([]);
   const [selectedClip, setSelectedClip] = createSignal<SelectedClip | null>(null);
+  const [waveformPeaks, setWaveformPeaks] = createSignal<Record<string, WaveformPeaks>>({});
 
   let sab: SharedArrayBuffer;
   let bridge: ReturnType<typeof createWorkerBridge> | null = null;
   let worker: Worker | null = null;
   let initSent = false;
+  const audioEngine = new AudioEngine();
+  let audioReady: Promise<void> | null = null;
+
+  const selectedTrackMix = createMemo(() => {
+    const clip = selectedClip();
+    if (!clip) return null;
+    const track = timeline().find((t) => t.id === clip.trackId);
+    if (!track || track.type !== 'audio') return null;
+    return {
+      trackId: track.id,
+      gain: track.gain,
+      muted: track.muted,
+      solo: track.solo,
+    };
+  });
 
   const clock = createSharedClock(
     (sab = new SharedArrayBuffer(CLOCK_BUFFER_BYTES)),
@@ -62,6 +80,11 @@ export function App() {
         break;
       case 'timeline-state':
         setTimeline(msg.timeline);
+        audioEngine.syncTracks(
+          msg.timeline
+            .filter((t) => t.type === 'audio')
+            .map((t) => ({ trackId: t.id, gain: t.gain, muted: t.muted, solo: t.solo })),
+        );
         setSelectedClip((prev) => {
           if (!prev) return prev;
           for (const track of msg.timeline) {
@@ -79,6 +102,12 @@ export function App() {
       case 'probe-result':
         setEncodeFps(msg.probe.encodeFps);
         break;
+      case 'waveform-peaks':
+        setWaveformPeaks((prev) => ({
+          ...prev,
+          [`${msg.trackId}:${msg.clipId}`]: msg.peaks,
+        }));
+        break;
       case 'import-error':
       case 'error':
         setImporting(false);
@@ -94,11 +123,20 @@ export function App() {
     return { worker, bridge };
   }
 
-  function sendInit(canvas: OffscreenCanvas) {
+  async function sendInit(canvas: OffscreenCanvas) {
     if (initSent) return;
     const { bridge: b } = ensureWorker();
+    if (!audioReady) {
+      audioReady = audioEngine.init(sab);
+    }
+    await audioReady;
+    const audioSab = audioEngine.getRingBuffer();
+    if (!audioSab) {
+      setStatusLine('Audio engine failed to initialize');
+      return;
+    }
     initSent = true;
-    b.send({ type: 'init', canvas, sab }, [canvas]);
+    b.send({ type: 'init', canvas, sab, audioSab }, [canvas]);
   }
 
   async function pickFile(): Promise<File | null> {
@@ -179,6 +217,7 @@ export function App() {
       window.removeEventListener('dragover', onDragOver);
       window.removeEventListener('drop', onDrop);
       bridge?.send({ type: 'dispose' });
+      audioEngine.dispose();
       worker?.terminate();
     });
   });
@@ -196,8 +235,15 @@ export function App() {
           metadata={metadata()}
           playing={clock.playing}
           onImport={importMedia}
-          onPlay={() => bridge?.send({ type: 'play' })}
-          onPause={() => bridge?.send({ type: 'pause' })}
+          onPlay={() => {
+            const t = clock.currentTime();
+            void audioEngine.play(t);
+            bridge?.send({ type: 'play' });
+          }}
+          onPause={() => {
+            bridge?.send({ type: 'pause' });
+            audioEngine.pause();
+          }}
           onStep={(direction) => bridge?.send({ type: 'step', direction })}
         />
         <main class="workspace">
@@ -210,9 +256,22 @@ export function App() {
           <Inspector
             metadata={metadata()}
             selectedClip={selectedClip()}
+            selectedTrackMix={selectedTrackMix()}
             onEffectParam={(trackId, clipId, key, value) =>
               bridge?.send({ type: 'set-effect-param', trackId, clipId, key, value })
             }
+            onTrackGain={(trackId, gain) => {
+              audioEngine.setTrackGain(trackId, gain);
+              bridge?.send({ type: 'set-track-gain', trackId, gain });
+            }}
+            onTrackMute={(trackId, muted) => {
+              audioEngine.setTrackMute(trackId, muted);
+              bridge?.send({ type: 'set-track-mute', trackId, muted });
+            }}
+            onTrackSolo={(trackId, solo) => {
+              audioEngine.setTrackSolo(trackId, solo);
+              bridge?.send({ type: 'set-track-solo', trackId, solo });
+            }}
           />
         </main>
         <Timeline
@@ -221,7 +280,11 @@ export function App() {
           frameRate={() => metadata()?.video?.frameRate ?? null}
           hasMedia={metadata() !== null}
           timeline={timeline}
-          onSeek={(t) => bridge?.send({ type: 'seek', time: t })}
+          waveformPeaks={() => waveformPeaks()}
+          onSeek={(t) => {
+            void audioEngine.seek(t);
+            bridge?.send({ type: 'seek', time: t });
+          }}
           onSplit={(trackId, _clipId, time) => bridge?.send({ type: 'split', trackId, time })}
           onDelete={(trackId, clipId) => bridge?.send({ type: 'delete-clip', trackId, clipId })}
           onMoveClip={(fromTrackId, clipId, toTrackId, toIndex) =>

@@ -18,7 +18,16 @@ export interface TimelineTrack {
   id: string;
   type: 'video' | 'audio';
   clips: TimelineClip[];
+  gain: number;
+  muted: boolean;
+  solo: boolean;
 }
+
+export const DEFAULT_TRACK_MIX = {
+  gain: 1,
+  muted: false,
+  solo: false,
+} as const;
 
 export type Timeline = TimelineTrack[];
 
@@ -31,8 +40,15 @@ export interface ResolveResult {
 function cloneTimeline(timeline: Timeline): Timeline {
   return timeline.map((track) => ({
     ...track,
+    gain: track.gain,
+    muted: track.muted,
+    solo: track.solo,
     clips: track.clips.map((clip) => ({ ...clip, effects: { ...clip.effects } })),
   }));
+}
+
+function findTrack(timeline: Timeline, trackId: string): TimelineTrack | null {
+  return timeline.find((track) => track.id === trackId) ?? null;
 }
 
 function finite(value: number): boolean {
@@ -70,12 +86,14 @@ export function getTimelineDuration(timeline: Timeline): number {
   return Math.max(0, end);
 }
 
-/** Finds the owning clip and its source offset for a timeline timestamp. */
-export function resolveAt(timeline: Timeline, time: number): ResolveResult | null {
+function resolveOnTrackType(
+  timeline: Timeline,
+  time: number,
+  type: TimelineTrack['type'],
+): ResolveResult | null {
   if (!finite(time) || time < 0) return null;
-
   for (const track of timeline) {
-    if (track.type !== 'video') continue;
+    if (track.type !== type) continue;
     for (const clip of track.clips) {
       if (!isInClip(time, clip)) continue;
       return {
@@ -86,6 +104,16 @@ export function resolveAt(timeline: Timeline, time: number): ResolveResult | nul
     }
   }
   return null;
+}
+
+/** Finds the owning clip and its source offset for a timeline timestamp. */
+export function resolveAt(timeline: Timeline, time: number): ResolveResult | null {
+  return resolveOnTrackType(timeline, time, 'video');
+}
+
+/** Finds the owning audio clip at a timeline timestamp. */
+export function resolveAudioAt(timeline: Timeline, time: number): ResolveResult | null {
+  return resolveOnTrackType(timeline, time, 'audio');
 }
 
 function newId(prefix: string): string {
@@ -328,6 +356,45 @@ export function setClipEffectParam(
 
 export function defaultClipEffects(): ClipEffectParams {
   return { ...DEFAULT_CLIP_EFFECTS };
+}
+
+function applyTrackMix(
+  timeline: Timeline,
+  trackId: string,
+  patch: Partial<Pick<TimelineTrack, 'gain' | 'muted' | 'solo'>>,
+): Timeline {
+  const track = findTrack(timeline, trackId);
+  if (!track) return timeline;
+  const next = cloneTimeline(timeline);
+  const idx = next.findIndex((t) => t.id === trackId);
+  const current = next[idx]!;
+  const updated = { ...current, ...patch };
+  if (patch.solo === true) {
+    for (const t of next) {
+      if (t.id !== trackId) t.solo = false;
+    }
+  }
+  next[idx] = updated;
+  return next;
+}
+
+export function setTrackGain(timeline: Timeline, trackId: string, gain: number): Timeline {
+  if (!finite(gain) || gain < 0) return timeline;
+  const track = findTrack(timeline, trackId);
+  if (!track || track.gain === gain) return timeline;
+  return applyTrackMix(timeline, trackId, { gain });
+}
+
+export function setTrackMute(timeline: Timeline, trackId: string, muted: boolean): Timeline {
+  const track = findTrack(timeline, trackId);
+  if (!track || track.muted === muted) return timeline;
+  return applyTrackMix(timeline, trackId, { muted });
+}
+
+export function setTrackSolo(timeline: Timeline, trackId: string, solo: boolean): Timeline {
+  const track = findTrack(timeline, trackId);
+  if (!track || track.solo === solo) return timeline;
+  return applyTrackMix(timeline, trackId, { solo });
 }
 
 export { normalizeClipEffects, type ClipEffectParams };

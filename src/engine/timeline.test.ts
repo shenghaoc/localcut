@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createEmptyTimeline,
+  DEFAULT_TRACK_MIX,
   defaultClipEffects,
   getTimelineDuration,
   removeClip,
@@ -27,6 +28,7 @@ describe('timeline', () => {
       {
         id: 'video-track',
         type: 'video',
+        ...DEFAULT_TRACK_MIX,
         clips: [
           clip({ id: 'a', sourceId: 'src-1', start: 2, duration: 3, inPoint: 0 }),
           clip({ id: 'b', sourceId: 'src-1', start: 10, duration: 4, inPoint: 1 }),
@@ -41,6 +43,7 @@ describe('timeline', () => {
       {
         id: 'video-track',
         type: 'video',
+        ...DEFAULT_TRACK_MIX,
         clips: [
           clip({ id: 'a', sourceId: 'src-1', start: 1, duration: 2, inPoint: 10 }),
           clip({ id: 'b', sourceId: 'src-1', start: 5, duration: 3, inPoint: 20 }),
@@ -59,6 +62,7 @@ describe('timeline', () => {
       {
         id: 'video-track',
         type: 'video',
+        ...DEFAULT_TRACK_MIX,
         clips: [clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 1, inPoint: 0 })],
       },
     ];
@@ -72,6 +76,7 @@ describe('timeline', () => {
       {
         id: 'video-track',
         type: 'video',
+        ...DEFAULT_TRACK_MIX,
         clips: [clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 10, inPoint: 100 })],
       },
     ];
@@ -96,6 +101,7 @@ describe('timeline', () => {
       {
         id: 'video-track',
         type: 'video',
+        ...DEFAULT_TRACK_MIX,
         clips: [clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 10, inPoint: 0 })],
       },
     ];
@@ -108,6 +114,7 @@ describe('timeline', () => {
       {
         id: 'video-track',
         type: 'video',
+        ...DEFAULT_TRACK_MIX,
         clips: [
           clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 2, inPoint: 0 }),
           clip({ id: 'b', sourceId: 'src-1', start: 2, duration: 2, inPoint: 2 }),
@@ -125,6 +132,7 @@ describe('timeline', () => {
       {
         id: 'video-track',
         type: 'video',
+        ...DEFAULT_TRACK_MIX,
         clips: [
           clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 2, inPoint: 0 }),
           clip({ id: 'b', sourceId: 'src-1', start: 2, duration: 2, inPoint: 2 }),
@@ -133,6 +141,7 @@ describe('timeline', () => {
       {
         id: 'video-track-2',
         type: 'video',
+        ...DEFAULT_TRACK_MIX,
         clips: [
           clip({ id: 'c', sourceId: 'src-2', start: 0, duration: 3, inPoint: 0 }),
           clip({ id: 'd', sourceId: 'src-2', start: 3, duration: 1, inPoint: 3 }),
@@ -158,6 +167,7 @@ describe('timeline', () => {
       {
         id: 'video-track',
         type: 'video',
+        ...DEFAULT_TRACK_MIX,
         clips: [
           clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 1, inPoint: 0 }),
           clip({ id: 'b', sourceId: 'src-1', start: 1, duration: 1, inPoint: 0 }),
@@ -177,6 +187,7 @@ describe('timeline', () => {
       {
         id: 'video-track',
         type: 'video',
+        ...DEFAULT_TRACK_MIX,
         clips: [clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 10, inPoint: 0 })],
       },
     ];
@@ -191,6 +202,7 @@ describe('timeline', () => {
       {
         id: 'video-track',
         type: 'video',
+        ...DEFAULT_TRACK_MIX,
         clips: [clip({ id: 'a', sourceId: 'src-1', start: 1, duration: 10, inPoint: 100 })],
       },
     ];
@@ -215,6 +227,7 @@ describe('timeline', () => {
       {
         id: 'video-track',
         type: 'video',
+        ...DEFAULT_TRACK_MIX,
         clips: [clip({ id: 'a', sourceId: 'src-1', start: 5, duration: 5, inPoint: 100 })],
       },
     ];
@@ -228,6 +241,7 @@ describe('timeline', () => {
       {
         id: 'video-track',
         type: 'video',
+        ...DEFAULT_TRACK_MIX,
         clips: [clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 2 })],
       },
     ];
@@ -239,6 +253,7 @@ describe('timeline', () => {
       {
         id: 'video-track',
         type: 'video',
+        ...DEFAULT_TRACK_MIX,
         clips: [clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 10 })],
       },
     ];
@@ -252,6 +267,7 @@ describe('timeline', () => {
       {
         id: 'video-track',
         type: 'video',
+        ...DEFAULT_TRACK_MIX,
         clips: [
           clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 0 }),
           clip({ id: 'b', sourceId: 'src-1', start: 8, duration: 2, inPoint: 0 }),
@@ -272,6 +288,7 @@ describe('timeline', () => {
       {
         id: 'video-track',
         type: 'video',
+        ...DEFAULT_TRACK_MIX,
         clips: [
           clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 0 }),
           clip({ id: 'b', sourceId: 'src-1', start: 8, duration: 5, inPoint: 10 }),
@@ -292,6 +309,7 @@ describe('timeline', () => {
       {
         id: 'video-track',
         type: 'video',
+        ...DEFAULT_TRACK_MIX,
         clips: [clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 10 })],
       },
     ];
@@ -303,6 +321,7 @@ describe('timeline', () => {
       {
         id: 'video-track',
         type: 'video',
+        ...DEFAULT_TRACK_MIX,
         clips: [clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 0 })],
       },
     ];
@@ -315,6 +334,7 @@ describe('timeline', () => {
       {
         id: 'video-track',
         type: 'video',
+        ...DEFAULT_TRACK_MIX,
         clips: [clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 0, effects: custom })],
       },
     ];
@@ -331,6 +351,7 @@ describe('timeline', () => {
       {
         id: 'video-track',
         type: 'video',
+        ...DEFAULT_TRACK_MIX,
         clips: [clip({ id: 'a', sourceId: 'src-1', start: 1, duration: 10, inPoint: 100 })],
       },
     ];

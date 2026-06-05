@@ -1,4 +1,6 @@
-import { type TimelineClipSnapshot as ProtocolTimelineClip } from '../protocol';
+import { Show } from 'solid-js';
+import { type TimelineClipSnapshot as ProtocolTimelineClip, type WaveformPeaks } from '../protocol';
+import { Waveform } from './Waveform';
 
 interface TimelineClipProps {
   trackId: string;
@@ -10,6 +12,8 @@ interface TimelineClipProps {
   onMoveStart?: (trackId: string, clipId: string, event: DragEvent) => void;
   selected?: boolean;
   onSelect?: () => void;
+  peaks?: WaveformPeaks | null;
+  isAudio?: boolean;
 }
 
 const EDGE_HANDLE_PX = 10;
@@ -43,6 +47,8 @@ export function TimelineClip(props: TimelineClipProps) {
   // never reflect a move/trim/duration change. Evaluate inside the tracking context.
   const left = () => safePercent(props.clip.start, props.totalDuration);
   const width = () => safePercent(props.clip.duration, props.totalDuration);
+  const waveformWidth = () =>
+    Math.max(24, Math.floor((props.clip.duration / Math.max(props.totalDuration, 1)) * 900));
   const dragText = () => `${props.clip.id} (${props.clip.sourceId})`;
   let trimDebounce: ReturnType<typeof setTimeout> | null = null;
   let pendingTrimTime = props.clip.start;
@@ -154,6 +160,11 @@ export function TimelineClip(props: TimelineClipProps) {
       onDblClick={onSplit}
     >
       <span class="timeline-clip-inner">
+        <Show when={props.isAudio && props.peaks}>
+          {(peaks) => (
+            <Waveform peaks={peaks()} width={waveformWidth()} height={24} />
+          )}
+        </Show>
         {props.clip.duration > 0.2 ? <span class="timeline-clip-id">{props.clip.id}</span> : null}
         <span class="timeline-clip-left-handle" />
         <span class="timeline-clip-right-handle" />

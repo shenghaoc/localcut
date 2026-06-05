@@ -1,5 +1,6 @@
-import { BlobSource, Input, MP4, QTFF, VideoSampleSink, WEBM } from 'mediabunny';
+import { AudioSampleSink, BlobSource, Input, MP4, QTFF, VideoSampleSink, WEBM } from 'mediabunny';
 import type { MediaMetadata } from '../protocol';
+import { SequentialAudioSource } from './audio-source';
 import { SequentialFrameSource } from './frame-source';
 
 /** Formats included in the bundle (tree-shaken). */
@@ -13,6 +14,10 @@ export interface MediaInputHandle {
   metadata: MediaMetadata;
   /** Sequential decoded-frame source for the primary video track; null if none/undecodable. */
   frameSource: SequentialFrameSource | null;
+  /** Sequential decoded-audio source; null if none/undecodable. */
+  audioSource: SequentialAudioSource | null;
+  audioChannels: number;
+  audioSampleRate: number;
   /** Source display dimensions (after rotation/aspect), or 0 when no video. */
   displayWidth: number;
   displayHeight: number;
@@ -78,13 +83,23 @@ export async function openMediaFile(file: File, sourceId: string): Promise<Media
     }
 
     let audio: MediaMetadata['audio'] = null;
+    let audioSource: SequentialAudioSource | null = null;
+    let audioChannels = 2;
+    let audioSampleRate = 48_000;
     if (audioTrack) {
+      const canDecodeAudio = await audioTrack.canDecode();
+      audioChannels = await audioTrack.getNumberOfChannels();
+      audioSampleRate = await audioTrack.getSampleRate();
       audio = {
         codec: await audioTrack.getCodecParameterString(),
-        channels: await audioTrack.getNumberOfChannels(),
-        sampleRate: await audioTrack.getSampleRate(),
-        canDecode: await audioTrack.canDecode(),
+        channels: audioChannels,
+        sampleRate: audioSampleRate,
+        canDecode: canDecodeAudio,
       };
+      if (canDecodeAudio) {
+        const sink = new AudioSampleSink(audioTrack);
+        audioSource = new SequentialAudioSource(sink);
+      }
     }
 
     const metadata: MediaMetadata = {
@@ -100,12 +115,16 @@ export async function openMediaFile(file: File, sourceId: string): Promise<Media
       sourceId,
       metadata,
       frameSource,
+      audioSource,
+      audioChannels,
+      audioSampleRate,
       displayWidth,
       displayHeight,
       frameRate,
       duration,
       dispose: () => {
         frameSource?.reset();
+        audioSource?.dispose();
         input.dispose();
       },
     };

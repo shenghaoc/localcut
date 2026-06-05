@@ -1,6 +1,6 @@
 import { createSignal, onCleanup } from 'solid-js';
 
-/** Layout: [0] currentTime, [1] duration, [2] playState (0 paused, 1 playing). */
+/** Layout: [0] currentTime, [1] duration, [2] playState, [3] audioClock. */
 export function createSharedClock(sab: SharedArrayBuffer) {
   const view = new Float64Array(sab);
   const [currentTime, setCurrentTime] = createSignal(0);

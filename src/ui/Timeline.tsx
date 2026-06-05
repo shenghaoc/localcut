@@ -5,6 +5,7 @@ import {
   type ClipEffectParamsSnapshot,
   type TimelineTrackSnapshot as ProtocolTimelineTrack,
   type TimelineClipSnapshot as ProtocolTimelineClip,
+  type WaveformPeaks,
 } from '../protocol';
 
 interface TimelineProps {
@@ -26,6 +27,7 @@ interface TimelineProps {
   onTrim: (trackId: string, clipId: string, edge: 'in' | 'out', time: number) => void;
   selectedClipId: string | null;
   onSelectClip: (trackId: string, clipId: string, effects: ClipEffectParamsSnapshot) => void;
+  waveformPeaks?: () => Record<string, WaveformPeaks>;
 }
 
 const DEFAULT_FPS = 30;
@@ -113,6 +115,8 @@ export function Timeline(props: TimelineProps) {
                       clip={clip}
                       totalDuration={props.duration()}
                       selected={props.selectedClipId === clip.id}
+                      isAudio={track.type === 'audio'}
+                      peaks={props.waveformPeaks?.()[`${track.id}:${clip.id}`] ?? null}
                       onSplit={props.onSplit}
                       onDelete={props.onDelete}
                       onTrim={props.onTrim}

@@ -20,5 +20,6 @@
     "jsxImportSource": "solid-js",
     "types": ["vite/client", "@webgpu/types"]
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/ui/audio-playback.worklet.ts"]
 }
