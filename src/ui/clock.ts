@@ -18,10 +18,8 @@ export function createSharedClock(sab: SharedArrayBuffer) {
 
   onCleanup(() => cancelAnimationFrame(rafId));
 
-  function setDurationMain(seconds: number) {
-    view[1] = seconds;
-    setDuration(seconds);
-  }
-
-  return { currentTime, duration, playing, setDurationMain, view };
+  // The worker is the sole writer of the clock buffer; the main thread only
+  // reads (here, via rAF). Duration is published by the worker on import and
+  // surfaces through the `duration` signal above — no main-thread SAB writes.
+  return { currentTime, duration, playing };
 }

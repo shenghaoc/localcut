@@ -43,7 +43,8 @@ export function App() {
       case 'import-complete':
         setImporting(false);
         setMetadata(msg.metadata);
-        clock.setDurationMain(msg.metadata.duration);
+        // Duration is written to the shared clock by the worker; the rAF reader
+        // in createSharedClock() surfaces it. Main thread never writes the SAB.
         setStatusLine(`Loaded ${msg.metadata.fileName}`);
         break;
       case 'import-error':
@@ -91,6 +92,9 @@ export function App() {
       input.type = 'file';
       input.accept = VIDEO_ACCEPT;
       input.onchange = () => resolve(input.files?.[0] ?? null);
+      // Without this, cancelling the dialog never settles the promise and
+      // importMedia() would await forever, wedging all future imports.
+      input.oncancel = () => resolve(null);
       input.click();
     });
   }
