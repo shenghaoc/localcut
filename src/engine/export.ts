@@ -21,15 +21,14 @@ import {
   type TimelineTrack,
 } from './timeline';
 
-/** Mediabunny's WebCodecs sources throttle at encodeQueueSize >= 4; keep the Phase 6 bound explicit. */
-export const EXPORT_QUEUE_LIMIT = 4;
 const AUDIO_BLOCK_FRAMES = 1024;
+const EXPORT_INTERLEAVE_SECONDS = 2;
 const MAX_EXPORT_WIDTH = 1920;
 const MAX_EXPORT_HEIGHT = 1080;
 const MP4_CHUNK_BYTES = 4 * 1024 * 1024;
 const DEFAULT_EXPORT_FPS = 30;
 const AAC_CODEC = 'mp4a.40.2';
-const H264_CODEC = 'avc1.42001f';
+const H264_CODEC = 'avc1.640028';
 
 export class ExportCancelledError extends Error {
   constructor() {
@@ -70,7 +69,7 @@ export interface TimelineExportResult {
 }
 
 function even(value: number): number {
-  return Math.max(2, Math.round(value / 2) * 2);
+  return Math.max(2, Math.floor(value / 2) * 2);
 }
 
 export function deriveExportSize(sourceWidth: number, sourceHeight: number): { width: number; height: number } {
@@ -168,6 +167,22 @@ export function buildExportPlan(
   const { width, height } = deriveExportSize(videoHandle.displayWidth, videoHandle.displayHeight);
   const audioHandle = firstAudioHandle(timeline, sources);
   const estimatedFps = estimatedEncodeFps(probe, preset);
+  const audioSampleRate = audioHandle?.audioSampleRate ?? 48_000;
+
+  if (audioHandle) {
+    for (const track of timeline) {
+      if (track.type !== 'audio' || !trackIsAudible(track, timeline)) continue;
+      for (const clip of track.clips) {
+        const handle = sources.get(clip.sourceId);
+        if (handle?.audioSource && handle.audioSampleRate !== audioSampleRate) {
+          throw new Error(
+            `Audio source "${clip.sourceId}" has sample rate ${handle.audioSampleRate} Hz ` +
+              `but export target is ${audioSampleRate} Hz. Resampling is not supported.`,
+          );
+        }
+      }
+    }
+  }
 
   return {
     preset,
@@ -178,7 +193,7 @@ export function buildExportPlan(
     totalFrames: Math.max(1, Math.ceil(duration * frameRate)),
     videoBitrate: videoBitrateForPreset(preset, width, height),
     audioBitrate: preset === 'quality' ? 192_000 : 128_000,
-    audioSampleRate: audioHandle?.audioSampleRate ?? 48_000,
+    audioSampleRate,
     audioChannels: Math.min(2, Math.max(1, audioHandle?.audioChannels ?? 2)),
     hasAudio: audioHandle !== null,
     estimatedEncodeFps: estimatedFps,
@@ -327,7 +342,7 @@ function makeProgress(
     doneFrames,
     totalFrames: plan.totalFrames,
     percent: plan.totalFrames > 0 ? Math.min(1, doneFrames / plan.totalFrames) : 1,
-    etaSeconds: phase === 'finalizing'
+    etaSeconds: phase !== 'video'
       ? null
       : estimateEtaSeconds(plan.totalFrames, doneFrames, probe, plan.preset),
     elapsedSeconds: (performance.now() - startedAt) / 1000,
@@ -335,19 +350,22 @@ function makeProgress(
   };
 }
 
-async function encodeVideo(
+async function encodeVideoRange(
   options: TimelineExportOptions,
   plan: ExportPlan,
   videoSource: VideoSampleSource,
   startedAt: number,
+  startFrame: number,
+  endFrame: number,
 ): Promise<void> {
   const { timeline, sources, renderer, signal, throughputProbe, onProgress } = options;
   renderer.setPreviewSize(plan.width, plan.height);
 
   const frameDuration = 1 / plan.frameRate;
   let lastReport = 0;
+  const keyFrameInterval = Math.max(1, Math.round(plan.frameRate * 2));
 
-  for (let frameIndex = 0; frameIndex < plan.totalFrames; frameIndex += 1) {
+  for (let frameIndex = startFrame; frameIndex < endFrame; frameIndex += 1) {
     throwIfCanceled(signal);
     const timestamp = frameIndex / plan.frameRate;
     const duration = Math.max(1e-6, Math.min(frameDuration, plan.duration - timestamp));
@@ -386,8 +404,10 @@ async function encodeVideo(
       throw error;
     }
 
+    // VideoSample wraps VideoFrame directly and closes that backing frame from
+    // sample.close(); closing exportFrame separately would double-close it.
     await videoSource
-      .add(sample, { keyFrame: frameIndex === 0 || frameIndex % Math.round(plan.frameRate * 2) === 0 })
+      .add(sample, { keyFrame: frameIndex % keyFrameInterval === 0 })
       .finally(() => sample.close());
 
     const now = performance.now();
@@ -398,20 +418,21 @@ async function encodeVideo(
   }
 }
 
-async function encodeAudio(
+async function encodeAudioRange(
   options: TimelineExportOptions,
   plan: ExportPlan,
   audioSource: AudioSampleSource,
   startedAt: number,
+  startFrame: number,
+  endFrame: number,
 ): Promise<void> {
-  const { timeline, sources, signal, throughputProbe, onProgress } = options;
-  const totalAudioFrames = Math.max(1, Math.ceil(plan.duration * plan.audioSampleRate));
+  const { timeline, sources, signal, onProgress } = options;
   let lastReport = 0;
 
-  for (let startFrame = 0; startFrame < totalAudioFrames; startFrame += AUDIO_BLOCK_FRAMES) {
+  for (let cursor = startFrame; cursor < endFrame; cursor += AUDIO_BLOCK_FRAMES) {
     throwIfCanceled(signal);
-    const frames = Math.min(AUDIO_BLOCK_FRAMES, totalAudioFrames - startFrame);
-    const timestamp = startFrame / plan.audioSampleRate;
+    const frames = Math.min(AUDIO_BLOCK_FRAMES, endFrame - cursor);
+    const timestamp = cursor / plan.audioSampleRate;
     const pcm = await mixAudioWindow(
       timeline,
       sources,
@@ -433,8 +454,40 @@ async function encodeAudio(
     const now = performance.now();
     if (now - lastReport > 500) {
       lastReport = now;
-      onProgress(makeProgress(plan, 'audio', plan.totalFrames, startedAt, throughputProbe));
+      const doneFrames = Math.min(
+        plan.totalFrames,
+        Math.ceil(((cursor + frames) / plan.audioSampleRate) * plan.frameRate),
+      );
+      onProgress(makeProgress(plan, 'audio', doneFrames, startedAt, null));
     }
+  }
+}
+
+async function encodeInterleaved(
+  options: TimelineExportOptions,
+  plan: ExportPlan,
+  videoSource: VideoSampleSource,
+  audioSource: AudioSampleSource | null,
+  startedAt: number,
+): Promise<void> {
+  const videoFramesPerSlice = Math.max(1, Math.round(plan.frameRate * EXPORT_INTERLEAVE_SECONDS));
+  const totalAudioFrames = Math.max(1, Math.ceil(plan.duration * plan.audioSampleRate));
+  let audioCursor = 0;
+
+  for (let videoStart = 0; videoStart < plan.totalFrames; videoStart += videoFramesPerSlice) {
+    const videoEnd = Math.min(plan.totalFrames, videoStart + videoFramesPerSlice);
+    await encodeVideoRange(options, plan, videoSource, startedAt, videoStart, videoEnd);
+
+    if (audioSource) {
+      const sliceEndTime = Math.min(plan.duration, videoEnd / plan.frameRate);
+      const audioEnd = Math.min(totalAudioFrames, Math.ceil(sliceEndTime * plan.audioSampleRate));
+      await encodeAudioRange(options, plan, audioSource, startedAt, audioCursor, audioEnd);
+      audioCursor = audioEnd;
+    }
+  }
+
+  if (audioSource && audioCursor < totalAudioFrames) {
+    await encodeAudioRange(options, plan, audioSource, startedAt, audioCursor, totalAudioFrames);
   }
 }
 
@@ -492,12 +545,11 @@ export async function exportTimelineToMp4(
     options.onProgress(makeProgress(plan, 'video', 0, startedAt, options.throughputProbe));
 
     await output.start();
-    await encodeVideo(options, plan, videoSource, startedAt);
+    await encodeInterleaved(options, plan, videoSource, audioSource, startedAt);
     videoSource.close();
     videoSource = null;
 
     if (audioSource) {
-      await encodeAudio(options, plan, audioSource, startedAt);
       audioSource.close();
       audioSource = null;
     }

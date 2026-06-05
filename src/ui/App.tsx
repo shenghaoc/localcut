@@ -236,22 +236,28 @@ export function App() {
   }
 
   async function startExport(preset: ExportPreset) {
-    if (!metadata()) return;
+    if (!metadata() || exporting()) return;
     if (!initSent) {
       setExportError('Waiting for preview canvas before export can start.');
       return;
     }
+    setExporting(true);
+    setExportProgress(null);
+    setExportResult(null);
+    setExportError(null);
+    setStatusLine('Choosing export destination…');
     try {
       const output = await pickOutputHandle();
-      if (!output) return;
+      if (!output) {
+        setExporting(false);
+        setStatusLine('Export canceled');
+        return;
+      }
       const { bridge: b } = ensureWorker();
-      setExporting(true);
-      setExportProgress(null);
-      setExportResult(null);
-      setExportError(null);
       setStatusLine('Starting export…');
       b.send({ type: 'export-start', preset, output });
     } catch (e) {
+      setExporting(false);
       const message = e instanceof Error ? e.message : String(e);
       setExportError(message);
       setStatusLine(`Export failed: ${message}`);

@@ -59,7 +59,7 @@ function timeline(): Timeline {
 describe('export planning', () => {
   it('caps export size at 1080p and keeps even dimensions', () => {
     expect(deriveExportSize(3840, 2160)).toEqual({ width: 1920, height: 1080 });
-    expect(deriveExportSize(1919, 1079)).toEqual({ width: 1920, height: 1080 });
+    expect(deriveExportSize(1919, 1079)).toEqual({ width: 1918, height: 1078 });
   });
 
   it('builds a preset-aware plan from the first decodable video source', () => {
@@ -97,20 +97,68 @@ describe('export planning', () => {
     expect(estimateEtaSeconds(100, 20, probe, 'fast')).toBeCloseTo(1.28);
     expect(estimateEtaSeconds(100, 20, null, 'quality')).toBeNull();
   });
+
+  it('rejects mixed audible audio sample rates before encoding starts', () => {
+    const sources = new Map<string, MediaInputHandle>([
+      [
+        'video',
+        mediaHandle({ sourceId: 'video', frameSource: {} as MediaInputHandle['frameSource'] }),
+      ],
+      [
+        'a',
+        mediaHandle({
+          sourceId: 'a',
+          audioSource: {} as MediaInputHandle['audioSource'],
+          audioSampleRate: 48_000,
+        }),
+      ],
+      [
+        'b',
+        mediaHandle({
+          sourceId: 'b',
+          audioSource: {} as MediaInputHandle['audioSource'],
+          audioSampleRate: 44_100,
+        }),
+      ],
+    ]);
+    const edit: Timeline = [
+      ...timeline(),
+      {
+        id: 'a-track',
+        type: 'audio',
+        gain: 1,
+        muted: false,
+        solo: false,
+        clips: [{ id: 'a', sourceId: 'a', start: 0, duration: 1, inPoint: 0, effects: defaultClipEffects() }],
+      },
+      {
+        id: 'b-track',
+        type: 'audio',
+        gain: 1,
+        muted: false,
+        solo: false,
+        clips: [{ id: 'b', sourceId: 'b', start: 0, duration: 1, inPoint: 0, effects: defaultClipEffects() }],
+      },
+    ];
+
+    expect(() => buildExportPlan(edit, sources, 'quality', null)).toThrow(
+      'Audio source "b" has sample rate 44100 Hz but export target is 48000 Hz. Resampling is not supported.',
+    );
+  });
 });
 
 describe('mixAudioWindow', () => {
+  function sourceWith(value: number) {
+    return {
+      pcmWindowAt: vi.fn(async (_time: number, frames: number, channels: number) =>
+        new Float32Array(frames * channels).fill(value),
+      ),
+    };
+  }
+
   it('mixes only soloed audio tracks and applies gain', async () => {
-    const a = {
-      pcmWindowAt: vi.fn(async (_time: number, frames: number, channels: number) =>
-        new Float32Array(frames * channels).fill(1),
-      ),
-    };
-    const b = {
-      pcmWindowAt: vi.fn(async (_time: number, frames: number, channels: number) =>
-        new Float32Array(frames * channels).fill(0.25),
-      ),
-    };
+    const a = sourceWith(1);
+    const b = sourceWith(0.25);
     const sources = new Map<string, MediaInputHandle>([
       ['a', mediaHandle({ sourceId: 'a', audioSource: a as unknown as MediaInputHandle['audioSource'] })],
       ['b', mediaHandle({ sourceId: 'b', audioSource: b as unknown as MediaInputHandle['audioSource'] })],
@@ -139,5 +187,111 @@ describe('mixAudioWindow', () => {
     expect([...mixed]).toEqual([0.5, 0.5, 0.5, 0.5]);
     expect(a.pcmWindowAt).not.toHaveBeenCalled();
     expect(b.pcmWindowAt).toHaveBeenCalledWith(0, 4, 1);
+  });
+
+  it('skips muted tracks', async () => {
+    const muted = sourceWith(1);
+    const sources = new Map<string, MediaInputHandle>([
+      ['muted', mediaHandle({ sourceId: 'muted', audioSource: muted as unknown as MediaInputHandle['audioSource'] })],
+    ]);
+    const edit: Timeline = [
+      {
+        id: 'muted-track',
+        type: 'audio',
+        gain: 1,
+        muted: true,
+        solo: false,
+        clips: [{ id: 'muted', sourceId: 'muted', start: 0, duration: 1, inPoint: 0, effects: defaultClipEffects() }],
+      },
+    ];
+
+    const mixed = await mixAudioWindow(edit, sources, 0, 4, 4, 1);
+
+    expect([...mixed]).toEqual([0, 0, 0, 0]);
+    expect(muted.pcmWindowAt).not.toHaveBeenCalled();
+  });
+
+  it('sums non-soloed tracks with gain', async () => {
+    const a = sourceWith(0.25);
+    const b = sourceWith(0.5);
+    const sources = new Map<string, MediaInputHandle>([
+      ['a', mediaHandle({ sourceId: 'a', audioSource: a as unknown as MediaInputHandle['audioSource'] })],
+      ['b', mediaHandle({ sourceId: 'b', audioSource: b as unknown as MediaInputHandle['audioSource'] })],
+    ]);
+    const edit: Timeline = [
+      {
+        id: 'a-track',
+        type: 'audio',
+        gain: 2,
+        muted: false,
+        solo: false,
+        clips: [{ id: 'a', sourceId: 'a', start: 0, duration: 1, inPoint: 0, effects: defaultClipEffects() }],
+      },
+      {
+        id: 'b-track',
+        type: 'audio',
+        gain: 0.5,
+        muted: false,
+        solo: false,
+        clips: [{ id: 'b', sourceId: 'b', start: 0, duration: 1, inPoint: 0, effects: defaultClipEffects() }],
+      },
+    ];
+
+    const mixed = await mixAudioWindow(edit, sources, 0, 2, 4, 1);
+
+    expect([...mixed]).toEqual([0.75, 0.75]);
+  });
+
+  it('leaves timeline gaps silent', async () => {
+    const source = sourceWith(0.5);
+    const sources = new Map<string, MediaInputHandle>([
+      ['a', mediaHandle({ sourceId: 'a', audioSource: source as unknown as MediaInputHandle['audioSource'] })],
+    ]);
+    const edit: Timeline = [
+      {
+        id: 'a-track',
+        type: 'audio',
+        gain: 1,
+        muted: false,
+        solo: false,
+        clips: [{ id: 'a', sourceId: 'a', start: 0.5, duration: 0.5, inPoint: 0, effects: defaultClipEffects() }],
+      },
+    ];
+
+    const mixed = await mixAudioWindow(edit, sources, 0, 4, 4, 1);
+
+    expect([...mixed]).toEqual([0, 0, 0.5, 0.5]);
+    expect(source.pcmWindowAt).toHaveBeenCalledWith(0, 2, 1);
+  });
+
+  it('clamps mixed audio to the valid sample range', async () => {
+    const a = sourceWith(0.8);
+    const b = sourceWith(0.8);
+    const sources = new Map<string, MediaInputHandle>([
+      ['a', mediaHandle({ sourceId: 'a', audioSource: a as unknown as MediaInputHandle['audioSource'] })],
+      ['b', mediaHandle({ sourceId: 'b', audioSource: b as unknown as MediaInputHandle['audioSource'] })],
+    ]);
+    const edit: Timeline = [
+      {
+        id: 'a-track',
+        type: 'audio',
+        gain: 1,
+        muted: false,
+        solo: false,
+        clips: [{ id: 'a', sourceId: 'a', start: 0, duration: 1, inPoint: 0, effects: defaultClipEffects() }],
+      },
+      {
+        id: 'b-track',
+        type: 'audio',
+        gain: 1,
+        muted: false,
+        solo: false,
+        clips: [{ id: 'b', sourceId: 'b', start: 0, duration: 1, inPoint: 0, effects: defaultClipEffects() }],
+      },
+    ];
+
+    const mixed = await mixAudioWindow(edit, sources, 0, 2, 4, 1);
+
+    expect([...mixed]).toEqual([1, 1]);
   });
 });
