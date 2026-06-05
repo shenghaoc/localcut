@@ -1,4 +1,4 @@
-/** Main-thread Web Audio graph: worklet playback + per-track gain/mute/solo (Phase 5). */
+/** Main-thread Web Audio graph: worklet playback (Phase 5). */
 
 import {
   initAudioRing,
@@ -12,23 +12,13 @@ import { AUDIO_RING_BYTES } from '../engine/audio-ring';
 import { ClockIndex } from '../protocol';
 import workletUrl from './audio-playback.worklet.ts?url';
 
-export interface AudioTrackMix {
-  trackId: string;
-  gain: number;
-  muted: boolean;
-  solo: boolean;
-}
-
 export class AudioEngine {
   private context: AudioContext | null = null;
   private worklet: AudioWorkletNode | null = null;
   private masterGain: GainNode | null = null;
-  private readonly trackGains = new Map<string, GainNode>();
   private ringSab: SharedArrayBuffer | null = null;
   private ring: AudioRingViews | null = null;
   private clockView: Float64Array | null = null;
-  private mixState = new Map<string, AudioTrackMix>();
-  private soloTrackId: string | null = null;
   private ready: Promise<void> | null = null;
 
   async init(clockSab: SharedArrayBuffer, sampleRate = 48_000, channels = 2): Promise<void> {
@@ -62,61 +52,6 @@ export class AudioEngine {
 
   getRingBuffer(): SharedArrayBuffer | null {
     return this.ringSab;
-  }
-
-  syncTracks(tracks: AudioTrackMix[]): void {
-    for (const track of tracks) {
-      this.mixState.set(track.trackId, { ...track });
-      this.ensureTrackGain(track.trackId);
-    }
-    this.applyMix();
-  }
-
-  private ensureTrackGain(trackId: string): GainNode {
-    let node = this.trackGains.get(trackId);
-    if (!node) {
-      if (!this.context || !this.masterGain) throw new Error('AudioEngine not initialized');
-      node = this.context.createGain();
-      node.connect(this.masterGain);
-      this.trackGains.set(trackId, node);
-    }
-    return node;
-  }
-
-  setTrackGain(trackId: string, gain: number): void {
-    const mix = this.mixState.get(trackId) ?? { trackId, gain: 1, muted: false, solo: false };
-    mix.gain = Math.max(0, gain);
-    this.mixState.set(trackId, mix);
-    this.applyMix();
-  }
-
-  setTrackMute(trackId: string, muted: boolean): void {
-    const mix = this.mixState.get(trackId) ?? { trackId, gain: 1, muted: false, solo: false };
-    mix.muted = muted;
-    this.mixState.set(trackId, mix);
-    this.applyMix();
-  }
-
-  setTrackSolo(trackId: string, solo: boolean): void {
-    const mix = this.mixState.get(trackId) ?? { trackId, gain: 1, muted: false, solo: false };
-    mix.solo = solo;
-    this.mixState.set(trackId, mix);
-    this.soloTrackId = solo ? trackId : this.soloTrackId === trackId ? null : this.soloTrackId;
-    if (solo) {
-      for (const [id, state] of this.mixState) {
-        if (id !== trackId) state.solo = false;
-      }
-    }
-    this.applyMix();
-  }
-
-  private applyMix(): void {
-    const anySolo = [...this.mixState.values()].some((t) => t.solo);
-    for (const [trackId, mix] of this.mixState) {
-      const node = this.ensureTrackGain(trackId);
-      const audible = !mix.muted && (!anySolo || mix.solo);
-      node.gain.value = audible ? mix.gain : 0;
-    }
   }
 
   async play(fromSeconds: number): Promise<void> {
@@ -156,8 +91,6 @@ export class AudioEngine {
     if (this.ring) Atomics.store(this.ring.header, RingHeader.STATE, RingState.IDLE);
     this.worklet?.disconnect();
     this.masterGain?.disconnect();
-    for (const node of this.trackGains.values()) node.disconnect();
-    this.trackGains.clear();
     void this.context?.close();
     this.context = null;
     this.worklet = null;

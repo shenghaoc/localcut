@@ -56,6 +56,8 @@ const sourceInputs = new Map<string, MediaInputHandle>();
 let frameCache: FrameCache | null = null;
 const FRAME_CACHE_BUDGET_BYTES = 64 * 1024 * 1024;
 let audioRing: AudioRingViews | null = null;
+let audioWriteAnchor = 0;
+let audioWriteFrames = 0;
 let audioPumpGen = 0;
 
 function makeSourceId(): string {
@@ -191,15 +193,33 @@ async function pumpAudioOnce(): Promise<void> {
   const freeFrames = ringFreeSamples(audioRing);
   if (freeFrames < 256) return;
 
-  const timelineTime = clockView[ClockIndex.AUDIO_CLOCK] ?? clockView[0] ?? 0;
+  const sampleRate = Atomics.load(audioRing.header, RingHeader.SAMPLE_RATE) || 48_000;
+  const timelineTime = audioWriteAnchor + audioWriteFrames / sampleRate;
   const resolved = resolveAudioAt(timeline, timelineTime);
-  if (!resolved) return;
+  if (!resolved) {
+    const channels = Math.max(1, Atomics.load(audioRing.header, RingHeader.CHANNELS));
+    const silenceFrames = Math.min(freeFrames, 1024);
+    const written = writeRingPcm(audioRing, new Float32Array(silenceFrames * channels));
+    audioWriteFrames += written;
+    return;
+  }
   const handle = sourceInputs.get(resolved.clip.sourceId);
-  if (!handle?.audioSource) return;
+  if (!handle?.audioSource) {
+    const channels = Math.max(1, Atomics.load(audioRing.header, RingHeader.CHANNELS));
+    const silenceFrames = Math.min(freeFrames, 1024);
+    const written = writeRingPcm(audioRing, new Float32Array(silenceFrames * channels));
+    audioWriteFrames += written;
+    return;
+  }
 
   const channels = Math.max(1, Atomics.load(audioRing.header, RingHeader.CHANNELS));
   const pcm = await handle.audioSource.pcmAt(resolved.sourceTime, channels);
-  if (!pcm) return;
+  if (!pcm) {
+    const silenceFrames = Math.min(freeFrames, 1024);
+    const written = writeRingPcm(audioRing, new Float32Array(silenceFrames * channels));
+    audioWriteFrames += written;
+    return;
+  }
 
   const gain = trackAudible(resolved.trackId);
   if (gain <= 0) {
@@ -207,7 +227,8 @@ async function pumpAudioOnce(): Promise<void> {
   } else if (gain !== 1) {
     for (let i = 0; i < pcm.length; i += 1) pcm[i] = (pcm[i] ?? 0) * gain;
   }
-  writeRingPcm(audioRing, pcm);
+  const written = writeRingPcm(audioRing, pcm);
+  audioWriteFrames += written;
 }
 
 function startAudioPump(): void {
@@ -233,6 +254,8 @@ function resetAudioRingForSeek(time: number): void {
   if (!audioRing) return;
   bumpRingGeneration(audioRing);
   resetRingPointers(audioRing);
+  audioWriteAnchor = time;
+  audioWriteFrames = 0;
   if (clockView) {
     clockView[ClockIndex.AUDIO_CLOCK] = time;
     clockView[ClockIndex.CURRENT_TIME] = time;
@@ -266,8 +289,8 @@ function writeClockFull(currentTime: number, duration: number, playing: boolean)
 /** Playback's per-frame writer: owns currentTime and playState, leaves duration. */
 function writeTransport(currentTime: number, playing: boolean) {
   if (!clockView) return;
-  clockView[0] = currentTime;
-  clockView[2] = playing ? 1 : 0;
+  if (!hasAudioTimeline()) clockView[ClockIndex.CURRENT_TIME] = currentTime;
+  clockView[ClockIndex.PLAY_STATE] = playing ? 1 : 0;
 }
 
 async function handleInit(

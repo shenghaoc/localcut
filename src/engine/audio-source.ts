@@ -25,6 +25,7 @@ export class SequentialAudioSource {
 
   constructor(
     private readonly source: AudioSampleStream,
+    private readonly sampleRate = 48_000,
     private readonly resyncThreshold = DEFAULT_RESYNC_THRESHOLD_S,
   ) {}
 
@@ -87,8 +88,13 @@ export class SequentialAudioSource {
     if (floats.length >= this.current.numberOfFrames * channels) {
       return floats.slice(0, this.current.numberOfFrames * channels);
     }
+    const srcCh = Math.round(floats.length / this.current.numberOfFrames);
     const out = new Float32Array(this.current.numberOfFrames * channels);
-    out.set(floats.subarray(0, out.length));
+    for (let i = 0; i < this.current.numberOfFrames; i += 1) {
+      for (let ch = 0; ch < channels; ch += 1) {
+        out[i * channels + ch] = floats[i * srcCh + Math.min(ch, srcCh - 1)] ?? 0;
+      }
+    }
     return out;
   }
 
@@ -100,23 +106,24 @@ export class SequentialAudioSource {
   async collectPeaks(maxSeconds: number, bucketCount: number): Promise<Float32Array> {
     const { computeWaveformPeaks } = await import('./waveform');
     const chunks: number[] = [];
-    let frames = 0;
-    const maxFrames = Math.max(1, Math.floor(maxSeconds * 48_000));
-    this.reset();
+    let totalFrames = 0;
+    const maxFrames = Math.max(1, Math.floor(maxSeconds * this.sampleRate));
+    let channels = 2;
     const iterator = this.source.samples(0, maxSeconds);
     try {
       for await (const sample of iterator) {
         const bytes = sample.allocationSize({ format: 'f32', planeIndex: 0 });
         const buf = new Float32Array(bytes / 4);
         sample.copyTo(buf, { format: 'f32', planeIndex: 0 });
+        channels = Math.round(buf.length / sample.numberOfFrames);
         for (let i = 0; i < buf.length; i += 1) chunks.push(buf[i]!);
-        frames += sample.numberOfFrames;
+        totalFrames += sample.numberOfFrames;
         sample.close();
-        if (frames >= maxFrames) break;
+        if (totalFrames >= maxFrames) break;
       }
     } catch {
-      return computeWaveformPeaks(new Float32Array(0), bucketCount);
+      return computeWaveformPeaks(new Float32Array(0), bucketCount, channels);
     }
-    return computeWaveformPeaks(new Float32Array(chunks), bucketCount);
+    return computeWaveformPeaks(new Float32Array(chunks), bucketCount, channels);
   }
 }

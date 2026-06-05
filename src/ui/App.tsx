@@ -80,11 +80,6 @@ export function App() {
         break;
       case 'timeline-state':
         setTimeline(msg.timeline);
-        audioEngine.syncTracks(
-          msg.timeline
-            .filter((t) => t.type === 'audio')
-            .map((t) => ({ trackId: t.id, gain: t.gain, muted: t.muted, solo: t.solo })),
-        );
         setSelectedClip((prev) => {
           if (!prev) return prev;
           for (const track of msg.timeline) {
@@ -125,6 +120,7 @@ export function App() {
 
   async function sendInit(canvas: OffscreenCanvas) {
     if (initSent) return;
+    initSent = true;
     const { bridge: b } = ensureWorker();
     if (!audioReady) {
       audioReady = audioEngine.init(sab);
@@ -135,7 +131,6 @@ export function App() {
       setStatusLine('Audio engine failed to initialize');
       return;
     }
-    initSent = true;
     b.send({ type: 'init', canvas, sab, audioSab }, [canvas]);
   }
 
@@ -261,15 +256,12 @@ export function App() {
               bridge?.send({ type: 'set-effect-param', trackId, clipId, key, value })
             }
             onTrackGain={(trackId, gain) => {
-              audioEngine.setTrackGain(trackId, gain);
               bridge?.send({ type: 'set-track-gain', trackId, gain });
             }}
             onTrackMute={(trackId, muted) => {
-              audioEngine.setTrackMute(trackId, muted);
               bridge?.send({ type: 'set-track-mute', trackId, muted });
             }}
             onTrackSolo={(trackId, solo) => {
-              audioEngine.setTrackSolo(trackId, solo);
               bridge?.send({ type: 'set-track-solo', trackId, solo });
             }}
           />

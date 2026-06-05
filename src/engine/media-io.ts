@@ -98,7 +98,7 @@ export async function openMediaFile(file: File, sourceId: string): Promise<Media
       };
       if (canDecodeAudio) {
         const sink = new AudioSampleSink(audioTrack);
-        audioSource = new SequentialAudioSource(sink);
+        audioSource = new SequentialAudioSource(sink, audioSampleRate);
       }
     }
 
