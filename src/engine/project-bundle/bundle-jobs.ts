@@ -128,10 +128,20 @@ export async function runExportProjectBundle(
       return;
     }
     const message = error instanceof Error ? error.message : String(error);
+    const digestStreamUnavailable = message.includes('DigestStream');
+    const userMessage = digestStreamUnavailable
+      ? 'Large media files require DigestStream for fingerprinting; this browser cannot export embedded bundles with files over 64 KiB.'
+      : message;
     ctx.postIntegrity(jobId, {
       bundleId: jobId,
       ok: false,
-      items: [{ code: 'corrupt-json', severity: 'error', message }],
+      items: [
+        {
+          code: digestStreamUnavailable ? 'unsupported-operation' : 'corrupt-json',
+          severity: 'error',
+          message: userMessage,
+        },
+      ],
       summary: {
         sourcesEmbedded: 0,
         sourcesOffline: 0,
@@ -140,6 +150,7 @@ export async function runExportProjectBundle(
         cachesSkipped: 0,
       },
     });
+    ctx.postImportResult(jobId, false, undefined, userMessage);
   } finally {
     jobs.delete(jobId);
   }

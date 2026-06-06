@@ -62,7 +62,7 @@ export function createFsDirectorySink(root: FileSystemDirectoryHandle): BundleDi
         }
         await writable.close();
       } catch (error) {
-        await writable.abort();
+        await writable.abort(error);
         throw error;
       }
     },

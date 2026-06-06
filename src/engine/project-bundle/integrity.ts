@@ -21,7 +21,7 @@ export function addIntegrityItem(
 ): BundleIntegrityReport {
   const items = [...report.items, item];
   const summary = { ...report.summary };
-  if (item.code === 'ok' && item.sourceId) {
+  if (item.code === 'ok' && item.sourceId && item.assetId) {
     summary.sourcesEmbedded += 1;
   }
   if (

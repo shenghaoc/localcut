@@ -60,9 +60,6 @@ export async function exportProjectBundle(
     bytesTotal += lut.values.byteLength;
   }
 
-  progress('project');
-  await sink.writeText(PROJECT_PATH, serializeProjectDocForBundle(options.doc));
-
   for (const descriptor of options.doc.sources) {
     throwIfBundleJobCanceled(options.isCancelled);
     const entry: BundleSourceEntry = {
@@ -187,6 +184,9 @@ export async function exportProjectBundle(
     sources,
     assets,
   };
+
+  progress('project');
+  await sink.writeText(PROJECT_PATH, serializeProjectDocForBundle(options.doc));
 
   progress('manifest');
   await sink.writeText(MANIFEST_PATH, serializeBundleManifest(manifest));

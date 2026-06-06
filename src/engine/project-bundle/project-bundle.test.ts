@@ -310,6 +310,27 @@ describe('bundle export cancellation', () => {
       }),
     ).rejects.toBeInstanceOf(BundleJobCanceledError);
     expect(await sink.exists('manifest.json')).toBe(false);
+    expect(await sink.exists('project.json')).toBe(false);
+  });
+});
+
+describe('bundle export integrity summary', () => {
+  it('does not count reference-only sources as embedded', async () => {
+    const sink = createMemoryDirectorySink();
+    const doc = serializeProject({
+      projectId: 'project-ref-summary',
+      timeline: timelineFixture(),
+      sources: [sourceFixture()],
+    });
+    const { report } = await exportProjectBundle(sink, {
+      doc,
+      displayName: 'clip',
+      policy: { mode: 'reference-only' },
+      resolveSourceFile: async () => null,
+      collectLuts: () => [],
+    });
+    expect(report.summary.sourcesEmbedded).toBe(0);
+    expect(report.items.some((item) => item.code === 'ok' && item.sourceId)).toBe(true);
   });
 });
 

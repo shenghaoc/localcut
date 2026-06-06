@@ -594,6 +594,7 @@ export type BundleIntegrityCodeSnapshot =
   | 'corrupt-json'
   | 'unsupported-bundle-schema'
   | 'unsupported-project-schema'
+  | 'unsupported-operation'
   | 'cache-stale';
 
 export interface BundleIntegrityItemSnapshot {

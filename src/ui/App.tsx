@@ -523,8 +523,10 @@ export function App() {
         break;
       }
       case 'bundle-job-progress':
-        setBundleBusy(true);
-        setBundlePhase(msg.phase);
+        if (bundleJobId()) {
+          setBundleBusy(true);
+          setBundlePhase(msg.phase);
+        }
         break;
       case 'bundle-integrity-report':
         setBundleReport(msg.report);

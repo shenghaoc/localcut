@@ -62,6 +62,7 @@ export type BundleIntegrityCode =
   | 'corrupt-json'
   | 'unsupported-bundle-schema'
   | 'unsupported-project-schema'
+  | 'unsupported-operation'
   | 'cache-stale';
 
 export interface BundleIntegrityItem {
