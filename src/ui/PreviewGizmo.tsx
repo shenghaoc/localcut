@@ -134,8 +134,8 @@ export function PreviewGizmo(props: PreviewGizmoProps) {
     };
     (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
     window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup', onPointerUp);
-    window.addEventListener('pointercancel', onPointerUp);
+    window.addEventListener('pointerup', endDrag);
+    window.addEventListener('pointercancel', endDrag);
   }
 
   function onPointerMove(event: PointerEvent) {
@@ -158,16 +158,12 @@ export function PreviewGizmo(props: PreviewGizmoProps) {
   function endDrag() {
     drag = null;
     window.removeEventListener('pointermove', onPointerMove);
-    window.removeEventListener('pointerup', onPointerUp);
-    window.removeEventListener('pointercancel', onPointerUp);
+    window.removeEventListener('pointerup', endDrag);
+    window.removeEventListener('pointercancel', endDrag);
   }
 
-  function onPointerUp() {
-    endDrag();
-  }
-
-  // Unmounting mid-drag (e.g. the selected clip is deleted) or a browser-initiated
-  // pointercancel would otherwise leave the window pointer listeners leaked.
+  // Unmounting mid-drag (e.g. the selected clip is deleted) would otherwise leave
+  // the window pointer listeners — and this component — leaked.
   onCleanup(endDrag);
 
   return (
