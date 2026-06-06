@@ -715,7 +715,8 @@ export function App() {
   }
 
   async function startExport(settings: ExportSettings) {
-    if (!metadata() || exporting()) return;
+    // Title-only projects have no source metadata but are still exportable.
+    if ((!metadata() && !hasTimeline()) || exporting()) return;
     if (!accelerated()) {
       setExportError(
         pipelineMode() === 'limited'

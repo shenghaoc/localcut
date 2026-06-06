@@ -139,5 +139,7 @@ export function titleContentHash(content: TitleContent): string {
   const style = normalizeTitleStyle(content.style);
   const parts = [`text=${content.text}`];
   for (const key of TITLE_STYLE_KEYS) parts.push(`${key}=${String(style[key])}`);
-  return parts.join('');
+  // NUL separator so free-form text can't masquerade as a following field=value
+  // pair and collide with a different style set.
+  return parts.join('\u0000');
 }

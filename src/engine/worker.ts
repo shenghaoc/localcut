@@ -2026,9 +2026,10 @@ function exportSettingsForProbe(): ExportSettings | null {
 }
 
 async function handleExportProbe() {
-  const videoHandle = firstExportVideoHandle();
   const settings = exportSettingsForProbe();
-  if (!settings || !videoHandle) {
+  // No videoHandle for title-only timelines; probe still works from the settings
+  // geometry (probeExportCodecs needs only width/height/fps/bitrate).
+  if (!settings) {
     post({ type: 'export-codecs', supported: [], settings: defaultExportSettings('quality', 1920, 1080, 30, 0) });
     return;
   }
@@ -2040,20 +2041,25 @@ async function handleExportProbe() {
     settings.videoBitrate,
   );
 
-  const handleAfterProbe = firstExportVideoHandle();
-  if (!handleAfterProbe) {
-    post({ type: 'export-codecs', supported: [], settings: defaultExportSettings('quality', 1920, 1080, 30, 0) });
+  if (supported.length === 0) {
+    post({ type: 'export-codecs', supported: [], settings });
     return;
   }
+
+  // Fall back to the settings geometry when there's no decodable video source.
+  const handleAfterProbe = firstExportVideoHandle();
+  const resolvedWidth = handleAfterProbe?.displayWidth ?? settings.width;
+  const resolvedHeight = handleAfterProbe?.displayHeight ?? settings.height;
+  const resolvedFps = handleAfterProbe?.frameRate ?? settings.fps;
 
   const preferredCodec = supported.some((entry) => entry.codec === settings.codec)
     ? settings.codec
     : (supported[0]?.codec ?? settings.codec);
   const resolved = normalizeExportSettings(
     { ...settings, codec: preferredCodec, container: preferredCodec === 'h264' ? 'mp4' : 'webm' },
-    handleAfterProbe.displayWidth,
-    handleAfterProbe.displayHeight,
-    handleAfterProbe.frameRate,
+    resolvedWidth,
+    resolvedHeight,
+    resolvedFps,
     getTimelineDuration(timeline),
   );
   post({ type: 'export-codecs', supported, settings: resolved });
