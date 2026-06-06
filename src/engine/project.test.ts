@@ -58,6 +58,61 @@ function sourceFixture(): SourceDescriptor {
 }
 
 describe('project serialization', () => {
+  it('drops a malformed export range but keeps the other settings', () => {
+    const result = deserializeProject({
+      schemaVersion: PROJECT_SCHEMA_VERSION,
+      projectId: 'project-1',
+      savedAt: '2026-06-06T00:00:00.000Z',
+      timeline: timelineFixture(),
+      sources: [sourceFixture()],
+      exportSettings: {
+        preset: 'quality',
+        codec: 'h264',
+        container: 'mp4',
+        width: 1920,
+        height: 1080,
+        fps: 30,
+        videoBitrate: 8_000_000,
+        range: { startS: 4, endS: 4 },
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.doc.exportSettings).toEqual({
+      preset: 'quality',
+      codec: 'h264',
+      container: 'mp4',
+      width: 1920,
+      height: 1080,
+      fps: 30,
+      videoBitrate: 8_000_000,
+    });
+  });
+
+  it('round-trips export settings when present', () => {
+    const doc = serializeProject({
+      projectId: 'project-1',
+      timeline: timelineFixture(),
+      sources: [sourceFixture()],
+      exportSettings: {
+        preset: 'fast',
+        codec: 'vp9',
+        container: 'webm',
+        width: 1280,
+        height: 720,
+        fps: 24,
+        videoBitrate: 4_000_000,
+        range: { startS: 1, endS: 8 },
+      },
+    });
+
+    const result = deserializeProject(doc);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.doc.exportSettings).toEqual(doc.exportSettings);
+  });
+
   it('round-trips a versioned project document', () => {
     const doc = serializeProject({
       projectId: 'project-1',

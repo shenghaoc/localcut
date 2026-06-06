@@ -1,4 +1,4 @@
-import type { SourceDescriptorSnapshot } from '../protocol';
+import type { ExportSettings, SourceDescriptorSnapshot } from '../protocol';
 import {
   DEFAULT_CLIP_AUDIO_FADES,
   DEFAULT_MASTER_GAIN,
@@ -21,6 +21,7 @@ export interface ProjectDoc {
   timeline: Timeline;
   sources: SourceDescriptor[];
   masterGain: number;
+  exportSettings?: ExportSettings;
 }
 
 export interface SerializeProjectOptions {
@@ -29,6 +30,7 @@ export interface SerializeProjectOptions {
   sources: readonly SourceDescriptor[];
   masterGain?: number;
   savedAt?: Date;
+  exportSettings?: ExportSettings;
 }
 
 export type DeserializeProjectResult =
@@ -55,6 +57,57 @@ function requiredString(value: unknown): string | null {
 
 function optionalString(value: unknown): string | null | undefined {
   return value === undefined || value === null || typeof value === 'string' ? value : undefined;
+}
+
+function parseExportSettings(value: unknown): ExportSettings | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!isRecord(value)) return undefined;
+  const preset = value.preset === 'quality' || value.preset === 'fast' ? value.preset : null;
+  const codec = value.codec === 'h264' || value.codec === 'vp9' || value.codec === 'av1' ? value.codec : null;
+  const container = value.container === 'mp4' || value.container === 'webm' ? value.container : null;
+  const width = finiteNumber(value.width);
+  const height = finiteNumber(value.height);
+  const fps = finiteNumber(value.fps);
+  const videoBitrate = finiteNumber(value.videoBitrate);
+  if (!preset || !codec || !container || width === null || height === null || fps === null || videoBitrate === null) {
+    return undefined;
+  }
+  if (width <= 0 || height <= 0 || fps <= 0 || videoBitrate <= 0) return undefined;
+
+  let range: ExportSettings['range'];
+  if (value.range !== undefined) {
+    if (isRecord(value.range)) {
+      const startS = finiteNumber(value.range.startS);
+      const endS = finiteNumber(value.range.endS);
+      if (startS !== null && endS !== null && endS > startS) {
+        range = { startS, endS };
+      }
+    }
+  }
+
+  return {
+    preset,
+    codec,
+    container,
+    width,
+    height,
+    fps,
+    videoBitrate,
+    range,
+  };
+}
+
+function cloneExportSettings(settings: ExportSettings): ExportSettings {
+  return {
+    preset: settings.preset,
+    codec: settings.codec,
+    container: settings.container,
+    width: settings.width,
+    height: settings.height,
+    fps: settings.fps,
+    videoBitrate: settings.videoBitrate,
+    range: settings.range ? { ...settings.range } : undefined,
+  };
 }
 
 function cloneClip(clip: TimelineClip): TimelineClip {
@@ -114,7 +167,7 @@ export function serializeProject(options: SerializeProjectOptions): ProjectDoc {
     options.masterGain !== undefined && Number.isFinite(options.masterGain)
       ? Math.max(0, options.masterGain)
       : DEFAULT_MASTER_GAIN;
-  return {
+  const doc: ProjectDoc = {
     schemaVersion: PROJECT_SCHEMA_VERSION,
     projectId: options.projectId,
     savedAt: (options.savedAt ?? new Date()).toISOString(),
@@ -122,6 +175,10 @@ export function serializeProject(options: SerializeProjectOptions): ProjectDoc {
     sources: options.sources.map(cloneSourceDescriptor),
     masterGain,
   };
+  if (options.exportSettings) {
+    doc.exportSettings = cloneExportSettings(options.exportSettings);
+  }
+  return doc;
 }
 
 function parseClip(value: unknown): TimelineClip | null {
@@ -288,6 +345,7 @@ function deserializeV1(value: Record<string, unknown>): DeserializeProjectResult
     sources.push(parsed);
   }
 
+  const exportSettings = parseExportSettings(value.exportSettings);
   const masterGain = finiteNumber(value.masterGain) ?? DEFAULT_MASTER_GAIN;
 
   return {
@@ -299,6 +357,7 @@ function deserializeV1(value: Record<string, unknown>): DeserializeProjectResult
       timeline,
       sources,
       masterGain: Math.max(0, masterGain),
+      ...(exportSettings ? { exportSettings } : {}),
     },
   };
 }

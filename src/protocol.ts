@@ -24,6 +24,29 @@ export const MeterIndex = {
 
 export type PlayState = 'paused' | 'playing';
 export type ExportPreset = 'quality' | 'fast';
+export type ExportVideoCodec = 'h264' | 'vp9' | 'av1';
+export type ExportContainer = 'mp4' | 'webm';
+
+export interface ExportRange {
+  startS: number;
+  endS: number;
+}
+
+export interface ExportSettings {
+  preset: ExportPreset;
+  codec: ExportVideoCodec;
+  container: ExportContainer;
+  width: number;
+  height: number;
+  fps: number;
+  videoBitrate: number;
+  range?: ExportRange;
+}
+
+export interface ExportCodecSupport {
+  codec: ExportVideoCodec;
+  container: ExportContainer;
+}
 
 export interface MediaMetadata {
   fileName: string;
@@ -179,7 +202,8 @@ export type WorkerCommand =
   | { type: 'pause' }
   | { type: 'seek'; time: number }
   | { type: 'step'; direction: 1 | -1 }
-  | { type: 'export-start'; preset: ExportPreset; output: FileSystemFileHandle }
+  | { type: 'export-probe' }
+  | { type: 'export-start'; settings: ExportSettings; output: FileSystemFileHandle }
   | { type: 'export-cancel' }
   | { type: 'undo' }
   | { type: 'redo' }
@@ -217,6 +241,8 @@ export interface ThroughputProbe {
 
 export interface ExportProgress {
   preset: ExportPreset;
+  codec: ExportVideoCodec;
+  container: ExportContainer;
   phase: 'video' | 'audio' | 'finalizing';
   doneFrames: number;
   totalFrames: number;
@@ -256,6 +282,7 @@ export type WorkerStateMessage =
   | { type: 'probe-result'; probe: ThroughputProbe }
   | { type: 'timeline-state'; timeline: TimelineTrackSnapshot[]; masterGain: number }
   | { type: 'waveform-peaks'; trackId: string; clipId: string; peaks: WaveformPeaks }
+  | { type: 'export-codecs'; supported: ExportCodecSupport[]; settings: ExportSettings }
   | { type: 'export-progress'; progress: ExportProgress }
   | { type: 'export-complete'; fileName: string; mimeType: string }
   | { type: 'export-canceled' }

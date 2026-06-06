@@ -1,4 +1,4 @@
-/** Pipelined export — Phase 6. */
+/** Pipelined export — Phase 6 + Phase 17 expansion. */
 
 import {
   AudioSample,
@@ -8,9 +8,18 @@ import {
   StreamTarget,
   VideoSample,
   VideoSampleSource,
+  WebMOutputFormat,
   type StreamTargetChunk,
 } from 'mediabunny';
-import type { ExportPreset, ExportProgress, ThroughputProbe } from '../protocol';
+import type {
+  ExportCodecSupport,
+  ExportContainer,
+  ExportPreset,
+  ExportProgress,
+  ExportSettings,
+  ExportVideoCodec,
+  ThroughputProbe,
+} from '../protocol';
 import type { PreviewRenderer } from './gpu';
 import type { MediaInputHandle } from './media-io';
 import {
@@ -39,7 +48,27 @@ const MAX_EXPORT_HEIGHT = 1080;
 const MP4_CHUNK_BYTES = 4 * 1024 * 1024;
 const DEFAULT_EXPORT_FPS = 30;
 const AAC_CODEC = 'mp4a.40.2';
+const OPUS_CODEC = 'opus';
 const H264_CODEC = 'avc1.640028';
+const VP9_CODEC = 'vp09.00.10.08';
+const AV1_CODEC = 'av01.0.05M.08';
+
+const CODEC_CANDIDATES: ReadonlyArray<{
+  codec: ExportVideoCodec;
+  container: ExportContainer;
+  webCodec: string;
+  mediabunnyCodec: 'avc' | 'vp9' | 'av1';
+}> = [
+  { codec: 'h264', container: 'mp4', webCodec: H264_CODEC, mediabunnyCodec: 'avc' },
+  { codec: 'vp9', container: 'webm', webCodec: VP9_CODEC, mediabunnyCodec: 'vp9' },
+  { codec: 'av1', container: 'webm', webCodec: AV1_CODEC, mediabunnyCodec: 'av1' },
+];
+
+const CODEC_ETA_FACTORS: Record<ExportVideoCodec, number> = {
+  h264: 1,
+  vp9: 0.72,
+  av1: 0.5,
+};
 
 export class ExportCancelledError extends Error {
   constructor() {
@@ -49,8 +78,13 @@ export class ExportCancelledError extends Error {
 }
 
 export interface ExportPlan {
+  settings: ExportSettings;
   preset: ExportPreset;
-  duration: number;
+  codec: ExportVideoCodec;
+  container: ExportContainer;
+  timelineDuration: number;
+  rangeStartS: number;
+  exportDuration: number;
   frameRate: number;
   width: number;
   height: number;
@@ -69,7 +103,7 @@ export interface TimelineExportOptions {
   sources: ReadonlyMap<string, MediaInputHandle>;
   renderer: PreviewRenderer;
   outputHandle: FileSystemFileHandle;
-  preset: ExportPreset;
+  settings: ExportSettings;
   throughputProbe: ThroughputProbe | null;
   signal: AbortSignal;
   onProgress: (progress: ExportProgress) => void;
@@ -81,11 +115,26 @@ export interface TimelineExportResult {
   mimeType: string;
 }
 
+export type VideoEncoderSupportProbe = (
+  config: VideoEncoderConfig,
+) => Promise<VideoEncoderSupport>;
+
 function even(value: number): number {
   return Math.max(2, Math.floor(value / 2) * 2);
 }
 
-export function deriveExportSize(sourceWidth: number, sourceHeight: number): { width: number; height: number } {
+export function containerForCodec(codec: ExportVideoCodec): ExportContainer {
+  return codec === 'h264' ? 'mp4' : 'webm';
+}
+
+export function deriveExportSize(
+  sourceWidth: number,
+  sourceHeight: number,
+  overrides?: { width?: number; height?: number },
+): { width: number; height: number } {
+  if (overrides?.width && overrides?.height) {
+    return { width: even(overrides.width), height: even(overrides.height) };
+  }
   if (sourceWidth <= 0 || sourceHeight <= 0) {
     return { width: 1280, height: 720 };
   }
@@ -100,7 +149,11 @@ export function videoBitrateForPreset(
   preset: ExportPreset,
   width: number,
   height: number,
+  override?: number,
 ): number {
+  if (override !== undefined && Number.isFinite(override) && override > 0) {
+    return Math.round(override);
+  }
   const pixels = Math.max(1, width * height);
   const scale = pixels / (1920 * 1080);
   const base = preset === 'quality' ? 10_000_000 : 5_000_000;
@@ -109,15 +162,45 @@ export function videoBitrateForPreset(
   return Math.round(Math.min(max, Math.max(min, base * scale)));
 }
 
+export function resolveExportRange(
+  timelineDuration: number,
+  range: ExportSettings['range'],
+): { rangeStartS: number; exportDuration: number } {
+  if (!range) {
+    return { rangeStartS: 0, exportDuration: timelineDuration };
+  }
+  const startS = Math.max(0, Math.min(range.startS, timelineDuration));
+  const endS = Math.max(startS, Math.min(range.endS, timelineDuration));
+  return { rangeStartS: startS, exportDuration: Math.max(0, endS - startS) };
+}
+
+export function exportFrameBounds(
+  exportDuration: number,
+  frameRate: number,
+): { totalFrames: number; startFrame: number; endFrame: number } {
+  const totalFrames = Math.max(1, Math.ceil(Math.max(0, exportDuration) * frameRate));
+  return { totalFrames, startFrame: 0, endFrame: totalFrames };
+}
+
+export function rebaseOutputTimestamp(frameIndex: number, frameRate: number): number {
+  return frameIndex / frameRate;
+}
+
+export function timelineTimeAt(plan: ExportPlan, outputTimestamp: number): number {
+  return plan.rangeStartS + outputTimestamp;
+}
+
 export function estimatedEncodeFps(
   probe: ThroughputProbe | null,
   preset: ExportPreset,
+  codec: ExportVideoCodec,
 ): number | null {
   if (!probe || !Number.isFinite(probe.encodeFps) || probe.encodeFps <= 0) {
     return null;
   }
-  const factor = preset === 'quality' ? 0.8 : 1.25;
-  return probe.encodeFps * factor;
+  const presetFactor = preset === 'quality' ? 0.8 : 1.25;
+  const codecFactor = CODEC_ETA_FACTORS[codec];
+  return probe.encodeFps * presetFactor * codecFactor;
 }
 
 export function estimateEtaSeconds(
@@ -125,8 +208,9 @@ export function estimateEtaSeconds(
   doneFrames: number,
   probe: ThroughputProbe | null,
   preset: ExportPreset,
+  codec: ExportVideoCodec,
 ): number | null {
-  const fps = estimatedEncodeFps(probe, preset);
+  const fps = estimatedEncodeFps(probe, preset, codec);
   if (!fps) return null;
   return Math.max(0, (Math.max(0, totalFrames - doneFrames)) / fps);
 }
@@ -145,14 +229,26 @@ function firstVideoHandle(
   return null;
 }
 
-function firstAudioHandle(
+export function clipOverlapsRange(
+  clip: TimelineClip,
+  rangeStartS: number,
+  rangeEndS: number,
+): boolean {
+  const clipEnd = clip.start + clip.duration;
+  return clip.start < rangeEndS && clipEnd > rangeStartS;
+}
+
+function firstAudioHandleInRange(
   timeline: Timeline,
   sources: ReadonlyMap<string, MediaInputHandle>,
+  rangeStartS: number,
+  rangeEndS: number,
 ): MediaInputHandle | null {
   for (const track of timeline) {
     if (track.type !== 'audio') continue;
     if (!trackIsAudible(track, timeline)) continue;
     for (const clip of track.clips) {
+      if (!clipOverlapsRange(clip, rangeStartS, rangeEndS)) continue;
       const handle = sources.get(clip.sourceId);
       if (handle?.audioSource) return handle;
     }
@@ -160,10 +256,61 @@ function firstAudioHandle(
   return null;
 }
 
+export function defaultExportSettings(
+  preset: ExportPreset,
+  sourceWidth: number,
+  sourceHeight: number,
+  sourceFps: number,
+  _timelineDuration: number,
+  codec: ExportVideoCodec = 'h264',
+): ExportSettings {
+  const { width, height } = deriveExportSize(sourceWidth, sourceHeight);
+  const fps = sourceFps > 0 ? sourceFps : DEFAULT_EXPORT_FPS;
+  return {
+    preset,
+    codec,
+    container: containerForCodec(codec),
+    width,
+    height,
+    fps,
+    videoBitrate: videoBitrateForPreset(preset, width, height),
+  };
+}
+
+export function normalizeExportSettings(
+  settings: ExportSettings,
+  sourceWidth: number,
+  sourceHeight: number,
+  sourceFps: number,
+  timelineDuration: number,
+): ExportSettings {
+  const { width, height } = deriveExportSize(sourceWidth, sourceHeight, {
+    width: settings.width,
+    height: settings.height,
+  });
+  const fps = settings.fps > 0 ? settings.fps : sourceFps > 0 ? sourceFps : DEFAULT_EXPORT_FPS;
+  const container = containerForCodec(settings.codec);
+  let range = settings.range;
+  if (range) {
+    const { rangeStartS, exportDuration } = resolveExportRange(timelineDuration, range);
+    range = exportDuration > 0 ? { startS: rangeStartS, endS: rangeStartS + exportDuration } : undefined;
+  }
+  return {
+    preset: settings.preset,
+    codec: settings.codec,
+    container,
+    width,
+    height,
+    fps,
+    videoBitrate: videoBitrateForPreset(settings.preset, width, height, settings.videoBitrate),
+    range,
+  };
+}
+
 export function buildExportPlan(
   timeline: Timeline,
   sources: ReadonlyMap<string, MediaInputHandle>,
-  preset: ExportPreset,
+  settings: ExportSettings,
   probe: ThroughputProbe | null,
 ): ExportPlan {
   const videoHandle = firstVideoHandle(timeline, sources);
@@ -171,21 +318,35 @@ export function buildExportPlan(
     throw new Error('Export requires at least one decodable video clip.');
   }
 
-  const duration = getTimelineDuration(timeline);
-  if (duration <= 0) {
+  const timelineDuration = getTimelineDuration(timeline);
+  if (timelineDuration <= 0) {
     throw new Error('Export requires a non-empty timeline.');
   }
 
-  const frameRate = videoHandle.frameRate > 0 ? videoHandle.frameRate : DEFAULT_EXPORT_FPS;
-  const { width, height } = deriveExportSize(videoHandle.displayWidth, videoHandle.displayHeight);
-  const audioHandle = firstAudioHandle(timeline, sources);
-  const estimatedFps = estimatedEncodeFps(probe, preset);
+  const normalized = normalizeExportSettings(
+    settings,
+    videoHandle.displayWidth,
+    videoHandle.displayHeight,
+    videoHandle.frameRate,
+    timelineDuration,
+  );
+  const { rangeStartS, exportDuration } = resolveExportRange(timelineDuration, normalized.range);
+  if (exportDuration <= 0) {
+    throw new Error('Export range must have a positive duration.');
+  }
+
+  const frameRate = normalized.fps;
+  const { totalFrames } = exportFrameBounds(exportDuration, frameRate);
+  const rangeEndS = rangeStartS + exportDuration;
+  const audioHandle = firstAudioHandleInRange(timeline, sources, rangeStartS, rangeEndS);
+  const estimatedFps = estimatedEncodeFps(probe, normalized.preset, normalized.codec);
   const audioSampleRate = audioHandle?.audioSampleRate ?? 48_000;
 
   if (audioHandle) {
     for (const track of timeline) {
       if (track.type !== 'audio' || !trackIsAudible(track, timeline)) continue;
       for (const clip of track.clips) {
+        if (!clipOverlapsRange(clip, rangeStartS, rangeEndS)) continue;
         const handle = sources.get(clip.sourceId);
         if (handle?.audioSource && handle.audioSampleRate !== audioSampleRate) {
           throw new Error(
@@ -198,20 +359,60 @@ export function buildExportPlan(
   }
 
   return {
-    preset,
-    duration,
+    settings: normalized,
+    preset: normalized.preset,
+    codec: normalized.codec,
+    container: normalized.container,
+    timelineDuration,
+    rangeStartS,
+    exportDuration,
     frameRate,
-    width,
-    height,
-    totalFrames: Math.max(1, Math.ceil(duration * frameRate)),
-    videoBitrate: videoBitrateForPreset(preset, width, height),
-    audioBitrate: preset === 'quality' ? 192_000 : 128_000,
+    width: normalized.width,
+    height: normalized.height,
+    totalFrames,
+    videoBitrate: normalized.videoBitrate,
+    audioBitrate: normalized.preset === 'quality' ? 192_000 : 128_000,
     audioSampleRate,
     audioChannels: Math.min(2, Math.max(1, audioHandle?.audioChannels ?? 2)),
     hasAudio: audioHandle !== null,
     estimatedEncodeFps: estimatedFps,
     subRealtime: estimatedFps !== null && estimatedFps < frameRate,
   };
+}
+
+export async function probeExportCodecs(
+  width: number,
+  height: number,
+  fps: number,
+  bitrate: number,
+  isConfigSupported: VideoEncoderSupportProbe = (config) => VideoEncoder.isConfigSupported(config),
+): Promise<ExportCodecSupport[]> {
+  const supported: ExportCodecSupport[] = [];
+  const evenWidth = even(width);
+  const evenHeight = even(height);
+
+  for (const candidate of CODEC_CANDIDATES) {
+    const config: VideoEncoderConfig = {
+      codec: candidate.webCodec,
+      width: evenWidth,
+      height: evenHeight,
+      bitrate,
+      framerate: fps,
+      hardwareAcceleration: 'prefer-hardware',
+      latencyMode: 'quality',
+      ...(candidate.codec === 'h264' ? { avc: { format: 'avc' } } : {}),
+    };
+    try {
+      const result = await isConfigSupported(config);
+      if (result.supported) {
+        supported.push({ codec: candidate.codec, container: candidate.container });
+      }
+    } catch {
+      // Unsupported codec string in this browser.
+    }
+  }
+
+  return supported;
 }
 
 function trackIsAudible(track: TimelineTrack, timeline: Timeline): boolean {
@@ -380,27 +581,35 @@ export async function mixAudioWindow(
   return applyMasterAndClamp(out, masterGain);
 }
 
+function codecConfig(candidateCodec: ExportVideoCodec): (typeof CODEC_CANDIDATES)[number] {
+  const found = CODEC_CANDIDATES.find((entry) => entry.codec === candidateCodec);
+  if (!found) throw new Error(`Unsupported export codec: ${candidateCodec}`);
+  return found;
+}
+
 async function assertVideoEncoderSupported(plan: ExportPlan): Promise<void> {
   if (typeof VideoEncoder === 'undefined') {
-    throw new Error('MP4 export requires WebCodecs VideoEncoder support.');
+    throw new Error('Export requires WebCodecs VideoEncoder support.');
   }
 
+  const candidate = codecConfig(plan.codec);
   const config: VideoEncoderConfig = {
-    codec: H264_CODEC,
+    codec: candidate.webCodec,
     width: plan.width,
     height: plan.height,
     bitrate: plan.videoBitrate,
     framerate: plan.frameRate,
     hardwareAcceleration: 'prefer-hardware',
     latencyMode: plan.preset === 'fast' ? 'realtime' : 'quality',
-    avc: { format: 'avc' },
+    ...(plan.codec === 'h264' ? { avc: { format: 'avc' } } : {}),
   };
 
   const support = await VideoEncoder.isConfigSupported(config);
   if (!support.supported) {
     throw new Error(
-      `H.264 MP4 export is not supported at ${plan.width}x${plan.height} ` +
-        `(${Math.round(plan.videoBitrate / 1_000_000)} Mbps). Try a recent Chromium browser with hardware acceleration enabled.`,
+      `${plan.codec.toUpperCase()} ${plan.container.toUpperCase()} export is not supported at ` +
+        `${plan.width}x${plan.height} (${Math.round(plan.videoBitrate / 1_000_000)} Mbps). ` +
+        'Try a recent Chromium browser with hardware acceleration enabled.',
     );
   }
 }
@@ -411,16 +620,17 @@ async function assertAudioEncoderSupported(plan: ExportPlan): Promise<void> {
     throw new Error('Audio export requires WebCodecs AudioEncoder support.');
   }
 
+  const codec = plan.container === 'webm' ? OPUS_CODEC : AAC_CODEC;
   const support = await AudioEncoder.isConfigSupported({
-    codec: AAC_CODEC,
+    codec,
     numberOfChannels: plan.audioChannels,
     sampleRate: plan.audioSampleRate,
     bitrate: plan.audioBitrate,
   });
   if (!support.supported) {
     throw new Error(
-      `AAC export is not supported at ${plan.audioSampleRate} Hz / ` +
-        `${plan.audioChannels} channel(s) in this browser.`,
+      `${plan.container === 'webm' ? 'Opus' : 'AAC'} export is not supported at ` +
+        `${plan.audioSampleRate} Hz / ${plan.audioChannels} channel(s) in this browser.`,
     );
   }
 }
@@ -438,13 +648,15 @@ function makeProgress(
 ): ExportProgress {
   return {
     preset: plan.preset,
+    codec: plan.codec,
+    container: plan.container,
     phase,
     doneFrames,
     totalFrames: plan.totalFrames,
     percent: plan.totalFrames > 0 ? Math.min(1, doneFrames / plan.totalFrames) : 1,
     etaSeconds: phase !== 'video'
       ? null
-      : estimateEtaSeconds(plan.totalFrames, doneFrames, probe, plan.preset),
+      : estimateEtaSeconds(plan.totalFrames, doneFrames, probe, plan.preset, plan.codec),
     elapsedSeconds: (performance.now() - startedAt) / 1000,
     subRealtime: plan.subRealtime,
   };
@@ -467,9 +679,13 @@ async function encodeVideoRange(
 
   for (let frameIndex = startFrame; frameIndex < endFrame; frameIndex += 1) {
     throwIfCanceled(signal);
-    const timestamp = frameIndex / plan.frameRate;
-    const duration = Math.max(1e-6, Math.min(frameDuration, plan.duration - timestamp));
-    const resolved = resolveAt(timeline, Math.min(timestamp, Math.max(0, plan.duration - 1e-6)));
+    const outputTimestamp = rebaseOutputTimestamp(frameIndex, plan.frameRate);
+    const timelineTime = timelineTimeAt(plan, outputTimestamp);
+    const duration = Math.max(1e-6, Math.min(frameDuration, plan.exportDuration - outputTimestamp));
+    const resolved = resolveAt(
+      timeline,
+      Math.min(timelineTime, plan.rangeStartS + plan.exportDuration - 1e-6),
+    );
 
     let exportFrame: VideoFrame;
     if (resolved) {
@@ -481,7 +697,7 @@ async function encodeVideoRange(
           sourceFrame = decoded.toVideoFrame();
           exportFrame = await renderer.renderForExport(
             sourceFrame,
-            timestamp,
+            outputTimestamp,
             duration,
             resolved.clip.effects,
           );
@@ -490,22 +706,20 @@ async function encodeVideoRange(
           decoded.close();
         }
       } else {
-        exportFrame = await renderer.renderBlackForExport(timestamp, duration);
+        exportFrame = await renderer.renderBlackForExport(outputTimestamp, duration);
       }
     } else {
-      exportFrame = await renderer.renderBlackForExport(timestamp, duration);
+      exportFrame = await renderer.renderBlackForExport(outputTimestamp, duration);
     }
 
     let sample: VideoSample;
     try {
-      sample = new VideoSample(exportFrame, { timestamp, duration });
+      sample = new VideoSample(exportFrame, { timestamp: outputTimestamp, duration });
     } catch (error) {
       exportFrame.close();
       throw error;
     }
 
-    // VideoSample wraps VideoFrame directly and closes that backing frame from
-    // sample.close(); closing exportFrame separately would double-close it.
     await videoSource
       .add(sample, { keyFrame: frameIndex % keyFrameInterval === 0 })
       .finally(() => sample.close());
@@ -532,11 +746,12 @@ async function encodeAudioRange(
   for (let cursor = startFrame; cursor < endFrame; cursor += AUDIO_BLOCK_FRAMES) {
     throwIfCanceled(signal);
     const frames = Math.min(AUDIO_BLOCK_FRAMES, endFrame - cursor);
-    const timestamp = cursor / plan.audioSampleRate;
+    const outputTimestamp = cursor / plan.audioSampleRate;
+    const timelineTime = timelineTimeAt(plan, outputTimestamp);
     const pcm = await mixAudioWindow(
       timeline,
       sources,
-      timestamp,
+      timelineTime,
       frames,
       plan.audioSampleRate,
       plan.audioChannels,
@@ -550,7 +765,7 @@ async function encodeAudioRange(
       format: 'f32',
       numberOfChannels: plan.audioChannels,
       sampleRate: plan.audioSampleRate,
-      timestamp,
+      timestamp: outputTimestamp,
     });
 
     await audioSource.add(sample).finally(() => sample.close());
@@ -575,7 +790,7 @@ async function encodeInterleaved(
   startedAt: number,
 ): Promise<void> {
   const videoFramesPerSlice = Math.max(1, Math.round(plan.frameRate * EXPORT_INTERLEAVE_SECONDS));
-  const totalAudioFrames = Math.max(1, Math.ceil(plan.duration * plan.audioSampleRate));
+  const totalAudioFrames = Math.max(1, Math.ceil(plan.exportDuration * plan.audioSampleRate));
   let audioCursor = 0;
 
   for (let videoStart = 0; videoStart < plan.totalFrames; videoStart += videoFramesPerSlice) {
@@ -583,7 +798,7 @@ async function encodeInterleaved(
     await encodeVideoRange(options, plan, videoSource, startedAt, videoStart, videoEnd);
 
     if (audioSource) {
-      const sliceEndTime = Math.min(plan.duration, videoEnd / plan.frameRate);
+      const sliceEndTime = Math.min(plan.exportDuration, videoEnd / plan.frameRate);
       const audioEnd = Math.min(totalAudioFrames, Math.ceil(sliceEndTime * plan.audioSampleRate));
       await encodeAudioRange(options, plan, audioSource, startedAt, audioCursor, audioEnd);
       audioCursor = audioEnd;
@@ -595,21 +810,24 @@ async function encodeInterleaved(
   }
 }
 
-export async function exportTimelineToMp4(
+export async function exportTimeline(
   options: TimelineExportOptions,
 ): Promise<TimelineExportResult> {
   const plan = buildExportPlan(
     options.timeline,
     options.sources,
-    options.preset,
+    options.settings,
     options.throughputProbe,
   );
   throwIfCanceled(options.signal);
   await assertVideoEncoderSupported(plan);
   await assertAudioEncoderSupported(plan);
 
+  const candidate = codecConfig(plan.codec);
+  const chunkBytes = MP4_CHUNK_BYTES;
+
   let writable: FileSystemWritableFileStream | null = null;
-  let output: Output<Mp4OutputFormat, StreamTarget> | null = null;
+  let output: Output<Mp4OutputFormat | WebMOutputFormat, StreamTarget> | null = null;
   let videoSource: VideoSampleSource | null = null;
   let audioSource: AudioSampleSource | null = null;
 
@@ -617,16 +835,16 @@ export async function exportTimelineToMp4(
     writable = await options.outputHandle.createWritable();
     const target = new StreamTarget(
       writable as unknown as WritableStream<StreamTargetChunk>,
-      { chunked: true, chunkSize: MP4_CHUNK_BYTES },
+      { chunked: true, chunkSize: chunkBytes },
     );
     output = new Output({
-      format: new Mp4OutputFormat({ fastStart: false }),
+      format: plan.container === 'mp4' ? new Mp4OutputFormat({ fastStart: false }) : new WebMOutputFormat(),
       target,
     });
 
     videoSource = new VideoSampleSource({
-      codec: 'avc',
-      fullCodecString: H264_CODEC,
+      codec: candidate.mediabunnyCodec,
+      fullCodecString: candidate.webCodec,
       bitrate: plan.videoBitrate,
       bitrateMode: 'variable',
       keyFrameInterval: 2,
@@ -637,8 +855,8 @@ export async function exportTimelineToMp4(
 
     audioSource = plan.hasAudio
       ? new AudioSampleSource({
-          codec: 'aac',
-          fullCodecString: AAC_CODEC,
+          codec: plan.container === 'webm' ? 'opus' : 'aac',
+          fullCodecString: plan.container === 'webm' ? OPUS_CODEC : AAC_CODEC,
           bitrate: plan.audioBitrate,
           bitrateMode: 'variable',
         })
@@ -659,7 +877,8 @@ export async function exportTimelineToMp4(
     }
 
     options.onProgress(makeProgress(plan, 'finalizing', plan.totalFrames, startedAt, options.throughputProbe));
-    const mimeType = await output.getMimeType().catch(() => 'video/mp4');
+    const fallbackMime = plan.container === 'webm' ? 'video/webm' : 'video/mp4';
+    const mimeType = await output.getMimeType().catch(() => fallbackMime);
     await output.finalize();
     output = null;
     writable = null;
