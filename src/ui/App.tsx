@@ -34,6 +34,7 @@ export function App() {
     typeof globalThis.crossOriginIsolated === 'boolean' ? globalThis.crossOriginIsolated : false,
   );
   const [workerReady, setWorkerReady] = createSignal(false);
+  const [webgpuAvailable, setWebgpuAvailable] = createSignal(false);
   const [metadata, setMetadata] = createSignal<MediaMetadata | null>(null);
   const [importing, setImporting] = createSignal(false);
   const [statusLine, setStatusLine] = createSignal('Checking client capabilities…');
@@ -87,19 +88,28 @@ export function App() {
   const clock = createSharedClock(sab);
 
   const pipelineMode = createMemo<PipelineMode>(() => {
-    if (workerReady()) return 'accelerated';
+    if (workerReady() && webgpuAvailable()) return 'accelerated';
     if (environmentIssue()) return 'limited';
     return 'starting';
   });
+
+  const accelerated = () => pipelineMode() === 'accelerated';
 
   function handleState(msg: import('../protocol').WorkerStateMessage) {
     switch (msg.type) {
       case 'ready':
         setWorkerReady(true);
+        setWebgpuAvailable(msg.webgpu);
+        if (!msg.webgpu) {
+          setEnvironmentIssue(
+            msg.gpuUnavailableReason ??
+              'WebGPU is unavailable in this browser. Accelerated import, playback, effects, and export require a WebGPU-capable Chromium browser.',
+          );
+        }
         setStatusLine(
           msg.webgpu
             ? `Pipeline ready · WebGPU (${msg.features.join(', ') || 'default'})`
-            : `Pipeline ready · ${msg.gpuUnavailableReason ?? 'WebGPU unavailable'}`,
+            : `Limited shell · ${msg.gpuUnavailableReason ?? 'WebGPU unavailable'}`,
         );
         break;
       case 'import-progress':
@@ -187,7 +197,7 @@ export function App() {
 
   async function sendInit(canvas: OffscreenCanvas) {
     if (initSent) return;
-    if (!sab) {
+    if (!isIsolated() || !sab) {
       setEnvironmentIssue(
         'This browser or origin cannot expose SharedArrayBuffer. The app shell stays client-side, but accelerated import, playback, effects, and export need SAB plus COOP/COEP headers so the local CPU/GPU path can run safely.',
       );
@@ -212,8 +222,10 @@ export function App() {
   }
 
   function importMedia(file: File) {
-    if (!initSent) {
-      setStatusLine(environmentIssue() ?? 'Waiting for preview canvas…');
+    if (!accelerated()) {
+      setStatusLine(
+        environmentIssue() ? 'Import unavailable in limited mode' : 'Waiting for preview canvas…',
+      );
       return;
     }
     const { bridge: b } = ensureWorker();
@@ -254,7 +266,7 @@ export function App() {
 
   async function startExport(preset: ExportPreset) {
     if (!metadata() || exporting()) return;
-    if (!initSent) {
+    if (!accelerated()) {
       setExportError('Waiting for preview canvas before export can start.');
       return;
     }
@@ -283,8 +295,10 @@ export function App() {
 
   function onFileDrop(file: File) {
     setIsDraggingFile(false);
-    if (!initSent) {
-      setStatusLine(environmentIssue() ?? 'Drop again after preview is ready');
+    if (!accelerated()) {
+      setStatusLine(
+        environmentIssue() ? 'Import unavailable in limited mode' : 'Drop again after preview is ready',
+      );
       return;
     }
     const { bridge: b } = ensureWorker();
@@ -363,7 +377,7 @@ export function App() {
           audioEngine.pause();
         }}
         onStep={(direction) => bridge?.send({ type: 'step', direction })}
-        disabled={!workerReady()}
+        disabled={!accelerated()}
         crossOriginIsolated={isIsolated()}
         pipelineMode={pipelineMode()}
         previewLabel={previewLabel()}
@@ -402,7 +416,7 @@ export function App() {
                 class={cn(
                   buttonVariants({ variant: 'default' }),
                   'import-picker',
-                  !workerReady() && 'is-disabled pointer-events-none',
+                  !accelerated() && 'is-disabled pointer-events-none',
                 )}
               >
                 Import
@@ -411,7 +425,7 @@ export function App() {
                   type="file"
                   accept={VIDEO_ACCEPT}
                   onChange={handleImportInput}
-                  disabled={!workerReady()}
+                  disabled={!accelerated()}
                   aria-label="Import media"
                 />
               </label>
@@ -481,22 +495,12 @@ export function App() {
               Offline
             </span>
           </Show>
-          <Show when={previewLabel() !== null}>
-            <span class="status-badge" title="Adaptive preview resolution">
-              Preview: {previewLabel()}
-            </span>
-          </Show>
-          <Show when={encodeFps() !== null}>
-            <span class="status-badge" title="Estimated encode throughput (session)">
-              Encode: {Math.round(encodeFps()!)} fps
-            </span>
-          </Show>
           <Show when={audioWarning()}>
             <span class="status-badge status-warn" title={audioWarning()!}>
               Audio Disabled
             </span>
           </Show>
-          <Show when={workerReady()}>
+          <Show when={isIsolated()}>
             <span class="status-ok">COOP/COEP OK</span>
           </Show>
         </span>

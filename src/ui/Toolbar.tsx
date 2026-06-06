@@ -75,13 +75,12 @@ export function Toolbar(props: ToolbarProps) {
       <div class="toolbar-center">
         <div class="pipeline-strip" aria-label="Pipeline status">
           <span
-            class={`pipeline-chip ${
-              props.pipelineMode === 'accelerated'
-                ? 'is-ok'
-                : props.pipelineMode === 'limited'
-                  ? 'is-warn'
-                  : 'is-waiting'
-            }`}
+            class={cn(
+              'pipeline-chip',
+              props.pipelineMode === 'accelerated' && 'is-ok',
+              props.pipelineMode === 'limited' && 'is-warn',
+              props.pipelineMode === 'starting' && 'is-waiting',
+            )}
           >
             <Gauge size={13} aria-hidden="true" />
             {props.pipelineMode === 'accelerated'
@@ -94,7 +93,7 @@ export function Toolbar(props: ToolbarProps) {
             <Cpu size={13} aria-hidden="true" />
             Client compute
           </span>
-          <span class={`pipeline-chip ${props.crossOriginIsolated ? 'is-ok' : 'is-warn'}`}>
+          <span class={cn('pipeline-chip', props.crossOriginIsolated ? 'is-ok' : 'is-warn')}>
             <ShieldCheck size={13} aria-hidden="true" />
             {props.crossOriginIsolated ? 'COOP/COEP OK' : 'COOP/COEP needed'}
           </span>
@@ -106,7 +105,7 @@ export function Toolbar(props: ToolbarProps) {
           </Show>
           <Show when={props.encodeFps !== null}>
             <span class="pipeline-chip">
-              <Activity size={13} aria-hidden="true" />
+              <Gauge size={13} aria-hidden="true" />
               Encode {Math.round(props.encodeFps!)} fps
             </span>
           </Show>

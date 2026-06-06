@@ -1,4 +1,4 @@
-import { type JSX } from 'solid-js';
+import { Show, type JSX } from 'solid-js';
 import { Film, Headphones, Music2, VolumeX } from 'lucide-solid';
 import { type TimelineTrackSnapshot as ProtocolTimelineTrack } from '../protocol';
 
@@ -91,20 +91,22 @@ export function TimelineTrack(props: TimelineTrackProps) {
         <span class="track-label-meta">
           {props.track.clips.length} clip{props.track.clips.length === 1 ? '' : 's'}
         </span>
-        <span class="track-badges">
-          {props.track.solo ? (
-            <span class="track-badge">
-              <Headphones size={11} aria-hidden="true" />
-              Solo
-            </span>
-          ) : null}
-          {props.track.muted ? (
-            <span class="track-badge is-muted">
-              <VolumeX size={11} aria-hidden="true" />
-              Muted
-            </span>
-          ) : null}
-        </span>
+        <Show when={props.track.solo || props.track.muted}>
+          <span class="track-badges">
+            {props.track.solo ? (
+              <span class="track-badge">
+                <Headphones size={11} aria-hidden="true" />
+                Solo
+              </span>
+            ) : null}
+            {props.track.muted ? (
+              <span class="track-badge is-muted">
+                <VolumeX size={11} aria-hidden="true" />
+                Muted
+              </span>
+            ) : null}
+          </span>
+        </Show>
       </div>
       <div
         class="track-surface"
