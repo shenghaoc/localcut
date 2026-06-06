@@ -14,6 +14,7 @@ import {
   type TimelineClipSnapshot,
   type TimelineMarkerSnapshot,
   type TimelineTrackSnapshot,
+  type TimelineTransitionSnapshot,
   type WorkerStateMessage,
   type WaveformPeaks,
 } from '../protocol';
@@ -136,6 +137,7 @@ export function App() {
   const [encodeFps, setEncodeFps] = createSignal<number | null>(null);
   const [timeline, setTimeline] = createSignal<TimelineTrackSnapshot[]>([]);
   const [markers, setMarkers] = createSignal<TimelineMarkerSnapshot[]>([]);
+  const [transitions, setTransitions] = createSignal<TimelineTransitionSnapshot[]>([]);
   const [masterGain, setMasterGain] = createSignal(1);
   const [selectedClipRefs, setSelectedClipRefs] = createSignal<TimelineClipReference[]>([]);
   const [timelineClipboard, setTimelineClipboard] = createSignal<TimelineClipboardClip[]>([]);
@@ -327,6 +329,7 @@ export function App() {
         break;
       case 'timeline-state':
         setTimeline(msg.timeline);
+        setTransitions(msg.transitions);
         setMarkers(msg.markers);
         setMasterGain(msg.masterGain);
         audioEngine.setMasterGain(msg.masterGain);
@@ -1154,7 +1157,7 @@ export function App() {
         currentTime={clock.currentTime}
         duration={clock.duration}
         frameRate={() => metadata()?.video?.frameRate ?? null}
-        hasMedia={(metadata() !== null || hasTimeline() || markers().length > 0 || assets().length > 0) && accelerated()}
+        hasMedia={(metadata() !== null || hasTimeline() || transitions().length > 0 || markers().length > 0 || assets().length > 0) && accelerated()}
         timeline={timeline}
         markers={markers}
         selectedClipRefs={selectedClipRefs}

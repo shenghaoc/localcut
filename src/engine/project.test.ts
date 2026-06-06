@@ -116,6 +116,48 @@ describe('project serialization', () => {
     expect(result.doc.exportSettings).toEqual(doc.exportSettings);
   });
 
+  it('round-trips transition lists and rejects malformed entries', () => {
+    const doc = serializeProject({
+      projectId: 'project-1',
+      timeline: timelineFixture(),
+      transitions: [
+        {
+          id: 'transition-1',
+          trackId: 'track-video-source-1',
+          fromClipId: 'clip-a',
+          toClipId: 'clip-b',
+          durationS: 1.25,
+          kind: 'slide',
+          params: { direction: 'left' },
+        },
+      ],
+      sources: [sourceFixture()],
+    });
+
+    const result = deserializeProject(doc);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.doc.transitions).toEqual(doc.transitions);
+
+    const invalidDuration = deserializeProject({
+      ...doc,
+      transitions: [{ ...doc.transitions[0], durationS: 0 }],
+    });
+    expect(invalidDuration.ok).toBe(false);
+
+    const invalidKind = deserializeProject({
+      ...doc,
+      transitions: [{ ...doc.transitions[0], kind: 'zoom-blur' }],
+    });
+    expect(invalidKind.ok).toBe(false);
+
+    const invalidParams = deserializeProject({
+      ...doc,
+      transitions: [{ ...doc.transitions[0], params: { direction: 'diagonal' } }],
+    });
+    expect(invalidParams.ok).toBe(false);
+  });
+
   it('round-trips a versioned project document', () => {
     const doc = serializeProject({
       projectId: 'project-1',

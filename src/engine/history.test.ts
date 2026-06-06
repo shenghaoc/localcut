@@ -34,6 +34,7 @@ function makeTimeline(label: string): Timeline {
 function makeSnapshot(label: string, markers: TimelineMarker[] = []) {
   return {
     timeline: makeTimeline(label),
+    transitions: [],
     markers,
   };
 }

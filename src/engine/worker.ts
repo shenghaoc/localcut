@@ -9,12 +9,14 @@ import {
   type SourceDescriptorSnapshot,
   type TimelineClipboardClip,
   type TimelineTrackSnapshot,
+  type TimelineTransitionSnapshot,
   type WorkerCommand,
   type WorkerStateMessage,
 } from '../protocol';
 import {
   addMarker,
   addTrack,
+  addTransition,
   closeGaps,
   createEmptyTimeline,
   deleteMarker,
@@ -26,10 +28,13 @@ import {
   pasteClips,
   removeClip,
   removeTrack,
+  removeTransition,
   reorderTrack,
+  revalidateTransitions,
   resolveAllAt,
   resolveAudioAt,
   setClipDuration,
+  setTransition,
   splitClipAt,
   trimClip,
   setClipEffectParam,
@@ -43,6 +48,7 @@ import {
   DEFAULT_MASTER_GAIN,
   type Timeline,
   type TimelineMarker,
+  type TimelineTransition,
   type ClipboardTimelineClip,
   type ClipEffectParams,
   type TransformParams,
@@ -89,6 +95,7 @@ import { createTimelineHistory, type HistoryCoalesceKey } from './history';
 import {
   cloneMarkersSnapshot,
   cloneTimelineSnapshot,
+  cloneTransitionsSnapshot,
   serializeProject,
   sourceDescriptorMatchesCandidate,
   type ProjectDoc,
@@ -112,6 +119,7 @@ let playback: PlaybackController<LayerMeta> | null = null;
 let adaptive: AdaptiveResolution | null = null;
 let probeDone = false;
 let timeline: Timeline = createEmptyTimeline();
+let transitions: TimelineTransition[] = [];
 let markers: TimelineMarker[] = [];
 let masterGain = DEFAULT_MASTER_GAIN;
 /** Phase 13 will populate this; export crossfades only until preview dual-stream lands. */
@@ -158,6 +166,14 @@ function makeClipId(sourceId: string): string {
   return `clip-${sourceId}-${suffix}`;
 }
 
+function makeTransitionId(): string {
+  const suffix =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2);
+  return `transition-${suffix}`;
+}
+
 function makeProjectId(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
     return `project-${crypto.randomUUID()}`;
@@ -190,7 +206,14 @@ function postTimelineState() {
       offline: sourceInputs.has(clip.sourceId) ? undefined : true,
     })),
   }));
-  post({ type: 'timeline-state', timeline: snapshot, markers: cloneMarkersSnapshot(markers), masterGain });
+  const transitionSnapshot: TimelineTransitionSnapshot[] = cloneTransitionsSnapshot(transitions);
+  post({
+    type: 'timeline-state',
+    timeline: snapshot,
+    transitions: transitionSnapshot,
+    markers: cloneMarkersSnapshot(markers),
+    masterGain,
+  });
 }
 
 function postHistoryState(): void {
@@ -574,6 +597,7 @@ async function persistCurrentProject(): Promise<void> {
   const doc = serializeProject({
     projectId,
     timeline,
+    transitions,
     markers,
     sources: currentProjectSources(),
     masterGain,
@@ -792,6 +816,34 @@ async function restoreMissingSources(): Promise<void> {
   ensureClockAndTimeline();
 }
 
+function transitionSourceDurations() {
+  return {
+    durationForSource: (sourceId: string) => sourceDescriptors.get(sourceId)?.durationS ?? sourceInputs.get(sourceId)?.duration,
+  };
+}
+
+function reconcileTransitions(
+  nextTimeline: Timeline = timeline,
+  currentTransitions: readonly TimelineTransition[] = transitions,
+): TimelineTransition[] {
+  return revalidateTransitions(nextTimeline, currentTransitions, transitionSourceDurations());
+}
+
+function commitTransitionMutation(
+  mutate: () => TimelineTransition[],
+  options: {
+    coalesceKey?: HistoryCoalesceKey;
+    refreshPlayback?: 'seek' | 'refresh' | 'none';
+    prune?: boolean;
+  } = {},
+): boolean {
+  return commitEditMutation(() => ({ timeline, transitions: mutate(), markers }), {
+    refreshPlayback: 'refresh',
+    prune: false,
+    ...options,
+  });
+}
+
 function afterTimelineMutation(options: {
   coalesceKey?: HistoryCoalesceKey;
   refreshPlayback?: 'seek' | 'refresh' | 'none';
@@ -815,12 +867,13 @@ function afterTimelineMutation(options: {
 function historySnapshot() {
   return {
     timeline,
+    transitions,
     markers,
   };
 }
 
 function commitEditMutation(
-  mutate: () => { timeline: Timeline; markers: TimelineMarker[] },
+  mutate: () => { timeline: Timeline; transitions: TimelineTransition[]; markers: TimelineMarker[] },
   options: {
     coalesceKey?: HistoryCoalesceKey;
     refreshPlayback?: 'seek' | 'refresh' | 'none';
@@ -829,9 +882,10 @@ function commitEditMutation(
 ): boolean {
   const before = historySnapshot();
   const next = mutate();
-  if (next.timeline === timeline && next.markers === markers) return false;
+  if (next.timeline === timeline && next.transitions === transitions && next.markers === markers) return false;
   history.push(before, { coalesceKey: options.coalesceKey });
   timeline = next.timeline;
+  transitions = next.transitions;
   markers = next.markers;
   afterTimelineMutation(options);
   return true;
@@ -845,7 +899,14 @@ function commitTimelineMutation(
     prune?: boolean;
   } = {},
 ): boolean {
-  return commitEditMutation(() => ({ timeline: mutate(), markers }), options);
+  return commitEditMutation(() => {
+    const nextTimeline = mutate();
+    return {
+      timeline: nextTimeline,
+      transitions: reconcileTransitions(nextTimeline, transitions),
+      markers,
+    };
+  }, options);
 }
 
 function commitMarkerMutation(
@@ -856,7 +917,7 @@ function commitMarkerMutation(
     prune?: boolean;
   } = {},
 ): boolean {
-  return commitEditMutation(() => ({ timeline, markers: mutate() }), {
+  return commitEditMutation(() => ({ timeline, transitions, markers: mutate() }), {
     refreshPlayback: 'none',
     prune: false,
     ...options,
@@ -938,11 +999,11 @@ function projectHasClips(doc: ProjectDoc): boolean {
  *  imported but not yet placed) are persisted too, so they must remain
  *  restore-eligible or that saved state would be silently lost on next launch. */
 function projectHasRestorableContent(doc: ProjectDoc): boolean {
-  return projectHasClips(doc) || doc.markers.length > 0 || doc.sources.length > 0;
+  return projectHasClips(doc) || doc.transitions.length > 0 || doc.markers.length > 0 || doc.sources.length > 0;
 }
 
 function currentProjectIsEmpty(): boolean {
-  return sourceInputs.size === 0 && timelineSourceIds().size === 0 && markers.length === 0;
+  return sourceInputs.size === 0 && timelineSourceIds().size === 0 && transitions.length === 0 && markers.length === 0;
 }
 
 async function checkRestoreAvailable(): Promise<void> {
@@ -1040,6 +1101,10 @@ async function handleRestoreProject(): Promise<void> {
     sourceDescriptors.set(descriptor.sourceId, descriptor);
     binSourceIds.add(descriptor.sourceId);
   }
+  // Transition validation depends on source durations. Populate descriptors before
+  // reconciling so restored projects don't drop otherwise-valid transitions while
+  // their media files are still offline.
+  transitions = reconcileTransitions(timeline, doc.transitions);
   postMediaAssets();
 
   const restoreProjectId = projectId;
@@ -1128,6 +1193,7 @@ function teardownMedia() {
   binSourceIds.clear();
   primaryHandle = null;
   timeline = createEmptyTimeline();
+  transitions = [];
   markers = [];
 }
 
@@ -1462,6 +1528,31 @@ function handleSetClipFade(cmd: Extract<WorkerCommand, { type: 'set-clip-fade' }
   );
 }
 
+function handleAddTransition(cmd: Extract<WorkerCommand, { type: 'add-transition' }>) {
+  commitTransitionMutation(() =>
+    addTransition(timeline, transitions, transitionSourceDurations(), {
+      id: makeTransitionId(),
+      trackId: cmd.trackId,
+      fromClipId: cmd.fromClipId,
+      toClipId: cmd.toClipId,
+      durationS: cmd.durationS,
+      kind: cmd.kind,
+      params: cmd.params,
+    }),
+  );
+}
+
+function handleRemoveTransition(cmd: Extract<WorkerCommand, { type: 'remove-transition' }>) {
+  commitTransitionMutation(() => removeTransition(transitions, cmd.transitionId));
+}
+
+function handleSetTransition(cmd: Extract<WorkerCommand, { type: 'set-transition' }>) {
+  commitTransitionMutation(
+    () => setTransition(timeline, transitions, transitionSourceDurations(), cmd.transitionId, cmd),
+    { coalesceKey: { clipId: cmd.transitionId, key: 'transition' } },
+  );
+}
+
 function handlePlaceClip(cmd: Extract<WorkerCommand, { type: 'place-clip' }>) {
   const handle = sourceInputs.get(cmd.sourceId);
   if (!handle) {
@@ -1565,8 +1656,9 @@ function handleTrim(cmd: Extract<WorkerCommand, { type: 'trim-clip' }>) {
   );
 }
 
-function applyHistoryRestore(next: { timeline: Timeline; markers: TimelineMarker[] }): void {
+function applyHistoryRestore(next: { timeline: Timeline; transitions: TimelineTransition[]; markers: TimelineMarker[] }): void {
   timeline = cloneTimelineSnapshot(next.timeline);
+  transitions = reconcileTransitions(timeline, next.transitions);
   markers = cloneMarkersSnapshot(next.markers);
   // Undo can resurrect clips of a source that was removed from the bin. Re-add
   // any still-described source the restored timeline references so the asset
@@ -2007,6 +2099,15 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
       break;
     case 'set-clip-fade':
       handleSetClipFade(cmd);
+      break;
+    case 'add-transition':
+      handleAddTransition(cmd);
+      break;
+    case 'remove-transition':
+      handleRemoveTransition(cmd);
+      break;
+    case 'set-transition':
+      handleSetTransition(cmd);
       break;
     case 'place-clip':
       handlePlaceClip(cmd);
