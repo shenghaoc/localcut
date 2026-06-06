@@ -502,6 +502,7 @@ function cloneWithNewId(clip: TimelineClip): TimelineClip {
   return {
     ...cloneClip(clip),
     id: newId(clip.id),
+    linkedGroupId: undefined,
   };
 }
 
@@ -1472,7 +1473,7 @@ export function removeMarkersInRange(
   endTime: number,
 ): TimelineMarker[] {
   const filtered = markers.filter(
-    (m) => m.time < startTime - TIMELINE_EPSILON || m.time > endTime + TIMELINE_EPSILON,
+    (m) => m.time < startTime - TIMELINE_EPSILON || m.time >= endTime - TIMELINE_EPSILON,
   );
   return filtered.length === markers.length ? (markers as TimelineMarker[]) : filtered;
 }
@@ -1610,14 +1611,14 @@ export function rippleTrim(
 
   const trimmedClip = trimmed[loc.trackIndex]!.clips[loc.clipIndex]!;
   const newEnd = clipEnd(trimmedClip);
-  const delta = edge === 'out' ? newEnd - oldEnd : trimmedClip.start - clip.start;
+  const delta = edge === 'out' ? newEnd - oldEnd : clip.start - trimmedClip.start;
   if (delta === 0) return trimmed;
 
   const afterTime = edge === 'out' ? oldEnd : clip.start;
   const next = cloneTimeline(trimmed);
   const track = next[loc.trackIndex]!;
   track.clips = track.clips.map((c, i) => {
-    if (i === loc.clipIndex) return c;
+    if (edge === 'out' && i === loc.clipIndex) return c;
     if (c.start >= afterTime - TIMELINE_EPSILON) {
       return { ...c, start: Math.max(0, c.start + delta) };
     }
@@ -1846,14 +1847,16 @@ export function insertEdit(
     if (isTrackLocked(timeline, sid)) return timeline;
   }
 
-  let insertDuration = 0;
-  for (const item of clips) {
-    insertDuration = Math.max(insertDuration, item.clip.duration);
-  }
-  if (insertDuration <= 0) return timeline;
-
   const targetSet = new Set(targetTrackIds);
   const syncSet = new Set(syncLockedTrackIds);
+
+  let insertDuration = 0;
+  for (const item of clips) {
+    if (targetSet.has(item.trackId)) {
+      insertDuration = Math.max(insertDuration, item.clip.duration);
+    }
+  }
+  if (insertDuration <= 0) return timeline;
 
   for (const track of timeline) {
     if (syncSet.has(track.id) && !targetSet.has(track.id)) {
@@ -1915,18 +1918,22 @@ export function overwriteEdit(
       }
       if (eStart < regionStart - TIMELINE_EPSILON) {
         const leftDuration = regionStart - eStart;
-        surviving.push({ ...existing, duration: leftDuration, linkedGroupId: undefined });
+        const leftKeyframes = normalizeClipKeyframes(existing.keyframes, leftDuration);
+        surviving.push({ ...existing, duration: leftDuration, linkedGroupId: undefined, keyframes: leftKeyframes || undefined });
       }
       if (eEnd > regionEnd + TIMELINE_EPSILON) {
         const rightStart = regionEnd;
         const trimDelta = regionEnd - eStart;
+        const rightDuration = eEnd - regionEnd;
+        const rightKeyframes = rebaseTrimmedKeyframes(existing, trimDelta, rightDuration);
         surviving.push({
           ...existing,
           id: newId(existing.id),
           start: rightStart,
-          duration: eEnd - regionEnd,
+          duration: rightDuration,
           inPoint: existing.inPoint + trimDelta,
           linkedGroupId: undefined,
+          keyframes: rightKeyframes,
         });
       }
     }
@@ -1970,17 +1977,22 @@ export function liftRegion(
       }
       changed = true;
       if (clip.start < startTime - TIMELINE_EPSILON) {
-        surviving.push({ ...clip, duration: startTime - clip.start, linkedGroupId: undefined });
+        const leftDuration = startTime - clip.start;
+        const leftKeyframes = normalizeClipKeyframes(clip.keyframes, leftDuration);
+        surviving.push({ ...clip, duration: leftDuration, linkedGroupId: undefined, keyframes: leftKeyframes || undefined });
       }
       if (cEnd > endTime + TIMELINE_EPSILON) {
         const trimDelta = endTime - clip.start;
+        const rightDuration = cEnd - endTime;
+        const rightKeyframes = rebaseTrimmedKeyframes(clip, trimDelta, rightDuration);
         surviving.push({
           ...clip,
           id: newId(clip.id),
           start: endTime,
-          duration: cEnd - endTime,
+          duration: rightDuration,
           inPoint: clip.inPoint + trimDelta,
           linkedGroupId: undefined,
+          keyframes: rightKeyframes,
         });
       }
     }
@@ -2010,7 +2022,12 @@ export function extractRegion(
 
   for (const track of timeline) {
     if (syncSet.has(track.id) && !targetSet.has(track.id)) {
-      if (clipSpansPoint(track, startTime) || clipSpansPoint(track, endTime)) return timeline;
+      for (const clip of track.clips) {
+        const cEnd = clipEnd(clip);
+        if (cEnd > startTime + TIMELINE_EPSILON && clip.start < endTime - TIMELINE_EPSILON) {
+          return timeline;
+        }
+      }
     }
   }
 

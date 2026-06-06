@@ -2,6 +2,7 @@
 import {
   assertCrossOriginIsolated,
   ClockIndex,
+  TIMELINE_EPSILON,
   type ExportSettings,
   type MediaAssetSnapshot,
   type ThroughputProbe,
@@ -1617,15 +1618,22 @@ function pruneUnusedSources(): void {
   }
 }
 
+function isTrackLockedWorker(trackId: string): boolean {
+  return timeline.find((t) => t.id === trackId)?.locked === true;
+}
+
 function handleSplit(cmd: Extract<WorkerCommand, { type: 'split' }>) {
+  if (isTrackLockedWorker(cmd.trackId)) return;
   commitTimelineMutation(() => splitClipAt(timeline, cmd.trackId, cmd.time));
 }
 
 function handleDelete(cmd: Extract<WorkerCommand, { type: 'delete-clip' }>) {
+  if (isTrackLockedWorker(cmd.trackId)) return;
   commitTimelineMutation(() => removeClip(timeline, cmd.trackId, cmd.clipId));
 }
 
 function handleDeleteBatch(cmd: Extract<WorkerCommand, { type: 'delete-clips' }>) {
+  if (cmd.clips.some((c) => isTrackLockedWorker(c.trackId))) return;
   commitTimelineMutation(() => {
     let next = timeline;
     for (const clip of cmd.clips) {
@@ -1636,16 +1644,19 @@ function handleDeleteBatch(cmd: Extract<WorkerCommand, { type: 'delete-clips' }>
 }
 
 function handleMove(cmd: Extract<WorkerCommand, { type: 'move-clip' }>) {
+  if (isTrackLockedWorker(cmd.fromTrackId) || isTrackLockedWorker(cmd.toTrackId)) return;
   commitTimelineMutation(() =>
     moveClipTo(timeline, cmd.fromTrackId, cmd.clipId, cmd.toTrackId, cmd.toStart),
   );
 }
 
 function handleMoveBatch(cmd: Extract<WorkerCommand, { type: 'move-clips' }>) {
+  if (cmd.moves.some((m) => isTrackLockedWorker(m.trackId) || isTrackLockedWorker(m.toTrackId))) return;
   commitTimelineMutation(() => moveClips(timeline, cmd.moves));
 }
 
 function handleDuplicate(cmd: Extract<WorkerCommand, { type: 'duplicate-clip' }>) {
+  if (cmd.clips.some((c) => isTrackLockedWorker(c.trackId))) return;
   commitTimelineMutation(() => duplicateClips(timeline, cmd.clips, cmd.atTime));
 }
 
@@ -1704,6 +1715,7 @@ function clipboardClipFromMessage(item: TimelineClipboardClip): ClipboardTimelin
 }
 
 function handlePaste(cmd: Extract<WorkerCommand, { type: 'paste-clips' }>) {
+  if (cmd.clips.some((c) => isTrackLockedWorker(c.trackId))) return;
   commitTimelineMutation(() =>
     pasteClips(timeline, cmd.clips.map(clipboardClipFromMessage), cmd.atTime),
   );
@@ -2045,9 +2057,7 @@ function handleRequestThumbnails(cmd: Extract<WorkerCommand, { type: 'request-th
 }
 
 function handleTrim(cmd: Extract<WorkerCommand, { type: 'trim-clip' }>) {
-  // Look up the underlying source's duration so trimClip can bound an outward
-  // extension. Without it, trimClip would refuse to grow the clip past its
-  // current edge — preventing the user from restoring a previously-shrunk clip.
+  if (isTrackLockedWorker(cmd.trackId)) return;
   const track = timeline.find((t) => t.id === cmd.trackId);
   const clip = track?.clips.find((c) => c.id === cmd.clipId);
   const sourceDuration = clip ? sourceInputs.get(clip.sourceId)?.duration : undefined;
@@ -2083,6 +2093,7 @@ function handleInsertEdit(cmd: Extract<WorkerCommand, { type: 'insert-edit' }>) 
       cmd.atTime,
       syncLockedTrackIds,
     );
+    if (nextTimeline === timeline) return { timeline, transitions, markers };
     const nextMarkers = shiftMarkers(markers, cmd.atTime, cmd.clips.reduce(
       (max, c) => Math.max(max, c.clip.duration), 0,
     ));
@@ -2115,11 +2126,19 @@ function handleRippleDelete(cmd: Extract<WorkerCommand, { type: 'ripple-delete' 
     if (nextTimeline === timeline) return { timeline, transitions, markers };
     let nextMarkers: TimelineMarker[] = markers as TimelineMarker[];
     const sorted = [...removedRegions].sort((a, b) => a.start - b.start);
+    const merged: { start: number; end: number }[] = [];
     for (const r of sorted) {
+      if (merged.length > 0 && r.start <= merged[merged.length - 1]!.end + TIMELINE_EPSILON) {
+        merged[merged.length - 1]!.end = Math.max(merged[merged.length - 1]!.end, r.end);
+      } else {
+        merged.push({ start: r.start, end: r.end });
+      }
+    }
+    for (const r of merged) {
       nextMarkers = removeMarkersInRange(nextMarkers, r.start, r.end);
     }
     let cumulativeDelta = 0;
-    for (const r of sorted) {
+    for (const r of merged) {
       const dur = r.end - r.start;
       nextMarkers = shiftMarkers(nextMarkers, r.start - cumulativeDelta, -dur);
       cumulativeDelta += dur;

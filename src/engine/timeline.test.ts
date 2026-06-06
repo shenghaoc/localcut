@@ -1275,29 +1275,16 @@ describe('rippleTrim', () => {
     expect(next[0]!.clips[1]!.start).toBe(3);
   });
 
-  it('trims in-edge inward and shifts downstream left', () => {
+  it('trims in-edge inward and closes gap by shifting left', () => {
     const a = clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 0 });
     const b = clip({ id: 'b', sourceId: 'src-1', start: 5, duration: 3, inPoint: 5 });
     const tl = [track('v', 'video', [a, b])];
     const next = rippleTrim(tl, 'v', 'a', 'in', 2, []);
-    expect(next[0]!.clips[0]!.start).toBe(2);
+    // In-edge inward: clip a trims from 0→2, gap closed, everything shifts left by 2
+    expect(next[0]!.clips[0]!.start).toBe(0);
     expect(next[0]!.clips[0]!.duration).toBe(3);
     expect(next[0]!.clips[0]!.inPoint).toBe(2);
-    expect(next[0]!.clips[1]!.start).toBe(7);
-  });
-
-  it('in-edge inward ripple shifts downstream by start delta', () => {
-    // Trimming in-edge inward (start 0→2): delta = +2, downstream shifts right.
-    // This documents the current contract: in-edge ripple uses the start-position
-    // delta, so shrinking from the left pushes downstream right (not left).
-    const a = clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 0 });
-    const b = clip({ id: 'b', sourceId: 'src-1', start: 5, duration: 3, inPoint: 5 });
-    const tl = [track('v', 'video', [a, b])];
-    const next = rippleTrim(tl, 'v', 'a', 'in', 2, []);
-    expect(next[0]!.clips[0]!.start).toBe(2);
-    expect(next[0]!.clips[0]!.inPoint).toBe(2);
-    expect(next[0]!.clips[0]!.duration).toBe(3);
-    expect(next[0]!.clips[1]!.start).toBe(7);
+    expect(next[0]!.clips[1]!.start).toBe(3);
   });
 
   it('rejects on locked track', () => {
@@ -1637,5 +1624,118 @@ describe('removeMarkersInRange', () => {
   it('returns original array when nothing removed', () => {
     const m: TimelineMarker[] = [{ id: 'm1', time: 2, label: 'A' }];
     expect(removeMarkersInRange(m, 5, 10)).toBe(m);
+  });
+
+  it('preserves markers at the exclusive end boundary', () => {
+    const m: TimelineMarker[] = [
+      { id: 'm1', time: 5, label: 'At start' },
+      { id: 'm2', time: 10, label: 'At end' },
+      { id: 'm3', time: 7, label: 'Inside' },
+    ];
+    const result = removeMarkersInRange(m, 5, 10);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.id).toBe('m2');
+  });
+});
+
+describe('review fixes', () => {
+  it('rippleTrim in-edge closes gap by shifting trimmed clip and downstream left', () => {
+    const a = clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 10, inPoint: 0 });
+    const b = clip({ id: 'b', sourceId: 'src-1', start: 10, duration: 5, inPoint: 0 });
+    const c = clip({ id: 'c', sourceId: 'src-1', start: 15, duration: 5, inPoint: 0 });
+    const tl = [track('v', 'video', [a, b, c])];
+    const next = rippleTrim(tl, 'v', 'a', 'in', 3, []);
+    expect(next[0]!.clips[0]!.start).toBe(0);
+    expect(next[0]!.clips[0]!.duration).toBe(7);
+    expect(next[0]!.clips[0]!.inPoint).toBe(3);
+    expect(next[0]!.clips[1]!.start).toBe(7);
+    expect(next[0]!.clips[2]!.start).toBe(12);
+  });
+
+  it('rippleTrim in-edge on sync-locked track shifts in tandem', () => {
+    const a = clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 10, inPoint: 0 });
+    const b = clip({ id: 'b', sourceId: 'src-1', start: 10, duration: 5, inPoint: 0 });
+    const s = clip({ id: 's', sourceId: 'src-1', start: 5, duration: 5, inPoint: 0 });
+    const tl = [
+      track('v', 'video', [a, b]),
+      track('a', 'audio', [s], { syncLocked: true }),
+    ];
+    const next = rippleTrim(tl, 'v', 'a', 'in', 4, ['a']);
+    expect(next[0]!.clips[0]!.start).toBe(0);
+    expect(next[0]!.clips[0]!.inPoint).toBe(4);
+    expect(next[0]!.clips[1]!.start).toBe(6);
+    expect(next[1]!.clips[0]!.start).toBe(1);
+  });
+
+  it('duplicateClips clears linkedGroupId on clones', () => {
+    const a = clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 0, linkedGroupId: 'g1' });
+    const b = clip({ id: 'b', sourceId: 'src-1', start: 0, duration: 5, inPoint: 0, linkedGroupId: 'g1' });
+    const tl = [
+      track('v', 'video', [a]),
+      track('a', 'audio', [b]),
+    ];
+    const next = duplicateClips(tl, [{ trackId: 'v', clipId: 'a' }], 5);
+    const dupe = next[0]!.clips[1]!;
+    expect(dupe.linkedGroupId).toBeUndefined();
+    expect(next[0]!.clips[0]!.linkedGroupId).toBe('g1');
+  });
+
+  it('insertEdit computes duration from targeted tracks only', () => {
+    const a = clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 0 });
+    const tl = [
+      track('v', 'video', [a]),
+      track('a', 'audio', []),
+    ];
+    const insertClips = [
+      { trackId: 'v', clip: clip({ id: 'x', sourceId: 'src-1', start: 0, duration: 2, inPoint: 0 }) },
+      { trackId: 'a', clip: clip({ id: 'y', sourceId: 'src-1', start: 0, duration: 10, inPoint: 0 }) },
+    ];
+    // Only 'v' is targeted — insert duration should be 2, not 10
+    const next = insertEdit(tl, ['v'], insertClips, 0, []);
+    expect(next[0]!.clips[1]!.start).toBe(2);
+  });
+
+  it('extractRegion rejects when contained sync-locked clip overlaps range', () => {
+    const a = clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 10, inPoint: 0 });
+    const s = clip({ id: 's', sourceId: 'src-1', start: 3, duration: 2, inPoint: 0 });
+    const tl = [
+      track('v', 'video', [a]),
+      track('a', 'audio', [s], { syncLocked: true }),
+    ];
+    // Sync-locked clip [3,5] is wholly inside extract range [2,8] — must reject
+    const next = extractRegion(tl, ['v'], 2, 8, ['a']);
+    expect(next).toBe(tl);
+  });
+
+  it('overwriteEdit rebases keyframes on right fragment', () => {
+    const kf = {
+      brightness: [
+        { t: 0, value: 0, easing: 'linear' as const },
+        { t: 5, value: 1, easing: 'linear' as const },
+        { t: 10, value: 0.5, easing: 'linear' as const },
+      ],
+    };
+    const a = clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 10, inPoint: 0, keyframes: kf });
+    const tl = [track('v', 'video', [a])];
+    const overClip = clip({ id: 'x', sourceId: 'src-2', start: 0, duration: 4, inPoint: 0 });
+    // Overwrite [3, 7]: clip a splits into left [0,3] and right [7,10]
+    const next = overwriteEdit(tl, ['v'], [{ trackId: 'v', clip: overClip }], 3);
+    const clips = next[0]!.clips;
+    expect(clips).toHaveLength(3);
+    const rightFrag = clips[2]!;
+    expect(rightFrag.start).toBe(7);
+    expect(rightFrag.duration).toBe(3);
+    // Right fragment keyframes should be rebased: original t=7 maps to local t=0
+    if (rightFrag.keyframes?.brightness) {
+      expect(rightFrag.keyframes.brightness[0]!.t).toBe(0);
+    }
+  });
+
+  it('pasteClips clears linkedGroupId on pasted clips', () => {
+    const a = clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 0, linkedGroupId: 'g1' });
+    const tl = [track('v', 'video', [])];
+    const pasted = [{ trackId: 'v', clip: a }];
+    const next = pasteClips(tl, pasted, 0);
+    expect(next[0]!.clips[0]!.linkedGroupId).toBeUndefined();
   });
 });
