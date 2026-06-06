@@ -9,6 +9,10 @@ Use this file as a **thin router**. Read steering before coding; specs live unde
 - [**Technical constraints**](.kiro/steering/tech.md) — SolidJS + Vite, Mediabunny, WebGPU/WebCodecs, Cloudflare static PWA.
 - [**Repository structure**](.kiro/steering/structure.md) — `src/ui/` vs `src/engine/`, naming, layout.
 - [**UI standards**](.kiro/steering/ui-standards.md) — dark professional-tool aesthetic, bespoke timeline.
+- [**Code style**](.kiro/steering/style.md) — TypeScript strict conventions, SolidJS patterns, naming, CSS.
+- [**Testing standards**](.kiro/steering/testing.md) — Vitest scope, mocking strategy, quality gate.
+- [**Accessibility**](.kiro/steering/accessibility.md) — ARIA patterns, keyboard nav, contrast, focus management.
+- [**Security**](.kiro/steering/security.md) — COOP/COEP, file handling, no secrets, user data policy.
 - [**Review policy**](.kiro/steering/review.md) — Kiro/Claude review process + output format (`#review`); priorities live in [Review guidelines](#review-guidelines) below.
 
 ## Workspace MCP config
