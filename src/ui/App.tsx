@@ -368,8 +368,7 @@ export function App() {
 
   return (
     <div class={`app${isDraggingFile() ? ' is-dragging-file' : ''}`}>
-      <Show when={!environmentIssue()}>
-        <Toolbar
+      <Toolbar
         metadata={metadata()}
         playing={clock.playing}
         importAccept={VIDEO_ACCEPT}
@@ -401,7 +400,6 @@ export function App() {
           />
         }
       />
-      </Show>
       <main class="workspace">
         <section class="preview panel">
           <PreviewCanvas onOffscreenReady={sendInit} />
@@ -513,6 +511,6 @@ export function App() {
           </Show>
         </span>
       </footer>
-  </div>
-);
+    </div>
+  );
 }
