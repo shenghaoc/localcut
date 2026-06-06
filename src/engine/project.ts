@@ -797,6 +797,8 @@ function deserializeV5(value: Record<string, unknown>): DeserializeProjectResult
 }
 
 function deserializeV6(value: Record<string, unknown>): DeserializeProjectResult {
+  // v6+ additions are parsed by the shared clip/source parsers; no separate
+  // migration step is needed beyond the v5 transition path.
   return deserializeV5(value);
 }
 
@@ -818,8 +820,9 @@ export function deserializeProject(value: unknown): DeserializeProjectResult {
     case 5:
     case 6:
     case 7:
-      // v6 adds source-less title clips plus keyframe/LUT clip sidecars; parseClip
-      // handles both while the v5 path keeps transition parsing.
+      // v6 adds title/keyframe/LUT clip sidecars; v7 adds Phase 18 source
+      // conformance fields. Shared parsers handle both while v5 keeps
+      // transition parsing.
       return deserializeV6(value);
     default:
       return { ok: false, reason: `Unsupported project schemaVersion ${schemaVersion}.` };

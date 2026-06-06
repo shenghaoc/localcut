@@ -85,15 +85,22 @@ async function detectFrameRateMode(
 ): Promise<SourceFrameRateMode> {
   if (!statsRate || statsRate <= 0) return 'unknown';
   const sink = new EncodedPacketSink(track);
+  const packets = sink.packets(undefined, undefined, { metadataOnly: true, skipLiveWait: true });
   const durations: number[] = [];
   let previousTimestamp: number | null = null;
-  for await (const packet of sink.packets(undefined, undefined, { metadataOnly: true, skipLiveWait: true })) {
-    if (previousTimestamp !== null) {
-      const delta = packet.timestamp - previousTimestamp;
-      if (delta > 0) durations.push(delta);
+  try {
+    while (durations.length < SAMPLE_PACKET_LIMIT) {
+      const next = await packets.next();
+      if (next.done) break;
+      const packet = next.value;
+      if (previousTimestamp !== null) {
+        const delta = packet.timestamp - previousTimestamp;
+        if (delta > 0) durations.push(delta);
+      }
+      previousTimestamp = packet.timestamp;
     }
-    previousTimestamp = packet.timestamp;
-    if (durations.length >= SAMPLE_PACKET_LIMIT) break;
+  } finally {
+    await packets.return(undefined);
   }
   if (durations.length < 4) return 'unknown';
   const average = durations.reduce((sum, duration) => sum + duration, 0) / durations.length;
@@ -214,11 +221,11 @@ function createMetadata(
   };
 }
 
+type SourceHealthWarningSnapshot = import('../../protocol').SourceHealthWarningSnapshot;
+
 function healthFromWarnings(warnings: readonly SourceHealthWarningSnapshot[]): SourceConformance['health'] {
   return warnings.some((item) => item.blocking) ? 'blocked' : warnings.length > 0 ? 'warnings' : 'ok';
 }
-
-type SourceHealthWarningSnapshot = import('../../protocol').SourceHealthWarningSnapshot;
 
 function deriveConformance(
   inspection: SourceInspection,

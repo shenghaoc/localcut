@@ -220,5 +220,7 @@ export function audioAvailabilityWindowFrames(
     (track.lastTimestampS - options.resolution.adapterTimestampS) * options.sampleRate,
   );
   if (framesUntilTrackEnd > 0) return Math.min(maxFrames, framesUntilTrackEnd);
+  // Keep export/audio pumps moving if floating-point drift leaves an available
+  // timestamp exactly at or just past the track end.
   return 1;
 }

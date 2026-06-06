@@ -592,7 +592,7 @@ export async function mixAudioWindow(
                     maxFrames: runFrames,
                   })
                 : runFrames;
-              offsetFrames += Math.max(1, Math.min(runFrames, outSkip, inSkip));
+              offsetFrames += Math.max(1, Math.min(outSkip, inSkip));
               continue;
             }
             const windowStart = cutTime - half;

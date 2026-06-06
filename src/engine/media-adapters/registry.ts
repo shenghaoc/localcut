@@ -14,8 +14,12 @@ export function selectPrimaryMediaAdapter(
   return adapters.find((adapter) => adapter.role === 'primary' && adapter.canInspect(file) && adapter.open) ?? null;
 }
 
-export async function openMediaFile(file: File, sourceId: string): Promise<MediaInputHandle> {
-  const adapter = selectPrimaryMediaAdapter(defaultMediaAdapters(), file);
+export async function openMediaFile(
+  file: File,
+  sourceId: string,
+  adapters: readonly MediaAdapter[] = defaultMediaAdapters(),
+): Promise<MediaInputHandle> {
+  const adapter = selectPrimaryMediaAdapter(adapters, file);
   if (!adapter?.open) {
     throw new Error('No primary media adapter can inspect this file.');
   }
