@@ -1,6 +1,6 @@
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
-import solid from 'eslint-plugin-solid/configs/typescript';
+import solid from 'eslint-plugin-solid';
 import prettier from 'eslint-config-prettier';
 
 export default tseslint.config(
@@ -9,7 +9,7 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   {
     files: ['**/*.{ts,tsx}'],
-    ...solid,
+    ...solid.configs['flat/typescript'],
   },
   prettier,
 );
