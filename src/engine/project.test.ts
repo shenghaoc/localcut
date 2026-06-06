@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_TRACK_MIX, defaultClipEffects, type Timeline } from './timeline';
+import {
+  DEFAULT_CLIP_AUDIO_FADES,
+  DEFAULT_TRACK_MIX,
+  defaultClipEffects,
+  type Timeline,
+} from './timeline';
 import {
   PROJECT_SCHEMA_VERSION,
   deserializeProject,
@@ -22,6 +27,7 @@ function timelineFixture(): Timeline {
           duration: 12,
           inPoint: 1.5,
           effects: { ...defaultClipEffects(), saturation: 1.2 },
+          ...DEFAULT_CLIP_AUDIO_FADES,
         },
       ],
     },
@@ -112,6 +118,7 @@ describe('project serialization', () => {
       projectId: 'project-1',
       timeline: timelineFixture(),
       sources: [sourceFixture()],
+      masterGain: 0.85,
       savedAt: new Date('2026-06-06T00:00:00.000Z'),
     });
 
@@ -135,6 +142,33 @@ describe('project serialization', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toContain('Unsupported project schemaVersion');
+  });
+
+  it('rejects tracks with negative gain on load', () => {
+    const doc = serializeProject({
+      projectId: 'project-1',
+      timeline: timelineFixture(),
+      sources: [sourceFixture()],
+    });
+    const raw = {
+      ...doc,
+      timeline: [{ ...doc.timeline[0]!, gain: -0.5 }],
+    };
+    const result = deserializeProject(raw);
+    expect(result.ok).toBe(false);
+  });
+
+  it('defaults master gain when older project documents omit it', () => {
+    const doc = serializeProject({
+      projectId: 'project-1',
+      timeline: timelineFixture(),
+      sources: [sourceFixture()],
+    });
+    const { masterGain: _ignored, ...legacy } = doc;
+    const result = deserializeProject(legacy);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.doc.masterGain).toBe(1);
   });
 
   it('normalizes missing effect fields when reading older-compatible v1 clips', () => {

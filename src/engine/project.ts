@@ -1,5 +1,13 @@
 import type { ExportSettings, SourceDescriptorSnapshot } from '../protocol';
-import { normalizeClipEffects, type Timeline, type TimelineClip, type TimelineTrack } from './timeline';
+import {
+  DEFAULT_CLIP_AUDIO_FADES,
+  DEFAULT_MASTER_GAIN,
+  DEFAULT_TRACK_MIX,
+  normalizeClipEffects,
+  type Timeline,
+  type TimelineClip,
+  type TimelineTrack,
+} from './timeline';
 
 export const PROJECT_SCHEMA_VERSION = 1;
 const DURATION_MATCH_TOLERANCE_S = 0.25;
@@ -12,6 +20,7 @@ export interface ProjectDoc {
   savedAt: string;
   timeline: Timeline;
   sources: SourceDescriptor[];
+  masterGain: number;
   exportSettings?: ExportSettings;
 }
 
@@ -19,6 +28,7 @@ export interface SerializeProjectOptions {
   projectId: string;
   timeline: Timeline;
   sources: readonly SourceDescriptor[];
+  masterGain?: number;
   savedAt?: Date;
   exportSettings?: ExportSettings;
 }
@@ -108,6 +118,8 @@ function cloneClip(clip: TimelineClip): TimelineClip {
     duration: clip.duration,
     inPoint: clip.inPoint,
     effects: normalizeClipEffects(clip.effects),
+    audioFadeIn: clip.audioFadeIn,
+    audioFadeOut: clip.audioFadeOut,
   };
 }
 
@@ -116,6 +128,7 @@ export function cloneTimelineSnapshot(timeline: Timeline): Timeline {
     id: track.id,
     type: track.type,
     gain: track.gain,
+    pan: track.pan,
     muted: track.muted,
     solo: track.solo,
     clips: track.clips.map(cloneClip),
@@ -150,12 +163,17 @@ function cloneSourceDescriptor(source: SourceDescriptor): SourceDescriptor {
 }
 
 export function serializeProject(options: SerializeProjectOptions): ProjectDoc {
+  const masterGain =
+    options.masterGain !== undefined && Number.isFinite(options.masterGain)
+      ? Math.max(0, options.masterGain)
+      : DEFAULT_MASTER_GAIN;
   const doc: ProjectDoc = {
     schemaVersion: PROJECT_SCHEMA_VERSION,
     projectId: options.projectId,
     savedAt: (options.savedAt ?? new Date()).toISOString(),
     timeline: cloneTimelineSnapshot(options.timeline),
     sources: options.sources.map(cloneSourceDescriptor),
+    masterGain,
   };
   if (options.exportSettings) {
     doc.exportSettings = cloneExportSettings(options.exportSettings);
@@ -176,6 +194,9 @@ function parseClip(value: unknown): TimelineClip | null {
   if (duration <= 0 || start < 0 || inPoint < 0) return null;
 
   const rawEffects = isRecord(value.effects) ? value.effects : {};
+  const audioFadeIn = finiteNumber(value.audioFadeIn) ?? DEFAULT_CLIP_AUDIO_FADES.audioFadeIn;
+  const audioFadeOut = finiteNumber(value.audioFadeOut) ?? DEFAULT_CLIP_AUDIO_FADES.audioFadeOut;
+
   return {
     id,
     sourceId,
@@ -189,6 +210,8 @@ function parseClip(value: unknown): TimelineClip | null {
       temperature: finiteNumber(rawEffects.temperature) ?? undefined,
       temperatureStrength: finiteNumber(rawEffects.temperatureStrength) ?? undefined,
     }),
+    audioFadeIn: Math.max(0, audioFadeIn),
+    audioFadeOut: Math.max(0, audioFadeOut),
   };
 }
 
@@ -197,7 +220,17 @@ function parseTrack(value: unknown): TimelineTrack | null {
   const id = requiredString(value.id);
   const type = value.type === 'video' || value.type === 'audio' ? value.type : null;
   const gain = finiteNumber(value.gain);
-  if (!id || !type || gain === null || typeof value.muted !== 'boolean' || typeof value.solo !== 'boolean') {
+  const pan = finiteNumber(value.pan) ?? DEFAULT_TRACK_MIX.pan;
+  if (
+    !id ||
+    !type ||
+    gain === null ||
+    gain < 0 ||
+    pan < -1 ||
+    pan > 1 ||
+    typeof value.muted !== 'boolean' ||
+    typeof value.solo !== 'boolean'
+  ) {
     return null;
   }
   if (!Array.isArray(value.clips)) return null;
@@ -214,6 +247,7 @@ function parseTrack(value: unknown): TimelineTrack | null {
     type,
     clips,
     gain,
+    pan,
     muted: value.muted,
     solo: value.solo,
   };
@@ -312,6 +346,7 @@ function deserializeV1(value: Record<string, unknown>): DeserializeProjectResult
   }
 
   const exportSettings = parseExportSettings(value.exportSettings);
+  const masterGain = finiteNumber(value.masterGain) ?? DEFAULT_MASTER_GAIN;
 
   return {
     ok: true,
@@ -321,6 +356,7 @@ function deserializeV1(value: Record<string, unknown>): DeserializeProjectResult
       savedAt,
       timeline,
       sources,
+      masterGain: Math.max(0, masterGain),
       ...(exportSettings ? { exportSettings } : {}),
     },
   };

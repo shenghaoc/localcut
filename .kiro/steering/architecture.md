@@ -49,7 +49,13 @@ Future compatibility modules may support limited client-side preview/export when
 
 ### Shared Clock Layout
 
-`Float64Array` view: `[0]` currentTime (s), `[1]` duration (s), `[2]` playState (0 paused, 1 playing).
+`Float64Array` view: `[0]` currentTime (s), `[1]` duration (s), `[2]` playState (0 paused, 1 playing), `[3]` audioClock (s).
+
+### Meter SAB Layout (Phase 16)
+
+Separate `Float32Array` SAB passed at `init` alongside the audio ring. The AudioWorklet is the single writer; the UI reads via rAF.
+
+`[0]` peakL, `[1]` peakR, `[2]` rmsL, `[3]` rmsR — see `MeterIndex` in `src/protocol.ts`.
 
 ## Accelerated GPU Pipeline (Premium Hot Path)
 
@@ -85,14 +91,14 @@ Build capability tracks in an order that protects the premium path while making 
 | 6 | Pipelined export, progress/ETA, quality/speed toggle | Done |
 | 7 | PWA polish, Cloudflare Pages deploy | Done |
 | 8 | Capability-tier UX and compatibility engine planning | Done |
-| 9 | Project persistence (versioned doc, IndexedDB autosave), snapshot undo/redo, media re-linking | Active |
+| 9 | Project persistence (versioned doc, IndexedDB autosave), snapshot undo/redo, media re-linking | Done |
 | 10 | Timeline UX: px-per-second zoom/scroll, gap-tolerant moves, snapping, multi-select, markers | Planned |
 | 11 | Media library: batch import, budgeted thumbnails, image-still/audio-only sources, track management | Planned |
 | 12 | Multi-track compositing: layered resolve, single-submission N-layer composite, per-clip transforms | Planned |
 | 13 | Transitions: cut-point model, dual-stream readahead, 2-input mix in the single submission | Planned |
 | 14 | Titles/text: edit-time raster cached as a GPU texture, composited via the transform path | Planned |
 | 15 | Keyframed parameters with shared preview/export sampling; `.cube` LUT grading | Planned |
-| 16 | Audio mixing: shared mix stage, master bus, pan, fades/crossfades, SAB level meters | Planned |
+| 16 | Audio mixing: shared mix stage, master bus, pan, fades/crossfades, SAB level meters | Active |
 | 17 | Export expansion: probed codecs (H.264/VP9/AV1), size/fps/bitrate overrides, range export | Planned |
 
 ## Critical Implementation Details

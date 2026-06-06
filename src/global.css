@@ -214,6 +214,83 @@ body {
   margin-left: auto;
 }
 
+.master-mix {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.2rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgb(255 255 255 / 3%);
+}
+
+.master-fader {
+  display: grid;
+  grid-template-columns: auto 72px auto;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.master-fader-label,
+.master-fader-value {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.master-fader-input {
+  width: 72px;
+}
+
+.meter-strip {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.35rem;
+  height: 42px;
+}
+
+.meter-channel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  min-width: 1.1rem;
+}
+
+.meter-bar {
+  position: relative;
+  width: 0.65rem;
+  height: 34px;
+  border-radius: var(--radius-xs);
+  background: rgb(0 0 0 / 35%);
+  overflow: hidden;
+}
+
+.meter-rms,
+.meter-peak {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.meter-rms {
+  background: color-mix(in oklab, var(--accent), white 18%);
+}
+
+.meter-peak {
+  width: 100%;
+  background: color-mix(in oklab, var(--warn), white 10%);
+  opacity: 0.85;
+}
+
+.meter-label,
+.meter-db {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  line-height: 1;
+}
+
 .file-name {
   display: inline-flex;
   align-items: center;

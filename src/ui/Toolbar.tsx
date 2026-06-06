@@ -18,6 +18,7 @@ import { cn } from '../lib/utils';
 import { Button } from './components/button';
 import type { CapabilityTier } from './capabilities';
 import type { MediaMetadata } from '../protocol';
+import { MeterStrip } from './MeterStrip';
 
 interface ToolbarProps {
   metadata: MediaMetadata | null;
@@ -40,6 +41,9 @@ interface ToolbarProps {
   previewLabel: string | null;
   encodeFps: number | null;
   onOpenCapabilities?: () => void;
+  masterGain: number;
+  meterSab: SharedArrayBuffer | null;
+  onMasterGain: (gain: number) => void;
   exportControl?: JSX.Element;
 }
 
@@ -206,6 +210,25 @@ export function Toolbar(props: ToolbarProps) {
           >
             <SkipForward size={14} aria-hidden="true" />
           </Button>
+        </div>
+        <div class="master-mix" role="group" aria-label="Master mix">
+          <MeterStrip meterSab={props.meterSab} />
+          <label class="master-fader">
+            <span class="master-fader-label">Master</span>
+            <input
+              type="range"
+              class="master-fader-input"
+              min={0}
+              max={2}
+              step={0.01}
+              value={props.masterGain}
+              onInput={(e) =>
+                props.onMasterGain(Number((e.currentTarget as HTMLInputElement).value))
+              }
+              aria-valuetext={`${props.masterGain.toFixed(2)}`}
+            />
+            <span class="master-fader-value tabular-nums">{props.masterGain.toFixed(2)}</span>
+          </label>
         </div>
         {props.exportControl}
       </div>

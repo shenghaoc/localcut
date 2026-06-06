@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_TRACK_MIX, defaultClipEffects, type Timeline } from './timeline';
+import {
+  DEFAULT_CLIP_AUDIO_FADES,
+  DEFAULT_TRACK_MIX,
+  defaultClipEffects,
+  type Timeline,
+} from './timeline';
 import { createTimelineHistory } from './history';
 
 function makeTimeline(label: string): Timeline {
@@ -16,6 +21,7 @@ function makeTimeline(label: string): Timeline {
           duration: 5,
           inPoint: 0,
           effects: defaultClipEffects(),
+          ...DEFAULT_CLIP_AUDIO_FADES,
         },
       ],
     },

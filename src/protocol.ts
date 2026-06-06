@@ -11,6 +11,17 @@ export const ClockIndex = {
   AUDIO_CLOCK: 3,
 } as const;
 
+/** Meter SAB layout: peak/RMS pairs written by the AudioWorklet (single writer). */
+export const METER_FIELD_COUNT = 4;
+export const METER_BUFFER_BYTES = METER_FIELD_COUNT * Float32Array.BYTES_PER_ELEMENT;
+
+export const MeterIndex = {
+  PEAK_L: 0,
+  PEAK_R: 1,
+  RMS_L: 2,
+  RMS_R: 3,
+} as const;
+
 export type PlayState = 'paused' | 'playing';
 export type ExportPreset = 'quality' | 'fast';
 export type ExportVideoCodec = 'h264' | 'vp9' | 'av1';
@@ -72,6 +83,8 @@ export interface TimelineClipSnapshot {
   duration: number;
   inPoint: number;
   effects: ClipEffectParamsSnapshot;
+  audioFadeIn: number;
+  audioFadeOut: number;
   offline?: boolean;
 }
 
@@ -80,6 +93,7 @@ export interface TimelineTrackSnapshot {
   type: 'video' | 'audio';
   clips: TimelineClipSnapshot[];
   gain: number;
+  pan: number;
   muted: boolean;
   solo: boolean;
 }
@@ -162,6 +176,25 @@ interface SetTrackSoloCommand {
   solo: boolean;
 }
 
+interface SetTrackPanCommand {
+  type: 'set-track-pan';
+  trackId: string;
+  pan: number;
+}
+
+interface SetMasterGainCommand {
+  type: 'set-master-gain';
+  gain: number;
+}
+
+interface SetClipFadeCommand {
+  type: 'set-clip-fade';
+  trackId: string;
+  clipId: string;
+  edge: 'in' | 'out';
+  durationS: number;
+}
+
 export type WorkerCommand =
   | { type: 'init'; canvas: OffscreenCanvas; sab: SharedArrayBuffer; audioSab?: SharedArrayBuffer | null }
   | { type: 'import'; file: File; fileHandle?: FileSystemFileHandle | null }
@@ -185,6 +218,9 @@ export type WorkerCommand =
   | SetTrackGainCommand
   | SetTrackMuteCommand
   | SetTrackSoloCommand
+  | SetTrackPanCommand
+  | SetMasterGainCommand
+  | SetClipFadeCommand
   | { type: 'dispose' };
 
 /** A measured preview resolution tier (adaptive downscale of the decode path). */
@@ -244,7 +280,7 @@ export type WorkerStateMessage =
     }
   | { type: 'preview-resolution'; resolution: PreviewResolution }
   | { type: 'probe-result'; probe: ThroughputProbe }
-  | { type: 'timeline-state'; timeline: TimelineTrackSnapshot[] }
+  | { type: 'timeline-state'; timeline: TimelineTrackSnapshot[]; masterGain: number }
   | { type: 'waveform-peaks'; trackId: string; clipId: string; peaks: WaveformPeaks }
   | { type: 'export-codecs'; supported: ExportCodecSupport[]; settings: ExportSettings }
   | { type: 'export-progress'; progress: ExportProgress }

@@ -117,6 +117,7 @@ export function App() {
   const [previewLabel, setPreviewLabel] = createSignal<string | null>(null);
   const [encodeFps, setEncodeFps] = createSignal<number | null>(null);
   const [timeline, setTimeline] = createSignal<TimelineTrackSnapshot[]>([]);
+  const [masterGain, setMasterGain] = createSignal(1);
   const [selectedClip, setSelectedClip] = createSignal<SelectedClip | null>(null);
   const [waveformPeaks, setWaveformPeaks] = createSignal<Record<string, WaveformPeaks>>({});
   const [exporting, setExporting] = createSignal(false);
@@ -157,7 +158,25 @@ export function App() {
   let relinkInput: HTMLInputElement | undefined;
   let pendingRelinkSourceId: string | null = null;
   const audioEngine = new AudioEngine();
-  let audioReady: Promise<SharedArrayBuffer | null> | null = null;
+  let audioReady: Promise<{ audioSab: SharedArrayBuffer | null; meterSab: SharedArrayBuffer | null }> | null =
+    null;
+  const [meterSab, setMeterSab] = createSignal<SharedArrayBuffer | null>(null);
+
+  const selectedClipFades = createMemo(() => {
+    const clip = selectedClip();
+    if (!clip) return null;
+    const track = timeline().find((t) => t.id === clip.trackId);
+    if (!track || track.type !== 'audio') return null;
+    const timelineClip = track.clips.find((c) => c.id === clip.clipId);
+    if (!timelineClip) return null;
+    return {
+      trackId: track.id,
+      clipId: timelineClip.id,
+      duration: timelineClip.duration,
+      audioFadeIn: timelineClip.audioFadeIn,
+      audioFadeOut: timelineClip.audioFadeOut,
+    };
+  });
 
   const selectedTrackMix = createMemo(() => {
     const clip = selectedClip();
@@ -167,6 +186,7 @@ export function App() {
     return {
       trackId: track.id,
       gain: track.gain,
+      pan: track.pan,
       muted: track.muted,
       solo: track.solo,
     };
@@ -248,6 +268,8 @@ export function App() {
         break;
       case 'timeline-state':
         setTimeline(msg.timeline);
+        setMasterGain(msg.masterGain);
+        audioEngine.setMasterGain(msg.masterGain);
         setSelectedClip((prev) => {
           if (!prev) return prev;
           for (const track of msg.timeline) {
@@ -376,11 +398,15 @@ export function App() {
     initSent = true;
     const { bridge: b } = ensureWorker();
     let audioSab: SharedArrayBuffer | null = null;
+    let meterBuffer: SharedArrayBuffer | null = null;
     if (!audioReady) {
       audioReady = audioEngine.init(sab);
     }
     try {
-      audioSab = await audioReady;
+      const audioInit = await audioReady;
+      audioSab = audioInit.audioSab;
+      meterBuffer = audioInit.meterSab;
+      setMeterSab(meterBuffer);
       setAudioWarning(null);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -725,6 +751,12 @@ export function App() {
         previewLabel={previewLabel()}
         encodeFps={encodeFps()}
         onOpenCapabilities={() => setCapabilityPanelOpen(true)}
+        masterGain={masterGain()}
+        meterSab={meterSab()}
+        onMasterGain={(gain) => {
+          audioEngine.setMasterGain(gain);
+          bridge?.send({ type: 'set-master-gain', gain });
+        }}
         exportControl={
           <ExportDialog
             hasMedia={metadata() !== null && accelerated()}
@@ -873,6 +905,7 @@ export function App() {
           metadata={metadata()}
           selectedClip={selectedClip()}
           selectedTrackMix={selectedTrackMix()}
+          selectedClipFades={selectedClipFades()}
           onEffectParam={(trackId, clipId, key, value) =>
             bridge?.send({ type: 'set-effect-param', trackId, clipId, key, value })
           }
@@ -884,6 +917,12 @@ export function App() {
           }}
           onTrackSolo={(trackId, solo) => {
             bridge?.send({ type: 'set-track-solo', trackId, solo });
+          }}
+          onTrackPan={(trackId, pan) => {
+            bridge?.send({ type: 'set-track-pan', trackId, pan });
+          }}
+          onClipFade={(trackId, clipId, edge, durationS) => {
+            bridge?.send({ type: 'set-clip-fade', trackId, clipId, edge, durationS });
           }}
         />
       </main>
