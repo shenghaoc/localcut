@@ -267,7 +267,11 @@ export function App() {
   async function startExport(preset: ExportPreset) {
     if (!metadata() || exporting()) return;
     if (!accelerated()) {
-      setExportError('Waiting for preview canvas before export can start.');
+      setExportError(
+        pipelineMode() === 'limited'
+          ? 'Export is unavailable because the accelerated engine is not running.'
+          : 'Waiting for preview canvas before export can start.',
+      );
       return;
     }
     setExporting(true);
@@ -308,12 +312,14 @@ export function App() {
   onMount(() => {
     const isolated = globalThis.crossOriginIsolated === true;
     setIsIsolated(isolated);
-    if (isolated) {
+    if (isolated && sab) {
       ensureWorker();
       setStatusLine('Starting pipeline worker…');
     } else {
       setEnvironmentIssue(
-        'This page is missing COOP/COEP headers. LocalCut still runs as a client-side shell, but accelerated import, playback, effects, and export need those headers so the browser can expose SharedArrayBuffer for local CPU/GPU work.',
+        !isolated
+          ? 'This page is missing COOP/COEP headers. LocalCut still runs as a client-side shell, but accelerated import, playback, effects, and export need those headers so the browser can expose SharedArrayBuffer for local CPU/GPU work.'
+          : 'This browser or origin cannot expose SharedArrayBuffer. The app shell stays client-side, but accelerated import, playback, effects, and export need SAB plus COOP/COEP headers so the local CPU/GPU path can run safely.',
       );
       setStatusLine('Limited shell · COOP/COEP needed for accelerated client compute');
     }
