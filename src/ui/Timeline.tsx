@@ -1,12 +1,30 @@
-import { createSignal, For, Show } from 'solid-js';
+import { createMemo, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
+import {
+  Flag,
+  Magnet,
+  RotateCcw,
+  SkipBack,
+  SkipForward,
+  X,
+  ZoomIn,
+  ZoomOut,
+} from 'lucide-solid';
 import { TimelineClip } from './TimelineClip';
 import { TimelineTrack } from './TimelineTrack';
 import {
   type ClipEffectParamsSnapshot,
-  type TimelineTrackSnapshot as ProtocolTimelineTrack,
+  type TimelineClipMove,
+  type TimelineClipReference,
   type TimelineClipSnapshot as ProtocolTimelineClip,
+  type TimelineMarkerSnapshot,
+  type TimelineTrackSnapshot as ProtocolTimelineTrack,
   type WaveformPeaks,
 } from '../protocol';
+import {
+  buildSnapTargets,
+  selectClipsInMarquee,
+  timelineTimeAtClientX,
+} from './timeline-interaction';
 
 interface TimelineProps {
   currentTime: () => number;
@@ -15,16 +33,33 @@ interface TimelineProps {
   frameRate?: () => number | null;
   hasMedia: boolean;
   timeline: () => ProtocolTimelineTrack[];
+  markers: () => TimelineMarkerSnapshot[];
+  selectedClipRefs: () => readonly TimelineClipReference[];
   onSeek: (time: number) => void;
   onSplit: (trackId: string, clipId: string, time: number) => void;
   onDelete: (trackId: string, clipId: string) => void;
   onTrim: (trackId: string, clipId: string, edge: 'in' | 'out', time: number) => void;
-  selectedClipId: string | null;
-  onSelectClip: (trackId: string, clipId: string, effects: ClipEffectParamsSnapshot) => void;
+  onMoveClips: (moves: TimelineClipMove[]) => void;
+  onSelectClip: (trackId: string, clipId: string, effects: ClipEffectParamsSnapshot, additive: boolean) => void;
+  onSelectClips: (clips: TimelineClipReference[]) => void;
+  onAddMarker: (time: number, label: string) => void;
+  onDeleteMarker: (markerId: string) => void;
+  onCloseGaps: (trackId?: string) => void;
   waveformPeaks?: () => Record<string, WaveformPeaks>;
 }
 
+interface MarqueeBox {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
 const DEFAULT_FPS = 30;
+const DEFAULT_PX_PER_SECOND = 80;
+const MIN_PX_PER_SECOND = 28;
+const MAX_PX_PER_SECOND = 420;
+const RULER_INTERVALS = [0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300];
 
 function formatTimecode(seconds: number, fps: number): string {
   const s = Math.max(0, seconds);
@@ -41,21 +76,94 @@ function formatTimecode(seconds: number, fps: number): string {
   return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}:${String(frames).padStart(2, '0')}`;
 }
 
+function formatTick(seconds: number): string {
+  if (seconds >= 3600) {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    return `${h}:${String(m).padStart(2, '0')}`;
+  }
+  if (seconds >= 60) {
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return `${m}:${String(s).padStart(2, '0')}`;
+  }
+  return seconds % 1 === 0 ? `${seconds}s` : `${seconds.toFixed(1)}s`;
+}
+
+function selectionKey(ref: TimelineClipReference): string {
+  return `${ref.trackId}:${ref.clipId}`;
+}
+
+function isInteractiveTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && !!target.closest('button, input, .timeline-clip, .timeline-ruler-wrap');
+}
+
 export function Timeline(props: TimelineProps) {
   const fps = () => props.frameRate?.() ?? DEFAULT_FPS;
-  const progress = () => {
-    const d = props.duration();
-    if (d <= 0) return 0;
-    return Math.min(1, props.currentTime() / d);
-  };
+  const [pxPerSecond, setPxPerSecond] = createSignal(DEFAULT_PX_PER_SECOND);
+  const [snapEnabled, setSnapEnabled] = createSignal(true);
   const [isScrubbing, setIsScrubbing] = createSignal(false);
+  const [marquee, setMarquee] = createSignal<MarqueeBox | null>(null);
+  let scrollEl: HTMLDivElement | undefined;
+  let contentEl: HTMLDivElement | undefined;
+  let zoomRaf: number | null = null;
+  let cleanupScrubListeners: (() => void) | null = null;
+  let cleanupMarqueeListeners: (() => void) | null = null;
 
-  function seekFromClientX(clientX: number, ruler: HTMLElement) {
-    const rect = ruler.getBoundingClientRect();
-    if (rect.width <= 0) return;
-    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-    const duration = props.duration();
-    if (duration > 0) props.onSeek(ratio * duration);
+  const timelineDuration = () => Math.max(0, props.duration());
+  const boundedCurrentTime = () =>
+    timelineDuration() > 0 ? Math.min(timelineDuration(), Math.max(0, props.currentTime())) : 0;
+
+  const modelDuration = createMemo(() => {
+    let end = timelineDuration();
+    for (const track of props.timeline()) {
+      for (const clip of track.clips) {
+        end = Math.max(end, clip.start + clip.duration);
+      }
+    }
+    for (const marker of props.markers()) {
+      end = Math.max(end, marker.time + 1);
+    }
+    return Math.max(1, end);
+  });
+
+  const contentWidth = createMemo(() =>
+    Math.max(720, Math.ceil(modelDuration() * pxPerSecond()) + 96),
+  );
+
+  const selectedKeys = createMemo(() => new Set(props.selectedClipRefs().map(selectionKey)));
+  const snapTargets = createMemo(() =>
+    buildSnapTargets(props.timeline(), props.markers(), boundedCurrentTime()),
+  );
+
+  const rulerInterval = createMemo(() => {
+    const pps = pxPerSecond();
+    const duration = modelDuration();
+    for (const interval of RULER_INTERVALS) {
+      if (interval * pps >= 64 && duration / interval <= 500) return interval;
+    }
+    return RULER_INTERVALS[RULER_INTERVALS.length - 1]!;
+  });
+
+  const rulerTicks = createMemo(() => {
+    const ticks: { time: number; label: string }[] = [];
+    const interval = rulerInterval();
+    const duration = modelDuration();
+    for (let time = 0; time <= duration + 0.0001; time += interval) {
+      const rounded = Math.round(time * 1000) / 1000;
+      ticks.push({ time: rounded, label: formatTick(rounded) });
+    }
+    return ticks;
+  });
+
+  function findClip(ref: TimelineClipReference): ProtocolTimelineClip | null {
+    const track = props.timeline().find((item) => item.id === ref.trackId);
+    return track?.clips.find((clip) => clip.id === ref.clipId) ?? null;
+  }
+
+  function selectedTrackId(): string | undefined {
+    const selected = props.selectedClipRefs()[0];
+    return selected?.trackId;
   }
 
   function seekTo(time: number) {
@@ -64,24 +172,49 @@ export function Timeline(props: TimelineProps) {
     props.onSeek(Math.max(0, Math.min(duration, time)));
   }
 
+  function recenterOnPlayhead() {
+    if (!scrollEl) return;
+    if (zoomRaf !== null) cancelAnimationFrame(zoomRaf);
+    zoomRaf = requestAnimationFrame(() => {
+      zoomRaf = null;
+      if (!scrollEl) return;
+      const center = boundedCurrentTime() * pxPerSecond() - scrollEl.clientWidth / 2;
+      scrollEl.scrollLeft = Math.max(0, center);
+    });
+  }
+
+  function zoomBy(multiplier: number) {
+    setPxPerSecond((current) =>
+      Math.min(MAX_PX_PER_SECOND, Math.max(MIN_PX_PER_SECOND, current * multiplier)),
+    );
+    recenterOnPlayhead();
+  }
+
+  function seekFromClientX(clientX: number, ruler: HTMLElement) {
+    const rect = ruler.getBoundingClientRect();
+    const time = timelineTimeAtClientX(clientX, rect.left, pxPerSecond());
+    if (time === null) return;
+    seekTo(time);
+  }
+
   function onScrubKeyDown(event: KeyboardEvent) {
     const frameStep = 1 / (fps() > 0 ? fps() : DEFAULT_FPS);
     switch (event.key) {
       case 'ArrowLeft':
         event.preventDefault();
-        seekTo(props.currentTime() - frameStep);
+        seekTo(boundedCurrentTime() - frameStep);
         break;
       case 'ArrowRight':
         event.preventDefault();
-        seekTo(props.currentTime() + frameStep);
+        seekTo(boundedCurrentTime() + frameStep);
         break;
       case 'PageDown':
         event.preventDefault();
-        seekTo(props.currentTime() - 1);
+        seekTo(boundedCurrentTime() - 1);
         break;
       case 'PageUp':
         event.preventDefault();
-        seekTo(props.currentTime() + 1);
+        seekTo(boundedCurrentTime() + 1);
         break;
       case 'Home':
         event.preventDefault();
@@ -97,6 +230,7 @@ export function Timeline(props: TimelineProps) {
   function onScrubPointerDown(event: PointerEvent) {
     const target = event.currentTarget as HTMLElement;
     event.preventDefault();
+    event.stopPropagation();
     seekFromClientX(event.clientX, target);
     setIsScrubbing(true);
     const onMove = (move: PointerEvent) => {
@@ -104,63 +238,323 @@ export function Timeline(props: TimelineProps) {
     };
     const onUp = () => {
       setIsScrubbing(false);
+      cleanupScrubListeners?.();
+      cleanupScrubListeners = null;
+    };
+    cleanupScrubListeners?.();
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    cleanupScrubListeners = () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
+  }
+
+  function handleMoveClip(trackId: string, clipId: string, toStart: number, fromStart: number) {
+    const currentRef = { trackId, clipId };
+    const selection = selectedKeys().has(selectionKey(currentRef))
+      ? props.selectedClipRefs()
+      : [currentRef];
+    const delta = toStart - fromStart;
+    const moves: TimelineClipMove[] = [];
+    for (const ref of selection) {
+      const clip = findClip(ref);
+      if (!clip) continue;
+      moves.push({
+        trackId: ref.trackId,
+        clipId: ref.clipId,
+        toTrackId: ref.trackId,
+        toStart: Math.max(0, clip.start + delta),
+      });
+    }
+    if (moves.length > 0) props.onMoveClips(moves);
+  }
+
+  function markerAt(offset: 1 | -1): TimelineMarkerSnapshot | null {
+    const sorted = [...props.markers()].sort((a, b) => a.time - b.time);
+    if (sorted.length === 0) return null;
+    const current = boundedCurrentTime();
+    if (offset > 0) {
+      return sorted.find((marker) => marker.time > current + 0.001) ?? sorted[0]!;
+    }
+    return [...sorted].reverse().find((marker) => marker.time < current - 0.001) ?? sorted[sorted.length - 1]!;
+  }
+
+  function trackIdsInVerticalRange(top: number, bottom: number): string[] {
+    if (!contentEl) return [];
+    const ids: string[] = [];
+    for (const surface of contentEl.querySelectorAll<HTMLElement>('.track-surface[data-track-id]')) {
+      const rect = surface.getBoundingClientRect();
+      if (rect.top < bottom && rect.bottom > top) {
+        const id = surface.dataset.trackId;
+        if (id) ids.push(id);
+      }
+    }
+    return ids;
+  }
+
+  function onContentPointerDown(event: PointerEvent) {
+    if (event.button !== 0 || isInteractiveTarget(event.target) || !contentEl) return;
+    event.preventDefault();
+    const contentRect = contentEl.getBoundingClientRect();
+    const startTime = timelineTimeAtClientX(event.clientX, contentRect.left, pxPerSecond());
+    if (startTime === null) return;
+    const startX = event.clientX;
+    const startY = event.clientY;
+
+    const updateBox = (move: PointerEvent) => {
+      setMarquee({
+        left: Math.min(startX, move.clientX) - contentRect.left,
+        top: Math.min(startY, move.clientY) - contentRect.top,
+        width: Math.abs(move.clientX - startX),
+        height: Math.abs(move.clientY - startY),
+      });
+    };
+    const onMove = (move: PointerEvent) => updateBox(move);
+    const onUp = (up: PointerEvent) => {
+      updateBox(up);
+      const endTime = timelineTimeAtClientX(up.clientX, contentRect.left, pxPerSecond());
+      const trackIds = trackIdsInVerticalRange(Math.min(startY, up.clientY), Math.max(startY, up.clientY));
+      if (endTime !== null) {
+        props.onSelectClips(
+          selectClipsInMarquee(props.timeline(), {
+            startTime,
+            endTime,
+            trackIds,
+          }),
+        );
+      }
+      setMarquee(null);
+      cleanupMarqueeListeners?.();
+      cleanupMarqueeListeners = null;
+    };
+    cleanupMarqueeListeners?.();
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onUp);
+    cleanupMarqueeListeners = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
   }
+
+  onMount(() => {
+    const onZoom = (event: Event) => {
+      const detail = (event as CustomEvent<{ direction: 1 | -1 }>).detail;
+      zoomBy(detail?.direction === 1 ? 1.25 : 0.8);
+    };
+    window.addEventListener('localcut-timeline-zoom', onZoom);
+    onCleanup(() => {
+      window.removeEventListener('localcut-timeline-zoom', onZoom);
+      if (zoomRaf !== null) cancelAnimationFrame(zoomRaf);
+      cleanupScrubListeners?.();
+      cleanupMarqueeListeners?.();
+    });
+  });
 
   return (
     <section class="timeline panel">
       <div class="timeline-header">
-        <span class="timecode cur tabular-nums">{formatTimecode(props.currentTime(), fps())}</span>
-        <span class="timecode-sep">/</span>
-        <span class="timecode tabular-nums muted">{formatTimecode(props.duration(), fps())}</span>
+        <div class="timeline-timecodes">
+          <span class="timecode cur tabular-nums">{formatTimecode(boundedCurrentTime(), fps())}</span>
+          <span class="timecode-sep">/</span>
+          <span class="timecode tabular-nums muted">{formatTimecode(props.duration(), fps())}</span>
+        </div>
+        <div class="timeline-actions" role="group" aria-label="Timeline tools">
+          <button
+            type="button"
+            class="timeline-tool-button"
+            onClick={() => {
+              const marker = markerAt(-1);
+              if (marker) seekTo(marker.time);
+            }}
+            disabled={props.markers().length === 0}
+            aria-label="Previous marker"
+            title="Previous marker"
+          >
+            <SkipBack size={13} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            class="timeline-tool-button"
+            onClick={() => props.onAddMarker(boundedCurrentTime(), `Marker ${props.markers().length + 1}`)}
+            disabled={props.duration() <= 0}
+            aria-label="Add marker at playhead"
+            title="Add marker at playhead"
+          >
+            <Flag size={13} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            class="timeline-tool-button"
+            onClick={() => {
+              const marker = markerAt(1);
+              if (marker) seekTo(marker.time);
+            }}
+            disabled={props.markers().length === 0}
+            aria-label="Next marker"
+            title="Next marker"
+          >
+            <SkipForward size={13} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            class={`timeline-tool-button${snapEnabled() ? ' is-active' : ''}`}
+            onClick={() => setSnapEnabled((value) => !value)}
+            aria-pressed={snapEnabled()}
+            aria-label="Toggle snapping"
+            title="Toggle snapping"
+          >
+            <Magnet size={13} aria-hidden="true" />
+            Snap
+          </button>
+          <button
+            type="button"
+            class="timeline-tool-button"
+            onClick={() => props.onCloseGaps(selectedTrackId())}
+            disabled={props.timeline().length === 0}
+            aria-label="Close gaps"
+            title="Close gaps"
+          >
+            <RotateCcw size={13} aria-hidden="true" />
+            Gaps
+          </button>
+          <button
+            type="button"
+            class="timeline-tool-button"
+            onClick={() => zoomBy(0.8)}
+            aria-label="Zoom out"
+            title="Zoom out"
+          >
+            <ZoomOut size={13} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            class="timeline-tool-button"
+            onClick={() => zoomBy(1.25)}
+            aria-label="Zoom in"
+            title="Zoom in"
+          >
+            <ZoomIn size={13} aria-hidden="true" />
+          </button>
+        </div>
       </div>
       <Show when={props.hasMedia} fallback={<p class="placeholder-text">Import media to edit</p>}>
         <div class="timeline-track-wrapper">
-          <For each={props.timeline()}>
-            {(track) => (
-              <TimelineTrack
-                track={track}
-                totalDuration={props.duration()}
-              >
-                <For each={track.clips as ProtocolTimelineClip[]}>
-                  {(clip) => (
-                    <TimelineClip
-                      trackId={track.id}
-                      clip={clip}
-                      totalDuration={props.duration()}
-                      selected={props.selectedClipId === clip.id}
-                      isAudio={track.type === 'audio'}
-                      peaks={props.waveformPeaks?.()[`${track.id}:${clip.id}`] ?? null}
-                      onSplit={props.onSplit}
-                      onDelete={props.onDelete}
-                      onTrim={props.onTrim}
-                      onSelect={() => props.onSelectClip(track.id, clip.id, clip.effects)}
-                    />
+          <div class="timeline-label-column" aria-hidden="true">
+            <For each={props.timeline()}>{(track) => <TimelineTrack track={track} />}</For>
+            <div class="timeline-ruler-label">Ruler</div>
+          </div>
+          <div
+            class="timeline-scroll-viewport"
+            ref={(el) => {
+              scrollEl = el;
+            }}
+          >
+            <div
+              class="timeline-content"
+              ref={(el) => {
+                contentEl = el;
+              }}
+              style={{ width: `${contentWidth()}px` }}
+              onPointerDown={onContentPointerDown}
+            >
+              <For each={props.timeline()}>
+                {(track) => (
+                  <div
+                    class="track-surface"
+                    data-track-id={track.id}
+                    style={{ width: `${contentWidth()}px` }}
+                  >
+                    <For each={track.clips as ProtocolTimelineClip[]}>
+                      {(clip) => (
+                        <TimelineClip
+                          trackId={track.id}
+                          clip={clip}
+                          pxPerSecond={pxPerSecond()}
+                          snapEnabled={snapEnabled()}
+                          snapTargets={snapTargets()}
+                          selected={selectedKeys().has(selectionKey({ trackId: track.id, clipId: clip.id }))}
+                          isAudio={track.type === 'audio'}
+                          peaks={props.waveformPeaks?.()[`${track.id}:${clip.id}`] ?? null}
+                          onMove={handleMoveClip}
+                          onSplit={props.onSplit}
+                          onDelete={props.onDelete}
+                          onTrim={props.onTrim}
+                          onSelect={(additive) => props.onSelectClip(track.id, clip.id, clip.effects, additive)}
+                        />
+                      )}
+                    </For>
+                  </div>
+                )}
+              </For>
+              <div class="timeline-marker-lane" style={{ width: `${contentWidth()}px` }}>
+                <For each={props.markers()}>
+                  {(marker) => (
+                    <div class="timeline-marker" style={{ left: `${marker.time * pxPerSecond()}px` }}>
+                      <button
+                        type="button"
+                        class="timeline-marker-button"
+                        onClick={() => seekTo(marker.time)}
+                        title={marker.label}
+                      >
+                        <Flag size={11} aria-hidden="true" />
+                        <span>{marker.label}</span>
+                      </button>
+                      <button
+                        type="button"
+                        class="timeline-marker-delete"
+                        onClick={() => props.onDeleteMarker(marker.id)}
+                        aria-label={`Delete ${marker.label}`}
+                        title={`Delete ${marker.label}`}
+                      >
+                        <X size={10} aria-hidden="true" />
+                      </button>
+                    </div>
                   )}
                 </For>
-              </TimelineTrack>
-            )}
-          </For>
-          <div
-            class={`timeline-ruler-wrap ${isScrubbing() ? 'is-scrubbing' : ''}`}
-            onPointerDown={onScrubPointerDown}
-            onKeyDown={onScrubKeyDown}
-            tabIndex={0}
-            role="slider"
-            aria-label="Timeline"
-            aria-valuemin={0}
-            aria-valuemax={props.duration()}
-            aria-valuenow={props.currentTime()}
-            aria-valuetext={formatTimecode(props.currentTime(), fps())}
-          >
-            <div class="timeline-ruler" />
-            <div class="scrubhead" style={{ left: `${progress() * 100}%` }} />
+              </div>
+              <div
+                class={`timeline-ruler-wrap ${isScrubbing() ? 'is-scrubbing' : ''}`}
+                style={{ width: `${contentWidth()}px` }}
+                onPointerDown={onScrubPointerDown}
+                onKeyDown={onScrubKeyDown}
+                tabIndex={0}
+                role="slider"
+                aria-label="Timeline"
+                aria-valuemin={0}
+                aria-valuemax={props.duration()}
+                aria-valuenow={boundedCurrentTime()}
+                aria-valuetext={formatTimecode(boundedCurrentTime(), fps())}
+              >
+                <div class="timeline-ruler">
+                  <For each={rulerTicks()}>
+                    {(tick) => (
+                      <span class="timeline-ruler-tick" style={{ left: `${tick.time * pxPerSecond()}px` }}>
+                        <span>{tick.label}</span>
+                      </span>
+                    )}
+                  </For>
+                </div>
+              </div>
+              <div class="scrubhead" style={{ left: `${boundedCurrentTime() * pxPerSecond()}px` }} />
+              <Show when={marquee()}>
+                {(box) => (
+                  <div
+                    class="timeline-marquee"
+                    style={{
+                      left: `${box().left}px`,
+                      top: `${box().top}px`,
+                      width: `${box().width}px`,
+                      height: `${box().height}px`,
+                    }}
+                  />
+                )}
+              </Show>
+            </div>
           </div>
         </div>
       </Show>

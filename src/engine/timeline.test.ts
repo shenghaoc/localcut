@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
+  addMarker,
+  closeGaps,
   createEmptyTimeline,
   DEFAULT_TRACK_MIX,
+  deleteMarker,
   defaultClipEffects,
+  duplicateClips,
   getTimelineDuration,
+  moveClips,
+  moveClipTo,
+  pasteClips,
   removeClip,
-  reorderClip,
   resolveAt,
   setClipEffectParam,
   setClipAudioFade,
@@ -132,7 +138,7 @@ describe('timeline', () => {
     expect(next[0]!.clips[1]).toMatchObject({ id: 'c', start: 4 });
   });
 
-  it('reorders a clip across tracks at the target index', () => {
+  it('moves a clip across compatible tracks to an absolute start without relayout', () => {
     const timeline: TimelineTrack[] = [
       {
         id: 'video-track',
@@ -148,26 +154,102 @@ describe('timeline', () => {
         type: 'video',
         ...DEFAULT_TRACK_MIX,
         clips: [
-          clip({ id: 'c', sourceId: 'src-2', start: 0, duration: 3, inPoint: 0 }),
-          clip({ id: 'd', sourceId: 'src-2', start: 3, duration: 1, inPoint: 3 }),
+          clip({ id: 'c', sourceId: 'src-2', start: 1, duration: 2, inPoint: 0 }),
+          clip({ id: 'd', sourceId: 'src-2', start: 8, duration: 1, inPoint: 3 }),
         ],
       },
     ];
 
-    const next = reorderClip(timeline, 'video-track', 'b', 'video-track-2', 1);
+    const next = moveClipTo(timeline, 'video-track', 'b', 'video-track-2', 4);
     expect(next[0]!.clips.map((clip) => clip.id)).toEqual(['a']);
     expect(next[1]!.clips.map((clip) => clip.id)).toEqual(['c', 'b', 'd']);
-    expect(next[1]!.clips[0]).toMatchObject({ id: 'c', start: 0, duration: 3 });
+    expect(next[1]!.clips[0]).toMatchObject({ id: 'c', start: 1, duration: 2 });
     expect(next[1]!.clips[1]).toMatchObject({
       id: 'b',
-      start: 3, // follows c
+      start: 4,
       duration: 2,
     });
-    // d must shift past the inserted clip instead of overlapping it at start 3.
-    expect(next[1]!.clips[2]).toMatchObject({ id: 'd', start: 5, duration: 1 });
+    expect(next[1]!.clips[2]).toMatchObject({ id: 'd', start: 8, duration: 1 });
   });
 
-  it('moves a clip to the end of its own track without overlap', () => {
+  it('moves a clip within its own track while preserving gaps', () => {
+    const timeline: TimelineTrack[] = [
+      {
+        id: 'video-track',
+        type: 'video',
+        ...DEFAULT_TRACK_MIX,
+        clips: [
+          clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 2, inPoint: 0 }),
+          clip({ id: 'b', sourceId: 'src-1', start: 4, duration: 2, inPoint: 0 }),
+          clip({ id: 'c', sourceId: 'src-1', start: 9, duration: 1, inPoint: 0 }),
+        ],
+      },
+    ];
+
+    const next = moveClipTo(timeline, 'video-track', 'b', 'video-track', 2);
+    expect(next[0]!.clips.map((clip) => [clip.id, clip.start])).toEqual([
+      ['a', 0],
+      ['b', 2],
+      ['c', 9],
+    ]);
+  });
+
+  it('rejects absolute moves that would overlap destination-track clips', () => {
+    const timeline: TimelineTrack[] = [
+      {
+        id: 'video-track',
+        type: 'video',
+        ...DEFAULT_TRACK_MIX,
+        clips: [
+          clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 2, inPoint: 0 }),
+          clip({ id: 'b', sourceId: 'src-1', start: 4, duration: 2, inPoint: 0 }),
+          clip({ id: 'c', sourceId: 'src-1', start: 7, duration: 2, inPoint: 0 }),
+        ],
+      },
+    ];
+
+    expect(moveClipTo(timeline, 'video-track', 'b', 'video-track', 6)).toBe(timeline);
+    expect(resolveAt(timeline, 7.25)!.clip.id).toBe('c');
+  });
+
+  it('rejects moves across incompatible track types', () => {
+    const timeline: TimelineTrack[] = [
+      {
+        id: 'video-track',
+        type: 'video',
+        ...DEFAULT_TRACK_MIX,
+        clips: [clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 2, inPoint: 0 })],
+      },
+      {
+        id: 'audio-track',
+        type: 'audio',
+        ...DEFAULT_TRACK_MIX,
+        clips: [],
+      },
+    ];
+
+    expect(moveClipTo(timeline, 'video-track', 'a', 'audio-track', 3)).toBe(timeline);
+  });
+
+  it('closes gaps only through the explicit closeGaps operation', () => {
+    const timeline: TimelineTrack[] = [
+      {
+        id: 'video-track',
+        type: 'video',
+        ...DEFAULT_TRACK_MIX,
+        clips: [
+          clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 2, inPoint: 0 }),
+          clip({ id: 'b', sourceId: 'src-1', start: 6, duration: 2, inPoint: 0 }),
+        ],
+      },
+    ];
+
+    expect(moveClipTo(timeline, 'video-track', 'b', 'video-track', 3)[0]!.clips[1]!.start).toBe(3);
+    const closed = closeGaps(timeline, 'video-track');
+    expect(closed[0]!.clips.map((clip) => clip.start)).toEqual([0, 2]);
+  });
+
+  it('moves a batch of clips as one validated placement', () => {
     const timeline: TimelineTrack[] = [
       {
         id: 'video-track',
@@ -175,16 +257,58 @@ describe('timeline', () => {
         ...DEFAULT_TRACK_MIX,
         clips: [
           clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 1, inPoint: 0 }),
-          clip({ id: 'b', sourceId: 'src-1', start: 1, duration: 1, inPoint: 0 }),
-          clip({ id: 'c', sourceId: 'src-1', start: 2, duration: 1, inPoint: 0 }),
+          clip({ id: 'b', sourceId: 'src-1', start: 3, duration: 1, inPoint: 0 }),
+          clip({ id: 'c', sourceId: 'src-1', start: 10, duration: 1, inPoint: 0 }),
         ],
       },
     ];
 
-    // Drop past the last clip -> toIndex === clips.length.
-    const next = reorderClip(timeline, 'video-track', 'a', 'video-track', 3);
-    expect(next[0]!.clips.map((clip) => clip.id)).toEqual(['b', 'c', 'a']);
-    expect(next[0]!.clips.map((clip) => clip.start)).toEqual([0, 1, 2]);
+    const next = moveClips(timeline, [
+      { trackId: 'video-track', clipId: 'a', toTrackId: 'video-track', toStart: 5 },
+      { trackId: 'video-track', clipId: 'b', toTrackId: 'video-track', toStart: 8 },
+    ]);
+    expect(next[0]!.clips.map((item) => [item.id, item.start])).toEqual([
+      ['a', 5],
+      ['b', 8],
+      ['c', 10],
+    ]);
+
+    expect(
+      moveClips(timeline, [
+        { trackId: 'video-track', clipId: 'a', toTrackId: 'video-track', toStart: 9.5 },
+        { trackId: 'video-track', clipId: 'b', toTrackId: 'video-track', toStart: 11 },
+      ]),
+    ).toBe(timeline);
+  });
+
+  it('duplicates and pastes clips while preserving their relative offsets', () => {
+    const timeline: TimelineTrack[] = [
+      {
+        id: 'video-track',
+        type: 'video',
+        ...DEFAULT_TRACK_MIX,
+        clips: [
+          clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 1, inPoint: 0 }),
+          clip({ id: 'b', sourceId: 'src-1', start: 3, duration: 1, inPoint: 0 }),
+        ],
+      },
+    ];
+
+    const duplicated = duplicateClips(timeline, [
+      { trackId: 'video-track', clipId: 'a' },
+      { trackId: 'video-track', clipId: 'b' },
+    ]);
+    expect(duplicated[0]!.clips.map((item) => item.start)).toEqual([0, 3, 4, 7]);
+
+    const pasted = pasteClips(
+      timeline,
+      [
+        { trackId: 'video-track', clip: timeline[0]!.clips[0]! },
+        { trackId: 'video-track', clip: timeline[0]!.clips[1]! },
+      ],
+      10,
+    );
+    expect(pasted[0]!.clips.map((item) => item.start)).toEqual([0, 3, 10, 13]);
   });
 
   it('returns the original timeline reference on no-op edits', () => {
@@ -198,7 +322,7 @@ describe('timeline', () => {
     ];
     expect(splitClipAt(timeline, 'video-track', 10)).toBe(timeline);
     expect(removeClip(timeline, 'video-track', 'missing')).toBe(timeline);
-    expect(reorderClip(timeline, 'video-track', 'missing', 'video-track', 0)).toBe(timeline);
+    expect(moveClipTo(timeline, 'video-track', 'missing', 'video-track', 0)).toBe(timeline);
     expect(trimClip(timeline, 'video-track', 'a', { edge: 'in', time: 0 })).toBe(timeline);
   });
 
@@ -398,5 +522,19 @@ describe('timeline', () => {
     const next = setClipAudioFade(timeline, 'audio-track', 'a', 'in', 0.5);
     expect(next[0]!.clips[0]!.audioFadeIn).toBeCloseTo(0.5);
     expect(setClipAudioFade(timeline, 'audio-track', 'a', 'out', 3)).toBe(timeline);
+  });
+
+  it('adds, sorts, and deletes timeline markers', () => {
+    const markers = addMarker(
+      [{ id: 'marker-existing', time: 8, label: 'Existing' }],
+      2,
+      'Intro',
+    );
+    expect(markers.map((marker) => marker.label)).toEqual(['Intro', 'Existing']);
+    expect(markers[0]!.id).toMatch(/^marker-/);
+
+    const deleted = deleteMarker(markers, markers[0]!.id);
+    expect(deleted).toEqual([{ id: 'marker-existing', time: 8, label: 'Existing' }]);
+    expect(deleteMarker(deleted, 'missing')).toBe(deleted);
   });
 });

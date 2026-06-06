@@ -8,6 +8,10 @@ import {
   type ExportSettings,
   type MediaMetadata,
   type SourceDescriptorSnapshot,
+  type TimelineClipboardClip,
+  type TimelineClipReference,
+  type TimelineClipSnapshot,
+  type TimelineMarkerSnapshot,
   type TimelineTrackSnapshot,
   type WorkerStateMessage,
   type WaveformPeaks,
@@ -24,6 +28,7 @@ import { Button, buttonVariants } from './components/button';
 import { cn } from '../lib/utils';
 import { CapabilityPanel } from './CapabilityPanel';
 import { LimitedPreview } from './LimitedPreview';
+import { registerKeyboardShortcuts } from './keyboard';
 import {
   canCompatibilityPreview,
   deriveCapabilityTier,
@@ -93,13 +98,6 @@ function formatSavedAt(value: string): string {
   });
 }
 
-function isEditableTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  if (target.isContentEditable) return true;
-  const tag = target.tagName.toLowerCase();
-  return tag === 'input' || tag === 'textarea' || tag === 'select';
-}
-
 export function App() {
   const [capabilities, setCapabilities] = createSignal<CapabilitySnapshot>(probeCapabilities());
   const [runtimeIssue, setRuntimeIssue] = createSignal<string | null>(null);
@@ -117,8 +115,10 @@ export function App() {
   const [previewLabel, setPreviewLabel] = createSignal<string | null>(null);
   const [encodeFps, setEncodeFps] = createSignal<number | null>(null);
   const [timeline, setTimeline] = createSignal<TimelineTrackSnapshot[]>([]);
+  const [markers, setMarkers] = createSignal<TimelineMarkerSnapshot[]>([]);
   const [masterGain, setMasterGain] = createSignal(1);
-  const [selectedClip, setSelectedClip] = createSignal<SelectedClip | null>(null);
+  const [selectedClipRefs, setSelectedClipRefs] = createSignal<TimelineClipReference[]>([]);
+  const [timelineClipboard, setTimelineClipboard] = createSignal<TimelineClipboardClip[]>([]);
   const [waveformPeaks, setWaveformPeaks] = createSignal<Record<string, WaveformPeaks>>({});
   const [exporting, setExporting] = createSignal(false);
   const [exportProgress, setExportProgress] = createSignal<ExportProgress | null>(null);
@@ -161,6 +161,21 @@ export function App() {
   let audioReady: Promise<{ audioSab: SharedArrayBuffer | null; meterSab: SharedArrayBuffer | null }> | null =
     null;
   const [meterSab, setMeterSab] = createSignal<SharedArrayBuffer | null>(null);
+
+  function findTimelineClip(ref: TimelineClipReference): TimelineClipSnapshot | null {
+    const track = timeline().find((item) => item.id === ref.trackId);
+    return track?.clips.find((clip) => clip.id === ref.clipId) ?? null;
+  }
+
+  const selectedClip = createMemo<SelectedClip | null>(() => {
+    for (const ref of selectedClipRefs()) {
+      const clip = findTimelineClip(ref);
+      if (clip) {
+        return { trackId: ref.trackId, clipId: clip.id, effects: { ...clip.effects } };
+      }
+    }
+    return null;
+  });
 
   const selectedClipFades = createMemo(() => {
     const clip = selectedClip();
@@ -268,17 +283,15 @@ export function App() {
         break;
       case 'timeline-state':
         setTimeline(msg.timeline);
+        setMarkers(msg.markers);
         setMasterGain(msg.masterGain);
         audioEngine.setMasterGain(msg.masterGain);
-        setSelectedClip((prev) => {
-          if (!prev) return prev;
+        setSelectedClipRefs((prev) => {
+          const live = new Set<string>();
           for (const track of msg.timeline) {
-            const clip = track.clips.find((c) => c.id === prev.clipId);
-            if (clip) {
-              return { trackId: track.id, clipId: clip.id, effects: { ...clip.effects } };
-            }
+            for (const clip of track.clips) live.add(`${track.id}:${clip.id}`);
           }
-          return null;
+          return prev.filter((ref) => live.has(`${ref.trackId}:${ref.clipId}`));
         });
         break;
       case 'history-state':
@@ -304,7 +317,7 @@ export function App() {
           setMetadata(null);
           setWaveformPeaks({});
           if (!msg.restored) {
-            setSelectedClip(null);
+            setSelectedClipRefs([]);
           }
         }
         break;
@@ -451,7 +464,8 @@ export function App() {
         trackCount: 1,
       });
       setTimeline([]);
-      setSelectedClip(null);
+      setMarkers([]);
+      setSelectedClipRefs([]);
       setStatusLine(`Loaded ${preview.fileName} · compatibility preview`);
     } catch (error) {
       if (generation !== compatibilityImportGeneration) return;
@@ -469,7 +483,9 @@ export function App() {
     setUnresolvedSources([]);
     setMetadata(null);
     setTimeline([]);
-    setSelectedClip(null);
+    setMarkers([]);
+    setSelectedClipRefs([]);
+    setTimelineClipboard([]);
     setWaveformPeaks({});
     setHistoryState({ canUndo: false, canRedo: false });
   }
@@ -630,6 +646,97 @@ export function App() {
     importMedia(file);
   }
 
+  function selectClip(
+    trackId: string,
+    clipId: string,
+    _effects: TimelineClipSnapshot['effects'],
+    additive: boolean,
+  ) {
+    const next = { trackId, clipId };
+    const key = `${trackId}:${clipId}`;
+    if (!additive) {
+      setSelectedClipRefs((prev) =>
+        prev.some((ref) => `${ref.trackId}:${ref.clipId}` === key) ? prev : [next],
+      );
+      return;
+    }
+    setSelectedClipRefs((prev) => {
+      if (prev.some((ref) => `${ref.trackId}:${ref.clipId}` === key)) {
+        return prev.filter((ref) => `${ref.trackId}:${ref.clipId}` !== key);
+      }
+      return [...prev, next];
+    });
+  }
+
+  function selectedClipboardClips(): TimelineClipboardClip[] {
+    const clips: TimelineClipboardClip[] = [];
+    for (const ref of selectedClipRefs()) {
+      const clip = findTimelineClip(ref);
+      if (!clip) continue;
+      clips.push({
+        trackId: ref.trackId,
+        clip: {
+          ...clip,
+          effects: { ...clip.effects },
+        },
+      });
+    }
+    return clips;
+  }
+
+  function copySelectedClips() {
+    const clips = selectedClipboardClips();
+    if (clips.length === 0) return;
+    setTimelineClipboard(clips);
+    setStatusLine(`Copied ${clips.length} clip${clips.length === 1 ? '' : 's'}`);
+  }
+
+  function pasteClipboardClips() {
+    const clips = timelineClipboard();
+    if (clips.length === 0) return;
+    bridge?.send({ type: 'paste-clips', clips, atTime: clock.currentTime() });
+  }
+
+  function deleteSelectedClips() {
+    const clips = selectedClipRefs();
+    if (clips.length === 0) return;
+    if (clips.length === 1) {
+      const clip = clips[0]!;
+      bridge?.send({ type: 'delete-clip', trackId: clip.trackId, clipId: clip.clipId });
+    } else {
+      bridge?.send({ type: 'delete-clips', clips });
+    }
+    setSelectedClipRefs([]);
+  }
+
+  function duplicateSelectedClips() {
+    const clips = selectedClipRefs();
+    if (clips.length === 0) return;
+    bridge?.send({ type: 'duplicate-clip', clips });
+  }
+
+  function splitSelectedClip() {
+    const clip = selectedClip();
+    if (!clip) return;
+    bridge?.send({ type: 'split', trackId: clip.trackId, time: clock.currentTime() });
+  }
+
+  function playFromKeyboard() {
+    if (!accelerated()) return;
+    const t = clock.currentTime();
+    void audioEngine.play(t);
+    bridge?.send({ type: 'play' });
+  }
+
+  function pauseFromKeyboard() {
+    bridge?.send({ type: 'pause' });
+    audioEngine.pause();
+  }
+
+  function zoomTimeline(direction: 1 | -1) {
+    window.dispatchEvent(new CustomEvent('localcut-timeline-zoom', { detail: { direction } }));
+  }
+
   onMount(() => {
     const isolated = globalThis.crossOriginIsolated === true;
     setIsIsolated(isolated);
@@ -646,21 +753,21 @@ export function App() {
       setStatusLine('Limited shell · COOP/COEP needed for accelerated client compute');
     }
 
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (isEditableTarget(event.target)) return;
-      if ((!event.metaKey && !event.ctrlKey) || event.altKey) return;
-      const key = event.key.toLowerCase();
-      if (key === 'z') {
-        event.preventDefault();
-        bridge?.send({ type: event.shiftKey ? 'redo' : 'undo' });
-      } else if (key === 'y') {
-        event.preventDefault();
-        bridge?.send({ type: 'redo' });
-      }
-    };
+    const unregisterKeyboard = registerKeyboardShortcuts({
+      onUndo: () => bridge?.send({ type: 'undo' }),
+      onRedo: () => bridge?.send({ type: 'redo' }),
+      onSplit: splitSelectedClip,
+      onDelete: deleteSelectedClips,
+      onPlay: playFromKeyboard,
+      onPause: pauseFromKeyboard,
+      onStep: (direction) => bridge?.send({ type: 'step', direction }),
+      onZoom: zoomTimeline,
+      onCopy: copySelectedClips,
+      onPaste: pasteClipboardClips,
+      onDuplicate: duplicateSelectedClips,
+    });
     const handleOffline = () => setIsOffline(true);
     const handleOnline = () => setIsOffline(false);
-    window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('offline', handleOffline);
     window.addEventListener('online', handleOnline);
 
@@ -690,7 +797,7 @@ export function App() {
     window.addEventListener('dragleave', onDragLeave);
     window.addEventListener('drop', onDrop);
     onCleanup(() => {
-      window.removeEventListener('keydown', handleKeyDown);
+      unregisterKeyboard();
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('dragover', onDragOver);
@@ -932,6 +1039,8 @@ export function App() {
         frameRate={() => metadata()?.video?.frameRate ?? null}
         hasMedia={(metadata() !== null || hasTimeline()) && accelerated()}
         timeline={timeline}
+        markers={markers}
+        selectedClipRefs={selectedClipRefs}
         waveformPeaks={() => waveformPeaks()}
         onSeek={(t) => {
           void audioEngine.seek(t);
@@ -942,10 +1051,12 @@ export function App() {
         onTrim={(trackId, clipId, edge, time) =>
           bridge?.send({ type: 'trim-clip', trackId, clipId, edge, time })
         }
-        selectedClipId={selectedClip()?.clipId ?? null}
-        onSelectClip={(trackId, clipId, effects) =>
-          setSelectedClip({ trackId, clipId, effects: { ...effects } })
-        }
+        onMoveClips={(moves) => bridge?.send({ type: 'move-clips', moves })}
+        onSelectClip={selectClip}
+        onSelectClips={(clips) => setSelectedClipRefs(clips)}
+        onAddMarker={(time, label) => bridge?.send({ type: 'add-marker', time, label })}
+        onDeleteMarker={(markerId) => bridge?.send({ type: 'delete-marker', markerId })}
+        onCloseGaps={(trackId) => bridge?.send(trackId ? { type: 'close-gaps', trackId } : { type: 'close-gaps' })}
       />
       <footer class="status-bar">
         <span role="status" aria-live={exporting() ? 'off' : 'polite'} aria-atomic={exporting() ? 'false' : 'true'}>{statusLine()}</span>

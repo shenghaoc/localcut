@@ -26,6 +26,27 @@ export interface TimelineTrack {
   solo: boolean;
 }
 
+export interface TimelineMarker {
+  id: string;
+  time: number;
+  label: string;
+}
+
+export interface ClipReference {
+  trackId: string;
+  clipId: string;
+}
+
+export interface MoveClipTarget extends ClipReference {
+  toTrackId: string;
+  toStart: number;
+}
+
+export interface ClipboardTimelineClip {
+  trackId: string;
+  clip: TimelineClip;
+}
+
 export const DEFAULT_TRACK_MIX = {
   gain: 1,
   pan: 0,
@@ -148,6 +169,52 @@ function trackWithClip(timeline: Timeline, trackId: string, clipId: string) {
   return { trackIndex, clipIndex };
 }
 
+function clipEnd(clip: TimelineClip): number {
+  return clip.start + clip.duration;
+}
+
+function cloneClip(clip: TimelineClip): TimelineClip {
+  return {
+    ...clip,
+    effects: { ...clip.effects },
+    audioFadeIn: clip.audioFadeIn,
+    audioFadeOut: clip.audioFadeOut,
+  };
+}
+
+function cloneWithNewId(clip: TimelineClip): TimelineClip {
+  return {
+    ...cloneClip(clip),
+    id: newId(clip.id),
+  };
+}
+
+function sortByStart(clips: readonly TimelineClip[]): TimelineClip[] {
+  return [...clips].sort((a, b) => {
+    const startDiff = a.start - b.start;
+    if (startDiff !== 0) return startDiff;
+    return a.id.localeCompare(b.id);
+  });
+}
+
+function trackHasOverlaps(clips: readonly TimelineClip[]): boolean {
+  const sorted = sortByStart(clips);
+  let lastEnd = 0;
+  for (const clip of sorted) {
+    if (!finite(clip.start) || !finite(clip.duration) || clip.start < 0 || clip.duration <= 0) {
+      return true;
+    }
+    if (clip.start < lastEnd) return true;
+    lastEnd = clipEnd(clip);
+  }
+  return false;
+}
+
+function normalizeMoveStart(toStart: number): number | null {
+  if (!finite(toStart)) return null;
+  return Math.max(0, toStart);
+}
+
 /** Splits one clip at an absolute timeline time, preserving source continuity. */
 export function splitClipAt(
   timeline: Timeline,
@@ -202,59 +269,132 @@ export function removeClip(timeline: Timeline, trackId: string, clipId: string):
   return next;
 }
 
-/**
- * Reorders a clip within or across compatible tracks, inserting it at `toIndex`
- * (an index into the destination track's *current* clip array, as produced by the
- * UI drop handler). The destination track is re-laid gaplessly so the move can
- * never overlap clips and the moved clip slots cleanly after its new predecessor;
- * the source track keeps its remaining clips' positions (a gap, like delete).
- */
-export function reorderClip(
+export function moveClips(timeline: Timeline, moves: readonly MoveClipTarget[]): Timeline {
+  if (moves.length === 0) return timeline;
+
+  const next = cloneTimeline(timeline);
+  const movingKeys = new Set<string>();
+  const movingByKey = new Map<string, TimelineClip>();
+
+  for (const move of moves) {
+    const source = trackWithClip(timeline, move.trackId, move.clipId);
+    if (!source) return timeline;
+    const sourceTrack = timeline[source.trackIndex]!;
+    const targetTrack = timeline.find((track) => track.id === move.toTrackId);
+    if (!targetTrack || sourceTrack.type !== targetTrack.type) return timeline;
+    const toStart = normalizeMoveStart(move.toStart);
+    if (toStart === null) return timeline;
+    const key = `${move.trackId}:${move.clipId}`;
+    if (movingKeys.has(key)) return timeline;
+    movingKeys.add(key);
+    movingByKey.set(key, {
+      ...cloneClip(sourceTrack.clips[source.clipIndex]!),
+      start: toStart,
+    });
+  }
+
+  for (const track of next) {
+    track.clips = track.clips.filter((clip) => !movingKeys.has(`${track.id}:${clip.id}`));
+  }
+
+  for (const move of moves) {
+    const moving = movingByKey.get(`${move.trackId}:${move.clipId}`);
+    if (!moving) return timeline;
+    const destination = next.find((track) => track.id === move.toTrackId);
+    if (!destination) return timeline;
+    destination.clips = sortByStart([...destination.clips, moving]);
+  }
+
+  for (const track of next) {
+    if (trackHasOverlaps(track.clips)) return timeline;
+  }
+
+  return next;
+}
+
+/** Moves a clip to an absolute timeline start while preserving all gaps. */
+export function moveClipTo(
   timeline: Timeline,
   fromTrackId: string,
   clipId: string,
   toTrackId: string,
-  toIndex: number,
+  toStart: number,
 ): Timeline {
-  const source = trackWithClip(timeline, fromTrackId, clipId);
-  if (!source) return timeline;
-  const destinationIndex = timeline.findIndex((track) => track.id === toTrackId);
-  if (destinationIndex < 0) return timeline;
+  const loc = trackWithClip(timeline, fromTrackId, clipId);
+  const normalizedStart = normalizeMoveStart(toStart);
+  if (!loc || normalizedStart === null) return timeline;
+  const current = timeline[loc.trackIndex]!.clips[loc.clipIndex]!;
+  if (fromTrackId === toTrackId && current.start === normalizedStart) return timeline;
+  return moveClips(timeline, [{ trackId: fromTrackId, clipId, toTrackId, toStart: normalizedStart }]);
+}
 
-  const sourceTrack = timeline[source.trackIndex]!;
-  const targetTrack = timeline[destinationIndex]!;
-  if (sourceTrack.type !== targetTrack.type) return timeline;
+export function closeGaps(timeline: Timeline, trackId?: string): Timeline {
+  let changed = false;
+  const next = cloneTimeline(timeline);
+  for (const track of next) {
+    if (trackId && track.id !== trackId) continue;
+    const laidOut = relayoutSequential(sortByStart(track.clips));
+    changed ||= laidOut.some((clip, index) => clip.start !== track.clips[index]?.start || clip.id !== track.clips[index]?.id);
+    track.clips = laidOut;
+  }
+  return changed ? next : timeline;
+}
 
-  const moving = sourceTrack.clips[source.clipIndex];
-  if (!moving) return timeline;
+export function duplicateClips(
+  timeline: Timeline,
+  refs: readonly ClipReference[],
+  atTime?: number,
+): Timeline {
+  if (refs.length === 0) return timeline;
+  const clips: ClipboardTimelineClip[] = [];
+  let earliestStart = Number.POSITIVE_INFINITY;
+  let latestEnd = 0;
 
-  const sameTrack = source.trackIndex === destinationIndex;
+  for (const ref of refs) {
+    const loc = trackWithClip(timeline, ref.trackId, ref.clipId);
+    if (!loc) return timeline;
+    const clip = timeline[loc.trackIndex]!.clips[loc.clipIndex]!;
+    earliestStart = Math.min(earliestStart, clip.start);
+    latestEnd = Math.max(latestEnd, clipEnd(clip));
+    clips.push({ trackId: ref.trackId, clip: cloneWithNewId(clip) });
+  }
 
-  // Build the destination order. For a same-track move the clip is still present
-  // in `targetTrack.clips`, so drop it first and shift the requested index down by
-  // one when the insertion point sits after the original slot.
-  const baseClips = sameTrack
-    ? targetTrack.clips.filter((clip) => clip.id !== clipId)
-    : targetTrack.clips.slice();
+  const pasteAt = atTime !== undefined ? normalizeMoveStart(atTime) : latestEnd;
+  if (pasteAt === null || !finite(earliestStart)) return timeline;
+  return pasteClips(timeline, clips, pasteAt, earliestStart);
+}
 
-  let insertAt = toIndex;
-  if (sameTrack && toIndex > source.clipIndex) insertAt -= 1;
-  insertAt = Math.min(Math.max(insertAt, 0), baseClips.length);
+export function pasteClips(
+  timeline: Timeline,
+  clips: readonly ClipboardTimelineClip[],
+  atTime: number,
+  sourceBaseStart?: number,
+): Timeline {
+  if (clips.length === 0) return timeline;
+  const pasteAt = normalizeMoveStart(atTime);
+  if (pasteAt === null) return timeline;
 
-  const reordered = [
-    ...baseClips.slice(0, insertAt),
-    moving,
-    ...baseClips.slice(insertAt),
-  ];
+  const baseStart =
+    sourceBaseStart ??
+    clips.reduce((earliest, item) => Math.min(earliest, item.clip.start), Number.POSITIVE_INFINITY);
+  if (!finite(baseStart)) return timeline;
 
   const next = cloneTimeline(timeline);
-  next[destinationIndex] = { ...targetTrack, clips: relayoutSequential(reordered) };
-  if (!sameTrack) {
-    next[source.trackIndex] = {
-      ...sourceTrack,
-      clips: sourceTrack.clips.filter((clip) => clip.id !== clipId),
+  for (const item of clips) {
+    const destination = next.find((track) => track.id === item.trackId);
+    if (!destination) return timeline;
+    const clip = {
+      ...cloneWithNewId(item.clip),
+      start: pasteAt + (item.clip.start - baseStart),
     };
+    if (clip.start < 0) return timeline;
+    destination.clips = sortByStart([...destination.clips, clip]);
   }
+
+  for (const track of next) {
+    if (trackHasOverlaps(track.clips)) return timeline;
+  }
+
   return next;
 }
 
@@ -452,6 +592,36 @@ export function setClipAudioFade(
   const nextClip = next[loc.trackIndex]!.clips[loc.clipIndex]!;
   nextClip[key] = durationS;
   return next;
+}
+
+export function addMarker(
+  markers: readonly TimelineMarker[],
+  time: number,
+  label?: string,
+): TimelineMarker[] {
+  if (!finite(time) || time < 0) return markers as TimelineMarker[];
+  const safeLabel = label?.trim() || `Marker ${markers.length + 1}`;
+  return sortMarkers([
+    ...markers,
+    {
+      id: newId('marker'),
+      time,
+      label: safeLabel,
+    },
+  ]);
+}
+
+export function deleteMarker(markers: readonly TimelineMarker[], markerId: string): TimelineMarker[] {
+  const next = markers.filter((marker) => marker.id !== markerId);
+  return next.length === markers.length ? (markers as TimelineMarker[]) : next;
+}
+
+export function sortMarkers(markers: readonly TimelineMarker[]): TimelineMarker[] {
+  return [...markers].sort((a, b) => {
+    const timeDiff = a.time - b.time;
+    if (timeDiff !== 0) return timeDiff;
+    return a.id.localeCompare(b.id);
+  });
 }
 
 export { normalizeClipEffects, type ClipEffectParams };

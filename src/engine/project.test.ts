@@ -117,6 +117,7 @@ describe('project serialization', () => {
     const doc = serializeProject({
       projectId: 'project-1',
       timeline: timelineFixture(),
+      markers: [{ id: 'marker-1', time: 4.5, label: 'Pull quote' }],
       sources: [sourceFixture()],
       masterGain: 0.85,
       savedAt: new Date('2026-06-06T00:00:00.000Z'),
@@ -127,6 +128,41 @@ describe('project serialization', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.doc).toEqual(doc);
+  });
+
+  it('upgrades v1 documents with absolute clip starts and empty markers', () => {
+    const timeline = timelineFixture();
+    timeline[0]!.clips[0]!.start = 7;
+    const result = deserializeProject({
+      schemaVersion: 1,
+      projectId: 'project-legacy',
+      savedAt: '2026-06-06T00:00:00.000Z',
+      timeline,
+      sources: [sourceFixture()],
+      masterGain: 0.75,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.doc.schemaVersion).toBe(PROJECT_SCHEMA_VERSION);
+    expect(result.doc.markers).toEqual([]);
+    expect(result.doc.timeline[0]!.clips[0]!.start).toBe(7);
+  });
+
+  it('rejects malformed marker records', () => {
+    const doc = serializeProject({
+      projectId: 'project-1',
+      timeline: timelineFixture(),
+      sources: [sourceFixture()],
+    });
+    const result = deserializeProject({
+      ...doc,
+      markers: [{ id: 'marker-1', time: -1, label: 'Bad' }],
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toContain('markers');
   });
 
   it('rejects unknown schema versions without throwing', () => {

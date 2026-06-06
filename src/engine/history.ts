@@ -1,5 +1,5 @@
-import type { Timeline } from './timeline';
-import { cloneTimelineSnapshot } from './project';
+import type { Timeline, TimelineMarker } from './timeline';
+import { cloneMarkersSnapshot, cloneTimelineSnapshot } from './project';
 
 const DEFAULT_HISTORY_LIMIT = 100;
 const DEFAULT_COALESCE_WINDOW_MS = 80;
@@ -20,17 +20,22 @@ export interface TimelineHistoryOptions {
   now?: () => number;
 }
 
+export interface TimelineHistorySnapshot {
+  timeline: Timeline;
+  markers: TimelineMarker[];
+}
+
 export interface TimelineHistory {
-  push: (snapshot: Timeline, options?: { coalesceKey?: HistoryCoalesceKey }) => void;
-  undo: (current: Timeline) => Timeline | null;
-  redo: (current: Timeline) => Timeline | null;
+  push: (snapshot: TimelineHistorySnapshot, options?: { coalesceKey?: HistoryCoalesceKey }) => void;
+  undo: (current: TimelineHistorySnapshot) => TimelineHistorySnapshot | null;
+  redo: (current: TimelineHistorySnapshot) => TimelineHistorySnapshot | null;
   clear: () => void;
   state: () => TimelineHistoryState;
   size: () => { past: number; future: number };
 }
 
 interface HistoryEntry {
-  snapshot: Timeline;
+  snapshot: TimelineHistorySnapshot;
   coalesceKey: HistoryCoalesceKey | null;
   updatedAt: number;
 }
@@ -44,9 +49,16 @@ export function createTimelineHistory(options: TimelineHistoryOptions = {}): Tim
   const coalesceWindowMs = Math.max(0, options.coalesceWindowMs ?? DEFAULT_COALESCE_WINDOW_MS);
   const now = options.now ?? (() => Date.now());
   const past: HistoryEntry[] = [];
-  const future: Timeline[] = [];
+  const future: TimelineHistorySnapshot[] = [];
 
-  function push(snapshot: Timeline, pushOptions: { coalesceKey?: HistoryCoalesceKey } = {}): void {
+  function cloneSnapshot(snapshot: TimelineHistorySnapshot): TimelineHistorySnapshot {
+    return {
+      timeline: cloneTimelineSnapshot(snapshot.timeline),
+      markers: cloneMarkersSnapshot(snapshot.markers),
+    };
+  }
+
+  function push(snapshot: TimelineHistorySnapshot, pushOptions: { coalesceKey?: HistoryCoalesceKey } = {}): void {
     const timestamp = now();
     const coalesceKey = pushOptions.coalesceKey ?? null;
     const last = past[past.length - 1] ?? null;
@@ -58,7 +70,7 @@ export function createTimelineHistory(options: TimelineHistoryOptions = {}): Tim
     }
 
     past.push({
-      snapshot: cloneTimelineSnapshot(snapshot),
+      snapshot: cloneSnapshot(snapshot),
       coalesceKey,
       updatedAt: timestamp,
     });
@@ -67,25 +79,25 @@ export function createTimelineHistory(options: TimelineHistoryOptions = {}): Tim
     }
   }
 
-  function undo(current: Timeline): Timeline | null {
+  function undo(current: TimelineHistorySnapshot): TimelineHistorySnapshot | null {
     const entry = past.pop();
     if (!entry) return null;
-    future.push(cloneTimelineSnapshot(current));
-    return cloneTimelineSnapshot(entry.snapshot);
+    future.push(cloneSnapshot(current));
+    return cloneSnapshot(entry.snapshot);
   }
 
-  function redo(current: Timeline): Timeline | null {
+  function redo(current: TimelineHistorySnapshot): TimelineHistorySnapshot | null {
     const snapshot = future.pop();
     if (!snapshot) return null;
     past.push({
-      snapshot: cloneTimelineSnapshot(current),
+      snapshot: cloneSnapshot(current),
       coalesceKey: null,
       updatedAt: now(),
     });
     if (past.length > limit) {
       past.splice(0, past.length - limit);
     }
-    return cloneTimelineSnapshot(snapshot);
+    return cloneSnapshot(snapshot);
   }
 
   function clear(): void {
