@@ -4,6 +4,7 @@ import {
   Cpu,
   FolderOpen,
   Gauge,
+  Info,
   Pause,
   Play,
   Scissors,
@@ -13,6 +14,7 @@ import {
 } from 'lucide-solid';
 import { cn } from '../lib/utils';
 import { Button, buttonVariants } from './components/button';
+import type { CapabilityTier } from './capabilities';
 import type { MediaMetadata } from '../protocol';
 
 interface ToolbarProps {
@@ -23,17 +25,20 @@ interface ToolbarProps {
   onPlay: () => void;
   onPause: () => void;
   onStep: (direction: 1 | -1) => void;
-  disabled?: boolean;
+  transportDisabled?: boolean;
+  importBlocked?: boolean;
+  importHint?: string | null;
   crossOriginIsolated: boolean;
-  pipelineMode: 'accelerated' | 'starting' | 'limited';
+  pipelineMode: CapabilityTier;
   previewLabel: string | null;
   encodeFps: number | null;
+  onOpenCapabilities?: () => void;
   exportControl?: JSX.Element;
 }
 
 export function Toolbar(props: ToolbarProps) {
   const hasVideo = () => props.metadata?.video != null;
-  const transportDisabled = () => props.disabled || !hasVideo();
+  const transportDisabled = () => props.transportDisabled || !hasVideo();
   const handleImportInput = (event: Event) => {
     const input = event.currentTarget as HTMLInputElement;
     const file = input.files?.[0] ?? null;
@@ -57,8 +62,9 @@ export function Toolbar(props: ToolbarProps) {
           class={cn(
             buttonVariants({ variant: 'default' }),
             'import-picker',
-            props.disabled && 'is-disabled pointer-events-none',
+            props.importBlocked && 'is-disabled pointer-events-none',
           )}
+          title={props.importHint ?? undefined}
         >
           <FolderOpen size={14} aria-hidden="true" />
           Import
@@ -67,8 +73,9 @@ export function Toolbar(props: ToolbarProps) {
             type="file"
             accept={props.importAccept}
             onChange={handleImportInput}
-            disabled={props.disabled}
+            disabled={props.importBlocked}
             aria-label="Import media"
+            title={props.importHint ?? undefined}
           />
         </label>
       </div>
@@ -80,6 +87,7 @@ export function Toolbar(props: ToolbarProps) {
               props.pipelineMode === 'accelerated' && 'is-ok',
               props.pipelineMode === 'limited' && 'is-warn',
               props.pipelineMode === 'starting' && 'is-waiting',
+              props.pipelineMode === 'blocked' && 'is-warn',
             )}
           >
             <Gauge size={13} aria-hidden="true" />
@@ -87,7 +95,9 @@ export function Toolbar(props: ToolbarProps) {
               ? 'Accelerated'
               : props.pipelineMode === 'limited'
                 ? 'Limited shell'
-                : 'Starting pipeline'}
+                : props.pipelineMode === 'blocked'
+                  ? 'Blocked'
+                  : 'Starting pipeline'}
           </span>
           <span class="pipeline-chip">
             <Cpu size={13} aria-hidden="true" />
@@ -109,6 +119,15 @@ export function Toolbar(props: ToolbarProps) {
               Encode {Math.round(props.encodeFps!)} fps
             </span>
           </Show>
+          <button
+            type="button"
+            class="pipeline-chip pipeline-chip-button"
+            onClick={() => props.onOpenCapabilities?.()}
+            title="View browser capabilities and recovery steps"
+          >
+            <Info size={13} aria-hidden="true" />
+            Capabilities
+          </button>
         </div>
         <span class="file-name" title={props.metadata?.fileName ?? 'No source loaded'}>
           <Show when={props.metadata} fallback="No source">
@@ -137,7 +156,7 @@ export function Toolbar(props: ToolbarProps) {
           </Button>
           <Button
             onClick={() => props.onPause()}
-            disabled={props.disabled || !props.playing()}
+            disabled={transportDisabled() || !props.playing()}
           >
             <Pause size={14} aria-hidden="true" />
             Pause
