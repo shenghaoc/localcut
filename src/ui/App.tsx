@@ -1043,7 +1043,7 @@ export function App() {
         currentTime={clock.currentTime}
         duration={clock.duration}
         frameRate={() => metadata()?.video?.frameRate ?? null}
-        hasMedia={(metadata() !== null || hasTimeline()) && accelerated()}
+        hasMedia={(metadata() !== null || hasTimeline() || markers().length > 0) && accelerated()}
         timeline={timeline}
         markers={markers}
         selectedClipRefs={selectedClipRefs}
