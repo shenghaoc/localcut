@@ -1,0 +1,11 @@
+# Ignore artifacts:
+dist
+dev-dist
+coverage
+
+# Ignore lockfile
+package-lock.json
+
+# Ignore spec/steering docs and settings
+.kiro/
+.claude/
