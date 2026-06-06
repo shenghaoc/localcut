@@ -107,7 +107,7 @@ const LUT_REGISTRY_ENTRY: LutRegistryEntry = {
   label: 'LUT',
   shaderF32: lutApplyF32,
   shaderF16: lutApplyF16,
-  uniformByteLength: 16,
+  uniformByteLength: 48,
   fields: [{ key: 'lutStrength', offset: 0 }],
 };
 
@@ -156,6 +156,18 @@ export function packEffectUniform(
   for (const field of entry.fields) {
     view[field.offset / 4] = params[field.key];
   }
+  if (effectId === 'lut-apply') {
+    view[8] = 1;
+    view[9] = 1;
+    view[10] = 1;
+  }
+  return view;
+}
+
+export function packLutUniform(params: ClipEffectParams, lut: ClipLut): Float32Array {
+  const view = packEffectUniform('lut-apply', params);
+  view.set(lut.domainMin, 4);
+  view.set(lut.domainMax, 8);
   return view;
 }
 
@@ -271,7 +283,7 @@ export class EffectChain {
   ): GPUTextureView {
     const lutTexture = this.luts.get(lut.key) ?? this.luts.upsert(lut);
     const uniformBuffer = this.uniformBufferFor(this.lutEffect, layerSlot);
-    this.device.queue.writeBuffer(uniformBuffer, 0, packEffectUniform(this.lutEffect.id, params));
+    this.device.queue.writeBuffer(uniformBuffer, 0, packLutUniform(params, lut));
     const bindGroup = this.device.createBindGroup({
       layout: this.lutEffect.bindGroupLayout,
       entries: [

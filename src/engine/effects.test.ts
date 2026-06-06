@@ -10,6 +10,7 @@ import {
   isSaturationActive,
   normalizeClipEffects,
   packEffectUniform,
+  packLutUniform,
 } from './effects';
 
 describe('effects', () => {
@@ -98,5 +99,33 @@ describe('effects', () => {
       lutStrength: 0.75,
     });
     expect(packed[0]).toBeCloseTo(0.75);
+    expect(packed).toHaveLength(12);
+    expect([...packed.slice(4, 7)]).toEqual([0, 0, 0]);
+    expect([...packed.slice(8, 11)]).toEqual([1, 1, 1]);
+  });
+
+  it('packs LUT domain uniforms from the clip LUT', () => {
+    const packed = packLutUniform(
+      {
+        ...DEFAULT_CLIP_EFFECTS,
+        lutStrength: 0.5,
+      },
+      {
+        key: 'lut-a',
+        fileName: 'grade.cube',
+        title: 'Grade',
+        size: 2,
+        domainMin: [0.1, 0.2, 0.3],
+        domainMax: [0.9, 0.8, 0.7],
+        values: new Float32Array(24),
+      },
+    );
+    expect(packed[0]).toBeCloseTo(0.5);
+    expect(packed[4]).toBeCloseTo(0.1);
+    expect(packed[5]).toBeCloseTo(0.2);
+    expect(packed[6]).toBeCloseTo(0.3);
+    expect(packed[8]).toBeCloseTo(0.9);
+    expect(packed[9]).toBeCloseTo(0.8);
+    expect(packed[10]).toBeCloseTo(0.7);
   });
 });

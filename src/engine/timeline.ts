@@ -24,6 +24,7 @@ import {
   isEffectKeyframeParam,
   isTransformKeyframeParam,
   normalizeClipKeyframes,
+  sampleKeyframes,
   type ClipKeyframeParam,
   type ClipKeyframes,
   type KeyframeEasing,
@@ -515,6 +516,49 @@ function normalizeMoveStart(toStart: number): number | null {
 }
 
 /** Splits one clip at an absolute timeline time, preserving source continuity. */
+function clipKeyframeFallback(clip: TimelineClip, key: ClipKeyframeParam): number {
+  if (isEffectKeyframeParam(key)) return clip.effects[key];
+  if (isTransformKeyframeParam(key)) return clip.transform[key];
+  return 0;
+}
+
+function splitClipKeyframes(
+  clip: TimelineClip,
+  splitOffset: number,
+): { left?: ClipKeyframes; right?: ClipKeyframes } {
+  const keyframes = normalizeClipKeyframes(clip.keyframes, clip.duration);
+  if (!keyframes) return {};
+  const left: ClipKeyframes = {};
+  const right: ClipKeyframes = {};
+  const rightDuration = clip.duration - splitOffset;
+
+  for (const [rawKey, track] of Object.entries(keyframes)) {
+    const key = rawKey as ClipKeyframeParam;
+    const splitValue = sampleKeyframes(track, splitOffset, clipKeyframeFallback(clip, key));
+    const leftTrack = insertKeyframe(
+      track.filter((frame) => frame.t <= splitOffset),
+      { t: splitOffset, value: splitValue, easing: 'linear' },
+    );
+    const rightTrack = insertKeyframe(
+      track
+        .filter((frame) => frame.t >= splitOffset)
+        .map((frame) => ({ ...frame, t: frame.t - splitOffset })),
+      { t: 0, value: splitValue, easing: 'linear' },
+    );
+    const normalizedLeft = normalizeClipKeyframes({ [key]: leftTrack }, splitOffset);
+    const normalizedRight = normalizeClipKeyframes({ [key]: rightTrack }, rightDuration);
+    const normalizedLeftTrack = normalizedLeft?.[key];
+    const normalizedRightTrack = normalizedRight?.[key];
+    if (normalizedLeftTrack?.length) left[key] = normalizedLeftTrack;
+    if (normalizedRightTrack?.length) right[key] = normalizedRightTrack;
+  }
+
+  return {
+    left: Object.keys(left).length > 0 ? left : undefined,
+    right: Object.keys(right).length > 0 ? right : undefined,
+  };
+}
+
 export function splitClipAt(
   timeline: Timeline,
   trackId: string,
@@ -534,10 +578,12 @@ export function splitClipAt(
   const clip = track.clips[clipIndex]!;
   const splitOffset = time - clip.start;
   if (splitOffset <= 0 || splitOffset >= clip.duration) return timeline;
+  const splitKeyframes = splitClipKeyframes(clip, splitOffset);
 
   const left: TimelineClip = {
     ...clip,
     duration: splitOffset,
+    keyframes: splitKeyframes.left,
   };
   const right: TimelineClip = {
     ...clip,
@@ -545,6 +591,7 @@ export function splitClipAt(
     start: clip.start + splitOffset,
     duration: clip.duration - splitOffset,
     inPoint: clip.inPoint + splitOffset,
+    keyframes: splitKeyframes.right,
   };
 
   const next = cloneTimeline(timeline);

@@ -129,6 +129,56 @@ describe('timeline', () => {
     });
   });
 
+  it('splits keyframes into clip-local halves with boundary samples', () => {
+    const timeline: TimelineTrack[] = [
+      {
+        id: 'video-track',
+        type: 'video',
+        ...DEFAULT_TRACK_MIX,
+        clips: [
+          clip({
+            id: 'a',
+            sourceId: 'src-1',
+            start: 0,
+            duration: 6,
+            inPoint: 0,
+            effects: { ...defaultClipEffects(), brightness: 0 },
+            transform: { ...defaultClipTransform(), x: 0 },
+            keyframes: {
+              brightness: [
+                { t: 0, value: 0, easing: 'linear' },
+                { t: 6, value: 6, easing: 'linear' },
+              ],
+              x: [
+                { t: 1, value: 10, easing: 'linear' },
+                { t: 5, value: 50, easing: 'linear' },
+              ],
+            },
+          }),
+        ],
+      },
+    ];
+
+    const next = splitClipAt(timeline, 'video-track', 2);
+    const [left, right] = next[0]!.clips;
+    expect(left!.keyframes?.brightness).toEqual([
+      { t: 0, value: 0, easing: 'linear' },
+      { t: 2, value: 2, easing: 'linear' },
+    ]);
+    expect(right!.keyframes?.brightness).toEqual([
+      { t: 0, value: 2, easing: 'linear' },
+      { t: 4, value: 6, easing: 'linear' },
+    ]);
+    expect(left!.keyframes?.x).toEqual([
+      { t: 1, value: 10, easing: 'linear' },
+      { t: 2, value: 20, easing: 'linear' },
+    ]);
+    expect(right!.keyframes?.x).toEqual([
+      { t: 0, value: 20, easing: 'linear' },
+      { t: 3, value: 50, easing: 'linear' },
+    ]);
+  });
+
   it('does not split out of clip bounds', () => {
     const timeline: TimelineTrack[] = [
       {
@@ -341,6 +391,34 @@ describe('timeline', () => {
       10,
     );
     expect(pasted[0]!.clips.map((item) => item.start)).toEqual([0, 3, 10, 13]);
+  });
+
+  it('pastes clips with their full LUT data intact', () => {
+    const lut = {
+      key: 'lut-a',
+      fileName: 'grade.cube',
+      title: 'Grade',
+      size: 2,
+      domainMin: [0.1, 0.2, 0.3] as [number, number, number],
+      domainMax: [0.9, 0.8, 0.7] as [number, number, number],
+      values: new Float32Array(24).fill(0.5),
+    };
+    const timeline: TimelineTrack[] = [
+      {
+        id: 'video-track',
+        type: 'video',
+        ...DEFAULT_TRACK_MIX,
+        clips: [clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 2, inPoint: 0, lut })],
+      },
+    ];
+
+    const pasted = pasteClips(timeline, [{ trackId: 'video-track', clip: timeline[0]!.clips[0]! }], 3);
+    const pastedLut = pasted[0]!.clips[1]!.lut;
+    expect(pastedLut?.key).toBe('lut-a');
+    expect(pastedLut?.domainMin).toEqual([0.1, 0.2, 0.3]);
+    expect(pastedLut?.domainMax).toEqual([0.9, 0.8, 0.7]);
+    expect(pastedLut?.values).toBeInstanceOf(Float32Array);
+    expect(pastedLut?.values).not.toBe(lut.values);
   });
 
   it('returns the original timeline reference on no-op edits', () => {

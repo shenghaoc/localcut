@@ -64,7 +64,7 @@ import {
   type TransformParams,
 } from './timeline';
 import { sampleClipParamsAt } from './keyframes';
-import { clipLutFromCubeFile, lutSnapshot, type ClipLut } from './lut';
+import { clipLutFromCubeFile, cloneClipLut, lutSnapshot, type ClipLut } from './lut';
 import {
   applyMixStageInPlace,
   type AudioTransitionCut,
@@ -1544,7 +1544,25 @@ function handleDuplicate(cmd: Extract<WorkerCommand, { type: 'duplicate-clip' }>
   commitTimelineMutation(() => duplicateClips(timeline, cmd.clips, cmd.atTime));
 }
 
+function timelineClipByRef(trackId: string, clipId: string): TimelineClip | null {
+  return timeline.find((track) => track.id === trackId)?.clips.find((clip) => clip.id === clipId) ?? null;
+}
+
+function clipboardLutFromTimeline(item: TimelineClipboardClip): ClipLut | undefined {
+  const snapshot = item.clip.lut;
+  if (!snapshot) return undefined;
+  const sourceClip = timelineClipByRef(item.trackId, item.clip.id);
+  if (sourceClip?.lut?.key === snapshot.key) return cloneClipLut(sourceClip.lut);
+  for (const track of timeline) {
+    for (const clip of track.clips) {
+      if (clip.lut?.key === snapshot.key) return cloneClipLut(clip.lut);
+    }
+  }
+  return undefined;
+}
+
 function clipboardClipFromMessage(item: TimelineClipboardClip): ClipboardTimelineClip {
+  const lut = clipboardLutFromTimeline(item);
   return {
     trackId: item.trackId,
     clip: {
@@ -1563,6 +1581,7 @@ function clipboardClipFromMessage(item: TimelineClipboardClip): ClipboardTimelin
       effects: { ...item.clip.effects },
       transform: { ...item.clip.transform },
       keyframes: item.clip.keyframes,
+      ...(lut ? { lut } : {}),
       audioFadeIn: item.clip.audioFadeIn,
       audioFadeOut: item.clip.audioFadeOut,
     },

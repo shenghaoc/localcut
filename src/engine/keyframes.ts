@@ -245,8 +245,5 @@ export function sampleClipParamsAt(clip: KeyframedClip, timelineTime: number): S
     }
   }
 
-  return {
-    effects: normalizeClipEffects(effects),
-    transform: normalizeTransform(transform),
-  };
+  return { effects, transform };
 }
