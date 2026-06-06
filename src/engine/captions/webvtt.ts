@@ -37,6 +37,12 @@ export function parseWebVtt(text: string): ParsedCaptionDocument {
   const segments: CaptionSegment[] = [];
   let cueIndex = 0;
   while (cursor < lines.length) {
+    const line = lines[cursor]!.trim();
+    if (line.startsWith('NOTE') || line.startsWith('STYLE') || line.startsWith('REGION')) {
+      while (cursor < lines.length && lines[cursor]!.trim() !== '') cursor += 1;
+      while (cursor < lines.length && lines[cursor]!.trim() === '') cursor += 1;
+      continue;
+    }
     const startLine = cursor + 1;
     let cueId: string | undefined;
     let timingLine = lines[cursor] ?? '';

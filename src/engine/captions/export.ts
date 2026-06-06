@@ -10,10 +10,16 @@ export function filterCaptionSegmentsForRange(
   const endS = range.mode === 'timeline-range' ? range.endS : Number.POSITIVE_INFINITY;
   return track.segments
     .filter((segment) => segment.start < endS && captionSegmentEnd(segment) > startS)
-    .map((segment) => ({
-      ...cloneCaptionSegment(segment),
-      start: Math.max(0, segment.start - startS),
-    }));
+    .map((segment) => {
+      const originalEnd = captionSegmentEnd(segment);
+      const newStart = Math.max(0, segment.start - startS);
+      const newEnd = Math.max(0, Math.min(endS, originalEnd) - startS);
+      return {
+        ...cloneCaptionSegment(segment),
+        start: newStart,
+        duration: Math.max(0.05, newEnd - newStart),
+      };
+    });
 }
 
 export function exportCaptionSidecars(track: CaptionTrack, settings: CaptionExportSettings): CaptionSidecarFile[] {

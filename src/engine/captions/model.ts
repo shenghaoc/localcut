@@ -175,8 +175,8 @@ export function splitCaptionSegment(
   const rightDuration = captionSegmentEnd(segment) - time;
   const pieces = segment.text.split(/\s+/);
   const pivot = Math.max(1, Math.floor(pieces.length / 2));
-  const leftText = pieces.slice(0, pivot).join(' ') || segment.text;
-  const rightText = pieces.slice(pivot).join(' ') || segment.text;
+  const leftText = pieces.slice(0, pivot).join(' ');
+  const rightText = pieces.slice(pivot).join(' ');
   next[trackIndex]!.segments.splice(
     segmentIndex,
     1,

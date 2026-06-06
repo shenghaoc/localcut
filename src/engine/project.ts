@@ -10,6 +10,7 @@ import type {
   SourceTrackTimingSnapshot,
 } from '../protocol';
 import {
+  DEFAULT_CAPTION_STYLE,
   cloneCaptionTrack,
   createCaptionTrack,
   normalizeCaptionStyle,
@@ -425,7 +426,10 @@ function parseCaptionStyle(value: unknown): CaptionStyle | null {
         ? value.anchor
         : undefined,
     insetPx: isRecord(value.insetPx)
-      ? { x: finiteNumber(value.insetPx.x) ?? 0, y: finiteNumber(value.insetPx.y) ?? 0 }
+      ? {
+          x: finiteNumber(value.insetPx.x) ?? DEFAULT_CAPTION_STYLE.insetPx!.x,
+          y: finiteNumber(value.insetPx.y) ?? DEFAULT_CAPTION_STYLE.insetPx!.y,
+        }
       : undefined,
     maxWidthPercent: finiteNumber(value.maxWidthPercent) ?? undefined,
     lineWrap: value.lineWrap === 'balanced' || value.lineWrap === 'greedy' ? value.lineWrap : undefined,

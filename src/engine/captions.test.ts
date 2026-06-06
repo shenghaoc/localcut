@@ -27,6 +27,20 @@ describe('caption SRT parse/serialize', () => {
     expect(parsed.segments).toHaveLength(1);
     expect(parsed.diagnostics.length).toBeGreaterThan(0);
   });
+
+  it('trims overlapping cues to the requested export range', () => {
+    const track = createCaptionTrack({
+      id: 'captions-1',
+      segments: [{ id: 'a', start: 1, duration: 3, text: 'Hello' }],
+    });
+    const files = exportCaptionSidecars(track, {
+      trackId: 'captions-1',
+      formats: ['srt'],
+      range: { mode: 'timeline-range', startS: 2, endS: 3.5 },
+      fileStem: 'trimmed',
+    });
+    expect(files[0]!.content).toContain('00:00:00,000 --> 00:00:01,500');
+  });
 });
 
 describe('caption WebVTT parse/serialize', () => {
@@ -36,6 +50,14 @@ describe('caption WebVTT parse/serialize', () => {
     expect(parsed.segments).toHaveLength(2);
     expect(parsed.diagnostics.some((item) => item.code === 'unsupported-setting')).toBe(true);
     expect(serializeWebVtt(parsed.segments)).toContain('WEBVTT');
+  });
+
+  it('skips NOTE and STYLE blocks', () => {
+    const input = `WEBVTT\n\nNOTE this is metadata\nignore me\n\nSTYLE\n::cue { color: red; }\n\n00:00:01.000 --> 00:00:02.000\nHello`;
+    const parsed = parseWebVtt(input);
+    expect(parsed.segments).toHaveLength(1);
+    expect(parsed.segments[0]!.text).toBe('Hello');
+    expect(parsed.diagnostics.some((item) => item.code === 'invalid-timecode')).toBe(false);
   });
 });
 
@@ -81,5 +103,18 @@ describe('caption editing and export', () => {
     });
     expect(files.map((file) => file.fileName)).toEqual(['demo.srt', 'demo.vtt']);
     expect(files[0]!.content).toContain('00:00:00,000');
+  });
+
+  it('does not duplicate single-word captions on split', () => {
+    const id = makeCaptionSegmentId();
+    const tracks = [
+      createCaptionTrack({
+        id: 'captions-1',
+        segments: [{ id, start: 1, duration: 2, text: 'Hello' }],
+      }),
+    ];
+    const split = splitCaptionSegment(tracks, 'captions-1', id, 2);
+    expect(split[0]!.segments[0]!.text).toBe('Hello');
+    expect(split[0]!.segments[1]!.text).toBe('');
   });
 });

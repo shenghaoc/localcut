@@ -47,7 +47,9 @@ function formatTime(value: number): string {
 }
 
 function parseTime(value: string, fallback: number): number {
-  const parsed = Number(value);
+  const trimmed = value.trim();
+  if (trimmed === '') return fallback;
+  const parsed = Number(trimmed);
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
