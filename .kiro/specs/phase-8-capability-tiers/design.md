@@ -1,6 +1,6 @@
 # Design: Phase 8 — Capability Tiers + Compatibility Engine
 
-> Status: **Active** — align the product with browser-native editing across real hardware.
+> Status: **Completed** — align the product with browser-native editing across real hardware.
 
 ## Goal
 
@@ -11,8 +11,10 @@ Make LocalCut useful even when the premium browser APIs are not all available. T
 | Tier | Requirements | Experience |
 |------|--------------|------------|
 | Accelerated | WebCodecs, WebGPU, OffscreenCanvas, `SharedArrayBuffer`, COOP/COEP | Full preview, effects, audio sync, timeline editing, export |
-- First fallback: **decode-only thumbnail** via `HTMLVideoElement` + one-shot Canvas2D in `src/compatibility/` (not WebGL2; keeps the path clearly separate from WebGPU preview).
+| Limited | Missing SAB or WebGPU, but app shell can run | Explain missing capability; compatibility import shows a decode-only thumbnail |
 | Blocked | Browser lacks core file/media APIs or unsupported security context | Show exact blocker and next action |
+
+First compatibility fallback: **decode-only thumbnail** via `HTMLVideoElement` + one-shot Canvas2D in `src/compatibility/` (not WebGL2; keeps the path clearly separate from WebGPU preview).
 
 ## Architecture
 
