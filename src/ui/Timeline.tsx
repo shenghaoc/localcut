@@ -1,7 +1,9 @@
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
 import {
+  Film,
   Flag,
   Magnet,
+  Music2,
   RotateCcw,
   SkipBack,
   SkipForward,
@@ -11,6 +13,8 @@ import {
 } from 'lucide-solid';
 import { TimelineClip } from './TimelineClip';
 import { TimelineTrack } from './TimelineTrack';
+import { ASSET_DRAG_MIME } from './MediaBin';
+import type { ThumbnailEntry } from './thumbnail-store';
 import {
   type ClipEffectParamsSnapshot,
   type TimelineClipMove,
@@ -46,6 +50,13 @@ interface TimelineProps {
   onDeleteMarker: (markerId: string) => void;
   onCloseGaps: (trackId?: string) => void;
   waveformPeaks?: () => Record<string, WaveformPeaks>;
+  onPlaceAsset: (sourceId: string, trackId: string, start: number) => void;
+  onAddTrack: (trackType: 'video' | 'audio') => void;
+  onRemoveTrack: (trackId: string) => void;
+  onReorderTrack: (trackId: string, toIndex: number) => void;
+  getThumbnail: (sourceId: string, timestamp: number) => ThumbnailEntry | null;
+  thumbnailVersion: () => number;
+  onRequestThumbnails: (sourceId: string, timestamps: number[]) => void;
 }
 
 interface MarqueeBox {
@@ -104,6 +115,7 @@ export function Timeline(props: TimelineProps) {
   const [snapEnabled, setSnapEnabled] = createSignal(true);
   const [isScrubbing, setIsScrubbing] = createSignal(false);
   const [marquee, setMarquee] = createSignal<MarqueeBox | null>(null);
+  const [dropTrackId, setDropTrackId] = createSignal<string | null>(null);
   let scrollEl: HTMLDivElement | undefined;
   let contentEl: HTMLDivElement | undefined;
   let zoomRaf: number | null = null;
@@ -357,6 +369,35 @@ export function Timeline(props: TimelineProps) {
     };
   }
 
+  function dragHasAsset(event: DragEvent): boolean {
+    return !!event.dataTransfer && Array.from(event.dataTransfer.types).includes(ASSET_DRAG_MIME);
+  }
+
+  function onTrackDragOver(trackId: string, event: DragEvent) {
+    if (!dragHasAsset(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+    if (dropTrackId() !== trackId) setDropTrackId(trackId);
+  }
+
+  function onTrackDragLeave(trackId: string) {
+    if (dropTrackId() === trackId) setDropTrackId(null);
+  }
+
+  function onTrackDrop(trackId: string, event: DragEvent) {
+    if (!dragHasAsset(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setDropTrackId(null);
+    const sourceId = event.dataTransfer?.getData(ASSET_DRAG_MIME);
+    if (!sourceId || !contentEl) return;
+    const rect = contentEl.getBoundingClientRect();
+    const start = timelineTimeAtClientX(event.clientX, rect.left, pxPerSecond());
+    if (start === null) return;
+    props.onPlaceAsset(sourceId, trackId, Math.max(0, start));
+  }
+
   onMount(() => {
     const onZoom = (event: Event) => {
       const detail = (event as CustomEvent<{ direction: 1 | -1 }>).detail;
@@ -380,6 +421,24 @@ export function Timeline(props: TimelineProps) {
           <span class="timecode tabular-nums muted">{formatTimecode(props.duration(), fps())}</span>
         </div>
         <div class="timeline-actions" role="group" aria-label="Timeline tools">
+          <button
+            type="button"
+            class="timeline-tool-button"
+            onClick={() => props.onAddTrack('video')}
+            aria-label="Add video track"
+            title="Add video track"
+          >
+            <Film size={13} aria-hidden="true" />+
+          </button>
+          <button
+            type="button"
+            class="timeline-tool-button"
+            onClick={() => props.onAddTrack('audio')}
+            aria-label="Add audio track"
+            title="Add audio track"
+          >
+            <Music2 size={13} aria-hidden="true" />+
+          </button>
           <button
             type="button"
             class="timeline-tool-button"
@@ -460,8 +519,19 @@ export function Timeline(props: TimelineProps) {
       </div>
       <Show when={props.hasMedia} fallback={<p class="placeholder-text">Import media to edit</p>}>
         <div class="timeline-track-wrapper">
-          <div class="timeline-label-column" aria-hidden="true">
-            <For each={props.timeline()}>{(track) => <TimelineTrack track={track} />}</For>
+          <div class="timeline-label-column">
+            <For each={props.timeline()}>
+              {(track, index) => (
+                <TimelineTrack
+                  track={track}
+                  index={index()}
+                  trackCount={props.timeline().length}
+                  onRemove={() => props.onRemoveTrack(track.id)}
+                  onMoveUp={() => props.onReorderTrack(track.id, index() - 1)}
+                  onMoveDown={() => props.onReorderTrack(track.id, index() + 1)}
+                />
+              )}
+            </For>
             <div class="timeline-ruler-label">Ruler</div>
           </div>
           <div
@@ -481,9 +551,12 @@ export function Timeline(props: TimelineProps) {
               <For each={props.timeline()}>
                 {(track) => (
                   <div
-                    class="track-surface"
+                    class={`track-surface${dropTrackId() === track.id ? ' is-drop-target' : ''}`}
                     data-track-id={track.id}
                     style={{ width: `${contentWidth()}px` }}
+                    onDragOver={(event) => onTrackDragOver(track.id, event)}
+                    onDragLeave={() => onTrackDragLeave(track.id)}
+                    onDrop={(event) => onTrackDrop(track.id, event)}
                   >
                     <For each={track.clips as ProtocolTimelineClip[]}>
                       {(clip) => (
@@ -496,6 +569,9 @@ export function Timeline(props: TimelineProps) {
                           selected={selectedKeys().has(selectionKey({ trackId: track.id, clipId: clip.id }))}
                           isAudio={track.type === 'audio'}
                           peaks={props.waveformPeaks?.()[`${track.id}:${clip.id}`] ?? null}
+                          getThumbnail={props.getThumbnail}
+                          thumbnailVersion={props.thumbnailVersion}
+                          requestThumbnails={props.onRequestThumbnails}
                           onMove={handleMoveClip}
                           onSplit={props.onSplit}
                           onDelete={props.onDelete}

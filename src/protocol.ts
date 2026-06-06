@@ -23,6 +23,8 @@ export const MeterIndex = {
 } as const;
 
 export type PlayState = 'paused' | 'playing';
+/** Source media kind. Images are stills serving one decoded frame for any timestamp. */
+export type MediaKind = 'video' | 'image' | 'audio';
 export type ExportPreset = 'quality' | 'fast';
 export type ExportVideoCodec = 'h264' | 'vp9' | 'av1';
 export type ExportContainer = 'mp4' | 'webm';
@@ -125,6 +127,7 @@ export type WaveformPeaks = Float32Array;
 export interface SourceDescriptorSnapshot {
   sourceId: string;
   fileName: string;
+  kind: MediaKind;
   byteSize: number;
   durationS: number;
   mimeType: string | null;
@@ -140,6 +143,26 @@ export interface SourceDescriptorSnapshot {
     sampleRate: number;
     codec: string | null;
     canDecode: boolean;
+  };
+}
+
+/** A media-bin asset: an imported source that is not (yet) placed on the timeline. */
+export interface MediaAssetSnapshot {
+  sourceId: string;
+  fileName: string;
+  kind: MediaKind;
+  /** Intrinsic duration in seconds; stills report their default placement duration. */
+  durationS: number;
+  byteSize: number;
+  mimeType: string | null;
+  video?: {
+    width: number;
+    height: number;
+    frameRate: number | null;
+  };
+  audio?: {
+    channels: number;
+    sampleRate: number;
   };
 }
 
@@ -254,6 +277,50 @@ interface SetClipFadeCommand {
   durationS: number;
 }
 
+/** Places a bin asset on the timeline. When `trackId` is omitted the worker finds
+ *  or creates a track matching the asset's kind; when `start` is omitted the clip
+ *  appends past the track's last clip. */
+interface PlaceClipCommand {
+  type: 'place-clip';
+  sourceId: string;
+  trackId?: string;
+  start?: number;
+}
+
+interface SetStillDurationCommand {
+  type: 'set-still-duration';
+  trackId: string;
+  clipId: string;
+  durationS: number;
+}
+
+interface AddTrackCommand {
+  type: 'add-track';
+  trackType: 'video' | 'audio';
+}
+
+interface RemoveTrackCommand {
+  type: 'remove-track';
+  trackId: string;
+}
+
+interface ReorderTrackCommand {
+  type: 'reorder-track';
+  trackId: string;
+  toIndex: number;
+}
+
+interface RemoveAssetCommand {
+  type: 'remove-asset';
+  sourceId: string;
+}
+
+interface RequestThumbnailsCommand {
+  type: 'request-thumbnails';
+  sourceId: string;
+  timestamps: number[];
+}
+
 export type WorkerCommand =
   | { type: 'init'; canvas: OffscreenCanvas; sab: SharedArrayBuffer; audioSab?: SharedArrayBuffer | null }
   | { type: 'import'; file: File; fileHandle?: FileSystemFileHandle | null }
@@ -287,6 +354,13 @@ export type WorkerCommand =
   | SetTrackPanCommand
   | SetMasterGainCommand
   | SetClipFadeCommand
+  | PlaceClipCommand
+  | SetStillDurationCommand
+  | AddTrackCommand
+  | RemoveTrackCommand
+  | ReorderTrackCommand
+  | RemoveAssetCommand
+  | RequestThumbnailsCommand
   | { type: 'dispose' };
 
 /** A measured preview resolution tier (adaptive downscale of the decode path). */
@@ -347,6 +421,8 @@ export type WorkerStateMessage =
   | { type: 'preview-resolution'; resolution: PreviewResolution }
   | { type: 'probe-result'; probe: ThroughputProbe }
   | { type: 'timeline-state'; timeline: TimelineTrackSnapshot[]; markers: TimelineMarkerSnapshot[]; masterGain: number }
+  | { type: 'media-assets'; assets: MediaAssetSnapshot[] }
+  | { type: 'thumbnail'; sourceId: string; timestamp: number; bitmap: ImageBitmap; width: number; height: number }
   | { type: 'waveform-peaks'; trackId: string; clipId: string; peaks: WaveformPeaks }
   | { type: 'export-codecs'; supported: ExportCodecSupport[]; settings: ExportSettings }
   | { type: 'export-progress'; progress: ExportProgress }

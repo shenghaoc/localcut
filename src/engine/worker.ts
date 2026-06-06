@@ -3,6 +3,7 @@ import {
   assertCrossOriginIsolated,
   ClockIndex,
   type ExportSettings,
+  type MediaAssetSnapshot,
   type ThroughputProbe,
   type MediaMetadata,
   type SourceDescriptorSnapshot,
@@ -13,18 +14,22 @@ import {
 } from '../protocol';
 import {
   addMarker,
+  addTrack,
   closeGaps,
   createEmptyTimeline,
-  DEFAULT_TRACK_MIX,
   deleteMarker,
   duplicateClips,
   getTimelineDuration,
+  insertClip,
   moveClips,
   moveClipTo,
   pasteClips,
   removeClip,
+  removeTrack,
+  reorderTrack,
   resolveAt,
   resolveAudioAt,
+  setClipDuration,
   splitClipAt,
   trimClip,
   setClipEffectParam,
@@ -53,7 +58,12 @@ import {
   resetRingPointers,
   type AudioRingViews,
 } from './audio-ring';
-import { openMediaFile, type MediaInputHandle } from './media-io';
+import {
+  openMediaFile,
+  STILL_DEFAULT_DURATION_S,
+  type MediaInputHandle,
+} from './media-io';
+import { ThumbnailGenerator } from './thumbnails';
 import { initGpu, type PreviewRenderer } from './gpu';
 import {
   AdaptiveResolution,
@@ -81,6 +91,7 @@ import {
 } from './project';
 import {
   deleteStoredProject,
+  deleteStoredSource,
   loadStoredProject,
   loadStoredSource,
   saveStoredProject,
@@ -103,7 +114,12 @@ const audioTransitions: AudioTransitionCut[] = [];
 let nextSourceId = 1;
 const sourceInputs = new Map<string, MediaInputHandle>();
 const sourceDescriptors = new Map<string, SourceDescriptor>();
+/** Media-bin membership: every imported/restored source, placed or not. Pruning
+ *  and persistence key off this set so unplaced assets survive. */
+const binSourceIds = new Set<string>();
 const restoringSourceIds = new Set<string>();
+let thumbnailGen: ThumbnailGenerator | null = null;
+const THUMBNAIL_WIDTH = 160;
 const history = createTimelineHistory();
 let projectId = makeProjectId();
 let restoreDoc: ProjectDoc | null = null;
@@ -124,6 +140,16 @@ const AUTOSAVE_DEBOUNCE_MS = 300;
 
 function makeSourceId(): string {
   return `source-${nextSourceId++}`;
+}
+
+function makeClipId(sourceId: string): string {
+  // A globally-unique suffix (not a per-session counter) so clips placed after a
+  // project restore can't collide with restored clip ids like `clip-<source>-…`.
+  const suffix =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2);
+  return `clip-${sourceId}-${suffix}`;
 }
 
 function makeProjectId(): string {
@@ -188,53 +214,145 @@ function getPlaybackSource(): MediaInputHandle | null {
   return null;
 }
 
-function appendTrackForSource(handle: MediaInputHandle, start?: number) {
-  if (!handle.frameSource || !handle.metadata.video) return;
-  const trackId = `track-video-${handle.sourceId}`;
-  if (timeline.some((track) => track.id === trackId)) return;
-
-  const clipStart = start ?? getTimelineDuration(timeline);
-  const nextTrack = {
-    id: trackId,
-    type: 'video' as const,
-    ...DEFAULT_TRACK_MIX,
-    clips: [
-      defaultTimelineClip({
-        id: `clip-${handle.sourceId}`,
-        sourceId: handle.sourceId,
-        start: clipStart,
-        duration: handle.duration,
-        inPoint: 0,
-      }),
-    ],
-  };
-
-  timeline = [...timeline, nextTrack];
+function trackEnd(tl: Timeline, trackId: string): number {
+  const track = tl.find((t) => t.id === trackId);
+  if (!track) return 0;
+  let end = 0;
+  for (const clip of track.clips) end = Math.max(end, clip.start + clip.duration);
+  return end;
 }
 
-function appendAudioTrackForSource(handle: MediaInputHandle, start?: number) {
-  if (!handle.audioSource || !handle.metadata.audio) return;
-  const trackId = `track-audio-${handle.sourceId}`;
-  if (timeline.some((track) => track.id === trackId)) return;
+/** Ensures a track of `type` exists, returning [timeline, trackId]. Prefers the
+ *  named track, then the first of that type, then a freshly added one. */
+function ensureTrack(
+  tl: Timeline,
+  type: 'video' | 'audio',
+  preferredId?: string,
+): [Timeline, string] {
+  if (preferredId) {
+    const named = tl.find((t) => t.id === preferredId && t.type === type);
+    if (named) return [tl, named.id];
+  }
+  const existing = tl.find((t) => t.type === type);
+  if (existing) return [tl, existing.id];
+  const next = addTrack(tl, type);
+  return [next, next[next.length - 1]!.id];
+}
 
-  const clipStart = start ?? getTimelineDuration(timeline);
-  const clipId = `clip-audio-${handle.sourceId}`;
-  const nextTrack = {
-    id: trackId,
-    type: 'audio' as const,
-    ...DEFAULT_TRACK_MIX,
-    clips: [
+/**
+ * Places a bin asset on the timeline: a clip on a track of its kind, plus a
+ * linked audio clip for video sources that carry audio. Returns the original
+ * timeline when an explicit-start placement would overlap an existing clip.
+ */
+function placeAsset(
+  tl: Timeline,
+  handle: MediaInputHandle,
+  trackId: string | undefined,
+  start: number | undefined,
+): Timeline {
+  // A video/still with no decodable frames would render black and can't export.
+  if (handle.kind !== 'audio' && !handle.frameSource) return tl;
+  if (handle.kind === 'audio') {
+    const [withTrack, audioTrackId] = ensureTrack(tl, 'audio', trackId);
+    const clipStart = start ?? trackEnd(withTrack, audioTrackId);
+    return insertClip(
+      withTrack,
+      audioTrackId,
       defaultTimelineClip({
-        id: clipId,
+        id: makeClipId(handle.sourceId),
         sourceId: handle.sourceId,
         start: clipStart,
         duration: handle.duration,
         inPoint: 0,
       }),
-    ],
+    );
+  }
+
+  // Video or still image → a video track, with the linked audio sub-clip below.
+  const [withVideoTrack, videoTrackId] = ensureTrack(tl, 'video', trackId);
+  const clipDuration = handle.kind === 'image' ? STILL_DEFAULT_DURATION_S : handle.duration;
+  const clipStart = start ?? trackEnd(withVideoTrack, videoTrackId);
+  let next = insertClip(
+    withVideoTrack,
+    videoTrackId,
+    defaultTimelineClip({
+      id: makeClipId(handle.sourceId),
+      sourceId: handle.sourceId,
+      start: clipStart,
+      duration: clipDuration,
+      inPoint: 0,
+    }),
+  );
+  if (next === withVideoTrack) return tl; // overlap rejected
+
+  if (handle.kind === 'video' && handle.audioSource) {
+    const [withAudioTrack, audioTrackId] = ensureTrack(next, 'audio');
+    const audioPlaced = insertClip(
+      withAudioTrack,
+      audioTrackId,
+      defaultTimelineClip({
+        id: makeClipId(handle.sourceId),
+        sourceId: handle.sourceId,
+        start: clipStart,
+        duration: handle.duration,
+        inPoint: 0,
+      }),
+    );
+    // Keep the video placement even if the aligned audio slot is occupied.
+    next = audioPlaced === withAudioTrack ? next : audioPlaced;
+  }
+  return next;
+}
+
+function assetSnapshotFromDescriptor(descriptor: SourceDescriptor): MediaAssetSnapshot {
+  return {
+    sourceId: descriptor.sourceId,
+    fileName: descriptor.fileName,
+    kind: descriptor.kind,
+    durationS: descriptor.kind === 'image' ? STILL_DEFAULT_DURATION_S : descriptor.durationS,
+    byteSize: descriptor.byteSize,
+    mimeType: descriptor.mimeType,
+    video: descriptor.video
+      ? {
+          width: descriptor.video.width,
+          height: descriptor.video.height,
+          frameRate: descriptor.video.frameRate,
+        }
+      : undefined,
+    audio: descriptor.audio
+      ? {
+          channels: descriptor.audio.channels,
+          sampleRate: descriptor.audio.sampleRate,
+        }
+      : undefined,
   };
-  timeline = [...timeline, nextTrack];
-  void computeAndPostWaveform(handle, trackId, clipId);
+}
+
+function postMediaAssets(): void {
+  const assets: MediaAssetSnapshot[] = [];
+  for (const id of binSourceIds) {
+    const descriptor = sourceDescriptors.get(id);
+    if (descriptor) assets.push(assetSnapshotFromDescriptor(descriptor));
+  }
+  post({ type: 'media-assets', assets });
+}
+
+function ensureThumbnailGenerator(): ThumbnailGenerator {
+  if (thumbnailGen) return thumbnailGen;
+  thumbnailGen = new ThumbnailGenerator({
+    decode: (sourceId, timestamp) => {
+      const handle = sourceInputs.get(sourceId);
+      return handle ? handle.thumbnailAt(timestamp) : Promise.resolve(null);
+    },
+    toBitmap: (frame, width) =>
+      createImageBitmap(frame, { resizeWidth: width, resizeQuality: 'low' }),
+    emit: ({ sourceId, timestamp, bitmap, width, height }) => {
+      self.postMessage({ type: 'thumbnail', sourceId, timestamp, bitmap, width, height }, [bitmap]);
+    },
+    targetWidth: THUMBNAIL_WIDTH,
+    concurrency: 2,
+  });
+  return thumbnailGen;
 }
 
 async function computeAndPostWaveform(
@@ -395,6 +513,7 @@ function sourceDescriptorFromHandle(
   return {
     sourceId,
     fileName: file.name,
+    kind: handle.kind,
     byteSize: file.size,
     durationS: handle.duration,
     mimeType: handle.metadata.mimeType,
@@ -413,10 +532,10 @@ function timelineSourceIds(): Set<string> {
   return ids;
 }
 
+/** Persisted sources = the whole bin, so unplaced assets survive restore. */
 function currentProjectSources(): SourceDescriptor[] {
-  const ids = timelineSourceIds();
   const descriptors: SourceDescriptor[] = [];
-  for (const id of ids) {
+  for (const id of binSourceIds) {
     const descriptor = sourceDescriptors.get(id);
     if (descriptor) descriptors.push(descriptor);
   }
@@ -425,7 +544,7 @@ function currentProjectSources(): SourceDescriptor[] {
 
 function unresolvedSourceDescriptors(): SourceDescriptorSnapshot[] {
   const unresolved: SourceDescriptorSnapshot[] = [];
-  for (const id of timelineSourceIds()) {
+  for (const id of binSourceIds) {
     if (sourceInputs.has(id)) continue;
     const descriptor = sourceDescriptors.get(id);
     if (descriptor) unresolved.push(descriptor);
@@ -808,11 +927,11 @@ function projectHasClips(doc: ProjectDoc): boolean {
 }
 
 /** An autosave is worth offering to restore when it holds any user content —
- *  clips or markers. Marker-only projects (e.g. all clips deleted after placing
- *  markers) are still persisted, so they must remain restore-eligible or the
- *  saved marker data would be silently lost on the next launch. */
+ *  clips, markers, or bin sources. Marker-only and bin-only projects (e.g. files
+ *  imported but not yet placed) are persisted too, so they must remain
+ *  restore-eligible or that saved state would be silently lost on next launch. */
 function projectHasRestorableContent(doc: ProjectDoc): boolean {
-  return projectHasClips(doc) || doc.markers.length > 0;
+  return projectHasClips(doc) || doc.markers.length > 0 || doc.sources.length > 0;
 }
 
 function currentProjectIsEmpty(): boolean {
@@ -912,7 +1031,9 @@ async function handleRestoreProject(): Promise<void> {
   nextSourceId = nextSourceIdFromDescriptors(doc.sources);
   for (const descriptor of doc.sources) {
     sourceDescriptors.set(descriptor.sourceId, descriptor);
+    binSourceIds.add(descriptor.sourceId);
   }
+  postMediaAssets();
 
   const restoreProjectId = projectId;
   const isCurrentRestore = () =>
@@ -951,6 +1072,7 @@ async function handleNewProject(): Promise<void> {
   markers = [];
   masterGain = DEFAULT_MASTER_GAIN;
   ensureClockAndTimeline();
+  postMediaAssets();
   postHistoryState();
   let message = 'Started a new project.';
   try {
@@ -996,6 +1118,7 @@ function teardownMedia() {
     handle.dispose();
   }
   sourceInputs.clear();
+  binSourceIds.clear();
   primaryHandle = null;
   timeline = createEmptyTimeline();
   markers = [];
@@ -1087,22 +1210,11 @@ async function handleImport(file: File, fileHandle?: FileSystemFileHandle | null
       fileHandle: fileHandle ?? undefined,
     });
 
+    // Register in the media bin as an unplaced asset; placement is now explicit.
+    binSourceIds.add(sourceId);
+
     if (!primaryHandle && handle.frameSource) {
       primaryHandle = handle;
-    }
-
-    const beforeTimeline = timeline;
-    const before = historySnapshot();
-    const start = getTimelineDuration(timeline);
-    appendTrackForSource(handle, start);
-    appendAudioTrackForSource(handle, start);
-    if (timeline !== beforeTimeline) {
-      history.push(before);
-      afterTimelineMutation();
-    } else {
-      ensureClockAndTimeline();
-      postHistoryState();
-      scheduleAutosave();
     }
 
     if (handle.audioSource && audioRing) {
@@ -1110,11 +1222,15 @@ async function handleImport(file: File, fileHandle?: FileSystemFileHandle | null
       Atomics.store(audioRing.header, RingHeader.CHANNELS, handle.audioChannels);
     }
 
+    ensureClockAndTimeline();
+    postMediaAssets();
+    postHistoryState();
+    scheduleAutosave();
+
     post({ type: 'import-complete', metadata: handle.metadata });
 
     const playbackHandle = getPlaybackSource();
     if (playbackHandle && playbackHandle.metadata.video) {
-      setupPlayback();
       void runProbeOnce(playbackHandle);
     }
   } catch (e) {
@@ -1124,6 +1240,7 @@ async function handleImport(file: File, fileHandle?: FileSystemFileHandle | null
     if (sourceId) {
       sourceInputs.delete(sourceId);
       sourceDescriptors.delete(sourceId);
+      binSourceIds.delete(sourceId);
     }
     const message = e instanceof Error ? e.message : String(e);
     post({ type: 'import-error', message });
@@ -1131,20 +1248,17 @@ async function handleImport(file: File, fileHandle?: FileSystemFileHandle | null
 }
 
 /**
- * Disposes `MediaInputHandle`s for sources no longer referenced by any clip,
- * releasing their decoder resources. Cheap to call after every edit; safe to
- * call when nothing changes (set lookup misses, no disposes).
+ * Disposes `MediaInputHandle`s for sources no longer in the media bin, releasing
+ * their decoder resources. Keyed off bin membership (not clip references) so an
+ * imported-but-unplaced asset keeps its handle. Cheap and idempotent.
  */
 function pruneUnusedSources(): void {
   if (exportAbort) return;
-  const inUse = new Set<string>();
-  for (const track of timeline) {
-    for (const clip of track.clips) inUse.add(clip.sourceId);
-  }
   for (const [id, handle] of [...sourceInputs.entries()]) {
-    if (inUse.has(id)) continue;
+    if (binSourceIds.has(id)) continue;
     handle.dispose();
     sourceInputs.delete(id);
+    thumbnailGen?.cancelSource(id);
     if (primaryHandle === handle) primaryHandle = null;
   }
 }
@@ -1275,6 +1389,89 @@ function handleSetClipFade(cmd: Extract<WorkerCommand, { type: 'set-clip-fade' }
   );
 }
 
+function handlePlaceClip(cmd: Extract<WorkerCommand, { type: 'place-clip' }>) {
+  const handle = sourceInputs.get(cmd.sourceId);
+  if (!handle) {
+    if (binSourceIds.has(cmd.sourceId)) {
+      postProjectWarning('Re-link this source before placing it on the timeline.');
+    }
+    return;
+  }
+  if (handle.kind !== 'audio' && !handle.frameSource) {
+    postProjectWarning(`${handle.metadata.fileName} has no decodable video track to place.`);
+    return;
+  }
+  const placed = commitTimelineMutation(() => placeAsset(timeline, handle, cmd.trackId, cmd.start));
+  if (placed) {
+    void computeWaveformsForSource(handle);
+    if (handle.metadata.video) setupPlayback();
+  }
+}
+
+function handleSetStillDuration(cmd: Extract<WorkerCommand, { type: 'set-still-duration' }>) {
+  commitTimelineMutation(
+    () => setClipDuration(timeline, cmd.trackId, cmd.clipId, cmd.durationS),
+    { coalesceKey: { clipId: cmd.clipId, key: 'still-duration' } },
+  );
+}
+
+function handleAddTrack(cmd: Extract<WorkerCommand, { type: 'add-track' }>) {
+  commitTimelineMutation(() => addTrack(timeline, cmd.trackType), {
+    refreshPlayback: 'none',
+    prune: false,
+  });
+}
+
+function handleRemoveTrack(cmd: Extract<WorkerCommand, { type: 'remove-track' }>) {
+  commitTimelineMutation(() => removeTrack(timeline, cmd.trackId), { prune: false });
+}
+
+function handleReorderTrack(cmd: Extract<WorkerCommand, { type: 'reorder-track' }>) {
+  commitTimelineMutation(() => reorderTrack(timeline, cmd.trackId, cmd.toIndex), {
+    refreshPlayback: 'none',
+    prune: false,
+  });
+}
+
+function handleRemoveAsset(cmd: Extract<WorkerCommand, { type: 'remove-asset' }>) {
+  if (!binSourceIds.has(cmd.sourceId)) return;
+  binSourceIds.delete(cmd.sourceId);
+  // Drop any clips placed from this source in a single pass, then release its
+  // decoder + bitmaps. Guard the commit so removing an unplaced asset doesn't
+  // push an empty history entry.
+  const referenced = timeline.some((track) =>
+    track.clips.some((clip) => clip.sourceId === cmd.sourceId),
+  );
+  if (referenced) {
+    commitTimelineMutation(() =>
+      timeline.map((track) => ({
+        ...track,
+        clips: track.clips.filter((clip) => clip.sourceId !== cmd.sourceId),
+      })),
+    );
+  }
+  const handle = sourceInputs.get(cmd.sourceId);
+  if (handle) {
+    handle.dispose();
+    sourceInputs.delete(cmd.sourceId);
+    if (primaryHandle === handle) primaryHandle = null;
+  }
+  thumbnailGen?.cancelSource(cmd.sourceId);
+  // Keep the descriptor in memory so undo can resurrect the clips as an
+  // offline, re-linkable source (reconciled in applyHistoryRestore). Drop the
+  // stored file record either way — the bin no longer claims it.
+  void deleteStoredSource(cmd.sourceId).catch(() => undefined);
+  // A pure bin removal skips the clip commit above, so persist the bin change
+  // explicitly; otherwise the autosaved project keeps referencing the source.
+  scheduleAutosave();
+  postMediaAssets();
+}
+
+function handleRequestThumbnails(cmd: Extract<WorkerCommand, { type: 'request-thumbnails' }>) {
+  if (!sourceInputs.has(cmd.sourceId)) return;
+  ensureThumbnailGenerator().request(cmd.sourceId, cmd.timestamps);
+}
+
 function handleTrim(cmd: Extract<WorkerCommand, { type: 'trim-clip' }>) {
   // Look up the underlying source's duration so trimClip can bound an outward
   // extension. Without it, trimClip would refuse to grow the clip past its
@@ -1298,7 +1495,18 @@ function handleTrim(cmd: Extract<WorkerCommand, { type: 'trim-clip' }>) {
 function applyHistoryRestore(next: { timeline: Timeline; markers: TimelineMarker[] }): void {
   timeline = cloneTimelineSnapshot(next.timeline);
   markers = cloneMarkersSnapshot(next.markers);
+  // Undo can resurrect clips of a source that was removed from the bin. Re-add
+  // any still-described source the restored timeline references so the asset
+  // returns to the bin (offline, re-linkable) instead of dangling.
+  let binChanged = false;
+  for (const id of timelineSourceIds()) {
+    if (sourceDescriptors.has(id) && !binSourceIds.has(id)) {
+      binSourceIds.add(id);
+      binChanged = true;
+    }
+  }
   afterTimelineMutation();
+  if (binChanged) postMediaAssets();
 }
 
 function handleUndo(): void {
@@ -1717,6 +1925,27 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
       break;
     case 'set-clip-fade':
       handleSetClipFade(cmd);
+      break;
+    case 'place-clip':
+      handlePlaceClip(cmd);
+      break;
+    case 'set-still-duration':
+      handleSetStillDuration(cmd);
+      break;
+    case 'add-track':
+      handleAddTrack(cmd);
+      break;
+    case 'remove-track':
+      handleRemoveTrack(cmd);
+      break;
+    case 'reorder-track':
+      handleReorderTrack(cmd);
+      break;
+    case 'remove-asset':
+      handleRemoveAsset(cmd);
+      break;
+    case 'request-thumbnails':
+      handleRequestThumbnails(cmd);
       break;
     case 'dispose':
       void handleDispose();

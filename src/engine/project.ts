@@ -11,7 +11,7 @@ import {
   type TimelineTrack,
 } from './timeline';
 
-export const PROJECT_SCHEMA_VERSION = 2;
+export const PROJECT_SCHEMA_VERSION = 3;
 const DURATION_MATCH_TOLERANCE_S = 0.25;
 
 export type SourceDescriptor = SourceDescriptorSnapshot;
@@ -153,6 +153,7 @@ function cloneSourceDescriptor(source: SourceDescriptor): SourceDescriptor {
   return {
     sourceId: source.sourceId,
     fileName: source.fileName,
+    kind: source.kind,
     byteSize: source.byteSize,
     durationS: source.durationS,
     mimeType: source.mimeType,
@@ -302,6 +303,8 @@ export function parseSourceDescriptor(value: unknown): SourceDescriptor | null {
   if (byteSize < 0 || durationS < 0) return null;
 
   let video: SourceDescriptor['video'];
+
+  const hasVideoBlock = value.video !== undefined && value.video !== null;
   if (value.video !== undefined) {
     if (!isRecord(value.video)) return null;
     const width = finiteNumber(value.video.width);
@@ -343,9 +346,17 @@ export function parseSourceDescriptor(value: unknown): SourceDescriptor | null {
     };
   }
 
+  const kind =
+    value.kind === 'video' || value.kind === 'image' || value.kind === 'audio'
+      ? value.kind
+      : hasVideoBlock
+        ? 'video'
+        : 'audio';
+
   return {
     sourceId,
     fileName,
+    kind,
     byteSize,
     durationS,
     mimeType,
@@ -422,6 +433,9 @@ export function deserializeProject(value: unknown): DeserializeProjectResult {
     case 1:
       return deserializeV1(value);
     case 2:
+    case 3:
+      // v3 adds `kind` to source descriptors; parseSourceDescriptor infers it for
+      // older docs, so the v2 parse path handles both.
       return deserializeV2(value);
     default:
       return { ok: false, reason: `Unsupported project schemaVersion ${schemaVersion}.` };

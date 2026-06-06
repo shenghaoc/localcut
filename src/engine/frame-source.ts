@@ -29,10 +29,20 @@ export interface SequentialVideoSource {
   ): AsyncGenerator<VideoSampleLike, void, unknown>;
 }
 
+/**
+ * The contract playback/export depend on for any video-bearing source. Both the
+ * sequential decoder ({@link SequentialFrameSource}) and the still source
+ * implement it so a still placed on a video track is a drop-in for a clip.
+ */
+export interface VideoFrameProvider {
+  frameAt(time: number): Promise<DecodedFrame | null>;
+  reset(): void;
+}
+
 /** Forward jumps larger than this (seconds) re-seek from a keyframe instead of scanning. */
 const DEFAULT_RESYNC_THRESHOLD_S = 1;
 
-export class SequentialFrameSource {
+export class SequentialFrameSource implements VideoFrameProvider {
   private iterator: AsyncGenerator<VideoSampleLike, void, unknown> | null = null;
   /** The sample currently on screen; owned here until we advance past it. */
   private current: VideoSampleLike | null = null;
