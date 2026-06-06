@@ -80,6 +80,8 @@ const history = createTimelineHistory();
 let projectId = makeProjectId();
 let restoreDoc: ProjectDoc | null = null;
 let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
+let autosaveInFlight: Promise<void> | null = null;
+let restoreOfferGeneration = 0;
 let frameCache: FrameCache | null = null;
 let currentProbe: ThroughputProbe | null = null;
 let exportAbort: AbortController | null = null;
@@ -410,15 +412,38 @@ async function persistCurrentProject(): Promise<void> {
   await saveStoredProject(doc);
 }
 
+function runAutosave(): Promise<void> {
+  let save: Promise<void>;
+  save = persistCurrentProject()
+    .catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      postProjectWarning(`Autosave failed: ${message}`);
+    })
+    .finally(() => {
+      if (autosaveInFlight === save) {
+        autosaveInFlight = null;
+      }
+    });
+  autosaveInFlight = save;
+  return save;
+}
+
 function scheduleAutosave(): void {
   clearAutosaveTimer();
   autosaveTimer = setTimeout(() => {
     autosaveTimer = null;
-    void persistCurrentProject().catch((error) => {
-      const message = error instanceof Error ? error.message : String(error);
-      postProjectWarning(`Autosave failed: ${message}`);
-    });
+    void runAutosave();
   }, AUTOSAVE_DEBOUNCE_MS);
+}
+
+async function flushPendingAutosave(): Promise<void> {
+  const shouldSave = autosaveTimer !== null;
+  clearAutosaveTimer();
+  if (shouldSave) {
+    await runAutosave();
+  } else if (autosaveInFlight) {
+    await autosaveInFlight;
+  }
 }
 
 async function persistSource(record: StoredSourceRecord): Promise<void> {
@@ -680,13 +705,26 @@ function projectHasClips(doc: ProjectDoc): boolean {
   return doc.timeline.some((track) => track.clips.length > 0);
 }
 
+function currentProjectIsEmpty(): boolean {
+  return sourceInputs.size === 0 && timelineSourceIds().size === 0;
+}
+
 async function checkRestoreAvailable(): Promise<void> {
+  const generation = restoreOfferGeneration;
+  const checkedProjectId = projectId;
   const result = await loadStoredProject();
   if (!result.ok) {
     postProjectWarning(`Could not read autosaved project: ${result.reason}`);
     return;
   }
   if (!result.doc || !projectHasClips(result.doc)) return;
+  if (
+    generation !== restoreOfferGeneration ||
+    projectId !== checkedProjectId ||
+    !currentProjectIsEmpty()
+  ) {
+    return;
+  }
   restoreDoc = result.doc;
   post({
     type: 'restore-available',
@@ -697,7 +735,21 @@ async function checkRestoreAvailable(): Promise<void> {
 }
 
 async function handleRestoreProject(): Promise<void> {
+  restoreOfferGeneration += 1;
   let doc = restoreDoc;
+  if (!currentProjectIsEmpty()) {
+    restoreDoc = null;
+    post({
+      type: 'restore-result',
+      projectId,
+      restored: false,
+      savedAt: null,
+      metadata: activeMetadata(),
+      unresolvedSources: unresolvedSourceDescriptors(),
+      message: 'Restore offer expired after the current project changed.',
+    });
+    return;
+  }
   if (!doc) {
     const loaded = await loadStoredProject();
     if (!loaded.ok) {
@@ -758,6 +810,7 @@ async function handleRestoreProject(): Promise<void> {
 }
 
 async function handleNewProject(): Promise<void> {
+  restoreOfferGeneration += 1;
   clearAutosaveTimer();
   restoreDoc = null;
   teardownMedia();
@@ -875,6 +928,8 @@ function makeGetFrame() {
 }
 
 async function handleImport(file: File, fileHandle?: FileSystemFileHandle | null) {
+  restoreOfferGeneration += 1;
+  restoreDoc = null;
   post({ type: 'import-progress', stage: 'reading' });
 
   post({ type: 'import-progress', stage: 'metadata' });
@@ -1217,14 +1272,16 @@ function handleExportCancel() {
   exportAbort?.abort();
 }
 
-function handleDispose() {
-  clearAutosaveTimer();
+async function handleDispose(): Promise<void> {
+  restoreOfferGeneration += 1;
+  await flushPendingAutosave();
   stopAudioPump();
   teardownMedia();
   renderer?.destroy();
   renderer = null;
   clockView = null;
   audioRing = null;
+  post({ type: 'dispose-complete' });
 }
 
 self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
@@ -1319,7 +1376,7 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
       handleSetTrackSolo(cmd);
       break;
     case 'dispose':
-      handleDispose();
+      void handleDispose();
       break;
     default: {
       const _exhaustive: never = cmd;

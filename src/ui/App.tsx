@@ -8,6 +8,7 @@ import {
   type MediaMetadata,
   type SourceDescriptorSnapshot,
   type TimelineTrackSnapshot,
+  type WorkerStateMessage,
   type WaveformPeaks,
 } from '../protocol';
 import { createSharedClock } from './clock';
@@ -207,7 +208,7 @@ export function App() {
     setCompatibilityPreview(null);
   }
 
-  function handleState(msg: import('../protocol').WorkerStateMessage) {
+  function handleState(msg: WorkerStateMessage) {
     switch (msg.type) {
       case 'ready':
         setWorkerReady(true);
@@ -326,6 +327,8 @@ export function App() {
         setExportResult(null);
         setExportError(msg.message);
         setStatusLine(`Export failed: ${msg.message}`);
+        break;
+      case 'dispose-complete':
         break;
       case 'import-error':
         setImporting(false);
@@ -647,9 +650,25 @@ export function App() {
       compatibilityImportGeneration++;
       pendingRelinkSourceId = null;
       clearCompatibilityPreview();
-      bridge?.send({ type: 'dispose' });
+      if (worker && bridge) {
+        const workerToDispose = worker;
+        let terminateFallback: ReturnType<typeof setTimeout>;
+        const onDisposeComplete = (event: MessageEvent<WorkerStateMessage>) => {
+          if (event.data.type !== 'dispose-complete') return;
+          clearTimeout(terminateFallback);
+          workerToDispose.removeEventListener('message', onDisposeComplete);
+          workerToDispose.terminate();
+        };
+        workerToDispose.addEventListener('message', onDisposeComplete);
+        terminateFallback = setTimeout(() => {
+          workerToDispose.removeEventListener('message', onDisposeComplete);
+          workerToDispose.terminate();
+        }, 1500);
+        bridge.send({ type: 'dispose' });
+      } else {
+        worker?.terminate();
+      }
       audioEngine.dispose();
-      worker?.terminate();
     });
   });
 

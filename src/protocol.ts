@@ -224,6 +224,7 @@ export type WorkerStateMessage =
   | { type: 'export-complete'; fileName: string; mimeType: string }
   | { type: 'export-canceled' }
   | { type: 'export-error'; message: string }
+  | { type: 'dispose-complete' }
   | { type: 'error'; message: string };
 
 export function assertCrossOriginIsolated(context: string): void {
