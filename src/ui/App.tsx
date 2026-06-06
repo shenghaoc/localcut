@@ -1,7 +1,6 @@
-import { createEffect, createMemo, createSignal, Show, onMount, onCleanup } from 'solid-js';
+import { createMemo, createSignal, Show, onMount, onCleanup } from 'solid-js';
 import { useRegisterSW } from 'virtual:pwa-register/solid';
 import {
-  assertCrossOriginIsolated,
   CLOCK_BUFFER_BYTES,
   type ExportPreset,
   type ExportProgress,
@@ -22,32 +21,23 @@ import { cn } from '../lib/utils';
 import PipelineWorker from '../engine/worker.ts?worker';
 
 const VIDEO_ACCEPT = 'video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm';
-type Theme = 'light' | 'dark';
 
-function initialTheme(): Theme {
-  if (typeof window === 'undefined') return 'light';
-  try {
-    const stored = window.localStorage.getItem('browser-editor-theme');
-    if (stored === 'light' || stored === 'dark') return stored;
-  } catch {
-    // Local storage is cosmetic; the editor remains fully functional without it.
-  }
-  if (typeof window.matchMedia === 'function') {
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-  }
-  return 'light';
-}
+type PipelineMode = 'accelerated' | 'starting' | 'limited';
 
 function initialOnlineStatus(): boolean {
   return typeof navigator === 'undefined' ? true : navigator.onLine;
 }
 
 export function App() {
-  const [fatalError, setFatalError] = createSignal<string | null>(null);
+  const [environmentIssue, setEnvironmentIssue] = createSignal<string | null>(null);
+  const [isIsolated, setIsIsolated] = createSignal(
+    typeof globalThis.crossOriginIsolated === 'boolean' ? globalThis.crossOriginIsolated : false,
+  );
   const [workerReady, setWorkerReady] = createSignal(false);
+  const [webgpuAvailable, setWebgpuAvailable] = createSignal(false);
   const [metadata, setMetadata] = createSignal<MediaMetadata | null>(null);
   const [importing, setImporting] = createSignal(false);
-  const [statusLine, setStatusLine] = createSignal('Checking environment…');
+  const [statusLine, setStatusLine] = createSignal('Checking client capabilities…');
   const [previewLabel, setPreviewLabel] = createSignal<string | null>(null);
   const [encodeFps, setEncodeFps] = createSignal<number | null>(null);
   const [timeline, setTimeline] = createSignal<TimelineTrackSnapshot[]>([]);
@@ -61,7 +51,6 @@ export function App() {
   const [hasActiveSW, setHasActiveSW] = createSignal(false);
   const [audioWarning, setAudioWarning] = createSignal<string | null>(null);
   const [isDraggingFile, setIsDraggingFile] = createSignal(false);
-  const [theme, setTheme] = createSignal<Theme>(initialTheme());
 
   const {
     offlineReady: [offlineReady],
@@ -98,30 +87,29 @@ export function App() {
 
   const clock = createSharedClock(sab);
 
-  createEffect(() => {
-    document.documentElement.dataset.theme = theme();
+  const pipelineMode = createMemo<PipelineMode>(() => {
+    if (workerReady() && webgpuAvailable()) return 'accelerated';
+    if (environmentIssue()) return 'limited';
+    return 'starting';
   });
 
-  function toggleTheme() {
-    setTheme((current) => {
-      const next = current === 'dark' ? 'light' : 'dark';
-      try {
-        window.localStorage.setItem('browser-editor-theme', next);
-      } catch {
-        // Persistence is optional; avoid turning a storage denial into UI failure.
-      }
-      return next;
-    });
-  }
+  const accelerated = () => pipelineMode() === 'accelerated';
 
   function handleState(msg: import('../protocol').WorkerStateMessage) {
     switch (msg.type) {
       case 'ready':
         setWorkerReady(true);
+        setWebgpuAvailable(msg.webgpu);
+        if (!msg.webgpu) {
+          setEnvironmentIssue(
+            msg.gpuUnavailableReason ??
+              'WebGPU is unavailable in this browser. Accelerated import, playback, effects, and export require a WebGPU-capable Chromium browser.',
+          );
+        }
         setStatusLine(
           msg.webgpu
             ? `Pipeline ready · WebGPU (${msg.features.join(', ') || 'default'})`
-            : `Pipeline ready · ${msg.gpuUnavailableReason ?? 'WebGPU unavailable'}`,
+            : `Limited shell · ${msg.gpuUnavailableReason ?? 'WebGPU unavailable'}`,
         );
         break;
       case 'import-progress':
@@ -209,10 +197,11 @@ export function App() {
 
   async function sendInit(canvas: OffscreenCanvas) {
     if (initSent) return;
-    if (!sab) {
-      setFatalError(
-        'Main thread: SharedArrayBuffer is unavailable. SharedArrayBuffer requires a secure, cross-origin-isolated origin with COOP/COEP headers.',
+    if (!isIsolated() || !sab) {
+      setEnvironmentIssue(
+        'This browser or origin cannot expose SharedArrayBuffer. The app shell stays client-side, but accelerated import, playback, effects, and export need SAB plus COOP/COEP headers so the local CPU/GPU path can run safely.',
       );
+      setStatusLine('Limited shell · COOP/COEP needed for accelerated client compute');
       return;
     }
     initSent = true;
@@ -233,11 +222,13 @@ export function App() {
   }
 
   function importMedia(file: File) {
-    const { bridge: b } = ensureWorker();
-    if (!initSent) {
-      setStatusLine('Waiting for preview canvas…');
+    if (!accelerated()) {
+      setStatusLine(
+        environmentIssue() ? 'Import unavailable in limited mode' : 'Waiting for preview canvas…',
+      );
       return;
     }
+    const { bridge: b } = ensureWorker();
     b.send({ type: 'import', file });
   }
 
@@ -275,8 +266,12 @@ export function App() {
 
   async function startExport(preset: ExportPreset) {
     if (!metadata() || exporting()) return;
-    if (!initSent) {
-      setExportError('Waiting for preview canvas before export can start.');
+    if (!accelerated()) {
+      setExportError(
+        pipelineMode() === 'limited'
+          ? 'Export is unavailable because the accelerated engine is not running.'
+          : 'Waiting for preview canvas before export can start.',
+      );
       return;
     }
     setExporting(true);
@@ -304,21 +299,29 @@ export function App() {
 
   function onFileDrop(file: File) {
     setIsDraggingFile(false);
-    const { bridge: b } = ensureWorker();
-    if (!initSent) {
-      setStatusLine('Drop again after preview is ready');
+    if (!accelerated()) {
+      setStatusLine(
+        environmentIssue() ? 'Import unavailable in limited mode' : 'Drop again after preview is ready',
+      );
       return;
     }
+    const { bridge: b } = ensureWorker();
     b.send({ type: 'import', file });
   }
 
   onMount(() => {
-    try {
-      assertCrossOriginIsolated('Main thread');
+    const isolated = globalThis.crossOriginIsolated === true;
+    setIsIsolated(isolated);
+    if (isolated && sab) {
       ensureWorker();
       setStatusLine('Starting pipeline worker…');
-    } catch (e) {
-      setFatalError(e instanceof Error ? e.message : String(e));
+    } else {
+      setEnvironmentIssue(
+        !isolated
+          ? 'This page is missing COOP/COEP headers. LocalCut still runs as a client-side shell, but accelerated import, playback, effects, and export need those headers so the browser can expose SharedArrayBuffer for local CPU/GPU work.'
+          : 'This browser or origin cannot expose SharedArrayBuffer. The app shell stays client-side, but accelerated import, playback, effects, and export need SAB plus COOP/COEP headers so the local CPU/GPU path can run safely.',
+      );
+      setStatusLine('Limited shell · COOP/COEP needed for accelerated client compute');
     }
 
     const handleOffline = () => setIsOffline(true);
@@ -365,157 +368,149 @@ export function App() {
 
   return (
     <div class={`app${isDraggingFile() ? ' is-dragging-file' : ''}`}>
-      <Show when={fatalError()}>
-        <div class="fatal-banner" role="alert">
-          <strong>Cannot start editor</strong>
-          <p>{fatalError()}</p>
-        </div>
-      </Show>
-      <Show when={!fatalError()}>
-        <Toolbar
-          metadata={metadata()}
-          playing={clock.playing}
-          importAccept={VIDEO_ACCEPT}
-          onImportFile={importMedia}
-          onPlay={() => {
-            const t = clock.currentTime();
-            void audioEngine.play(t);
-            bridge?.send({ type: 'play' });
-          }}
-          onPause={() => {
-            bridge?.send({ type: 'pause' });
-            audioEngine.pause();
-          }}
-          onStep={(direction) => bridge?.send({ type: 'step', direction })}
-          disabled={!workerReady()}
-          theme={theme()}
-          onToggleTheme={toggleTheme}
-          exportControl={
-            <ExportDialog
-              hasMedia={metadata() !== null}
-              exporting={exporting()}
-              progress={exportProgress()}
-              lastResult={exportResult()}
-              error={exportError()}
-              onStart={startExport}
-              onCancel={() => bridge?.send({ type: 'export-cancel' })}
-            />
-          }
-        />
-        <main class="workspace">
-          <section class="preview panel">
-            <PreviewCanvas onOffscreenReady={sendInit} />
-            <Show when={!metadata() && !importing()}>
-              <div class="preview-empty">
-                <div>
-                  <p class="preview-empty-eyebrow">Preview</p>
-                  <p class="preview-empty-title">No source loaded</p>
-                  <p class="preview-empty-copy">Drop an MP4, MOV, or WebM here.</p>
-                </div>
-                <label
-                  class={cn(
-                    buttonVariants({ variant: 'default' }),
-                    'import-picker',
-                    !workerReady() && 'is-disabled pointer-events-none',
-                  )}
-                >
-                  Import
-                  <input
-                    class="import-picker-input"
-                    type="file"
-                    accept={VIDEO_ACCEPT}
-                    onChange={handleImportInput}
-                    disabled={!workerReady()}
-                    aria-label="Import media"
-                  />
-                </label>
-              </div>
-            </Show>
-            <Show when={importing()}>
-              <div class="preview-overlay">Importing…</div>
-            </Show>
-          </section>
-          <Inspector
-            metadata={metadata()}
-            selectedClip={selectedClip()}
-            selectedTrackMix={selectedTrackMix()}
-            onEffectParam={(trackId, clipId, key, value) =>
-              bridge?.send({ type: 'set-effect-param', trackId, clipId, key, value })
-            }
-            onTrackGain={(trackId, gain) => {
-              bridge?.send({ type: 'set-track-gain', trackId, gain });
-            }}
-            onTrackMute={(trackId, muted) => {
-              bridge?.send({ type: 'set-track-mute', trackId, muted });
-            }}
-            onTrackSolo={(trackId, solo) => {
-              bridge?.send({ type: 'set-track-solo', trackId, solo });
-            }}
+      <Toolbar
+        metadata={metadata()}
+        playing={clock.playing}
+        importAccept={VIDEO_ACCEPT}
+        onImportFile={importMedia}
+        onPlay={() => {
+          const t = clock.currentTime();
+          void audioEngine.play(t);
+          bridge?.send({ type: 'play' });
+        }}
+        onPause={() => {
+          bridge?.send({ type: 'pause' });
+          audioEngine.pause();
+        }}
+        onStep={(direction) => bridge?.send({ type: 'step', direction })}
+        disabled={!accelerated()}
+        crossOriginIsolated={isIsolated()}
+        pipelineMode={pipelineMode()}
+        previewLabel={previewLabel()}
+        encodeFps={encodeFps()}
+        exportControl={
+          <ExportDialog
+            hasMedia={metadata() !== null}
+            exporting={exporting()}
+            progress={exportProgress()}
+            lastResult={exportResult()}
+            error={exportError()}
+            onStart={startExport}
+            onCancel={() => bridge?.send({ type: 'export-cancel' })}
           />
-        </main>
-        <Timeline
-          currentTime={clock.currentTime}
-          duration={clock.duration}
-          frameRate={() => metadata()?.video?.frameRate ?? null}
-          hasMedia={metadata() !== null}
-          timeline={timeline}
-          waveformPeaks={() => waveformPeaks()}
-          onSeek={(t) => {
-            void audioEngine.seek(t);
-            bridge?.send({ type: 'seek', time: t });
+        }
+      />
+      <main class="workspace">
+        <section class="preview panel">
+          <PreviewCanvas onOffscreenReady={sendInit} />
+          <Show when={!metadata() && !importing()}>
+            <div class="preview-empty">
+              <div>
+                <p class="preview-empty-eyebrow">
+                  {pipelineMode() === 'limited' ? 'Compatibility' : 'Preview'}
+                </p>
+                <p class="preview-empty-title">
+                  {pipelineMode() === 'limited' ? 'Accelerated engine unavailable' : 'No source loaded'}
+                </p>
+                <p class="preview-empty-copy">
+                  {pipelineMode() === 'limited'
+                    ? environmentIssue()
+                    : 'Drop an MP4, MOV, or WebM here.'}
+                </p>
+              </div>
+              <label
+                class={cn(
+                  buttonVariants({ variant: 'default' }),
+                  'import-picker',
+                  !accelerated() && 'is-disabled pointer-events-none',
+                )}
+              >
+                Import
+                <input
+                  class="import-picker-input"
+                  type="file"
+                  accept={VIDEO_ACCEPT}
+                  onChange={handleImportInput}
+                  disabled={!accelerated()}
+                  aria-label="Import media"
+                />
+              </label>
+            </div>
+          </Show>
+          <Show when={importing()}>
+            <div class="preview-overlay">Importing…</div>
+          </Show>
+        </section>
+        <Inspector
+          metadata={metadata()}
+          selectedClip={selectedClip()}
+          selectedTrackMix={selectedTrackMix()}
+          onEffectParam={(trackId, clipId, key, value) =>
+            bridge?.send({ type: 'set-effect-param', trackId, clipId, key, value })
+          }
+          onTrackGain={(trackId, gain) => {
+            bridge?.send({ type: 'set-track-gain', trackId, gain });
           }}
-          onSplit={(trackId, _clipId, time) => bridge?.send({ type: 'split', trackId, time })}
-          onDelete={(trackId, clipId) => bridge?.send({ type: 'delete-clip', trackId, clipId })}
-          onMoveClip={(fromTrackId, clipId, toTrackId, toIndex) =>
-            bridge?.send({ type: 'move-clip', fromTrackId, clipId, toTrackId, toIndex })
-          }
-          onTrim={(trackId, clipId, edge, time) =>
-            bridge?.send({ type: 'trim-clip', trackId, clipId, edge, time })
-          }
-          selectedClipId={selectedClip()?.clipId ?? null}
-          onSelectClip={(trackId, clipId, effects) =>
-            setSelectedClip({ trackId, clipId, effects: { ...effects } })
-          }
+          onTrackMute={(trackId, muted) => {
+            bridge?.send({ type: 'set-track-mute', trackId, muted });
+          }}
+          onTrackSolo={(trackId, solo) => {
+            bridge?.send({ type: 'set-track-solo', trackId, solo });
+          }}
         />
-        <footer class="status-bar">
-          <span>{statusLine()}</span>
-          <span class="status-meta">
-            <Show when={needRefresh()}>
-              <button type="button" class="status-badge" onClick={() => updateServiceWorker(true)} title="Click to update app">
-                Update Available
-              </button>
-            </Show>
-            <Show when={(offlineReady() || hasActiveSW()) && !isOffline()}>
-              <span class="status-badge" title="App ready to work offline">
-                Ready Offline
-              </span>
-            </Show>
-            <Show when={isOffline()}>
-              <span class="status-badge status-warn" title="No internet connection">
-                Offline
-              </span>
-            </Show>
-            <Show when={previewLabel()}>
-              <span class="status-badge" title="Adaptive preview resolution">
-                Preview: {previewLabel()}
-              </span>
-            </Show>
-            <Show when={encodeFps()}>
-              <span class="status-badge" title="Estimated encode throughput (session)">
-                Encode: {Math.round(encodeFps()!)} fps
-              </span>
-            </Show>
-            <Show when={audioWarning()}>
-              <span class="status-badge status-warn" title={audioWarning()!}>
-                Audio Disabled
-              </span>
-            </Show>
-            <Show when={workerReady()}>
-              <span class="status-ok">crossOriginIsolated</span>
-            </Show>
-          </span>
-        </footer>
-      </Show>
+      </main>
+      <Timeline
+        currentTime={clock.currentTime}
+        duration={clock.duration}
+        frameRate={() => metadata()?.video?.frameRate ?? null}
+        hasMedia={metadata() !== null}
+        timeline={timeline}
+        waveformPeaks={() => waveformPeaks()}
+        onSeek={(t) => {
+          void audioEngine.seek(t);
+          bridge?.send({ type: 'seek', time: t });
+        }}
+        onSplit={(trackId, _clipId, time) => bridge?.send({ type: 'split', trackId, time })}
+        onDelete={(trackId, clipId) => bridge?.send({ type: 'delete-clip', trackId, clipId })}
+        onMoveClip={(fromTrackId, clipId, toTrackId, toIndex) =>
+          bridge?.send({ type: 'move-clip', fromTrackId, clipId, toTrackId, toIndex })
+        }
+        onTrim={(trackId, clipId, edge, time) =>
+          bridge?.send({ type: 'trim-clip', trackId, clipId, edge, time })
+        }
+        selectedClipId={selectedClip()?.clipId ?? null}
+        onSelectClip={(trackId, clipId, effects) =>
+          setSelectedClip({ trackId, clipId, effects: { ...effects } })
+        }
+      />
+      <footer class="status-bar">
+        <span>{statusLine()}</span>
+        <span class="status-meta">
+          <Show when={needRefresh()}>
+            <button type="button" class="status-badge" onClick={() => updateServiceWorker(true)} title="Click to update app">
+              Update Available
+            </button>
+          </Show>
+          <Show when={(offlineReady() || hasActiveSW()) && !isOffline()}>
+            <span class="status-badge" title="App ready to work offline">
+              Ready Offline
+            </span>
+          </Show>
+          <Show when={isOffline()}>
+            <span class="status-badge status-warn" title="No internet connection">
+              Offline
+            </span>
+          </Show>
+          <Show when={audioWarning()}>
+            <span class="status-badge status-warn" title={audioWarning()!}>
+              Audio Disabled
+            </span>
+          </Show>
+          <Show when={isIsolated()}>
+            <span class="status-ok">COOP/COEP OK</span>
+          </Show>
+        </span>
+      </footer>
     </div>
   );
 }

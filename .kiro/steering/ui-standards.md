@@ -28,13 +28,14 @@ Dark, professional-tool look — not a consumer social app.
 
 ## Interaction
 
-- Scrubhead position driven by SAB clock poll — not per-frame worker messages.
+- Scrubhead position driven by SAB clock poll in the accelerated tier. Limited tiers may use visibly lower-frequency clock updates when SAB is unavailable.
 - Import: File System Access API primary; file input + drag-and-drop fallback.
-- Transport controls disabled when no media loaded.
+- Transport controls disabled when no media is loaded or when the active capability tier cannot support playback yet.
 - Preview resolution indicator when adaptive proxy is active (Phase 2+): e.g. "Preview: 720p".
+- Capability tier indicators belong in the persistent chrome. Users should always know whether they are in accelerated, limited, or blocked mode.
 
 ## Accessibility
 
 - Preview canvas: `aria-label="Video preview"`.
 - Timeline scrub track: `role="slider"` with `aria-label`.
-- Fatal environment errors: `role="alert"`.
+- Capability warnings: use persistent visible text plus `role="alert"` only when a required user action blocks the current workflow.

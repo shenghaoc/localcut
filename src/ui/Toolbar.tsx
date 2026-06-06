@@ -1,5 +1,16 @@
 import { Show, type JSX } from 'solid-js';
-import { FolderOpen, Moon, Pause, Play, SkipBack, SkipForward, Sun } from 'lucide-solid';
+import {
+  Activity,
+  Cpu,
+  FolderOpen,
+  Gauge,
+  Pause,
+  Play,
+  Scissors,
+  ShieldCheck,
+  SkipBack,
+  SkipForward,
+} from 'lucide-solid';
 import { cn } from '../lib/utils';
 import { Button, buttonVariants } from './components/button';
 import type { MediaMetadata } from '../protocol';
@@ -13,9 +24,11 @@ interface ToolbarProps {
   onPause: () => void;
   onStep: (direction: 1 | -1) => void;
   disabled?: boolean;
+  crossOriginIsolated: boolean;
+  pipelineMode: 'accelerated' | 'starting' | 'limited';
+  previewLabel: string | null;
+  encodeFps: number | null;
   exportControl?: JSX.Element;
-  theme: 'light' | 'dark';
-  onToggleTheme: () => void;
 }
 
 export function Toolbar(props: ToolbarProps) {
@@ -32,8 +45,13 @@ export function Toolbar(props: ToolbarProps) {
     <header class="toolbar">
       <div class="toolbar-left">
         <div class="app-brand">
-          <span class="app-glyph" aria-hidden="true" />
-          <h1 class="app-title">Browser Editor</h1>
+          <span class="app-glyph" aria-hidden="true">
+            <Scissors size={15} />
+          </span>
+          <div class="app-brand-copy">
+            <h1 class="app-title">LocalCut Studio</h1>
+            <span class="app-kicker">Browser-native NLE</span>
+          </div>
         </div>
         <label
           class={cn(
@@ -55,8 +73,45 @@ export function Toolbar(props: ToolbarProps) {
         </label>
       </div>
       <div class="toolbar-center">
-        <span class="file-name">
-          <Show when={props.metadata} fallback="No media loaded">
+        <div class="pipeline-strip" aria-label="Pipeline status">
+          <span
+            class={cn(
+              'pipeline-chip',
+              props.pipelineMode === 'accelerated' && 'is-ok',
+              props.pipelineMode === 'limited' && 'is-warn',
+              props.pipelineMode === 'starting' && 'is-waiting',
+            )}
+          >
+            <Gauge size={13} aria-hidden="true" />
+            {props.pipelineMode === 'accelerated'
+              ? 'Accelerated'
+              : props.pipelineMode === 'limited'
+                ? 'Limited shell'
+                : 'Starting pipeline'}
+          </span>
+          <span class="pipeline-chip">
+            <Cpu size={13} aria-hidden="true" />
+            Client compute
+          </span>
+          <span class={cn('pipeline-chip', props.crossOriginIsolated ? 'is-ok' : 'is-warn')}>
+            <ShieldCheck size={13} aria-hidden="true" />
+            {props.crossOriginIsolated ? 'COOP/COEP OK' : 'COOP/COEP needed'}
+          </span>
+          <Show when={props.previewLabel !== null}>
+            <span class="pipeline-chip">
+              <Activity size={13} aria-hidden="true" />
+              Preview {props.previewLabel}
+            </span>
+          </Show>
+          <Show when={props.encodeFps !== null}>
+            <span class="pipeline-chip">
+              <Gauge size={13} aria-hidden="true" />
+              Encode {Math.round(props.encodeFps!)} fps
+            </span>
+          </Show>
+        </div>
+        <span class="file-name" title={props.metadata?.fileName ?? 'No source loaded'}>
+          <Show when={props.metadata} fallback="No source">
             {(meta) => meta().fileName}
           </Show>
         </span>
@@ -98,18 +153,6 @@ export function Toolbar(props: ToolbarProps) {
           </Button>
         </div>
         {props.exportControl}
-        <Button
-          size="icon"
-          onClick={() => props.onToggleTheme()}
-          aria-label={props.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-          title={props.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-        >
-          {props.theme === 'dark' ? (
-            <Sun size={14} aria-hidden="true" />
-          ) : (
-            <Moon size={14} aria-hidden="true" />
-          )}
-        </Button>
       </div>
     </header>
   );

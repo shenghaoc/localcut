@@ -10,12 +10,12 @@ export default defineConfig({
     VitePWA({
       registerType: 'prompt',
       manifest: {
-        name: 'Browser Editor',
-        short_name: 'BrEditor',
+        name: 'LocalCut Studio',
+        short_name: 'LocalCut',
         start_url: '/',
         display: 'standalone',
-        background_color: '#f4f5f7',
-        theme_color: '#f4f5f7',
+        background_color: '#16161a',
+        theme_color: '#16161a',
         icons: [
           { src: '/icons/192.png', sizes: '192x192', type: 'image/png' },
           { src: '/icons/512.png', sizes: '512x512', type: 'image/png' },
