@@ -130,6 +130,15 @@ import {
   saveStoredSourceWithoutHandle,
   type StoredSourceRecord,
 } from './persistence';
+import {
+  cancelBundleJob,
+  makeStoredSourceResolver,
+  resolveBundleReplaceDecision,
+  runCollectProjectMedia,
+  runExportProjectBundle,
+  runImportProjectBundle,
+  type BundleWorkerContext,
+} from './project-bundle/bundle-jobs';
 
 let clockView: Float64Array | null = null;
 let renderer: PreviewRenderer | null = null;
@@ -2064,6 +2073,106 @@ function handleRedo(): void {
   applyHistoryRestore(next);
 }
 
+function collectTimelineLuts(): import('./lut').ClipLut[] {
+  const luts = new Map<string, import('./lut').ClipLut>();
+  for (const track of timeline) {
+    for (const clip of track.clips) {
+      if (clip.lut) luts.set(clip.lut.key, clip.lut);
+    }
+  }
+  return [...luts.values()];
+}
+
+function projectDisplayName(): string {
+  const first = currentProjectSources()[0];
+  if (!first) return 'Untitled project';
+  const stem = first.fileName.replace(/\.[^.]+$/, '');
+  return stem || first.fileName;
+}
+
+async function applyImportedDoc(doc: ProjectDoc): Promise<void> {
+  restoreOfferGeneration += 1;
+  await flushPendingAutosave();
+  restoreDoc = null;
+  playback?.dispose();
+  playback = null;
+  adaptive = null;
+  frameCache?.clear();
+  frameCache = null;
+  primaryHandle = null;
+  history.clear();
+
+  projectId = doc.projectId;
+  timeline = cloneTimelineSnapshot(doc.timeline);
+  markers = cloneMarkersSnapshot(doc.markers);
+  syncTimelineLuts();
+  lastExportSettings = doc.exportSettings ?? null;
+  masterGain = doc.masterGain;
+  nextSourceId = nextSourceIdFromDescriptors(doc.sources);
+
+  const keepIds = new Set(doc.sources.map((source) => source.sourceId));
+  for (const id of [...binSourceIds]) {
+    if (keepIds.has(id)) continue;
+    binSourceIds.delete(id);
+    sourceInputs.get(id)?.dispose();
+    sourceInputs.delete(id);
+    sourceDescriptors.delete(id);
+    void deleteStoredSource(id).catch(() => undefined);
+  }
+  for (const descriptor of doc.sources) {
+    sourceDescriptors.set(descriptor.sourceId, descriptor);
+    binSourceIds.add(descriptor.sourceId);
+  }
+
+  transitions = reconcileTransitions(timeline, doc.transitions);
+  postMediaAssets();
+  setupPlayback();
+  syncTitleRasters();
+  ensureClockAndTimeline();
+  postHistoryState();
+  scheduleAutosave();
+}
+
+const bundleWorkerContext: BundleWorkerContext = {
+  getProjectId: () => projectId,
+  getDisplayName: projectDisplayName,
+  getProjectState: () => ({
+    timeline,
+    transitions,
+    markers,
+    masterGain,
+    exportSettings: lastExportSettings ?? undefined,
+    sources: currentProjectSources(),
+  }),
+  resolveSourceFile: makeStoredSourceResolver(loadStoredSource, fileFromHandle),
+  collectLuts: collectTimelineLuts,
+  attachSourceFile: async (descriptor, file, persist) => {
+    const result = await attachSourceFile(descriptor, file, null, persist);
+    return result.ok ? { ok: true } : { ok: false, message: result.message };
+  },
+  applyImportedDoc,
+  currentProjectIsEmpty,
+  projectHasRestorableContent,
+  postProgress: (jobId, phase, bytesDone, bytesTotal) => {
+    post({ type: 'bundle-job-progress', jobId, phase, bytesDone, bytesTotal });
+  },
+  postIntegrity: (jobId, report) => {
+    post({ type: 'bundle-integrity-report', jobId, report });
+  },
+  postImportResult: (jobId, ok, importedProjectId, reason) => {
+    post({
+      type: 'bundle-import-result',
+      jobId,
+      ok,
+      projectId: importedProjectId,
+      reason,
+    });
+  },
+  postReplacePrompt: (jobId, message) => {
+    post({ type: 'bundle-replace-prompt', jobId, message });
+  },
+};
+
 async function handleRelinkSource(cmd: Extract<WorkerCommand, { type: 'relink-source' }>): Promise<void> {
   const descriptor = sourceDescriptors.get(cmd.sourceId);
   if (!descriptor) {
@@ -2555,6 +2664,47 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
       break;
     case 'request-thumbnails':
       handleRequestThumbnails(cmd);
+      break;
+    case 'export-project-bundle':
+      void runExportProjectBundle(bundleWorkerContext, cmd.jobId, cmd.policy, cmd.outputDir).catch(
+        (error) => {
+          const message = error instanceof Error ? error.message : String(error);
+          post({ type: 'error', message: `Export bundle failed: ${message}` });
+        },
+      );
+      break;
+    case 'import-project-bundle':
+      void runImportProjectBundle(
+        bundleWorkerContext,
+        cmd.jobId,
+        cmd.bundleDir,
+        cmd.replaceConfirmed,
+      ).catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        post({
+          type: 'bundle-import-result',
+          jobId: cmd.jobId,
+          ok: false,
+          reason: message,
+        });
+      });
+      break;
+    case 'collect-project-media':
+      void runCollectProjectMedia(
+        bundleWorkerContext,
+        cmd.jobId,
+        cmd.relocate,
+        cmd.outputDir,
+      ).catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        post({ type: 'error', message: `Collect media failed: ${message}` });
+      });
+      break;
+    case 'cancel-bundle-job':
+      cancelBundleJob(cmd.jobId);
+      break;
+    case 'bundle-replace-decision':
+      resolveBundleReplaceDecision(cmd.jobId, cmd.action);
       break;
     case 'dispose':
       void handleDispose();

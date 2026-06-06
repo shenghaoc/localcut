@@ -45,7 +45,7 @@
 
 ## R5 — Integrity Validation
 
-- **R5.1** Produce a `BundleIntegrityReport` on every export, collect, and import summarizing per-asset and per-source status: `ok`, `missing`, `corrupt`, `fingerprint-mismatch`, `descriptor-mismatch`, `unsupported-schema`.
+- **R5.1** Produce a `BundleIntegrityReport` on every export, collect, and import summarizing per-asset and per-source status: `ok`, `missing-file`, `size-mismatch`, `fingerprint-mismatch`, `descriptor-mismatch`, `corrupt-json`, `unsupported-bundle-schema`, `unsupported-project-schema`, `cache-stale`.
 - **R5.2** Validation checks, in order: manifest schema version, required files present, recorded byte size matches on-disk size, fingerprint matches when declared, and descriptor fields (duration, timing, rotation, audio params) match inspected media when media is bound.
 - **R5.3** Corrupt `project.json` or `manifest.json` rejects import with a user-visible reason; the shell stays alive.
 - **R5.4** Optional cache/proxy files validate only when present; their absence or checksum failure downgrades to "cache miss" (regenerate) rather than blocking edit correctness.

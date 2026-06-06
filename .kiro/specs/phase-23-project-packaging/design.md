@@ -42,7 +42,7 @@ Relative paths in the manifest are POSIX-style (`media/…`) regardless of host 
 |----------------|-----------|-------|
 | `manifest.json` | yes | `bundleSchemaVersion`, asset table, policies, fingerprints |
 | `project.json` | yes | Valid `ProjectDoc`; upgraded on import via `deserializeProject` |
-| `media/*` embedded assets | policy-dependent | Required when `BundleSourcePolicy.embedMedia === true` |
+| `media/*` embedded assets | policy-dependent | Required when `BundleSourcePolicy.mode === 'embed-media'` |
 | `assets/luts/*` | no | Included when clips reference imported LUTs; otherwise re-pick `.cube` |
 | `assets/captions/*` | no | Future caption tracks; descriptors always in `ProjectDoc` |
 | `cache/**` | no | Warm-start only; missing entries trigger regeneration |
@@ -67,7 +67,7 @@ export interface BundleAsset {
   assetId: string;              // stable id inside bundle (uuid)
   kind: 'media' | 'lut' | 'caption' | 'thumbnail' | 'waveform' | 'proxy';
   relativePath: string;         // from bundle root
-  fingerprint?: MediaFingerprint; // required for media + lut when embedMedia
+  fingerprint?: MediaFingerprint; // required for media + lut when mode is 'embed-media'
   byteSize: number;
   mimeType?: string | null;
   originalFileName: string;       // export-time name for UX / relink hints
@@ -193,7 +193,7 @@ UI: Import Project… → pick bundle directory (must contain manifest.json)
 | Situation | Behaviour |
 |-----------|-----------|
 | Target profile already has a project | Prompt: **Replace** (new project id) / **Cancel** — no silent merge in v1 |
-| Duplicate `sourceId` collision (re-import) | Generate new `sourceId`s in manifest remap table; update clip references in memory before save |
+| Duplicate `sourceId` collision (re-import) | Generate new `sourceId`s in manifest remap table; update clip references and cache manifest keys in memory before save |
 | Embedded media passes fingerprint but fails descriptor inspect | `descriptor-mismatch`; offline + user may force re-pick (force never bypasses fingerprint check) |
 | Partial bundle (some media missing) | Import proceeds; offline clips; report lists missing assets |
 | Cache file corrupt | Skip cache entry; regenerate thumbnail/waveform on demand |
@@ -207,7 +207,7 @@ Collect is export with `BundleSourcePolicy.collect-media`:
 
 - User picks an output directory.
 - `relocate: false` — copies media + manifest for archival; editor keeps current bindings.
-- `relocate: true` — same copy, plus manifest paths rewritten so the bundle is self-contained relative to the collect folder (useful before handoff).
+- `relocate: true` — same copy, plus active in-editor project paths rewritten to the collected copies (useful before handoff).
 
 Skipped sources (offline at collect time) appear in the integrity report; other assets still copy.
 

@@ -592,6 +592,41 @@ body {
   box-shadow: var(--shadow-lg);
 }
 
+.bundle-popover {
+  width: min(360px, calc(100vw - 1rem));
+}
+
+.bundle-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.bundle-collect-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+}
+
+.bundle-status {
+  border-top: 1px solid var(--border);
+  padding-top: 0.65rem;
+  font-size: var(--text-sm);
+}
+
+.bundle-integrity ul {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+  color: var(--muted-foreground);
+}
+
+.bundle-integrity .is-warn {
+  color: var(--warning, #f5a623);
+}
+
 .export-eyebrow {
   margin: 0 0 0.6rem;
   font-size: var(--text-xs);

@@ -102,6 +102,21 @@ export function parseCubeLut(text: string): CubeLut {
   };
 }
 
+/** Serialize a parsed LUT back to `.cube` text for portable bundle export. */
+export function serializeCubeLut(lut: CubeLut): string {
+  const lines: string[] = [];
+  if (lut.title) lines.push(`TITLE "${lut.title}"`);
+  lines.push(`LUT_3D_SIZE ${lut.size}`);
+  lines.push(
+    `DOMAIN_MIN ${lut.domainMin[0]} ${lut.domainMin[1]} ${lut.domainMin[2]}`,
+    `DOMAIN_MAX ${lut.domainMax[0]} ${lut.domainMax[1]} ${lut.domainMax[2]}`,
+  );
+  for (let i = 0; i < lut.values.length; i += 3) {
+    lines.push(`${lut.values[i]} ${lut.values[i + 1]} ${lut.values[i + 2]}`);
+  }
+  return `${lines.join('\n')}\n`;
+}
+
 export function lutFileKey(file: File): string {
   return `${file.name}:${file.size}:${file.lastModified}`;
 }
