@@ -18,7 +18,7 @@ interface TimelineClipProps {
   onDelete?: (trackId: string, clipId: string) => void;
   onTrim?: (trackId: string, clipId: string, edge: 'in' | 'out', time: number) => void;
   selected?: boolean;
-  onSelect?: (additive: boolean) => void;
+  onSelect?: (additive: boolean, exclusive: boolean) => void;
   peaks?: WaveformPeaks | null;
   isAudio?: boolean;
 }
@@ -170,7 +170,9 @@ export function TimelineClip(props: TimelineClipProps) {
 
   function onMovePointerDown(event: PointerEvent) {
     event.stopPropagation();
-    props.onSelect?.(event.shiftKey);
+    // Select on pointerdown so a group drag can begin immediately; App keeps an
+    // existing multi-selection intact when the clicked clip is already part of it.
+    props.onSelect?.(event.shiftKey, false);
     if (!props.onMove) return;
     event.preventDefault();
     const clipEl = event.currentTarget as HTMLElement;
@@ -196,6 +198,11 @@ export function TimelineClip(props: TimelineClipProps) {
       clearPointerListeners();
       if (moved) {
         props.onMove?.(props.trackId, props.clip.id, finalStart, originStart);
+      } else if (!up.shiftKey) {
+        // A plain click (no drag, no shift) collapses any multi-selection down to
+        // just this clip; the pointerdown handler had preserved the group in case
+        // the user intended a drag.
+        props.onSelect?.(false, true);
       }
     };
 

@@ -651,9 +651,15 @@ export function App() {
     clipId: string,
     _effects: TimelineClipSnapshot['effects'],
     additive: boolean,
+    exclusive = false,
   ) {
     const next = { trackId, clipId };
     const key = `${trackId}:${clipId}`;
+    if (exclusive) {
+      // Collapse any multi-selection down to just this clip (a plain click).
+      setSelectedClipRefs([next]);
+      return;
+    }
     if (!additive) {
       setSelectedClipRefs((prev) =>
         prev.some((ref) => `${ref.trackId}:${ref.clipId}` === key) ? prev : [next],

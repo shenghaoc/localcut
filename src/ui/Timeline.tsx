@@ -40,7 +40,7 @@ interface TimelineProps {
   onDelete: (trackId: string, clipId: string) => void;
   onTrim: (trackId: string, clipId: string, edge: 'in' | 'out', time: number) => void;
   onMoveClips: (moves: TimelineClipMove[]) => void;
-  onSelectClip: (trackId: string, clipId: string, effects: ClipEffectParamsSnapshot, additive: boolean) => void;
+  onSelectClip: (trackId: string, clipId: string, effects: ClipEffectParamsSnapshot, additive: boolean, exclusive: boolean) => void;
   onSelectClips: (clips: TimelineClipReference[]) => void;
   onAddMarker: (time: number, label: string) => void;
   onDeleteMarker: (markerId: string) => void;
@@ -258,6 +258,18 @@ export function Timeline(props: TimelineProps) {
       ? props.selectedClipRefs()
       : [currentRef];
     const delta = toStart - fromStart;
+
+    // Clamp the group delta once by the earliest selected start so the leftmost
+    // clip lands at 0 without collapsing the relative offsets of the others
+    // (independent per-clip clamping would overlap clips and the worker would
+    // reject the whole move).
+    let earliestStart = Number.POSITIVE_INFINITY;
+    for (const ref of selection) {
+      const clip = findClip(ref);
+      if (clip) earliestStart = Math.min(earliestStart, clip.start);
+    }
+    const clampedDelta = Number.isFinite(earliestStart) ? Math.max(-earliestStart, delta) : delta;
+
     const moves: TimelineClipMove[] = [];
     for (const ref of selection) {
       const clip = findClip(ref);
@@ -266,7 +278,7 @@ export function Timeline(props: TimelineProps) {
         trackId: ref.trackId,
         clipId: ref.clipId,
         toTrackId: ref.trackId,
-        toStart: Math.max(0, clip.start + delta),
+        toStart: clip.start + clampedDelta,
       });
     }
     if (moves.length > 0) props.onMoveClips(moves);
@@ -484,7 +496,7 @@ export function Timeline(props: TimelineProps) {
                           onSplit={props.onSplit}
                           onDelete={props.onDelete}
                           onTrim={props.onTrim}
-                          onSelect={(additive) => props.onSelectClip(track.id, clip.id, clip.effects, additive)}
+                          onSelect={(additive, exclusive) => props.onSelectClip(track.id, clip.id, clip.effects, additive, exclusive)}
                         />
                       )}
                     </For>

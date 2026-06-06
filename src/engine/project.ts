@@ -421,7 +421,7 @@ export function deserializeProject(value: unknown): DeserializeProjectResult {
   switch (schemaVersion) {
     case 1:
       return deserializeV1(value);
-    case PROJECT_SCHEMA_VERSION:
+    case 2:
       return deserializeV2(value);
     default:
       return { ok: false, reason: `Unsupported project schemaVersion ${schemaVersion}.` };
