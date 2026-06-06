@@ -40,6 +40,22 @@ export interface TimelineMarker {
   label: string;
 }
 
+export type TransitionKind = 'cross-dissolve' | 'dip-to-black' | 'wipe' | 'slide';
+
+export interface TransitionParams {
+  direction?: 'left' | 'right' | 'up' | 'down';
+}
+
+export interface TimelineTransition {
+  id: string;
+  trackId: string;
+  fromClipId: string;
+  toClipId: string;
+  durationS: number;
+  kind: TransitionKind;
+  params: TransitionParams;
+}
+
 export interface ClipReference {
   trackId: string;
   clipId: string;
@@ -70,6 +86,10 @@ export const DEFAULT_CLIP_AUDIO_FADES = {
 export const DEFAULT_MASTER_GAIN = 1;
 
 export type Timeline = TimelineTrack[];
+
+export interface TransitionSourceDurations {
+  durationForSource: (sourceId: string) => number | undefined;
+}
 
 export interface ResolveResult {
   clip: TimelineClip;
@@ -186,6 +206,216 @@ export function resolveAllAt(timeline: Timeline, time: number): ResolveResult[] 
 /** Finds the owning audio clip at a timeline timestamp. */
 export function resolveAudioAt(timeline: Timeline, time: number): ResolveResult | null {
   return resolveOnTrackType(timeline, time, 'audio');
+}
+
+const TIMELINE_EPSILON = 1e-6;
+
+function transitionsEqual(a: TimelineTransition, b: TimelineTransition): boolean {
+  return (
+    a.id === b.id &&
+    a.trackId === b.trackId &&
+    a.fromClipId === b.fromClipId &&
+    a.toClipId === b.toClipId &&
+    a.durationS === b.durationS &&
+    a.kind === b.kind &&
+    a.params.direction === b.params.direction
+  );
+}
+
+function cloneTransition(transition: TimelineTransition): TimelineTransition {
+  return {
+    ...transition,
+    params: { ...transition.params },
+  };
+}
+
+function isTransitionKind(value: unknown): value is TransitionKind {
+  return value === 'cross-dissolve' || value === 'dip-to-black' || value === 'wipe' || value === 'slide';
+}
+
+export function normalizeTransitionKind(kind: unknown): TransitionKind {
+  return isTransitionKind(kind) ? kind : 'cross-dissolve';
+}
+
+export function normalizeTransitionParams(params: Partial<TransitionParams> | undefined): TransitionParams {
+  const direction = params?.direction;
+  return direction === 'left' || direction === 'right' || direction === 'up' || direction === 'down'
+    ? { direction }
+    : {};
+}
+
+function transitionBoundary(
+  timeline: Timeline,
+  trackId: string,
+  fromClipId: string,
+  toClipId: string,
+): { fromClip: TimelineClip; toClip: TimelineClip } | null {
+  const track = timeline.find((item) => item.id === trackId);
+  if (!track || track.type !== 'video') return null;
+  const sorted = sortByStart(track.clips);
+  const fromIndex = sorted.findIndex((clip) => clip.id === fromClipId);
+  if (fromIndex < 0) return null;
+  const fromClip = sorted[fromIndex]!;
+  const toClip = sorted[fromIndex + 1];
+  if (!toClip || toClip.id !== toClipId) return null;
+  if (Math.abs(clipEnd(fromClip) - toClip.start) > TIMELINE_EPSILON) return null;
+  return { fromClip, toClip };
+}
+
+function sourceTailHandle(clip: TimelineClip, sourceDurations: TransitionSourceDurations): number {
+  const sourceDuration = sourceDurations.durationForSource(clip.sourceId);
+  if (sourceDuration === undefined || !finite(sourceDuration)) return 0;
+  return Math.max(0, sourceDuration - (clip.inPoint + clip.duration));
+}
+
+function sourceHeadHandle(clip: TimelineClip): number {
+  return Math.max(0, clip.inPoint);
+}
+
+export function maxTransitionDurationS(
+  timeline: Timeline,
+  sourceDurations: TransitionSourceDurations,
+  trackId: string,
+  fromClipId: string,
+  toClipId: string,
+): number {
+  const boundary = transitionBoundary(timeline, trackId, fromClipId, toClipId);
+  if (!boundary) return 0;
+  const handle = Math.min(
+    boundary.fromClip.duration,
+    boundary.toClip.duration,
+    sourceTailHandle(boundary.fromClip, sourceDurations),
+    sourceHeadHandle(boundary.toClip),
+  );
+  return Math.max(0, handle * 2);
+}
+
+export function clampTransitionDurationS(
+  timeline: Timeline,
+  sourceDurations: TransitionSourceDurations,
+  trackId: string,
+  fromClipId: string,
+  toClipId: string,
+  durationS: number,
+): number {
+  if (!finite(durationS) || durationS <= 0) return 0;
+  const maxDuration = maxTransitionDurationS(timeline, sourceDurations, trackId, fromClipId, toClipId);
+  return Math.min(durationS, maxDuration);
+}
+
+export function addTransition(
+  timeline: Timeline,
+  transitions: readonly TimelineTransition[],
+  sourceDurations: TransitionSourceDurations,
+  transition: Omit<TimelineTransition, 'durationS' | 'kind' | 'params'> & {
+    durationS: number;
+    kind?: TransitionKind;
+    params?: Partial<TransitionParams>;
+  },
+): TimelineTransition[] {
+  const durationS = clampTransitionDurationS(
+    timeline,
+    sourceDurations,
+    transition.trackId,
+    transition.fromClipId,
+    transition.toClipId,
+    transition.durationS,
+  );
+  if (durationS <= 0) return transitions as TimelineTransition[];
+  const nextTransition: TimelineTransition = {
+    id: transition.id,
+    trackId: transition.trackId,
+    fromClipId: transition.fromClipId,
+    toClipId: transition.toClipId,
+    durationS,
+    kind: normalizeTransitionKind(transition.kind),
+    params: normalizeTransitionParams(transition.params),
+  };
+  const withoutBoundary = transitions.filter(
+    (item) =>
+      item.trackId !== nextTransition.trackId ||
+      item.fromClipId !== nextTransition.fromClipId ||
+      item.toClipId !== nextTransition.toClipId,
+  );
+  return [...withoutBoundary.map(cloneTransition), nextTransition];
+}
+
+export function removeTransition(
+  transitions: readonly TimelineTransition[],
+  transitionId: string,
+): TimelineTransition[] {
+  const next = transitions.filter((transition) => transition.id !== transitionId).map(cloneTransition);
+  return next.length === transitions.length ? (transitions as TimelineTransition[]) : next;
+}
+
+export function setTransition(
+  timeline: Timeline,
+  transitions: readonly TimelineTransition[],
+  sourceDurations: TransitionSourceDurations,
+  transitionId: string,
+  patch: Partial<Pick<TimelineTransition, 'durationS' | 'kind' | 'params'>>,
+): TimelineTransition[] {
+  let changed = false;
+  const next = transitions.map((transition) => {
+    if (transition.id !== transitionId) return cloneTransition(transition);
+    const durationS =
+      patch.durationS === undefined
+        ? transition.durationS
+        : clampTransitionDurationS(
+            timeline,
+            sourceDurations,
+            transition.trackId,
+            transition.fromClipId,
+            transition.toClipId,
+            patch.durationS,
+          );
+    if (durationS <= 0) {
+      changed = true;
+      return null;
+    }
+    const updated: TimelineTransition = {
+      ...transition,
+      durationS,
+      kind: patch.kind ? normalizeTransitionKind(patch.kind) : transition.kind,
+      params: patch.params ? normalizeTransitionParams(patch.params) : { ...transition.params },
+    };
+    changed ||= !transitionsEqual(transition, updated);
+    return updated;
+  });
+  const filtered = next.filter((transition): transition is TimelineTransition => transition !== null);
+  return changed ? filtered : (transitions as TimelineTransition[]);
+}
+
+export function revalidateTransitions(
+  timeline: Timeline,
+  transitions: readonly TimelineTransition[],
+  sourceDurations: TransitionSourceDurations,
+): TimelineTransition[] {
+  let changed = false;
+  const next: TimelineTransition[] = [];
+  for (const transition of transitions) {
+    const durationS = clampTransitionDurationS(
+      timeline,
+      sourceDurations,
+      transition.trackId,
+      transition.fromClipId,
+      transition.toClipId,
+      transition.durationS,
+    );
+    if (durationS <= 0) {
+      changed = true;
+      continue;
+    }
+    const normalized: TimelineTransition = {
+      ...cloneTransition(transition),
+      durationS,
+      kind: normalizeTransitionKind(transition.kind),
+      params: normalizeTransitionParams(transition.params),
+    };
+    changed ||= !transitionsEqual(transition, normalized);
+    next.push(normalized);
+  }
+  return changed ? next : (transitions as TimelineTransition[]);
 }
 
 function newId(prefix: string): string {

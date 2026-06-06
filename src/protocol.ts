@@ -120,6 +120,22 @@ export interface TimelineMarkerSnapshot {
   label: string;
 }
 
+export type TransitionKindSnapshot = 'cross-dissolve' | 'dip-to-black' | 'wipe' | 'slide';
+
+export interface TransitionParamsSnapshot {
+  direction?: 'left' | 'right' | 'up' | 'down';
+}
+
+export interface TimelineTransitionSnapshot {
+  id: string;
+  trackId: string;
+  fromClipId: string;
+  toClipId: string;
+  durationS: number;
+  kind: TransitionKindSnapshot;
+  params: TransitionParamsSnapshot;
+}
+
 export interface TimelineClipReference {
   trackId: string;
   clipId: string;
@@ -298,6 +314,29 @@ interface SetClipFadeCommand {
   durationS: number;
 }
 
+interface AddTransitionCommand {
+  type: 'add-transition';
+  trackId: string;
+  fromClipId: string;
+  toClipId: string;
+  durationS: number;
+  kind?: TransitionKindSnapshot;
+  params?: TransitionParamsSnapshot;
+}
+
+interface RemoveTransitionCommand {
+  type: 'remove-transition';
+  transitionId: string;
+}
+
+interface SetTransitionCommand {
+  type: 'set-transition';
+  transitionId: string;
+  durationS?: number;
+  kind?: TransitionKindSnapshot;
+  params?: TransitionParamsSnapshot;
+}
+
 /** Places a bin asset on the timeline. When `trackId` is omitted the worker finds
  *  or creates a track matching the asset's kind; when `start` is omitted the clip
  *  appends past the track's last clip. */
@@ -376,6 +415,9 @@ export type WorkerCommand =
   | SetTrackPanCommand
   | SetMasterGainCommand
   | SetClipFadeCommand
+  | AddTransitionCommand
+  | RemoveTransitionCommand
+  | SetTransitionCommand
   | PlaceClipCommand
   | SetStillDurationCommand
   | AddTrackCommand
@@ -442,7 +484,13 @@ export type WorkerStateMessage =
     }
   | { type: 'preview-resolution'; resolution: PreviewResolution }
   | { type: 'probe-result'; probe: ThroughputProbe }
-  | { type: 'timeline-state'; timeline: TimelineTrackSnapshot[]; markers: TimelineMarkerSnapshot[]; masterGain: number }
+  | {
+      type: 'timeline-state';
+      timeline: TimelineTrackSnapshot[];
+      transitions: TimelineTransitionSnapshot[];
+      markers: TimelineMarkerSnapshot[];
+      masterGain: number;
+    }
   | { type: 'media-assets'; assets: MediaAssetSnapshot[] }
   | { type: 'thumbnail'; sourceId: string; timestamp: number; bitmap: ImageBitmap; width: number; height: number }
   | { type: 'waveform-peaks'; trackId: string; clipId: string; peaks: WaveformPeaks }

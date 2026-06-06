@@ -1,5 +1,5 @@
-import type { Timeline, TimelineMarker } from './timeline';
-import { cloneMarkersSnapshot, cloneTimelineSnapshot } from './project';
+import type { Timeline, TimelineMarker, TimelineTransition } from './timeline';
+import { cloneMarkersSnapshot, cloneTimelineSnapshot, cloneTransitionsSnapshot } from './project';
 
 const DEFAULT_HISTORY_LIMIT = 100;
 const DEFAULT_COALESCE_WINDOW_MS = 80;
@@ -22,6 +22,7 @@ export interface TimelineHistoryOptions {
 
 export interface TimelineHistorySnapshot {
   timeline: Timeline;
+  transitions: TimelineTransition[];
   markers: TimelineMarker[];
 }
 
@@ -54,6 +55,7 @@ export function createTimelineHistory(options: TimelineHistoryOptions = {}): Tim
   function cloneSnapshot(snapshot: TimelineHistorySnapshot): TimelineHistorySnapshot {
     return {
       timeline: cloneTimelineSnapshot(snapshot.timeline),
+      transitions: cloneTransitionsSnapshot(snapshot.transitions),
       markers: cloneMarkersSnapshot(snapshot.markers),
     };
   }

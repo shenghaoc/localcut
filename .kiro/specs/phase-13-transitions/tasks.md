@@ -4,10 +4,10 @@
 
 ## Model
 
-- [ ] **T1.1** Add the `transitions[]` list (`{ id, trackId, fromClipId, toClipId, durationS, kind, params }`) beside the tracks; persist via Phase 9.
-- [ ] **T1.2** Placement validation: adjacency + `durationS / 2` source headroom per side, reusing trim's source-bounds logic.
-- [ ] **T1.3** Re-validate on every edit; drop transitions whose neighbours separate or disappear.
-- [ ] **T1.4** Unit-test placement, clamping, and survival/drop across trim/move/delete.
+- [x] **T1.1** Add the `transitions[]` list (`{ id, trackId, fromClipId, toClipId, durationS, kind, params }`) beside the tracks; persist via Phase 9.
+- [x] **T1.2** Placement validation: adjacency + `durationS / 2` source headroom per side, reusing trim's source-bounds logic.
+- [x] **T1.3** Re-validate on every edit; drop transitions whose neighbours separate or disappear.
+- [x] **T1.4** Unit-test placement, clamping, and survival/drop across trim/move/delete.
 
 ## Readahead
 
@@ -22,7 +22,7 @@
 ## UI + parity
 
 - [ ] **T4.1** Cut-point affordance + duration drag in the timeline; kind picker in the Inspector.
-- [ ] **T4.2** Commands `add-transition`/`remove-transition`/`set-transition`; `timeline-state` carries transitions.
+- [x] **T4.2** Commands `add-transition`/`remove-transition`/`set-transition`; `timeline-state` carries transitions.
 
 ## Verification
 

@@ -3,6 +3,8 @@ import {
   DEFAULT_CLIP_AUDIO_FADES,
   DEFAULT_MASTER_GAIN,
   DEFAULT_TRACK_MIX,
+  normalizeTransitionKind,
+  normalizeTransitionParams,
   normalizeClipEffects,
   normalizeTransform,
   sortMarkers,
@@ -10,9 +12,10 @@ import {
   type TimelineClip,
   type TimelineMarker,
   type TimelineTrack,
+  type TimelineTransition,
 } from './timeline';
 
-export const PROJECT_SCHEMA_VERSION = 4;
+export const PROJECT_SCHEMA_VERSION = 5;
 const DURATION_MATCH_TOLERANCE_S = 0.25;
 
 export type SourceDescriptor = SourceDescriptorSnapshot;
@@ -22,6 +25,7 @@ export interface ProjectDoc {
   projectId: string;
   savedAt: string;
   timeline: Timeline;
+  transitions: TimelineTransition[];
   markers: TimelineMarker[];
   sources: SourceDescriptor[];
   masterGain: number;
@@ -31,6 +35,7 @@ export interface ProjectDoc {
 export interface SerializeProjectOptions {
   projectId: string;
   timeline: Timeline;
+  transitions?: readonly TimelineTransition[];
   markers?: readonly TimelineMarker[];
   sources: readonly SourceDescriptor[];
   masterGain?: number;
@@ -141,6 +146,18 @@ export function cloneTimelineSnapshot(timeline: Timeline): Timeline {
   }));
 }
 
+export function cloneTransitionsSnapshot(transitions: readonly TimelineTransition[]): TimelineTransition[] {
+  return transitions.map((transition) => ({
+    id: transition.id,
+    trackId: transition.trackId,
+    fromClipId: transition.fromClipId,
+    toClipId: transition.toClipId,
+    durationS: transition.durationS,
+    kind: normalizeTransitionKind(transition.kind),
+    params: normalizeTransitionParams(transition.params),
+  }));
+}
+
 export function cloneMarkersSnapshot(markers: readonly TimelineMarker[]): TimelineMarker[] {
   return sortMarkers(
     markers.map((marker) => ({
@@ -189,6 +206,7 @@ export function serializeProject(options: SerializeProjectOptions): ProjectDoc {
     projectId: options.projectId,
     savedAt: (options.savedAt ?? new Date()).toISOString(),
     timeline: cloneTimelineSnapshot(options.timeline),
+    transitions: cloneTransitionsSnapshot(options.transitions ?? []),
     markers: cloneMarkersSnapshot(options.markers ?? []),
     sources: options.sources.map(cloneSourceDescriptor),
     masterGain,
@@ -285,6 +303,42 @@ function parseTrack(value: unknown): TimelineTrack | null {
     muted: value.muted,
     solo: value.solo,
   };
+}
+
+function parseTransition(value: unknown): TimelineTransition | null {
+  if (!isRecord(value)) return null;
+  const id = requiredString(value.id);
+  const trackId = requiredString(value.trackId);
+  const fromClipId = requiredString(value.fromClipId);
+  const toClipId = requiredString(value.toClipId);
+  const durationS = finiteNumber(value.durationS);
+  if (!id || !trackId || !fromClipId || !toClipId || durationS === null || durationS <= 0) return null;
+  const params = isRecord(value.params) ? value.params : {};
+  return {
+    id,
+    trackId,
+    fromClipId,
+    toClipId,
+    durationS,
+    kind: normalizeTransitionKind(value.kind),
+    params: normalizeTransitionParams({
+      direction: params.direction === 'left' || params.direction === 'right' || params.direction === 'up' || params.direction === 'down'
+        ? params.direction
+        : undefined,
+    }),
+  };
+}
+
+function parseTransitions(value: unknown): TimelineTransition[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) return null;
+  const transitions: TimelineTransition[] = [];
+  for (const transition of value) {
+    const parsed = parseTransition(transition);
+    if (!parsed) return null;
+    transitions.push(parsed);
+  }
+  return cloneTransitionsSnapshot(transitions);
 }
 
 function parseMarker(value: unknown): TimelineMarker | null {
@@ -420,6 +474,7 @@ function deserializeV1(value: Record<string, unknown>): DeserializeProjectResult
       projectId,
       savedAt,
       timeline,
+      transitions: [],
       markers: [],
       sources,
       masterGain: Math.max(0, masterGain),
@@ -442,6 +497,20 @@ function deserializeV2(value: Record<string, unknown>): DeserializeProjectResult
   };
 }
 
+function deserializeV5(value: Record<string, unknown>): DeserializeProjectResult {
+  const result = deserializeV2(value);
+  if (!result.ok) return result;
+  const transitions = parseTransitions(value.transitions);
+  if (!transitions) return { ok: false, reason: 'Project transitions are invalid.' };
+  return {
+    ok: true,
+    doc: {
+      ...result.doc,
+      transitions,
+    },
+  };
+}
+
 export function deserializeProject(value: unknown): DeserializeProjectResult {
   if (!isRecord(value)) return { ok: false, reason: 'Project document is not an object.' };
   const schemaVersion = finiteNumber(value.schemaVersion);
@@ -457,6 +526,8 @@ export function deserializeProject(value: unknown): DeserializeProjectResult {
       // parseSourceDescriptor infers `kind` and parseClip fills an identity
       // transform for older docs, so the v2 parse path handles all three.
       return deserializeV2(value);
+    case 5:
+      return deserializeV5(value);
     default:
       return { ok: false, reason: `Unsupported project schemaVersion ${schemaVersion}.` };
   }

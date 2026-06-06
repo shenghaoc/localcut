@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   addMarker,
   addTrack,
+  addTransition,
+  maxTransitionDurationS,
+  revalidateTransitions,
   closeGaps,
   createEmptyTimeline,
   DEFAULT_TRACK_MIX,
@@ -725,4 +728,107 @@ describe('timeline tracks', () => {
       expect(next[1]!.clips[1]!.inPoint).toBe(4);
     });
   });
+  it('adds cut-point transitions and clamps duration to source headroom', () => {
+    const timeline: TimelineTrack[] = [
+      {
+        id: 'video-track',
+        type: 'video',
+        ...DEFAULT_TRACK_MIX,
+        clips: [
+          clip({ id: 'a', sourceId: 'src-a', start: 0, duration: 4, inPoint: 1 }),
+          clip({ id: 'b', sourceId: 'src-b', start: 4, duration: 4, inPoint: 0.75 }),
+        ],
+      },
+    ];
+    const durations = { durationForSource: (sourceId: string) => (sourceId === 'src-a' ? 5.25 : 8) };
+
+    const transitions = addTransition(timeline, [], durations, {
+      id: 'transition-1',
+      trackId: 'video-track',
+      fromClipId: 'a',
+      toClipId: 'b',
+      durationS: 3,
+      kind: 'wipe',
+      params: { direction: 'right' },
+    });
+
+    expect(transitions).toEqual([
+      {
+        id: 'transition-1',
+        trackId: 'video-track',
+        fromClipId: 'a',
+        toClipId: 'b',
+        durationS: 0.5,
+        kind: 'wipe',
+        params: { direction: 'right' },
+      },
+    ]);
+    expect(maxTransitionDurationS(timeline, durations, 'video-track', 'a', 'b')).toBe(0.5);
+  });
+
+  it('rejects transitions between separated, missing, or non-video neighbours', () => {
+    const timeline: TimelineTrack[] = [
+      {
+        id: 'video-track',
+        type: 'video',
+        ...DEFAULT_TRACK_MIX,
+        clips: [
+          clip({ id: 'a', sourceId: 'src-a', start: 0, duration: 3, inPoint: 1 }),
+          clip({ id: 'b', sourceId: 'src-b', start: 4, duration: 3, inPoint: 1 }),
+        ],
+      },
+      { id: 'audio-track', type: 'audio', ...DEFAULT_TRACK_MIX, clips: [clip({ id: 'c', sourceId: 'src-c', start: 0, duration: 3, inPoint: 1 })] },
+    ];
+    const durations = { durationForSource: () => 10 };
+
+    expect(addTransition(timeline, [], durations, {
+      id: 'transition-1',
+      trackId: 'video-track',
+      fromClipId: 'a',
+      toClipId: 'b',
+      durationS: 1,
+    })).toEqual([]);
+    expect(addTransition(timeline, [], durations, {
+      id: 'transition-2',
+      trackId: 'audio-track',
+      fromClipId: 'c',
+      toClipId: 'missing',
+      durationS: 1,
+    })).toEqual([]);
+  });
+
+  it('revalidates transitions after trim, move, and delete edits', () => {
+    const timeline: TimelineTrack[] = [
+      {
+        id: 'video-track',
+        type: 'video',
+        ...DEFAULT_TRACK_MIX,
+        clips: [
+          clip({ id: 'a', sourceId: 'src-a', start: 0, duration: 4, inPoint: 1 }),
+          clip({ id: 'b', sourceId: 'src-b', start: 4, duration: 4, inPoint: 1 }),
+        ],
+      },
+    ];
+    const durations = { durationForSource: () => 10 };
+    const transitions = addTransition(timeline, [], durations, {
+      id: 'transition-1',
+      trackId: 'video-track',
+      fromClipId: 'a',
+      toClipId: 'b',
+      durationS: 2,
+    });
+
+    const trimmed = trimClip(timeline, 'video-track', 'b', { edge: 'in', time: 4.75, sourceDuration: 10 });
+    expect(revalidateTransitions(trimmed, transitions, durations)).toEqual([]);
+
+    const moved = moveClipTo(timeline, 'video-track', 'b', 'video-track', 5);
+    expect(revalidateTransitions(moved, transitions, durations)).toEqual([]);
+
+    const deleted = removeClip(timeline, 'video-track', 'b');
+    expect(revalidateTransitions(deleted, transitions, durations)).toEqual([]);
+
+    const stillAdjacent = trimClip(timeline, 'video-track', 'a', { edge: 'in', time: 0.5, sourceDuration: 10 });
+    expect(revalidateTransitions(stillAdjacent, transitions, durations)).toHaveLength(1);
+  });
+
 });
