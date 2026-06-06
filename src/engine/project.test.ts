@@ -4,6 +4,7 @@ import {
   DEFAULT_TRACK_MIX,
   defaultClipEffects,
   defaultClipTransform,
+  defaultTitleClip,
   type Timeline,
 } from './timeline';
 import {
@@ -114,6 +115,54 @@ describe('project serialization', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.doc.exportSettings).toEqual(doc.exportSettings);
+  });
+
+  it('round-trips source-less title clips with text and style', () => {
+    const title = defaultTitleClip({
+      id: 'clip-title-1',
+      start: 3,
+      duration: 5,
+      title: { text: 'Lower third', style: { color: '#ff0000', align: 'left', fontSizePx: 120 } },
+      transform: { x: 0.1, y: -0.2 },
+    });
+    const timeline: Timeline = [
+      { id: 'track-video-1', type: 'video', ...DEFAULT_TRACK_MIX, clips: [title] },
+    ];
+
+    const doc = serializeProject({ projectId: 'project-1', timeline, sources: [] });
+    expect(doc.schemaVersion).toBe(PROJECT_SCHEMA_VERSION);
+
+    const result = deserializeProject(doc);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const restored = result.doc.timeline[0]!.clips[0]!;
+    expect(restored.kind).toBe('title');
+    expect(restored.sourceId).toBe('');
+    expect(restored.title?.text).toBe('Lower third');
+    expect(restored.title?.style.color).toBe('#ff0000');
+    expect(restored.title?.style.align).toBe('left');
+    expect(restored.title?.style.fontSizePx).toBe(120);
+    expect(restored.transform.x).toBeCloseTo(0.1);
+  });
+
+  it('rejects a title clip whose title payload is missing', () => {
+    const result = deserializeProject({
+      schemaVersion: PROJECT_SCHEMA_VERSION,
+      projectId: 'project-1',
+      savedAt: new Date().toISOString(),
+      timeline: [
+        {
+          id: 'track-video-1',
+          type: 'video',
+          ...DEFAULT_TRACK_MIX,
+          clips: [
+            { id: 'clip-title-1', kind: 'title', sourceId: '', start: 0, duration: 4, inPoint: 0 },
+          ],
+        },
+      ],
+      sources: [],
+    });
+    expect(result.ok).toBe(false);
   });
 
   it('round-trips transition lists and rejects malformed entries', () => {

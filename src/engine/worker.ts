@@ -44,9 +44,14 @@ import {
   setTrackSolo,
   setTrackPan,
   setClipAudioFade,
+  setTitleContent,
   defaultTimelineClip,
+  defaultTitleClip,
+  isTitleClip,
   DEFAULT_MASTER_GAIN,
+  DEFAULT_TITLE_DURATION_S,
   type Timeline,
+  type TimelineClip,
   type TimelineMarker,
   type TimelineTransition,
   type ClipboardTimelineClip,
@@ -74,6 +79,7 @@ import {
 } from './media-io';
 import { ThumbnailGenerator } from './thumbnails';
 import { initGpu, type CompositeLayer, type PreviewRenderer } from './gpu';
+import { createCanvasTitleUploader, loadTitleFonts, TitleTextureCache } from './titles';
 import {
   AdaptiveResolution,
   buildPreviewLadder,
@@ -114,6 +120,12 @@ import {
 
 let clockView: Float64Array | null = null;
 let renderer: PreviewRenderer | null = null;
+/** Phase 14 title raster cache; created once the GPU device is ready. */
+let titleCache: TitleTextureCache | null = null;
+/** Shared empty set for dropping every cached title texture via `retain`. */
+const EMPTY_CLIP_IDS: ReadonlySet<string> = new Set<string>();
+/** Default preview/export geometry for title-only timelines (no video source). */
+const TITLE_ONLY_CANVAS = { width: 1920, height: 1080, frameRate: 30 } as const;
 let primaryHandle: MediaInputHandle | null = null;
 let playback: PlaybackController<LayerMeta> | null = null;
 let adaptive: AdaptiveResolution | null = null;
@@ -195,6 +207,9 @@ function postTimelineState() {
     solo: track.solo,
     clips: track.clips.map((clip) => ({
       id: clip.id,
+      ...(clip.kind === 'title' && clip.title
+        ? { kind: 'title' as const, title: { text: clip.title.text, style: { ...clip.title.style } } }
+        : {}),
       sourceId: clip.sourceId,
       start: clip.start,
       duration: clip.duration,
@@ -203,7 +218,9 @@ function postTimelineState() {
       transform: { ...clip.transform },
       audioFadeIn: clip.audioFadeIn,
       audioFadeOut: clip.audioFadeOut,
-      offline: sourceInputs.has(clip.sourceId) ? undefined : true,
+      // Title clips are source-less and never "offline"; source clips report
+      // offline when their decoder handle is missing.
+      offline: clip.kind === 'title' || sourceInputs.has(clip.sourceId) ? undefined : true,
     })),
   }));
   const transitionSnapshot: TimelineTransitionSnapshot[] = cloneTransitionsSnapshot(transitions);
@@ -852,6 +869,9 @@ function afterTimelineMutation(options: {
   if (options.prune !== false) {
     pruneUnusedSources();
   }
+  // Refresh title rasters (no-op on unchanged content) before re-rendering so
+  // the cached texture is current when playback refreshes the frame.
+  syncTitleRasters();
   ensureClockAndTimeline();
   postHistoryState();
   scheduleAutosave();
@@ -966,6 +986,19 @@ async function handleInit(
   try {
     const gpu = await initGpu(canvas);
     renderer = gpu.renderer;
+    if (renderer) {
+      titleCache = new TitleTextureCache(createCanvasTitleUploader(renderer.gpuDevice));
+      // Load bundled fonts before the first raster; resolves even when a bundle
+      // is missing (generic fallback keeps titles offline-safe). Font availability
+      // isn't part of the content hash, so titles rastered during the load race
+      // hold fallback metrics — drop those textures, re-raster with the loaded
+      // faces, and refresh the current frame.
+      void loadTitleFonts().then(() => {
+        titleCache?.retain(EMPTY_CLIP_IDS);
+        syncTitleRasters();
+        playback?.refresh();
+      });
+    }
     post({
       type: 'ready',
       webgpu: renderer !== null,
@@ -1115,6 +1148,8 @@ async function handleRestoreProject(): Promise<void> {
     return;
   }
   setupPlayback();
+  // Raster any restored title clips so their textures exist before first render.
+  syncTitleRasters();
   ensureClockAndTimeline();
   postHistoryState();
   post({
@@ -1170,8 +1205,11 @@ async function handleNewProject(): Promise<void> {
  * are ready), so it reconciles whichever of GPU-init / import completes last.
  */
 function ensurePreview() {
+  if (!renderer || !adaptive) return;
+  // Render when there's a decodable video source or any title clip (title-only
+  // timelines composite source-less titles over black).
   const source = getPlaybackSource();
-  if (!renderer || !adaptive || !source?.frameSource) return;
+  if (!source?.frameSource && titleClips().length === 0) return;
   const tier = adaptive.current();
   renderer.setPreviewSize(tier.width, tier.height);
   post({ type: 'preview-resolution', resolution: tier });
@@ -1192,6 +1230,9 @@ function teardownMedia() {
   sourceInputs.clear();
   binSourceIds.clear();
   primaryHandle = null;
+  // Release cached title textures: clearing the timeline here (new project,
+  // re-import, restore) would otherwise orphan them until worker disposal.
+  titleCache?.retain(EMPTY_CLIP_IDS);
   timeline = createEmptyTimeline();
   transitions = [];
   markers = [];
@@ -1256,11 +1297,40 @@ function decodeFrameForLayer(
   return wrapDecodedFrameForPlayback(sourceHandle, sourceTime);
 }
 
-/** Colour/transform metadata carried per decoded layer (no shared mutable state). */
-interface LayerMeta {
-  effects: ClipEffectParams;
-  transform: TransformParams;
+/** Every title clip on the timeline, paired with its owning track id. */
+function titleClips(): { trackId: string; clip: TimelineClip }[] {
+  const result: { trackId: string; clip: TimelineClip }[] = [];
+  for (const track of timeline) {
+    if (track.type !== 'video') continue;
+    for (const clip of track.clips) {
+      if (isTitleClip(clip) && clip.title) result.push({ trackId: track.id, clip });
+    }
+  }
+  return result;
 }
+
+/**
+ * Edit-path raster sync: rasterizes every title clip (a no-op when the content
+ * hash is unchanged) and drops cached textures for titles no longer present.
+ * Called after timeline mutations and once fonts/GPU are ready — never per frame.
+ */
+function syncTitleRasters(): void {
+  if (!titleCache) return;
+  const active = new Set<string>();
+  for (const { clip } of titleClips()) {
+    active.add(clip.id);
+    titleCache.rasterize(clip.id, clip.title!);
+  }
+  titleCache.retain(active);
+}
+
+/**
+ * Colour/transform metadata carried per decoded layer (no shared mutable state).
+ * Title layers carry no decode — they composite from the cached title texture.
+ */
+type LayerMeta =
+  | { kind: 'frame'; effects: ClipEffectParams; transform: TransformParams }
+  | { kind: 'title'; clipId: string; transform: TransformParams };
 
 /**
  * Decodes the budgeted video layer stack at `timestamp` (bottom → top) for the
@@ -1276,24 +1346,37 @@ function makeGetLayers() {
     const layers = resolveAllAt(timeline, timestamp);
     const budget = layerBudgetFromProbe(currentProbe);
     const decodedLayers: DecodedLayer<LayerMeta>[] = [];
+    let decodedCount = 0;
     let overBudget = false;
     try {
       for (const layer of layers) {
+        // Title layers carry no decode and don't consume the decode budget; they
+        // composite from the cached title texture, preserving z-order.
+        if (isTitleClip(layer.clip)) {
+          decodedLayers.push({
+            decoded: null,
+            meta: { kind: 'title', clipId: layer.clip.id, transform: layer.clip.transform },
+          });
+          continue;
+        }
         const handle = sourceInputs.get(layer.clip.sourceId);
         if (!handle?.frameSource) continue;
-        if (decodedLayers.length >= budget) {
+        if (decodedCount >= budget) {
+          // Stop decoding video past the budget but keep scanning: source-less
+          // title layers above the budgeted stack still composite (no decode).
           overBudget = true;
-          break;
+          continue;
         }
         const decoded = await decodeFrameForLayer(handle, layer.clip.sourceId, layer.sourceTime);
         if (!decoded) continue;
+        decodedCount += 1;
         decodedLayers.push({
           decoded,
-          meta: { effects: layer.clip.effects, transform: layer.clip.transform },
+          meta: { kind: 'frame', effects: layer.clip.effects, transform: layer.clip.transform },
         });
       }
     } catch (error) {
-      for (const layer of decodedLayers) layer.decoded.close();
+      for (const layer of decodedLayers) layer.decoded?.close();
       throw error;
     }
     noteLayerBudget(overBudget, budget);
@@ -1425,6 +1508,13 @@ function clipboardClipFromMessage(item: TimelineClipboardClip): ClipboardTimelin
     trackId: item.trackId,
     clip: {
       id: item.clip.id,
+      // Preserve a pasted title clip's kind + text/style; source clips omit both.
+      ...(item.clip.kind === 'title' && item.clip.title
+        ? {
+            kind: 'title' as const,
+            title: { text: item.clip.title.text, style: { ...item.clip.title.style } },
+          }
+        : {}),
       sourceId: item.clip.sourceId,
       start: item.clip.start,
       duration: item.clip.duration,
@@ -1576,6 +1666,56 @@ function handleSetStillDuration(cmd: Extract<WorkerCommand, { type: 'set-still-d
   commitTimelineMutation(
     () => setClipDuration(timeline, cmd.trackId, cmd.clipId, cmd.durationS),
     { coalesceKey: { clipId: cmd.clipId, key: 'still-duration' } },
+  );
+}
+
+function makeTitleClipId(): string {
+  const suffix =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2);
+  return `clip-title-${suffix}`;
+}
+
+/**
+ * Adds a source-less title clip at `start` (default 0). Titles want an overlay
+ * track: try each existing video track for a free slot, falling back to a fresh
+ * video track appended on top (drawn last by `resolveAllAt`) so a title never
+ * collides with footage on the base track (Phase 14).
+ */
+function handleAddTitle(cmd: Extract<WorkerCommand, { type: 'add-title' }>) {
+  const added = commitTimelineMutation(() => {
+    const start = cmd.start !== undefined && Number.isFinite(cmd.start) && cmd.start >= 0 ? cmd.start : 0;
+    const makeClip = () =>
+      defaultTitleClip({ id: makeTitleClipId(), start, duration: DEFAULT_TITLE_DURATION_S });
+
+    if (cmd.trackId) {
+      return insertClip(timeline, cmd.trackId, makeClip());
+    }
+    for (const track of timeline) {
+      if (track.type !== 'video') continue;
+      const candidate = insertClip(timeline, track.id, makeClip());
+      if (candidate !== timeline) return candidate;
+    }
+    const withTrack = addTrack(timeline, 'video');
+    const overlayTrackId = withTrack[withTrack.length - 1]!.id;
+    return insertClip(withTrack, overlayTrackId, makeClip());
+  });
+  // First title on a footage-free timeline: stand up playback so the title-only
+  // preview renders (afterTimelineMutation only refreshes an existing controller).
+  if (added && !playback) setupPlayback();
+}
+
+function handleSetTitle(cmd: Extract<WorkerCommand, { type: 'set-title' }>) {
+  commitTimelineMutation(
+    () => setTitleContent(timeline, cmd.trackId, cmd.clipId, { text: cmd.text, style: cmd.style }),
+    {
+      // A typing/restyle burst streams many updates; coalesce into one history
+      // entry per clip so a single edit session doesn't exhaust the undo ring.
+      coalesceKey: { clipId: cmd.clipId, key: 'title' },
+      refreshPlayback: 'refresh',
+      prune: false,
+    },
   );
 }
 
@@ -1737,12 +1877,20 @@ async function handleRelinkSource(cmd: Extract<WorkerCommand, { type: 'relink-so
 
 function setupPlayback() {
   const handle = getPlaybackSource();
-  if (!handle?.frameSource) return;
+  // Title-only timelines have no decodable video source but are still renderable
+  // (source-less title cards over black). Fall back to a default 1080p/30 canvas
+  // so preview/playback work without footage (Phase 14 full support).
+  const hasTitles = titleClips().length > 0;
+  if (!handle?.frameSource && !hasTitles) return;
 
-  const ladder = buildPreviewLadder(handle.displayWidth, handle.displayHeight);
+  const width = handle?.frameSource ? handle.displayWidth : TITLE_ONLY_CANVAS.width;
+  const height = handle?.frameSource ? handle.displayHeight : TITLE_ONLY_CANVAS.height;
+  const frameRate = handle?.frameSource && handle.frameRate > 0 ? handle.frameRate : TITLE_ONLY_CANVAS.frameRate;
+
+  const ladder = buildPreviewLadder(width, height);
   // Budget the adaptive downgrade to the source frame period (e.g. ~16.6ms at
   // 60fps, ~41.6ms at 24fps), falling back to 33ms (~30fps) for unknown rates.
-  const budgetMs = handle.frameRate > 0 ? 1000 / handle.frameRate : 33;
+  const budgetMs = frameRate > 0 ? 1000 / frameRate : 33;
   adaptive = new AdaptiveResolution(ladder, budgetMs);
   ensureFrameCache();
 
@@ -1753,16 +1901,33 @@ function setupPlayback() {
   const getFrames = makeGetLayers();
   playback = new PlaybackController<LayerMeta>({
     duration: getTimelineDuration(timeline),
-    frameRate: handle.frameRate,
+    frameRate,
     getFrames,
     renderFrames: (layers) => {
-      // The stack is already budgeted + offline-skipped by makeGetLayers.
-      const stack: CompositeLayer[] = layers.map((layer) => ({
-        kind: 'frame' as const,
-        frame: layer.frame,
-        effects: layer.meta.effects,
-        transform: layer.meta.transform,
-      }));
+      // The stack is already budgeted + offline-skipped + z-ordered by
+      // makeGetLayers. Title layers bind the cached texture (no decode, no
+      // upload here); frame layers carry the decoded VideoFrame.
+      const stack: CompositeLayer[] = [];
+      for (const layer of layers) {
+        if (layer.meta.kind === 'title') {
+          const texture = titleCache?.get(layer.meta.clipId);
+          if (!texture) continue;
+          stack.push({
+            kind: 'texture',
+            view: texture.view,
+            sourceWidth: texture.width,
+            sourceHeight: texture.height,
+            transform: layer.meta.transform,
+          });
+        } else if (layer.frame) {
+          stack.push({
+            kind: 'frame',
+            frame: layer.frame,
+            effects: layer.meta.effects,
+            transform: layer.meta.transform,
+          });
+        }
+      }
       renderer?.present(stack);
     },
     writeClock: writeTransport,
@@ -1845,34 +2010,26 @@ function firstExportVideoHandle(): MediaInputHandle | null {
 
 function exportSettingsForProbe(): ExportSettings | null {
   const videoHandle = firstExportVideoHandle();
-  if (!videoHandle) return null;
+  // Title-only timelines export over the default canvas (no decodable video).
+  if (!videoHandle && titleClips().length === 0) return null;
+  const width = videoHandle?.displayWidth ?? TITLE_ONLY_CANVAS.width;
+  const height = videoHandle?.displayHeight ?? TITLE_ONLY_CANVAS.height;
+  const frameRate = videoHandle?.frameRate ?? TITLE_ONLY_CANVAS.frameRate;
   const timelineDuration = getTimelineDuration(timeline);
   const base =
-    lastExportSettings ??
-    defaultExportSettings(
-      'quality',
-      videoHandle.displayWidth,
-      videoHandle.displayHeight,
-      videoHandle.frameRate,
-      timelineDuration,
-    );
+    lastExportSettings ?? defaultExportSettings('quality', width, height, frameRate, timelineDuration);
   try {
-    return normalizeExportSettings(
-      base,
-      videoHandle.displayWidth,
-      videoHandle.displayHeight,
-      videoHandle.frameRate,
-      timelineDuration,
-    );
+    return normalizeExportSettings(base, width, height, frameRate, timelineDuration);
   } catch {
     return null;
   }
 }
 
 async function handleExportProbe() {
-  const videoHandle = firstExportVideoHandle();
   const settings = exportSettingsForProbe();
-  if (!settings || !videoHandle) {
+  // No videoHandle for title-only timelines; probe still works from the settings
+  // geometry (probeExportCodecs needs only width/height/fps/bitrate).
+  if (!settings) {
     post({ type: 'export-codecs', supported: [], settings: defaultExportSettings('quality', 1920, 1080, 30, 0) });
     return;
   }
@@ -1884,20 +2041,25 @@ async function handleExportProbe() {
     settings.videoBitrate,
   );
 
-  const handleAfterProbe = firstExportVideoHandle();
-  if (!handleAfterProbe) {
-    post({ type: 'export-codecs', supported: [], settings: defaultExportSettings('quality', 1920, 1080, 30, 0) });
+  if (supported.length === 0) {
+    post({ type: 'export-codecs', supported: [], settings });
     return;
   }
+
+  // Fall back to the settings geometry when there's no decodable video source.
+  const handleAfterProbe = firstExportVideoHandle();
+  const resolvedWidth = handleAfterProbe?.displayWidth ?? settings.width;
+  const resolvedHeight = handleAfterProbe?.displayHeight ?? settings.height;
+  const resolvedFps = handleAfterProbe?.frameRate ?? settings.fps;
 
   const preferredCodec = supported.some((entry) => entry.codec === settings.codec)
     ? settings.codec
     : (supported[0]?.codec ?? settings.codec);
   const resolved = normalizeExportSettings(
     { ...settings, codec: preferredCodec, container: preferredCodec === 'h264' ? 'mp4' : 'webm' },
-    handleAfterProbe.displayWidth,
-    handleAfterProbe.displayHeight,
-    handleAfterProbe.frameRate,
+    resolvedWidth,
+    resolvedHeight,
+    resolvedFps,
     getTimelineDuration(timeline),
   );
   post({ type: 'export-codecs', supported, settings: resolved });
@@ -1941,6 +2103,10 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
       onProgress: (progress) => post({ type: 'export-progress', progress }),
       masterGain,
       transitions: audioTransitions,
+      // Title layers composite from the cached raster; `ensure` (re)rasters once
+      // per title on the cold export path, never per frame.
+      titleTextureFor: (clip) =>
+        clip.title ? titleCache?.ensure(clip.id, clip.title) ?? null : null,
     });
     post({ type: 'export-complete', fileName: cmd.output.name, mimeType: result.mimeType });
   } catch (error) {
@@ -1966,6 +2132,8 @@ async function handleDispose(): Promise<void> {
   await flushPendingAutosave();
   stopAudioPump();
   teardownMedia();
+  titleCache?.destroy();
+  titleCache = null;
   renderer?.destroy();
   renderer = null;
   clockView = null;
@@ -2114,6 +2282,12 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
       break;
     case 'set-still-duration':
       handleSetStillDuration(cmd);
+      break;
+    case 'add-title':
+      handleAddTitle(cmd);
+      break;
+    case 'set-title':
+      handleSetTitle(cmd);
       break;
     case 'add-track':
       handleAddTrack(cmd);

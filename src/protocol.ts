@@ -91,8 +91,33 @@ export interface TransformParamsSnapshot {
   fit: FitModeSnapshot;
 }
 
+export type ClipKindSnapshot = 'video' | 'title';
+export type TitleAlignSnapshot = 'left' | 'center' | 'right';
+
+export interface TitleStyleSnapshot {
+  fontFamily: string;
+  fontSizePx: number;
+  color: string;
+  backgroundColor: string;
+  backgroundOpacity: number;
+  outlineColor: string;
+  outlineWidthPx: number;
+  shadowColor: string;
+  shadowBlurPx: number;
+  shadowOffsetXPx: number;
+  shadowOffsetYPx: number;
+  align: TitleAlignSnapshot;
+}
+
+export interface TitleContentSnapshot {
+  text: string;
+  style: TitleStyleSnapshot;
+}
+
 export interface TimelineClipSnapshot {
   id: string;
+  /** Absent/`'video'` for source clips; `'title'` for source-less titles (Phase 14). */
+  kind?: ClipKindSnapshot;
   sourceId: string;
   start: number;
   duration: number;
@@ -102,6 +127,8 @@ export interface TimelineClipSnapshot {
   audioFadeIn: number;
   audioFadeOut: number;
   offline?: boolean;
+  /** Present iff `kind === 'title'`. */
+  title?: TitleContentSnapshot;
 }
 
 export interface TimelineTrackSnapshot {
@@ -354,6 +381,22 @@ interface SetStillDurationCommand {
   durationS: number;
 }
 
+/** Adds a source-less title clip; the worker picks/creates an overlay (video)
+ *  track and appends when `trackId`/`start` are omitted (Phase 14). */
+interface AddTitleCommand {
+  type: 'add-title';
+  trackId?: string;
+  start?: number;
+}
+
+interface SetTitleCommand {
+  type: 'set-title';
+  trackId: string;
+  clipId: string;
+  text?: string;
+  style?: Partial<TitleStyleSnapshot>;
+}
+
 interface AddTrackCommand {
   type: 'add-track';
   trackType: 'video' | 'audio';
@@ -420,6 +463,8 @@ export type WorkerCommand =
   | SetTransitionCommand
   | PlaceClipCommand
   | SetStillDurationCommand
+  | AddTitleCommand
+  | SetTitleCommand
   | AddTrackCommand
   | RemoveTrackCommand
   | ReorderTrackCommand

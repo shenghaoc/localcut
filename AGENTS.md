@@ -36,10 +36,12 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 
 **Planned:**
 
-- [**Phase 14: Titles + text**](.kiro/specs/phase-14-titles-text/tasks.md) — overlay text clips; edit-time raster cached as a GPU texture; bundled offline fonts; transform-driven layout; safe-area guides.
 - [**Phase 15: Keyframes + advanced colour**](.kiro/specs/phase-15-keyframes-colour/tasks.md) — keyframe tracks with shared preview/export interpolation; Inspector keyframe UI; `.cube` LUT import as a 3D-texture pass.
 
 **Completed:**
+
+- [**Phase 14: Titles + text**](.kiro/specs/phase-14-titles-text/tasks.md) — source-less title clips; edit-time OffscreenCanvas raster cached as a GPU texture keyed by content hash; bundled offline fonts (Inter/Lora OFL); transform-driven layout; toggleable safe-area guides.
+
 
 - [**Phase 12: Multi-track compositing + transforms**](.kiro/specs/phase-12-compositing-transform/tasks.md) — layered resolve; N-layer single-submission composite; per-clip position/scale/rotation/opacity; preview gizmo; fit/letterbox.
 

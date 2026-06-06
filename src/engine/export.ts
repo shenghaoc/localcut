@@ -35,11 +35,13 @@ import {
 import {
   DEFAULT_MASTER_GAIN,
   getTimelineDuration,
+  isTitleClip,
   resolveAllAt,
   type Timeline,
   type TimelineClip,
   type TimelineTrack,
 } from './timeline';
+import type { TitleTexture } from './titles';
 
 const AUDIO_BLOCK_FRAMES = 1024;
 const EXPORT_INTERLEAVE_SECONDS = 2;
@@ -47,6 +49,10 @@ const MAX_EXPORT_WIDTH = 1920;
 const MAX_EXPORT_HEIGHT = 1080;
 const MP4_CHUNK_BYTES = 4 * 1024 * 1024;
 const DEFAULT_EXPORT_FPS = 30;
+/** Default export geometry for title-only timelines (no decodable video). */
+const TITLE_ONLY_EXPORT_WIDTH = 1920;
+const TITLE_ONLY_EXPORT_HEIGHT = 1080;
+const TITLE_ONLY_EXPORT_FPS = 30;
 const AAC_CODEC = 'mp4a.40.2';
 const OPUS_CODEC = 'opus';
 const H264_CODEC = 'avc1.640028';
@@ -109,6 +115,9 @@ export interface TimelineExportOptions {
   onProgress: (progress: ExportProgress) => void;
   masterGain?: number;
   transitions?: readonly AudioTransitionCut[];
+  /** Resolves a title clip's cached raster texture (Phase 14); rasters on the
+   *  cold path if needed, never per frame. Returns `null` for non-title clips. */
+  titleTextureFor?: (clip: TimelineClip) => TitleTexture | null;
 }
 
 export interface TimelineExportResult {
@@ -332,7 +341,12 @@ export function buildExportPlan(
   probe: ThroughputProbe | null,
 ): ExportPlan {
   const videoHandle = firstVideoHandle(timeline, sources);
-  if (!videoHandle) {
+  // Title-only timelines have no decodable video but are still exportable
+  // (source-less titles over black) using the default canvas geometry below.
+  const hasTitles = timeline.some(
+    (track) => track.type === 'video' && track.clips.some(isTitleClip),
+  );
+  if (!videoHandle && !hasTitles) {
     throw new Error('Export requires at least one decodable video clip.');
   }
 
@@ -343,9 +357,9 @@ export function buildExportPlan(
 
   const normalized = normalizeExportSettings(
     settings,
-    videoHandle.displayWidth,
-    videoHandle.displayHeight,
-    videoHandle.frameRate,
+    videoHandle?.displayWidth ?? TITLE_ONLY_EXPORT_WIDTH,
+    videoHandle?.displayHeight ?? TITLE_ONLY_EXPORT_HEIGHT,
+    videoHandle?.frameRate ?? TITLE_ONLY_EXPORT_FPS,
     timelineDuration,
   );
   const { rangeStartS, exportDuration } = resolveExportRange(timelineDuration, normalized.range);
@@ -688,7 +702,7 @@ async function encodeVideoRange(
   startFrame: number,
   endFrame: number,
 ): Promise<void> {
-  const { timeline, sources, renderer, signal, throughputProbe, onProgress } = options;
+  const { timeline, sources, renderer, signal, throughputProbe, onProgress, titleTextureFor } = options;
   renderer.setPreviewSize(plan.width, plan.height);
 
   const frameDuration = 1 / plan.frameRate;
@@ -716,12 +730,30 @@ async function encodeVideoRange(
     const layers: CompositeLayer[] = [];
     let exportFrame: VideoFrame;
     try {
+      let decodedCount = 0;
       for (const layer of resolvedLayers) {
+        // Title layers composite from the cached raster (no decode, no budget),
+        // preserving z-order — matching preview's makeGetLayers.
+        if (isTitleClip(layer.clip)) {
+          const texture = layer.clip.title ? titleTextureFor?.(layer.clip) : null;
+          if (!texture) continue;
+          layers.push({
+            kind: 'texture',
+            view: texture.view,
+            sourceWidth: texture.width,
+            sourceHeight: texture.height,
+            transform: layer.clip.transform,
+          });
+          continue;
+        }
         const sourceHandle = sources.get(layer.clip.sourceId);
         if (!sourceHandle?.frameSource) continue;
-        if (layers.length >= layerBudget) break;
+        // Stop decoding video past the budget but keep scanning so source-less
+        // title layers above the budgeted stack still composite (preview parity).
+        if (decodedCount >= layerBudget) continue;
         const decoded = await sourceHandle.frameSource.frameAt(layer.sourceTime);
         if (!decoded) continue;
+        decodedCount += 1;
         let videoFrame: VideoFrame;
         try {
           videoFrame = decoded.toVideoFrame();

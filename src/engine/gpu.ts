@@ -23,10 +23,11 @@ export interface GpuInit {
 }
 
 /**
- * One composite layer. Only `'frame'` (per-frame decoded video, re-imported every
- * frame) exists in Phase 12; the `'texture'` arm is the designed entry point for
- * Phase 14 pre-rendered title textures, so the composite loop extends rather than
- * forks.
+ * One composite layer.
+ *  - `'frame'` — per-frame decoded video, re-imported every frame, colour-graded.
+ *  - `'texture'` — a pre-rendered RGBA texture (Phase 14 title raster) uploaded
+ *    once on edit and cached; it skips the colour chain and feeds the transform
+ *    pass directly. Both kinds composite inside the one per-frame submission.
  */
 export interface FrameCompositeLayer {
   kind: 'frame';
@@ -36,7 +37,20 @@ export interface FrameCompositeLayer {
   transform: TransformParams;
 }
 
-export type CompositeLayer = FrameCompositeLayer;
+/**
+ * A cached-texture layer. The view is owned by the caller's texture cache (Phase
+ * 14 title raster) and must outlive the submission. Carries straight-alpha RGBA;
+ * the transform pass premultiplies it like any graded frame.
+ */
+export interface TextureCompositeLayer {
+  kind: 'texture';
+  view: GPUTextureView;
+  sourceWidth: number;
+  sourceHeight: number;
+  transform: TransformParams;
+}
+
+export type CompositeLayer = FrameCompositeLayer | TextureCompositeLayer;
 
 function unavailable(reason: string): GpuInit {
   return { renderer: null, features: [], unavailableReason: reason };
@@ -143,6 +157,11 @@ export class PreviewRenderer {
 
   get size(): { width: number; height: number } {
     return { width: this.width, height: this.height };
+  }
+
+  /** The compositor's device — title textures must be uploaded on it (Phase 14). */
+  get gpuDevice(): GPUDevice {
+    return this.device;
   }
 
   /** Submissions issued by the last `present()` call (always 1 when a frame rendered). */
@@ -269,9 +288,15 @@ export class PreviewRenderer {
     let acc = 0; // index of the accumulator holding the current "under"
 
     layers.forEach((layer, slot) => {
-      // 'frame' is the only arm in Phase 12; switch keeps the 'texture' arm open.
-      const srcView = this.encodeLayerColour(encoder, layer, storage, slot);
-      this.encodeTransform(encoder, layer, srcView, slot, wgX, wgY);
+      // Frame layers run the colour-grade chain; title-texture layers bind the
+      // cached view directly (no grade) and feed the same transform pass.
+      const srcView =
+        layer.kind === 'frame'
+          ? this.encodeLayerColour(encoder, layer, storage, slot)
+          : layer.view;
+      const srcWidth = layer.kind === 'frame' ? layer.frame.displayWidth : layer.sourceWidth;
+      const srcHeight = layer.kind === 'frame' ? layer.frame.displayHeight : layer.sourceHeight;
+      this.encodeTransform(encoder, layer.transform, srcView, srcWidth, srcHeight, slot, wgX, wgY);
 
       const under = acc;
       const over = under === 0 ? 1 : 0;
@@ -296,7 +321,7 @@ export class PreviewRenderer {
 
   private encodeLayerColour(
     encoder: GPUCommandEncoder,
-    layer: CompositeLayer,
+    layer: FrameCompositeLayer,
     storage: { a: GPUTextureView; b: GPUTextureView; c: GPUTextureView },
     slot: number,
   ): GPUTextureView {
@@ -315,8 +340,10 @@ export class PreviewRenderer {
 
   private encodeTransform(
     encoder: GPUCommandEncoder,
-    layer: CompositeLayer,
+    transform: TransformParams,
     srcView: GPUTextureView,
+    srcWidth: number,
+    srcHeight: number,
     slot: number,
     wgX: number,
     wgY: number,
@@ -330,11 +357,11 @@ export class PreviewRenderer {
       this.transformBuffers[slot] = buffer;
     }
     const packed = packTransformUniform(
-      layer.transform,
+      transform,
       this.width,
       this.height,
-      layer.frame.displayWidth,
-      layer.frame.displayHeight,
+      srcWidth,
+      srcHeight,
     );
     this.device.queue.writeBuffer(buffer, 0, packed);
 
