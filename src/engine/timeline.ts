@@ -3,6 +3,12 @@ import {
   normalizeClipEffects,
   type ClipEffectParams,
 } from './effects';
+import {
+  DEFAULT_TRANSFORM,
+  normalizeTransform,
+  transformsEqual,
+  type TransformParams,
+} from './transform';
 
 /** Authoritative timeline model — Phase 3+. */
 export interface TimelineClip {
@@ -12,6 +18,8 @@ export interface TimelineClip {
   duration: number;
   inPoint: number;
   effects: ClipEffectParams;
+  /** Per-clip position/scale/rotation/opacity/fit — Phase 12 compositing. */
+  transform: TransformParams;
   audioFadeIn: number;
   audioFadeOut: number;
 }
@@ -79,6 +87,7 @@ function cloneTimeline(timeline: Timeline): Timeline {
     clips: track.clips.map((clip) => ({
       ...clip,
       effects: { ...clip.effects },
+      transform: { ...clip.transform },
       audioFadeIn: clip.audioFadeIn,
       audioFadeOut: clip.audioFadeOut,
     })),
@@ -149,6 +158,31 @@ export function resolveAt(timeline: Timeline, time: number): ResolveResult | nul
   return resolveOnTrackType(timeline, time, 'video');
 }
 
+/**
+ * Every video clip overlapping `time`, ordered bottom-to-top by track array
+ * position (the last track is topmost / drawn last). Phase 12 compositing
+ * consumes this so preview and export render the full layer stack rather than
+ * just the first hit. At most one clip per track can overlap (tracks forbid
+ * overlaps), so this yields one entry per video track with a clip at `time`.
+ */
+export function resolveAllAt(timeline: Timeline, time: number): ResolveResult[] {
+  const layers: ResolveResult[] = [];
+  if (!finite(time) || time < 0) return layers;
+  for (const track of timeline) {
+    if (track.type !== 'video') continue;
+    for (const clip of track.clips) {
+      if (!isInClip(time, clip)) continue;
+      layers.push({
+        clip,
+        trackId: track.id,
+        sourceTime: clip.inPoint + (time - clip.start),
+      });
+      break; // one clip per track at any timestamp
+    }
+  }
+  return layers;
+}
+
 /** Finds the owning audio clip at a timeline timestamp. */
 export function resolveAudioAt(timeline: Timeline, time: number): ResolveResult | null {
   return resolveOnTrackType(timeline, time, 'audio');
@@ -177,6 +211,7 @@ function cloneClip(clip: TimelineClip): TimelineClip {
   return {
     ...clip,
     effects: { ...clip.effects },
+    transform: { ...clip.transform },
     audioFadeIn: clip.audioFadeIn,
     audioFadeOut: clip.audioFadeOut,
   };
@@ -518,12 +553,36 @@ export function defaultClipEffects(): ClipEffectParams {
   return { ...DEFAULT_CLIP_EFFECTS };
 }
 
+export function defaultClipTransform(): TransformParams {
+  return { ...DEFAULT_TRANSFORM };
+}
+
+/** Replaces a clip's transform; returns the original timeline on no-op. */
+export function setClipTransform(
+  timeline: Timeline,
+  trackId: string,
+  clipId: string,
+  transform: Partial<TransformParams>,
+): Timeline {
+  const loc = trackWithClip(timeline, trackId, clipId);
+  if (!loc) return timeline;
+
+  const clip = timeline[loc.trackIndex]!.clips[loc.clipIndex]!;
+  const next = normalizeTransform({ ...clip.transform, ...transform });
+  if (transformsEqual(clip.transform, next)) return timeline;
+
+  const cloned = cloneTimeline(timeline);
+  cloned[loc.trackIndex]!.clips[loc.clipIndex]!.transform = next;
+  return cloned;
+}
+
 export function defaultTimelineClip(
-  partial: Omit<TimelineClip, 'effects' | 'audioFadeIn' | 'audioFadeOut'> &
-    Partial<Pick<TimelineClip, 'effects' | 'audioFadeIn' | 'audioFadeOut'>>,
+  partial: Omit<TimelineClip, 'effects' | 'transform' | 'audioFadeIn' | 'audioFadeOut'> &
+    Partial<Pick<TimelineClip, 'effects' | 'transform' | 'audioFadeIn' | 'audioFadeOut'>>,
 ): TimelineClip {
   return {
     effects: defaultClipEffects(),
+    transform: defaultClipTransform(),
     ...DEFAULT_CLIP_AUDIO_FADES,
     ...partial,
   };
@@ -712,3 +771,10 @@ export function sortMarkers(markers: readonly TimelineMarker[]): TimelineMarker[
 }
 
 export { normalizeClipEffects, type ClipEffectParams };
+export {
+  DEFAULT_TRANSFORM,
+  normalizeTransform,
+  transformsEqual,
+  type FitMode,
+  type TransformParams,
+} from './transform';

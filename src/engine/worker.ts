@@ -27,12 +27,13 @@ import {
   removeClip,
   removeTrack,
   reorderTrack,
-  resolveAt,
+  resolveAllAt,
   resolveAudioAt,
   setClipDuration,
   splitClipAt,
   trimClip,
   setClipEffectParam,
+  setClipTransform,
   setTrackGain,
   setTrackMute,
   setTrackSolo,
@@ -40,10 +41,14 @@ import {
   setClipAudioFade,
   defaultTimelineClip,
   DEFAULT_MASTER_GAIN,
+  DEFAULT_TRANSFORM,
   type Timeline,
   type TimelineMarker,
   type ClipboardTimelineClip,
+  type ClipEffectParams,
+  type TransformParams,
 } from './timeline';
+import { DEFAULT_CLIP_EFFECTS } from './effects';
 import {
   applyMixStageInPlace,
   type AudioTransitionCut,
@@ -64,7 +69,7 @@ import {
   type MediaInputHandle,
 } from './media-io';
 import { ThumbnailGenerator } from './thumbnails';
-import { initGpu, type PreviewRenderer } from './gpu';
+import { initGpu, type CompositeLayer, type PreviewRenderer } from './gpu';
 import {
   AdaptiveResolution,
   buildPreviewLadder,
@@ -77,6 +82,7 @@ import {
   ExportCancelledError,
   defaultExportSettings,
   exportTimeline,
+  layerBudgetFromProbe,
   normalizeExportSettings,
   probeExportCodecs,
 } from './export';
@@ -128,6 +134,10 @@ let autosaveInFlight: Promise<void> | null = null;
 let restoreOfferGeneration = 0;
 let frameCache: FrameCache | null = null;
 let currentProbe: ThroughputProbe | null = null;
+/** Per-layer colour/transform metadata for the most recent decoded preview stack,
+ *  aligned by index with the VideoFrames handed to `renderFrames`. */
+let pendingLayerMeta: { effects: ClipEffectParams; transform: TransformParams }[] = [];
+let layerBudgetWarned = false;
 let exportAbort: AbortController | null = null;
 let lastExportSettings: ExportSettings | null = null;
 const FRAME_CACHE_BUDGET_BYTES = 64 * 1024 * 1024;
@@ -178,6 +188,7 @@ function postTimelineState() {
       duration: clip.duration,
       inPoint: clip.inPoint,
       effects: { ...clip.effects },
+      transform: { ...clip.transform },
       audioFadeIn: clip.audioFadeIn,
       audioFadeOut: clip.audioFadeOut,
       offline: sourceInputs.has(clip.sourceId) ? undefined : true,
@@ -1161,32 +1172,69 @@ function wrapDecodedFrameForPlayback(frameSource: MediaInputHandle, sourceTimest
   });
 }
 
-function makeGetFrame() {
-  return async (timestamp: number): Promise<DecodedFrame | null> => {
-    const resolved = resolveAt(timeline, timestamp);
-    if (!resolved) return null;
+function decodeFrameForLayer(
+  sourceHandle: MediaInputHandle,
+  sourceId: string,
+  sourceTime: number,
+): Promise<DecodedFrame | null> {
+  if (!frameCache) {
+    return wrapDecodedFrameForPlayback(sourceHandle, sourceTime);
+  }
+  const key = makeFrameCacheKey(sourceId, sourceTime);
+  // FrameCache.get() returns a caller-owned clone. The wrapper owns it (closed via
+  // close()) and hands the renderer a further clone, keeping the two close paths on
+  // distinct frames so neither the wrapper nor the cache's own copy is closed twice.
+  const cached = frameCache.get(key);
+  if (cached) {
+    return Promise.resolve({
+      toVideoFrame: () => cached.clone(),
+      close: () => cached.close(),
+    });
+  }
+  return wrapDecodedFrameForPlayback(sourceHandle, sourceTime);
+}
 
-    const sourceHandle = sourceInputs.get(resolved.clip.sourceId);
-    if (!sourceHandle) return null;
-
-    if (!frameCache) {
-      return wrapDecodedFrameForPlayback(sourceHandle, resolved.sourceTime);
+/**
+ * Decodes the full video layer stack at `timestamp` (bottom → top) for the
+ * compositor. Offline/audio-only layers are skipped; {@link pendingLayerMeta} is
+ * left aligned by index with the returned frames so `renderFrames` can pair each
+ * frame with its colour/transform params.
+ */
+function makeGetLayers() {
+  return async (timestamp: number): Promise<DecodedFrame[] | null> => {
+    const layers = resolveAllAt(timeline, timestamp);
+    const frames: DecodedFrame[] = [];
+    const meta: { effects: ClipEffectParams; transform: TransformParams }[] = [];
+    for (const layer of layers) {
+      const handle = sourceInputs.get(layer.clip.sourceId);
+      if (!handle?.frameSource) continue;
+      const decoded = await decodeFrameForLayer(handle, layer.clip.sourceId, layer.sourceTime);
+      if (!decoded) continue;
+      frames.push(decoded);
+      meta.push({ effects: layer.clip.effects, transform: layer.clip.transform });
     }
-
-    const key = makeFrameCacheKey(resolved.clip.sourceId, resolved.sourceTime);
-    // FrameCache.get() returns a caller-owned clone. The wrapper owns it (closed via
-    // close()) and hands the renderer a further clone, keeping the two close paths on
-    // distinct frames so neither the wrapper nor the cache's own copy is closed twice.
-    const cached = frameCache.get(key);
-    if (cached) {
-      return {
-        toVideoFrame: () => cached.clone(),
-        close: () => cached.close(),
-      };
-    }
-
-    return wrapDecodedFrameForPlayback(sourceHandle, resolved.sourceTime);
+    pendingLayerMeta = meta;
+    return frames.length > 0 ? frames : null;
   };
+}
+
+/** Budget the concurrent layer count off the encode-throughput probe (T2.4),
+ *  dropping the topmost over-budget layers with a one-time visible notice. */
+function applyLayerBudget(layers: CompositeLayer[]): CompositeLayer[] {
+  const budget = layerBudgetFromProbe(currentProbe);
+  if (layers.length <= budget) {
+    layerBudgetWarned = false;
+    return layers;
+  }
+  if (!layerBudgetWarned) {
+    layerBudgetWarned = true;
+    postProjectWarning(
+      `Compositing ${layers.length} layers exceeds this device's budget of ${budget}; ` +
+        `dropping the top ${layers.length - budget}.`,
+    );
+  }
+  // resolveAllAt is bottom→top, so the tail holds the topmost layers.
+  return layers.slice(0, budget);
 }
 
 async function handleImport(file: File, fileHandle?: FileSystemFileHandle | null) {
@@ -1305,6 +1353,7 @@ function clipboardClipFromMessage(item: TimelineClipboardClip): ClipboardTimelin
       duration: item.clip.duration,
       inPoint: item.clip.inPoint,
       effects: { ...item.clip.effects },
+      transform: { ...item.clip.transform },
       audioFadeIn: item.clip.audioFadeIn,
       audioFadeOut: item.clip.audioFadeOut,
     },
@@ -1334,6 +1383,19 @@ function handleSetEffectParam(cmd: Extract<WorkerCommand, { type: 'set-effect-pa
     () => setClipEffectParam(timeline, cmd.trackId, cmd.clipId, cmd.key, cmd.value),
     {
       coalesceKey: { clipId: cmd.clipId, key: cmd.key },
+      refreshPlayback: 'refresh',
+      prune: false,
+    },
+  );
+}
+
+function handleSetTransform(cmd: Extract<WorkerCommand, { type: 'set-transform' }>) {
+  commitTimelineMutation(
+    () => setClipTransform(timeline, cmd.trackId, cmd.clipId, cmd.transform),
+    {
+      // A gizmo drag streams many updates; coalesce them into one history entry
+      // per clip so a single drag doesn't exhaust the undo ring.
+      coalesceKey: { clipId: cmd.clipId, key: 'transform' },
       refreshPlayback: 'refresh',
       prune: false,
     },
@@ -1585,14 +1647,19 @@ function setupPlayback() {
   const wasPlaying = playback?.isPlaying() ?? false;
   playback?.dispose();
 
-  const getFrame = makeGetFrame();
+  const getFrames = makeGetLayers();
   playback = new PlaybackController({
     duration: getTimelineDuration(timeline),
     frameRate: handle.frameRate,
-    getFrame,
-    renderFrame: (frame, timestamp) => {
-      const resolved = resolveAt(timeline, timestamp);
-      renderer?.present(frame, resolved?.clip.effects);
+    getFrames,
+    renderFrames: (frames) => {
+      const stack: CompositeLayer[] = frames.map((frame, index) => ({
+        kind: 'frame' as const,
+        frame,
+        effects: pendingLayerMeta[index]?.effects ?? DEFAULT_CLIP_EFFECTS,
+        transform: pendingLayerMeta[index]?.transform ?? DEFAULT_TRANSFORM,
+      }));
+      renderer?.present(applyLayerBudget(stack));
     },
     writeClock: writeTransport,
     onFrameTime: handleFrameTime,
@@ -1907,6 +1974,9 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
       break;
     case 'set-effect-param':
       handleSetEffectParam(cmd);
+      break;
+    case 'set-transform':
+      handleSetTransform(cmd);
       break;
     case 'set-track-gain':
       handleSetTrackGain(cmd);

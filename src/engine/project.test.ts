@@ -3,6 +3,7 @@ import {
   DEFAULT_CLIP_AUDIO_FADES,
   DEFAULT_TRACK_MIX,
   defaultClipEffects,
+  defaultClipTransform,
   type Timeline,
 } from './timeline';
 import {
@@ -27,6 +28,7 @@ function timelineFixture(): Timeline {
           duration: 12,
           inPoint: 1.5,
           effects: { ...defaultClipEffects(), saturation: 1.2 },
+          transform: { ...defaultClipTransform(), scale: 0.5, x: 0.1, fit: 'fit' },
           ...DEFAULT_CLIP_AUDIO_FADES,
         },
       ],
@@ -129,6 +131,32 @@ describe('project serialization', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.doc).toEqual(doc);
+  });
+
+  it('round-trips per-clip transforms and fills identity for older docs', () => {
+    const doc = serializeProject({
+      projectId: 'project-1',
+      timeline: timelineFixture(),
+      sources: [sourceFixture()],
+    });
+    expect(doc.timeline[0]!.clips[0]!.transform).toMatchObject({ scale: 0.5, x: 0.1, fit: 'fit' });
+
+    // A schema-3 clip carries no transform; deserialization must fill identity.
+    const legacyClip = { ...doc.timeline[0]!.clips[0] } as Record<string, unknown>;
+    delete legacyClip.transform;
+    const result = deserializeProject({
+      ...doc,
+      schemaVersion: 3,
+      timeline: [{ ...doc.timeline[0], clips: [legacyClip] }],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.doc.timeline[0]!.clips[0]!.transform).toMatchObject({
+      x: 0,
+      scale: 1,
+      opacity: 1,
+      fit: 'fill',
+    });
   });
 
   it('upgrades v1 documents with absolute clip starts and empty markers', () => {

@@ -20,7 +20,7 @@ import type {
   ExportVideoCodec,
   ThroughputProbe,
 } from '../protocol';
-import type { PreviewRenderer } from './gpu';
+import type { CompositeLayer, PreviewRenderer } from './gpu';
 import type { MediaInputHandle } from './media-io';
 import {
   accumulateMix,
@@ -35,7 +35,7 @@ import {
 import {
   DEFAULT_MASTER_GAIN,
   getTimelineDuration,
-  resolveAt,
+  resolveAllAt,
   type Timeline,
   type TimelineClip,
   type TimelineTrack,
@@ -121,6 +121,24 @@ export type VideoEncoderSupportProbe = (
 
 function even(value: number): number {
   return Math.max(2, Math.floor(value / 2) * 2);
+}
+
+/** Default concurrent composite-layer budget when no throughput probe exists. */
+export const DEFAULT_LAYER_BUDGET = 8;
+
+/**
+ * Concurrent layer budget derived from the encode-throughput probe (Phase 12
+ * T2.4). Preview and export share this so an over-budget stack degrades the
+ * same way in both. Faster devices allow deeper stacks.
+ */
+export function layerBudgetFromProbe(probe: ThroughputProbe | null): number {
+  if (!probe || !Number.isFinite(probe.encodeFps) || probe.encodeFps <= 0) {
+    return DEFAULT_LAYER_BUDGET;
+  }
+  if (probe.encodeFps >= 60) return 12;
+  if (probe.encodeFps >= 30) return DEFAULT_LAYER_BUDGET;
+  if (probe.encodeFps >= 15) return 4;
+  return 2;
 }
 
 export function containerForCodec(codec: ExportVideoCodec): ExportContainer {
@@ -676,40 +694,51 @@ async function encodeVideoRange(
   const frameDuration = 1 / plan.frameRate;
   let lastReport = 0;
   const keyFrameInterval = Math.max(1, Math.round(plan.frameRate * 2));
+  const layerBudget = layerBudgetFromProbe(throughputProbe);
 
   for (let frameIndex = startFrame; frameIndex < endFrame; frameIndex += 1) {
     throwIfCanceled(signal);
     const outputTimestamp = rebaseOutputTimestamp(frameIndex, plan.frameRate);
     const timelineTime = timelineTimeAt(plan, outputTimestamp);
     const duration = Math.max(1e-6, Math.min(frameDuration, plan.exportDuration - outputTimestamp));
-    const resolved = resolveAt(
+    // resolveAllAt is bottom→top; drop the topmost layers past the budget so
+    // export degrades identically to preview.
+    const resolvedLayers = resolveAllAt(
       timeline,
       Math.min(timelineTime, plan.rangeStartS + plan.exportDuration - 1e-6),
-    );
+    ).slice(0, layerBudget);
 
+    // Decode each layer's source frame, build the composite stack, and render
+    // through the same compositor as preview. Every decoded VideoFrame is closed
+    // exactly once below, after the layered submission completes.
+    const decodedFrames: VideoFrame[] = [];
+    const layers: CompositeLayer[] = [];
     let exportFrame: VideoFrame;
-    if (resolved) {
-      const sourceHandle = sources.get(resolved.clip.sourceId);
-      const decoded = await sourceHandle?.frameSource?.frameAt(resolved.sourceTime);
-      if (decoded) {
-        let sourceFrame: VideoFrame | null = null;
+    try {
+      for (const layer of resolvedLayers) {
+        const sourceHandle = sources.get(layer.clip.sourceId);
+        const decoded = await sourceHandle?.frameSource?.frameAt(layer.sourceTime);
+        if (!decoded) continue;
+        let videoFrame: VideoFrame;
         try {
-          sourceFrame = decoded.toVideoFrame();
-          exportFrame = await renderer.renderForExport(
-            sourceFrame,
-            outputTimestamp,
-            duration,
-            resolved.clip.effects,
-          );
+          videoFrame = decoded.toVideoFrame();
         } finally {
-          sourceFrame?.close();
           decoded.close();
         }
-      } else {
-        exportFrame = await renderer.renderBlackForExport(outputTimestamp, duration);
+        decodedFrames.push(videoFrame);
+        layers.push({
+          kind: 'frame',
+          frame: videoFrame,
+          effects: layer.clip.effects,
+          transform: layer.clip.transform,
+        });
       }
-    } else {
-      exportFrame = await renderer.renderBlackForExport(outputTimestamp, duration);
+      exportFrame =
+        layers.length > 0
+          ? await renderer.renderLayeredForExport(layers, outputTimestamp, duration)
+          : await renderer.renderBlackForExport(outputTimestamp, duration);
+    } finally {
+      for (const frame of decodedFrames) frame.close();
     }
 
     let sample: VideoSample;

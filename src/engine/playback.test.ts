@@ -116,20 +116,20 @@ describe('AdaptiveResolution', () => {
 });
 
 describe('PlaybackController', () => {
-  it('drops a stale decode when generation changes during getFrame', async () => {
-    const pending: Array<(frame: DecodedFrame | null) => void> = [];
+  it('drops a stale decode when generation changes during getFrames', async () => {
+    const pending: Array<(frames: DecodedFrame[] | null) => void> = [];
     const frame = mockFrame();
     const writeClock = vi.fn();
-    const renderFrame = vi.fn();
+    const renderFrames = vi.fn();
 
     const controller = new PlaybackController({
       duration: 10,
       frameRate: 30,
-      getFrame: () =>
+      getFrames: () =>
         new Promise((resolve) => {
           pending.push(resolve);
         }),
-      renderFrame,
+      renderFrames,
       writeClock,
     });
 
@@ -138,11 +138,11 @@ describe('PlaybackController', () => {
     expect(pending).toHaveLength(1);
 
     controller.seek(5);
-    pending[0]!(frame);
+    pending[0]!([frame]);
     await Promise.resolve();
 
     expect(frame.close).toHaveBeenCalledOnce();
-    expect(renderFrame).not.toHaveBeenCalled();
+    expect(renderFrames).not.toHaveBeenCalled();
   });
 
   it('pauses and reports when renderAt rejects during playback', async () => {
@@ -154,8 +154,8 @@ describe('PlaybackController', () => {
     const controller = new PlaybackController({
       duration: 10,
       frameRate: 30,
-      getFrame: () => Promise.reject(new Error('decode failed')),
-      renderFrame: vi.fn(),
+      getFrames: () => Promise.reject(new Error('decode failed')),
+      renderFrames: vi.fn(),
       writeClock,
       onPlaybackError,
       now: () => now,
@@ -181,8 +181,8 @@ describe('PlaybackController', () => {
     const controller = new PlaybackController({
       duration: 10,
       frameRate: 30,
-      getFrame: () => Promise.reject(new Error('seek decode failed')),
-      renderFrame: vi.fn(),
+      getFrames: () => Promise.reject(new Error('seek decode failed')),
+      renderFrames: vi.fn(),
       writeClock: vi.fn(),
       onPlaybackError,
     });
@@ -194,14 +194,14 @@ describe('PlaybackController', () => {
   it('renders and closes both frames on a successful tick', async () => {
     const frame = mockFrame();
     const videoFrame = frame.toVideoFrame() as unknown as { close: ReturnType<typeof vi.fn> };
-    const renderFrame = vi.fn();
+    const renderFrames = vi.fn();
     const scheduled: Array<() => void> = [];
 
     const controller = new PlaybackController({
       duration: 10,
       frameRate: 30,
-      getFrame: () => Promise.resolve(frame),
-      renderFrame,
+      getFrames: () => Promise.resolve([frame]),
+      renderFrames,
       writeClock: vi.fn(),
       now: () => 0,
       scheduler: (cb) => {
@@ -213,8 +213,8 @@ describe('PlaybackController', () => {
 
     controller.play();
     scheduled[0]!(); // run one tick
-    await vi.waitFor(() => expect(renderFrame).toHaveBeenCalledOnce());
-    expect(renderFrame).toHaveBeenCalledWith(videoFrame, expect.any(Number));
+    await vi.waitFor(() => expect(renderFrames).toHaveBeenCalledOnce());
+    expect(renderFrames).toHaveBeenCalledWith([videoFrame], expect.any(Number));
 
     // The DecodedFrame and the derived VideoFrame are both closed exactly once.
     expect((frame.close as ReturnType<typeof vi.fn>)).toHaveBeenCalledOnce();
@@ -223,14 +223,14 @@ describe('PlaybackController', () => {
 
   it('refresh() is a no-op when transport is playing', async () => {
     const frame = mockFrame();
-    const renderFrame = vi.fn();
+    const renderFrames = vi.fn();
     const scheduled: Array<() => void> = [];
 
     const controller = new PlaybackController({
       duration: 10,
       frameRate: 30,
-      getFrame: () => Promise.resolve(frame),
-      renderFrame,
+      getFrames: () => Promise.resolve([frame]),
+      renderFrames,
       writeClock: vi.fn(),
       now: () => 0,
       scheduler: (cb) => {
@@ -242,13 +242,13 @@ describe('PlaybackController', () => {
 
     controller.play();
     scheduled[0]!();
-    await vi.waitFor(() => expect(renderFrame).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(renderFrames).toHaveBeenCalledOnce());
 
     const callsBeforeRefresh = scheduled.length;
-    const renderCallsBefore = renderFrame.mock.calls.length;
+    const renderCallsBefore = renderFrames.mock.calls.length;
     controller.refresh();
     expect(scheduled.length).toBe(callsBeforeRefresh);
-    expect(renderFrame.mock.calls.length).toBe(renderCallsBefore);
+    expect(renderFrames.mock.calls.length).toBe(renderCallsBefore);
     expect(controller.isPlaying()).toBe(true);
   });
 });

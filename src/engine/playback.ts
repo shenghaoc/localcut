@@ -125,10 +125,14 @@ class FrameLeakTracker {
 export interface PlaybackDeps {
   duration: number;
   frameRate: number;
-  /** Decode the frame at `timestamp` (keyframe-accurate); null if unavailable. */
-  getFrame: (timestamp: number) => Promise<DecodedFrame | null>;
-  /** Present a decoded frame to the canvas at `timestamp` (timeline seconds). */
-  renderFrame: (frame: VideoFrame, timestamp: number) => void;
+  /**
+   * Decode the composite layer stack at `timestamp` (keyframe-accurate, ordered
+   * bottom → top). Returns `null`/`[]` when nothing resolves there. Phase 12: a
+   * single full-screen clip is just a one-element stack.
+   */
+  getFrames: (timestamp: number) => Promise<DecodedFrame[] | null>;
+  /** Present a decoded layer stack to the canvas at `timestamp` (timeline seconds). */
+  renderFrames: (frames: VideoFrame[], timestamp: number) => void;
   /** Write [currentTime, playing] to the shared clock. */
   writeClock: (currentTime: number, playing: boolean) => void;
   /** Per-frame wall time (decode + render), for adaptive resolution. */
@@ -214,23 +218,28 @@ export class PlaybackController {
   }
 
   private async decodeAndRender(time: number, gen: number): Promise<void> {
-    const frame = await this.deps.getFrame(time);
-    if (!frame) return;
+    const decoded = await this.deps.getFrames(time);
+    if (!decoded || decoded.length === 0) return;
     if (gen !== this.generation) {
-      frame.close();
+      for (const frame of decoded) frame.close();
       return;
     }
-    const id = this.leaks.track();
+    // Each layer's decoded sample yields one VideoFrame; every VideoFrame and
+    // every decoded sample is closed exactly once below. The compositor consumes
+    // all of them synchronously inside renderFrames (importExternalTexture +
+    // submit), so they are safe to close immediately afterwards.
+    const ids: number[] = [];
+    const videoFrames: VideoFrame[] = [];
     try {
-      const videoFrame = frame.toVideoFrame();
-      try {
-        this.deps.renderFrame(videoFrame, time);
-      } finally {
-        videoFrame.close();
+      for (const frame of decoded) {
+        ids.push(this.leaks.track());
+        videoFrames.push(frame.toVideoFrame());
       }
+      this.deps.renderFrames(videoFrames, time);
     } finally {
-      frame.close();
-      this.leaks.release(id);
+      for (const videoFrame of videoFrames) videoFrame.close();
+      for (const frame of decoded) frame.close();
+      for (const id of ids) this.leaks.release(id);
     }
   }
 

@@ -4,6 +4,7 @@ import {
   DEFAULT_MASTER_GAIN,
   DEFAULT_TRACK_MIX,
   normalizeClipEffects,
+  normalizeTransform,
   sortMarkers,
   type Timeline,
   type TimelineClip,
@@ -11,7 +12,7 @@ import {
   type TimelineTrack,
 } from './timeline';
 
-export const PROJECT_SCHEMA_VERSION = 3;
+export const PROJECT_SCHEMA_VERSION = 4;
 const DURATION_MATCH_TOLERANCE_S = 0.25;
 
 export type SourceDescriptor = SourceDescriptorSnapshot;
@@ -122,6 +123,7 @@ function cloneClip(clip: TimelineClip): TimelineClip {
     duration: clip.duration,
     inPoint: clip.inPoint,
     effects: normalizeClipEffects(clip.effects),
+    transform: normalizeTransform(clip.transform),
     audioFadeIn: clip.audioFadeIn,
     audioFadeOut: clip.audioFadeOut,
   };
@@ -210,6 +212,11 @@ function parseClip(value: unknown): TimelineClip | null {
   if (duration <= 0 || start < 0 || inPoint < 0) return null;
 
   const rawEffects = isRecord(value.effects) ? value.effects : {};
+  const rawTransform = isRecord(value.transform) ? value.transform : {};
+  const fit =
+    rawTransform.fit === 'fit' || rawTransform.fit === 'letterbox' || rawTransform.fit === 'fill'
+      ? rawTransform.fit
+      : undefined;
   const audioFadeIn = finiteNumber(value.audioFadeIn) ?? DEFAULT_CLIP_AUDIO_FADES.audioFadeIn;
   const audioFadeOut = finiteNumber(value.audioFadeOut) ?? DEFAULT_CLIP_AUDIO_FADES.audioFadeOut;
 
@@ -225,6 +232,17 @@ function parseClip(value: unknown): TimelineClip | null {
       saturation: finiteNumber(rawEffects.saturation) ?? undefined,
       temperature: finiteNumber(rawEffects.temperature) ?? undefined,
       temperatureStrength: finiteNumber(rawEffects.temperatureStrength) ?? undefined,
+    }),
+    // Older docs (schema ≤ 3) carry no transform; normalizeTransform fills identity.
+    transform: normalizeTransform({
+      x: finiteNumber(rawTransform.x) ?? undefined,
+      y: finiteNumber(rawTransform.y) ?? undefined,
+      scale: finiteNumber(rawTransform.scale) ?? undefined,
+      rotation: finiteNumber(rawTransform.rotation) ?? undefined,
+      opacity: finiteNumber(rawTransform.opacity) ?? undefined,
+      anchorX: finiteNumber(rawTransform.anchorX) ?? undefined,
+      anchorY: finiteNumber(rawTransform.anchorY) ?? undefined,
+      fit,
     }),
     audioFadeIn: Math.max(0, audioFadeIn),
     audioFadeOut: Math.max(0, audioFadeOut),
@@ -434,8 +452,10 @@ export function deserializeProject(value: unknown): DeserializeProjectResult {
       return deserializeV1(value);
     case 2:
     case 3:
-      // v3 adds `kind` to source descriptors; parseSourceDescriptor infers it for
-      // older docs, so the v2 parse path handles both.
+    case 4:
+      // v3 adds `kind` to source descriptors; v4 adds per-clip transforms.
+      // parseSourceDescriptor infers `kind` and parseClip fills an identity
+      // transform for older docs, so the v2 parse path handles all three.
       return deserializeV2(value);
     default:
       return { ok: false, reason: `Unsupported project schemaVersion ${schemaVersion}.` };

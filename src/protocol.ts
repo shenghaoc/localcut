@@ -78,6 +78,19 @@ export interface ClipEffectParamsSnapshot {
   temperatureStrength: number;
 }
 
+export type FitModeSnapshot = 'fill' | 'fit' | 'letterbox';
+
+export interface TransformParamsSnapshot {
+  x: number;
+  y: number;
+  scale: number;
+  rotation: number;
+  opacity: number;
+  anchorX: number;
+  anchorY: number;
+  fit: FitModeSnapshot;
+}
+
 export interface TimelineClipSnapshot {
   id: string;
   sourceId: string;
@@ -85,6 +98,7 @@ export interface TimelineClipSnapshot {
   duration: number;
   inPoint: number;
   effects: ClipEffectParamsSnapshot;
+  transform: TransformParamsSnapshot;
   audioFadeIn: number;
   audioFadeOut: number;
   offline?: boolean;
@@ -240,6 +254,13 @@ interface SetEffectParamCommand {
   value: number;
 }
 
+interface SetTransformCommand {
+  type: 'set-transform';
+  trackId: string;
+  clipId: string;
+  transform: Partial<TransformParamsSnapshot>;
+}
+
 interface SetTrackGainCommand {
   type: 'set-track-gain';
   trackId: string;
@@ -348,6 +369,7 @@ export type WorkerCommand =
   | CloseTimelineGapsCommand
   | TrimTimelineClipCommand
   | SetEffectParamCommand
+  | SetTransformCommand
   | SetTrackGainCommand
   | SetTrackMuteCommand
   | SetTrackSoloCommand

@@ -20,6 +20,7 @@ import {
 import { createSharedClock } from './clock';
 import { createWorkerBridge } from './worker-bridge';
 import { PreviewCanvas } from './PreviewCanvas';
+import { PreviewGizmo } from './PreviewGizmo';
 import { Toolbar } from './Toolbar';
 import { Timeline } from './Timeline';
 import { Inspector, type SelectedClip } from './Inspector';
@@ -130,6 +131,8 @@ export function App() {
   const [importing, setImporting] = createSignal(false);
   const [statusLine, setStatusLine] = createSignal('Checking client capabilities…');
   const [previewLabel, setPreviewLabel] = createSignal<string | null>(null);
+  const [previewSize, setPreviewSize] = createSignal<{ width: number; height: number } | null>(null);
+  const [previewCanvasEl, setPreviewCanvasEl] = createSignal<HTMLCanvasElement | undefined>(undefined);
   const [encodeFps, setEncodeFps] = createSignal<number | null>(null);
   const [timeline, setTimeline] = createSignal<TimelineTrackSnapshot[]>([]);
   const [markers, setMarkers] = createSignal<TimelineMarkerSnapshot[]>([]);
@@ -228,6 +231,25 @@ export function App() {
       solo: track.solo,
     };
   });
+  // Transform applies to video clips; pair it with the source's intrinsic size so
+  // the gizmo/inspector can compute the fit rect. Audio clips have no transform UI.
+  const selectedClipTransform = createMemo(() => {
+    const clip = selectedClip();
+    if (!clip) return null;
+    const track = timeline().find((t) => t.id === clip.trackId);
+    if (!track || track.type !== 'video') return null;
+    const timelineClip = track.clips.find((c) => c.id === clip.clipId);
+    if (!timelineClip) return null;
+    const asset = assets().find((a) => a.sourceId === timelineClip.sourceId);
+    return {
+      trackId: track.id,
+      clipId: timelineClip.id,
+      transform: timelineClip.transform,
+      sourceWidth: asset?.video?.width ?? metadata()?.video?.width ?? 16,
+      sourceHeight: asset?.video?.height ?? metadata()?.video?.height ?? 9,
+    };
+  });
+
   const hasTimeline = createMemo(() => timeline().some((track) => track.clips.length > 0));
 
   const clock = createSharedClock(sab);
@@ -377,6 +399,7 @@ export function App() {
         break;
       case 'preview-resolution':
         setPreviewLabel(msg.resolution.label);
+        setPreviewSize({ width: msg.resolution.width, height: msg.resolution.height });
         break;
       case 'probe-result':
         setEncodeFps(msg.probe.encodeFps);
@@ -1026,7 +1049,21 @@ export function App() {
           />
         </Show>
         <section class="preview panel">
-          <PreviewCanvas onOffscreenReady={sendInit} />
+          <PreviewCanvas onOffscreenReady={sendInit} onCanvasEl={setPreviewCanvasEl} />
+          <Show when={accelerated() && selectedClipTransform() && previewSize()}>
+            <PreviewGizmo
+              transform={selectedClipTransform()!.transform}
+              sourceWidth={selectedClipTransform()!.sourceWidth}
+              sourceHeight={selectedClipTransform()!.sourceHeight}
+              outputWidth={previewSize()!.width}
+              outputHeight={previewSize()!.height}
+              canvasEl={previewCanvasEl}
+              onChange={(transform) => {
+                const sel = selectedClipTransform();
+                if (sel) bridge?.send({ type: 'set-transform', trackId: sel.trackId, clipId: sel.clipId, transform });
+              }}
+            />
+          </Show>
           <Show when={compatibilityPreview() !== null}>
             <LimitedPreview
               thumbnailUrl={compatibilityPreview()!.url}
@@ -1089,8 +1126,12 @@ export function App() {
           selectedClip={selectedClip()}
           selectedTrackMix={selectedTrackMix()}
           selectedClipFades={selectedClipFades()}
+          selectedClipTransform={selectedClipTransform()}
           onEffectParam={(trackId, clipId, key, value) =>
             bridge?.send({ type: 'set-effect-param', trackId, clipId, key, value })
+          }
+          onTransform={(trackId, clipId, transform) =>
+            bridge?.send({ type: 'set-transform', trackId, clipId, transform })
           }
           onTrackGain={(trackId, gain) => {
             bridge?.send({ type: 'set-track-gain', trackId, gain });
