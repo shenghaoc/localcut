@@ -458,6 +458,29 @@ export function App() {
             bridge?.send({ type: 'set-track-solo', trackId, solo });
           }}
         />
+      <Timeline
+        currentTime={clock.currentTime}
+        duration={clock.duration}
+        frameRate={() => metadata()?.video?.frameRate ?? null}
+        hasMedia={metadata() !== null}
+        timeline={timeline}
+        waveformPeaks={() => waveformPeaks()}
+        onSeek={(t) => {
+          void audioEngine.seek(t);
+          bridge?.send({ type: 'seek', time: t });
+        }}
+        onSplit={(trackId, _clipId, time) => bridge?.send({ type: 'split', trackId, time })}
+        onDelete={(trackId, clipId) => bridge?.send({ type: 'delete-clip', trackId, clipId })}
+        onMoveClip={(fromTrackId, clipId, toTrackId, toIndex) =>
+          bridge?.send({ type: 'move-clip', fromTrackId, clipId, toTrackId, toIndex })
+        }
+        onTrim={(trackId, clipId, edge, time) =>
+          bridge?.send({ type: 'trim-clip', trackId, clipId, edge, time })
+        }
+        selectedClipId={selectedClip()?.clipId ?? null}
+        onSelectClip={(trackId, clipId, effects) =>
+          setSelectedClip({ trackId, clipId, effects: { ...effects } })
+        }
       />
       <footer class="status-bar">
         <span role="status" aria-live={exporting() ? 'off' : 'polite'} aria-atomic={exporting() ? 'false' : 'true'}>{statusLine()}</span>
