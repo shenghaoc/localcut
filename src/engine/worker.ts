@@ -75,7 +75,8 @@ let timeline: Timeline = createEmptyTimeline();
 let nextSourceId = 1;
 const sourceInputs = new Map<string, MediaInputHandle>();
 const sourceDescriptors = new Map<string, SourceDescriptor>();
-const history = createTimelineHistory({ limit: 100, coalesceWindowMs: 80 });
+const restoringSourceIds = new Set<string>();
+const history = createTimelineHistory();
 let projectId = makeProjectId();
 let restoreDoc: ProjectDoc | null = null;
 let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -533,22 +534,32 @@ async function attachSourceFile(
 async function restoreStoredSources(descriptors: readonly SourceDescriptor[]): Promise<SourceDescriptorSnapshot[]> {
   const unresolved: SourceDescriptorSnapshot[] = [];
   for (const descriptor of descriptors) {
+    if (sourceInputs.has(descriptor.sourceId)) continue;
+    if (restoringSourceIds.has(descriptor.sourceId)) {
+      unresolved.push(descriptor);
+      continue;
+    }
+    restoringSourceIds.add(descriptor.sourceId);
     sourceDescriptors.set(descriptor.sourceId, descriptor);
     let attached = false;
-    const stored = await loadStoredSource(descriptor.sourceId).catch(() => null);
-    if (stored?.file) {
-      const result = await attachSourceFile(descriptor, stored.file, stored.fileHandle ?? null);
-      attached = result.ok;
-    }
-    if (!attached && stored?.fileHandle) {
-      const file = await fileFromHandle(stored.fileHandle);
-      if (file) {
-        const result = await attachSourceFile(descriptor, file, stored.fileHandle, true);
+    try {
+      const stored = await loadStoredSource(descriptor.sourceId).catch(() => null);
+      if (stored?.file) {
+        const result = await attachSourceFile(descriptor, stored.file, stored.fileHandle ?? null);
         attached = result.ok;
       }
-    }
-    if (!attached) {
-      unresolved.push(descriptor);
+      if (!attached && stored?.fileHandle) {
+        const file = await fileFromHandle(stored.fileHandle);
+        if (file) {
+          const result = await attachSourceFile(descriptor, file, stored.fileHandle, true);
+          attached = result.ok;
+        }
+      }
+      if (!attached) {
+        unresolved.push(descriptor);
+      }
+    } finally {
+      restoringSourceIds.delete(descriptor.sourceId);
     }
   }
   return unresolved;
@@ -591,10 +602,9 @@ function commitTimelineMutation(
   } = {},
 ): boolean {
   const before = timeline;
-  const beforeSnapshot = cloneTimelineSnapshot(timeline);
   const next = mutate();
   if (next === before) return false;
-  history.push(beforeSnapshot, { coalesceKey: options.coalesceKey });
+  history.push(before, { coalesceKey: options.coalesceKey });
   timeline = next;
   afterTimelineMutation(options);
   return true;
@@ -888,12 +898,11 @@ async function handleImport(file: File, fileHandle?: FileSystemFileHandle | null
     }
 
     const before = timeline;
-    const beforeSnapshot = cloneTimelineSnapshot(timeline);
     const start = getTimelineDuration(timeline);
     appendTrackForSource(handle, start);
     appendAudioTrackForSource(handle, start);
     if (timeline !== before) {
-      history.push(beforeSnapshot);
+      history.push(before);
       afterTimelineMutation();
     } else {
       ensureClockAndTimeline();

@@ -162,7 +162,7 @@ function parseTrack(value: unknown): TimelineTrack | null {
   };
 }
 
-function parseSourceDescriptor(value: unknown): SourceDescriptor | null {
+export function parseSourceDescriptor(value: unknown): SourceDescriptor | null {
   if (!isRecord(value)) return null;
   const sourceId = requiredString(value.sourceId);
   const fileName = requiredString(value.fileName);

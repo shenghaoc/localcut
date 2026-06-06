@@ -1,4 +1,4 @@
-import { deserializeProject, type ProjectDoc, type SourceDescriptor } from './project';
+import { deserializeProject, parseSourceDescriptor, type ProjectDoc, type SourceDescriptor } from './project';
 
 const DB_NAME = 'localcut-projects';
 const DB_VERSION = 1;
@@ -54,7 +54,10 @@ function openDatabase(): Promise<IDBDatabase> {
     };
     request.onsuccess = () => {
       const db = request.result;
-      db.onversionchange = () => db.close();
+      db.onversionchange = () => {
+        db.close();
+        dbPromise = null;
+      };
       resolve(db);
     };
     request.onerror = () => reject(request.error ?? new Error('Could not open IndexedDB.'));
@@ -122,15 +125,8 @@ export async function loadStoredSource(sourceId: string): Promise<StoredSourceRe
     return null;
   }
 
-  const descriptorResult = deserializeProject({
-    schemaVersion: 1,
-    projectId: 'descriptor-check',
-    savedAt: new Date(0).toISOString(),
-    timeline: [],
-    sources: [value.descriptor],
-  });
-  if (!descriptorResult.ok) return null;
-  const descriptor = descriptorResult.doc.sources[0]!;
+  const descriptor = parseSourceDescriptor(value.descriptor);
+  if (!descriptor) return null;
   if (descriptor.sourceId !== sourceId) return null;
 
   const file = isFileValue(value.file) ? value.file : undefined;
