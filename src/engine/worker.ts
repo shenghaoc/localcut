@@ -250,6 +250,8 @@ function placeAsset(
   trackId: string | undefined,
   start: number | undefined,
 ): Timeline {
+  // A video/still with no decodable frames would render black and can't export.
+  if (handle.kind !== 'audio' && !handle.frameSource) return tl;
   if (handle.kind === 'audio') {
     const [withTrack, audioTrackId] = ensureTrack(tl, 'audio', trackId);
     const clipStart = start ?? trackEnd(withTrack, audioTrackId);
@@ -925,11 +927,11 @@ function projectHasClips(doc: ProjectDoc): boolean {
 }
 
 /** An autosave is worth offering to restore when it holds any user content —
- *  clips or markers. Marker-only projects (e.g. all clips deleted after placing
- *  markers) are still persisted, so they must remain restore-eligible or the
- *  saved marker data would be silently lost on the next launch. */
+ *  clips, markers, or bin sources. Marker-only and bin-only projects (e.g. files
+ *  imported but not yet placed) are persisted too, so they must remain
+ *  restore-eligible or that saved state would be silently lost on next launch. */
 function projectHasRestorableContent(doc: ProjectDoc): boolean {
-  return projectHasClips(doc) || doc.markers.length > 0;
+  return projectHasClips(doc) || doc.markers.length > 0 || doc.sources.length > 0;
 }
 
 function currentProjectIsEmpty(): boolean {
@@ -1395,6 +1397,10 @@ function handlePlaceClip(cmd: Extract<WorkerCommand, { type: 'place-clip' }>) {
     }
     return;
   }
+  if (handle.kind !== 'audio' && !handle.frameSource) {
+    postProjectWarning(`${handle.metadata.fileName} has no decodable video track to place.`);
+    return;
+  }
   const placed = commitTimelineMutation(() => placeAsset(timeline, handle, cmd.trackId, cmd.start));
   if (placed) {
     void computeWaveformsForSource(handle);
@@ -1450,9 +1456,14 @@ function handleRemoveAsset(cmd: Extract<WorkerCommand, { type: 'remove-asset' }>
     sourceInputs.delete(cmd.sourceId);
     if (primaryHandle === handle) primaryHandle = null;
   }
-  sourceDescriptors.delete(cmd.sourceId);
   thumbnailGen?.cancelSource(cmd.sourceId);
+  // Keep the descriptor in memory so undo can resurrect the clips as an
+  // offline, re-linkable source (reconciled in applyHistoryRestore). Drop the
+  // stored file record either way — the bin no longer claims it.
   void deleteStoredSource(cmd.sourceId).catch(() => undefined);
+  // A pure bin removal skips the clip commit above, so persist the bin change
+  // explicitly; otherwise the autosaved project keeps referencing the source.
+  scheduleAutosave();
   postMediaAssets();
 }
 
@@ -1484,7 +1495,18 @@ function handleTrim(cmd: Extract<WorkerCommand, { type: 'trim-clip' }>) {
 function applyHistoryRestore(next: { timeline: Timeline; markers: TimelineMarker[] }): void {
   timeline = cloneTimelineSnapshot(next.timeline);
   markers = cloneMarkersSnapshot(next.markers);
+  // Undo can resurrect clips of a source that was removed from the bin. Re-add
+  // any still-described source the restored timeline references so the asset
+  // returns to the bin (offline, re-linkable) instead of dangling.
+  let binChanged = false;
+  for (const id of timelineSourceIds()) {
+    if (sourceDescriptors.has(id) && !binSourceIds.has(id)) {
+      binSourceIds.add(id);
+      binChanged = true;
+    }
+  }
   afterTimelineMutation();
+  if (binChanged) postMediaAssets();
 }
 
 function handleUndo(): void {

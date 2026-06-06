@@ -326,6 +326,12 @@ export function App() {
         for (const id of thumbnailStore.sourceIds()) {
           if (!live.has(id)) thumbnailStore.clearSource(id);
         }
+        // Removing the last asset leaves no active media: clear the stale
+        // metadata so the preview-empty state and disabled export reflect reality.
+        if (msg.assets.length === 0 && !hasTimeline()) {
+          setMetadata(null);
+          setSelectedClipRefs([]);
+        }
         setThumbnailVersion((v) => v + 1);
         break;
       }
@@ -545,13 +551,17 @@ export function App() {
   }
 
   function importMedia(file: File, fileHandle?: FileSystemFileHandle | null) {
-    if (importing()) return;
     discardRestoreBeforeImport();
     if (accelerated()) {
+      // The worker queues imports independently, so a batch (multi-file picker
+      // or drop) must not be gated on `importing()` — that would silently drop
+      // every file after the first once the first import flips the flag.
       const { bridge: b } = ensureWorker();
       b.send({ type: 'import', file, fileHandle });
       return;
     }
+    // The limited compatibility path renders a single preview at a time.
+    if (importing()) return;
     if (compatibilityImportEnabled()) {
       void importCompatibilityMedia(file);
       return;
@@ -686,7 +696,6 @@ export function App() {
 
   function onFileDrop(file: File) {
     setIsDraggingFile(false);
-    if (importing()) return;
     importMedia(file);
   }
 

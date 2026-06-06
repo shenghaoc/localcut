@@ -202,7 +202,10 @@ export async function openMediaFile(file: File, sourceId: string): Promise<Media
       }
     }
 
-    const kind: MediaKind = video ? 'video' : 'audio';
+    // Key the kind off decodability, not mere track presence: an undecodable
+    // video whose audio decodes is an audio asset, so it places on an audio
+    // track instead of inserting a black, unexportable video clip.
+    const kind: MediaKind = frameSource ? 'video' : audioSource ? 'audio' : 'video';
 
     const metadata: MediaMetadata = {
       fileName: file.name,
