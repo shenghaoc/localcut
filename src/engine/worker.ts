@@ -807,6 +807,14 @@ function projectHasClips(doc: ProjectDoc): boolean {
   return doc.timeline.some((track) => track.clips.length > 0);
 }
 
+/** An autosave is worth offering to restore when it holds any user content —
+ *  clips or markers. Marker-only projects (e.g. all clips deleted after placing
+ *  markers) are still persisted, so they must remain restore-eligible or the
+ *  saved marker data would be silently lost on the next launch. */
+function projectHasRestorableContent(doc: ProjectDoc): boolean {
+  return projectHasClips(doc) || doc.markers.length > 0;
+}
+
 function currentProjectIsEmpty(): boolean {
   return sourceInputs.size === 0 && timelineSourceIds().size === 0 && markers.length === 0;
 }
@@ -819,7 +827,7 @@ async function checkRestoreAvailable(): Promise<void> {
     postProjectWarning(`Could not read autosaved project: ${result.reason}`);
     return;
   }
-  if (!result.doc || !projectHasClips(result.doc)) return;
+  if (!result.doc || !projectHasRestorableContent(result.doc)) return;
   if (
     generation !== restoreOfferGeneration ||
     projectId !== checkedProjectId ||
