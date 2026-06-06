@@ -124,6 +124,7 @@ export class PreviewRenderer {
   // Phase 21: zebra overlay texture (only allocated when toggled on).
   private zebraTex: GPUTexture | null = null;
   private zebraView: GPUTextureView | null = null;
+  private _zebraUniform: GPUBuffer | null = null;
   private zebraEnabled = false;
 
   // Phase 21: per-layer normalization uniform buffers.
@@ -138,10 +139,13 @@ export class PreviewRenderer {
 
   // Phase 21: scopes SAB reference (set by worker for scope output).
   private scopeSab: Float32Array | null = null;
+  private scopesEnabled = false;
 
   private presentBindGroup: GPUBindGroup | null = null;
   /** Accumulator view holding the most recent composited frame (preview + export). */
   private lastPresentView: GPUTextureView | null = null;
+  /** Phase 21: pre-output-conversion accumulator for zebra overlay + scopes. */
+  private _lastAccView: GPUTextureView | null = null;
   /** Per-layer transform uniform buffers (grown on demand; one submission, many layers). */
   private readonly transformBuffers: GPUBuffer[] = [];
   private width = 0;
@@ -274,6 +278,11 @@ export class PreviewRenderer {
     }
   }
 
+  /** Phase 21: enable/disable scope computation during the preview loop. */
+  setScopesEnabled(enabled: boolean): void {
+    this.scopesEnabled = enabled;
+  }
+
   importLut(lut: ClipLut): void {
     this.effectChain.importLut(lut);
   }
@@ -341,10 +350,16 @@ export class PreviewRenderer {
     const encoder = this.device.createCommandEncoder();
     const finalView = this.compositeLayers(encoder, layers);
 
-    // Phase 21: optional zebra clipping overlay
+    // Phase 21: optional zebra clipping overlay — fed from pre-conversion
+    // accumulator so isClipped() can detect out-of-range values.
     let presentView = finalView;
-    if (this.zebraEnabled && this.clippingOverlayPipeline && this.zebraView && this.scopeSab) {
-      presentView = this.encodeZebraOverlay(encoder, finalView);
+    if (this.zebraEnabled && this.clippingOverlayPipeline && this.zebraView && this._lastAccView) {
+      presentView = this.encodeZebraOverlay(encoder, this._lastAccView);
+    }
+
+    // Phase 21: scope dispatch when enabled (post-composite, pre-present)
+    if (this.scopesEnabled && this._lastAccView && this.scopeSab) {
+      this.dispatchScopes(encoder, this._lastAccView);
     }
 
     if (presentView !== this.lastPresentView || !this.presentBindGroup) {
@@ -387,6 +402,9 @@ export class PreviewRenderer {
    * Stage order (single source of truth: PIPELINE_ORDER in colour.ts):
    *   source-normalization → base-correction → lut-apply → opacity →
    *   transform → compositing → output-conversion
+   *
+   * Returns the final output-converted view. The pre-conversion accumulator
+   * view is saved to `_lastAccView` for zebra overlay and scope diagnostics.
    */
   private compositeLayers(
     encoder: GPUCommandEncoder,
@@ -431,22 +449,30 @@ export class PreviewRenderer {
             )
           : srcView;
 
-      // Stage 3: lut-apply (only for frame layers with LUT — currently
-      // handled inside encodeColourChain via the backward-compat path)
-      // For the full split, LUT encoding requires exposing encodeLut on EffectChain.
+      // Stage 3: lut-apply (only for frame layers with an active LUT)
       let lutView = correctedView;
       if (layer.kind === 'frame' && layer.lut && layer.effects.lutStrength > 0) {
-        // LUT not yet integrated in the split pipeline; the backward-compat
-        // encodeColourChain handles it. For this MVP, we skip explicit LUT.
-        lutView = correctedView;
+        // Pick a destination that is not the current source
+        const lutDst =
+          correctedView === storage.a ? storage.b :
+          correctedView === storage.b ? storage.c : storage.a;
+        lutView = this.effectChain.encodeLut(
+          encoder, correctedView, lutDst,
+          layer.lut, layer.effects, slot, wgX, wgY,
+        );
       }
 
       // Stage 4: opacity
       const opaqueView = this.encodeOpacity(encoder, lutView, layer.transform, slot, wgX, wgY);
 
-      // Stage 5: transform
+      // Stage 5: transform — pass identity opacity if the opacity stage already
+      // multiplied alpha (the transform shader also multiplies by u.params.z).
+      const xfParams =
+        layer.transform.opacity < 1.0 && opaqueView !== lutView
+          ? { ...layer.transform, opacity: 1.0 }
+          : layer.transform;
       this.encodeTransform(
-        encoder, layer.transform, opaqueView, srcWidth, srcHeight, slot, wgX, wgY,
+        encoder, xfParams, opaqueView, srcWidth, srcHeight, slot, wgX, wgY,
       );
 
       // Stage 6: compositing
@@ -469,6 +495,7 @@ export class PreviewRenderer {
     });
 
     // Stage 7: output-conversion (applied to final accumulator)
+    this._lastAccView = accView[acc];
     return this.encodeOutputConvert(encoder, accView[acc], wgX, wgY);
   }
 
@@ -679,19 +706,22 @@ export class PreviewRenderer {
     const wgX = Math.ceil(this.width / 8);
     const wgY = Math.ceil(this.height / 8);
 
-    const zebraUniform = this.device.createBuffer({
-      size: 12, // width: u32, height: u32, stripePeriod: u32
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
+    // Reusable uniform buffer — avoid per-frame allocation
+    if (!this._zebraUniform) {
+      this._zebraUniform = this.device.createBuffer({
+        size: 12, // width: u32, height: u32, stripePeriod: u32
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+    }
     this.device.queue.writeBuffer(
-      zebraUniform, 0,
+      this._zebraUniform, 0,
       new Uint32Array([this.width, this.height, 4]),
     );
 
     const bindGroup = this.device.createBindGroup({
       layout: this.clippingOverlayPipeline.getBindGroupLayout(0),
       entries: [
-        { binding: 0, resource: { buffer: zebraUniform } },
+        { binding: 0, resource: { buffer: this._zebraUniform } },
         { binding: 1, resource: srcView },
         { binding: 2, resource: this.zebraView },
       ],
@@ -703,6 +733,18 @@ export class PreviewRenderer {
     pass.end();
 
     return this.zebraView;
+  }
+
+  /** Phase 21: dispatches scope results to the SAB for main-thread rendering.
+   *  Currently writes a heartbeat sequence; full shader-based scopes require
+   *  storage buffer allocation (deferred to a follow-on). */
+  private dispatchScopes(
+    _encoder: GPUCommandEncoder,
+    _accView: GPUTextureView,
+  ): void {
+    if (!this.scopeSab) return;
+    const seq = this.scopeSab[0] + 1;
+    this.scopeSab[0] = seq;
   }
 
   destroy(): void {
@@ -742,6 +784,8 @@ export class PreviewRenderer {
     this.opacityView = null;
     this.zebraTex = null;
     this.zebraView = null;
+    this._zebraUniform?.destroy();
+    this._zebraUniform = null;
     this.accTex = null;
     this.storageAView = null;
     this.storageBView = null;

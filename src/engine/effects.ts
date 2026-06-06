@@ -276,7 +276,8 @@ export class EffectChain {
     this.luts.prune(activeKeys);
   }
 
-  private encodeLut(
+  // Public for Phase 21 split pipeline.
+  encodeLut(
     encoder: GPUCommandEncoder,
     currentSrc: GPUTextureView,
     currentDst: GPUTextureView,

@@ -3056,7 +3056,6 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
       handleSetTrackEditTarget(cmd);
       break;
     case 'toggle-scopes': {
-      // Phase 21: scope panel toggle
       renderer?.setScopesEnabled(cmd.enabled);
       break;
     }
