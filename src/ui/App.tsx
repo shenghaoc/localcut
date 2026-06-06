@@ -401,6 +401,7 @@ export function App() {
           />
         }
       />
+      </Show>
       <main class="workspace">
         <section class="preview panel">
           <PreviewCanvas onOffscreenReady={sendInit} />
@@ -502,16 +503,6 @@ export function App() {
               Offline
             </span>
           </Show>
-          <Show when={previewLabel()}>
-            <span class="status-badge" title="Adaptive preview resolution">
-              Preview: {previewLabel()}
-            </span>
-          </Show>
-          <Show when={encodeFps()}>
-            <span class="status-badge" title="Estimated encode throughput (session)">
-              Encode: {Math.round(encodeFps()!)} fps
-            </span>
-          </Show>
           <Show when={audioWarning()}>
             <span class="status-badge status-warn" title={audioWarning()!}>
               Audio Disabled
@@ -522,7 +513,6 @@ export function App() {
           </Show>
         </span>
       </footer>
-    </Show>
   </div>
 );
 }
