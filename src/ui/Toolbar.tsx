@@ -7,13 +7,15 @@ import {
   Info,
   Pause,
   Play,
+  Redo2,
   Scissors,
   ShieldCheck,
   SkipBack,
   SkipForward,
+  Undo2,
 } from 'lucide-solid';
 import { cn } from '../lib/utils';
-import { Button, buttonVariants } from './components/button';
+import { Button } from './components/button';
 import type { CapabilityTier } from './capabilities';
 import type { MediaMetadata } from '../protocol';
 
@@ -22,9 +24,14 @@ interface ToolbarProps {
   playing: () => boolean;
   importAccept: string;
   onImportFile: (file: File) => void;
+  onPickImport?: () => Promise<boolean>;
   onPlay: () => void;
   onPause: () => void;
   onStep: (direction: 1 | -1) => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
   transportDisabled?: boolean;
   importBlocked?: boolean;
   importHint?: string | null;
@@ -39,11 +46,17 @@ interface ToolbarProps {
 export function Toolbar(props: ToolbarProps) {
   const hasVideo = () => props.metadata?.video != null;
   const transportDisabled = () => props.transportDisabled || !hasVideo();
+  let importInput: HTMLInputElement | undefined;
   const handleImportInput = (event: Event) => {
     const input = event.currentTarget as HTMLInputElement;
     const file = input.files?.[0] ?? null;
     input.value = '';
     if (file) props.onImportFile(file);
+  };
+  const openImport = async () => {
+    if (props.importBlocked) return;
+    const handled = (await props.onPickImport?.()) ?? false;
+    if (!handled) importInput?.click();
   };
 
   return (
@@ -58,26 +71,29 @@ export function Toolbar(props: ToolbarProps) {
             <span class="app-kicker">Browser-native NLE</span>
           </div>
         </div>
-        <label
-          class={cn(
-            buttonVariants({ variant: 'default' }),
-            'import-picker',
-            props.importBlocked && 'is-disabled pointer-events-none',
-          )}
+        <Button
+          variant="default"
+          class="import-picker"
+          onClick={() => void openImport()}
+          disabled={props.importBlocked}
           title={props.importHint ?? undefined}
         >
           <FolderOpen size={14} aria-hidden="true" />
           Import
-          <input
-            class="import-picker-input"
-            type="file"
-            accept={props.importAccept}
-            onChange={handleImportInput}
-            disabled={props.importBlocked}
-            aria-label="Import media"
-            title={props.importHint ?? undefined}
-          />
-        </label>
+        </Button>
+        <input
+          ref={(el) => {
+            importInput = el;
+          }}
+          class="import-picker-input"
+          type="file"
+          accept={props.importAccept}
+          onChange={handleImportInput}
+          disabled={props.importBlocked}
+          aria-label="Import media"
+          title={props.importHint ?? undefined}
+          hidden
+        />
       </div>
       <div class="toolbar-center">
         <div class="pipeline-strip" aria-label="Pipeline status">
@@ -136,6 +152,26 @@ export function Toolbar(props: ToolbarProps) {
         </span>
       </div>
       <div class="toolbar-right">
+        <div class="edit-controls" role="group" aria-label="Edit history">
+          <Button
+            size="icon"
+            onClick={() => props.onUndo()}
+            disabled={!props.canUndo}
+            aria-label="Undo"
+            title="Undo"
+          >
+            <Undo2 size={14} aria-hidden="true" />
+          </Button>
+          <Button
+            size="icon"
+            onClick={() => props.onRedo()}
+            disabled={!props.canRedo}
+            aria-label="Redo"
+            title="Redo"
+          >
+            <Redo2 size={14} aria-hidden="true" />
+          </Button>
+        </div>
         <div class="transport-controls" role="group" aria-label="Transport">
           <Button
             size="icon"

@@ -494,6 +494,16 @@ body {
   background: var(--muted);
 }
 
+.edit-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--muted);
+}
+
 .transport-play {
   min-width: 64px;
 }
@@ -597,6 +607,79 @@ body {
 
 .export-error {
   color: var(--danger);
+}
+
+.restore-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  min-height: 48px;
+  padding: 0.55rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--warn) 8%, var(--card));
+}
+
+.restore-banner-copy {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 180px;
+}
+
+.restore-banner-title,
+.restore-banner-detail {
+  margin: 0;
+}
+
+.restore-banner-title {
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+.restore-banner-detail {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.restore-source-list {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-x: auto;
+}
+
+.restore-source-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  max-width: 360px;
+  padding: 0.25rem 0.3rem 0.25rem 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--border));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.restore-source-item > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.restore-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-left: auto;
 }
 
 .workspace {
@@ -944,6 +1027,19 @@ body {
   border-color: color-mix(in oklab, var(--clip-audio) 64%, black);
 }
 
+.timeline-clip.is-offline {
+  background:
+    repeating-linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--danger) 72%, black) 0,
+      color-mix(in srgb, var(--danger) 72%, black) 6px,
+      color-mix(in srgb, var(--muted) 92%, black) 6px,
+      color-mix(in srgb, var(--muted) 92%, black) 12px
+    );
+  border-color: color-mix(in srgb, var(--danger) 70%, var(--border));
+  color: var(--foreground);
+}
+
 .timeline-clip.is-selected {
   outline: 2.5px solid var(--card);
   box-shadow: 0 0 0 4px color-mix(in oklab, var(--clip-video) 55%, transparent), var(--shadow-md);
@@ -1281,6 +1377,15 @@ button.status-badge:hover {
     order: 3;
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .restore-banner {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .restore-actions {
+    margin-left: 0;
   }
 
   .file-name {
