@@ -1,4 +1,9 @@
-/** WebGPU compute effect chain — Phase 4. */
+/** WebGPU compute effect chain — Phase 4, extended in Phase 21.
+ *
+ *  Phase 21 splits the old `encodeColourChain` into `encodeColourImport` +
+ *  `encodeBaseCorrection` + `encodeLutApply`, so the pipeline orchestrator in
+ *  gpu.ts can interleave normalization, opacity, and output-conversion stages.
+ */
 
 import brightnessContrastF32 from './shaders/brightness-contrast.wgsl?raw';
 import brightnessContrastF16 from './shaders/brightness-contrast.f16.wgsl?raw';
@@ -271,7 +276,8 @@ export class EffectChain {
     this.luts.prune(activeKeys);
   }
 
-  private encodeLut(
+  // Public for Phase 21 split pipeline.
+  encodeLut(
     encoder: GPUCommandEncoder,
     currentSrc: GPUTextureView,
     currentDst: GPUTextureView,
@@ -303,47 +309,61 @@ export class EffectChain {
   }
 
   /**
-   * Encodes import → brightness → saturation → colour-temperature for one layer
-   * into `encoder`. `params` are the layer's clip effects; `layerSlot` selects
-   * the per-layer uniform-buffer set. Returns the texture view holding the final
-   * graded frame (preview present and export encode share this).
+   * Stage 0: imports a VideoFrame external texture into storage.a via a passthrough
+   * compute pass. Returns the storage.a view (ready for downstream stages).
    */
-  encodeColourChain(
+  encodeColourImport(
     encoder: GPUCommandEncoder,
     external: GPUExternalTexture,
     storage: StoragePingPong,
     width: number,
     height: number,
+  ): GPUTextureView {
+    const wgX = Math.ceil(width / 8);
+    const wgY = Math.ceil(height / 8);
+
+    const bindGroup = this.device.createBindGroup({
+      layout: this.passthroughLayout,
+      entries: [
+        { binding: 0, resource: external },
+        { binding: 1, resource: storage.a },
+      ],
+    });
+    const pass = encoder.beginComputePass();
+    pass.setPipeline(this.passthroughPipeline);
+    pass.setBindGroup(0, bindGroup);
+    pass.dispatchWorkgroups(wgX, wgY);
+    pass.end();
+
+    return storage.a;
+  }
+
+  /**
+   * Stage 2 (base-correction): encodes brightness → saturation → colour-temperature
+   * for one layer, reading from `srcView` and returning the last written storage view.
+   * `slot` selects the per-layer uniform-buffer set for multi-layer frames.
+   */
+  encodeBaseCorrection(
+    encoder: GPUCommandEncoder,
+    srcView: GPUTextureView,
+    storage: StoragePingPong,
+    width: number,
+    height: number,
     params: ClipEffectParams,
-    layerSlot = 0,
-    lut?: ClipLut,
+    slot = 0,
   ): GPUTextureView {
     const normalized = normalizeClipEffects(params);
     const wgX = Math.ceil(width / 8);
     const wgY = Math.ceil(height / 8);
-
-    // External → A
-    {
-      const bindGroup = this.device.createBindGroup({
-        layout: this.passthroughLayout,
-        entries: [
-          { binding: 0, resource: external },
-          { binding: 1, resource: storage.a },
-        ],
-      });
-      const pass = encoder.beginComputePass();
-      pass.setPipeline(this.passthroughPipeline);
-      pass.setBindGroup(0, bindGroup);
-      pass.dispatchWorkgroups(wgX, wgY);
-      pass.end();
-    }
 
     const activeEffects: CompiledEffect[] = [];
     if (isBrightnessContrastActive(normalized)) activeEffects.push(this.effects[0]!);
     if (isSaturationActive(normalized)) activeEffects.push(this.effects[1]!);
     if (isColourTemperatureActive(normalized)) activeEffects.push(this.effects[2]!);
 
-    let currentSrc = storage.a;
+    if (activeEffects.length === 0) return srcView;
+
+    let currentSrc = srcView;
     const pingPong = [storage.b, storage.c, storage.a];
     let bufIdx = 0;
 
@@ -351,7 +371,7 @@ export class EffectChain {
       const currentDst = pingPong[bufIdx]!;
       bufIdx = (bufIdx + 1) % 3;
 
-      const uniformBuffer = this.uniformBufferFor(effect, layerSlot);
+      const uniformBuffer = this.uniformBufferFor(effect, slot);
       this.device.queue.writeBuffer(uniformBuffer, 0, packEffectUniform(effect.id, normalized));
 
       const bindGroup = this.device.createBindGroup({
@@ -371,7 +391,37 @@ export class EffectChain {
       currentSrc = currentDst;
     }
 
+    return currentSrc;
+  }
+
+  /**
+   * Retained for backward compatibility: full colour chain as a single call.
+   * New callers should use the individual stage methods instead.
+   */
+  encodeColourChain(
+    encoder: GPUCommandEncoder,
+    external: GPUExternalTexture,
+    storage: StoragePingPong,
+    width: number,
+    height: number,
+    params: ClipEffectParams,
+    layerSlot = 0,
+    lut?: ClipLut,
+  ): GPUTextureView {
+    const normalized = normalizeClipEffects(params);
+    const wgX = Math.ceil(width / 8);
+    const wgY = Math.ceil(height / 8);
+
+    let currentSrc = this.encodeColourImport(encoder, external, storage, width, height);
+    currentSrc = this.encodeBaseCorrection(encoder, currentSrc, storage, width, height, params, layerSlot);
+
     if (isLutActive(normalized, lut)) {
+      const activeBaseEffects =
+        (isBrightnessContrastActive(normalized) ? 1 : 0) +
+        (isSaturationActive(normalized) ? 1 : 0) +
+        (isColourTemperatureActive(normalized) ? 1 : 0);
+      const bufIdx = activeBaseEffects % 3;
+      const pingPong = [storage.b, storage.c, storage.a];
       const currentDst = pingPong[bufIdx]!;
       currentSrc = this.encodeLut(encoder, currentSrc, currentDst, lut!, normalized, layerSlot, wgX, wgY);
     }
