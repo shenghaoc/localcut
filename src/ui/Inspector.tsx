@@ -1,10 +1,21 @@
 import { Show, For, createEffect, createSignal, onCleanup } from 'solid-js';
-import type { ClipEffectParamsSnapshot, MediaMetadata } from '../protocol';
+import type {
+  ClipEffectParamsSnapshot,
+  FitModeSnapshot,
+  MediaMetadata,
+  TransformParamsSnapshot,
+} from '../protocol';
 
 export interface SelectedClip {
   trackId: string;
   clipId: string;
   effects: ClipEffectParamsSnapshot;
+}
+
+export interface SelectedClipTransform {
+  trackId: string;
+  clipId: string;
+  transform: TransformParamsSnapshot;
 }
 
 export interface SelectedTrackMix {
@@ -28,11 +39,17 @@ interface InspectorProps {
   selectedClip: SelectedClip | null;
   selectedTrackMix: SelectedTrackMix | null;
   selectedClipFades: SelectedClipFades | null;
+  selectedClipTransform: SelectedClipTransform | null;
   onEffectParam: (
     trackId: string,
     clipId: string,
     key: keyof ClipEffectParamsSnapshot,
     value: number,
+  ) => void;
+  onTransform: (
+    trackId: string,
+    clipId: string,
+    transform: Partial<TransformParamsSnapshot>,
   ) => void;
   onTrackGain: (trackId: string, gain: number) => void;
   onTrackMute: (trackId: string, muted: boolean) => void;
@@ -40,6 +57,31 @@ interface InspectorProps {
   onTrackPan: (trackId: string, pan: number) => void;
   onClipFade: (trackId: string, clipId: string, edge: 'in' | 'out', durationS: number) => void;
 }
+
+type TransformSliderKey = 'x' | 'y' | 'scale' | 'rotation' | 'opacity';
+
+interface TransformSliderSpec {
+  key: TransformSliderKey;
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+  format: (value: number) => string;
+}
+
+const TRANSFORM_SLIDERS: TransformSliderSpec[] = [
+  { key: 'x', label: 'Position X', min: -1, max: 1, step: 0.005, format: (v) => v.toFixed(3) },
+  { key: 'y', label: 'Position Y', min: -1, max: 1, step: 0.005, format: (v) => v.toFixed(3) },
+  { key: 'scale', label: 'Scale', min: 0.1, max: 3, step: 0.01, format: (v) => `${v.toFixed(2)}×` },
+  { key: 'rotation', label: 'Rotation', min: -180, max: 180, step: 1, format: (v) => `${Math.round(v)}°` },
+  { key: 'opacity', label: 'Opacity', min: 0, max: 1, step: 0.01, format: (v) => v.toFixed(2) },
+];
+
+const FIT_OPTIONS: { value: FitModeSnapshot; label: string }[] = [
+  { value: 'fill', label: 'Fill' },
+  { value: 'fit', label: 'Fit' },
+  { value: 'letterbox', label: 'Letterbox' },
+];
 
 const PARAM_DEBOUNCE_MS = 80;
 
@@ -76,11 +118,16 @@ const SLIDERS: SliderSpec[] = [
 
 type MixDraft = Pick<SelectedTrackMix, 'gain' | 'pan'>;
 type FadeDraft = Pick<SelectedClipFades, 'audioFadeIn' | 'audioFadeOut'>;
+type TransformDraft = TransformParamsSnapshot;
 
 export function Inspector(props: InspectorProps) {
   const [draft, setDraft] = createSignal<ClipEffectParamsSnapshot | null>(null);
   const [mixDraft, setMixDraft] = createSignal<MixDraft | null>(null);
   const [fadeDraft, setFadeDraft] = createSignal<FadeDraft | null>(null);
+  const [transformDraft, setTransformDraft] = createSignal<TransformDraft | null>(null);
+  const transformPending = new Map<TransformSliderKey, number>();
+  const transformDebouncers = new Map<TransformSliderKey, ReturnType<typeof setTimeout>>();
+  const transformTarget = { trackId: '', clipId: '' };
   const pending = new Map<keyof ClipEffectParamsSnapshot, number>();
   const debouncers = new Map<keyof ClipEffectParamsSnapshot, ReturnType<typeof setTimeout>>();
   const mixPending = new Map<keyof MixDraft, number>();
@@ -125,6 +172,45 @@ export function Inspector(props: InspectorProps) {
       );
     }
     fadePending.clear();
+  }
+
+  function flushTransformPending() {
+    if (!transformTarget.clipId || transformPending.size === 0) return;
+    for (const handle of transformDebouncers.values()) clearTimeout(handle);
+    transformDebouncers.clear();
+    const patch: Partial<TransformParamsSnapshot> = {};
+    for (const [key, value] of transformPending) patch[key] = value;
+    props.onTransform(transformTarget.trackId, transformTarget.clipId, patch);
+    transformPending.clear();
+  }
+
+  function scheduleTransformParam(key: TransformSliderKey, value: number) {
+    const transform = props.selectedClipTransform;
+    if (!transform) return;
+    transformTarget.trackId = transform.trackId;
+    transformTarget.clipId = transform.clipId;
+    setTransformDraft((prev) => (prev ? { ...prev, [key]: value } : prev));
+    transformPending.set(key, value);
+    const existing = transformDebouncers.get(key);
+    if (existing) clearTimeout(existing);
+    transformDebouncers.set(
+      key,
+      setTimeout(() => {
+        transformDebouncers.delete(key);
+        const latest = transformPending.get(key);
+        transformPending.delete(key);
+        if (latest !== undefined) {
+          props.onTransform(transform.trackId, transform.clipId, { [key]: latest });
+        }
+      }, PARAM_DEBOUNCE_MS),
+    );
+  }
+
+  function setFitMode(fit: FitModeSnapshot) {
+    const transform = props.selectedClipTransform;
+    if (!transform) return;
+    setTransformDraft((prev) => (prev ? { ...prev, fit } : prev));
+    props.onTransform(transform.trackId, transform.clipId, { fit });
   }
 
   function syncDraftFromClip(clip: SelectedClip) {
@@ -271,10 +357,38 @@ export function Inspector(props: InspectorProps) {
     });
   });
 
+  createEffect(() => {
+    const transform = props.selectedClipTransform;
+    if (!transform) {
+      flushTransformPending();
+      transformTarget.trackId = '';
+      transformTarget.clipId = '';
+      setTransformDraft(null);
+      return;
+    }
+    if (transformTarget.clipId && transformTarget.clipId !== transform.clipId) {
+      flushTransformPending();
+    }
+    transformTarget.trackId = transform.trackId;
+    transformTarget.clipId = transform.clipId;
+    setTransformDraft((prev) => {
+      const base = { ...transform.transform };
+      if (!prev) return base;
+      const next = { ...base };
+      for (const spec of TRANSFORM_SLIDERS) {
+        if (transformPending.has(spec.key) || transformDebouncers.has(spec.key)) {
+          next[spec.key] = prev[spec.key];
+        }
+      }
+      return next;
+    });
+  });
+
   onCleanup(() => {
     flushPending();
     flushMixPending();
     flushFadePending();
+    flushTransformPending();
   });
 
   function scheduleParam(key: keyof ClipEffectParamsSnapshot, value: number) {
@@ -429,6 +543,49 @@ export function Inspector(props: InspectorProps) {
                         scheduleFadeParam('audioFadeOut', Number((e.currentTarget as HTMLInputElement).value))
                       }
                     />
+                  </label>
+                </div>
+              )}
+            </Show>
+            <Show when={transformDraft()}>
+              {(transform) => (
+                <div class="effect-sliders transform-controls">
+                  <h3 class="panel-subtitle">Transform</h3>
+                  <For each={TRANSFORM_SLIDERS}>
+                    {(spec) => (
+                      <label class="effect-slider">
+                        <span class="effect-slider-label">
+                          {spec.label}
+                          <span class="effect-slider-value tabular-nums">
+                            {spec.format(transform()[spec.key])}
+                          </span>
+                        </span>
+                        <input
+                          type="range"
+                          min={spec.min}
+                          max={spec.max}
+                          step={spec.step}
+                          value={transform()[spec.key]}
+                          onInput={(e) =>
+                            scheduleTransformParam(
+                              spec.key,
+                              Number((e.currentTarget as HTMLInputElement).value),
+                            )
+                          }
+                        />
+                      </label>
+                    )}
+                  </For>
+                  <label class="effect-slider transform-fit">
+                    <span class="effect-slider-label">Fit</span>
+                    <select
+                      value={transform().fit}
+                      onChange={(e) => setFitMode((e.currentTarget as HTMLSelectElement).value as FitModeSnapshot)}
+                    >
+                      <For each={FIT_OPTIONS}>
+                        {(option) => <option value={option.value}>{option.label}</option>}
+                      </For>
+                    </select>
                   </label>
                 </div>
               )}

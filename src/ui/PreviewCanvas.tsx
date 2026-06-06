@@ -2,6 +2,9 @@ import { onMount } from 'solid-js';
 
 interface PreviewCanvasProps {
   onOffscreenReady: (canvas: OffscreenCanvas) => void;
+  /** Exposes the live <canvas> element so an overlay (e.g. the transform gizmo)
+   *  can measure its displayed rect. */
+  onCanvasEl?: (canvas: HTMLCanvasElement) => void;
 }
 
 export function PreviewCanvas(props: PreviewCanvasProps) {
@@ -9,6 +12,7 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 
   onMount(() => {
     if (!canvasEl) return;
+    props.onCanvasEl?.(canvasEl);
     const offscreen = canvasEl.transferControlToOffscreen();
     props.onOffscreenReady(offscreen);
   });

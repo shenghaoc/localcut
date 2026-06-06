@@ -137,21 +137,26 @@ export interface StoragePingPong {
 
 interface CompiledEffect {
   id: EffectId;
+  byteLength: number;
   pipeline: GPUComputePipeline;
-  uniformBuffer: GPUBuffer;
+  /** One uniform buffer per concurrent layer slot (grown on demand). A single
+   *  frame composites many layers in one submission, so each layer needs its
+   *  own buffer — sharing one would let the last write clobber every pass. */
+  uniformBuffers: GPUBuffer[];
   bindGroupLayout: GPUBindGroupLayout;
 }
 
 /**
- * Compiles colour-grade pipelines once and encodes the full import → grade chain
- * into a caller-owned command encoder (single submission per frame).
+ * Compiles colour-grade pipelines once and encodes the import → grade chain for
+ * one layer into a caller-owned command encoder. Params are supplied per call
+ * (layers in a single frame differ), and each layer slot owns its own uniform
+ * buffers so the multi-layer single submission stays correct.
  */
 export class EffectChain {
   private readonly device: GPUDevice;
   private readonly effects: CompiledEffect[];
   private readonly passthroughPipeline: GPUComputePipeline;
   private readonly passthroughLayout: GPUBindGroupLayout;
-  private params: ClipEffectParams = { ...DEFAULT_CLIP_EFFECTS };
 
   constructor(device: GPUDevice, useF16: boolean) {
     this.device = device;
@@ -170,48 +175,33 @@ export class EffectChain {
         layout: 'auto',
         compute: { module, entryPoint: 'main' },
       });
-      const bindGroupLayout = pipeline.getBindGroupLayout(0);
-      const uniformBuffer = device.createBuffer({
-        size: entry.uniformByteLength,
+      return {
+        id: entry.id,
+        byteLength: entry.uniformByteLength,
+        pipeline,
+        uniformBuffers: [],
+        bindGroupLayout: pipeline.getBindGroupLayout(0),
+      };
+    });
+  }
+
+  private uniformBufferFor(effect: CompiledEffect, slot: number): GPUBuffer {
+    let buffer = effect.uniformBuffers[slot];
+    if (!buffer) {
+      buffer = this.device.createBuffer({
+        size: effect.byteLength,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
-      return { id: entry.id, pipeline, uniformBuffer, bindGroupLayout };
-    });
-
-    this.writeAllUniforms(DEFAULT_CLIP_EFFECTS);
-  }
-
-  setParams(params: ClipEffectParams): void {
-    const next = normalizeClipEffects(params);
-    if (clipEffectsEqual(this.params, next)) return;
-    this.params = next;
-    this.writeAllUniforms(this.params);
-  }
-
-  /** Updates one scalar without recompiling pipelines. */
-  setParam(key: keyof ClipEffectParams, value: number): void {
-    if (this.params[key] === value) return;
-    this.params = { ...this.params, [key]: value };
-    for (const effect of this.effects) {
-      const entry = EFFECT_REGISTRY.find((e) => e.id === effect.id)!;
-      const field = entry.fields.find((f) => f.key === key);
-      if (!field) continue;
-      this.device.queue.writeBuffer(
-        effect.uniformBuffer,
-        field.offset,
-        new Float32Array([value]),
-      );
+      effect.uniformBuffers[slot] = buffer;
     }
-  }
-
-  getParams(): ClipEffectParams {
-    return { ...this.params };
+    return buffer;
   }
 
   /**
-   * Encodes import → brightness → saturation → colour-temperature into `encoder`.
-   * Returns the texture view that holds the final processed frame (shared by
-   * preview present and future export encode).
+   * Encodes import → brightness → saturation → colour-temperature for one layer
+   * into `encoder`. `params` are the layer's clip effects; `layerSlot` selects
+   * the per-layer uniform-buffer set. Returns the texture view holding the final
+   * graded frame (preview present and export encode share this).
    */
   encodeColourChain(
     encoder: GPUCommandEncoder,
@@ -219,7 +209,10 @@ export class EffectChain {
     storage: StoragePingPong,
     width: number,
     height: number,
+    params: ClipEffectParams,
+    layerSlot = 0,
   ): GPUTextureView {
+    const normalized = normalizeClipEffects(params);
     const wgX = Math.ceil(width / 8);
     const wgY = Math.ceil(height / 8);
 
@@ -240,9 +233,9 @@ export class EffectChain {
     }
 
     const activeEffects: CompiledEffect[] = [];
-    if (isBrightnessContrastActive(this.params)) activeEffects.push(this.effects[0]!);
-    if (isSaturationActive(this.params)) activeEffects.push(this.effects[1]!);
-    if (isColourTemperatureActive(this.params)) activeEffects.push(this.effects[2]!);
+    if (isBrightnessContrastActive(normalized)) activeEffects.push(this.effects[0]!);
+    if (isSaturationActive(normalized)) activeEffects.push(this.effects[1]!);
+    if (isColourTemperatureActive(normalized)) activeEffects.push(this.effects[2]!);
 
     let currentSrc = storage.a;
     const pingPong = [storage.b, storage.c, storage.a];
@@ -252,10 +245,13 @@ export class EffectChain {
       const currentDst = pingPong[bufIdx]!;
       bufIdx = (bufIdx + 1) % 3;
 
+      const uniformBuffer = this.uniformBufferFor(effect, layerSlot);
+      this.device.queue.writeBuffer(uniformBuffer, 0, packEffectUniform(effect.id, normalized));
+
       const bindGroup = this.device.createBindGroup({
         layout: effect.bindGroupLayout,
         entries: [
-          { binding: 0, resource: { buffer: effect.uniformBuffer } },
+          { binding: 0, resource: { buffer: uniformBuffer } },
           { binding: 1, resource: currentSrc },
           { binding: 2, resource: currentDst },
         ],
@@ -274,14 +270,8 @@ export class EffectChain {
 
   destroy(): void {
     for (const effect of this.effects) {
-      effect.uniformBuffer.destroy();
-    }
-  }
-
-  private writeAllUniforms(params: ClipEffectParams): void {
-    for (const effect of this.effects) {
-      const packed = packEffectUniform(effect.id, params);
-      this.device.queue.writeBuffer(effect.uniformBuffer, 0, packed);
+      for (const buffer of effect.uniformBuffers) buffer.destroy();
+      effect.uniformBuffers.length = 0;
     }
   }
 }

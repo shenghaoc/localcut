@@ -27,12 +27,13 @@ import {
   removeClip,
   removeTrack,
   reorderTrack,
-  resolveAt,
+  resolveAllAt,
   resolveAudioAt,
   setClipDuration,
   splitClipAt,
   trimClip,
   setClipEffectParam,
+  setClipTransform,
   setTrackGain,
   setTrackMute,
   setTrackSolo,
@@ -43,6 +44,8 @@ import {
   type Timeline,
   type TimelineMarker,
   type ClipboardTimelineClip,
+  type ClipEffectParams,
+  type TransformParams,
 } from './timeline';
 import {
   applyMixStageInPlace,
@@ -64,12 +67,13 @@ import {
   type MediaInputHandle,
 } from './media-io';
 import { ThumbnailGenerator } from './thumbnails';
-import { initGpu, type PreviewRenderer } from './gpu';
+import { initGpu, type CompositeLayer, type PreviewRenderer } from './gpu';
 import {
   AdaptiveResolution,
   buildPreviewLadder,
   PlaybackController,
   type DecodedFrame,
+  type DecodedLayer,
 } from './playback';
 import { probeEncodeThroughput } from './hardware-probe';
 import { FrameCache, makeFrameCacheKey } from './frame-cache';
@@ -77,6 +81,7 @@ import {
   ExportCancelledError,
   defaultExportSettings,
   exportTimeline,
+  layerBudgetFromProbe,
   normalizeExportSettings,
   probeExportCodecs,
 } from './export';
@@ -103,7 +108,7 @@ import {
 let clockView: Float64Array | null = null;
 let renderer: PreviewRenderer | null = null;
 let primaryHandle: MediaInputHandle | null = null;
-let playback: PlaybackController | null = null;
+let playback: PlaybackController<LayerMeta> | null = null;
 let adaptive: AdaptiveResolution | null = null;
 let probeDone = false;
 let timeline: Timeline = createEmptyTimeline();
@@ -128,6 +133,7 @@ let autosaveInFlight: Promise<void> | null = null;
 let restoreOfferGeneration = 0;
 let frameCache: FrameCache | null = null;
 let currentProbe: ThroughputProbe | null = null;
+let layerBudgetWarned = false;
 let exportAbort: AbortController | null = null;
 let lastExportSettings: ExportSettings | null = null;
 const FRAME_CACHE_BUDGET_BYTES = 64 * 1024 * 1024;
@@ -178,6 +184,7 @@ function postTimelineState() {
       duration: clip.duration,
       inPoint: clip.inPoint,
       effects: { ...clip.effects },
+      transform: { ...clip.transform },
       audioFadeIn: clip.audioFadeIn,
       audioFadeOut: clip.audioFadeOut,
       offline: sourceInputs.has(clip.sourceId) ? undefined : true,
@@ -1161,32 +1168,84 @@ function wrapDecodedFrameForPlayback(frameSource: MediaInputHandle, sourceTimest
   });
 }
 
-function makeGetFrame() {
-  return async (timestamp: number): Promise<DecodedFrame | null> => {
-    const resolved = resolveAt(timeline, timestamp);
-    if (!resolved) return null;
+function decodeFrameForLayer(
+  sourceHandle: MediaInputHandle,
+  sourceId: string,
+  sourceTime: number,
+): Promise<DecodedFrame | null> {
+  if (!frameCache) {
+    return wrapDecodedFrameForPlayback(sourceHandle, sourceTime);
+  }
+  const key = makeFrameCacheKey(sourceId, sourceTime);
+  // FrameCache.get() returns a caller-owned clone. The wrapper owns it (closed via
+  // close()) and hands the renderer a further clone, keeping the two close paths on
+  // distinct frames so neither the wrapper nor the cache's own copy is closed twice.
+  const cached = frameCache.get(key);
+  if (cached) {
+    return Promise.resolve({
+      toVideoFrame: () => cached.clone(),
+      close: () => cached.close(),
+    });
+  }
+  return wrapDecodedFrameForPlayback(sourceHandle, sourceTime);
+}
 
-    const sourceHandle = sourceInputs.get(resolved.clip.sourceId);
-    if (!sourceHandle) return null;
+/** Colour/transform metadata carried per decoded layer (no shared mutable state). */
+interface LayerMeta {
+  effects: ClipEffectParams;
+  transform: TransformParams;
+}
 
-    if (!frameCache) {
-      return wrapDecodedFrameForPlayback(sourceHandle, resolved.sourceTime);
+/**
+ * Decodes the budgeted video layer stack at `timestamp` (bottom → top) for the
+ * compositor. Offline/audio-only layers are skipped (they don't consume budget);
+ * decoding stops once the throughput-derived budget of decodable layers is met,
+ * dropping the topmost extras with a one-time notice (T2.4). Each decoded layer
+ * carries its own colour/transform metadata so `renderFrames` pairs them
+ * directly. On a decode failure, every already-decoded layer is closed before
+ * the error propagates so no frame leaks.
+ */
+function makeGetLayers() {
+  return async (timestamp: number): Promise<DecodedLayer<LayerMeta>[] | null> => {
+    const layers = resolveAllAt(timeline, timestamp);
+    const budget = layerBudgetFromProbe(currentProbe);
+    const decodedLayers: DecodedLayer<LayerMeta>[] = [];
+    let overBudget = false;
+    try {
+      for (const layer of layers) {
+        const handle = sourceInputs.get(layer.clip.sourceId);
+        if (!handle?.frameSource) continue;
+        if (decodedLayers.length >= budget) {
+          overBudget = true;
+          break;
+        }
+        const decoded = await decodeFrameForLayer(handle, layer.clip.sourceId, layer.sourceTime);
+        if (!decoded) continue;
+        decodedLayers.push({
+          decoded,
+          meta: { effects: layer.clip.effects, transform: layer.clip.transform },
+        });
+      }
+    } catch (error) {
+      for (const layer of decodedLayers) layer.decoded.close();
+      throw error;
     }
-
-    const key = makeFrameCacheKey(resolved.clip.sourceId, resolved.sourceTime);
-    // FrameCache.get() returns a caller-owned clone. The wrapper owns it (closed via
-    // close()) and hands the renderer a further clone, keeping the two close paths on
-    // distinct frames so neither the wrapper nor the cache's own copy is closed twice.
-    const cached = frameCache.get(key);
-    if (cached) {
-      return {
-        toVideoFrame: () => cached.clone(),
-        close: () => cached.close(),
-      };
-    }
-
-    return wrapDecodedFrameForPlayback(sourceHandle, resolved.sourceTime);
+    noteLayerBudget(overBudget, budget);
+    return decodedLayers.length > 0 ? decodedLayers : null;
   };
+}
+
+/** Surfaces an over-budget composite stack once per episode (reset when back under). */
+function noteLayerBudget(overBudget: boolean, budget: number): void {
+  if (!overBudget) {
+    layerBudgetWarned = false;
+    return;
+  }
+  if (layerBudgetWarned) return;
+  layerBudgetWarned = true;
+  postProjectWarning(
+    `Composite stack exceeds this device's budget of ${budget} layers; dropping the topmost extras.`,
+  );
 }
 
 async function handleImport(file: File, fileHandle?: FileSystemFileHandle | null) {
@@ -1305,6 +1364,7 @@ function clipboardClipFromMessage(item: TimelineClipboardClip): ClipboardTimelin
       duration: item.clip.duration,
       inPoint: item.clip.inPoint,
       effects: { ...item.clip.effects },
+      transform: { ...item.clip.transform },
       audioFadeIn: item.clip.audioFadeIn,
       audioFadeOut: item.clip.audioFadeOut,
     },
@@ -1334,6 +1394,19 @@ function handleSetEffectParam(cmd: Extract<WorkerCommand, { type: 'set-effect-pa
     () => setClipEffectParam(timeline, cmd.trackId, cmd.clipId, cmd.key, cmd.value),
     {
       coalesceKey: { clipId: cmd.clipId, key: cmd.key },
+      refreshPlayback: 'refresh',
+      prune: false,
+    },
+  );
+}
+
+function handleSetTransform(cmd: Extract<WorkerCommand, { type: 'set-transform' }>) {
+  commitTimelineMutation(
+    () => setClipTransform(timeline, cmd.trackId, cmd.clipId, cmd.transform),
+    {
+      // A gizmo drag streams many updates; coalesce them into one history entry
+      // per clip so a single drag doesn't exhaust the undo ring.
+      coalesceKey: { clipId: cmd.clipId, key: 'transform' },
       refreshPlayback: 'refresh',
       prune: false,
     },
@@ -1585,14 +1658,20 @@ function setupPlayback() {
   const wasPlaying = playback?.isPlaying() ?? false;
   playback?.dispose();
 
-  const getFrame = makeGetFrame();
-  playback = new PlaybackController({
+  const getFrames = makeGetLayers();
+  playback = new PlaybackController<LayerMeta>({
     duration: getTimelineDuration(timeline),
     frameRate: handle.frameRate,
-    getFrame,
-    renderFrame: (frame, timestamp) => {
-      const resolved = resolveAt(timeline, timestamp);
-      renderer?.present(frame, resolved?.clip.effects);
+    getFrames,
+    renderFrames: (layers) => {
+      // The stack is already budgeted + offline-skipped by makeGetLayers.
+      const stack: CompositeLayer[] = layers.map((layer) => ({
+        kind: 'frame' as const,
+        frame: layer.frame,
+        effects: layer.meta.effects,
+        transform: layer.meta.transform,
+      }));
+      renderer?.present(stack);
     },
     writeClock: writeTransport,
     onFrameTime: handleFrameTime,
@@ -1907,6 +1986,9 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
       break;
     case 'set-effect-param':
       handleSetEffectParam(cmd);
+      break;
+    case 'set-transform':
+      handleSetTransform(cmd);
       break;
     case 'set-track-gain':
       handleSetTrackGain(cmd);

@@ -3,6 +3,7 @@ import {
   DEFAULT_CLIP_AUDIO_FADES,
   DEFAULT_TRACK_MIX,
   defaultClipEffects,
+  defaultClipTransform,
   type Timeline,
   type TimelineMarker,
 } from './timeline';
@@ -22,6 +23,7 @@ function makeTimeline(label: string): Timeline {
           duration: 5,
           inPoint: 0,
           effects: defaultClipEffects(),
+          transform: defaultClipTransform(),
           ...DEFAULT_CLIP_AUDIO_FADES,
         },
       ],

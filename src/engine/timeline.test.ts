@@ -7,8 +7,11 @@ import {
   DEFAULT_TRACK_MIX,
   deleteMarker,
   defaultClipEffects,
+  defaultClipTransform,
   defaultTimelineClip,
   duplicateClips,
+  resolveAllAt,
+  setClipTransform,
   getTimelineDuration,
   insertClip,
   moveClips,
@@ -29,10 +32,16 @@ import {
 } from './timeline';
 
 function clip(
-  partial: Omit<TimelineClip, 'effects' | 'audioFadeIn' | 'audioFadeOut'> &
-    Partial<Pick<TimelineClip, 'effects' | 'audioFadeIn' | 'audioFadeOut'>>,
+  partial: Omit<TimelineClip, 'effects' | 'transform' | 'audioFadeIn' | 'audioFadeOut'> &
+    Partial<Pick<TimelineClip, 'effects' | 'transform' | 'audioFadeIn' | 'audioFadeOut'>>,
 ): TimelineClip {
-  return { effects: defaultClipEffects(), audioFadeIn: 0, audioFadeOut: 0, ...partial };
+  return {
+    effects: defaultClipEffects(),
+    transform: defaultClipTransform(),
+    audioFadeIn: 0,
+    audioFadeOut: 0,
+    ...partial,
+  };
 }
 
 describe('timeline', () => {
@@ -621,5 +630,99 @@ describe('timeline tracks', () => {
 
     expect(setClipDuration(timeline, 'v', 'still', 0)).toBe(timeline);
     expect(setClipDuration(timeline, 'v', 'still', 5)).toBe(timeline);
+  });
+
+  describe('resolveAllAt', () => {
+    function stack(): TimelineTrack[] {
+      return [
+        {
+          id: 'video-base',
+          type: 'video',
+          ...DEFAULT_TRACK_MIX,
+          clips: [clip({ id: 'base', sourceId: 's1', start: 0, duration: 10, inPoint: 5 })],
+        },
+        {
+          id: 'audio',
+          type: 'audio',
+          ...DEFAULT_TRACK_MIX,
+          clips: [clip({ id: 'aud', sourceId: 's1', start: 0, duration: 10, inPoint: 0 })],
+        },
+        {
+          id: 'video-top',
+          type: 'video',
+          ...DEFAULT_TRACK_MIX,
+          clips: [clip({ id: 'pip', sourceId: 's2', start: 2, duration: 3, inPoint: 1 })],
+        },
+      ];
+    }
+
+    it('returns overlapping video layers bottom-to-top, skipping audio', () => {
+      const layers = resolveAllAt(stack(), 3);
+      expect(layers.map((l) => l.clip.id)).toEqual(['base', 'pip']);
+      expect(layers[0]!.sourceTime).toBeCloseTo(8); // base inPoint 5 + (3 - 0)
+      expect(layers[1]!.sourceTime).toBeCloseTo(2); // pip inPoint 1 + (3 - 2)
+    });
+
+    it('returns only the base layer outside the overlap window', () => {
+      const layers = resolveAllAt(stack(), 7);
+      expect(layers.map((l) => l.clip.id)).toEqual(['base']);
+    });
+
+    it('returns nothing in a gap or before zero', () => {
+      expect(resolveAllAt(stack(), 50)).toEqual([]);
+      expect(resolveAllAt(stack(), -1)).toEqual([]);
+    });
+  });
+
+  describe('setClipTransform', () => {
+    function withClip(): TimelineTrack[] {
+      return [
+        {
+          id: 'v',
+          type: 'video',
+          ...DEFAULT_TRACK_MIX,
+          clips: [clip({ id: 'a', sourceId: 's', start: 0, duration: 5, inPoint: 0 })],
+        },
+      ];
+    }
+
+    it('merges a partial transform and normalizes it', () => {
+      const next = setClipTransform(withClip(), 'v', 'a', { scale: 0.5, opacity: 2 });
+      expect(next[0]!.clips[0]!.transform.scale).toBe(0.5);
+      expect(next[0]!.clips[0]!.transform.opacity).toBe(1);
+    });
+
+    it('returns the original timeline on no-op and unknown clips', () => {
+      const timeline = withClip();
+      expect(setClipTransform(timeline, 'v', 'a', { scale: 1 })).toBe(timeline);
+      expect(setClipTransform(timeline, 'v', 'missing', { scale: 0.5 })).toBe(timeline);
+    });
+  });
+
+  describe('splitClipAt with overlapping tracks', () => {
+    function stacked(): TimelineTrack[] {
+      return [
+        {
+          id: 'video-base',
+          type: 'video',
+          ...DEFAULT_TRACK_MIX,
+          clips: [clip({ id: 'base', sourceId: 's1', start: 0, duration: 10, inPoint: 0 })],
+        },
+        {
+          id: 'video-top',
+          type: 'video',
+          ...DEFAULT_TRACK_MIX,
+          clips: [clip({ id: 'pip', sourceId: 's2', start: 0, duration: 10, inPoint: 0 })],
+        },
+      ];
+    }
+
+    it('splits the clip on the requested track, not the first overlapping one', () => {
+      const next = splitClipAt(stacked(), 'video-top', 4);
+      expect(next[0]!.clips.map((c) => c.id)).toEqual(['base']); // base untouched
+      expect(next[1]!.clips).toHaveLength(2); // top track split into two
+      expect(next[1]!.clips[0]!.duration).toBe(4);
+      expect(next[1]!.clips[1]!.inPoint).toBe(4);
+    });
   });
 });

@@ -847,6 +847,57 @@ body {
   font-weight: 500;
 }
 
+.preview-gizmo {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid var(--accent, #5b8cff);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 40%);
+  pointer-events: none;
+  z-index: 4;
+}
+
+.preview-gizmo-body {
+  position: absolute;
+  inset: 0;
+  cursor: move;
+  pointer-events: auto;
+}
+
+.preview-gizmo-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  background: var(--accent, #5b8cff);
+  border: 1px solid #fff;
+  border-radius: 2px;
+  cursor: nwse-resize;
+  pointer-events: auto;
+}
+
+.preview-gizmo-rotate {
+  position: absolute;
+  left: 50%;
+  top: -22px;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  background: #fff;
+  border: 1px solid var(--accent, #5b8cff);
+  border-radius: 50%;
+  cursor: grab;
+  pointer-events: auto;
+}
+
+.transform-fit select {
+  width: 100%;
+  background: var(--input-bg, #1a1d24);
+  color: inherit;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: var(--radius-sm, 4px);
+  padding: 4px 6px;
+}
+
 .preview-empty {
   position: absolute;
   inset: 0;
