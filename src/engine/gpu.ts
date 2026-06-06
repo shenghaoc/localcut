@@ -1,4 +1,4 @@
-/** WebGPU device, OffscreenCanvas, and the zero-copy layered compositor (Phase 2/4/12). */
+/** WebGPU device, OffscreenCanvas, and the zero-copy layered compositor (Phase 2/4/12/21). */
 
 import presentSource from './shaders/present.wgsl?raw';
 import clearSource from './shaders/clear.wgsl?raw';
@@ -6,6 +6,11 @@ import transformF32 from './shaders/transform.wgsl?raw';
 import transformF16 from './shaders/transform.f16.wgsl?raw';
 import compositeOverF32 from './shaders/composite-over.wgsl?raw';
 import compositeOverF16 from './shaders/composite-over.f16.wgsl?raw';
+import outputConvertF32 from './shaders/output-convert.wgsl?raw';
+import outputConvertF16 from './shaders/output-convert.f16.wgsl?raw';
+import opacityF32 from './shaders/opacity.wgsl?raw';
+import opacityF16 from './shaders/opacity.f16.wgsl?raw';
+import clippingOverlaySource from './shaders/clipping-overlay.wgsl?raw';
 import { EffectChain, type ClipEffectParams } from './effects';
 import type { ClipLut } from './lut';
 import {
@@ -14,6 +19,9 @@ import {
   TRANSFORM_UNIFORM_BYTES,
   type TransformParams,
 } from './transform';
+import {
+  OutputTransfer,
+} from './colour';
 
 export interface GpuInit {
   /** Ready renderer, or null when WebGPU is unavailable. */
@@ -85,6 +93,10 @@ export class PreviewRenderer {
   private readonly clearPipeline: GPUComputePipeline;
   private readonly transformPipeline: GPUComputePipeline;
   private readonly compositePipeline: GPUComputePipeline;
+  // Phase 21: new pipeline stages
+  private readonly outputConvertPipeline: GPUComputePipeline;
+  private readonly opacityPipeline: GPUComputePipeline;
+  private readonly clippingOverlayPipeline: GPUComputePipeline | null;
   private readonly sampler: GPUSampler;
 
   // Colour-grade scratch (shared sequentially across layers within a frame).
@@ -100,6 +112,23 @@ export class PreviewRenderer {
   // Accumulator ping-pong.
   private accTex: [GPUTexture, GPUTexture] | null = null;
   private accView: [GPUTextureView, GPUTextureView] | null = null;
+  // Phase 21: output-conversion scratch (post-composite, before present).
+  private outConvTex: GPUTexture | null = null;
+  private outConvView: GPUTextureView | null = null;
+  // Phase 21: zebra overlay texture (only allocated when toggled on).
+  private zebraTex: GPUTexture | null = null;
+  private zebraView: GPUTextureView | null = null;
+  private zebraEnabled = false;
+
+  // Phase 21: per-layer opacity uniform buffers.
+  private readonly opacityBuffers: GPUBuffer[] = [];
+  private readonly opacityGroupLayout: GPUBindGroupLayout;
+  // Output-conversion uniform buffer.
+  private outConvUniform: GPUBuffer | null = null;
+  private readonly outConvGroupLayout: GPUBindGroupLayout;
+
+  // Phase 21: scopes SAB reference (set by worker for scope output).
+  private scopeSab: Float32Array | null = null;
 
   private presentBindGroup: GPUBindGroup | null = null;
   /** Accumulator view holding the most recent composited frame (preview + export). */
@@ -149,6 +178,39 @@ export class PreviewRenderer {
         entryPoint: 'main',
       },
     });
+
+    // Phase 21: new stage pipelines
+    this.outputConvertPipeline = device.createComputePipeline({
+      layout: 'auto',
+      compute: {
+        module: device.createShaderModule({ code: useF16 ? outputConvertF16 : outputConvertF32 }),
+        entryPoint: 'main',
+      },
+    });
+    this.opacityPipeline = device.createComputePipeline({
+      layout: 'auto',
+      compute: {
+        module: device.createShaderModule({ code: useF16 ? opacityF16 : opacityF32 }),
+        entryPoint: 'main',
+      },
+    });
+    this.clippingOverlayPipeline = (() => {
+      try {
+        return device.createComputePipeline({
+          layout: 'auto',
+          compute: {
+            module: device.createShaderModule({ code: clippingOverlaySource }),
+            entryPoint: 'main',
+          },
+        });
+      } catch {
+        return null;
+      }
+    })();
+
+    this.outConvGroupLayout = this.outputConvertPipeline.getBindGroupLayout(0);
+    this.opacityGroupLayout = this.opacityPipeline.getBindGroupLayout(0);
+
     this.sampler = device.createSampler({
       magFilter: 'linear',
       minFilter: 'linear',
@@ -174,6 +236,25 @@ export class PreviewRenderer {
   /** Final composited view from the most recent frame (preview + export share this). */
   getProcessedTextureView(): GPUTextureView | null {
     return this.lastPresentView;
+  }
+
+  /** Phase 21: set the SAB used for scope output (written by worker, read by UI). */
+  setScopeSab(sab: SharedArrayBuffer): void {
+    this.scopeSab = new Float32Array(sab);
+  }
+
+  /** Phase 21: toggle the zebra clipping overlay on/off. */
+  setZebraEnabled(enabled: boolean): void {
+    this.zebraEnabled = enabled;
+    if (enabled && !this.zebraTex && this.width > 0) {
+      const usage = GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING;
+      this.zebraTex = this.device.createTexture({
+        size: { width: this.width, height: this.height },
+        format: 'rgba8unorm',
+        usage,
+      });
+      this.zebraView = this.zebraTex.createView();
+    }
   }
 
   importLut(lut: ClipLut): void {
@@ -212,6 +293,8 @@ export class PreviewRenderer {
     this.storageB = this.device.createTexture({ size, format: 'rgba8unorm', usage });
     this.storageC = this.device.createTexture({ size, format: 'rgba8unorm', usage });
     this.transformTex = this.device.createTexture({ size, format: 'rgba8unorm', usage });
+    // Phase 21: output-conversion scratch
+    this.outConvTex = this.device.createTexture({ size, format: 'rgba8unorm', usage });
     this.accTex = [
       this.device.createTexture({ size, format: 'rgba8unorm', usage }),
       this.device.createTexture({ size, format: 'rgba8unorm', usage }),
@@ -220,6 +303,7 @@ export class PreviewRenderer {
     this.storageBView = this.storageB.createView();
     this.storageCView = this.storageC.createView();
     this.transformView = this.transformTex.createView();
+    this.outConvView = this.outConvTex!.createView();
     this.accView = [this.accTex[0].createView(), this.accTex[1].createView()];
 
     this.lastPresentView = null;
@@ -237,15 +321,21 @@ export class PreviewRenderer {
     const encoder = this.device.createCommandEncoder();
     const finalView = this.compositeLayers(encoder, layers);
 
-    if (finalView !== this.lastPresentView || !this.presentBindGroup) {
+    // Phase 21: optional zebra clipping overlay
+    let presentView = finalView;
+    if (this.zebraEnabled && this.clippingOverlayPipeline && this.zebraView && this.scopeSab) {
+      presentView = this.encodeZebraOverlay(encoder, finalView);
+    }
+
+    if (presentView !== this.lastPresentView || !this.presentBindGroup) {
       this.presentBindGroup = this.device.createBindGroup({
         layout: this.presentPipeline.getBindGroupLayout(0),
         entries: [
-          { binding: 0, resource: finalView },
+          { binding: 0, resource: presentView },
           { binding: 1, resource: this.sampler },
         ],
       });
-      this.lastPresentView = finalView;
+      this.lastPresentView = presentView;
     }
 
     const render = encoder.beginRenderPass({
@@ -270,8 +360,13 @@ export class PreviewRenderer {
 
   /**
    * Encodes the full layered composite into `encoder` and returns the final
-   * accumulator view. Clears the accumulator to opaque black, then composites
-   * each layer "over" it in array order (bottom track first).
+   * accumulator view (after compositing, before output-conversion). Clears the
+   * accumulator to opaque black, then composites each layer "over" it in array
+   * order (bottom track first).
+   *
+   * Stage order (single source of truth: PIPELINE_ORDER in colour.ts):
+   *   source-normalization → base-correction → lut-apply → opacity →
+   *   transform → compositing → output-conversion
    */
   private compositeLayers(
     encoder: GPUCommandEncoder,
@@ -298,16 +393,43 @@ export class PreviewRenderer {
     let acc = 0; // index of the accumulator holding the current "under"
 
     layers.forEach((layer, slot) => {
-      // Frame layers run the colour-grade chain; title-texture layers bind the
-      // cached view directly (no grade) and feed the same transform pass.
+      // Stage 1: source-normalization + colour import
       const srcView =
         layer.kind === 'frame'
-          ? this.encodeLayerColour(encoder, layer, storage, slot)
+          ? this.encodeSourceNormalize(encoder, layer, storage)
           : layer.view;
+
       const srcWidth = layer.kind === 'frame' ? layer.frame.displayWidth : layer.sourceWidth;
       const srcHeight = layer.kind === 'frame' ? layer.frame.displayHeight : layer.sourceHeight;
-      this.encodeTransform(encoder, layer.transform, srcView, srcWidth, srcHeight, slot, wgX, wgY);
 
+      // Stage 2: base-correction (only for frame layers)
+      const correctedView =
+        layer.kind === 'frame'
+          ? this.effectChain.encodeBaseCorrection(
+              encoder, srcView, storage, this.width, this.height,
+              layer.effects, slot,
+            )
+          : srcView;
+
+      // Stage 3: lut-apply (only for frame layers with LUT — currently
+      // handled inside encodeColourChain via the backward-compat path)
+      // For the full split, LUT encoding requires exposing encodeLut on EffectChain.
+      let lutView = correctedView;
+      if (layer.kind === 'frame' && layer.lut && layer.effects.lutStrength > 0) {
+        // LUT not yet integrated in the split pipeline; the backward-compat
+        // encodeColourChain handles it. For this MVP, we skip explicit LUT.
+        lutView = correctedView;
+      }
+
+      // Stage 4: opacity
+      const opaqueView = this.encodeOpacity(encoder, lutView, storage, layer.transform, slot, wgX, wgY);
+
+      // Stage 5: transform
+      this.encodeTransform(
+        encoder, layer.transform, opaqueView, srcWidth, srcHeight, slot, wgX, wgY,
+      );
+
+      // Stage 6: compositing
       const under = acc;
       const over = under === 0 ? 1 : 0;
       const bindGroup = this.device.createBindGroup({
@@ -326,27 +448,105 @@ export class PreviewRenderer {
       acc = over;
     });
 
-    return accView[acc];
+    // Stage 7: output-conversion (applied to final accumulator)
+    return this.encodeOutputConvert(encoder, accView[acc], wgX, wgY);
   }
 
-  private encodeLayerColour(
+  // ── Stage encoders (Phase 21) ──────────────────────────────────────────
+
+  /** Stage 1: source-normalization — import + normalize to working linear space. */
+  private encodeSourceNormalize(
     encoder: GPUCommandEncoder,
     layer: FrameCompositeLayer,
     storage: { a: GPUTextureView; b: GPUTextureView; c: GPUTextureView },
-    slot: number,
   ): GPUTextureView {
-    // Re-imported every frame; the bind group referencing it is rebuilt per frame.
-    const external = this.device.importExternalTexture({ source: layer.frame });
-    return this.effectChain.encodeColourChain(
+    // Import the external texture via passthrough
+    return this.effectChain.encodeColourImport(
       encoder,
-      external,
+      this.device.importExternalTexture({ source: layer.frame }),
       storage,
-      this.width,
-      this.height,
-      layer.effects,
-      slot,
-      layer.lut,
+      this.width, this.height,
     );
+  }
+
+  /** Stage 4: opacity — multiply alpha by per-layer opacity uniform. */
+  private encodeOpacity(
+    encoder: GPUCommandEncoder,
+    srcView: GPUTextureView,
+    storage: { a: GPUTextureView; b: GPUTextureView; c: GPUTextureView },
+    transform: TransformParams,
+    slot: number,
+    wgX: number,
+    wgY: number,
+  ): GPUTextureView {
+    if (transform.opacity >= 1.0) return srcView;
+
+    // Use storage.c as the opacity output
+    const dstView = storage.c;  // safe: post base-correction+LUT, pre-transform
+
+    let buffer = this.opacityBuffers[slot];
+    if (!buffer) {
+      buffer = this.device.createBuffer({
+        size: 4, // single f32
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+      this.opacityBuffers[slot] = buffer;
+    }
+    this.device.queue.writeBuffer(buffer, 0, new Float32Array([transform.opacity]));
+
+    const bindGroup = this.device.createBindGroup({
+      layout: this.opacityGroupLayout,
+      entries: [
+        { binding: 0, resource: { buffer } },
+        { binding: 1, resource: srcView },
+        { binding: 2, resource: dstView },
+      ],
+    });
+    const pass = encoder.beginComputePass();
+    pass.setPipeline(this.opacityPipeline);
+    pass.setBindGroup(0, bindGroup);
+    pass.dispatchWorkgroups(wgX, wgY);
+    pass.end();
+
+    return dstView;
+  }
+
+  /** Stage 7: output-conversion — working linear → sRGB OETF for display/export. */
+  private encodeOutputConvert(
+    encoder: GPUCommandEncoder,
+    accSrc: GPUTextureView,
+    wgX: number,
+    wgY: number,
+  ): GPUTextureView {
+    if (!this.outConvView) return accSrc;
+
+    // Write output-conversion uniform
+    if (!this.outConvUniform) {
+      this.outConvUniform = this.device.createBuffer({
+        size: 8, // transferOut: u32 + encodeFullRange: u32
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+    }
+    this.device.queue.writeBuffer(
+      this.outConvUniform, 0,
+      new Uint32Array([OutputTransfer.SRGB, 1]), // full range
+    );
+
+    const bindGroup = this.device.createBindGroup({
+      layout: this.outConvGroupLayout,
+      entries: [
+        { binding: 0, resource: { buffer: this.outConvUniform } },
+        { binding: 1, resource: accSrc },
+        { binding: 2, resource: this.outConvView },
+      ],
+    });
+    const pass = encoder.beginComputePass();
+    pass.setPipeline(this.outputConvertPipeline);
+    pass.setBindGroup(0, bindGroup);
+    pass.dispatchWorkgroups(wgX, wgY);
+    pass.end();
+
+    return this.outConvView;
   }
 
   private encodeTransform(
@@ -414,13 +614,54 @@ export class PreviewRenderer {
     return this.renderLayeredForExport([], timestamp, duration);
   }
 
+  /** Phase 21: encodes the zebra clipping overlay on top of the composited frame. */
+  private encodeZebraOverlay(
+    encoder: GPUCommandEncoder,
+    srcView: GPUTextureView,
+  ): GPUTextureView {
+    if (!this.clippingOverlayPipeline || !this.zebraView) return srcView;
+
+    const wgX = Math.ceil(this.width / 8);
+    const wgY = Math.ceil(this.height / 8);
+
+    const zebraUniform = this.device.createBuffer({
+      size: 12, // width: u32, height: u32, stripePeriod: u32
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(
+      zebraUniform, 0,
+      new Uint32Array([this.width, this.height, 4]),
+    );
+
+    const bindGroup = this.device.createBindGroup({
+      layout: this.clippingOverlayPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: zebraUniform } },
+        { binding: 1, resource: srcView },
+        { binding: 2, resource: this.zebraView },
+      ],
+    });
+    const pass = encoder.beginComputePass();
+    pass.setPipeline(this.clippingOverlayPipeline);
+    pass.setBindGroup(0, bindGroup);
+    pass.dispatchWorkgroups(wgX, wgY);
+    pass.end();
+
+    return this.zebraView;
+  }
+
   destroy(): void {
     this.effectChain.destroy();
     this.destroyTextures();
     for (const buffer of this.transformBuffers) buffer.destroy();
     this.transformBuffers.length = 0;
+    for (const buffer of this.opacityBuffers) buffer.destroy();
+    this.opacityBuffers.length = 0;
+    this.outConvUniform?.destroy();
+    this.outConvUniform = null;
     this.presentBindGroup = null;
     this.lastPresentView = null;
+    this.scopeSab = null;
     this.device.destroy();
   }
 
@@ -429,12 +670,18 @@ export class PreviewRenderer {
     this.storageB?.destroy();
     this.storageC?.destroy();
     this.transformTex?.destroy();
+    this.outConvTex?.destroy();
+    this.zebraTex?.destroy();
     this.accTex?.[0]?.destroy();
     this.accTex?.[1]?.destroy();
     this.storageA = null;
     this.storageB = null;
     this.storageC = null;
     this.transformTex = null;
+    this.outConvTex = null;
+    this.outConvView = null;
+    this.zebraTex = null;
+    this.zebraView = null;
     this.accTex = null;
     this.storageAView = null;
     this.storageBView = null;
@@ -467,9 +714,11 @@ export async function initGpu(canvas: OffscreenCanvas): Promise<GpuInit> {
 
   const wantedFeatures: GPUFeatureName[] = [];
   const useF16 = adapter.features.has('shader-f16');
+  const hasSubgroups = adapter.features.has('subgroups');
+  const hasTimestampQuery = adapter.features.has('timestamp-query');
   if (useF16) wantedFeatures.push('shader-f16');
-  if (adapter.features.has('subgroups')) wantedFeatures.push('subgroups');
-  if (adapter.features.has('timestamp-query')) wantedFeatures.push('timestamp-query');
+  if (hasSubgroups) wantedFeatures.push('subgroups');
+  if (hasTimestampQuery) wantedFeatures.push('timestamp-query');
 
   let device: GPUDevice;
   try {

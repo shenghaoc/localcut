@@ -748,7 +748,7 @@ interface SetTrackEditTargetCommand {
 }
 
 export type WorkerCommand =
-  | { type: 'init'; canvas: OffscreenCanvas; sab: SharedArrayBuffer; audioSab?: SharedArrayBuffer | null }
+  | { type: 'init'; canvas: OffscreenCanvas; sab: SharedArrayBuffer; audioSab?: SharedArrayBuffer | null; scopeSab?: SharedArrayBuffer | null }
   | { type: 'import'; file: File; fileHandle?: FileSystemFileHandle | null }
   | { type: 'play' }
   | { type: 'pause' }
@@ -834,6 +834,8 @@ export type WorkerCommand =
   | SetTrackVisibleCommand
   | SetTrackSyncLockCommand
   | SetTrackEditTargetCommand
+  | { type: 'toggle-scopes'; enabled: boolean }
+  | { type: 'toggle-zebra'; enabled: boolean }
   | { type: 'dispose' };
 
 /** A measured preview resolution tier (adaptive downscale of the decode path). */
@@ -863,6 +865,14 @@ export interface ExportProgress {
   etaSeconds: number | null;
   elapsedSeconds: number;
   subRealtime: boolean;
+}
+
+export type HDRWarningTypeSnapshot = 'hdr-content-detected' | 'gamut-mismatch' | 'tone-map-active' | 'export-hdr-to-sdr';
+
+export interface HDRWarningSnapshot {
+  type: HDRWarningTypeSnapshot;
+  clipIds: string[];
+  message: string;
 }
 
 export type WorkerStateMessage =
@@ -914,6 +924,7 @@ export type WorkerStateMessage =
   | { type: 'bundle-job-progress'; jobId: string; phase: string; bytesDone: number; bytesTotal: number | null }
   | { type: 'bundle-integrity-report'; jobId: string; report: BundleIntegrityReportSnapshot }
   | { type: 'bundle-import-result'; jobId: string; ok: boolean; projectId?: string; reason?: string }
+  | { type: 'hdr-warnings'; warnings: HDRWarningSnapshot[] }
   | { type: 'error'; message: string };
 
 export function assertCrossOriginIsolated(context: string): void {

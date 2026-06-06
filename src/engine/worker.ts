@@ -1096,6 +1096,7 @@ async function handleInit(
   canvas: OffscreenCanvas,
   sab: SharedArrayBuffer,
   audioSab?: SharedArrayBuffer | null,
+  scopeSab?: SharedArrayBuffer | null,
 ) {
   assertCrossOriginIsolated('Pipeline worker');
   clockView = new Float64Array(sab);
@@ -1108,6 +1109,11 @@ async function handleInit(
   try {
     const gpu = await initGpu(canvas);
     renderer = gpu.renderer;
+
+    // Phase 21: wire scope SAB to renderer if provided
+    if (scopeSab && renderer) {
+      renderer.setScopeSab(scopeSab);
+    }
     if (renderer) {
       titleCache = new TitleTextureCache(createCanvasTitleUploader(renderer.gpuDevice));
       // Load bundled fonts before the first raster; resolves even when a bundle
@@ -2786,7 +2792,7 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
   const cmd = event.data;
   switch (cmd.type) {
     case 'init':
-      void handleInit(cmd.canvas, cmd.sab, cmd.audioSab);
+      void handleInit(cmd.canvas, cmd.sab, cmd.audioSab, cmd.scopeSab);
       break;
     case 'import':
       void handleImport(cmd.file, cmd.fileHandle);
@@ -3049,6 +3055,15 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
     case 'set-track-edit-target':
       handleSetTrackEditTarget(cmd);
       break;
+    case 'toggle-scopes': {
+      // Phase 21: scope panel toggle
+      renderer?.setScopesEnabled(cmd.enabled);
+      break;
+    }
+    case 'toggle-zebra': {
+      renderer?.setZebraEnabled(cmd.enabled);
+      break;
+    }
     case 'dispose':
       void handleDispose();
       break;
