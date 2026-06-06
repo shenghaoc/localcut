@@ -1,3 +1,8 @@
+---
+inclusion: fileMatch
+fileMatchPattern: ["**/*.test.ts", "src/engine/**"]
+---
+
 # Testing Standards
 
 ## Framework & Environment

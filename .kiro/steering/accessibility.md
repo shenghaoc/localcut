@@ -1,3 +1,8 @@
+---
+inclusion: fileMatch
+fileMatchPattern: "src/ui/**"
+---
+
 # Accessibility Standards
 
 ## Principles
