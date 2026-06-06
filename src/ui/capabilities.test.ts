@@ -109,6 +109,17 @@ describe('deriveCapabilityTier', () => {
     ).toBe('limited');
   });
 
+  it('returns limited (not starting) when isolated but a required accelerated feature is missing', () => {
+    const snapshot = probeCapabilities({ ...isolated, offscreenCanvas: false });
+    expect(
+      deriveCapabilityTier(snapshot, {
+        workerReady: false,
+        webgpuReady: false,
+        runtimeIssue: null,
+      }),
+    ).toBe('limited');
+  });
+
   it('returns blocked when File API is missing', () => {
     const snapshot = probeCapabilities({ ...isolated, fileApi: false });
     expect(

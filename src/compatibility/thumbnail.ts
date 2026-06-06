@@ -51,8 +51,11 @@ export async function extractCompatibilityPreview(
     const sourceWidth = video.videoWidth;
     const sourceHeight = video.videoHeight;
 
-    video.currentTime = Math.min(THUMBNAIL_SEEK_SECONDS, Math.max(0, duration - 0.001));
-    await waitForEvent(video, 'seeked');
+    const seekTime = Math.min(THUMBNAIL_SEEK_SECONDS, Math.max(0, duration - 0.001));
+    if (seekTime !== video.currentTime) {
+      video.currentTime = seekTime;
+      await waitForEvent(video, 'seeked');
+    }
 
     const target = scaleToMaxEdge(sourceWidth, sourceHeight, maxEdge);
     const canvas = document.createElement('canvas');

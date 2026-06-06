@@ -235,6 +235,9 @@ export function App() {
         setStatusLine(`Export failed: ${msg.message}`);
         break;
       case 'import-error':
+        setImporting(false);
+        setStatusLine(msg.message);
+        break;
       case 'error':
         setImporting(false);
         setRuntimeIssue(msg.message);
@@ -405,6 +408,7 @@ export function App() {
 
   function onFileDrop(file: File) {
     setIsDraggingFile(false);
+    if (importing()) return;
     if (accelerated()) {
       const { bridge: b } = ensureWorker();
       b.send({ type: 'import', file });
@@ -469,6 +473,7 @@ export function App() {
       window.removeEventListener('dragover', onDragOver);
       window.removeEventListener('dragleave', onDragLeave);
       window.removeEventListener('drop', onDrop);
+      compatibilityImportGeneration++;
       clearCompatibilityPreview();
       bridge?.send({ type: 'dispose' });
       audioEngine.dispose();

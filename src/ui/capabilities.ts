@@ -107,14 +107,12 @@ export function deriveCapabilityTier(
     !runtime.workerReady &&
     snapshot.crossOriginIsolated &&
     snapshot.sharedArrayBuffer &&
+    hasAcceleratedFeatures(snapshot) &&
     !runtime.runtimeIssue
   ) {
     return 'starting';
   }
-  if (!snapshot.crossOriginIsolated || !snapshot.sharedArrayBuffer || runtime.runtimeIssue) {
-    return 'limited';
-  }
-  return 'starting';
+  return 'limited';
 }
 
 export function missingAcceleratedFeatures(snapshot: CapabilitySnapshot): CapabilityFeature[] {
