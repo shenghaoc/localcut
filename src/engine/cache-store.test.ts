@@ -5,7 +5,7 @@ describe('opaqueCachePath', () => {
   it('derives sanitized opaque paths instead of preserving source names', () => {
     const path = opaqueCachePath('proxy files', 'Vacation Raw Footage.mov', 'mp4!');
 
-    expect(path).toMatch(/^proxy-files\/[0-9a-f]{8}\.mp4$/);
+    expect(path).toMatch(/^proxy-files\/[0-9a-f]{64}\.mp4$/);
     expect(path).not.toContain('Vacation');
     expect(path).not.toContain('Footage');
   });

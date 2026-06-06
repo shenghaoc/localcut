@@ -134,6 +134,19 @@ function trackOrderSignature(timeline: Timeline): string {
   return timeline.map((track) => `${track.id}:${track.type}`).join('|');
 }
 
+function trackStateSignature(timeline: Timeline): string {
+  return stableStringify(
+    timeline.map((track) => ({
+      id: track.id,
+      type: track.type,
+      gain: track.gain,
+      pan: track.pan,
+      muted: track.muted,
+      solo: track.solo,
+    })),
+  );
+}
+
 export function invalidateTimelineEdit(before: Timeline, after: Timeline): CacheInvalidation {
   if (before === after) return EMPTY_INVALIDATION;
   const beforeClips = indexClips(before);
@@ -182,13 +195,14 @@ export function invalidateTimelineEdit(before: Timeline, after: Timeline): Cache
   }
 
   const trackOrderChanged = trackOrderSignature(before) !== trackOrderSignature(after);
-  if (trackOrderChanged) {
+  const trackStateChanged = trackStateSignature(before) !== trackStateSignature(after);
+  if (trackOrderChanged || trackStateChanged) {
     const endS = Math.max(getTimelineDuration(before), getTimelineDuration(after));
     if (endS > 0) ranges.push({ startS: 0, endS });
-    reasons.push('track-order');
+    reasons.push(trackOrderChanged ? 'track-order' : 'track-state');
   }
 
-  return invalidation({ ranges, clipIds, trackIds, sourceIds, reasons, fullTimeline: trackOrderChanged });
+  return invalidation({ ranges, clipIds, trackIds, sourceIds, reasons, fullTimeline: trackOrderChanged || trackStateChanged });
 }
 
 function clipById(timeline: Timeline, clipId: string): TimelineClip | null {

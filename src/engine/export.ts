@@ -372,6 +372,9 @@ export function buildExportPlan(
     videoHandle?.frameRate ?? TITLE_ONLY_EXPORT_FPS,
     timelineDuration,
   );
+  if (normalized.sourceMode === 'proxy') {
+    throw new Error('Proxy export is not available until proxy source routing is implemented. Use original-source export.');
+  }
   const { rangeStartS, exportDuration } = resolveExportRange(timelineDuration, normalized.range);
   if (exportDuration <= 0) {
     throw new Error('Export range must have a positive duration.');

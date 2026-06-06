@@ -75,6 +75,18 @@ describe('invalidateTimelineEdit', () => {
     expect(invalidation.ranges).toEqual([{ startS: 0, endS: 10 }]);
   });
 
+  it('invalidates the full timeline when track mix state changes', () => {
+    const before = timelineFixture();
+    const after = timelineFixture();
+    after[0] = { ...after[0]!, gain: 0.25 };
+
+    const invalidation = invalidateTimelineEdit(before, after);
+
+    expect(invalidation.fullTimeline).toBe(true);
+    expect(invalidation.reasons).toContain('track-state');
+    expect(invalidation.ranges).toEqual([{ startS: 0, endS: 10 }]);
+  });
+
   it('does not invalidate identical clips that deserialize with different key order', () => {
     const before = timelineFixture();
     const previous = before[0]!.clips[0]!;

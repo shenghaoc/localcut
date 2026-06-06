@@ -180,6 +180,22 @@ describe('export planning', () => {
     ).toBe('proxy');
   });
 
+  it('rejects proxy export until proxy source routing is implemented', () => {
+    const sources = new Map<string, MediaInputHandle>([
+      [
+        'video',
+        mediaHandle({
+          sourceId: 'video',
+          frameSource: {} as MediaInputHandle['frameSource'],
+        }),
+      ],
+    ]);
+
+    expect(() => buildExportPlan(timeline(), sources, qualitySettings({ sourceMode: 'proxy' }), null)).toThrow(
+      'Proxy export is not available until proxy source routing is implemented.',
+    );
+  });
+
   it('plans a title-only export (no decodable video) over the default canvas', () => {
     const titleTimeline: Timeline = [
       {

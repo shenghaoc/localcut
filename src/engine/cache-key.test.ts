@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   canonicalExportSettingsForCache,
   exportSettingsHash,
+  hashString,
   hashStableValue,
   proxySettingsHash,
   renderCacheEntryMatchesKey,
@@ -106,6 +107,10 @@ describe('stableStringify', () => {
     expect(stableStringify({ b: 2, a: 1 })).toBe(stableStringify({ a: 1, b: 2 }));
     expect(hashStableValue('test', { b: 2, a: [3, 1] })).toBe(hashStableValue('test', { a: [3, 1], b: 2 }));
   });
+
+  it('uses a SHA-256 digest for persisted hash identities', () => {
+    expect(hashString('hello')).toBe('2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824');
+  });
 });
 
 describe('source fingerprinting', () => {
@@ -113,6 +118,11 @@ describe('source fingerprinting', () => {
     const source = sourceFixture();
     expect(sourceFingerprintFromDescriptor(source)).not.toBe(
       sourceFingerprintFromDescriptor(sourceFixture({ byteSize: source.byteSize + 1 })),
+    );
+    expect(
+      sourceFingerprintFromDescriptor(sourceFixture({ fingerprint: { algorithm: 'sha-256', digest: 'a'.repeat(64) } })),
+    ).not.toBe(
+      sourceFingerprintFromDescriptor(sourceFixture({ fingerprint: { algorithm: 'sha-256', digest: 'b'.repeat(64) } })),
     );
     expect(sourceConformanceHash(source)).not.toBe(
       sourceConformanceHash(sourceFixture({ timing: { ...source.timing!, avOffsetS: 0.5 } })),
