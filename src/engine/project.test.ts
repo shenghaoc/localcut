@@ -30,6 +30,21 @@ function timelineFixture(): Timeline {
           inPoint: 1.5,
           effects: { ...defaultClipEffects(), saturation: 1.2 },
           transform: { ...defaultClipTransform(), scale: 0.5, x: 0.1, fit: 'fit' },
+          keyframes: {
+            saturation: [
+              { t: 0, value: 1, easing: 'linear' },
+              { t: 4, value: 1.5, easing: 'ease' },
+            ],
+          },
+          lut: {
+            key: 'grade.cube:128:1',
+            fileName: 'grade.cube',
+            title: 'Grade',
+            size: 2,
+            domainMin: [0, 0, 0],
+            domainMax: [1, 1, 1],
+            values: new Float32Array(24),
+          },
           ...DEFAULT_CLIP_AUDIO_FADES,
         },
       ],
@@ -224,6 +239,26 @@ describe('project serialization', () => {
     expect(result.doc).toEqual(doc);
   });
 
+  it('round-trips clip keyframes and LUT payloads', () => {
+    const doc = serializeProject({
+      projectId: 'project-1',
+      timeline: timelineFixture(),
+      sources: [sourceFixture()],
+    });
+
+    const result = deserializeProject(doc);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const clip = result.doc.timeline[0]!.clips[0]!;
+    expect(clip.keyframes?.saturation).toEqual([
+      { t: 0, value: 1, easing: 'linear' },
+      { t: 4, value: 1.5, easing: 'ease' },
+    ]);
+    expect(clip.lut?.fileName).toBe('grade.cube');
+    expect(clip.lut?.values).toBeInstanceOf(Float32Array);
+    expect(clip.lut?.values).toHaveLength(24);
+  });
+
   it('round-trips per-clip transforms and fills identity for older docs', () => {
     const doc = serializeProject({
       projectId: 'project-1',
@@ -352,6 +387,7 @@ describe('project serialization', () => {
       saturation: 1,
       temperature: 6500,
       temperatureStrength: 1,
+      lutStrength: 0,
     });
   });
 });

@@ -76,6 +76,7 @@ export interface ClipEffectParamsSnapshot {
   saturation: number;
   temperature: number;
   temperatureStrength: number;
+  lutStrength: number;
 }
 
 export type FitModeSnapshot = 'fill' | 'fit' | 'letterbox';
@@ -114,6 +115,29 @@ export interface TitleContentSnapshot {
   style: TitleStyleSnapshot;
 }
 
+export type KeyframeEasingSnapshot = 'linear' | 'ease' | 'hold';
+
+export interface KeyframeSnapshot {
+  /** Clip-local time in seconds. */
+  t: number;
+  value: number;
+  easing: KeyframeEasingSnapshot;
+}
+
+export const TIMELINE_EPSILON = 1e-6;
+export const KEYFRAME_EPSILON = 1e-4;
+
+export type TransformKeyframeParamSnapshot = Exclude<keyof TransformParamsSnapshot, 'fit'>;
+export type ClipKeyframeParamSnapshot = keyof ClipEffectParamsSnapshot | TransformKeyframeParamSnapshot;
+export type ClipKeyframesSnapshot = Partial<Record<ClipKeyframeParamSnapshot, KeyframeSnapshot[]>>;
+
+export interface ClipLutSnapshot {
+  key: string;
+  fileName: string;
+  title?: string;
+  size: number;
+}
+
 export interface TimelineClipSnapshot {
   id: string;
   /** Absent/`'video'` for source clips; `'title'` for source-less titles (Phase 14). */
@@ -124,6 +148,8 @@ export interface TimelineClipSnapshot {
   inPoint: number;
   effects: ClipEffectParamsSnapshot;
   transform: TransformParamsSnapshot;
+  keyframes?: ClipKeyframesSnapshot;
+  lut?: ClipLutSnapshot;
   audioFadeIn: number;
   audioFadeOut: number;
   offline?: boolean;
@@ -265,6 +291,11 @@ interface PasteTimelineClipsCommand {
   atTime: number;
 }
 
+interface CacheClipboardLutsCommand {
+  type: 'cache-clipboard-luts';
+  clips: TimelineClipReference[];
+}
+
 interface AddTimelineMarkerCommand {
   type: 'add-marker';
   time: number;
@@ -302,6 +333,53 @@ interface SetTransformCommand {
   trackId: string;
   clipId: string;
   transform: Partial<TransformParamsSnapshot>;
+}
+
+interface SetKeyframeCommand {
+  type: 'set-keyframe';
+  trackId: string;
+  clipId: string;
+  key: ClipKeyframeParamSnapshot;
+  /** Absolute timeline time in seconds; the worker stores it clip-local. */
+  t: number;
+  value: number;
+  easing?: KeyframeEasingSnapshot;
+}
+
+interface SetKeyframesCommand {
+  type: 'set-keyframes';
+  trackId: string;
+  clipId: string;
+  /** Absolute timeline time in seconds; the worker stores it clip-local. */
+  t: number;
+  keyframes: Array<{
+    key: ClipKeyframeParamSnapshot;
+    value: number;
+    easing?: KeyframeEasingSnapshot;
+  }>;
+}
+
+interface DeleteKeyframeCommand {
+  type: 'delete-keyframe';
+  trackId: string;
+  clipId: string;
+  key: ClipKeyframeParamSnapshot;
+  /** Absolute timeline time in seconds; the worker stores tracks clip-local. */
+  t: number;
+}
+
+interface ImportLutCommand {
+  type: 'import-lut';
+  trackId: string;
+  clipId: string;
+  file: File;
+}
+
+interface SetLutStrengthCommand {
+  type: 'set-lut-strength';
+  trackId: string;
+  clipId: string;
+  strength: number;
 }
 
 interface SetTrackGainCommand {
@@ -446,12 +524,18 @@ export type WorkerCommand =
   | MoveTimelineClipsCommand
   | DuplicateTimelineClipCommand
   | PasteTimelineClipsCommand
+  | CacheClipboardLutsCommand
   | AddTimelineMarkerCommand
   | DeleteTimelineMarkerCommand
   | CloseTimelineGapsCommand
   | TrimTimelineClipCommand
   | SetEffectParamCommand
   | SetTransformCommand
+  | SetKeyframeCommand
+  | SetKeyframesCommand
+  | DeleteKeyframeCommand
+  | ImportLutCommand
+  | SetLutStrengthCommand
   | SetTrackGainCommand
   | SetTrackMuteCommand
   | SetTrackSoloCommand

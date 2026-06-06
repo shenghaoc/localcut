@@ -90,6 +90,30 @@ describe('timeline history', () => {
     expect(history.undo(makeSnapshot('after-drag'))!.timeline[0]!.clips[0]!.id).toBe('before-drag');
   });
 
+  it('shares immutable LUT sample tables across stored snapshots', () => {
+    const values = new Float32Array(24).fill(0.5);
+    const history = createTimelineHistory();
+    const snapshot = makeSnapshot('lut');
+    snapshot.timeline[0]!.clips[0]!.lut = {
+      key: 'lut-a',
+      fileName: 'grade.cube',
+      title: 'Grade',
+      size: 2,
+      domainMin: [0, 0, 0],
+      domainMax: [1, 1, 1],
+      values,
+    };
+
+    history.push(snapshot);
+    const restored = history.undo(makeSnapshot('current'));
+
+    expect(restored?.timeline[0]!.clips[0]!.lut?.values).toBe(values);
+    expect(restored?.timeline[0]!.clips[0]!.lut?.domainMin).toEqual([0, 0, 0]);
+    expect(restored?.timeline[0]!.clips[0]!.lut?.domainMin).not.toBe(
+      snapshot.timeline[0]!.clips[0]!.lut?.domainMin,
+    );
+  });
+
   it('starts a new entry for a different effect key or idle gap', () => {
     let now = 0;
     const history = createTimelineHistory({ coalesceWindowMs: 80, now: () => now });

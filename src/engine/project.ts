@@ -16,6 +16,8 @@ import {
   type TimelineTransition,
   type TitleContent,
 } from './timeline';
+import { cloneClipKeyframes, parseClipKeyframes } from './keyframes';
+import { cloneClipLut, parsePersistedClipLut } from './lut';
 
 export const PROJECT_SCHEMA_VERSION = 6;
 const DURATION_MATCH_TOLERANCE_S = 0.25;
@@ -138,6 +140,10 @@ function cloneClip(clip: TimelineClip): TimelineClip {
     cloned.kind = 'title';
     cloned.title = normalizeTitleContent(clip.title);
   }
+  const keyframes = cloneClipKeyframes(clip.keyframes);
+  if (keyframes) cloned.keyframes = keyframes;
+  const lut = cloneClipLut(clip.lut);
+  if (lut) cloned.lut = lut;
   return cloned;
 }
 
@@ -243,6 +249,10 @@ function parseClip(value: unknown): TimelineClip | null {
 
   const rawEffects = isRecord(value.effects) ? value.effects : {};
   const rawTransform = isRecord(value.transform) ? value.transform : {};
+  const keyframes = parseClipKeyframes(value.keyframes, duration);
+  if (keyframes === null) return null;
+  const lut = parsePersistedClipLut(value.lut);
+  if (lut === null) return null;
   const fit =
     rawTransform.fit === 'fit' || rawTransform.fit === 'letterbox' || rawTransform.fit === 'fill'
       ? rawTransform.fit
@@ -250,7 +260,7 @@ function parseClip(value: unknown): TimelineClip | null {
   const audioFadeIn = finiteNumber(value.audioFadeIn) ?? DEFAULT_CLIP_AUDIO_FADES.audioFadeIn;
   const audioFadeOut = finiteNumber(value.audioFadeOut) ?? DEFAULT_CLIP_AUDIO_FADES.audioFadeOut;
 
-  return {
+  const clip: TimelineClip = {
     id,
     ...(isTitle
       ? { kind: 'title' as const, title: normalizeTitleContent(value.title as Partial<TitleContent>) }
@@ -265,6 +275,7 @@ function parseClip(value: unknown): TimelineClip | null {
       saturation: finiteNumber(rawEffects.saturation) ?? undefined,
       temperature: finiteNumber(rawEffects.temperature) ?? undefined,
       temperatureStrength: finiteNumber(rawEffects.temperatureStrength) ?? undefined,
+      lutStrength: finiteNumber(rawEffects.lutStrength) ?? undefined,
     }),
     // Older docs (schema ≤ 3) carry no transform; normalizeTransform fills identity.
     transform: normalizeTransform({
@@ -280,6 +291,9 @@ function parseClip(value: unknown): TimelineClip | null {
     audioFadeIn: Math.max(0, audioFadeIn),
     audioFadeOut: Math.max(0, audioFadeOut),
   };
+  if (keyframes) clip.keyframes = keyframes;
+  if (lut) clip.lut = lut;
+  return clip;
 }
 
 function parseTrack(value: unknown): TimelineTrack | null {
@@ -541,6 +555,10 @@ function deserializeV5(value: Record<string, unknown>): DeserializeProjectResult
   };
 }
 
+function deserializeV6(value: Record<string, unknown>): DeserializeProjectResult {
+  return deserializeV5(value);
+}
+
 export function deserializeProject(value: unknown): DeserializeProjectResult {
   if (!isRecord(value)) return { ok: false, reason: 'Project document is not an object.' };
   const schemaVersion = finiteNumber(value.schemaVersion);
@@ -558,9 +576,9 @@ export function deserializeProject(value: unknown): DeserializeProjectResult {
       return deserializeV2(value);
     case 5:
     case 6:
-      // v6 adds source-less title clips; parseClip branches on `clip.kind`, so
-      // the v5 path (which parses transitions) handles both versions.
-      return deserializeV5(value);
+      // v6 adds source-less title clips plus keyframe/LUT clip sidecars; parseClip
+      // handles both while the v5 path keeps transition parsing.
+      return deserializeV6(value);
     default:
       return { ok: false, reason: `Unsupported project schemaVersion ${schemaVersion}.` };
   }

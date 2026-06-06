@@ -1,13 +1,24 @@
 import { Show, For, createEffect, createSignal, onCleanup } from 'solid-js';
+import { ChevronLeft, ChevronRight, Diamond, Upload } from 'lucide-solid';
 import type {
   ClipEffectParamsSnapshot,
+  ClipKeyframeParamSnapshot,
+  ClipKeyframesSnapshot,
+  ClipLutSnapshot,
   FitModeSnapshot,
+  KeyframeEasingSnapshot,
   MediaMetadata,
   TitleAlignSnapshot,
   TitleContentSnapshot,
   TitleStyleSnapshot,
   TransformParamsSnapshot,
 } from '../protocol';
+import {
+  clipLocalTime,
+  hasKeyframeTrack,
+  keyframeAt,
+  sortedKeyframes,
+} from './keyframes';
 
 export interface SelectedTitle {
   trackId: string;
@@ -18,7 +29,12 @@ export interface SelectedTitle {
 export interface SelectedClip {
   trackId: string;
   clipId: string;
+  start: number;
+  duration: number;
   effects: ClipEffectParamsSnapshot;
+  transform: TransformParamsSnapshot;
+  keyframes?: ClipKeyframesSnapshot;
+  lut?: ClipLutSnapshot;
 }
 
 export interface SelectedClipTransform {
@@ -50,6 +66,7 @@ interface InspectorProps {
   selectedClipFades: SelectedClipFades | null;
   selectedClipTransform: SelectedClipTransform | null;
   selectedTitle: SelectedTitle | null;
+  playheadTime: number;
   onSetTitle: (
     trackId: string,
     clipId: string,
@@ -66,6 +83,23 @@ interface InspectorProps {
     clipId: string,
     transform: Partial<TransformParamsSnapshot>,
   ) => void;
+  onSeek: (time: number) => void;
+  onSetKeyframe: (
+    trackId: string,
+    clipId: string,
+    key: ClipKeyframeParamSnapshot,
+    t: number,
+    value: number,
+    easing: KeyframeEasingSnapshot,
+  ) => void;
+  onDeleteKeyframe: (
+    trackId: string,
+    clipId: string,
+    key: ClipKeyframeParamSnapshot,
+    t: number,
+  ) => void;
+  onImportLut: (trackId: string, clipId: string, file: File) => void;
+  onLutStrength: (trackId: string, clipId: string, strength: number) => void;
   onTrackGain: (trackId: string, gain: number) => void;
   onTrackMute: (trackId: string, muted: boolean) => void;
   onTrackSolo: (trackId: string, solo: boolean) => void;
@@ -165,6 +199,15 @@ const SLIDERS: SliderSpec[] = [
   },
 ];
 
+const LUT_STRENGTH_SLIDER: SliderSpec = {
+  key: 'lutStrength',
+  label: 'Strength',
+  min: 0,
+  max: 1,
+  step: 0.01,
+  format: (v) => v.toFixed(2),
+};
+
 type MixDraft = Pick<SelectedTrackMix, 'gain' | 'pan'>;
 type FadeDraft = Pick<SelectedClipFades, 'audioFadeIn' | 'audioFadeOut'>;
 type TransformDraft = TransformParamsSnapshot;
@@ -183,6 +226,7 @@ export function Inspector(props: InspectorProps) {
   const transformTarget = { trackId: '', clipId: '' };
   const pending = new Map<keyof ClipEffectParamsSnapshot, number>();
   const debouncers = new Map<keyof ClipEffectParamsSnapshot, ReturnType<typeof setTimeout>>();
+  const keyframeTimes = new Map<ClipKeyframeParamSnapshot, number>();
   const mixPending = new Map<keyof MixDraft, number>();
   const mixDebouncers = new Map<keyof MixDraft, ReturnType<typeof setTimeout>>();
   const fadePending = new Map<keyof FadeDraft, number>();
@@ -190,13 +234,67 @@ export function Inspector(props: InspectorProps) {
   const pendingTarget = { trackId: '', clipId: '' };
   const mixTarget = { trackId: '' };
   const fadeTarget = { trackId: '', clipId: '' };
+  let lutInput: HTMLInputElement | undefined;
+
+  function currentLocalTime(): number | null {
+    const clip = props.selectedClip;
+    return clip ? clipLocalTime(clip, props.playheadTime) : null;
+  }
+
+  function shouldEditKeyframe(key: ClipKeyframeParamSnapshot): boolean {
+    const clip = props.selectedClip;
+    return Boolean(clip && currentLocalTime() !== null && hasKeyframeTrack(clip.keyframes, key));
+  }
+
+  function hasKeyframeAtPlayhead(key: ClipKeyframeParamSnapshot): boolean {
+    const clip = props.selectedClip;
+    return Boolean(clip && keyframeAt(clip.keyframes?.[key], currentLocalTime()));
+  }
+
+  function toggleKeyframe(key: ClipKeyframeParamSnapshot, value: number): void {
+    const clip = props.selectedClip;
+    if (!clip) return;
+    if (currentLocalTime() === null) return;
+    if (hasKeyframeAtPlayhead(key)) {
+      props.onDeleteKeyframe(clip.trackId, clip.clipId, key, props.playheadTime);
+    } else {
+      props.onSetKeyframe(clip.trackId, clip.clipId, key, props.playheadTime, value, 'linear');
+    }
+  }
+
+  function seekKeyframe(key: ClipKeyframeParamSnapshot, direction: -1 | 1): void {
+    const clip = props.selectedClip;
+    if (!clip) return;
+    const localTime = currentLocalTime();
+    if (localTime === null) return;
+    const frames = sortedKeyframes(clip.keyframes?.[key]);
+    const next =
+      direction < 0
+        ? [...frames].reverse().find((frame) => frame.t < localTime - 1e-3)
+        : frames.find((frame) => frame.t > localTime + 1e-3);
+    if (next) props.onSeek(clip.start + next.t);
+  }
+
+  function handleLutFile(file: File | undefined): void {
+    const clip = props.selectedClip;
+    if (!clip || !file) return;
+    props.onImportLut(clip.trackId, clip.clipId, file);
+  }
 
   function flushPending() {
     if (!pendingTarget.clipId || pending.size === 0) return;
     for (const handle of debouncers.values()) clearTimeout(handle);
     debouncers.clear();
     for (const [key, value] of pending) {
-      props.onEffectParam(pendingTarget.trackId, pendingTarget.clipId, key, value);
+      const keyframeTime = keyframeTimes.get(key);
+      if (keyframeTime !== undefined) {
+        props.onSetKeyframe(pendingTarget.trackId, pendingTarget.clipId, key, keyframeTime, value, 'linear');
+        keyframeTimes.delete(key);
+      } else if (key === 'lutStrength') {
+        props.onLutStrength(pendingTarget.trackId, pendingTarget.clipId, value);
+      } else {
+        props.onEffectParam(pendingTarget.trackId, pendingTarget.clipId, key, value);
+      }
     }
     pending.clear();
   }
@@ -232,8 +330,18 @@ export function Inspector(props: InspectorProps) {
     for (const handle of transformDebouncers.values()) clearTimeout(handle);
     transformDebouncers.clear();
     const patch: Partial<TransformParamsSnapshot> = {};
-    for (const [key, value] of transformPending) patch[key] = value;
-    props.onTransform(transformTarget.trackId, transformTarget.clipId, patch);
+    for (const [key, value] of transformPending) {
+      const keyframeTime = keyframeTimes.get(key);
+      if (keyframeTime !== undefined) {
+        props.onSetKeyframe(transformTarget.trackId, transformTarget.clipId, key, keyframeTime, value, 'linear');
+        keyframeTimes.delete(key);
+      } else {
+        patch[key] = value;
+      }
+    }
+    if (Object.keys(patch).length > 0) {
+      props.onTransform(transformTarget.trackId, transformTarget.clipId, patch);
+    }
     transformPending.clear();
   }
 
@@ -244,6 +352,7 @@ export function Inspector(props: InspectorProps) {
     transformTarget.clipId = transform.clipId;
     setTransformDraft((prev) => (prev ? { ...prev, [key]: value } : prev));
     transformPending.set(key, value);
+    if (shouldEditKeyframe(key)) keyframeTimes.set(key, props.playheadTime);
     const existing = transformDebouncers.get(key);
     if (existing) clearTimeout(existing);
     transformDebouncers.set(
@@ -253,7 +362,13 @@ export function Inspector(props: InspectorProps) {
         const latest = transformPending.get(key);
         transformPending.delete(key);
         if (latest !== undefined) {
-          props.onTransform(transform.trackId, transform.clipId, { [key]: latest });
+          const keyframeTime = keyframeTimes.get(key);
+          if (keyframeTime !== undefined) {
+            keyframeTimes.delete(key);
+            props.onSetKeyframe(transform.trackId, transform.clipId, key, keyframeTime, latest, 'linear');
+          } else {
+            props.onTransform(transform.trackId, transform.clipId, { [key]: latest });
+          }
         }
       }, PARAM_DEBOUNCE_MS),
     );
@@ -505,6 +620,7 @@ export function Inspector(props: InspectorProps) {
     pendingTarget.clipId = clip.clipId;
     setDraft((prev) => (prev ? { ...prev, [key]: value } : prev));
     pending.set(key, value);
+    if (shouldEditKeyframe(key)) keyframeTimes.set(key, props.playheadTime);
     const existing = debouncers.get(key);
     if (existing) clearTimeout(existing);
     debouncers.set(
@@ -514,7 +630,15 @@ export function Inspector(props: InspectorProps) {
         const latest = pending.get(key);
         pending.delete(key);
         if (latest !== undefined) {
-          props.onEffectParam(clip.trackId, clip.clipId, key, latest);
+          const keyframeTime = keyframeTimes.get(key);
+          if (keyframeTime !== undefined) {
+            keyframeTimes.delete(key);
+            props.onSetKeyframe(clip.trackId, clip.clipId, key, keyframeTime, latest, 'linear');
+          } else if (key === 'lutStrength') {
+            props.onLutStrength(clip.trackId, clip.clipId, latest);
+          } else {
+            props.onEffectParam(clip.trackId, clip.clipId, key, latest);
+          }
         }
       }, PARAM_DEBOUNCE_MS),
     );
@@ -741,27 +865,55 @@ export function Inspector(props: InspectorProps) {
                   <h3 class="panel-subtitle">Transform</h3>
                   <For each={TRANSFORM_SLIDERS}>
                     {(spec) => (
-                      <label class="effect-slider">
-                        <span class="effect-slider-label">
-                          {spec.label}
-                          <span class="effect-slider-value tabular-nums">
-                            {spec.format(transform()[spec.key])}
-                          </span>
-                        </span>
-                        <input
-                          type="range"
-                          min={spec.min}
-                          max={spec.max}
-                          step={spec.step}
-                          value={transform()[spec.key]}
-                          onInput={(e) =>
-                            scheduleTransformParam(
-                              spec.key,
-                              Number((e.currentTarget as HTMLInputElement).value),
-                            )
-                          }
-                        />
-                      </label>
+                      <div class="effect-slider">
+                        <div class="effect-slider-label">
+                          <span>{spec.label}</span>
+                          <span class="effect-slider-value tabular-nums">{spec.format(transform()[spec.key])}</span>
+                        </div>
+                        <div class="keyframe-slider-row">
+                          <button
+                            type="button"
+                            class="keyframe-nav"
+                            aria-label={`Previous ${spec.label} keyframe`}
+                            onClick={() => seekKeyframe(spec.key, -1)}
+                            disabled={!props.selectedClip?.keyframes?.[spec.key]?.length}
+                          >
+                            <ChevronLeft size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            class={`keyframe-toggle${hasKeyframeAtPlayhead(spec.key) ? ' is-active' : ''}`}
+                            aria-label={`Toggle ${spec.label} keyframe`}
+                            aria-pressed={hasKeyframeAtPlayhead(spec.key)}
+                            onClick={() => toggleKeyframe(spec.key, transform()[spec.key])}
+                            disabled={currentLocalTime() === null}
+                          >
+                            <Diamond size={13} />
+                          </button>
+                          <input
+                            type="range"
+                            min={spec.min}
+                            max={spec.max}
+                            step={spec.step}
+                            value={transform()[spec.key]}
+                            onInput={(e) =>
+                              scheduleTransformParam(
+                                spec.key,
+                                Number((e.currentTarget as HTMLInputElement).value),
+                              )
+                            }
+                          />
+                          <button
+                            type="button"
+                            class="keyframe-nav"
+                            aria-label={`Next ${spec.label} keyframe`}
+                            onClick={() => seekKeyframe(spec.key, 1)}
+                            disabled={!props.selectedClip?.keyframes?.[spec.key]?.length}
+                          >
+                            <ChevronRight size={14} />
+                          </button>
+                        </div>
+                      </div>
                     )}
                   </For>
                   <label class="effect-slider transform-fit">
@@ -784,24 +936,140 @@ export function Inspector(props: InspectorProps) {
                   <h3 class="panel-subtitle">Effects</h3>
                   <For each={SLIDERS}>
                     {(spec) => (
-                      <label class="effect-slider">
-                        <span class="effect-slider-label">
-                          {spec.label}
+                      <div class="effect-slider">
+                        <div class="effect-slider-label">
+                          <span>{spec.label}</span>
                           <span class="effect-slider-value tabular-nums">{spec.format(effects()[spec.key])}</span>
-                        </span>
-                        <input
-                          type="range"
-                          min={spec.min}
-                          max={spec.max}
-                          step={spec.step}
-                          value={effects()[spec.key]}
-                          onInput={(e) =>
-                            scheduleParam(spec.key, Number((e.currentTarget as HTMLInputElement).value))
-                          }
-                        />
-                      </label>
+                        </div>
+                        <div class="keyframe-slider-row">
+                          <button
+                            type="button"
+                            class="keyframe-nav"
+                            aria-label={`Previous ${spec.label} keyframe`}
+                            onClick={() => seekKeyframe(spec.key, -1)}
+                            disabled={!props.selectedClip?.keyframes?.[spec.key]?.length}
+                          >
+                            <ChevronLeft size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            class={`keyframe-toggle${hasKeyframeAtPlayhead(spec.key) ? ' is-active' : ''}`}
+                            aria-label={`Toggle ${spec.label} keyframe`}
+                            aria-pressed={hasKeyframeAtPlayhead(spec.key)}
+                            onClick={() => toggleKeyframe(spec.key, effects()[spec.key])}
+                            disabled={currentLocalTime() === null}
+                          >
+                            <Diamond size={13} />
+                          </button>
+                          <input
+                            type="range"
+                            min={spec.min}
+                            max={spec.max}
+                            step={spec.step}
+                            value={effects()[spec.key]}
+                            onInput={(e) =>
+                              scheduleParam(spec.key, Number((e.currentTarget as HTMLInputElement).value))
+                            }
+                          />
+                          <button
+                            type="button"
+                            class="keyframe-nav"
+                            aria-label={`Next ${spec.label} keyframe`}
+                            onClick={() => seekKeyframe(spec.key, 1)}
+                            disabled={!props.selectedClip?.keyframes?.[spec.key]?.length}
+                          >
+                            <ChevronRight size={14} />
+                          </button>
+                        </div>
+                      </div>
                     )}
                   </For>
+                  <div class="lut-controls">
+                    <div class="lut-header">
+                      <span class="effect-slider-label">LUT</span>
+                      <button
+                        type="button"
+                        class="lut-import-button"
+                        aria-label="Import LUT"
+                        onClick={() => lutInput?.click()}
+                      >
+                        <Upload size={14} />
+                      </button>
+                      <input
+                        ref={(el) => {
+                          lutInput = el;
+                        }}
+                        class="sr-only"
+                        type="file"
+                        accept=".cube,application/octet-stream,text/plain"
+                        onChange={(event) => {
+                          const input = event.currentTarget as HTMLInputElement;
+                          handleLutFile(input.files?.[0]);
+                          input.value = '';
+                        }}
+                      />
+                    </div>
+                    <Show when={props.selectedClip?.lut} fallback={<p class="lut-empty">No LUT loaded</p>}>
+                      {(lut) => (
+                        <p class="lut-name">
+                          {lut().title || lut().fileName}
+                          <span>{lut().size}³</span>
+                        </p>
+                      )}
+                    </Show>
+                    <div class="effect-slider">
+                      <div class="effect-slider-label">
+                        <span>{LUT_STRENGTH_SLIDER.label}</span>
+                        <span class="effect-slider-value tabular-nums">
+                          {LUT_STRENGTH_SLIDER.format(effects().lutStrength)}
+                        </span>
+                      </div>
+                      <div class="keyframe-slider-row">
+                        <button
+                          type="button"
+                          class="keyframe-nav"
+                          aria-label="Previous LUT strength keyframe"
+                          onClick={() => seekKeyframe(LUT_STRENGTH_SLIDER.key, -1)}
+                          disabled={!props.selectedClip?.keyframes?.lutStrength?.length}
+                        >
+                          <ChevronLeft size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          class={`keyframe-toggle${hasKeyframeAtPlayhead(LUT_STRENGTH_SLIDER.key) ? ' is-active' : ''}`}
+                          aria-label="Toggle LUT strength keyframe"
+                          aria-pressed={hasKeyframeAtPlayhead(LUT_STRENGTH_SLIDER.key)}
+                          onClick={() => toggleKeyframe(LUT_STRENGTH_SLIDER.key, effects().lutStrength)}
+                          disabled={currentLocalTime() === null}
+                        >
+                          <Diamond size={13} />
+                        </button>
+                        <input
+                          type="range"
+                          min={LUT_STRENGTH_SLIDER.min}
+                          max={LUT_STRENGTH_SLIDER.max}
+                          step={LUT_STRENGTH_SLIDER.step}
+                          value={effects().lutStrength}
+                          disabled={!props.selectedClip?.lut}
+                          onInput={(e) =>
+                            scheduleParam(
+                              LUT_STRENGTH_SLIDER.key,
+                              Number((e.currentTarget as HTMLInputElement).value),
+                            )
+                          }
+                        />
+                        <button
+                          type="button"
+                          class="keyframe-nav"
+                          aria-label="Next LUT strength keyframe"
+                          onClick={() => seekKeyframe(LUT_STRENGTH_SLIDER.key, 1)}
+                          disabled={!props.selectedClip?.keyframes?.lutStrength?.length}
+                        >
+                          <ChevronRight size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </Show>

@@ -7,6 +7,7 @@ import transformF16 from './shaders/transform.f16.wgsl?raw';
 import compositeOverF32 from './shaders/composite-over.wgsl?raw';
 import compositeOverF16 from './shaders/composite-over.f16.wgsl?raw';
 import { EffectChain, type ClipEffectParams } from './effects';
+import type { ClipLut } from './lut';
 import {
   DEFAULT_TRANSFORM,
   packTransformUniform,
@@ -35,6 +36,7 @@ export interface FrameCompositeLayer {
   frame: VideoFrame;
   effects: ClipEffectParams;
   transform: TransformParams;
+  lut?: ClipLut;
 }
 
 /**
@@ -172,6 +174,14 @@ export class PreviewRenderer {
   /** Final composited view from the most recent frame (preview + export share this). */
   getProcessedTextureView(): GPUTextureView | null {
     return this.lastPresentView;
+  }
+
+  importLut(lut: ClipLut): void {
+    this.effectChain.importLut(lut);
+  }
+
+  pruneLuts(activeKeys: ReadonlySet<string>): void {
+    this.effectChain.pruneLuts(activeKeys);
   }
 
   /**
@@ -335,6 +345,7 @@ export class PreviewRenderer {
       this.height,
       layer.effects,
       slot,
+      layer.lut,
     );
   }
 

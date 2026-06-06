@@ -17,6 +17,20 @@ import {
   type TitleContentInput,
   type TitleStyle,
 } from './title';
+import {
+  cloneClipKeyframes,
+  deleteKeyframe,
+  insertKeyframe,
+  isEffectKeyframeParam,
+  isTransformKeyframeParam,
+  normalizeClipKeyframes,
+  sampleKeyframes,
+  type ClipKeyframeParam,
+  type ClipKeyframes,
+  type KeyframeEasing,
+} from './keyframes';
+import { cloneClipLut, type ClipLut } from './lut';
+import { TIMELINE_EPSILON } from '../protocol';
 
 /** Source clips decode media; title clips are source-less text overlays (Phase 14). */
 export type ClipKind = 'video' | 'title';
@@ -34,6 +48,8 @@ export interface TimelineClip {
   effects: ClipEffectParams;
   /** Per-clip position/scale/rotation/opacity/fit — Phase 12 compositing. */
   transform: TransformParams;
+  keyframes?: ClipKeyframes;
+  lut?: ClipLut;
   audioFadeIn: number;
   audioFadeOut: number;
   /** Text + style for `kind: 'title'` clips; absent otherwise (Phase 14). */
@@ -125,14 +141,7 @@ function cloneTimeline(timeline: Timeline): Timeline {
     pan: track.pan,
     muted: track.muted,
     solo: track.solo,
-    clips: track.clips.map((clip) => ({
-      ...clip,
-      effects: { ...clip.effects },
-      transform: { ...clip.transform },
-      audioFadeIn: clip.audioFadeIn,
-      audioFadeOut: clip.audioFadeOut,
-      title: clip.title ? cloneTitleContent(clip.title) : undefined,
-    })),
+    clips: track.clips.map(cloneClip),
   }));
 }
 
@@ -229,8 +238,6 @@ export function resolveAllAt(timeline: Timeline, time: number): ResolveResult[] 
 export function resolveAudioAt(timeline: Timeline, time: number): ResolveResult | null {
   return resolveOnTrackType(timeline, time, 'audio');
 }
-
-const TIMELINE_EPSILON = 1e-6;
 
 function transitionsEqual(a: TimelineTransition, b: TimelineTransition): boolean {
   return (
@@ -460,7 +467,7 @@ function clipEnd(clip: TimelineClip): number {
 }
 
 function cloneClip(clip: TimelineClip): TimelineClip {
-  return {
+  const cloned: TimelineClip = {
     ...clip,
     effects: { ...clip.effects },
     transform: { ...clip.transform },
@@ -468,6 +475,11 @@ function cloneClip(clip: TimelineClip): TimelineClip {
     audioFadeOut: clip.audioFadeOut,
     title: clip.title ? cloneTitleContent(clip.title) : undefined,
   };
+  const keyframes = cloneClipKeyframes(clip.keyframes);
+  if (keyframes) cloned.keyframes = keyframes;
+  const lut = cloneClipLut(clip.lut);
+  if (lut) cloned.lut = lut;
+  return cloned;
 }
 
 function cloneWithNewId(clip: TimelineClip): TimelineClip {
@@ -504,6 +516,73 @@ function normalizeMoveStart(toStart: number): number | null {
 }
 
 /** Splits one clip at an absolute timeline time, preserving source continuity. */
+function clipKeyframeFallback(clip: TimelineClip, key: ClipKeyframeParam): number {
+  if (isEffectKeyframeParam(key)) return clip.effects[key];
+  if (isTransformKeyframeParam(key)) return clip.transform[key];
+  return 0;
+}
+
+function splitClipKeyframes(
+  clip: TimelineClip,
+  splitOffset: number,
+): { left?: ClipKeyframes; right?: ClipKeyframes } {
+  const keyframes = normalizeClipKeyframes(clip.keyframes, clip.duration);
+  if (!keyframes) return {};
+  const left: ClipKeyframes = {};
+  const right: ClipKeyframes = {};
+  const rightDuration = clip.duration - splitOffset;
+
+  for (const [rawKey, track] of Object.entries(keyframes)) {
+    const key = rawKey as ClipKeyframeParam;
+    const splitValue = sampleKeyframes(track, splitOffset, clipKeyframeFallback(clip, key));
+    const leftTrack = insertKeyframe(
+      track.filter((frame) => frame.t <= splitOffset),
+      { t: splitOffset, value: splitValue, easing: 'linear' },
+    );
+    const rightTrack = insertKeyframe(
+      track
+        .filter((frame) => frame.t >= splitOffset)
+        .map((frame) => ({ ...frame, t: frame.t - splitOffset })),
+      { t: 0, value: splitValue, easing: 'linear' },
+    );
+    const normalizedLeft = normalizeClipKeyframes({ [key]: leftTrack }, splitOffset);
+    const normalizedRight = normalizeClipKeyframes({ [key]: rightTrack }, rightDuration);
+    const normalizedLeftTrack = normalizedLeft?.[key];
+    const normalizedRightTrack = normalizedRight?.[key];
+    if (normalizedLeftTrack?.length) left[key] = normalizedLeftTrack;
+    if (normalizedRightTrack?.length) right[key] = normalizedRightTrack;
+  }
+
+  return {
+    left: Object.keys(left).length > 0 ? left : undefined,
+    right: Object.keys(right).length > 0 ? right : undefined,
+  };
+}
+
+function rebaseTrimmedKeyframes(
+  clip: TimelineClip,
+  trimOffset: number,
+  nextDuration: number,
+): ClipKeyframes | undefined {
+  const keyframes = normalizeClipKeyframes(clip.keyframes, clip.duration);
+  if (!keyframes) return undefined;
+  const rebased: ClipKeyframes = {};
+
+  for (const [rawKey, track] of Object.entries(keyframes)) {
+    const key = rawKey as ClipKeyframeParam;
+    const boundaryValue = sampleKeyframes(track, trimOffset, clipKeyframeFallback(clip, key));
+    const shiftedTrack = track
+      .map((frame) => ({ ...frame, t: frame.t - trimOffset }))
+      .filter((frame) => frame.t >= 0 && frame.t <= nextDuration);
+    const nextTrack = insertKeyframe(shiftedTrack, { t: 0, value: boundaryValue, easing: 'linear' });
+    const normalized = normalizeClipKeyframes({ [key]: nextTrack }, nextDuration);
+    const normalizedTrack = normalized?.[key];
+    if (normalizedTrack?.length) rebased[key] = normalizedTrack;
+  }
+
+  return Object.keys(rebased).length > 0 ? rebased : undefined;
+}
+
 export function splitClipAt(
   timeline: Timeline,
   trackId: string,
@@ -523,10 +602,12 @@ export function splitClipAt(
   const clip = track.clips[clipIndex]!;
   const splitOffset = time - clip.start;
   if (splitOffset <= 0 || splitOffset >= clip.duration) return timeline;
+  const splitKeyframes = splitClipKeyframes(clip, splitOffset);
 
   const left: TimelineClip = {
     ...clip,
     duration: splitOffset,
+    keyframes: splitKeyframes.left,
   };
   const right: TimelineClip = {
     ...clip,
@@ -534,6 +615,7 @@ export function splitClipAt(
     start: clip.start + splitOffset,
     duration: clip.duration - splitOffset,
     inPoint: clip.inPoint + splitOffset,
+    keyframes: splitKeyframes.right,
   };
 
   const next = cloneTimeline(timeline);
@@ -779,12 +861,22 @@ export function trimClip(timeline: Timeline, trackId: string, clipId: string, op
   if (nextDuration <= 0) return timeline;
 
   const next = cloneTimeline(timeline);
-  next[loc.trackIndex]!.clips[loc.clipIndex] = {
+  const nextClip: TimelineClip = {
     ...clip,
     start: nextStartOut,
     duration: nextDuration,
     inPoint: nextInPoint,
   };
+  const keyframes =
+    edge === 'in'
+      ? rebaseTrimmedKeyframes(clip, nextStartOut - clip.start, nextDuration)
+      : normalizeClipKeyframes(nextClip.keyframes, nextDuration);
+  if (keyframes) {
+    nextClip.keyframes = keyframes;
+  } else {
+    delete nextClip.keyframes;
+  }
+  next[loc.trackIndex]!.clips[loc.clipIndex] = nextClip;
   return next;
 }
 
@@ -807,6 +899,151 @@ export function setClipEffectParam(
   const nextClip = next[loc.trackIndex]!.clips[loc.clipIndex]!;
   nextClip.effects = { ...nextClip.effects, [key]: value };
   return next;
+}
+
+function localKeyframeTime(clip: TimelineClip, timelineTime: number): number | null {
+  if (!finite(timelineTime)) return null;
+  const local = timelineTime - clip.start;
+  if (local < -TIMELINE_EPSILON || local > clip.duration + TIMELINE_EPSILON) return null;
+  return Math.min(Math.max(0, local), clip.duration);
+}
+
+function stripEmptyKeyframes(keyframes: ClipKeyframes): ClipKeyframes | undefined {
+  const next: ClipKeyframes = {};
+  for (const [rawKey, track] of Object.entries(keyframes)) {
+    if (track.length > 0) {
+      next[rawKey as ClipKeyframeParam] = track;
+    }
+  }
+  return Object.keys(next).length > 0 ? next : undefined;
+}
+
+export function setClipKeyframe(
+  timeline: Timeline,
+  trackId: string,
+  clipId: string,
+  key: ClipKeyframeParam,
+  timelineTime: number,
+  value: number,
+  easing: KeyframeEasing = 'linear',
+): Timeline {
+  return setClipKeyframes(timeline, trackId, clipId, timelineTime, [{ key, value, easing }]);
+}
+
+export interface ClipKeyframeUpdate {
+  key: ClipKeyframeParam;
+  value: number;
+  easing?: KeyframeEasing;
+}
+
+export function setClipKeyframes(
+  timeline: Timeline,
+  trackId: string,
+  clipId: string,
+  timelineTime: number,
+  updates: readonly ClipKeyframeUpdate[],
+): Timeline {
+  if (updates.length === 0) return timeline;
+  const loc = trackWithClip(timeline, trackId, clipId);
+  if (!loc) return timeline;
+  const clip = timeline[loc.trackIndex]!.clips[loc.clipIndex]!;
+  const localTime = localKeyframeTime(clip, timelineTime);
+  if (localTime === null) return timeline;
+
+  const normalized = normalizeClipKeyframes(clip.keyframes, clip.duration) ?? {};
+  const nextKeyframes: ClipKeyframes = { ...normalized };
+  const effectPatch: Partial<ClipEffectParams> = {};
+  const transformPatch: Partial<TransformParams> = {};
+  let changed = false;
+
+  for (const update of updates) {
+    const { key, value, easing = 'linear' } = update;
+    if (!finite(value) || (!isEffectKeyframeParam(key) && !isTransformKeyframeParam(key))) continue;
+    const nextTrack = insertKeyframe(nextKeyframes[key], { t: localTime, value, easing });
+    const previous = nextKeyframes[key] ?? [];
+    const sameTrack =
+      previous.length === nextTrack.length &&
+      previous.every((frame, index) => {
+        const next = nextTrack[index];
+        return next && frame.t === next.t && frame.value === next.value && frame.easing === next.easing;
+      });
+    if (sameTrack) continue;
+    nextKeyframes[key] = nextTrack;
+    changed = true;
+    if (isEffectKeyframeParam(key)) {
+      effectPatch[key] = value;
+    } else if (isTransformKeyframeParam(key)) {
+      transformPatch[key] = value;
+    }
+  }
+
+  if (!changed) return timeline;
+
+  const next = cloneTimeline(timeline);
+  const nextClip = next[loc.trackIndex]!.clips[loc.clipIndex]!;
+  nextClip.keyframes = stripEmptyKeyframes(nextKeyframes);
+  if (Object.keys(effectPatch).length > 0) {
+    nextClip.effects = { ...nextClip.effects, ...effectPatch };
+  }
+  if (Object.keys(transformPatch).length > 0) {
+    nextClip.transform = normalizeTransform({ ...nextClip.transform, ...transformPatch });
+  }
+  return next;
+}
+
+export function deleteClipKeyframe(
+  timeline: Timeline,
+  trackId: string,
+  clipId: string,
+  key: ClipKeyframeParam,
+  timelineTime: number,
+): Timeline {
+  const loc = trackWithClip(timeline, trackId, clipId);
+  if (!loc) return timeline;
+  const clip = timeline[loc.trackIndex]!.clips[loc.clipIndex]!;
+  const localTime = localKeyframeTime(clip, timelineTime);
+  if (localTime === null) return timeline;
+  const normalized = normalizeClipKeyframes(clip.keyframes, clip.duration);
+  const currentTrack = normalized?.[key];
+  if (!normalized || !currentTrack || currentTrack.length === 0) return timeline;
+  const nextTrack = deleteKeyframe(currentTrack, localTime);
+  if (nextTrack.length === currentTrack.length) return timeline;
+
+  const next = cloneTimeline(timeline);
+  next[loc.trackIndex]!.clips[loc.clipIndex]!.keyframes = stripEmptyKeyframes({
+    ...normalized,
+    [key]: nextTrack,
+  });
+  return next;
+}
+
+export function setClipLut(
+  timeline: Timeline,
+  trackId: string,
+  clipId: string,
+  lut: ClipLut,
+): Timeline {
+  const loc = trackWithClip(timeline, trackId, clipId);
+  if (!loc) return timeline;
+  const next = cloneTimeline(timeline);
+  const clip = next[loc.trackIndex]!.clips[loc.clipIndex]!;
+  clip.lut = cloneClipLut(lut);
+  clip.effects = {
+    ...clip.effects,
+    lutStrength: clip.effects.lutStrength > 0 ? clip.effects.lutStrength : 1,
+  };
+  return next;
+}
+
+export function setClipLutStrength(
+  timeline: Timeline,
+  trackId: string,
+  clipId: string,
+  strength: number,
+): Timeline {
+  const clamped = finite(strength) ? Math.min(1, Math.max(0, strength)) : Number.NaN;
+  if (!finite(clamped)) return timeline;
+  return setClipEffectParam(timeline, trackId, clipId, 'lutStrength', clamped);
 }
 
 export function defaultClipEffects(): ClipEffectParams {
@@ -888,15 +1125,20 @@ export function setTitleContent(
 }
 
 export function defaultTimelineClip(
-  partial: Omit<TimelineClip, 'effects' | 'transform' | 'audioFadeIn' | 'audioFadeOut'> &
-    Partial<Pick<TimelineClip, 'effects' | 'transform' | 'audioFadeIn' | 'audioFadeOut'>>,
+  partial: Omit<TimelineClip, 'effects' | 'transform' | 'keyframes' | 'lut' | 'audioFadeIn' | 'audioFadeOut'> &
+    Partial<Pick<TimelineClip, 'effects' | 'transform' | 'keyframes' | 'lut' | 'audioFadeIn' | 'audioFadeOut'>>,
 ): TimelineClip {
-  return {
+  const clip: TimelineClip = {
     effects: defaultClipEffects(),
     transform: defaultClipTransform(),
     ...DEFAULT_CLIP_AUDIO_FADES,
     ...partial,
   };
+  const keyframes = normalizeClipKeyframes(partial.keyframes, Math.max(0, clip.duration));
+  if (keyframes) clip.keyframes = keyframes;
+  const lut = cloneClipLut(partial.lut);
+  if (lut) clip.lut = lut;
+  return clip;
 }
 
 function applyTrackMix(

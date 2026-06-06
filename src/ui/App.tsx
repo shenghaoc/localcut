@@ -3,6 +3,7 @@ import { useRegisterSW } from 'virtual:pwa-register/solid';
 import { Link2, RotateCcw, Plus } from 'lucide-solid';
 import {
   CLOCK_BUFFER_BYTES,
+  type ClipKeyframeParamSnapshot,
   type ExportCodecSupport,
   type ExportProgress,
   type ExportSettings,
@@ -34,6 +35,12 @@ import { cn } from '../lib/utils';
 import { CapabilityPanel } from './CapabilityPanel';
 import { LimitedPreview } from './LimitedPreview';
 import { registerKeyboardShortcuts } from './keyboard';
+import {
+  clipLocalTime,
+  hasKeyframeTrack,
+  sampleEffectsAt,
+  sampleTransformAt,
+} from './keyframes';
 import {
   canCompatibilityPreview,
   deriveCapabilityTier,
@@ -199,7 +206,17 @@ export function App() {
     for (const ref of selectedClipRefs()) {
       const clip = findTimelineClip(ref);
       if (clip) {
-        return { trackId: ref.trackId, clipId: clip.id, effects: { ...clip.effects } };
+        const localTime = clipLocalTime(clip, clock.currentTime());
+        return {
+          trackId: ref.trackId,
+          clipId: clip.id,
+          start: clip.start,
+          duration: clip.duration,
+          effects: sampleEffectsAt(clip.effects, clip.keyframes, localTime),
+          transform: sampleTransformAt(clip.transform, clip.keyframes, localTime),
+          keyframes: clip.keyframes,
+          lut: clip.lut,
+        };
       }
     }
     return null;
@@ -243,13 +260,14 @@ export function App() {
     if (!track || track.type !== 'video') return null;
     const timelineClip = track.clips.find((c) => c.id === clip.clipId);
     if (!timelineClip) return null;
+    const localTime = clipLocalTime(timelineClip, clock.currentTime());
     // Title clips are source-less: their raster is a fixed 1920×1080 (16:9) card,
     // so the gizmo/inspector size against that rather than a media asset.
     if (timelineClip.kind === 'title') {
       return {
         trackId: track.id,
         clipId: timelineClip.id,
-        transform: timelineClip.transform,
+        transform: sampleTransformAt(timelineClip.transform, timelineClip.keyframes, localTime),
         sourceWidth: 1920,
         sourceHeight: 1080,
       };
@@ -258,7 +276,7 @@ export function App() {
     return {
       trackId: track.id,
       clipId: timelineClip.id,
-      transform: timelineClip.transform,
+      transform: sampleTransformAt(timelineClip.transform, timelineClip.keyframes, localTime),
       sourceWidth: asset?.video?.width ?? metadata()?.video?.width ?? 16,
       sourceHeight: asset?.video?.height ?? metadata()?.video?.height ?? 9,
     };
@@ -801,6 +819,7 @@ export function App() {
     const clips = selectedClipboardClips();
     if (clips.length === 0) return;
     setTimelineClipboard(clips);
+    bridge?.send({ type: 'cache-clipboard-luts', clips: selectedClipRefs() });
     setStatusLine(`Copied ${clips.length} clip${clips.length === 1 ? '' : 's'}`);
   }
 
@@ -808,6 +827,47 @@ export function App() {
     const clips = timelineClipboard();
     if (clips.length === 0) return;
     bridge?.send({ type: 'paste-clips', clips, atTime: clock.currentTime() });
+  }
+
+  function splitKeyframedTransformChange(
+    transform: Partial<TimelineClipSnapshot['transform']>,
+  ): Partial<TimelineClipSnapshot['transform']> {
+    const sel = selectedClip();
+    if (!sel) return transform;
+    const staticPatch: Partial<TimelineClipSnapshot['transform']> = {};
+    const staticNumbers = staticPatch as Partial<
+      Record<Exclude<keyof TimelineClipSnapshot['transform'], 'fit'>, number>
+    >;
+    const keyedUpdates: Array<{
+      key: ClipKeyframeParamSnapshot;
+      value: number;
+      easing: 'linear';
+    }> = [];
+    for (const [rawKey, value] of Object.entries(transform)) {
+      if (rawKey === 'fit') {
+        staticPatch.fit = value as TimelineClipSnapshot['transform']['fit'];
+        continue;
+      }
+      if (typeof value !== 'number') {
+        continue;
+      }
+      const key = rawKey as ClipKeyframeParamSnapshot;
+      if (!hasKeyframeTrack(sel.keyframes, key)) {
+        staticNumbers[key as Exclude<keyof TimelineClipSnapshot['transform'], 'fit'>] = value;
+        continue;
+      }
+      keyedUpdates.push({ key, value, easing: 'linear' });
+    }
+    if (keyedUpdates.length > 0) {
+      bridge?.send({
+        type: 'set-keyframes',
+        trackId: sel.trackId,
+        clipId: sel.clipId,
+        t: clock.currentTime(),
+        keyframes: keyedUpdates,
+      });
+    }
+    return staticPatch;
   }
 
   function deleteSelectedClips() {
@@ -1091,7 +1151,11 @@ export function App() {
               canvasEl={previewCanvasEl}
               onChange={(transform) => {
                 const sel = selectedClipTransform();
-                if (sel) bridge?.send({ type: 'set-transform', trackId: sel.trackId, clipId: sel.clipId, transform });
+                if (!sel) return;
+                const staticPatch = splitKeyframedTransformChange(transform);
+                if (Object.keys(staticPatch).length > 0) {
+                  bridge?.send({ type: 'set-transform', trackId: sel.trackId, clipId: sel.clipId, transform: staticPatch });
+                }
               }}
             />
           </Show>
@@ -1184,6 +1248,20 @@ export function App() {
           }
           onTransform={(trackId, clipId, transform) =>
             bridge?.send({ type: 'set-transform', trackId, clipId, transform })
+          }
+          playheadTime={clock.currentTime()}
+          onSeek={(time) => bridge?.send({ type: 'seek', time })}
+          onSetKeyframe={(trackId, clipId, key, t, value, easing) =>
+            bridge?.send({ type: 'set-keyframe', trackId, clipId, key, t, value, easing })
+          }
+          onDeleteKeyframe={(trackId, clipId, key, t) =>
+            bridge?.send({ type: 'delete-keyframe', trackId, clipId, key, t })
+          }
+          onImportLut={(trackId, clipId, file) =>
+            bridge?.send({ type: 'import-lut', trackId, clipId, file })
+          }
+          onLutStrength={(trackId, clipId, strength) =>
+            bridge?.send({ type: 'set-lut-strength', trackId, clipId, strength })
           }
           onTrackGain={(trackId, gain) => {
             bridge?.send({ type: 'set-track-gain', trackId, gain });
