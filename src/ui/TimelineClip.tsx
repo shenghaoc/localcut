@@ -175,6 +175,13 @@ export function TimelineClip(props: TimelineClipProps) {
             tabIndex={-1}
             aria-label={`Delete ${props.clip.id}`}
             onPointerDown={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.stopPropagation();
+                event.preventDefault();
+                props.onDelete?.(props.trackId, props.clip.id);
+              }
+            }}
             onClick={(event) => {
               event.stopPropagation();
               props.onDelete?.(props.trackId, props.clip.id);
