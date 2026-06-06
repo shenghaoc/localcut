@@ -8,14 +8,19 @@ import {
   reorderClip,
   resolveAt,
   setClipEffectParam,
+  setClipAudioFade,
+  setTrackPan,
   splitClipAt,
   trimClip,
   type TimelineClip,
   type TimelineTrack,
 } from './timeline';
 
-function clip(partial: Omit<TimelineClip, 'effects'> & { effects?: TimelineClip['effects'] }): TimelineClip {
-  return { effects: defaultClipEffects(), ...partial };
+function clip(
+  partial: Omit<TimelineClip, 'effects' | 'audioFadeIn' | 'audioFadeOut'> &
+    Partial<Pick<TimelineClip, 'effects' | 'audioFadeIn' | 'audioFadeOut'>>,
+): TimelineClip {
+  return { effects: defaultClipEffects(), audioFadeIn: 0, audioFadeOut: 0, ...partial };
 }
 
 describe('timeline', () => {
@@ -362,5 +367,36 @@ describe('timeline', () => {
     expect(trimClip(timeline, 'video-track', 'a', { edge: 'out', time: 11 })[0]!.clips[0]).toEqual(
       timeline[0]!.clips[0],
     );
+  });
+
+  it('updates track pan within the legal range', () => {
+    const timeline: TimelineTrack[] = [
+      {
+        id: 'audio-track',
+        type: 'audio',
+        ...DEFAULT_TRACK_MIX,
+        clips: [clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 0 })],
+      },
+    ];
+
+    const next = setTrackPan(timeline, 'audio-track', -0.75);
+    expect(next[0]!.pan).toBeCloseTo(-0.75);
+    expect(setTrackPan(next, 'audio-track', -0.75)).toBe(next);
+    expect(setTrackPan(timeline, 'audio-track', 2)).toBe(timeline);
+  });
+
+  it('updates clip audio fades without exceeding clip duration', () => {
+    const timeline: TimelineTrack[] = [
+      {
+        id: 'audio-track',
+        type: 'audio',
+        ...DEFAULT_TRACK_MIX,
+        clips: [clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 2, inPoint: 0 })],
+      },
+    ];
+
+    const next = setClipAudioFade(timeline, 'audio-track', 'a', 'in', 0.5);
+    expect(next[0]!.clips[0]!.audioFadeIn).toBeCloseTo(0.5);
+    expect(setClipAudioFade(timeline, 'audio-track', 'a', 'out', 3)).toBe(timeline);
   });
 });

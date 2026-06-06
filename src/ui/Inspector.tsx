@@ -10,14 +10,24 @@ export interface SelectedClip {
 export interface SelectedTrackMix {
   trackId: string;
   gain: number;
+  pan: number;
   muted: boolean;
   solo: boolean;
+}
+
+export interface SelectedClipFades {
+  trackId: string;
+  clipId: string;
+  duration: number;
+  audioFadeIn: number;
+  audioFadeOut: number;
 }
 
 interface InspectorProps {
   metadata: MediaMetadata | null;
   selectedClip: SelectedClip | null;
   selectedTrackMix: SelectedTrackMix | null;
+  selectedClipFades: SelectedClipFades | null;
   onEffectParam: (
     trackId: string,
     clipId: string,
@@ -27,6 +37,8 @@ interface InspectorProps {
   onTrackGain: (trackId: string, gain: number) => void;
   onTrackMute: (trackId: string, muted: boolean) => void;
   onTrackSolo: (trackId: string, solo: boolean) => void;
+  onTrackPan: (trackId: string, pan: number) => void;
+  onClipFade: (trackId: string, clipId: string, edge: 'in' | 'out', durationS: number) => void;
 }
 
 const PARAM_DEBOUNCE_MS = 80;
@@ -62,11 +74,22 @@ const SLIDERS: SliderSpec[] = [
   },
 ];
 
+type MixDraft = Pick<SelectedTrackMix, 'gain' | 'pan'>;
+type FadeDraft = Pick<SelectedClipFades, 'audioFadeIn' | 'audioFadeOut'>;
+
 export function Inspector(props: InspectorProps) {
   const [draft, setDraft] = createSignal<ClipEffectParamsSnapshot | null>(null);
+  const [mixDraft, setMixDraft] = createSignal<MixDraft | null>(null);
+  const [fadeDraft, setFadeDraft] = createSignal<FadeDraft | null>(null);
   const pending = new Map<keyof ClipEffectParamsSnapshot, number>();
   const debouncers = new Map<keyof ClipEffectParamsSnapshot, ReturnType<typeof setTimeout>>();
+  const mixPending = new Map<keyof MixDraft, number>();
+  const mixDebouncers = new Map<keyof MixDraft, ReturnType<typeof setTimeout>>();
+  const fadePending = new Map<keyof FadeDraft, number>();
+  const fadeDebouncers = new Map<keyof FadeDraft, ReturnType<typeof setTimeout>>();
   const pendingTarget = { trackId: '', clipId: '' };
+  const mixTarget = { trackId: '' };
+  const fadeTarget = { trackId: '', clipId: '' };
 
   function flushPending() {
     if (!pendingTarget.clipId || pending.size === 0) return;
@@ -76,6 +99,32 @@ export function Inspector(props: InspectorProps) {
       props.onEffectParam(pendingTarget.trackId, pendingTarget.clipId, key, value);
     }
     pending.clear();
+  }
+
+  function flushMixPending() {
+    if (!mixTarget.trackId || mixPending.size === 0) return;
+    for (const handle of mixDebouncers.values()) clearTimeout(handle);
+    mixDebouncers.clear();
+    for (const [key, value] of mixPending) {
+      if (key === 'gain') props.onTrackGain(mixTarget.trackId, value);
+      if (key === 'pan') props.onTrackPan(mixTarget.trackId, value);
+    }
+    mixPending.clear();
+  }
+
+  function flushFadePending() {
+    if (!fadeTarget.clipId || fadePending.size === 0) return;
+    for (const handle of fadeDebouncers.values()) clearTimeout(handle);
+    fadeDebouncers.clear();
+    for (const [key, value] of fadePending) {
+      props.onClipFade(
+        fadeTarget.trackId,
+        fadeTarget.clipId,
+        key === 'audioFadeIn' ? 'in' : 'out',
+        value,
+      );
+    }
+    fadePending.clear();
   }
 
   function syncDraftFromClip(clip: SelectedClip) {
@@ -92,13 +141,74 @@ export function Inspector(props: InspectorProps) {
     });
   }
 
+  function scheduleMixParam(key: keyof MixDraft, value: number) {
+    const mix = props.selectedTrackMix;
+    if (!mix) return;
+    mixTarget.trackId = mix.trackId;
+    setMixDraft((prev) => ({ gain: mix.gain, pan: mix.pan, ...prev, [key]: value }));
+    mixPending.set(key, value);
+    const existing = mixDebouncers.get(key);
+    if (existing) clearTimeout(existing);
+    mixDebouncers.set(
+      key,
+      setTimeout(() => {
+        mixDebouncers.delete(key);
+        const latest = mixPending.get(key);
+        mixPending.delete(key);
+        if (latest !== undefined) {
+          if (key === 'gain') props.onTrackGain(mix.trackId, latest);
+          if (key === 'pan') props.onTrackPan(mix.trackId, latest);
+        }
+      }, PARAM_DEBOUNCE_MS),
+    );
+  }
+
+  function scheduleFadeParam(key: keyof FadeDraft, value: number) {
+    const fades = props.selectedClipFades;
+    if (!fades) return;
+    fadeTarget.trackId = fades.trackId;
+    fadeTarget.clipId = fades.clipId;
+    setFadeDraft((prev) => ({
+      audioFadeIn: fades.audioFadeIn,
+      audioFadeOut: fades.audioFadeOut,
+      ...prev,
+      [key]: value,
+    }));
+    fadePending.set(key, value);
+    const existing = fadeDebouncers.get(key);
+    if (existing) clearTimeout(existing);
+    fadeDebouncers.set(
+      key,
+      setTimeout(() => {
+        fadeDebouncers.delete(key);
+        const latest = fadePending.get(key);
+        fadePending.delete(key);
+        if (latest !== undefined) {
+          props.onClipFade(
+            fades.trackId,
+            fades.clipId,
+            key === 'audioFadeIn' ? 'in' : 'out',
+            latest,
+          );
+        }
+      }, PARAM_DEBOUNCE_MS),
+    );
+  }
+
   createEffect(() => {
     const clip = props.selectedClip;
     if (!clip) {
       flushPending();
+      flushMixPending();
+      flushFadePending();
       pendingTarget.trackId = '';
       pendingTarget.clipId = '';
+      mixTarget.trackId = '';
+      fadeTarget.trackId = '';
+      fadeTarget.clipId = '';
       setDraft(null);
+      setMixDraft(null);
+      setFadeDraft(null);
       return;
     }
     if (pendingTarget.clipId && pendingTarget.clipId !== clip.clipId) {
@@ -109,8 +219,62 @@ export function Inspector(props: InspectorProps) {
     syncDraftFromClip(clip);
   });
 
+  createEffect(() => {
+    const mix = props.selectedTrackMix;
+    if (!mix) {
+      flushMixPending();
+      mixTarget.trackId = '';
+      setMixDraft(null);
+      return;
+    }
+    if (mixTarget.trackId && mixTarget.trackId !== mix.trackId) {
+      flushMixPending();
+    }
+    mixTarget.trackId = mix.trackId;
+    setMixDraft((prev) => {
+      const base = { gain: mix.gain, pan: mix.pan };
+      if (!prev) return base;
+      return {
+        gain: mixPending.has('gain') || mixDebouncers.has('gain') ? prev.gain : mix.gain,
+        pan: mixPending.has('pan') || mixDebouncers.has('pan') ? prev.pan : mix.pan,
+      };
+    });
+  });
+
+  createEffect(() => {
+    const fades = props.selectedClipFades;
+    if (!fades) {
+      flushFadePending();
+      fadeTarget.trackId = '';
+      fadeTarget.clipId = '';
+      setFadeDraft(null);
+      return;
+    }
+    if (fadeTarget.clipId && fadeTarget.clipId !== fades.clipId) {
+      flushFadePending();
+    }
+    fadeTarget.trackId = fades.trackId;
+    fadeTarget.clipId = fades.clipId;
+    setFadeDraft((prev) => {
+      const base = { audioFadeIn: fades.audioFadeIn, audioFadeOut: fades.audioFadeOut };
+      if (!prev) return base;
+      return {
+        audioFadeIn:
+          fadePending.has('audioFadeIn') || fadeDebouncers.has('audioFadeIn')
+            ? prev.audioFadeIn
+            : fades.audioFadeIn,
+        audioFadeOut:
+          fadePending.has('audioFadeOut') || fadeDebouncers.has('audioFadeOut')
+            ? prev.audioFadeOut
+            : fades.audioFadeOut,
+      };
+    });
+  });
+
   onCleanup(() => {
     flushPending();
+    flushMixPending();
+    flushFadePending();
   });
 
   function scheduleParam(key: keyof ClipEffectParamsSnapshot, value: number) {
@@ -159,7 +323,7 @@ export function Inspector(props: InspectorProps) {
                 <dd>{clip().clipId}</dd>
               </div>
             </dl>
-            <Show when={props.selectedTrackMix}>
+            <Show when={mixDraft()}>
               {(mix) => (
                 <div class="track-mix-controls">
                   <h3 class="panel-subtitle">Track mix</h3>
@@ -175,29 +339,96 @@ export function Inspector(props: InspectorProps) {
                       step={0.01}
                       value={mix().gain}
                       onInput={(e) =>
-                        props.onTrackGain(mix().trackId, Number((e.currentTarget as HTMLInputElement).value))
+                        scheduleMixParam('gain', Number((e.currentTarget as HTMLInputElement).value))
                       }
                     />
                   </label>
-                  <label class="mix-toggle">
+                  <label class="effect-slider">
+                    <span class="effect-slider-label">
+                      Pan
+                      <span class="effect-slider-value tabular-nums">{mix().pan.toFixed(2)}</span>
+                    </span>
                     <input
-                      type="checkbox"
-                      checked={mix().muted}
-                      onChange={(e) =>
-                        props.onTrackMute(mix().trackId, (e.currentTarget as HTMLInputElement).checked)
+                      type="range"
+                      min={-1}
+                      max={1}
+                      step={0.01}
+                      value={mix().pan}
+                      onInput={(e) =>
+                        scheduleMixParam('pan', Number((e.currentTarget as HTMLInputElement).value))
                       }
                     />
-                    Mute
                   </label>
-                  <label class="mix-toggle">
+                  <Show when={props.selectedTrackMix}>
+                    {(trackMix) => (
+                      <>
+                        <label class="mix-toggle">
+                          <input
+                            type="checkbox"
+                            checked={trackMix().muted}
+                            onChange={(e) =>
+                              props.onTrackMute(
+                                trackMix().trackId,
+                                (e.currentTarget as HTMLInputElement).checked,
+                              )
+                            }
+                          />
+                          Mute
+                        </label>
+                        <label class="mix-toggle">
+                          <input
+                            type="checkbox"
+                            checked={trackMix().solo}
+                            onChange={(e) =>
+                              props.onTrackSolo(
+                                trackMix().trackId,
+                                (e.currentTarget as HTMLInputElement).checked,
+                              )
+                            }
+                          />
+                          Solo
+                        </label>
+                      </>
+                    )}
+                  </Show>
+                </div>
+              )}
+            </Show>
+            <Show when={fadeDraft()}>
+              {(fades) => (
+                <div class="track-mix-controls">
+                  <h3 class="panel-subtitle">Audio fades</h3>
+                  <label class="effect-slider">
+                    <span class="effect-slider-label">
+                      Fade in
+                      <span class="effect-slider-value tabular-nums">{fades().audioFadeIn.toFixed(2)}s</span>
+                    </span>
                     <input
-                      type="checkbox"
-                      checked={mix().solo}
-                      onChange={(e) =>
-                        props.onTrackSolo(mix().trackId, (e.currentTarget as HTMLInputElement).checked)
+                      type="range"
+                      min={0}
+                      max={props.selectedClipFades?.duration ?? 0}
+                      step={0.01}
+                      value={fades().audioFadeIn}
+                      onInput={(e) =>
+                        scheduleFadeParam('audioFadeIn', Number((e.currentTarget as HTMLInputElement).value))
                       }
                     />
-                    Solo
+                  </label>
+                  <label class="effect-slider">
+                    <span class="effect-slider-label">
+                      Fade out
+                      <span class="effect-slider-value tabular-nums">{fades().audioFadeOut.toFixed(2)}s</span>
+                    </span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={props.selectedClipFades?.duration ?? 0}
+                      step={0.01}
+                      value={fades().audioFadeOut}
+                      onInput={(e) =>
+                        scheduleFadeParam('audioFadeOut', Number((e.currentTarget as HTMLInputElement).value))
+                      }
+                    />
                   </label>
                 </div>
               )}

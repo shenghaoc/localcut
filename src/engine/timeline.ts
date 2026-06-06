@@ -12,6 +12,8 @@ export interface TimelineClip {
   duration: number;
   inPoint: number;
   effects: ClipEffectParams;
+  audioFadeIn: number;
+  audioFadeOut: number;
 }
 
 export interface TimelineTrack {
@@ -19,15 +21,24 @@ export interface TimelineTrack {
   type: 'video' | 'audio';
   clips: TimelineClip[];
   gain: number;
+  pan: number;
   muted: boolean;
   solo: boolean;
 }
 
 export const DEFAULT_TRACK_MIX = {
   gain: 1,
+  pan: 0,
   muted: false,
   solo: false,
 } as const;
+
+export const DEFAULT_CLIP_AUDIO_FADES = {
+  audioFadeIn: 0,
+  audioFadeOut: 0,
+} as const;
+
+export const DEFAULT_MASTER_GAIN = 1;
 
 export type Timeline = TimelineTrack[];
 
@@ -41,9 +52,15 @@ function cloneTimeline(timeline: Timeline): Timeline {
   return timeline.map((track) => ({
     ...track,
     gain: track.gain,
+    pan: track.pan,
     muted: track.muted,
     solo: track.solo,
-    clips: track.clips.map((clip) => ({ ...clip, effects: { ...clip.effects } })),
+    clips: track.clips.map((clip) => ({
+      ...clip,
+      effects: { ...clip.effects },
+      audioFadeIn: clip.audioFadeIn,
+      audioFadeOut: clip.audioFadeOut,
+    })),
   }));
 }
 
@@ -358,10 +375,21 @@ export function defaultClipEffects(): ClipEffectParams {
   return { ...DEFAULT_CLIP_EFFECTS };
 }
 
+export function defaultTimelineClip(
+  partial: Omit<TimelineClip, 'effects' | 'audioFadeIn' | 'audioFadeOut'> &
+    Partial<Pick<TimelineClip, 'effects' | 'audioFadeIn' | 'audioFadeOut'>>,
+): TimelineClip {
+  return {
+    effects: defaultClipEffects(),
+    ...DEFAULT_CLIP_AUDIO_FADES,
+    ...partial,
+  };
+}
+
 function applyTrackMix(
   timeline: Timeline,
   trackId: string,
-  patch: Partial<Pick<TimelineTrack, 'gain' | 'muted' | 'solo'>>,
+  patch: Partial<Pick<TimelineTrack, 'gain' | 'pan' | 'muted' | 'solo'>>,
 ): Timeline {
   const track = findTrack(timeline, trackId);
   if (!track) return timeline;
@@ -395,6 +423,35 @@ export function setTrackSolo(timeline: Timeline, trackId: string, solo: boolean)
   const track = findTrack(timeline, trackId);
   if (!track || track.solo === solo) return timeline;
   return applyTrackMix(timeline, trackId, { solo });
+}
+
+export function setTrackPan(timeline: Timeline, trackId: string, pan: number): Timeline {
+  if (!finite(pan) || pan < -1 || pan > 1) return timeline;
+  const track = findTrack(timeline, trackId);
+  if (!track || track.pan === pan) return timeline;
+  return applyTrackMix(timeline, trackId, { pan });
+}
+
+export function setClipAudioFade(
+  timeline: Timeline,
+  trackId: string,
+  clipId: string,
+  edge: 'in' | 'out',
+  durationS: number,
+): Timeline {
+  if (!finite(durationS) || durationS < 0) return timeline;
+  const loc = trackWithClip(timeline, trackId, clipId);
+  if (!loc) return timeline;
+
+  const clip = timeline[loc.trackIndex]!.clips[loc.clipIndex]!;
+  const key = edge === 'in' ? 'audioFadeIn' : 'audioFadeOut';
+  if (clip[key] === durationS) return timeline;
+  if (durationS > clip.duration) return timeline;
+
+  const next = cloneTimeline(timeline);
+  const nextClip = next[loc.trackIndex]!.clips[loc.clipIndex]!;
+  nextClip[key] = durationS;
+  return next;
 }
 
 export { normalizeClipEffects, type ClipEffectParams };

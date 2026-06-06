@@ -23,9 +23,16 @@ import {
   setTrackGain,
   setTrackMute,
   setTrackSolo,
-  defaultClipEffects,
+  setTrackPan,
+  setClipAudioFade,
+  defaultTimelineClip,
+  DEFAULT_MASTER_GAIN,
   type Timeline,
 } from './timeline';
+import {
+  applyMixStageInPlace,
+  type AudioTransitionCut,
+} from './audio-mix';
 import {
   mapAudioRing,
   ringFreeSamples,
@@ -72,6 +79,9 @@ let playback: PlaybackController | null = null;
 let adaptive: AdaptiveResolution | null = null;
 let probeDone = false;
 let timeline: Timeline = createEmptyTimeline();
+let masterGain = DEFAULT_MASTER_GAIN;
+/** Phase 13 will populate this; export crossfades only until preview dual-stream lands. */
+const audioTransitions: AudioTransitionCut[] = [];
 let nextSourceId = 1;
 const sourceInputs = new Map<string, MediaInputHandle>();
 const sourceDescriptors = new Map<string, SourceDescriptor>();
@@ -113,6 +123,7 @@ function postTimelineState() {
     id: track.id,
     type: track.type,
     gain: track.gain,
+    pan: track.pan,
     muted: track.muted,
     solo: track.solo,
     clips: track.clips.map((clip) => ({
@@ -122,10 +133,12 @@ function postTimelineState() {
       duration: clip.duration,
       inPoint: clip.inPoint,
       effects: { ...clip.effects },
+      audioFadeIn: clip.audioFadeIn,
+      audioFadeOut: clip.audioFadeOut,
       offline: sourceInputs.has(clip.sourceId) ? undefined : true,
     })),
   }));
-  post({ type: 'timeline-state', timeline: snapshot });
+  post({ type: 'timeline-state', timeline: snapshot, masterGain });
 }
 
 function postHistoryState(): void {
@@ -167,14 +180,13 @@ function appendTrackForSource(handle: MediaInputHandle, start?: number) {
     type: 'video' as const,
     ...DEFAULT_TRACK_MIX,
     clips: [
-      {
+      defaultTimelineClip({
         id: `clip-${handle.sourceId}`,
         sourceId: handle.sourceId,
         start: clipStart,
         duration: handle.duration,
         inPoint: 0,
-        effects: defaultClipEffects(),
-      },
+      }),
     ],
   };
 
@@ -193,14 +205,13 @@ function appendAudioTrackForSource(handle: MediaInputHandle, start?: number) {
     type: 'audio' as const,
     ...DEFAULT_TRACK_MIX,
     clips: [
-      {
+      defaultTimelineClip({
         id: clipId,
         sourceId: handle.sourceId,
         start: clipStart,
         duration: handle.duration,
         inPoint: 0,
-        effects: defaultClipEffects(),
-      },
+      }),
     ],
   };
   timeline = [...timeline, nextTrack];
@@ -236,6 +247,7 @@ function trackAudible(trackId: string): number {
   return track.gain;
 }
 
+/** Live preview pumps the first resolved audio clip only; export sums all audible tracks. */
 async function pumpAudioOnce(): Promise<void> {
   if (!audioRing || !clockView) return;
   if (Atomics.load(audioRing.header, RingHeader.STATE) !== RingState.PLAYING) return;
@@ -276,11 +288,21 @@ async function pumpAudioOnce(): Promise<void> {
     }
   }
 
+  const track = timeline.find((item) => item.id === resolved.trackId);
   const gain = trackAudible(resolved.trackId);
-  if (gain <= 0) {
+  if (gain <= 0 || !track) {
     pcm.fill(0);
-  } else if (gain !== 1) {
-    for (let i = 0; i < pcm.length; i += 1) pcm[i] = (pcm[i] ?? 0) * gain;
+  } else {
+    const clipOffsetS = timelineTime - resolved.clip.start;
+    applyMixStageInPlace(pcm, channels, {
+      gain,
+      pan: track.pan,
+      fadeInS: resolved.clip.audioFadeIn,
+      fadeOutS: resolved.clip.audioFadeOut,
+      clipOffsetS,
+      clipDurationS: resolved.clip.duration,
+      sampleRate,
+    });
   }
   const written = writeRingPcm(audioRing, pcm);
   audioWriteFrames += written;
@@ -408,6 +430,7 @@ async function persistCurrentProject(): Promise<void> {
     projectId,
     timeline,
     sources: currentProjectSources(),
+    masterGain,
   });
   await saveStoredProject(doc);
 }
@@ -820,6 +843,7 @@ async function handleRestoreProject(): Promise<void> {
   restoreDoc = null;
   projectId = doc.projectId;
   timeline = cloneTimelineSnapshot(doc.timeline);
+  masterGain = doc.masterGain;
   nextSourceId = nextSourceIdFromDescriptors(doc.sources);
   for (const descriptor of doc.sources) {
     sourceDescriptors.set(descriptor.sourceId, descriptor);
@@ -858,6 +882,7 @@ async function handleNewProject(): Promise<void> {
   history.clear();
   projectId = makeProjectId();
   nextSourceId = 1;
+  masterGain = DEFAULT_MASTER_GAIN;
   ensureClockAndTimeline();
   postHistoryState();
   let message = 'Started a new project.';
@@ -1082,6 +1107,7 @@ function handleSetEffectParam(cmd: Extract<WorkerCommand, { type: 'set-effect-pa
 
 function handleSetTrackGain(cmd: Extract<WorkerCommand, { type: 'set-track-gain' }>) {
   commitTimelineMutation(() => setTrackGain(timeline, cmd.trackId, cmd.gain), {
+    coalesceKey: { clipId: cmd.trackId, key: 'gain' },
     refreshPlayback: 'none',
     prune: false,
   });
@@ -1099,6 +1125,33 @@ function handleSetTrackSolo(cmd: Extract<WorkerCommand, { type: 'set-track-solo'
     refreshPlayback: 'none',
     prune: false,
   });
+}
+
+function handleSetTrackPan(cmd: Extract<WorkerCommand, { type: 'set-track-pan' }>) {
+  commitTimelineMutation(() => setTrackPan(timeline, cmd.trackId, cmd.pan), {
+    coalesceKey: { clipId: cmd.trackId, key: 'pan' },
+    refreshPlayback: 'none',
+    prune: false,
+  });
+}
+
+function handleSetMasterGain(cmd: Extract<WorkerCommand, { type: 'set-master-gain' }>) {
+  const gain = Number.isFinite(cmd.gain) ? Math.max(0, cmd.gain) : masterGain;
+  if (gain === masterGain) return;
+  masterGain = gain;
+  postTimelineState();
+  scheduleAutosave();
+}
+
+function handleSetClipFade(cmd: Extract<WorkerCommand, { type: 'set-clip-fade' }>) {
+  commitTimelineMutation(
+    () => setClipAudioFade(timeline, cmd.trackId, cmd.clipId, cmd.edge, cmd.durationS),
+    {
+      coalesceKey: { clipId: cmd.clipId, key: `fade-${cmd.edge}` },
+      refreshPlayback: 'none',
+      prune: false,
+    },
+  );
 }
 
 function handleTrim(cmd: Extract<WorkerCommand, { type: 'trim-clip' }>) {
@@ -1298,6 +1351,8 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
       throughputProbe: currentProbe,
       signal: controller.signal,
       onProgress: (progress) => post({ type: 'export-progress', progress }),
+      masterGain,
+      transitions: audioTransitions,
     });
     post({ type: 'export-complete', fileName: cmd.output.name, mimeType: result.mimeType });
   } catch (error) {
@@ -1420,6 +1475,15 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
       break;
     case 'set-track-solo':
       handleSetTrackSolo(cmd);
+      break;
+    case 'set-track-pan':
+      handleSetTrackPan(cmd);
+      break;
+    case 'set-master-gain':
+      handleSetMasterGain(cmd);
+      break;
+    case 'set-clip-fade':
+      handleSetClipFade(cmd);
       break;
     case 'dispose':
       void handleDispose();

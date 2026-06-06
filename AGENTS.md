@@ -32,7 +32,7 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 
 **Active:**
 
-- [**Phase 9: Project persistence + undo/redo**](.kiro/specs/phase-9-persistence-undo/tasks.md) — versioned timeline serialization; worker-owned snapshot undo/redo; IndexedDB autosave + restore-on-launch; layered media re-linking.
+- [**Phase 16: Audio mixing polish**](.kiro/specs/phase-16-audio-mixing/tasks.md) — shared mix stage; master bus; per-track pan; clip fades + transition crossfades; AudioWorklet meters over SAB.
 
 **Planned:**
 
@@ -42,10 +42,11 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 - [**Phase 13: Transitions**](.kiro/specs/phase-13-transitions/tasks.md) — cut-point transition model; dual-stream readahead; 2-input mix pass in the single submission; export parity.
 - [**Phase 14: Titles + text**](.kiro/specs/phase-14-titles-text/tasks.md) — overlay text clips; edit-time raster cached as a GPU texture; bundled offline fonts; transform-driven layout; safe-area guides.
 - [**Phase 15: Keyframes + advanced colour**](.kiro/specs/phase-15-keyframes-colour/tasks.md) — keyframe tracks with shared preview/export interpolation; Inspector keyframe UI; `.cube` LUT import as a 3D-texture pass.
-- [**Phase 16: Audio mixing polish**](.kiro/specs/phase-16-audio-mixing/tasks.md) — shared mix stage; master bus; per-track pan; clip fades + transition crossfades; AudioWorklet meters over SAB.
 - [**Phase 17: Export expansion**](.kiro/specs/phase-17-export-expansion/tasks.md) — probed codec/container choice (H.264/VP9/AV1); resolution/fps/bitrate overrides; in/out range export; persisted settings.
 
 **Completed:**
+
+- [**Phase 9: Project persistence + undo/redo**](.kiro/specs/phase-9-persistence-undo/tasks.md) — versioned timeline serialization; worker-owned snapshot undo/redo; IndexedDB autosave + restore-on-launch; layered media re-linking.
 
 - [**Phase 8: Capability-tier UX + compatibility engine**](.kiro/specs/phase-8-capability-tiers/tasks.md) — preserve the accelerated path while making missing browser capabilities understandable and recoverable.
 
