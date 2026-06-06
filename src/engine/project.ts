@@ -202,6 +202,7 @@ function cloneSourceDescriptor(source: SourceDescriptor): SourceDescriptor {
     byteSize: source.byteSize,
     durationS: source.durationS,
     mimeType: source.mimeType,
+    fingerprint: source.fingerprint ? { ...source.fingerprint } : undefined,
     adapterId: source.adapterId,
     timing: source.timing ? cloneTiming(source.timing) : undefined,
     health: source.health ? cloneHealthReport(source.health) : undefined,
@@ -469,6 +470,15 @@ function parseMarker(value: unknown): TimelineMarker | null {
   return { id, time, label };
 }
 
+function parseFingerprint(value: unknown): SourceDescriptor['fingerprint'] | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!isRecord(value)) return undefined;
+  if (value.algorithm !== 'sha-256') return undefined;
+  const digest = requiredString(value.digest);
+  if (!digest || !/^[a-f0-9]{64}$/.test(digest)) return undefined;
+  return { algorithm: 'sha-256', digest };
+}
+
 function parseFrameRateMode(value: unknown): SourceFrameRateModeSnapshot | undefined {
   return value === 'constant' || value === 'variable' || value === 'unknown'
     ? value
@@ -706,6 +716,7 @@ export function parseSourceDescriptor(value: unknown): SourceDescriptor | null {
       : undefined;
   const timing = parseTiming(value.timing);
   const health = parseHealthReport(value.health, sourceId, fileName);
+  const fingerprint = parseFingerprint(value.fingerprint);
 
   return {
     sourceId,
@@ -714,6 +725,7 @@ export function parseSourceDescriptor(value: unknown): SourceDescriptor | null {
     byteSize,
     durationS,
     mimeType,
+    fingerprint,
     adapterId,
     timing,
     health,

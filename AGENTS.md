@@ -32,6 +32,8 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 
 **Active:**
 
+- [**Phase 23: Project packaging + portability**](.kiro/specs/phase-23-project-packaging/tasks.md) — directory bundles, fingerprint dedup, integrity validation, collect media, import/export.
+
 - [**Phase 13: Transitions**](.kiro/specs/phase-13-transitions/tasks.md) — cut-point transition model; dual-stream readahead; 2-input mix pass in the single submission; export parity.
 
 **Planned:**

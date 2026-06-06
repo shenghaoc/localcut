@@ -262,6 +262,11 @@ export interface TimelineClipboardClip {
 /** Min/max peak pairs (2 floats per bucket) for waveform rendering. */
 export type WaveformPeaks = Float32Array;
 
+export interface MediaFingerprintSnapshot {
+  algorithm: 'sha-256';
+  digest: string;
+}
+
 export interface SourceDescriptorSnapshot {
   sourceId: string;
   fileName: string;
@@ -269,6 +274,7 @@ export interface SourceDescriptorSnapshot {
   byteSize: number;
   durationS: number;
   mimeType: string | null;
+  fingerprint?: MediaFingerprintSnapshot;
   adapterId?: MediaAdapterIdSnapshot;
   timing?: NormalizedSourceTimingSnapshot;
   health?: SourceHealthReportSnapshot;
@@ -573,6 +579,47 @@ interface RequestThumbnailsCommand {
   timestamps: number[];
 }
 
+
+export type BundleSourcePolicySnapshot =
+  | { mode: 'embed-media' }
+  | { mode: 'reference-only' }
+  | { mode: 'collect-media'; relocate: boolean };
+
+export type BundleIntegrityCodeSnapshot =
+  | 'ok'
+  | 'missing-file'
+  | 'size-mismatch'
+  | 'fingerprint-mismatch'
+  | 'descriptor-mismatch'
+  | 'corrupt-json'
+  | 'unsupported-bundle-schema'
+  | 'unsupported-project-schema'
+  | 'unsupported-operation'
+  | 'cache-stale';
+
+export interface BundleIntegrityItemSnapshot {
+  code: BundleIntegrityCodeSnapshot;
+  severity: 'info' | 'warning' | 'error';
+  sourceId?: string;
+  assetId?: string;
+  relativePath?: string;
+  message: string;
+  details?: Record<string, string | number | boolean | null>;
+}
+
+export interface BundleIntegrityReportSnapshot {
+  bundleId: string;
+  ok: boolean;
+  items: readonly BundleIntegrityItemSnapshot[];
+  summary: {
+    sourcesEmbedded: number;
+    sourcesOffline: number;
+    assetsVerified: number;
+    assetsFailed: number;
+    cachesSkipped: number;
+  };
+}
+
 export type WorkerCommand =
   | { type: 'init'; canvas: OffscreenCanvas; sab: SharedArrayBuffer; audioSab?: SharedArrayBuffer | null }
   | { type: 'import'; file: File; fileHandle?: FileSystemFileHandle | null }
@@ -625,6 +672,26 @@ export type WorkerCommand =
   | ReorderTrackCommand
   | RemoveAssetCommand
   | RequestThumbnailsCommand
+  | {
+      type: 'export-project-bundle';
+      jobId: string;
+      policy: BundleSourcePolicySnapshot;
+      outputDir: FileSystemDirectoryHandle;
+    }
+  | {
+      type: 'import-project-bundle';
+      jobId: string;
+      bundleDir: FileSystemDirectoryHandle;
+      replaceConfirmed?: boolean;
+    }
+  | {
+      type: 'collect-project-media';
+      jobId: string;
+      relocate: boolean;
+      outputDir: FileSystemDirectoryHandle;
+    }
+  | { type: 'cancel-bundle-job'; jobId: string }
+  | { type: 'bundle-replace-decision'; jobId: string; action: 'replace' | 'cancel' }
   | { type: 'dispose' };
 
 /** A measured preview resolution tier (adaptive downscale of the decode path). */
@@ -701,6 +768,10 @@ export type WorkerStateMessage =
   | { type: 'export-canceled' }
   | { type: 'export-error'; message: string }
   | { type: 'dispose-complete' }
+  | { type: 'bundle-replace-prompt'; jobId: string; message: string }
+  | { type: 'bundle-job-progress'; jobId: string; phase: string; bytesDone: number; bytesTotal: number | null }
+  | { type: 'bundle-integrity-report'; jobId: string; report: BundleIntegrityReportSnapshot }
+  | { type: 'bundle-import-result'; jobId: string; ok: boolean; projectId?: string; reason?: string }
   | { type: 'error'; message: string };
 
 export function assertCrossOriginIsolated(context: string): void {

@@ -7,6 +7,8 @@ import {
   type ExportCodecSupport,
   type ExportProgress,
   type ExportSettings,
+  type BundleIntegrityReportSnapshot,
+  type BundleSourcePolicySnapshot,
   type MediaAssetSnapshot,
   type MediaMetadata,
   type SourceDescriptorSnapshot,
@@ -31,6 +33,7 @@ import { MediaBin } from './MediaBin';
 import { ThumbnailStore } from './thumbnail-store';
 import { AudioEngine } from './audio-engine';
 import { ExportDialog } from './ExportDialog';
+import { BundleDialog } from './BundleDialog';
 import { Button, buttonVariants } from './components/button';
 import { cn } from '../lib/utils';
 import { CapabilityPanel } from './CapabilityPanel';
@@ -169,6 +172,11 @@ export function App() {
   const [unresolvedSources, setUnresolvedSources] = createSignal<SourceDescriptorSnapshot[]>([]);
   const [assets, setAssets] = createSignal<MediaAssetSnapshot[]>([]);
   const [latestHealthReport, setLatestHealthReport] = createSignal<SourceHealthReportSnapshot | null>(null);
+  const [bundleBusy, setBundleBusy] = createSignal(false);
+  const [bundleJobId, setBundleJobId] = createSignal<string | null>(null);
+  const [bundlePhase, setBundlePhase] = createSignal<string | null>(null);
+  const [bundleReport, setBundleReport] = createSignal<BundleIntegrityReportSnapshot | null>(null);
+  const [bundleMessage, setBundleMessage] = createSignal<string | null>(null);
   const [thumbnailVersion, setThumbnailVersion] = createSignal(0);
   const thumbnailStore = new ThumbnailStore();
 
@@ -505,6 +513,34 @@ export function App() {
         if (first) setStatusLine(first.message);
         break;
       }
+      case 'bundle-replace-prompt': {
+        const replace = window.confirm(msg.message);
+        bridge?.send({
+          type: 'bundle-replace-decision',
+          jobId: msg.jobId,
+          action: replace ? 'replace' : 'cancel',
+        });
+        break;
+      }
+      case 'bundle-job-progress':
+        if (bundleJobId()) {
+          setBundleBusy(true);
+          setBundlePhase(msg.phase);
+        }
+        break;
+      case 'bundle-integrity-report':
+        setBundleReport(msg.report);
+        break;
+      case 'bundle-import-result':
+        setBundleBusy(false);
+        setBundlePhase(null);
+        setBundleJobId(null);
+        setBundleMessage(msg.reason ?? (msg.ok ? 'Bundle job complete.' : 'Bundle job failed.'));
+        if (msg.ok && msg.projectId) {
+          setRestoreOffer(null);
+          setStatusLine(msg.reason ?? 'Bundle job complete.');
+        }
+        break;
       case 'dispose-complete':
         break;
       case 'import-error':
@@ -744,6 +780,51 @@ export function App() {
 
   function probeExportCodecs() {
     bridge?.send({ type: 'export-probe' });
+  }
+
+  function makeBundleJobId(): string {
+    return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `bundle-job-${Math.random().toString(36).slice(2)}`;
+  }
+
+  function startBundleExport(policy: BundleSourcePolicySnapshot, outputDir: FileSystemDirectoryHandle) {
+    const jobId = makeBundleJobId();
+    setBundleBusy(true);
+    setBundleJobId(jobId);
+    setBundlePhase('starting');
+    setBundleReport(null);
+    setBundleMessage(null);
+    bridge?.send({ type: 'export-project-bundle', jobId, policy, outputDir });
+  }
+
+  function startBundleImport(bundleDir: FileSystemDirectoryHandle) {
+    const jobId = makeBundleJobId();
+    setBundleBusy(true);
+    setBundleJobId(jobId);
+    setBundlePhase('starting');
+    setBundleReport(null);
+    setBundleMessage(null);
+    bridge?.send({ type: 'import-project-bundle', jobId, bundleDir });
+  }
+
+  function startCollectMedia(relocate: boolean, outputDir: FileSystemDirectoryHandle) {
+    const jobId = makeBundleJobId();
+    setBundleBusy(true);
+    setBundleJobId(jobId);
+    setBundlePhase('starting');
+    setBundleReport(null);
+    setBundleMessage(null);
+    bridge?.send({ type: 'collect-project-media', jobId, relocate, outputDir });
+  }
+
+  function cancelBundleJob() {
+    const jobId = bundleJobId();
+    if (jobId) bridge?.send({ type: 'cancel-bundle-job', jobId });
+    setBundleBusy(false);
+    setBundlePhase(null);
+    setBundleJobId(null);
+    setBundleMessage('Bundle job canceled.');
   }
 
   async function startExport(settings: ExportSettings) {
@@ -1055,6 +1136,19 @@ export function App() {
           bridge?.send({ type: 'set-master-gain', gain });
         }}
         exportControl={
+          <>
+          <BundleDialog
+            disabled={!accelerated()}
+            directoryPickerAvailable={'showDirectoryPicker' in window}
+            busy={bundleBusy()}
+            progressPhase={bundlePhase()}
+            integrityReport={bundleReport()}
+            lastMessage={bundleMessage()}
+            onExport={startBundleExport}
+            onImport={startBundleImport}
+            onCollect={startCollectMedia}
+            onCancelJob={cancelBundleJob}
+          />
           <ExportDialog
             hasMedia={(metadata() !== null || hasTimeline()) && accelerated()}
             exporting={exporting()}
@@ -1068,6 +1162,7 @@ export function App() {
             onStart={startExport}
             onCancel={() => bridge?.send({ type: 'export-cancel' })}
           />
+          </>
         }
       />
       <Show when={restoreOffer() || unresolvedSources().length > 0}>
