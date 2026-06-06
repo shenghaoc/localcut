@@ -484,7 +484,7 @@ export function App() {
         }
       />
       <footer class="status-bar">
-        <span>{statusLine()}</span>
+        <span role="status" aria-live={exporting() ? 'off' : 'polite'} aria-atomic={exporting() ? 'false' : 'true'}>{statusLine()}</span>
         <span class="status-meta">
           <Show when={needRefresh()}>
             <button type="button" class="status-badge" onClick={() => updateServiceWorker(true)} title="Click to update app">
@@ -501,6 +501,16 @@ export function App() {
               Offline
             </span>
           </Show>
+          <Show when={previewLabel()}>
+            <span class="status-badge" title="Adaptive preview resolution">
+              Preview: {previewLabel()}
+            </span>
+          </Show>
+          <Show when={encodeFps()}>
+            <span class="status-badge" title="Estimated encode throughput (session)">
+              Encode: {Math.round(encodeFps()!)} fps
+            </span>
+          </Show>
           <Show when={audioWarning()}>
             <span class="status-badge status-warn" title={audioWarning()!}>
               Audio Disabled
@@ -511,6 +521,8 @@ export function App() {
           </Show>
         </span>
       </footer>
+    </Show>
+  </div>
     </div>
   );
 }
