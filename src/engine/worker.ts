@@ -38,7 +38,11 @@ import {
   splitClipAt,
   trimClip,
   setClipEffectParam,
+  setClipKeyframe,
+  deleteClipKeyframe,
   setClipTransform,
+  setClipLut,
+  setClipLutStrength,
   setTrackGain,
   setTrackMute,
   setTrackSolo,
@@ -58,6 +62,8 @@ import {
   type ClipEffectParams,
   type TransformParams,
 } from './timeline';
+import { sampleClipParamsAt } from './keyframes';
+import { clipLutFromCubeFile, lutSnapshot, type ClipLut } from './lut';
 import {
   applyMixStageInPlace,
   type AudioTransitionCut,
@@ -216,6 +222,8 @@ function postTimelineState() {
       inPoint: clip.inPoint,
       effects: { ...clip.effects },
       transform: { ...clip.transform },
+      keyframes: clip.keyframes,
+      lut: lutSnapshot(clip.lut),
       audioFadeIn: clip.audioFadeIn,
       audioFadeOut: clip.audioFadeOut,
       // Title clips are source-less and never "offline"; source clips report
@@ -532,6 +540,18 @@ function resetAudioRingForSeek(time: number): void {
 function ensureClockAndTimeline() {
   publishClockFromTimeline();
   postTimelineState();
+}
+
+function uploadTimelineLuts(): void {
+  if (!renderer) return;
+  const uploaded = new Set<string>();
+  for (const track of timeline) {
+    for (const clip of track.clips) {
+      if (!clip.lut || uploaded.has(clip.lut.key)) continue;
+      renderer.importLut(clip.lut);
+      uploaded.add(clip.lut.key);
+    }
+  }
 }
 
 function sourceDescriptorFromHandle(
@@ -1018,6 +1038,7 @@ async function handleInit(
   // An import can arrive after `init` is sent but before `ready` is resolved
   // (the UI gates imports on `initSent`, not on `ready`). In that case the media
   // was set up with no renderer; wire up its preview now that the GPU is ready.
+  uploadTimelineLuts();
   ensurePreview();
   postHistoryState();
   void checkRestoreAvailable();
@@ -1127,6 +1148,7 @@ async function handleRestoreProject(): Promise<void> {
   projectId = doc.projectId;
   timeline = cloneTimelineSnapshot(doc.timeline);
   markers = cloneMarkersSnapshot(doc.markers);
+  uploadTimelineLuts();
   lastExportSettings = doc.exportSettings ?? null;
   masterGain = doc.masterGain;
   nextSourceId = nextSourceIdFromDescriptors(doc.sources);
@@ -1329,7 +1351,7 @@ function syncTitleRasters(): void {
  * Title layers carry no decode — they composite from the cached title texture.
  */
 type LayerMeta =
-  | { kind: 'frame'; effects: ClipEffectParams; transform: TransformParams }
+  | { kind: 'frame'; effects: ClipEffectParams; transform: TransformParams; lut?: ClipLut }
   | { kind: 'title'; clipId: string; transform: TransformParams };
 
 /**
@@ -1353,9 +1375,10 @@ function makeGetLayers() {
         // Title layers carry no decode and don't consume the decode budget; they
         // composite from the cached title texture, preserving z-order.
         if (isTitleClip(layer.clip)) {
+          const sampled = sampleClipParamsAt(layer.clip, timestamp);
           decodedLayers.push({
             decoded: null,
-            meta: { kind: 'title', clipId: layer.clip.id, transform: layer.clip.transform },
+            meta: { kind: 'title', clipId: layer.clip.id, transform: sampled.transform },
           });
           continue;
         }
@@ -1369,10 +1392,16 @@ function makeGetLayers() {
         }
         const decoded = await decodeFrameForLayer(handle, layer.clip.sourceId, layer.sourceTime);
         if (!decoded) continue;
+        const sampled = sampleClipParamsAt(layer.clip, timestamp);
         decodedCount += 1;
         decodedLayers.push({
           decoded,
-          meta: { kind: 'frame', effects: layer.clip.effects, transform: layer.clip.transform },
+          meta: {
+            kind: 'frame',
+            effects: sampled.effects,
+            transform: sampled.transform,
+            lut: layer.clip.lut,
+          },
         });
       }
     } catch (error) {
@@ -1521,6 +1550,7 @@ function clipboardClipFromMessage(item: TimelineClipboardClip): ClipboardTimelin
       inPoint: item.clip.inPoint,
       effects: { ...item.clip.effects },
       transform: { ...item.clip.transform },
+      keyframes: item.clip.keyframes,
       audioFadeIn: item.clip.audioFadeIn,
       audioFadeOut: item.clip.audioFadeOut,
     },
@@ -1563,6 +1593,63 @@ function handleSetTransform(cmd: Extract<WorkerCommand, { type: 'set-transform' 
       // A gizmo drag streams many updates; coalesce them into one history entry
       // per clip so a single drag doesn't exhaust the undo ring.
       coalesceKey: { clipId: cmd.clipId, key: 'transform' },
+      refreshPlayback: 'refresh',
+      prune: false,
+    },
+  );
+}
+
+function handleSetKeyframe(cmd: Extract<WorkerCommand, { type: 'set-keyframe' }>) {
+  commitTimelineMutation(
+    () => setClipKeyframe(timeline, cmd.trackId, cmd.clipId, cmd.key, cmd.t, cmd.value, cmd.easing ?? 'linear'),
+    {
+      coalesceKey: { clipId: cmd.clipId, key: `keyframe-${cmd.key}` },
+      refreshPlayback: 'refresh',
+      prune: false,
+    },
+  );
+}
+
+function handleDeleteKeyframe(cmd: Extract<WorkerCommand, { type: 'delete-keyframe' }>) {
+  commitTimelineMutation(
+    () => deleteClipKeyframe(timeline, cmd.trackId, cmd.clipId, cmd.key, cmd.t),
+    {
+      coalesceKey: { clipId: cmd.clipId, key: `keyframe-${cmd.key}` },
+      refreshPlayback: 'refresh',
+      prune: false,
+    },
+  );
+}
+
+async function handleImportLut(cmd: Extract<WorkerCommand, { type: 'import-lut' }>): Promise<void> {
+  if (!renderer) {
+    postProjectWarning('LUT import requires the accelerated WebGPU renderer.');
+    return;
+  }
+  let lut: ClipLut;
+  try {
+    lut = await clipLutFromCubeFile(cmd.file);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    postProjectWarning(`Could not import LUT: ${message}`);
+    return;
+  }
+  renderer.importLut(lut);
+  commitTimelineMutation(
+    () => setClipLut(timeline, cmd.trackId, cmd.clipId, lut),
+    {
+      coalesceKey: { clipId: cmd.clipId, key: 'lut' },
+      refreshPlayback: 'refresh',
+      prune: false,
+    },
+  );
+}
+
+function handleSetLutStrength(cmd: Extract<WorkerCommand, { type: 'set-lut-strength' }>) {
+  commitTimelineMutation(
+    () => setClipLutStrength(timeline, cmd.trackId, cmd.clipId, cmd.strength),
+    {
+      coalesceKey: { clipId: cmd.clipId, key: 'lutStrength' },
       refreshPlayback: 'refresh',
       prune: false,
     },
@@ -1800,6 +1887,7 @@ function applyHistoryRestore(next: { timeline: Timeline; transitions: TimelineTr
   timeline = cloneTimelineSnapshot(next.timeline);
   transitions = reconcileTransitions(timeline, next.transitions);
   markers = cloneMarkersSnapshot(next.markers);
+  uploadTimelineLuts();
   // Undo can resurrect clips of a source that was removed from the bin. Re-add
   // any still-described source the restored timeline references so the asset
   // returns to the bin (offline, re-linkable) instead of dangling.
@@ -1925,6 +2013,7 @@ function setupPlayback() {
             frame: layer.frame,
             effects: layer.meta.effects,
             transform: layer.meta.transform,
+            lut: layer.meta.lut,
           });
         }
       }
@@ -2249,6 +2338,18 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
       break;
     case 'set-transform':
       handleSetTransform(cmd);
+      break;
+    case 'set-keyframe':
+      handleSetKeyframe(cmd);
+      break;
+    case 'delete-keyframe':
+      handleDeleteKeyframe(cmd);
+      break;
+    case 'import-lut':
+      void handleImportLut(cmd);
+      break;
+    case 'set-lut-strength':
+      handleSetLutStrength(cmd);
       break;
     case 'set-track-gain':
       handleSetTrackGain(cmd);

@@ -6,9 +6,13 @@ import saturationF32 from './shaders/saturation.wgsl?raw';
 import saturationF16 from './shaders/saturation.f16.wgsl?raw';
 import colourTemperatureF32 from './shaders/colour-temperature.wgsl?raw';
 import colourTemperatureF16 from './shaders/colour-temperature.f16.wgsl?raw';
+import lutApplyF32 from './shaders/lut-apply.wgsl?raw';
+import lutApplyF16 from './shaders/lut-apply.f16.wgsl?raw';
 import passthroughSource from './shaders/passthrough.wgsl?raw';
+import { LutTextureCache, type ClipLut } from './lut';
 
-export type EffectId = 'brightness-contrast' | 'saturation' | 'colour-temperature';
+export type EffectId = 'brightness-contrast' | 'saturation' | 'colour-temperature' | 'lut-apply';
+type ScalarEffectId = Exclude<EffectId, 'lut-apply'>;
 
 /** Per-clip colour-grade parameters mirrored in the timeline model. */
 export interface ClipEffectParams {
@@ -17,6 +21,7 @@ export interface ClipEffectParams {
   saturation: number;
   temperature: number;
   temperatureStrength: number;
+  lutStrength: number;
 }
 
 export const DEFAULT_CLIP_EFFECTS: ClipEffectParams = {
@@ -25,6 +30,7 @@ export const DEFAULT_CLIP_EFFECTS: ClipEffectParams = {
   saturation: 1,
   temperature: 6500,
   temperatureStrength: 1,
+  lutStrength: 0,
 };
 
 export function normalizeClipEffects(
@@ -36,6 +42,7 @@ export function normalizeClipEffects(
     saturation: partial?.saturation ?? DEFAULT_CLIP_EFFECTS.saturation,
     temperature: partial?.temperature ?? DEFAULT_CLIP_EFFECTS.temperature,
     temperatureStrength: partial?.temperatureStrength ?? DEFAULT_CLIP_EFFECTS.temperatureStrength,
+    lutStrength: partial?.lutStrength ?? DEFAULT_CLIP_EFFECTS.lutStrength,
   };
 }
 
@@ -45,7 +52,16 @@ interface UniformField {
 }
 
 interface EffectRegistryEntry {
-  id: EffectId;
+  id: ScalarEffectId;
+  label: string;
+  shaderF32: string;
+  shaderF16: string;
+  uniformByteLength: number;
+  fields: UniformField[];
+}
+
+interface LutRegistryEntry {
+  id: 'lut-apply';
   label: string;
   shaderF32: string;
   shaderF16: string;
@@ -86,10 +102,19 @@ const EFFECT_REGISTRY: EffectRegistryEntry[] = [
   },
 ];
 
-export const EFFECT_IDS: EffectId[] = EFFECT_REGISTRY.map((entry) => entry.id);
+const LUT_REGISTRY_ENTRY: LutRegistryEntry = {
+  id: 'lut-apply',
+  label: 'LUT',
+  shaderF32: lutApplyF32,
+  shaderF16: lutApplyF16,
+  uniformByteLength: 16,
+  fields: [{ key: 'lutStrength', offset: 0 }],
+};
+
+export const EFFECT_IDS: EffectId[] = [...EFFECT_REGISTRY.map((entry) => entry.id), LUT_REGISTRY_ENTRY.id];
 
 export function getEffectLabel(id: EffectId): string {
-  return EFFECT_REGISTRY.find((entry) => entry.id === id)?.label ?? id;
+  return [...EFFECT_REGISTRY, LUT_REGISTRY_ENTRY].find((entry) => entry.id === id)?.label ?? id;
 }
 
 /** Packs one effect's uniform buffer from clip parameters (testable without GPU). */
@@ -106,13 +131,18 @@ export function isColourTemperatureActive(params: ClipEffectParams): boolean {
   return params.temperatureStrength !== 0 && params.temperature !== DEFAULT_CLIP_EFFECTS.temperature;
 }
 
+export function isLutActive(params: ClipEffectParams, lut: ClipLut | undefined): boolean {
+  return Boolean(lut) && params.lutStrength > 0;
+}
+
 export function clipEffectsEqual(a: ClipEffectParams, b: ClipEffectParams): boolean {
   return (
     a.brightness === b.brightness &&
     a.contrast === b.contrast &&
     a.saturation === b.saturation &&
     a.temperature === b.temperature &&
-    a.temperatureStrength === b.temperatureStrength
+    a.temperatureStrength === b.temperatureStrength &&
+    a.lutStrength === b.lutStrength
   );
 }
 
@@ -120,7 +150,7 @@ export function packEffectUniform(
   effectId: EffectId,
   params: ClipEffectParams,
 ): Float32Array {
-  const entry = EFFECT_REGISTRY.find((e) => e.id === effectId);
+  const entry = [...EFFECT_REGISTRY, LUT_REGISTRY_ENTRY].find((e) => e.id === effectId);
   if (!entry) throw new Error(`Unknown effect: ${effectId}`);
   const view = new Float32Array(entry.uniformByteLength / 4);
   for (const field of entry.fields) {
@@ -136,12 +166,20 @@ export interface StoragePingPong {
 }
 
 interface CompiledEffect {
-  id: EffectId;
+  id: ScalarEffectId;
   byteLength: number;
   pipeline: GPUComputePipeline;
   /** One uniform buffer per concurrent layer slot (grown on demand). A single
    *  frame composites many layers in one submission, so each layer needs its
    *  own buffer — sharing one would let the last write clobber every pass. */
+  uniformBuffers: GPUBuffer[];
+  bindGroupLayout: GPUBindGroupLayout;
+}
+
+interface CompiledLutEffect {
+  id: 'lut-apply';
+  byteLength: number;
+  pipeline: GPUComputePipeline;
   uniformBuffers: GPUBuffer[];
   bindGroupLayout: GPUBindGroupLayout;
 }
@@ -155,6 +193,8 @@ interface CompiledEffect {
 export class EffectChain {
   private readonly device: GPUDevice;
   private readonly effects: CompiledEffect[];
+  private readonly lutEffect: CompiledLutEffect;
+  private readonly luts: LutTextureCache;
   private readonly passthroughPipeline: GPUComputePipeline;
   private readonly passthroughLayout: GPUBindGroupLayout;
 
@@ -183,9 +223,23 @@ export class EffectChain {
         bindGroupLayout: pipeline.getBindGroupLayout(0),
       };
     });
+
+    const lutModule = device.createShaderModule({ code: useF16 ? LUT_REGISTRY_ENTRY.shaderF16 : LUT_REGISTRY_ENTRY.shaderF32 });
+    const lutPipeline = device.createComputePipeline({
+      layout: 'auto',
+      compute: { module: lutModule, entryPoint: 'main' },
+    });
+    this.lutEffect = {
+      id: LUT_REGISTRY_ENTRY.id,
+      byteLength: LUT_REGISTRY_ENTRY.uniformByteLength,
+      pipeline: lutPipeline,
+      uniformBuffers: [],
+      bindGroupLayout: lutPipeline.getBindGroupLayout(0),
+    };
+    this.luts = new LutTextureCache(device);
   }
 
-  private uniformBufferFor(effect: CompiledEffect, slot: number): GPUBuffer {
+  private uniformBufferFor(effect: Pick<CompiledEffect, 'byteLength' | 'uniformBuffers'>, slot: number): GPUBuffer {
     let buffer = effect.uniformBuffers[slot];
     if (!buffer) {
       buffer = this.device.createBuffer({
@@ -195,6 +249,41 @@ export class EffectChain {
       effect.uniformBuffers[slot] = buffer;
     }
     return buffer;
+  }
+
+  importLut(lut: ClipLut): void {
+    this.luts.upsert(lut);
+  }
+
+  private encodeLut(
+    encoder: GPUCommandEncoder,
+    currentSrc: GPUTextureView,
+    currentDst: GPUTextureView,
+    lut: ClipLut,
+    params: ClipEffectParams,
+    layerSlot: number,
+    wgX: number,
+    wgY: number,
+  ): GPUTextureView {
+    const lutTexture = this.luts.get(lut.key) ?? this.luts.upsert(lut);
+    const uniformBuffer = this.uniformBufferFor(this.lutEffect, layerSlot);
+    this.device.queue.writeBuffer(uniformBuffer, 0, packEffectUniform(this.lutEffect.id, params));
+    const bindGroup = this.device.createBindGroup({
+      layout: this.lutEffect.bindGroupLayout,
+      entries: [
+        { binding: 0, resource: { buffer: uniformBuffer } },
+        { binding: 1, resource: currentSrc },
+        { binding: 2, resource: currentDst },
+        { binding: 3, resource: lutTexture.view },
+        { binding: 4, resource: lutTexture.sampler },
+      ],
+    });
+    const pass = encoder.beginComputePass();
+    pass.setPipeline(this.lutEffect.pipeline);
+    pass.setBindGroup(0, bindGroup);
+    pass.dispatchWorkgroups(wgX, wgY);
+    pass.end();
+    return currentDst;
   }
 
   /**
@@ -211,6 +300,7 @@ export class EffectChain {
     height: number,
     params: ClipEffectParams,
     layerSlot = 0,
+    lut?: ClipLut,
   ): GPUTextureView {
     const normalized = normalizeClipEffects(params);
     const wgX = Math.ceil(width / 8);
@@ -265,6 +355,11 @@ export class EffectChain {
       currentSrc = currentDst;
     }
 
+    if (isLutActive(normalized, lut)) {
+      const currentDst = pingPong[bufIdx]!;
+      currentSrc = this.encodeLut(encoder, currentSrc, currentDst, lut!, normalized, layerSlot, wgX, wgY);
+    }
+
     return currentSrc;
   }
 
@@ -273,5 +368,8 @@ export class EffectChain {
       for (const buffer of effect.uniformBuffers) buffer.destroy();
       effect.uniformBuffers.length = 0;
     }
+    for (const buffer of this.lutEffect.uniformBuffers) buffer.destroy();
+    this.lutEffect.uniformBuffers.length = 0;
+    this.luts.destroy();
   }
 }

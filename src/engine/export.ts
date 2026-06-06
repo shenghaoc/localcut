@@ -42,6 +42,7 @@ import {
   type TimelineTrack,
 } from './timeline';
 import type { TitleTexture } from './titles';
+import { sampleClipParamsAt } from './keyframes';
 
 const AUDIO_BLOCK_FRAMES = 1024;
 const EXPORT_INTERLEAVE_SECONDS = 2;
@@ -760,12 +761,14 @@ async function encodeVideoRange(
         } finally {
           decoded.close();
         }
+        const sampled = sampleClipParamsAt(layer.clip, timelineTime);
         decodedFrames.push(videoFrame);
         layers.push({
           kind: 'frame',
           frame: videoFrame,
-          effects: layer.clip.effects,
-          transform: layer.clip.transform,
+          effects: sampled.effects,
+          transform: sampled.transform,
+          lut: layer.clip.lut,
         });
       }
       exportFrame =
