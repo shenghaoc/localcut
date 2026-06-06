@@ -328,7 +328,7 @@ export function normalizeExportSettings(
     const { rangeStartS, exportDuration } = resolveExportRange(timelineDuration, range);
     range = exportDuration > 0 ? { startS: rangeStartS, endS: rangeStartS + exportDuration } : undefined;
   }
-  return {
+  const normalizedSettings: ExportSettings = {
     preset: settings.preset,
     codec: settings.codec,
     container,
@@ -338,6 +338,12 @@ export function normalizeExportSettings(
     videoBitrate: videoBitrateForPreset(settings.preset, width, height, settings.videoBitrate),
     range,
   };
+  if (settings.sourceMode === 'proxy') {
+    normalizedSettings.sourceMode = 'proxy';
+  } else if (settings.sourceMode === 'original') {
+    normalizedSettings.sourceMode = 'original';
+  }
+  return normalizedSettings;
 }
 
 export function buildExportPlan(

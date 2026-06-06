@@ -139,6 +139,7 @@ import {
   runImportProjectBundle,
   type BundleWorkerContext,
 } from './project-bundle/bundle-jobs';
+import { proxyStatusForAsset } from './proxy-jobs';
 
 let clockView: Float64Array | null = null;
 let renderer: PreviewRenderer | null = null;
@@ -377,7 +378,7 @@ function placeAsset(
 }
 
 function assetSnapshotFromDescriptor(descriptor: SourceDescriptor): MediaAssetSnapshot {
-  return {
+  const asset: MediaAssetSnapshot = {
     sourceId: descriptor.sourceId,
     fileName: descriptor.fileName,
     kind: descriptor.kind,
@@ -402,6 +403,8 @@ function assetSnapshotFromDescriptor(descriptor: SourceDescriptor): MediaAssetSn
     timing: descriptor.timing,
     health: descriptor.health,
   };
+  asset.proxy = proxyStatusForAsset(asset, currentProbe);
+  return asset;
 }
 
 function postSourceHealth(report: SourceDescriptor['health']): void {
@@ -2312,6 +2315,7 @@ async function runProbeOnce(handle: MediaInputHandle) {
   if (probe) {
     currentProbe = probe;
     post({ type: 'probe-result', probe });
+    postMediaAssets();
   }
 }
 
