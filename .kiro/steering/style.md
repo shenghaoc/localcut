@@ -45,4 +45,4 @@ Project is formatted with **Prettier** (defaults). Run `npx prettier --write` or
 
 - All design tokens in `src/global.css` as `:root` CSS custom properties — do not hard-code colour hex values or spacing in component files.
 - No CSS-in-JS or runtime style injection.
-- Use `gap` / `flex` / `grid` layout; avoid absolute positioning except for overlay layers (scrubhead, playhead).
+- Use `gap` / `flex` / `grid` layout; avoid absolute positioning except for overlay layers (scrubhead, playhead) and timeline clip positioning where `left`/`width` encode time.
