@@ -484,7 +484,7 @@ export function App() {
         }
       />
       <footer class="status-bar">
-        <span>{statusLine()}</span>
+        <span role="status" aria-live={exporting() ? 'off' : 'polite'} aria-atomic={exporting() ? 'false' : 'true'}>{statusLine()}</span>
         <span class="status-meta">
           <Show when={needRefresh()}>
             <button type="button" class="status-badge" onClick={() => updateServiceWorker(true)} title="Click to update app">
