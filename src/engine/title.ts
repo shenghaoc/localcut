@@ -69,11 +69,13 @@ function finiteOr(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
-/** Accepts `#rgb`/`#rrggbb` (any case); anything else falls back. */
+/** Accepts `#rgb`/`#rgba`/`#rrggbb`/`#rrggbbaa` (any case); anything else falls back. */
 function normalizeColor(value: unknown, fallback: string): string {
   if (typeof value !== 'string') return fallback;
   const trimmed = value.trim();
-  return /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(trimmed) ? trimmed.toLowerCase() : fallback;
+  return /^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(trimmed)
+    ? trimmed.toLowerCase()
+    : fallback;
 }
 
 function normalizeAlign(value: unknown): TitleAlign {

@@ -156,8 +156,11 @@ type Canvas2D = OffscreenCanvasRenderingContext2D;
 function withAlpha(ctx: Canvas2D, alpha: number, draw: () => void): void {
   const prev = ctx.globalAlpha;
   ctx.globalAlpha = alpha;
-  draw();
-  ctx.globalAlpha = prev;
+  try {
+    draw();
+  } finally {
+    ctx.globalAlpha = prev;
+  }
 }
 
 function setShadow(ctx: Canvas2D, content: TitleContent, on: boolean): void {
@@ -249,6 +252,9 @@ export function createCanvasTitleUploader(device: GPUDevice): TitleUploader {
       const texture = device.createTexture({
         size: { width: TITLE_RASTER_WIDTH, height: TITLE_RASTER_HEIGHT },
         format: 'rgba8unorm',
+        // copyExternalImageToTexture REQUIRES both COPY_DST and RENDER_ATTACHMENT
+        // on the destination (WebGPU spec); TEXTURE_BINDING lets the transform
+        // pass sample it. RENDER_ATTACHMENT is not optional here.
         usage:
           GPUTextureUsage.TEXTURE_BINDING |
           GPUTextureUsage.COPY_DST |
