@@ -8,8 +8,8 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ['**/*.{ts,tsx}'],
     ...solid.configs['flat/typescript'],
+    files: ['**/*.{ts,tsx}'],
   },
   prettier,
 );
