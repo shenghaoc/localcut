@@ -9,7 +9,6 @@ interface TimelineClipProps {
   onSplit?: (trackId: string, clipId: string, time: number) => void;
   onDelete?: (trackId: string, clipId: string) => void;
   onTrim?: (trackId: string, clipId: string, edge: 'in' | 'out', time: number) => void;
-  onMoveStart?: (trackId: string, clipId: string, event: DragEvent) => void;
   selected?: boolean;
   onSelect?: () => void;
   peaks?: WaveformPeaks | null;
@@ -49,7 +48,7 @@ export function TimelineClip(props: TimelineClipProps) {
   const width = () => safePercent(props.clip.duration, props.totalDuration);
   const waveformWidth = () =>
     Math.max(24, Math.floor((props.clip.duration / Math.max(props.totalDuration, 1)) * 900));
-  const dragText = () => `${props.clip.id} (${props.clip.sourceId})`;
+  const clipTitle = () => `${props.clip.id} (${props.clip.sourceId})`;
   let trimDebounce: ReturnType<typeof setTimeout> | null = null;
   let pendingTrimTime = props.clip.start;
   let activeTrimEdge: 'in' | 'out' | null = null;
@@ -151,11 +150,9 @@ export function TimelineClip(props: TimelineClipProps) {
     <div
       class={`timeline-clip${props.isAudio ? ' is-audio' : ''}${props.selected ? ' is-selected' : ''}`}
       style={{ left: left(), width: width() }}
-      title={dragText()}
-      draggable="true"
+      title={clipTitle()}
       tabindex="0"
       onKeyDown={onKeyDown}
-      onDragStart={(event: DragEvent) => props.onMoveStart?.(props.trackId, props.clip.id, event)}
       onPointerDown={onPointerDown}
       onDblClick={onSplit}
     >
