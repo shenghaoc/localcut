@@ -187,7 +187,7 @@ export interface CacheStore {
 - OPFS is primary for large binary chunks and proxy files.
 - IndexedDB Blob fallback is acceptable when OPFS is unavailable, including when `navigator.storage.getDirectory` exists but throws `SecurityError`/`DOMException` in private browsing or nested contexts; the UI must label large proxy/render-cache features as reduced if quota or performance is limited.
 - Cache paths are generated from opaque ids/hashes and sanitized before writing. Do not derive OPFS/IndexedDB paths from raw media file names, user-visible URLs, or other identifying strings.
-- Writes use temp paths followed by manifest commit. If a tab closes mid-write, repair deletes temp files and stale `writing` entries on the next startup.
+- Large chunk writes stream directly to opaque cache paths and become usable only after manifest commit. If a tab closes mid-write, repair treats uncommitted final-path files as orphaned derivatives and deletes them on the next startup; do not copy large OPFS chunks through a Blob just to commit.
 - Delete operations report deleted and missing paths separately for both OPFS and IndexedDB fallback stores so repair can distinguish cleanup success from already-missing derivatives.
 
 ## Proxy workflow
@@ -328,7 +328,7 @@ Accessibility follows steering: native buttons/inputs, keyboard-reachable cleanu
 - Corrupt proxy: mark failed, fall back to original preview, and offer regenerate.
 - Quota exceeded: pause background jobs, run eviction, then resume only if under budget.
 - OPFS unavailable: use IndexedDB fallback or disable large-cache features with a limited local-cache status.
-- Worker crash/restart: incomplete `writing` entries are cleaned on startup; project remains loadable.
+- Worker crash/restart: orphaned cache files and incomplete `writing` entries are cleaned on startup; project remains loadable.
 
 ## Validation
 

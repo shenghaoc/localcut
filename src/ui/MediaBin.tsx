@@ -188,11 +188,11 @@ export function MediaBin(props: MediaBinProps) {
                         </For>
                       </ul>
                     </Show>
-                    <Show when={proxy()}>
+                    <Show when={proxy()} keyed>
                       {(label) => (
                         <span class="media-bin-proxy">
                           <Gauge size={11} aria-hidden="true" />
-                          <span>{label()}</span>
+                          <span>{label}</span>
                         </span>
                       )}
                     </Show>

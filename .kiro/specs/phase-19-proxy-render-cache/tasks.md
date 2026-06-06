@@ -9,10 +9,10 @@
 - [ ] **T1.2** Add `src/engine/cache-key.ts` with canonical serialization and hashing helpers for `RenderCacheKey` and proxy settings.
   - Acceptance: tests prove stable hashes across object insertion order, array ordering rules, schema-version changes, output-size changes, and proxy/original source-mode changes.
 - [ ] **T1.3** Add `src/engine/cache-store.ts` with a worker-only `CacheStore` interface and OPFS primary implementation.
-  - Acceptance: all file/blob writes happen through the worker-facing store; no OPFS handles or cache blobs cross into `src/ui/`; cache paths are generated from opaque ids/hashes and sanitized before writing, not raw media file names or remote identifiers; OPFS chunk writes use temp paths before final manifest commit.
+  - Acceptance: all file/blob writes happen through the worker-facing store; no OPFS handles or cache blobs cross into `src/ui/`; cache paths are generated from opaque ids/hashes and sanitized before writing, not raw media file names or remote identifiers; OPFS chunk writes stream once to opaque final paths without readback or double-write, and manifest commit plus repair remains the readiness gate.
 - [ ] **T1.4** Add an IndexedDB Blob fallback behind the same `CacheStore` interface.
   - Acceptance: fallback is feature-detected by actively calling `navigator.storage.getDirectory()` when present and catching `SecurityError`/`DOMException` failures before falling back; fallback is labeled as reduced for large caches and covered by manifest read/write tests with a mocked store; delete results distinguish actually deleted paths from missing keys.
-- [ ] **T1.5** Add manifest startup repair for temp files, missing files, orphaned files, and stale `writing` entries.
+- [ ] **T1.5** Add manifest startup repair for missing files, orphaned files, and stale `writing` entries.
   - Acceptance: tests load damaged manifests and end with either valid ready entries or deleted/missing entries, never half-ready cache records.
 
 ## Dedicated proxy/cache worker
@@ -78,7 +78,7 @@
 - [ ] **T6.3** Capture/cache rendered chunks without CPU pixel readback in the premium path.
   - Acceptance: no `getImageData` or Canvas2D readback appears in accelerated render-cache code paths.
 - [ ] **T6.4** Send encoded chunk streams/blobs to the cache worker for storage and manifest commit.
-  - Acceptance: interrupted writes leave temp entries that startup repair can clean.
+  - Acceptance: interrupted writes leave uncommitted orphan files or `writing` entries that startup repair can clean.
 - [ ] **T6.5** Add render-cache hit/miss status to worker snapshots.
   - Acceptance: UI can show original/proxy/render-cache status without receiving media handles.
 

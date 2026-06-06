@@ -122,8 +122,9 @@ function parseExportSettings(value: unknown): ExportSettings | undefined {
     videoBitrate,
     range,
   };
-  if (value.sourceMode === 'proxy' || value.sourceMode === 'original') {
-    parsed.sourceMode = value.sourceMode;
+  const sourceMode = value.sourceMode;
+  if (sourceMode === 'proxy' || sourceMode === 'original') {
+    parsed.sourceMode = sourceMode;
   }
   return parsed;
 }
