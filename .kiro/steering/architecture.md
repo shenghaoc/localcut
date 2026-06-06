@@ -68,6 +68,7 @@ VideoFrame (decoder, GPU memory)
 - Re-import `importExternalTexture` every frame; never cache across submissions.
 - Preview and export share the **same** processed texture — do not run the chain twice.
 - Effects are compute shaders with ping-pong storage textures.
+- From Phase 12 the chain runs per layer (colour → transform → composite) through one shared `compositeLayers` encode; multiple `importExternalTexture` calls within a frame are expected, and the single `queue.submit` per frame still holds.
 - Any fallback that violates these rules must be outside the accelerated engine and visibly reported as a compatibility tier.
 
 ## Development Phases
@@ -83,7 +84,16 @@ Build capability tracks in an order that protects the premium path while making 
 | 5 | AudioWorklet, A/V sync, waveforms | Done |
 | 6 | Pipelined export, progress/ETA, quality/speed toggle | Done |
 | 7 | PWA polish, Cloudflare Pages deploy | Done |
-| 8 | Capability-tier UX and compatibility engine planning | Active |
+| 8 | Capability-tier UX and compatibility engine planning | Done |
+| 9 | Project persistence (versioned doc, IndexedDB autosave), snapshot undo/redo, media re-linking | Active |
+| 10 | Timeline UX: px-per-second zoom/scroll, gap-tolerant moves, snapping, multi-select, markers | Planned |
+| 11 | Media library: batch import, budgeted thumbnails, image-still/audio-only sources, track management | Planned |
+| 12 | Multi-track compositing: layered resolve, single-submission N-layer composite, per-clip transforms | Planned |
+| 13 | Transitions: cut-point model, dual-stream readahead, 2-input mix in the single submission | Planned |
+| 14 | Titles/text: edit-time raster cached as a GPU texture, composited via the transform path | Planned |
+| 15 | Keyframed parameters with shared preview/export sampling; `.cube` LUT grading | Planned |
+| 16 | Audio mixing: shared mix stage, master bus, pan, fades/crossfades, SAB level meters | Planned |
+| 17 | Export expansion: probed codecs (H.264/VP9/AV1), size/fps/bitrate overrides, range export | Planned |
 
 ## Critical Implementation Details
 
