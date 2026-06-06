@@ -472,9 +472,6 @@ export function App() {
         }}
         onSplit={(trackId, _clipId, time) => bridge?.send({ type: 'split', trackId, time })}
         onDelete={(trackId, clipId) => bridge?.send({ type: 'delete-clip', trackId, clipId })}
-        onMoveClip={(fromTrackId, clipId, toTrackId, toIndex) =>
-          bridge?.send({ type: 'move-clip', fromTrackId, clipId, toTrackId, toIndex })
-        }
         onTrim={(trackId, clipId, edge, time) =>
           bridge?.send({ type: 'trim-clip', trackId, clipId, edge, time })
         }

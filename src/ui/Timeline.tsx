@@ -18,12 +18,6 @@ interface TimelineProps {
   onSeek: (time: number) => void;
   onSplit: (trackId: string, clipId: string, time: number) => void;
   onDelete: (trackId: string, clipId: string) => void;
-  onMoveClip: (
-    fromTrackId: string,
-    clipId: string,
-    toTrackId: string,
-    toIndex: number,
-  ) => void;
   onTrim: (trackId: string, clipId: string, edge: 'in' | 'out', time: number) => void;
   selectedClipId: string | null;
   onSelectClip: (trackId: string, clipId: string, effects: ClipEffectParamsSnapshot) => void;
@@ -119,15 +113,6 @@ export function Timeline(props: TimelineProps) {
     window.addEventListener('pointercancel', onUp);
   }
 
-  function onClipMoveStart(trackId: string, clipId: string, event: DragEvent) {
-    if (!event.dataTransfer) return;
-    event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData(
-      'application/x-be-timeline-clip',
-      JSON.stringify({ fromTrackId: trackId, clipId }),
-    );
-  }
-
   return (
     <section class="timeline panel">
       <div class="timeline-header">
@@ -142,7 +127,6 @@ export function Timeline(props: TimelineProps) {
               <TimelineTrack
                 track={track}
                 totalDuration={props.duration()}
-                onMoveClip={props.onMoveClip}
               >
                 <For each={track.clips as ProtocolTimelineClip[]}>
                   {(clip) => (
@@ -156,7 +140,6 @@ export function Timeline(props: TimelineProps) {
                       onSplit={props.onSplit}
                       onDelete={props.onDelete}
                       onTrim={props.onTrim}
-                      onMoveStart={onClipMoveStart}
                       onSelect={() => props.onSelectClip(track.id, clip.id, clip.effects)}
                     />
                   )}
