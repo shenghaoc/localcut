@@ -38,6 +38,7 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 
 **Planned:**
 
+- [**Phase 20: Editing Tools V2**](.kiro/specs/phase-20-editing-tools-v2/tasks.md) — linked A/V clips; insert/overwrite edits; ripple delete/trim; roll/slip/slide; lift/extract; track lock/visibility/sync lock/edit targeting.
 - [**Phase 15: Keyframes + advanced colour**](.kiro/specs/phase-15-keyframes-colour/tasks.md) — keyframe tracks with shared preview/export interpolation; Inspector keyframe UI; `.cube` LUT import as a 3D-texture pass.
 
 **Completed:**
