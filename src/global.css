@@ -798,6 +798,52 @@ body {
   margin-left: auto;
 }
 
+.source-health-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  min-height: 44px;
+  padding: 0.5rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--warn) 7%, var(--card));
+}
+
+.source-health-list {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-x: auto;
+}
+
+.source-health-item {
+  display: inline-flex;
+  align-items: center;
+  max-width: 420px;
+  padding: 0.22rem 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--warn) 38%, var(--border));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.source-health-item.is-error {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+
+.source-health-item span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
@@ -2061,7 +2107,8 @@ button.status-badge:hover {
   border-color: var(--border-strong);
 }
 
-.media-bin-item.is-offline {
+.media-bin-item.is-offline,
+.media-bin-item.is-blocked {
   cursor: not-allowed;
   opacity: 0.7;
   border-color: color-mix(in srgb, var(--danger) 50%, var(--border));
@@ -2111,6 +2158,39 @@ button.status-badge:hover {
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
   color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.media-bin-health {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+  margin: 0.08rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.media-bin-health-item {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+}
+
+.media-bin-health-item.is-warning {
+  color: var(--warn);
+}
+
+.media-bin-health-item.is-error {
+  color: var(--danger);
+}
+
+.media-bin-health-item span {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

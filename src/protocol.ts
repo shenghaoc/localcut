@@ -70,6 +70,61 @@ export interface MediaMetadata {
   trackCount: number;
 }
 
+export type MediaAdapterIdSnapshot = 'mediabunny' | 'web-demuxer-diagnostics';
+export type SourceFrameRateModeSnapshot = 'constant' | 'variable' | 'unknown';
+
+export interface SourceColorHintsSnapshot {
+  primaries: string | null;
+  transfer: string | null;
+  matrix: string | null;
+  fullRange: boolean | null;
+}
+
+export interface SourceTrackTimingSnapshot {
+  trackId: string;
+  firstTimestampS: number;
+  lastTimestampS: number | null;
+  durationS: number | null;
+}
+
+export interface NormalizedSourceTimingSnapshot {
+  normalizedStartS: number;
+  durationS: number;
+  video?: SourceTrackTimingSnapshot;
+  audio?: SourceTrackTimingSnapshot;
+  avOffsetS: number;
+  frameRateMode: SourceFrameRateModeSnapshot;
+}
+
+export type SourceHealthWarningCodeSnapshot =
+  | 'variable-frame-rate'
+  | 'non-zero-track-start'
+  | 'audio-video-offset'
+  | 'rotation-metadata'
+  | 'mixed-audio-sample-rates'
+  | 'unsupported-video-codec'
+  | 'unsupported-audio-codec'
+  | 'corrupt-or-truncated-file'
+  | 'missing-duration'
+  | 'undecodable-track';
+
+export interface SourceHealthWarningSnapshot {
+  code: SourceHealthWarningCodeSnapshot;
+  severity: 'info' | 'warning' | 'error';
+  blocking: boolean;
+  sourceId: string;
+  trackId?: string;
+  message: string;
+  details: Record<string, string | number | boolean | null>;
+}
+
+export interface SourceHealthReportSnapshot {
+  sourceId: string;
+  fileName: string;
+  status: 'ok' | 'warnings' | 'blocked';
+  warnings: readonly SourceHealthWarningSnapshot[];
+}
+
 export interface ClipEffectParamsSnapshot {
   brightness: number;
   contrast: number;
@@ -214,16 +269,28 @@ export interface SourceDescriptorSnapshot {
   byteSize: number;
   durationS: number;
   mimeType: string | null;
+  adapterId?: MediaAdapterIdSnapshot;
+  timing?: NormalizedSourceTimingSnapshot;
+  health?: SourceHealthReportSnapshot;
   video?: {
     width: number;
     height: number;
+    codedWidth?: number;
+    codedHeight?: number;
     frameRate: number | null;
+    frameRateMode?: SourceFrameRateModeSnapshot;
+    rotationDeg?: number;
+    color?: SourceColorHintsSnapshot;
+    trackStartS?: number;
+    trackDurationS?: number | null;
     codec: string | null;
     canDecode: boolean;
   };
   audio?: {
     channels: number;
     sampleRate: number;
+    trackStartS?: number;
+    trackDurationS?: number | null;
     codec: string | null;
     canDecode: boolean;
   };
@@ -242,11 +309,15 @@ export interface MediaAssetSnapshot {
     width: number;
     height: number;
     frameRate: number | null;
+    frameRateMode?: SourceFrameRateModeSnapshot;
+    rotationDeg?: number;
   };
   audio?: {
     channels: number;
     sampleRate: number;
   };
+  timing?: NormalizedSourceTimingSnapshot;
+  health?: SourceHealthReportSnapshot;
 }
 
 interface SplitTimelineCommand {
@@ -590,6 +661,7 @@ export type WorkerStateMessage =
   | { type: 'import-progress'; stage: 'reading' | 'metadata' }
   | { type: 'import-complete'; metadata: MediaMetadata }
   | { type: 'import-error'; message: string }
+  | { type: 'source-health'; report: SourceHealthReportSnapshot }
   | { type: 'project-warning'; message: string }
   | { type: 'history-state'; canUndo: boolean; canRedo: boolean }
   | { type: 'restore-available'; projectId: string; savedAt: string; sources: SourceDescriptorSnapshot[] }

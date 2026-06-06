@@ -21,6 +21,7 @@ import {
   type TimelineTrack,
 } from './timeline';
 import type { MediaInputHandle } from './media-io';
+import { defaultNormalizedSourceTiming } from './media-adapters/source-timing';
 
 function audioTrack(
   partial: Partial<Omit<TimelineTrack, 'type' | 'clips'>> & {
@@ -32,17 +33,40 @@ function audioTrack(
 }
 
 function mediaHandle(partial: Partial<MediaInputHandle>): MediaInputHandle {
-  return {
+  const duration = partial.duration ?? 10;
+  const timing = partial.timing ?? defaultNormalizedSourceTiming(duration, partial.audioSource ? 'audio' : 'video');
+  const base: MediaInputHandle = {
     sourceId: 'src',
     kind: 'video',
+    adapterId: 'mediabunny',
     metadata: {
       fileName: 'clip.mp4',
-      duration: 10,
+      duration,
       mimeType: 'video/mp4',
       video: null,
       audio: null,
       trackCount: 1,
     },
+    inspection: {
+      sourceId: 'src',
+      adapterId: 'mediabunny',
+      fileName: 'clip.mp4',
+      byteSize: 1,
+      mimeType: 'video/mp4',
+      container: 'mp4',
+      durationS: duration,
+      tracks: [],
+    },
+    conformance: {
+      sourceId: 'src',
+      adapterId: 'mediabunny',
+      kind: 'video',
+      durationS: duration,
+      timing,
+      health: 'ok',
+    },
+    timing,
+    warnings: [],
     frameSource: null,
     audioSource: null,
     audioChannels: 2,
@@ -50,10 +74,18 @@ function mediaHandle(partial: Partial<MediaInputHandle>): MediaInputHandle {
     displayWidth: 1920,
     displayHeight: 1080,
     frameRate: 30,
-    duration: 10,
+    duration,
     thumbnailAt: vi.fn(async () => null),
     dispose: vi.fn(),
+  };
+  return {
+    ...base,
     ...partial,
+    adapterId: partial.adapterId ?? base.adapterId,
+    inspection: partial.inspection ?? base.inspection,
+    conformance: partial.conformance ?? base.conformance,
+    timing: partial.timing ?? base.timing,
+    warnings: partial.warnings ?? base.warnings,
   };
 }
 
@@ -405,6 +437,81 @@ describe('mixAudioWindow', () => {
 
     expect([...mixed]).toEqual([0, 0, 0.5, 0.5]);
     expect(source.pcmWindowAt).toHaveBeenCalledWith(0, 2, 1);
+  });
+
+  it('leaves audio silent until a non-zero source track start becomes available', async () => {
+    const source = sourceWith(0.5);
+    const timing = {
+      normalizedStartS: 0,
+      durationS: 1,
+      video: { trackId: 'video-1', firstTimestampS: 0, lastTimestampS: 1, durationS: 1 },
+      audio: { trackId: 'audio-1', firstTimestampS: 0.5, lastTimestampS: 1, durationS: 0.5 },
+      avOffsetS: 0.5,
+      frameRateMode: 'constant' as const,
+    };
+    const sources = new Map<string, MediaInputHandle>([
+      [
+        'a',
+        mediaHandle({
+          sourceId: 'a',
+          audioSource: source as unknown as MediaInputHandle['audioSource'],
+          timing,
+        }),
+      ],
+    ]);
+    const edit: Timeline = [
+      audioTrack({
+        id: 'a-track',
+        clips: [defaultTimelineClip({ id: 'a', sourceId: 'a', start: 0, duration: 1, inPoint: 0 })],
+      }),
+    ];
+
+    const mixed = await mixAudioWindow(edit, sources, 0, 4, 4, 1);
+
+    expect([...mixed]).toEqual([0, 0, 0.5, 0.5]);
+    expect(source.pcmWindowAt).toHaveBeenCalledWith(0.5, 2, 1);
+  });
+
+  it('splits transition audio when an incoming track becomes available mid-window', async () => {
+    const outgoing = sourceWith(0);
+    const incoming = sourceWith(1);
+    const incomingTiming = {
+      normalizedStartS: 0,
+      durationS: 1,
+      audio: { trackId: 'audio-1', firstTimestampS: 0.25, lastTimestampS: 1, durationS: 0.75 },
+      avOffsetS: 0,
+      frameRateMode: 'constant' as const,
+    };
+    const sources = new Map<string, MediaInputHandle>([
+      ['out', mediaHandle({ sourceId: 'out', audioSource: outgoing as unknown as MediaInputHandle['audioSource'] })],
+      [
+        'in',
+        mediaHandle({
+          sourceId: 'in',
+          audioSource: incoming as unknown as MediaInputHandle['audioSource'],
+          timing: incomingTiming,
+        }),
+      ],
+    ]);
+    const edit: Timeline = [
+      audioTrack({
+        id: 'a-track',
+        clips: [
+          defaultTimelineClip({ id: 'out', sourceId: 'out', start: 0, duration: 1, inPoint: 0 }),
+          defaultTimelineClip({ id: 'in', sourceId: 'in', start: 1, duration: 1, inPoint: 0.5 }),
+        ],
+      }),
+    ];
+
+    const mixed = await mixAudioWindow(edit, sources, 0.5, 4, 4, 1, {
+      transitions: [{ trackId: 'a-track', fromClipId: 'out', toClipId: 'in', durationS: 1 }],
+    });
+
+    expect(mixed[0]).toBe(0);
+    expect(mixed[1]!).toBeGreaterThan(0);
+    expect(mixed[2]!).toBeGreaterThan(mixed[1]!);
+    expect(mixed[3]!).toBeGreaterThan(mixed[2]!);
+    expect(incoming.pcmWindowAt).toHaveBeenCalledWith(0.25, 3, 1);
   });
 
   it('clamps mixed audio to the valid sample range', async () => {

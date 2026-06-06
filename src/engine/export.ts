@@ -43,6 +43,11 @@ import {
 } from './timeline';
 import type { TitleTexture } from './titles';
 import { sampleClipParamsAt } from './keyframes';
+import {
+  audioAvailabilityWindowFrames,
+  resolveSourceTimestamp,
+  unavailableAudioSilenceFrames,
+} from './media-adapters/source-timing';
 
 const AUDIO_BLOCK_FRAMES = 1024;
 const EXPORT_INTERLEAVE_SECONDS = 2;
@@ -509,7 +514,7 @@ export async function mixAudioWindow(
           const cutTime = outgoing.start + outgoing.duration;
           const half = transitionSpec.durationS * 0.5;
           const windowEnd = cutTime + half;
-          const runFrames = Math.max(
+          const baseRunFrames = Math.max(
             1,
             Math.min(frameCount - offsetFrames, Math.ceil((windowEnd - timelineTime) * sampleRate)),
           );
@@ -518,14 +523,78 @@ export async function mixAudioWindow(
           const hasOut = Boolean(outHandle?.audioSource);
           const hasIn = Boolean(inHandle?.audioSource);
           if (hasOut || hasIn) {
-            const outSourceTime = outgoing.inPoint + (timelineTime - outgoing.start);
-            const inSourceTime = incoming.inPoint + (timelineTime - incoming.start);
-            const outPcm = hasOut
-              ? await outHandle!.audioSource!.pcmWindowAt(outSourceTime, runFrames, channels)
+            const outSourceTime = outHandle
+              ? resolveSourceTimestamp({
+                  clip: outgoing,
+                  timelineTime,
+                  trackKind: 'audio',
+                  timing: outHandle.timing,
+                })
               : null;
-            const inPcm = hasIn
-              ? await inHandle!.audioSource!.pcmWindowAt(inSourceTime, runFrames, channels)
+            const inSourceTime = inHandle
+              ? resolveSourceTimestamp({
+                  clip: incoming,
+                  timelineTime,
+                  trackKind: 'audio',
+                  timing: inHandle.timing,
+                })
               : null;
+            const runFrames = Math.max(
+              1,
+              Math.min(
+                baseRunFrames,
+                outSourceTime && outHandle
+                  ? audioAvailabilityWindowFrames({
+                      resolution: outSourceTime,
+                      timing: outHandle.timing,
+                      clip: outgoing,
+                      timelineTime,
+                      sampleRate,
+                      maxFrames: baseRunFrames,
+                    })
+                  : baseRunFrames,
+                inSourceTime && inHandle
+                  ? audioAvailabilityWindowFrames({
+                      resolution: inSourceTime,
+                      timing: inHandle.timing,
+                      clip: incoming,
+                      timelineTime,
+                      sampleRate,
+                      maxFrames: baseRunFrames,
+                    })
+                  : baseRunFrames,
+              ),
+            );
+            const outPcm = hasOut && outSourceTime?.available
+              ? await outHandle!.audioSource!.pcmWindowAt(outSourceTime.adapterTimestampS, runFrames, channels)
+              : null;
+            const inPcm = hasIn && inSourceTime?.available
+              ? await inHandle!.audioSource!.pcmWindowAt(inSourceTime.adapterTimestampS, runFrames, channels)
+              : null;
+            if (!outPcm && !inPcm) {
+              const outSkip = outSourceTime && outHandle
+                ? unavailableAudioSilenceFrames({
+                    resolution: outSourceTime,
+                    timing: outHandle.timing,
+                    clip: outgoing,
+                    timelineTime,
+                    sampleRate,
+                    maxFrames: runFrames,
+                  })
+                : runFrames;
+              const inSkip = inSourceTime && inHandle
+                ? unavailableAudioSilenceFrames({
+                    resolution: inSourceTime,
+                    timing: inHandle.timing,
+                    clip: incoming,
+                    timelineTime,
+                    sampleRate,
+                    maxFrames: runFrames,
+                  })
+                : runFrames;
+              offsetFrames += Math.max(1, Math.min(outSkip, inSkip));
+              continue;
+            }
             const windowStart = cutTime - half;
             const { left, right } = panCoefficients(track.pan, channels);
             for (let frame = 0; frame < runFrames; frame += 1) {
@@ -595,8 +664,25 @@ export async function mixAudioWindow(
         continue;
       }
 
-      const sourceTime = clip.inPoint + (timelineTime - clip.start);
-      const pcm = await handle.audioSource.pcmWindowAt(sourceTime, runFrames, channels);
+      const sourceTime = resolveSourceTimestamp({
+        clip,
+        timelineTime,
+        trackKind: 'audio',
+        timing: handle.timing,
+      });
+      const availableRunFrames = audioAvailabilityWindowFrames({
+        resolution: sourceTime,
+        timing: handle.timing,
+        clip,
+        timelineTime,
+        sampleRate,
+        maxFrames: runFrames,
+      });
+      if (!sourceTime.available) {
+        offsetFrames += availableRunFrames;
+        continue;
+      }
+      const pcm = await handle.audioSource.pcmWindowAt(sourceTime.adapterTimestampS, availableRunFrames, channels);
       const mixed = applyMixStage(pcm, channels, {
         gain: track.gain,
         pan: track.pan,
@@ -607,7 +693,7 @@ export async function mixAudioWindow(
         sampleRate,
       });
       accumulateMix(out, mixed, offsetFrames * channels);
-      offsetFrames += runFrames;
+      offsetFrames += availableRunFrames;
     }
   }
 
@@ -753,7 +839,14 @@ async function encodeVideoRange(
         // Stop decoding video past the budget but keep scanning so source-less
         // title layers above the budgeted stack still composite (preview parity).
         if (decodedCount >= layerBudget) continue;
-        const decoded = await sourceHandle.frameSource.frameAt(layer.sourceTime);
+        const sourceTimestamp = resolveSourceTimestamp({
+          clip: layer.clip,
+          timelineTime,
+          trackKind: 'video',
+          timing: sourceHandle.timing,
+        });
+        if (!sourceTimestamp.available) continue;
+        const decoded = await sourceHandle.frameSource.frameAt(sourceTimestamp.adapterTimestampS);
         if (!decoded) continue;
         decodedCount += 1;
         let videoFrame: VideoFrame;
