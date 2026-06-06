@@ -1093,7 +1093,6 @@ async function handleRestoreProject(): Promise<void> {
   restoreDoc = null;
   projectId = doc.projectId;
   timeline = cloneTimelineSnapshot(doc.timeline);
-  transitions = reconcileTransitions(timeline, doc.transitions);
   markers = cloneMarkersSnapshot(doc.markers);
   lastExportSettings = doc.exportSettings ?? null;
   masterGain = doc.masterGain;
@@ -1102,6 +1101,10 @@ async function handleRestoreProject(): Promise<void> {
     sourceDescriptors.set(descriptor.sourceId, descriptor);
     binSourceIds.add(descriptor.sourceId);
   }
+  // Transition validation depends on source durations. Populate descriptors before
+  // reconciling so restored projects don't drop otherwise-valid transitions while
+  // their media files are still offline.
+  transitions = reconcileTransitions(timeline, doc.transitions);
   postMediaAssets();
 
   const restoreProjectId = projectId;
