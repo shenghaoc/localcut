@@ -42,6 +42,7 @@ import {
   unlinkClips,
   expandLinkedGroup,
   shiftMarkers,
+  removeMarkersInRange,
   rippleDelete,
   rippleTrim,
   rollTrim,
@@ -1485,5 +1486,105 @@ describe('extractRegion', () => {
     ];
     const next = extractRegion(tl, ['v'], 2, 5, ['a']);
     expect(next[1]!.clips[0]!.start).toBe(2);
+  });
+
+  it('rejects when sync-locked clip spans the extraction point', () => {
+    const a = clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 10, inPoint: 0 });
+    const s = clip({ id: 's', sourceId: 'src-2', start: 2, duration: 8, inPoint: 0 });
+    const tl = [
+      track('v', 'video', [a]),
+      track('a', 'audio', [s], { syncLocked: true }),
+    ];
+    expect(extractRegion(tl, ['v'], 3, 6, ['a'])).toBe(tl);
+  });
+});
+
+describe('rippleDelete cumulative shifts', () => {
+  it('correctly shifts clips between non-contiguous removed regions', () => {
+    const a = clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 0 });
+    const b = clip({ id: 'b', sourceId: 'src-1', start: 5, duration: 5, inPoint: 5 });
+    const c = clip({ id: 'c', sourceId: 'src-1', start: 10, duration: 5, inPoint: 10 });
+    const d = clip({ id: 'd', sourceId: 'src-1', start: 15, duration: 5, inPoint: 15 });
+    const tl = [track('v', 'video', [a, b, c, d])];
+    // Remove a (0-5) and c (10-15): b (5-10) should shift by 5, d (15-20) should shift by 10
+    const next = rippleDelete(tl, [
+      { trackId: 'v', clipId: 'a' },
+      { trackId: 'v', clipId: 'c' },
+    ], []);
+    expect(next[0]!.clips).toHaveLength(2);
+    expect(next[0]!.clips[0]!.id).toBe('b');
+    expect(next[0]!.clips[0]!.start).toBe(0);
+    expect(next[0]!.clips[1]!.id).toBe('d');
+    expect(next[0]!.clips[1]!.start).toBe(5);
+  });
+});
+
+describe('sync-lock spanning rejection', () => {
+  it('rippleTrim rejects when sync-locked clip spans the ripple point', () => {
+    const a = clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 10, inPoint: 0 });
+    const s = clip({ id: 's', sourceId: 'src-2', start: 3, duration: 8, inPoint: 0 });
+    const tl = [
+      track('v', 'video', [a]),
+      track('a', 'audio', [s], { syncLocked: true }),
+    ];
+    expect(rippleTrim(tl, 'v', 'a', 'out', 5, ['a'])).toBe(tl);
+  });
+
+  it('insertEdit rejects when sync-locked clip spans the insert point', () => {
+    const a = clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 3, inPoint: 0 });
+    const s = clip({ id: 's', sourceId: 'src-2', start: 0, duration: 10, inPoint: 0 });
+    const tl = [
+      track('v', 'video', [a]),
+      track('a', 'audio', [s], { syncLocked: true }),
+    ];
+    const newClip = clip({ id: 'new', sourceId: 'src-2', start: 0, duration: 2, inPoint: 0 });
+    expect(insertEdit(tl, ['v'], [{ trackId: 'v', clip: newClip }], 3, ['a'])).toBe(tl);
+  });
+
+  it('rippleDelete rejects when sync-locked clip spans the ripple point', () => {
+    const a = clip({ id: 'a', sourceId: 'src-1', start: 5, duration: 5, inPoint: 0 });
+    const b = clip({ id: 'b', sourceId: 'src-1', start: 10, duration: 5, inPoint: 5 });
+    const s = clip({ id: 's', sourceId: 'src-2', start: 3, duration: 8, inPoint: 0 });
+    const tl = [
+      track('v', 'video', [a, b]),
+      track('a', 'audio', [s], { syncLocked: true }),
+    ];
+    // Clip s [3-11] spans the ripple point at 5 (start of deleted clip a)
+    expect(rippleDelete(tl, [{ trackId: 'v', clipId: 'a' }], ['a'])).toBe(tl);
+  });
+});
+
+describe('split unlinks linked clips', () => {
+  it('clears linkedGroupId on both halves after split', () => {
+    const a = clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 10, inPoint: 0, linkedGroupId: 'g1' });
+    const b = clip({ id: 'b', sourceId: 'src-1', start: 0, duration: 10, inPoint: 0, linkedGroupId: 'g1' });
+    const tl = [
+      track('v', 'video', [a]),
+      track('a', 'audio', [b]),
+    ];
+    const next = splitClipAt(tl, 'v', 5);
+    expect(next[0]!.clips[0]!.linkedGroupId).toBeUndefined();
+    expect(next[0]!.clips[1]!.linkedGroupId).toBeUndefined();
+    // Audio track is unaffected by the split
+    expect(next[1]!.clips[0]!.linkedGroupId).toBe('g1');
+  });
+});
+
+describe('removeMarkersInRange', () => {
+  it('removes markers inside the range', () => {
+    const m: TimelineMarker[] = [
+      { id: 'm1', time: 2, label: 'A' },
+      { id: 'm2', time: 5, label: 'B' },
+      { id: 'm3', time: 8, label: 'C' },
+    ];
+    const result = removeMarkersInRange(m, 3, 7);
+    expect(result).toHaveLength(2);
+    expect(result[0]!.id).toBe('m1');
+    expect(result[1]!.id).toBe('m3');
+  });
+
+  it('returns original array when nothing removed', () => {
+    const m: TimelineMarker[] = [{ id: 'm1', time: 2, label: 'A' }];
+    expect(removeMarkersInRange(m, 5, 10)).toBe(m);
   });
 });

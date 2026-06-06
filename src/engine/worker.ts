@@ -69,6 +69,7 @@ import {
   liftRegion,
   extractRegion,
   shiftMarkers,
+  removeMarkersInRange,
   expandLinkedGroup,
   DEFAULT_MASTER_GAIN,
   DEFAULT_TITLE_DURATION_S,
@@ -2103,21 +2104,24 @@ function handleOverwriteEdit(cmd: Extract<WorkerCommand, { type: 'overwrite-edit
 function handleRippleDelete(cmd: Extract<WorkerCommand, { type: 'ripple-delete' }>) {
   const syncLockedTrackIds = getSyncLockedTrackIds();
   const expanded = expandLinkedGroup(timeline, cmd.clips);
-  let removedDuration = 0;
-  let earliestRemoved = Number.POSITIVE_INFINITY;
+  const removedRegions: { start: number; end: number }[] = [];
   for (const ref of expanded) {
     const track = timeline.find((t) => t.id === ref.trackId);
     const clip = track?.clips.find((c) => c.id === ref.clipId);
-    if (clip) {
-      removedDuration = Math.max(removedDuration, clip.duration);
-      earliestRemoved = Math.min(earliestRemoved, clip.start);
-    }
+    if (clip) removedRegions.push({ start: clip.start, end: clip.start + clip.duration });
   }
   commitEditMutation(() => {
     const nextTimeline = rippleDelete(timeline, cmd.clips, syncLockedTrackIds);
-    const nextMarkers = Number.isFinite(earliestRemoved)
-      ? shiftMarkers(markers, earliestRemoved, -removedDuration)
-      : markers;
+    if (nextTimeline === timeline) return { timeline, transitions, markers };
+    let nextMarkers: TimelineMarker[] = markers as TimelineMarker[];
+    for (const r of removedRegions) {
+      nextMarkers = removeMarkersInRange(nextMarkers, r.start, r.end);
+    }
+    if (removedRegions.length > 0) {
+      const earliest = Math.min(...removedRegions.map((r) => r.start));
+      const totalRemoved = removedRegions.reduce((sum, r) => sum + (r.end - r.start), 0);
+      nextMarkers = shiftMarkers(nextMarkers, earliest, -totalRemoved);
+    }
     return {
       timeline: nextTimeline,
       transitions: reconcileTransitions(nextTimeline, transitions),
@@ -2155,11 +2159,20 @@ function handleRollTrim(cmd: Extract<WorkerCommand, { type: 'roll-trim' }>) {
 }
 
 function handleSlipEdit(cmd: Extract<WorkerCommand, { type: 'slip-edit' }>) {
-  const clip = timeline.find((t) => t.id === cmd.trackId)?.clips.find((c) => c.id === cmd.clipId);
-  const sourceDuration = clip ? sourceInputs.get(clip.sourceId)?.duration : undefined;
-  if (sourceDuration === undefined) return;
+  const refs = expandLinkedGroup(timeline, [{ trackId: cmd.trackId, clipId: cmd.clipId }]);
   commitTimelineMutation(
-    () => slipEdit(timeline, cmd.trackId, cmd.clipId, cmd.deltaS, sourceDuration),
+    () => {
+      let tl = timeline;
+      for (const ref of refs) {
+        const clip = tl.find((t) => t.id === ref.trackId)?.clips.find((c) => c.id === ref.clipId);
+        const sourceDuration = clip ? sourceInputs.get(clip.sourceId)?.duration : undefined;
+        if (sourceDuration === undefined) return timeline;
+        const next = slipEdit(tl, ref.trackId, ref.clipId, cmd.deltaS, sourceDuration);
+        if (next === tl) return timeline;
+        tl = next;
+      }
+      return tl;
+    },
     {
       coalesceKey: { clipId: cmd.clipId, key: 'slip' },
       refreshPlayback: 'refresh',
@@ -2187,9 +2200,9 @@ function handleExtractRegion(cmd: Extract<WorkerCommand, { type: 'extract-region
   const regionDuration = cmd.endTime - cmd.startTime;
   commitEditMutation(() => {
     const nextTimeline = extractRegion(timeline, targetTrackIds, cmd.startTime, cmd.endTime, syncLockedTrackIds);
-    const nextMarkers = nextTimeline !== timeline
-      ? shiftMarkers(markers, cmd.endTime, -regionDuration)
-      : markers;
+    if (nextTimeline === timeline) return { timeline, transitions, markers };
+    const pruned = removeMarkersInRange(markers, cmd.startTime, cmd.endTime);
+    const nextMarkers = shiftMarkers(pruned, cmd.endTime, -regionDuration);
     return {
       timeline: nextTimeline,
       transitions: reconcileTransitions(nextTimeline, transitions),

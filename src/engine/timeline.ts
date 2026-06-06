@@ -624,6 +624,7 @@ export function splitClipAt(
     ...clip,
     duration: splitOffset,
     keyframes: splitKeyframes.left,
+    linkedGroupId: undefined,
   };
   const right: TimelineClip = {
     ...clip,
@@ -632,6 +633,7 @@ export function splitClipAt(
     duration: clip.duration - splitOffset,
     inPoint: clip.inPoint + splitOffset,
     keyframes: splitKeyframes.right,
+    linkedGroupId: undefined,
   };
 
   const next = cloneTimeline(timeline);
@@ -1447,6 +1449,17 @@ function anyRefOnLockedTrack(timeline: Timeline, refs: readonly ClipReference[])
   return refs.some((ref) => isTrackLocked(timeline, ref.trackId));
 }
 
+export function removeMarkersInRange(
+  markers: readonly TimelineMarker[],
+  startTime: number,
+  endTime: number,
+): TimelineMarker[] {
+  const filtered = markers.filter(
+    (m) => m.time < startTime - TIMELINE_EPSILON || m.time > endTime + TIMELINE_EPSILON,
+  );
+  return filtered.length === markers.length ? (markers as TimelineMarker[]) : filtered;
+}
+
 export function shiftMarkers(
   markers: readonly TimelineMarker[],
   afterTime: number,
@@ -1480,6 +1493,12 @@ function shiftClipsOnTrack(
   });
 }
 
+function clipSpansPoint(track: TimelineTrack, point: number): boolean {
+  return track.clips.some(
+    (c) => c.start < point - TIMELINE_EPSILON && clipEnd(c) > point + TIMELINE_EPSILON,
+  );
+}
+
 export function rippleDelete(
   timeline: Timeline,
   refs: readonly ClipReference[],
@@ -1506,25 +1525,28 @@ export function rippleDelete(
   for (const track of next) {
     const clipIds = refsByTrack.get(track.id);
     if (!clipIds) continue;
-    const removed = track.clips.filter((c) => clipIds.has(c.id));
+    const removed = sortByStart(track.clips.filter((c) => clipIds.has(c.id)));
     if (removed.length === 0) continue;
     const remaining = track.clips.filter((c) => !clipIds.has(c.id));
     let totalDelta = 0;
-    let earliestRemoved = Number.POSITIVE_INFINITY;
-    for (const clip of removed) {
-      totalDelta += clip.duration;
-      earliestRemoved = Math.min(earliestRemoved, clip.start);
-    }
-    trackDeltas.set(track.id, { afterTime: earliestRemoved, delta: -totalDelta });
-    track.clips = remaining.map((clip) => {
-      if (clip.start >= earliestRemoved - TIMELINE_EPSILON) {
-        return { ...clip, start: Math.max(0, clip.start - totalDelta) };
+    const earliestRemoved = removed[0]!.start;
+    // Build sorted removal regions for cumulative shifting
+    const regions = removed.map((c) => ({ start: c.start, duration: c.duration }));
+    track.clips = sortByStart(remaining).map((clip) => {
+      if (clip.start < earliestRemoved - TIMELINE_EPSILON) return clip;
+      // Accumulate shift from all removed regions before/at this clip
+      let shift = 0;
+      for (const r of regions) {
+        if (r.start <= clip.start + TIMELINE_EPSILON) shift += r.duration;
       }
-      return clip;
+      if (shift === 0) return clip;
+      return { ...clip, start: Math.max(0, clip.start - shift) };
     });
+    for (const r of regions) totalDelta += r.duration;
+    trackDeltas.set(track.id, { afterTime: earliestRemoved, delta: -totalDelta });
   }
 
-  // Shift sync-locked tracks by largest delta
+  // Shift sync-locked tracks — reject if any clip spans the ripple point
   for (const track of next) {
     if (!syncSet.has(track.id) || refsByTrack.has(track.id)) continue;
     let bestDelta = 0;
@@ -1536,6 +1558,7 @@ export function rippleDelete(
       }
     }
     if (bestDelta !== 0) {
+      if (clipSpansPoint(track, bestAfter)) return timeline;
       track.clips = shiftClipsOnTrack(track, bestAfter, bestDelta);
     }
   }
@@ -1587,6 +1610,7 @@ export function rippleTrim(
   const syncSet = new Set(syncLockedTrackIds);
   for (const t of next) {
     if (t.id === trackId || !syncSet.has(t.id)) continue;
+    if (clipSpansPoint(t, afterTime)) return timeline;
     t.clips = shiftClipsOnTrack(t, afterTime, delta);
   }
 
@@ -1813,6 +1837,13 @@ export function insertEdit(
 
   const targetSet = new Set(targetTrackIds);
   const syncSet = new Set(syncLockedTrackIds);
+
+  for (const track of timeline) {
+    if (syncSet.has(track.id) && !targetSet.has(track.id)) {
+      if (clipSpansPoint(track, atTime)) return timeline;
+    }
+  }
+
   const next = cloneTimeline(timeline);
 
   for (const track of next) {
@@ -1955,12 +1986,19 @@ export function extractRegion(
     if (isTrackLocked(timeline, sid)) return timeline;
   }
 
+  const targetSet = new Set(targetTrackIds);
+  const syncSet = new Set(syncLockedTrackIds);
+
+  for (const track of timeline) {
+    if (syncSet.has(track.id) && !targetSet.has(track.id)) {
+      if (clipSpansPoint(track, startTime) || clipSpansPoint(track, endTime)) return timeline;
+    }
+  }
+
   const lifted = liftRegion(timeline, targetTrackIds, startTime, endTime);
   if (lifted === timeline) return timeline;
 
   const regionDuration = endTime - startTime;
-  const targetSet = new Set(targetTrackIds);
-  const syncSet = new Set(syncLockedTrackIds);
   const next = cloneTimeline(lifted);
 
   for (const track of next) {
