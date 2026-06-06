@@ -35,11 +35,13 @@ import {
 import {
   DEFAULT_MASTER_GAIN,
   getTimelineDuration,
+  isTitleClip,
   resolveAllAt,
   type Timeline,
   type TimelineClip,
   type TimelineTrack,
 } from './timeline';
+import type { TitleTexture } from './titles';
 
 const AUDIO_BLOCK_FRAMES = 1024;
 const EXPORT_INTERLEAVE_SECONDS = 2;
@@ -109,6 +111,9 @@ export interface TimelineExportOptions {
   onProgress: (progress: ExportProgress) => void;
   masterGain?: number;
   transitions?: readonly AudioTransitionCut[];
+  /** Resolves a title clip's cached raster texture (Phase 14); rasters on the
+   *  cold path if needed, never per frame. Returns `null` for non-title clips. */
+  titleTextureFor?: (clip: TimelineClip) => TitleTexture | null;
 }
 
 export interface TimelineExportResult {
@@ -688,7 +693,7 @@ async function encodeVideoRange(
   startFrame: number,
   endFrame: number,
 ): Promise<void> {
-  const { timeline, sources, renderer, signal, throughputProbe, onProgress } = options;
+  const { timeline, sources, renderer, signal, throughputProbe, onProgress, titleTextureFor } = options;
   renderer.setPreviewSize(plan.width, plan.height);
 
   const frameDuration = 1 / plan.frameRate;
@@ -716,12 +721,28 @@ async function encodeVideoRange(
     const layers: CompositeLayer[] = [];
     let exportFrame: VideoFrame;
     try {
+      let decodedCount = 0;
       for (const layer of resolvedLayers) {
+        // Title layers composite from the cached raster (no decode, no budget),
+        // preserving z-order — matching preview's makeGetLayers.
+        if (isTitleClip(layer.clip)) {
+          const texture = layer.clip.title ? titleTextureFor?.(layer.clip) : null;
+          if (!texture) continue;
+          layers.push({
+            kind: 'texture',
+            view: texture.view,
+            sourceWidth: texture.width,
+            sourceHeight: texture.height,
+            transform: layer.clip.transform,
+          });
+          continue;
+        }
         const sourceHandle = sources.get(layer.clip.sourceId);
         if (!sourceHandle?.frameSource) continue;
-        if (layers.length >= layerBudget) break;
+        if (decodedCount >= layerBudget) break;
         const decoded = await sourceHandle.frameSource.frameAt(layer.sourceTime);
         if (!decoded) continue;
+        decodedCount += 1;
         let videoFrame: VideoFrame;
         try {
           videoFrame = decoded.toVideoFrame();

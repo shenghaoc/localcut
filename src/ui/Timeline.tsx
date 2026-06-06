@@ -7,6 +7,7 @@ import {
   RotateCcw,
   SkipBack,
   SkipForward,
+  Type,
   X,
   ZoomIn,
   ZoomOut,
@@ -46,6 +47,7 @@ interface TimelineProps {
   onMoveClips: (moves: TimelineClipMove[]) => void;
   onSelectClip: (trackId: string, clipId: string, effects: ClipEffectParamsSnapshot, additive: boolean, exclusive: boolean) => void;
   onSelectClips: (clips: TimelineClipReference[]) => void;
+  onAddTitle: (start: number) => void;
   onAddMarker: (time: number, label: string) => void;
   onDeleteMarker: (markerId: string) => void;
   onCloseGaps: (trackId?: string) => void;
@@ -438,6 +440,15 @@ export function Timeline(props: TimelineProps) {
             title="Add audio track"
           >
             <Music2 size={13} aria-hidden="true" />+
+          </button>
+          <button
+            type="button"
+            class="timeline-tool-button"
+            onClick={() => props.onAddTitle(boundedCurrentTime())}
+            aria-label="Add title clip"
+            title="Add title at playhead"
+          >
+            <Type size={13} aria-hidden="true" />+
           </button>
           <button
             type="button"

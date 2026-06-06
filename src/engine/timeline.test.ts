@@ -8,13 +8,17 @@ import {
   closeGaps,
   createEmptyTimeline,
   DEFAULT_TRACK_MIX,
+  DEFAULT_TITLE_TEXT,
   deleteMarker,
   defaultClipEffects,
   defaultClipTransform,
   defaultTimelineClip,
+  defaultTitleClip,
   duplicateClips,
+  isTitleClip,
   resolveAllAt,
   setClipTransform,
+  setTitleContent,
   getTimelineDuration,
   insertClip,
   moveClips,
@@ -831,4 +835,80 @@ describe('timeline tracks', () => {
     expect(revalidateTransitions(stillAdjacent, transitions, durations)).toHaveLength(1);
   });
 
+});
+
+describe('title clips', () => {
+  function videoTrack(clips: TimelineClip[] = []): TimelineTrack {
+    return { id: 'v', type: 'video', clips, ...DEFAULT_TRACK_MIX };
+  }
+
+  it('defaultTitleClip is a source-less title with defaults', () => {
+    const t = defaultTitleClip({ id: 'title-1', start: 2, duration: 5 });
+    expect(t.kind).toBe('title');
+    expect(isTitleClip(t)).toBe(true);
+    expect(t.sourceId).toBe('');
+    expect(t.inPoint).toBe(0);
+    expect(t.title?.text).toBe(DEFAULT_TITLE_TEXT);
+    expect(t.transform).toEqual(defaultClipTransform());
+  });
+
+  it('inserts onto a video track and resolves as a layer', () => {
+    const title = defaultTitleClip({ id: 'title-1', start: 1, duration: 4 });
+    const timeline = insertClip([videoTrack()], 'v', title);
+    const layers = resolveAllAt(timeline, 2);
+    expect(layers).toHaveLength(1);
+    expect(isTitleClip(layers[0]!.clip)).toBe(true);
+  });
+
+  it('setTitleContent updates text, merges style, and is a no-op when unchanged', () => {
+    const title = defaultTitleClip({ id: 'title-1', start: 0, duration: 4 });
+    const timeline = [videoTrack([title])];
+
+    const renamed = setTitleContent(timeline, 'v', 'title-1', { text: 'Lower third' });
+    expect(renamed).not.toBe(timeline);
+    expect(renamed[0]!.clips[0]!.title?.text).toBe('Lower third');
+    // Style preserved on a text-only edit.
+    expect(renamed[0]!.clips[0]!.title?.style.color).toBe(title.title!.style.color);
+
+    const restyled = setTitleContent(renamed, 'v', 'title-1', { style: { color: '#ff0000' } });
+    expect(restyled[0]!.clips[0]!.title?.style.color).toBe('#ff0000');
+    expect(restyled[0]!.clips[0]!.title?.text).toBe('Lower third');
+
+    // Identical content returns the same reference (no churn).
+    expect(setTitleContent(restyled, 'v', 'title-1', { text: 'Lower third' })).toBe(restyled);
+  });
+
+  it('setTitleContent ignores non-title clips and missing targets', () => {
+    const videoClip = clip({ id: 'c', sourceId: 's', start: 0, duration: 3, inPoint: 0 });
+    const timeline = [videoTrack([videoClip])];
+    expect(setTitleContent(timeline, 'v', 'c', { text: 'x' })).toBe(timeline);
+    expect(setTitleContent(timeline, 'v', 'missing', { text: 'x' })).toBe(timeline);
+  });
+
+  it('split preserves title content on both halves with distinct ids', () => {
+    const title = defaultTitleClip({
+      id: 'title-1',
+      start: 0,
+      duration: 6,
+      title: { text: 'Keep me', style: { color: '#00ff00' } },
+    });
+    const timeline = [videoTrack([title])];
+    const split = splitClipAt(timeline, 'v', 3);
+    const clips = split[0]!.clips;
+    expect(clips).toHaveLength(2);
+    expect(clips[0]!.id).not.toBe(clips[1]!.id);
+    for (const c of clips) {
+      expect(isTitleClip(c)).toBe(true);
+      expect(c.title?.text).toBe('Keep me');
+      expect(c.title?.style.color).toBe('#00ff00');
+    }
+  });
+
+  it('move and delete operate on title clips', () => {
+    const title = defaultTitleClip({ id: 'title-1', start: 0, duration: 4 });
+    const timeline = [videoTrack([title])];
+    const moved = moveClipTo(timeline, 'v', 'title-1', 'v', 5);
+    expect(moved[0]!.clips[0]!.start).toBe(5);
+    expect(removeClip(moved, 'v', 'title-1')[0]!.clips).toHaveLength(0);
+  });
 });

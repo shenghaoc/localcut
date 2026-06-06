@@ -847,6 +847,54 @@ body {
   font-weight: 500;
 }
 
+/* Title/action safe-area guides: a pure DOM overlay matching the canvas box. */
+.safe-area-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(100%, calc((100vh - var(--toolbar-h) - var(--timeline-h) - var(--status-h) - 28px) * 16 / 9));
+  max-width: 100%;
+  aspect-ratio: 16 / 9;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.safe-area-rect {
+  position: absolute;
+  border: 1px dashed rgb(255 255 255 / 55%);
+  border-radius: 2px;
+}
+
+.safe-area-action {
+  inset: 5%;
+}
+
+.safe-area-title {
+  inset: 10%;
+  border-color: rgb(255 255 255 / 35%);
+}
+
+.safe-area-toggle {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 4;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted, #aab);
+  background: rgb(0 0 0 / 55%);
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.safe-area-toggle.is-active {
+  color: #fff;
+  border-color: var(--accent, #5b8cff);
+}
+
 .preview-gizmo {
   position: absolute;
   box-sizing: border-box;
@@ -1362,6 +1410,52 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
+}
+
+.title-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.title-text-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.title-text-input {
+  width: 100%;
+  resize: vertical;
+  padding: 0.4rem 0.5rem;
+  font: inherit;
+  color: var(--text);
+  background: var(--input, rgb(255 255 255 / 4%));
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: var(--radius-sm);
+}
+
+.title-colors {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.title-color {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.title-color input[type='color'] {
+  width: 34px;
+  height: 24px;
+  padding: 0;
+  background: none;
+  border: 1px solid rgb(255 255 255 / 15%);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
 }
 
 .effect-slider {

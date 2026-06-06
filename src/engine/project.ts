@@ -3,6 +3,7 @@ import {
   DEFAULT_CLIP_AUDIO_FADES,
   DEFAULT_MASTER_GAIN,
   DEFAULT_TRACK_MIX,
+  normalizeTitleContent,
   normalizeTransitionKind,
   normalizeTransitionParams,
   normalizeClipEffects,
@@ -13,9 +14,10 @@ import {
   type TimelineMarker,
   type TimelineTrack,
   type TimelineTransition,
+  type TitleContent,
 } from './timeline';
 
-export const PROJECT_SCHEMA_VERSION = 5;
+export const PROJECT_SCHEMA_VERSION = 6;
 const DURATION_MATCH_TOLERANCE_S = 0.25;
 
 export type SourceDescriptor = SourceDescriptorSnapshot;
@@ -121,7 +123,7 @@ function cloneExportSettings(settings: ExportSettings): ExportSettings {
 }
 
 function cloneClip(clip: TimelineClip): TimelineClip {
-  return {
+  const cloned: TimelineClip = {
     id: clip.id,
     sourceId: clip.sourceId,
     start: clip.start,
@@ -132,6 +134,11 @@ function cloneClip(clip: TimelineClip): TimelineClip {
     audioFadeIn: clip.audioFadeIn,
     audioFadeOut: clip.audioFadeOut,
   };
+  if (clip.kind === 'title') {
+    cloned.kind = 'title';
+    cloned.title = normalizeTitleContent(clip.title);
+  }
+  return cloned;
 }
 
 export function cloneTimelineSnapshot(timeline: Timeline): Timeline {
@@ -220,14 +227,19 @@ export function serializeProject(options: SerializeProjectOptions): ProjectDoc {
 function parseClip(value: unknown): TimelineClip | null {
   if (!isRecord(value)) return null;
   const id = requiredString(value.id);
-  const sourceId = requiredString(value.sourceId);
   const start = finiteNumber(value.start);
   const duration = finiteNumber(value.duration);
-  const inPoint = finiteNumber(value.inPoint);
-  if (!id || !sourceId || start === null || duration === null || inPoint === null) {
+  // Title clips are source-less, carry no in-point, and decode no media (Phase
+  // 14); regular clips still require a sourceId and a non-negative in-point.
+  const isTitle = value.kind === 'title';
+  const sourceId = isTitle ? '' : requiredString(value.sourceId);
+  const inPoint = isTitle ? 0 : finiteNumber(value.inPoint);
+  if (!id || start === null || duration === null || inPoint === null) {
     return null;
   }
+  if (!isTitle && sourceId === null) return null;
   if (duration <= 0 || start < 0 || inPoint < 0) return null;
+  if (isTitle && !isRecord(value.title)) return null;
 
   const rawEffects = isRecord(value.effects) ? value.effects : {};
   const rawTransform = isRecord(value.transform) ? value.transform : {};
@@ -240,7 +252,10 @@ function parseClip(value: unknown): TimelineClip | null {
 
   return {
     id,
-    sourceId,
+    ...(isTitle
+      ? { kind: 'title' as const, title: normalizeTitleContent(value.title as Partial<TitleContent>) }
+      : {}),
+    sourceId: sourceId ?? '',
     start,
     duration,
     inPoint,
@@ -542,6 +557,9 @@ export function deserializeProject(value: unknown): DeserializeProjectResult {
       // transform for older docs, so the v2 parse path handles all three.
       return deserializeV2(value);
     case 5:
+    case 6:
+      // v6 adds source-less title clips; parseClip branches on `clip.kind`, so
+      // the v5 path (which parses transitions) handles both versions.
       return deserializeV5(value);
     default:
       return { ok: false, reason: `Unsupported project schemaVersion ${schemaVersion}.` };

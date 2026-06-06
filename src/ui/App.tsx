@@ -134,6 +134,7 @@ export function App() {
   const [previewLabel, setPreviewLabel] = createSignal<string | null>(null);
   const [previewSize, setPreviewSize] = createSignal<{ width: number; height: number } | null>(null);
   const [previewCanvasEl, setPreviewCanvasEl] = createSignal<HTMLCanvasElement | undefined>(undefined);
+  const [safeAreaGuides, setSafeAreaGuides] = createSignal(false);
   const [encodeFps, setEncodeFps] = createSignal<number | null>(null);
   const [timeline, setTimeline] = createSignal<TimelineTrackSnapshot[]>([]);
   const [markers, setMarkers] = createSignal<TimelineMarkerSnapshot[]>([]);
@@ -242,6 +243,17 @@ export function App() {
     if (!track || track.type !== 'video') return null;
     const timelineClip = track.clips.find((c) => c.id === clip.clipId);
     if (!timelineClip) return null;
+    // Title clips are source-less: their raster is a fixed 16:9 card, so the
+    // gizmo/inspector size against that rather than a media asset.
+    if (timelineClip.kind === 'title') {
+      return {
+        trackId: track.id,
+        clipId: timelineClip.id,
+        transform: timelineClip.transform,
+        sourceWidth: 16,
+        sourceHeight: 9,
+      };
+    }
     const asset = assets().find((a) => a.sourceId === timelineClip.sourceId);
     return {
       trackId: track.id,
@@ -249,6 +261,21 @@ export function App() {
       transform: timelineClip.transform,
       sourceWidth: asset?.video?.width ?? metadata()?.video?.width ?? 16,
       sourceHeight: asset?.video?.height ?? metadata()?.video?.height ?? 9,
+    };
+  });
+
+  // Text + style for a selected title clip; null for source clips (Phase 14).
+  const selectedTitle = createMemo(() => {
+    const clip = selectedClip();
+    if (!clip) return null;
+    const track = timeline().find((t) => t.id === clip.trackId);
+    if (!track || track.type !== 'video') return null;
+    const timelineClip = track.clips.find((c) => c.id === clip.clipId);
+    if (!timelineClip || timelineClip.kind !== 'title' || !timelineClip.title) return null;
+    return {
+      trackId: track.id,
+      clipId: timelineClip.id,
+      title: timelineClip.title,
     };
   });
 
@@ -1067,6 +1094,23 @@ export function App() {
               }}
             />
           </Show>
+          <Show when={accelerated() && safeAreaGuides()}>
+            <div class="safe-area-overlay" aria-hidden="true">
+              <div class="safe-area-rect safe-area-action" />
+              <div class="safe-area-rect safe-area-title" />
+            </div>
+          </Show>
+          <Show when={accelerated()}>
+            <button
+              type="button"
+              class={`safe-area-toggle${safeAreaGuides() ? ' is-active' : ''}`}
+              aria-pressed={safeAreaGuides()}
+              onClick={() => setSafeAreaGuides((on) => !on)}
+              title="Toggle title/action safe-area guides"
+            >
+              Safe areas
+            </button>
+          </Show>
           <Show when={compatibilityPreview() !== null}>
             <LimitedPreview
               thumbnailUrl={compatibilityPreview()!.url}
@@ -1130,6 +1174,10 @@ export function App() {
           selectedTrackMix={selectedTrackMix()}
           selectedClipFades={selectedClipFades()}
           selectedClipTransform={selectedClipTransform()}
+          selectedTitle={selectedTitle()}
+          onSetTitle={(trackId, clipId, patch) =>
+            bridge?.send({ type: 'set-title', trackId, clipId, ...patch })
+          }
           onEffectParam={(trackId, clipId, key, value) =>
             bridge?.send({ type: 'set-effect-param', trackId, clipId, key, value })
           }
@@ -1174,6 +1222,7 @@ export function App() {
         onMoveClips={(moves) => bridge?.send({ type: 'move-clips', moves })}
         onSelectClip={selectClip}
         onSelectClips={(clips) => setSelectedClipRefs(clips)}
+        onAddTitle={(start) => bridge?.send({ type: 'add-title', start })}
         onAddMarker={(time, label) => bridge?.send({ type: 'add-marker', time, label })}
         onDeleteMarker={(markerId) => bridge?.send({ type: 'delete-marker', markerId })}
         onCloseGaps={(trackId) => bridge?.send(trackId ? { type: 'close-gaps', trackId } : { type: 'close-gaps' })}

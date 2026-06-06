@@ -9,10 +9,24 @@ import {
   transformsEqual,
   type TransformParams,
 } from './transform';
+import {
+  cloneTitleContent,
+  normalizeTitleContent,
+  titleContentsEqual,
+  type TitleContent,
+  type TitleContentInput,
+  type TitleStyle,
+} from './title';
+
+/** Source clips decode media; title clips are source-less text overlays (Phase 14). */
+export type ClipKind = 'video' | 'title';
 
 /** Authoritative timeline model — Phase 3+. */
 export interface TimelineClip {
   id: string;
+  /** `undefined`/`'video'` for source clips; `'title'` for source-less titles (Phase 14). */
+  kind?: ClipKind;
+  /** Empty string for title clips (they decode no media). */
   sourceId: string;
   start: number;
   duration: number;
@@ -22,6 +36,13 @@ export interface TimelineClip {
   transform: TransformParams;
   audioFadeIn: number;
   audioFadeOut: number;
+  /** Text + style for `kind: 'title'` clips; absent otherwise (Phase 14). */
+  title?: TitleContent;
+}
+
+/** A title clip carries source-less text; it composites as a cached texture. */
+export function isTitleClip(clip: TimelineClip): boolean {
+  return clip.kind === 'title';
 }
 
 export interface TimelineTrack {
@@ -110,6 +131,7 @@ function cloneTimeline(timeline: Timeline): Timeline {
       transform: { ...clip.transform },
       audioFadeIn: clip.audioFadeIn,
       audioFadeOut: clip.audioFadeOut,
+      title: clip.title ? cloneTitleContent(clip.title) : undefined,
     })),
   }));
 }
@@ -444,6 +466,7 @@ function cloneClip(clip: TimelineClip): TimelineClip {
     transform: { ...clip.transform },
     audioFadeIn: clip.audioFadeIn,
     audioFadeOut: clip.audioFadeOut,
+    title: clip.title ? cloneTitleContent(clip.title) : undefined,
   };
 }
 
@@ -807,6 +830,57 @@ export function setClipTransform(
   return cloned;
 }
 
+/** Builds a source-less title clip with default colour/transform/fades. */
+export function defaultTitleClip(partial: {
+  id: string;
+  start: number;
+  duration: number;
+  title?: TitleContentInput;
+  transform?: Partial<TransformParams>;
+}): TimelineClip {
+  return {
+    id: partial.id,
+    kind: 'title',
+    sourceId: '',
+    start: partial.start,
+    duration: partial.duration,
+    inPoint: 0,
+    effects: defaultClipEffects(),
+    transform: normalizeTransform(partial.transform),
+    ...DEFAULT_CLIP_AUDIO_FADES,
+    title: normalizeTitleContent(partial.title),
+  };
+}
+
+/**
+ * Updates a title clip's text and/or style; returns the original timeline on
+ * no-op (unchanged content) or when the target is missing or not a title clip.
+ * The style patch merges over the current style so a text-only edit preserves
+ * styling — and still produces a new content hash so the raster is refreshed.
+ */
+export function setTitleContent(
+  timeline: Timeline,
+  trackId: string,
+  clipId: string,
+  patch: { text?: string; style?: Partial<TitleStyle> },
+): Timeline {
+  const loc = trackWithClip(timeline, trackId, clipId);
+  if (!loc) return timeline;
+
+  const clip = timeline[loc.trackIndex]!.clips[loc.clipIndex]!;
+  if (!isTitleClip(clip) || !clip.title) return timeline;
+
+  const next = normalizeTitleContent({
+    text: patch.text ?? clip.title.text,
+    style: { ...clip.title.style, ...patch.style },
+  });
+  if (titleContentsEqual(clip.title, next)) return timeline;
+
+  const cloned = cloneTimeline(timeline);
+  cloned[loc.trackIndex]!.clips[loc.clipIndex]!.title = next;
+  return cloned;
+}
+
 export function defaultTimelineClip(
   partial: Omit<TimelineClip, 'effects' | 'transform' | 'audioFadeIn' | 'audioFadeOut'> &
     Partial<Pick<TimelineClip, 'effects' | 'transform' | 'audioFadeIn' | 'audioFadeOut'>>,
@@ -1009,3 +1083,15 @@ export {
   type FitMode,
   type TransformParams,
 } from './transform';
+export {
+  DEFAULT_TITLE_STYLE,
+  DEFAULT_TITLE_TEXT,
+  DEFAULT_TITLE_DURATION_S,
+  normalizeTitleContent,
+  normalizeTitleStyle,
+  titleContentHash,
+  titleContentsEqual,
+  type TitleAlign,
+  type TitleContent,
+  type TitleStyle,
+} from './title';

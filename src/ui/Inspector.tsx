@@ -3,8 +3,17 @@ import type {
   ClipEffectParamsSnapshot,
   FitModeSnapshot,
   MediaMetadata,
+  TitleAlignSnapshot,
+  TitleContentSnapshot,
+  TitleStyleSnapshot,
   TransformParamsSnapshot,
 } from '../protocol';
+
+export interface SelectedTitle {
+  trackId: string;
+  clipId: string;
+  title: TitleContentSnapshot;
+}
 
 export interface SelectedClip {
   trackId: string;
@@ -40,6 +49,12 @@ interface InspectorProps {
   selectedTrackMix: SelectedTrackMix | null;
   selectedClipFades: SelectedClipFades | null;
   selectedClipTransform: SelectedClipTransform | null;
+  selectedTitle: SelectedTitle | null;
+  onSetTitle: (
+    trackId: string,
+    clipId: string,
+    patch: { text?: string; style?: Partial<TitleStyleSnapshot> },
+  ) => void;
   onEffectParam: (
     trackId: string,
     clipId: string,
@@ -81,6 +96,40 @@ const FIT_OPTIONS: { value: FitModeSnapshot; label: string }[] = [
   { value: 'fill', label: 'Fill' },
   { value: 'fit', label: 'Fit' },
   { value: 'letterbox', label: 'Letterbox' },
+];
+
+type TitleNumberKey = 'fontSizePx' | 'backgroundOpacity' | 'outlineWidthPx' | 'shadowBlurPx' | 'shadowOffsetXPx' | 'shadowOffsetYPx';
+type TitleColorKey = 'color' | 'backgroundColor' | 'outlineColor' | 'shadowColor';
+
+interface TitleSliderSpec {
+  key: TitleNumberKey;
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+  format: (value: number) => string;
+}
+
+const TITLE_SLIDERS: TitleSliderSpec[] = [
+  { key: 'fontSizePx', label: 'Font size', min: 8, max: 256, step: 1, format: (v) => `${Math.round(v)} px` },
+  { key: 'backgroundOpacity', label: 'Background', min: 0, max: 1, step: 0.01, format: (v) => v.toFixed(2) },
+  { key: 'outlineWidthPx', label: 'Outline', min: 0, max: 32, step: 0.5, format: (v) => `${v.toFixed(1)} px` },
+  { key: 'shadowBlurPx', label: 'Shadow blur', min: 0, max: 64, step: 1, format: (v) => `${Math.round(v)} px` },
+  { key: 'shadowOffsetXPx', label: 'Shadow X', min: -64, max: 64, step: 1, format: (v) => `${Math.round(v)} px` },
+  { key: 'shadowOffsetYPx', label: 'Shadow Y', min: -64, max: 64, step: 1, format: (v) => `${Math.round(v)} px` },
+];
+
+const TITLE_COLORS: { key: TitleColorKey; label: string }[] = [
+  { key: 'color', label: 'Text' },
+  { key: 'backgroundColor', label: 'Background' },
+  { key: 'outlineColor', label: 'Outline' },
+  { key: 'shadowColor', label: 'Shadow' },
+];
+
+const TITLE_ALIGN_OPTIONS: { value: TitleAlignSnapshot; label: string }[] = [
+  { value: 'left', label: 'Left' },
+  { value: 'center', label: 'Center' },
+  { value: 'right', label: 'Right' },
 ];
 
 const PARAM_DEBOUNCE_MS = 80;
@@ -125,6 +174,10 @@ export function Inspector(props: InspectorProps) {
   const [mixDraft, setMixDraft] = createSignal<MixDraft | null>(null);
   const [fadeDraft, setFadeDraft] = createSignal<FadeDraft | null>(null);
   const [transformDraft, setTransformDraft] = createSignal<TransformDraft | null>(null);
+  const [titleDraft, setTitleDraft] = createSignal<TitleContentSnapshot | null>(null);
+  const titleTarget = { trackId: '', clipId: '' };
+  let titleTimer: ReturnType<typeof setTimeout> | undefined;
+  let titlePatch: { text?: string; style?: Partial<TitleStyleSnapshot> } = {};
   const transformPending = new Map<TransformSliderKey, number>();
   const transformDebouncers = new Map<TransformSliderKey, ReturnType<typeof setTimeout>>();
   const transformTarget = { trackId: '', clipId: '' };
@@ -211,6 +264,36 @@ export function Inspector(props: InspectorProps) {
     if (!transform) return;
     setTransformDraft((prev) => (prev ? { ...prev, fit } : prev));
     props.onTransform(transform.trackId, transform.clipId, { fit });
+  }
+
+  function flushTitle() {
+    if (titleTimer) {
+      clearTimeout(titleTimer);
+      titleTimer = undefined;
+    }
+    if (!titleTarget.clipId) return;
+    if (titlePatch.text === undefined && !titlePatch.style) return;
+    props.onSetTitle(titleTarget.trackId, titleTarget.clipId, titlePatch);
+    titlePatch = {};
+  }
+
+  function scheduleTitle(patch: { text?: string; style?: Partial<TitleStyleSnapshot> }) {
+    const title = props.selectedTitle;
+    if (!title) return;
+    titleTarget.trackId = title.trackId;
+    titleTarget.clipId = title.clipId;
+    setTitleDraft((prev) =>
+      prev
+        ? {
+            text: patch.text ?? prev.text,
+            style: patch.style ? { ...prev.style, ...patch.style } : prev.style,
+          }
+        : prev,
+    );
+    if (patch.text !== undefined) titlePatch.text = patch.text;
+    if (patch.style) titlePatch.style = { ...titlePatch.style, ...patch.style };
+    if (titleTimer) clearTimeout(titleTimer);
+    titleTimer = setTimeout(flushTitle, PARAM_DEBOUNCE_MS);
   }
 
   function syncDraftFromClip(clip: SelectedClip) {
@@ -384,11 +467,35 @@ export function Inspector(props: InspectorProps) {
     });
   });
 
+  createEffect(() => {
+    const title = props.selectedTitle;
+    if (!title) {
+      flushTitle();
+      titleTarget.trackId = '';
+      titleTarget.clipId = '';
+      setTitleDraft(null);
+      return;
+    }
+    if (titleTarget.clipId && titleTarget.clipId !== title.clipId) {
+      flushTitle();
+    }
+    titleTarget.trackId = title.trackId;
+    titleTarget.clipId = title.clipId;
+    // Mirror the authoritative content unless a local edit is still pending for
+    // this clip (debounce in flight), so the worker echo doesn't clobber typing.
+    setTitleDraft((prev) =>
+      prev && titleTimer !== undefined && titleTarget.clipId === title.clipId
+        ? prev
+        : { text: title.title.text, style: { ...title.title.style } },
+    );
+  });
+
   onCleanup(() => {
     flushPending();
     flushMixPending();
     flushFadePending();
     flushTransformPending();
+    flushTitle();
   });
 
   function scheduleParam(key: keyof ClipEffectParamsSnapshot, value: number) {
@@ -437,6 +544,87 @@ export function Inspector(props: InspectorProps) {
                 <dd>{clip().clipId}</dd>
               </div>
             </dl>
+            <Show when={titleDraft()}>
+              {(title) => (
+                <div class="title-controls">
+                  <h3 class="panel-subtitle">Title</h3>
+                  <label class="title-text-label">
+                    <span class="effect-slider-label">Text</span>
+                    <textarea
+                      class="title-text-input"
+                      rows={2}
+                      value={title().text}
+                      onInput={(e) =>
+                        scheduleTitle({ text: (e.currentTarget as HTMLTextAreaElement).value })
+                      }
+                    />
+                  </label>
+                  <For each={TITLE_SLIDERS}>
+                    {(spec) => (
+                      <label class="effect-slider">
+                        <span class="effect-slider-label">
+                          {spec.label}
+                          <span class="effect-slider-value tabular-nums">
+                            {spec.format(title().style[spec.key])}
+                          </span>
+                        </span>
+                        <input
+                          type="range"
+                          min={spec.min}
+                          max={spec.max}
+                          step={spec.step}
+                          value={title().style[spec.key]}
+                          onInput={(e) =>
+                            scheduleTitle({
+                              style: {
+                                [spec.key]: Number((e.currentTarget as HTMLInputElement).value),
+                              } as Partial<TitleStyleSnapshot>,
+                            })
+                          }
+                        />
+                      </label>
+                    )}
+                  </For>
+                  <div class="title-colors">
+                    <For each={TITLE_COLORS}>
+                      {(spec) => (
+                        <label class="title-color">
+                          <span class="effect-slider-label">{spec.label}</span>
+                          <input
+                            type="color"
+                            value={title().style[spec.key]}
+                            onInput={(e) =>
+                              scheduleTitle({
+                                style: {
+                                  [spec.key]: (e.currentTarget as HTMLInputElement).value,
+                                } as Partial<TitleStyleSnapshot>,
+                              })
+                            }
+                          />
+                        </label>
+                      )}
+                    </For>
+                  </div>
+                  <label class="effect-slider transform-fit">
+                    <span class="effect-slider-label">Align</span>
+                    <select
+                      value={title().style.align}
+                      onChange={(e) =>
+                        scheduleTitle({
+                          style: {
+                            align: (e.currentTarget as HTMLSelectElement).value as TitleAlignSnapshot,
+                          },
+                        })
+                      }
+                    >
+                      <For each={TITLE_ALIGN_OPTIONS}>
+                        {(option) => <option value={option.value}>{option.label}</option>}
+                      </For>
+                    </select>
+                  </label>
+                </div>
+              )}
+            </Show>
             <Show when={mixDraft()}>
               {(mix) => (
                 <div class="track-mix-controls">

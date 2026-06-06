@@ -8,16 +8,19 @@ export interface DecodedFrame {
   close(): void;
 }
 
-/** A decoded composite layer: a frame plus caller-defined metadata the controller
- *  treats opaquely and hands back, paired, to {@link PlaybackDeps.renderFrames}. */
+/** A decoded composite layer: an optional frame plus caller-defined metadata the
+ *  controller treats opaquely and hands back, paired, to
+ *  {@link PlaybackDeps.renderFrames}. `decoded` is `null` for source-less layers
+ *  (Phase 14 titles) that composite from a cached texture rather than a decode. */
 export interface DecodedLayer<M = unknown> {
-  decoded: DecodedFrame;
+  decoded: DecodedFrame | null;
   meta: M;
 }
 
-/** A layer ready to render: its derived `VideoFrame` paired with its metadata. */
+/** A layer ready to render: its derived `VideoFrame` (or `null` for a
+ *  texture-backed title layer) paired with its metadata. */
 export interface RenderedLayer<M = unknown> {
-  frame: VideoFrame;
+  frame: VideoFrame | null;
   meta: M;
 }
 
@@ -236,25 +239,30 @@ export class PlaybackController<M = unknown> {
     const decoded = await this.deps.getFrames(time);
     if (!decoded || decoded.length === 0) return;
     if (gen !== this.generation) {
-      for (const layer of decoded) layer.decoded.close();
+      for (const layer of decoded) layer.decoded?.close();
       return;
     }
-    // Each layer's decoded sample yields one VideoFrame, paired with its own
-    // metadata — no shared state. Every VideoFrame and every decoded sample is
-    // closed exactly once below. The compositor consumes all of them
+    // Each decoded sample yields one VideoFrame, paired with its own metadata —
+    // no shared state. Source-less layers (titles) carry no decode and render a
+    // null frame from a cached texture. Every VideoFrame and every decoded
+    // sample is closed exactly once below. The compositor consumes all of them
     // synchronously inside renderFrames (importExternalTexture + submit), so
     // they are safe to close immediately afterwards.
     const ids: number[] = [];
     const rendered: RenderedLayer<M>[] = [];
     try {
       for (const layer of decoded) {
-        ids.push(this.leaks.track());
-        rendered.push({ frame: layer.decoded.toVideoFrame(), meta: layer.meta });
+        if (layer.decoded) {
+          ids.push(this.leaks.track());
+          rendered.push({ frame: layer.decoded.toVideoFrame(), meta: layer.meta });
+        } else {
+          rendered.push({ frame: null, meta: layer.meta });
+        }
       }
       this.deps.renderFrames(rendered, time);
     } finally {
-      for (const layer of rendered) layer.frame.close();
-      for (const layer of decoded) layer.decoded.close();
+      for (const layer of rendered) layer.frame?.close();
+      for (const layer of decoded) layer.decoded?.close();
       for (const id of ids) this.leaks.release(id);
     }
   }
