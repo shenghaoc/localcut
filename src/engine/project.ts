@@ -203,7 +203,7 @@ function cloneSourceDescriptor(source: SourceDescriptor): SourceDescriptor {
     durationS: source.durationS,
     mimeType: source.mimeType,
     adapterId: source.adapterId,
-    timing: cloneTiming(source.timing ?? defaultTimingForDescriptor(source.durationS, source.video, source.audio)),
+    timing: source.timing ? cloneTiming(source.timing) : undefined,
     health: source.health ? cloneHealthReport(source.health) : undefined,
     video: source.video
       ? {
@@ -510,49 +510,9 @@ function parseTrackTiming(value: unknown): SourceTrackTimingSnapshot | undefined
   };
 }
 
-function defaultTimingForDescriptor(
-  durationS: number,
-  video?: SourceDescriptor['video'],
-  audio?: SourceDescriptor['audio'],
-): NormalizedSourceTimingSnapshot {
-  const videoStart = video?.trackStartS ?? 0;
-  const audioStart = audio?.trackStartS ?? 0;
-  const starts = [
-    video ? videoStart : undefined,
-    audio ? audioStart : undefined,
-  ].filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
-  const normalizedStartS = Math.max(0, starts.length > 0 ? Math.min(...starts) : 0);
-  const duration = Math.max(0, durationS);
-  return {
-    normalizedStartS,
-    durationS: duration,
-    video: video
-      ? {
-          trackId: 'video-1',
-          firstTimestampS: videoStart,
-          lastTimestampS: videoStart + (video.trackDurationS ?? duration),
-          durationS: video.trackDurationS ?? duration,
-        }
-      : undefined,
-    audio: audio
-      ? {
-          trackId: 'audio-1',
-          firstTimestampS: audioStart,
-          lastTimestampS: audioStart + (audio.trackDurationS ?? duration),
-          durationS: audio.trackDurationS ?? duration,
-        }
-      : undefined,
-    avOffsetS: video && audio ? audioStart - videoStart : 0,
-    frameRateMode: video?.frameRateMode ?? 'unknown',
-  };
-}
-
 function parseTiming(
   value: unknown,
-  durationS: number,
-  video?: SourceDescriptor['video'],
-  audio?: SourceDescriptor['audio'],
-): NormalizedSourceTimingSnapshot {
+): NormalizedSourceTimingSnapshot | undefined {
   if (isRecord(value)) {
     const normalizedStartS = finiteNumber(value.normalizedStartS);
     const duration = finiteNumber(value.durationS);
@@ -569,7 +529,7 @@ function parseTiming(
       };
     }
   }
-  return defaultTimingForDescriptor(durationS, video, audio);
+  return undefined;
 }
 
 function parseWarningCode(value: unknown): SourceHealthWarningSnapshot['code'] | null {
@@ -744,7 +704,7 @@ export function parseSourceDescriptor(value: unknown): SourceDescriptor | null {
     value.adapterId === 'mediabunny' || value.adapterId === 'web-demuxer-diagnostics'
       ? value.adapterId
       : undefined;
-  const timing = parseTiming(value.timing, durationS, video, audio);
+  const timing = parseTiming(value.timing);
   const health = parseHealthReport(value.health, sourceId, fileName);
 
   return {

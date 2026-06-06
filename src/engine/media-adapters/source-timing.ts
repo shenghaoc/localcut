@@ -36,6 +36,8 @@ export interface UnavailableAudioSilenceFramesOptions {
   readonly maxFrames: number;
 }
 
+export type AudioAvailabilityWindowFramesOptions = UnavailableAudioSilenceFramesOptions;
+
 export interface BuildNormalizedSourceTimingOptions {
   readonly durationS: number;
   readonly video?: SourceTrackInspection;
@@ -195,4 +197,28 @@ export function unavailableAudioSilenceFrames(
   }
 
   return maxFrames;
+}
+
+export function audioAvailabilityWindowFrames(
+  options: AudioAvailabilityWindowFramesOptions,
+): number {
+  const maxFrames = Math.max(0, Math.floor(finiteOr(options.maxFrames, 0)));
+  if (maxFrames <= 0) return 0;
+  if (!options.resolution.available) return unavailableAudioSilenceFrames(options);
+
+  const track = options.timing.audio;
+  if (
+    !track ||
+    track.lastTimestampS === null ||
+    !Number.isFinite(options.sampleRate) ||
+    options.sampleRate <= 0
+  ) {
+    return maxFrames;
+  }
+
+  const framesUntilTrackEnd = Math.ceil(
+    (track.lastTimestampS - options.resolution.adapterTimestampS) * options.sampleRate,
+  );
+  if (framesUntilTrackEnd > 0) return Math.min(maxFrames, framesUntilTrackEnd);
+  return 1;
 }

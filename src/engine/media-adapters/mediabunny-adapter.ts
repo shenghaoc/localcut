@@ -178,9 +178,17 @@ function createMetadata(
   duration: number,
   mimeType: string | null,
   tracks: readonly SourceTrackInspection[],
+  primaryVideo?: SourceVideoTrackInspection | null,
+  primaryAudio?: SourceAudioTrackInspection | null,
 ): MediaMetadata {
-  const videoTrack = tracks.find((track): track is SourceVideoTrackInspection => track.kind === 'video') ?? null;
-  const audioTrack = tracks.find((track): track is SourceAudioTrackInspection => track.kind === 'audio') ?? null;
+  const videoTrack =
+    primaryVideo ??
+    tracks.find((track): track is SourceVideoTrackInspection => track.kind === 'video') ??
+    null;
+  const audioTrack =
+    primaryAudio ??
+    tracks.find((track): track is SourceAudioTrackInspection => track.kind === 'audio') ??
+    null;
   return {
     fileName: file.name,
     duration,
@@ -307,7 +315,14 @@ async function openImageFile(file: File, sourceId: string): Promise<PrimaryMedia
   const inspection = imageInspection(sourceId, file, displayWidth, displayHeight);
   const primaryVideo = inspection.tracks[0] as SourceVideoTrackInspection;
   const { conformance, warnings } = deriveConformance(inspection, primaryVideo, null);
-  const metadata = createMetadata(file, conformance.durationS, inspection.mimeType, inspection.tracks);
+  const metadata = createMetadata(
+    file,
+    conformance.durationS,
+    inspection.mimeType,
+    inspection.tracks,
+    primaryVideo,
+    null,
+  );
   const handle: MediaInputHandle = {
     sourceId,
     kind: 'image',
@@ -448,7 +463,14 @@ export const mediabunnyAdapter: MediaAdapter = {
         primaryVideoInspection,
         primaryAudioInspection,
       );
-      const metadata = createMetadata(input.file, conformance.durationS, inspection.mimeType, inspection.tracks);
+      const metadata = createMetadata(
+        input.file,
+        conformance.durationS,
+        inspection.mimeType,
+        inspection.tracks,
+        primaryVideoInspection,
+        primaryAudioInspection,
+      );
 
       let frameSource: SequentialFrameSource | null = null;
       let thumbnailSink: VideoSampleSink | null = null;

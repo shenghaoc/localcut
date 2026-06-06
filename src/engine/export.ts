@@ -44,6 +44,7 @@ import {
 import type { TitleTexture } from './titles';
 import { sampleClipParamsAt } from './keyframes';
 import {
+  audioAvailabilityWindowFrames,
   resolveSourceTimestamp,
   unavailableAudioSilenceFrames,
 } from './media-adapters/source-timing';
@@ -513,7 +514,7 @@ export async function mixAudioWindow(
           const cutTime = outgoing.start + outgoing.duration;
           const half = transitionSpec.durationS * 0.5;
           const windowEnd = cutTime + half;
-          const runFrames = Math.max(
+          const baseRunFrames = Math.max(
             1,
             Math.min(frameCount - offsetFrames, Math.ceil((windowEnd - timelineTime) * sampleRate)),
           );
@@ -538,6 +539,32 @@ export async function mixAudioWindow(
                   timing: inHandle.timing,
                 })
               : null;
+            const runFrames = Math.max(
+              1,
+              Math.min(
+                baseRunFrames,
+                outSourceTime && outHandle
+                  ? audioAvailabilityWindowFrames({
+                      resolution: outSourceTime,
+                      timing: outHandle.timing,
+                      clip: outgoing,
+                      timelineTime,
+                      sampleRate,
+                      maxFrames: baseRunFrames,
+                    })
+                  : baseRunFrames,
+                inSourceTime && inHandle
+                  ? audioAvailabilityWindowFrames({
+                      resolution: inSourceTime,
+                      timing: inHandle.timing,
+                      clip: incoming,
+                      timelineTime,
+                      sampleRate,
+                      maxFrames: baseRunFrames,
+                    })
+                  : baseRunFrames,
+              ),
+            );
             const outPcm = hasOut && outSourceTime?.available
               ? await outHandle!.audioSource!.pcmWindowAt(outSourceTime.adapterTimestampS, runFrames, channels)
               : null;
@@ -643,18 +670,19 @@ export async function mixAudioWindow(
         trackKind: 'audio',
         timing: handle.timing,
       });
+      const availableRunFrames = audioAvailabilityWindowFrames({
+        resolution: sourceTime,
+        timing: handle.timing,
+        clip,
+        timelineTime,
+        sampleRate,
+        maxFrames: runFrames,
+      });
       if (!sourceTime.available) {
-        offsetFrames += unavailableAudioSilenceFrames({
-          resolution: sourceTime,
-          timing: handle.timing,
-          clip,
-          timelineTime,
-          sampleRate,
-          maxFrames: runFrames,
-        });
+        offsetFrames += availableRunFrames;
         continue;
       }
-      const pcm = await handle.audioSource.pcmWindowAt(sourceTime.adapterTimestampS, runFrames, channels);
+      const pcm = await handle.audioSource.pcmWindowAt(sourceTime.adapterTimestampS, availableRunFrames, channels);
       const mixed = applyMixStage(pcm, channels, {
         gain: track.gain,
         pan: track.pan,
@@ -665,7 +693,7 @@ export async function mixAudioWindow(
         sampleRate,
       });
       accumulateMix(out, mixed, offsetFrames * channels);
-      offsetFrames += runFrames;
+      offsetFrames += availableRunFrames;
     }
   }
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { defaultTimelineClip } from '../timeline';
 import {
+  audioAvailabilityWindowFrames,
   buildNormalizedSourceTiming,
   resolveNormalizedSourceTimestamp,
   resolveSourceTimestamp,
@@ -145,5 +146,27 @@ describe('source timestamp normalization', () => {
         maxFrames: 16,
       }),
     ).toBe(16);
+  });
+
+  it('limits available audio windows to the next track end', () => {
+    const timing = buildNormalizedSourceTiming({
+      durationS: 1,
+      audio: { ...audioTrack, startS: 0, durationS: 0.5 },
+      frameRateMode: 'constant',
+    });
+    const clip = defaultTimelineClip({ id: 'clip', sourceId: 'src', start: 0, duration: 1, inPoint: 0 });
+    const resolution = resolveSourceTimestamp({ clip, timelineTime: 0.25, trackKind: 'audio', timing });
+
+    expect(resolution).toMatchObject({ available: true, fill: 'none' });
+    expect(
+      audioAvailabilityWindowFrames({
+        resolution,
+        timing,
+        clip,
+        timelineTime: 0.25,
+        sampleRate: 4,
+        maxFrames: 16,
+      }),
+    ).toBe(1);
   });
 });

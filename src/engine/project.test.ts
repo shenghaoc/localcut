@@ -481,6 +481,33 @@ describe('source descriptor matching', () => {
     ).toBe(true);
   });
 
+  it('does not fabricate timing for legacy descriptors without conformance metadata', () => {
+    const legacy = sourceFixture();
+    const doc = serializeProject({
+      projectId: 'project-legacy',
+      timeline: timelineFixture(),
+      sources: [legacy],
+      savedAt: new Date('2026-06-06T00:00:00.000Z'),
+    });
+    const result = deserializeProject({ ...doc, schemaVersion: 6, sources: [legacy] });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const restored = result.doc.sources[0]!;
+    const candidate = conformedSourceFixture();
+    expect(restored.timing).toBeUndefined();
+    expect(
+      sourceDescriptorMismatchReasons(restored, {
+        fileName: legacy.fileName,
+        byteSize: legacy.byteSize,
+        durationS: legacy.durationS,
+        video: candidate.video,
+        audio: candidate.audio,
+        timing: candidate.timing,
+      }),
+    ).not.toContain('track timing');
+  });
+
   it('rejects relink candidates with mismatched timing, rotation, or audio conformance', () => {
     const source = conformedSourceFixture();
     const candidate = {

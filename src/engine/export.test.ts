@@ -472,6 +472,48 @@ describe('mixAudioWindow', () => {
     expect(source.pcmWindowAt).toHaveBeenCalledWith(0.5, 2, 1);
   });
 
+  it('splits transition audio when an incoming track becomes available mid-window', async () => {
+    const outgoing = sourceWith(0);
+    const incoming = sourceWith(1);
+    const incomingTiming = {
+      normalizedStartS: 0,
+      durationS: 1,
+      audio: { trackId: 'audio-1', firstTimestampS: 0.25, lastTimestampS: 1, durationS: 0.75 },
+      avOffsetS: 0,
+      frameRateMode: 'constant' as const,
+    };
+    const sources = new Map<string, MediaInputHandle>([
+      ['out', mediaHandle({ sourceId: 'out', audioSource: outgoing as unknown as MediaInputHandle['audioSource'] })],
+      [
+        'in',
+        mediaHandle({
+          sourceId: 'in',
+          audioSource: incoming as unknown as MediaInputHandle['audioSource'],
+          timing: incomingTiming,
+        }),
+      ],
+    ]);
+    const edit: Timeline = [
+      audioTrack({
+        id: 'a-track',
+        clips: [
+          defaultTimelineClip({ id: 'out', sourceId: 'out', start: 0, duration: 1, inPoint: 0 }),
+          defaultTimelineClip({ id: 'in', sourceId: 'in', start: 1, duration: 1, inPoint: 0.5 }),
+        ],
+      }),
+    ];
+
+    const mixed = await mixAudioWindow(edit, sources, 0.5, 4, 4, 1, {
+      transitions: [{ trackId: 'a-track', fromClipId: 'out', toClipId: 'in', durationS: 1 }],
+    });
+
+    expect(mixed[0]).toBe(0);
+    expect(mixed[1]!).toBeGreaterThan(0);
+    expect(mixed[2]!).toBeGreaterThan(mixed[1]!);
+    expect(mixed[3]!).toBeGreaterThan(mixed[2]!);
+    expect(incoming.pcmWindowAt).toHaveBeenCalledWith(0.25, 3, 1);
+  });
+
   it('clamps mixed audio to the valid sample range', async () => {
     const a = sourceWith(0.8);
     const b = sourceWith(0.8);
