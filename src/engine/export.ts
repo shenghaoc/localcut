@@ -17,7 +17,9 @@ import {
   accumulateMix,
   applyMasterAndClamp,
   applyMixStage,
+  computeClipFadeGain,
   equalPowerCrossfadeGains,
+  equalPowerPanLaw,
   resolveAudioTransitionAt,
   type AudioTransitionCut,
 } from './audio-mix';
@@ -286,35 +288,44 @@ export async function mixAudioWindow(
               outHandle.audioSource.pcmWindowAt(outSourceTime, runFrames, channels),
               inHandle.audioSource.pcmWindowAt(inSourceTime, runFrames, channels),
             ]);
-            const mixed = new Float32Array(runFrames * channels);
             const windowStart = cutTime - half;
+            const { left, right } = equalPowerPanLaw(track.pan);
             for (let frame = 0; frame < runFrames; frame += 1) {
               const frameTime = timelineTime + frame / sampleRate;
               const mixT = (frameTime - windowStart) / transitionSpec.durationS;
               const gains = equalPowerCrossfadeGains(mixT);
-              const outMixed = applyMixStage(outPcm.subarray(frame * channels, (frame + 1) * channels), channels, {
-                gain: track.gain * gains.outgoing,
-                pan: track.pan,
-                fadeInS: outgoing.audioFadeIn,
-                fadeOutS: outgoing.audioFadeOut,
-                clipOffsetS: frameTime - outgoing.start,
-                clipDurationS: outgoing.duration,
-                sampleRate,
-              });
-              const inMixed = applyMixStage(inPcm.subarray(frame * channels, (frame + 1) * channels), channels, {
-                gain: track.gain * gains.incoming,
-                pan: track.pan,
-                fadeInS: incoming.audioFadeIn,
-                fadeOutS: incoming.audioFadeOut,
-                clipOffsetS: frameTime - incoming.start,
-                clipDurationS: incoming.duration,
-                sampleRate,
-              });
-              for (let ch = 0; ch < channels; ch += 1) {
-                mixed[frame * channels + ch] = (outMixed[ch] ?? 0) + (inMixed[ch] ?? 0);
+              const outFade = computeClipFadeGain(
+                frameTime - outgoing.start,
+                outgoing.duration,
+                outgoing.audioFadeIn,
+                outgoing.audioFadeOut,
+              );
+              const inFade = computeClipFadeGain(
+                frameTime - incoming.start,
+                incoming.duration,
+                incoming.audioFadeIn,
+                incoming.audioFadeOut,
+              );
+              const outScale = track.gain * gains.outgoing * outFade;
+              const inScale = track.gain * gains.incoming * inFade;
+              const srcFrame = frame * channels;
+              const destFrame = (offsetFrames + frame) * channels;
+
+              if (channels === 1) {
+                const outVal = (outPcm[srcFrame] ?? 0) * outScale;
+                const inVal = (inPcm[srcFrame] ?? 0) * inScale;
+                out[destFrame] = (out[destFrame] ?? 0) + outVal + inVal;
+              } else {
+                const outL = outPcm[srcFrame] ?? 0;
+                const outR = outPcm[srcFrame + 1] ?? outL;
+                const inL = inPcm[srcFrame] ?? 0;
+                const inR = inPcm[srcFrame + 1] ?? inL;
+
+                out[destFrame] = (out[destFrame] ?? 0) + outL * left * outScale + inL * left * inScale;
+                out[destFrame + 1] =
+                  (out[destFrame + 1] ?? 0) + outR * right * outScale + inR * right * inScale;
               }
             }
-            accumulateMix(out, mixed, offsetFrames * channels);
           }
           offsetFrames += runFrames;
           continue;

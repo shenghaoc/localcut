@@ -1,4 +1,4 @@
-import { createSignal, onMount } from 'solid-js';
+import { createEffect, createSignal, onCleanup } from 'solid-js';
 import { levelToDb, meterHeightPercent, startMeterReader } from './meters';
 
 interface MeterStripProps {
@@ -30,14 +30,24 @@ export function MeterStrip(props: MeterStripProps) {
   const [rmsL, setRmsL] = createSignal(0);
   const [rmsR, setRmsR] = createSignal(0);
 
-  onMount(() =>
-    startMeterReader(props.meterSab, (levels) => {
-      setPeakL(levels.peakL);
-      setPeakR(levels.peakR);
-      setRmsL(levels.rmsL);
-      setRmsR(levels.rmsR);
-    }),
-  );
+  createEffect(() => {
+    const sab = props.meterSab;
+    if (!sab) {
+      setPeakL(0);
+      setPeakR(0);
+      setRmsL(0);
+      setRmsR(0);
+      return;
+    }
+    onCleanup(
+      startMeterReader(sab, (levels) => {
+        setPeakL(levels.peakL);
+        setPeakR(levels.peakR);
+        setRmsL(levels.rmsL);
+        setRmsR(levels.rmsR);
+      }),
+    );
+  });
 
   return (
     <div class="meter-strip" role="meter" aria-label="Master output levels">

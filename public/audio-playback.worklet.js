@@ -100,9 +100,10 @@ class AudioPlaybackProcessor extends AudioWorkletProcessor {
 
     if (this.meters && frames > 0) {
       this.meters[METER_PEAK_L] = peakL;
-      this.meters[METER_PEAK_R] = peakR || peakL;
+      this.meters[METER_PEAK_R] = outChannels > 1 ? peakR : peakL;
       this.meters[METER_RMS_L] = Math.sqrt(sumSqL / frames);
-      this.meters[METER_RMS_R] = Math.sqrt(sumSqR / frames) || this.meters[METER_RMS_L];
+      this.meters[METER_RMS_R] =
+        outChannels > 1 ? Math.sqrt(sumSqR / frames) : this.meters[METER_RMS_L];
     }
 
     Atomics.store(this.header, RING_READ, read);
