@@ -119,7 +119,6 @@ const sourceDescriptors = new Map<string, SourceDescriptor>();
 const binSourceIds = new Set<string>();
 const restoringSourceIds = new Set<string>();
 let thumbnailGen: ThumbnailGenerator | null = null;
-let nextClipSeq = 1;
 const THUMBNAIL_WIDTH = 160;
 const history = createTimelineHistory();
 let projectId = makeProjectId();
@@ -144,7 +143,13 @@ function makeSourceId(): string {
 }
 
 function makeClipId(sourceId: string): string {
-  return `clip-${sourceId}-${nextClipSeq++}`;
+  // A globally-unique suffix (not a per-session counter) so clips placed after a
+  // project restore can't collide with restored clip ids like `clip-<source>-…`.
+  const suffix =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2);
+  return `clip-${sourceId}-${suffix}`;
 }
 
 function makeProjectId(): string {
@@ -1425,16 +1430,20 @@ function handleReorderTrack(cmd: Extract<WorkerCommand, { type: 'reorder-track' 
 function handleRemoveAsset(cmd: Extract<WorkerCommand, { type: 'remove-asset' }>) {
   if (!binSourceIds.has(cmd.sourceId)) return;
   binSourceIds.delete(cmd.sourceId);
-  // Drop any clips placed from this source, then release its decoder + bitmaps.
-  commitTimelineMutation(() => {
-    let next = timeline;
-    for (const track of timeline) {
-      for (const clip of track.clips) {
-        if (clip.sourceId === cmd.sourceId) next = removeClip(next, track.id, clip.id);
-      }
-    }
-    return next;
-  });
+  // Drop any clips placed from this source in a single pass, then release its
+  // decoder + bitmaps. Guard the commit so removing an unplaced asset doesn't
+  // push an empty history entry.
+  const referenced = timeline.some((track) =>
+    track.clips.some((clip) => clip.sourceId === cmd.sourceId),
+  );
+  if (referenced) {
+    commitTimelineMutation(() =>
+      timeline.map((track) => ({
+        ...track,
+        clips: track.clips.filter((clip) => clip.sourceId !== cmd.sourceId),
+      })),
+    );
+  }
   const handle = sourceInputs.get(cmd.sourceId);
   if (handle) {
     handle.dispose();

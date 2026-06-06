@@ -76,6 +76,7 @@ async function openImageFile(file: File, sourceId: string): Promise<MediaInputHa
     bitmap.close();
   }
   const baseFrame = base;
+  let disposed = false;
 
   const still = new StillFrameSource({
     clone: () => baseFrame.clone(),
@@ -109,8 +110,11 @@ async function openImageFile(file: File, sourceId: string): Promise<MediaInputHa
     displayHeight,
     frameRate: STILL_FRAME_RATE,
     duration: STILL_MAX_DURATION_S,
-    thumbnailAt: () => Promise.resolve(baseFrame.clone()),
+    // Guard against an in-flight thumbnail request racing dispose(): cloning a
+    // closed VideoFrame throws, so serve null once the base frame is released.
+    thumbnailAt: () => Promise.resolve(disposed ? null : baseFrame.clone()),
     dispose: () => {
+      disposed = true;
       still.dispose();
     },
   };

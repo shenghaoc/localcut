@@ -83,6 +83,8 @@ export function TimelineClip(props: TimelineClipProps) {
   let activeTrimEdge: 'in' | 'out' | null = null;
   let cleanupPointerListeners: (() => void) | null = null;
   let filmstripCanvas: HTMLCanvasElement | undefined;
+  let thumbRequestTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingThumbRequest: number[] | null = null;
 
   function clearPointerListeners() {
     cleanupPointerListeners?.();
@@ -90,6 +92,9 @@ export function TimelineClip(props: TimelineClipProps) {
   }
 
   onCleanup(clearPointerListeners);
+  onCleanup(() => {
+    if (thumbRequestTimer) clearTimeout(thumbRequestTimer);
+  });
 
   // Filmstrip: sample thumbnails across a video clip, requesting any that are
   // missing and drawing the rest. Re-runs on zoom/trim (width changes the tile
@@ -129,7 +134,20 @@ export function TimelineClip(props: TimelineClipProps) {
       ctx.drawImage(entry.bitmap, i * tileW + (tileW - dw) / 2, (FILMSTRIP_HEIGHT - dh) / 2, dw, dh);
       ctx.restore();
     }
-    if (missing.length > 0) props.requestThumbnails(props.clip.sourceId, missing);
+    // Draw available tiles immediately, but debounce the worker requests: a live
+    // zoom/trim shifts the sampled timestamps every frame, which would otherwise
+    // flood the worker queue with timestamps abandoned on the next frame.
+    if (missing.length > 0) {
+      const sourceId = props.clip.sourceId;
+      pendingThumbRequest = missing;
+      if (thumbRequestTimer) clearTimeout(thumbRequestTimer);
+      thumbRequestTimer = setTimeout(() => {
+        thumbRequestTimer = null;
+        const times = pendingThumbRequest;
+        pendingThumbRequest = null;
+        if (times) props.requestThumbnails?.(sourceId, times);
+      }, 140);
+    }
   });
 
   function scheduleTrim(clientX: number, trackRect: DOMRect) {
