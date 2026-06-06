@@ -1,10 +1,11 @@
-import { createSignal, onCleanup, Show } from 'solid-js';
+import { createEffect, createSignal, onCleanup, Show } from 'solid-js';
 import { type TimelineClipSnapshot as ProtocolTimelineClip, type WaveformPeaks } from '../protocol';
 import {
   resolveSnap,
   timelineTimeAtClientX,
   type SnapTarget,
 } from './timeline-interaction';
+import type { ThumbnailEntry } from './thumbnail-store';
 import { Waveform } from './Waveform';
 
 interface TimelineClipProps {
@@ -21,11 +22,26 @@ interface TimelineClipProps {
   onSelect?: (additive: boolean, exclusive: boolean) => void;
   peaks?: WaveformPeaks | null;
   isAudio?: boolean;
+  getThumbnail?: (sourceId: string, timestamp: number) => ThumbnailEntry | null;
+  thumbnailVersion?: () => number;
+  requestThumbnails?: (sourceId: string, timestamps: number[]) => void;
 }
 
 const EDGE_HANDLE_PX = 10;
 const TRIM_DEBOUNCE_MS = 60;
 const SNAP_THRESHOLD_PX = 8;
+const FILMSTRIP_TILE_PX = 88;
+const FILMSTRIP_MAX_TILES = 16;
+const FILMSTRIP_HEIGHT = 34;
+
+/** Source timestamps sampled across a video clip for its filmstrip tiles. */
+function filmstripTimestamps(clip: ProtocolTimelineClip, tileCount: number): number[] {
+  const times: number[] = [];
+  for (let i = 0; i < tileCount; i += 1) {
+    times.push(clip.inPoint + ((i + 0.5) / tileCount) * clip.duration);
+  }
+  return times;
+}
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -66,6 +82,7 @@ export function TimelineClip(props: TimelineClipProps) {
   let pendingTrimTime = props.clip.start;
   let activeTrimEdge: 'in' | 'out' | null = null;
   let cleanupPointerListeners: (() => void) | null = null;
+  let filmstripCanvas: HTMLCanvasElement | undefined;
 
   function clearPointerListeners() {
     cleanupPointerListeners?.();
@@ -73,6 +90,47 @@ export function TimelineClip(props: TimelineClipProps) {
   }
 
   onCleanup(clearPointerListeners);
+
+  // Filmstrip: sample thumbnails across a video clip, requesting any that are
+  // missing and drawing the rest. Re-runs on zoom/trim (width changes the tile
+  // sampling) and when a transferred bitmap lands (thumbnailVersion bumps).
+  createEffect(() => {
+    if (props.isAudio || !props.getThumbnail || !props.requestThumbnails) return;
+    props.thumbnailVersion?.();
+    const canvas = filmstripCanvas;
+    if (!canvas) return;
+    const width = Math.max(1, Math.floor(props.clip.duration * props.pxPerSecond));
+    const tileCount = Math.min(
+      FILMSTRIP_MAX_TILES,
+      Math.max(1, Math.floor(width / FILMSTRIP_TILE_PX)),
+    );
+    const times = filmstripTimestamps(props.clip, tileCount);
+    if (canvas.width !== width) canvas.width = width;
+    if (canvas.height !== FILMSTRIP_HEIGHT) canvas.height = FILMSTRIP_HEIGHT;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, width, FILMSTRIP_HEIGHT);
+
+    const tileW = width / tileCount;
+    const missing: number[] = [];
+    for (let i = 0; i < tileCount; i += 1) {
+      const entry = props.getThumbnail(props.clip.sourceId, times[i]!);
+      if (!entry) {
+        missing.push(times[i]!);
+        continue;
+      }
+      const scale = Math.max(tileW / entry.width, FILMSTRIP_HEIGHT / entry.height);
+      const dw = entry.width * scale;
+      const dh = entry.height * scale;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(i * tileW, 0, tileW, FILMSTRIP_HEIGHT);
+      ctx.clip();
+      ctx.drawImage(entry.bitmap, i * tileW + (tileW - dw) / 2, (FILMSTRIP_HEIGHT - dh) / 2, dw, dh);
+      ctx.restore();
+    }
+    if (missing.length > 0) props.requestThumbnails(props.clip.sourceId, missing);
+  });
 
   function scheduleTrim(clientX: number, trackRect: DOMRect) {
     if (!activeTrimEdge || !props.onTrim) return;
@@ -240,6 +298,16 @@ export function TimelineClip(props: TimelineClipProps) {
       onDblClick={onSplit}
     >
       <span class="timeline-clip-inner">
+        <Show when={!props.isAudio && props.getThumbnail}>
+          <canvas
+            class="timeline-clip-filmstrip"
+            height={FILMSTRIP_HEIGHT}
+            ref={(el) => {
+              filmstripCanvas = el;
+            }}
+            aria-hidden="true"
+          />
+        </Show>
         <Show when={props.isAudio && props.peaks}>
           {(peaks) => (
             <Waveform peaks={peaks()} width={waveformWidth()} height={24} />

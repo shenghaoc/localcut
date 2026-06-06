@@ -32,19 +32,23 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 
 **Active:**
 
-- [**Phase 16: Audio mixing polish**](.kiro/specs/phase-16-audio-mixing/tasks.md) — shared mix stage; master bus; per-track pan; clip fades + transition crossfades; AudioWorklet meters over SAB.
+- [**Phase 12: Multi-track compositing + transforms**](.kiro/specs/phase-12-compositing-transform/tasks.md) — layered resolve; N-layer single-submission composite; per-clip position/scale/rotation/opacity; preview gizmo; fit/letterbox.
 
 **Planned:**
 
-- [**Phase 10: Timeline UX + gap model**](.kiro/specs/phase-10-timeline-ux/tasks.md) — px-per-second zoom/scroll; gap-tolerant time-based moves; snapping; multi-select; copy/paste/duplicate; markers; keyboard map.
-- [**Phase 11: Media library + stills + tracks**](.kiro/specs/phase-11-media-library/tasks.md) — batch import; media bin with budgeted worker thumbnails; image-still + audio-only sources; explicit track management; filmstrips.
-- [**Phase 12: Multi-track compositing + transforms**](.kiro/specs/phase-12-compositing-transform/tasks.md) — layered resolve; N-layer single-submission composite; per-clip position/scale/rotation/opacity; preview gizmo; fit/letterbox.
 - [**Phase 13: Transitions**](.kiro/specs/phase-13-transitions/tasks.md) — cut-point transition model; dual-stream readahead; 2-input mix pass in the single submission; export parity.
 - [**Phase 14: Titles + text**](.kiro/specs/phase-14-titles-text/tasks.md) — overlay text clips; edit-time raster cached as a GPU texture; bundled offline fonts; transform-driven layout; safe-area guides.
 - [**Phase 15: Keyframes + advanced colour**](.kiro/specs/phase-15-keyframes-colour/tasks.md) — keyframe tracks with shared preview/export interpolation; Inspector keyframe UI; `.cube` LUT import as a 3D-texture pass.
-- [**Phase 17: Export expansion**](.kiro/specs/phase-17-export-expansion/tasks.md) — probed codec/container choice (H.264/VP9/AV1); resolution/fps/bitrate overrides; in/out range export; persisted settings.
 
 **Completed:**
+
+- [**Phase 11: Media library + stills + tracks**](.kiro/specs/phase-11-media-library/tasks.md) — batch import; media bin with budgeted worker thumbnails; image-still + audio-only sources; explicit track management; filmstrips.
+
+- [**Phase 17: Export expansion**](.kiro/specs/phase-17-export-expansion/tasks.md) — probed codec/container choice (H.264/VP9/AV1); resolution/fps/bitrate overrides; in/out range export; persisted settings.
+
+- [**Phase 16: Audio mixing polish**](.kiro/specs/phase-16-audio-mixing/tasks.md) — shared mix stage; master bus; per-track pan; clip fades + transition crossfades; AudioWorklet meters over SAB.
+
+- [**Phase 10: Timeline UX + gap model**](.kiro/specs/phase-10-timeline-ux/tasks.md) — px-per-second zoom/scroll; gap-tolerant time-based moves; snapping; multi-select; copy/paste/duplicate; markers; keyboard map.
 
 - [**Phase 9: Project persistence + undo/redo**](.kiro/specs/phase-9-persistence-undo/tasks.md) — versioned timeline serialization; worker-owned snapshot undo/redo; IndexedDB autosave + restore-on-launch; layered media re-linking.
 

@@ -1,18 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import {
   addMarker,
+  addTrack,
   closeGaps,
   createEmptyTimeline,
   DEFAULT_TRACK_MIX,
   deleteMarker,
   defaultClipEffects,
+  defaultTimelineClip,
   duplicateClips,
   getTimelineDuration,
+  insertClip,
   moveClips,
   moveClipTo,
   pasteClips,
   removeClip,
+  removeTrack,
+  reorderTrack,
   resolveAt,
+  setClipDuration,
   setClipEffectParam,
   setClipAudioFade,
   setTrackPan,
@@ -546,5 +552,74 @@ describe('timeline', () => {
     const deleted = deleteMarker(markers, markers[0]!.id);
     expect(deleted).toEqual([{ id: 'marker-existing', time: 8, label: 'Existing' }]);
     expect(deleteMarker(deleted, 'missing')).toBe(deleted);
+  });
+});
+
+describe('timeline tracks', () => {
+  function videoTrack(id: string, clips: TimelineClip[] = []): TimelineTrack {
+    return { id, type: 'video', ...DEFAULT_TRACK_MIX, clips };
+  }
+
+  it('adds an empty track of the requested type with default mix', () => {
+    const next = addTrack(createEmptyTimeline(), 'audio');
+    expect(next).toHaveLength(1);
+    expect(next[0]!.type).toBe('audio');
+    expect(next[0]!.clips).toEqual([]);
+    expect(next[0]!).toMatchObject(DEFAULT_TRACK_MIX);
+    expect(next[0]!.id).toMatch(/^track-audio-/);
+  });
+
+  it('removes a track and returns the original on a missing id', () => {
+    const timeline = [videoTrack('a'), videoTrack('b')];
+    expect(removeTrack(timeline, 'a').map((t) => t.id)).toEqual(['b']);
+    expect(removeTrack(timeline, 'missing')).toBe(timeline);
+  });
+
+  it('reorders tracks within bounds and is a no-op otherwise', () => {
+    const timeline = [videoTrack('a'), videoTrack('b'), videoTrack('c')];
+    expect(reorderTrack(timeline, 'c', 0).map((t) => t.id)).toEqual(['c', 'a', 'b']);
+    expect(reorderTrack(timeline, 'a', 99).map((t) => t.id)).toEqual(['b', 'c', 'a']);
+    expect(reorderTrack(timeline, 'a', 0)).toBe(timeline);
+    expect(reorderTrack(timeline, 'missing', 1)).toBe(timeline);
+  });
+
+  it('inserts a clip when there is room and rejects overlaps', () => {
+    const timeline = [
+      videoTrack('v', [
+        defaultTimelineClip({ id: 'a', sourceId: 's', start: 0, duration: 2, inPoint: 0 }),
+      ]),
+    ];
+    const placed = insertClip(
+      timeline,
+      'v',
+      defaultTimelineClip({ id: 'b', sourceId: 's', start: 3, duration: 2, inPoint: 0 }),
+    );
+    expect(placed[0]!.clips.map((c) => c.id)).toEqual(['a', 'b']);
+
+    const overlapping = insertClip(
+      timeline,
+      'v',
+      defaultTimelineClip({ id: 'c', sourceId: 's', start: 1, duration: 2, inPoint: 0 }),
+    );
+    expect(overlapping).toBe(timeline);
+    expect(insertClip(timeline, 'missing', defaultTimelineClip({ id: 'd', sourceId: 's', start: 9, duration: 1, inPoint: 0 }))).toBe(timeline);
+  });
+
+  it('sets still clip duration, bounded by the next neighbor', () => {
+    const timeline = [
+      videoTrack('v', [
+        defaultTimelineClip({ id: 'still', sourceId: 'img', start: 0, duration: 5, inPoint: 0 }),
+        defaultTimelineClip({ id: 'next', sourceId: 's', start: 8, duration: 2, inPoint: 0 }),
+      ]),
+    ];
+    const grown = setClipDuration(timeline, 'v', 'still', 6);
+    expect(grown[0]!.clips[0]!.duration).toBe(6);
+
+    // Clamps to the gap before the next clip (start 8 - start 0).
+    const clamped = setClipDuration(timeline, 'v', 'still', 20);
+    expect(clamped[0]!.clips[0]!.duration).toBe(8);
+
+    expect(setClipDuration(timeline, 'v', 'still', 0)).toBe(timeline);
+    expect(setClipDuration(timeline, 'v', 'still', 5)).toBe(timeline);
   });
 });

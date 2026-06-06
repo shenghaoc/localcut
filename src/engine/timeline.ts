@@ -597,6 +597,90 @@ export function setClipAudioFade(
   return next;
 }
 
+/** Appends a new empty track of the given type with default mix settings. */
+export function addTrack(timeline: Timeline, type: TimelineTrack['type']): Timeline {
+  return [
+    ...timeline,
+    {
+      id: newId(`track-${type}`),
+      type,
+      clips: [],
+      ...DEFAULT_TRACK_MIX,
+    },
+  ];
+}
+
+/** Removes a track (and any clips it holds); returns the original on no-op. */
+export function removeTrack(timeline: Timeline, trackId: string): Timeline {
+  const next = timeline.filter((track) => track.id !== trackId);
+  return next.length === timeline.length ? timeline : next;
+}
+
+/** Moves a track to `toIndex`, clamped to bounds; returns the original on no-op. */
+export function reorderTrack(timeline: Timeline, trackId: string, toIndex: number): Timeline {
+  if (!Number.isInteger(toIndex)) return timeline;
+  const from = timeline.findIndex((track) => track.id === trackId);
+  if (from < 0) return timeline;
+  const clamped = Math.min(Math.max(0, toIndex), timeline.length - 1);
+  if (clamped === from) return timeline;
+  const next = [...timeline];
+  const [moved] = next.splice(from, 1);
+  next.splice(clamped, 0, moved!);
+  return next;
+}
+
+/**
+ * Inserts a pre-built clip onto a track, keeping clips sorted by start. Rejects
+ * (returns the original timeline) when the clip would overlap an existing clip or
+ * the track is missing / of a mismatched discriminant.
+ */
+export function insertClip(timeline: Timeline, trackId: string, clip: TimelineClip): Timeline {
+  const track = findTrack(timeline, trackId);
+  if (!track) return timeline;
+  if (!finite(clip.start) || !finite(clip.duration) || clip.start < 0 || clip.duration <= 0) {
+    return timeline;
+  }
+  const next = cloneTimeline(timeline);
+  const destination = next.find((t) => t.id === trackId)!;
+  destination.clips = sortByStart([...destination.clips, cloneClip(clip)]);
+  if (trackHasOverlaps(destination.clips)) return timeline;
+  return next;
+}
+
+/**
+ * Sets a clip's on-timeline duration directly (used by still sources, whose
+ * duration is clip-driven rather than bounded by decoded media). Bounded below by
+ * a positive floor and above by the next same-track neighbor so clips never overlap.
+ */
+export function setClipDuration(
+  timeline: Timeline,
+  trackId: string,
+  clipId: string,
+  durationS: number,
+): Timeline {
+  if (!finite(durationS) || durationS <= 0) return timeline;
+  const loc = trackWithClip(timeline, trackId, clipId);
+  if (!loc) return timeline;
+
+  const clip = timeline[loc.trackIndex]!.clips[loc.clipIndex]!;
+  if (clip.duration === durationS) return timeline;
+
+  let nextStart = Number.POSITIVE_INFINITY;
+  for (const other of timeline[loc.trackIndex]!.clips) {
+    if (other.id === clip.id) continue;
+    if (other.start >= clip.start + clip.duration && other.start < nextStart) {
+      nextStart = other.start;
+    }
+  }
+  const maxDuration = nextStart === Number.POSITIVE_INFINITY ? durationS : nextStart - clip.start;
+  const bounded = Math.min(durationS, maxDuration);
+  if (bounded <= 0 || bounded === clip.duration) return timeline;
+
+  const next = cloneTimeline(timeline);
+  next[loc.trackIndex]!.clips[loc.clipIndex] = { ...cloneClip(clip), duration: bounded };
+  return next;
+}
+
 export function addMarker(
   markers: readonly TimelineMarker[],
   time: number,

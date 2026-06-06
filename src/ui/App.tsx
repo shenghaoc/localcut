@@ -6,6 +6,7 @@ import {
   type ExportCodecSupport,
   type ExportProgress,
   type ExportSettings,
+  type MediaAssetSnapshot,
   type MediaMetadata,
   type SourceDescriptorSnapshot,
   type TimelineClipboardClip,
@@ -22,6 +23,8 @@ import { PreviewCanvas } from './PreviewCanvas';
 import { Toolbar } from './Toolbar';
 import { Timeline } from './Timeline';
 import { Inspector, type SelectedClip } from './Inspector';
+import { MediaBin } from './MediaBin';
+import { ThumbnailStore } from './thumbnail-store';
 import { AudioEngine } from './audio-engine';
 import { ExportDialog } from './ExportDialog';
 import { Button, buttonVariants } from './components/button';
@@ -42,17 +45,31 @@ import {
 import { extractCompatibilityPreview } from '../compatibility/thumbnail';
 import PipelineWorker from '../engine/worker.ts?worker';
 
-const VIDEO_ACCEPT = 'video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm';
+const VIDEO_ACCEPT =
+  'video/mp4,video/quicktime,video/webm,image/*,audio/*,.mp4,.mov,.webm,.png,.jpg,.jpeg,.webp,.gif,.mp3,.m4a,.wav,.ogg';
 const VIDEO_PICKER_TYPES = [
   {
-    description: 'Video files',
+    description: 'Media files',
     accept: {
       'video/mp4': ['.mp4'],
       'video/quicktime': ['.mov'],
       'video/webm': ['.webm'],
+      'image/*': ['.png', '.jpg', '.jpeg', '.webp', '.gif'],
+      'audio/*': ['.mp3', '.m4a', '.wav', '.ogg'],
     },
   },
 ];
+
+const MEDIA_FILE_PATTERN = /\.(mp4|mov|webm|png|jpe?g|webp|gif|bmp|avif|mp3|m4a|wav|ogg)$/i;
+
+function isImportableFile(file: File): boolean {
+  return (
+    file.type.startsWith('video/') ||
+    file.type.startsWith('image/') ||
+    file.type.startsWith('audio/') ||
+    MEDIA_FILE_PATTERN.test(file.name)
+  );
+}
 
 interface CompatibilityPreviewState {
   url: string;
@@ -136,6 +153,11 @@ export function App() {
   });
   const [restoreOffer, setRestoreOffer] = createSignal<RestoreOfferState | null>(null);
   const [unresolvedSources, setUnresolvedSources] = createSignal<SourceDescriptorSnapshot[]>([]);
+  const [assets, setAssets] = createSignal<MediaAssetSnapshot[]>([]);
+  const [thumbnailVersion, setThumbnailVersion] = createSignal(0);
+  const thumbnailStore = new ThumbnailStore();
+
+  const unresolvedIds = createMemo(() => new Set(unresolvedSources().map((s) => s.sourceId)));
 
   const {
     offlineReady: [offlineReady],
@@ -296,6 +318,24 @@ export function App() {
         break;
       case 'history-state':
         setHistoryState({ canUndo: msg.canUndo, canRedo: msg.canRedo });
+        break;
+      case 'media-assets': {
+        setAssets(msg.assets);
+        // Free bitmaps for assets that left the bin.
+        const live = new Set(msg.assets.map((asset) => asset.sourceId));
+        for (const id of thumbnailStore.sourceIds()) {
+          if (!live.has(id)) thumbnailStore.clearSource(id);
+        }
+        setThumbnailVersion((v) => v + 1);
+        break;
+      }
+      case 'thumbnail':
+        thumbnailStore.set(msg.sourceId, msg.timestamp, {
+          bitmap: msg.bitmap,
+          width: msg.width,
+          height: msg.height,
+        });
+        setThumbnailVersion((v) => v + 1);
         break;
       case 'restore-available':
         setRestoreOffer({
@@ -487,6 +527,9 @@ export function App() {
     setSelectedClipRefs([]);
     setTimelineClipboard([]);
     setWaveformPeaks({});
+    setAssets([]);
+    thumbnailStore.clear();
+    setThumbnailVersion((v) => v + 1);
     setHistoryState({ canUndo: false, canRedo: false });
   }
 
@@ -519,13 +562,14 @@ export function App() {
   async function pickImportMedia(): Promise<boolean> {
     if (typeof window.showOpenFilePicker !== 'function') return false;
     try {
-      const [handle] = await window.showOpenFilePicker({
+      const handles = await window.showOpenFilePicker({
         types: VIDEO_PICKER_TYPES,
-        multiple: false,
+        multiple: true,
       });
-      if (!handle) return true;
-      const file = await handle.getFile();
-      importMedia(file, handle);
+      for (const handle of handles) {
+        const file = await handle.getFile();
+        importMedia(file, handle);
+      }
       return true;
     } catch (error) {
       if (isAbortError(error)) return true;
@@ -566,9 +610,9 @@ export function App() {
 
   function handleImportInput(event: Event) {
     const input = event.currentTarget as HTMLInputElement;
-    const file = input.files?.[0] ?? null;
+    const files = input.files ? Array.from(input.files) : [];
     input.value = '';
-    if (file) importMedia(file);
+    for (const file of files) importMedia(file);
   }
 
   function exportFileName(settings: ExportSettings): string {
@@ -782,6 +826,9 @@ export function App() {
     }
 
     const onDragOver = (e: DragEvent) => {
+      // Ignore internal drags (e.g. a media-bin asset onto a track); only OS file
+      // drops carry the "Files" type and should raise the import overlay.
+      if (!e.dataTransfer || !Array.from(e.dataTransfer.types).includes('Files')) return;
       e.preventDefault();
       setIsDraggingFile(true);
     };
@@ -791,12 +838,11 @@ export function App() {
     const onDrop = (e: DragEvent) => {
       e.preventDefault();
       setIsDraggingFile(false);
-      const file = e.dataTransfer?.files[0];
-      if (
-        file &&
-        (file.type.startsWith('video/') || /\.(mp4|mov|webm)$/i.test(file.name))
-      ) {
-        onFileDrop(file);
+      const files = e.dataTransfer?.files;
+      if (files && files.length > 0) {
+        for (const file of files) {
+          if (isImportableFile(file)) onFileDrop(file);
+        }
       }
     };
     window.addEventListener('dragover', onDragOver);
@@ -812,6 +858,7 @@ export function App() {
       compatibilityImportGeneration++;
       pendingRelinkSourceId = null;
       clearCompatibilityPreview();
+      thumbnailStore.clear();
       if (worker && bridge) {
         const workerToDispose = worker;
         let terminateFallback: ReturnType<typeof setTimeout>;
@@ -955,7 +1002,20 @@ export function App() {
           />
         </section>
       </Show>
-      <main class="workspace">
+      <main class={`workspace${accelerated() ? ' has-bin' : ''}`}>
+        <Show when={accelerated()}>
+          <MediaBin
+            assets={assets}
+            unresolvedIds={unresolvedIds}
+            getThumbnail={(sourceId, timestamp) => thumbnailStore.get(sourceId, timestamp)}
+            thumbnailVersion={thumbnailVersion}
+            requestThumbnails={(sourceId, timestamps) =>
+              bridge?.send({ type: 'request-thumbnails', sourceId, timestamps })
+            }
+            onPlace={(sourceId) => bridge?.send({ type: 'place-clip', sourceId })}
+            onRemove={(sourceId) => bridge?.send({ type: 'remove-asset', sourceId })}
+          />
+        </Show>
         <section class="preview panel">
           <PreviewCanvas onOffscreenReady={sendInit} />
           <Show when={compatibilityPreview() !== null}>
@@ -1002,6 +1062,7 @@ export function App() {
                   class="import-picker-input"
                   type="file"
                   accept={VIDEO_ACCEPT}
+                  multiple
                   onChange={handleImportInput}
                   disabled={importBlocked()}
                   aria-label="Import media"
@@ -1043,7 +1104,7 @@ export function App() {
         currentTime={clock.currentTime}
         duration={clock.duration}
         frameRate={() => metadata()?.video?.frameRate ?? null}
-        hasMedia={(metadata() !== null || hasTimeline() || markers().length > 0) && accelerated()}
+        hasMedia={(metadata() !== null || hasTimeline() || markers().length > 0 || assets().length > 0) && accelerated()}
         timeline={timeline}
         markers={markers}
         selectedClipRefs={selectedClipRefs}
@@ -1063,6 +1124,15 @@ export function App() {
         onAddMarker={(time, label) => bridge?.send({ type: 'add-marker', time, label })}
         onDeleteMarker={(markerId) => bridge?.send({ type: 'delete-marker', markerId })}
         onCloseGaps={(trackId) => bridge?.send(trackId ? { type: 'close-gaps', trackId } : { type: 'close-gaps' })}
+        onPlaceAsset={(sourceId, trackId, start) => bridge?.send({ type: 'place-clip', sourceId, trackId, start })}
+        onAddTrack={(trackType) => bridge?.send({ type: 'add-track', trackType })}
+        onRemoveTrack={(trackId) => bridge?.send({ type: 'remove-track', trackId })}
+        onReorderTrack={(trackId, toIndex) => bridge?.send({ type: 'reorder-track', trackId, toIndex })}
+        getThumbnail={(sourceId, timestamp) => thumbnailStore.get(sourceId, timestamp)}
+        thumbnailVersion={thumbnailVersion}
+        onRequestThumbnails={(sourceId, timestamps) =>
+          bridge?.send({ type: 'request-thumbnails', sourceId, timestamps })
+        }
       />
       <footer class="status-bar">
         <span role="status" aria-live={exporting() ? 'off' : 'polite'} aria-atomic={exporting() ? 'false' : 'true'}>{statusLine()}</span>

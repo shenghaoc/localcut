@@ -38,6 +38,7 @@ function sourceFixture(): SourceDescriptor {
   return {
     sourceId: 'source-1',
     fileName: 'cutaway.mp4',
+    kind: 'video',
     byteSize: 42_000,
     durationS: 12.04,
     mimeType: 'video/mp4',

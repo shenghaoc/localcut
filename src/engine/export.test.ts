@@ -28,6 +28,7 @@ function audioTrack(
 function mediaHandle(partial: Partial<MediaInputHandle>): MediaInputHandle {
   return {
     sourceId: 'src',
+    kind: 'video',
     metadata: {
       fileName: 'clip.mp4',
       duration: 10,
@@ -44,6 +45,7 @@ function mediaHandle(partial: Partial<MediaInputHandle>): MediaInputHandle {
     displayHeight: 1080,
     frameRate: 30,
     duration: 10,
+    thumbnailAt: vi.fn(async () => null),
     dispose: vi.fn(),
     ...partial,
   };

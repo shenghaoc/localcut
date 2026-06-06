@@ -139,6 +139,13 @@ export async function loadStoredSource(sourceId: string): Promise<StoredSourceRe
   };
 }
 
+export async function deleteStoredSource(sourceId: string): Promise<void> {
+  const db = await openDatabase();
+  const transaction = db.transaction(SOURCE_STORE, 'readwrite');
+  transaction.objectStore(SOURCE_STORE).delete(sourceId);
+  await transactionDone(transaction);
+}
+
 export async function saveStoredSource(record: StoredSourceRecord): Promise<void> {
   const db = await openDatabase();
   const transaction = db.transaction(SOURCE_STORE, 'readwrite');
