@@ -837,6 +837,11 @@ export function App() {
     const staticNumbers = staticPatch as Partial<
       Record<Exclude<keyof TimelineClipSnapshot['transform'], 'fit'>, number>
     >;
+    const keyedUpdates: Array<{
+      key: ClipKeyframeParamSnapshot;
+      value: number;
+      easing: 'linear';
+    }> = [];
     for (const [rawKey, value] of Object.entries(transform)) {
       if (rawKey === 'fit') {
         staticPatch.fit = value as TimelineClipSnapshot['transform']['fit'];
@@ -850,14 +855,15 @@ export function App() {
         staticNumbers[key as Exclude<keyof TimelineClipSnapshot['transform'], 'fit'>] = value;
         continue;
       }
+      keyedUpdates.push({ key, value, easing: 'linear' });
+    }
+    if (keyedUpdates.length > 0) {
       bridge?.send({
-        type: 'set-keyframe',
+        type: 'set-keyframes',
         trackId: sel.trackId,
         clipId: sel.clipId,
-        key,
         t: clock.currentTime(),
-        value,
-        easing: 'linear',
+        keyframes: keyedUpdates,
       });
     }
     return staticPatch;

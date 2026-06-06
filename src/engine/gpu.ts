@@ -180,6 +180,10 @@ export class PreviewRenderer {
     this.effectChain.importLut(lut);
   }
 
+  pruneLuts(activeKeys: ReadonlySet<string>): void {
+    this.effectChain.pruneLuts(activeKeys);
+  }
+
   /**
    * (Re)allocates the compute textures and resizes the canvas backing store.
    * Cheap no-op when the size is unchanged.

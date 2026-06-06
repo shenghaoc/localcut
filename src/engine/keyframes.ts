@@ -1,3 +1,4 @@
+import { KEYFRAME_EPSILON } from '../protocol';
 import type {
   ClipEffectParamsSnapshot,
   ClipKeyframeParamSnapshot,
@@ -8,8 +9,6 @@ import type {
 } from '../protocol';
 import { DEFAULT_CLIP_EFFECTS, normalizeClipEffects, type ClipEffectParams } from './effects';
 import { DEFAULT_TRANSFORM, normalizeTransform, type TransformParams } from './transform';
-
-const KEYFRAME_EPSILON = 1e-4;
 
 export type KeyframeEasing = KeyframeEasingSnapshot;
 export type Keyframe = KeyframeSnapshot;
@@ -78,21 +77,45 @@ export function isClipKeyframeParam(key: unknown): key is ClipKeyframeParam {
 
 export function normalizeKeyframeTrack(track: readonly Keyframe[] | undefined, maxT = Number.POSITIVE_INFINITY): Keyframe[] {
   if (!track) return [];
-  const byTime = new Map<number, Keyframe>();
-  for (const frame of track) {
+  const candidates: Array<Keyframe & { sourceIndex: number }> = [];
+  for (let sourceIndex = 0; sourceIndex < track.length; sourceIndex += 1) {
+    const frame = track[sourceIndex]!;
     if (!finite(frame.t) || !finite(frame.value) || frame.t < 0 || frame.t > maxT) continue;
-    const existingKey = [...byTime.keys()].find((t) => sameTime(t, frame.t));
-    const normalized: Keyframe = {
+    candidates.push({
       t: Math.max(0, frame.t),
       value: frame.value,
       easing: normalizeEasing(frame.easing),
-    };
-    if (existingKey !== undefined) {
-      byTime.delete(existingKey);
-    }
-    byTime.set(normalized.t, normalized);
+      sourceIndex,
+    });
   }
-  return [...byTime.values()].sort((a, b) => a.t - b.t);
+  candidates.sort((a, b) => a.t - b.t);
+
+  const normalized: Keyframe[] = [];
+  let selected: (Keyframe & { sourceIndex: number }) | null = null;
+  for (const frame of candidates) {
+    if (selected && sameTime(selected.t, frame.t)) {
+      if (frame.sourceIndex > selected.sourceIndex) {
+        selected = frame;
+      }
+      continue;
+    }
+    if (selected) {
+      normalized.push({
+        t: selected.t,
+        value: selected.value,
+        easing: selected.easing,
+      });
+    }
+    selected = frame;
+  }
+  if (selected) {
+    normalized.push({
+      t: selected.t,
+      value: selected.value,
+      easing: selected.easing,
+    });
+  }
+  return normalized;
 }
 
 export function normalizeClipKeyframes(
@@ -181,15 +204,15 @@ function easeAmount(easing: KeyframeEasing, amount: number): number {
 
 export function sampleKeyframes(track: readonly Keyframe[] | undefined, t: number, fallback: number): number {
   if (!finite(t)) return fallback;
-  const normalized = normalizeKeyframeTrack(track);
-  if (normalized.length === 0) return fallback;
-  if (t <= normalized[0]!.t) return normalized[0]!.value;
-  const last = normalized[normalized.length - 1]!;
+  const frames = track ?? [];
+  if (frames.length === 0) return fallback;
+  if (t <= frames[0]!.t) return frames[0]!.value;
+  const last = frames[frames.length - 1]!;
   if (t >= last.t) return last.value;
 
-  for (let index = 0; index < normalized.length - 1; index += 1) {
-    const left = normalized[index]!;
-    const right = normalized[index + 1]!;
+  for (let index = 0; index < frames.length - 1; index += 1) {
+    const left = frames[index]!;
+    const right = frames[index + 1]!;
     if (t < left.t || t > right.t) continue;
     if (sameTime(t, right.t)) return right.value;
     const span = Math.max(KEYFRAME_EPSILON, right.t - left.t);
@@ -208,7 +231,7 @@ export function sampleClipParamsAt(clip: KeyframedClip, timelineTime: number): S
   const localTime = clipLocalTime(clip, timelineTime);
   const effects = normalizeClipEffects(clip.effects);
   const transform = normalizeTransform(clip.transform);
-  const keyframes = normalizeClipKeyframes(clip.keyframes, Math.max(0, clip.duration));
+  const keyframes = clip.keyframes;
   if (!keyframes) {
     return { effects, transform };
   }

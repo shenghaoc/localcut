@@ -1,3 +1,4 @@
+import { KEYFRAME_EPSILON, TIMELINE_EPSILON } from '../protocol';
 import type {
   ClipEffectParamsSnapshot,
   ClipKeyframeParamSnapshot,
@@ -7,10 +8,8 @@ import type {
   TransformParamsSnapshot,
 } from '../protocol';
 
-const EPSILON = 1e-3;
-
 function sameTime(a: number, b: number): boolean {
-  return Math.abs(a - b) <= EPSILON;
+  return Math.abs(a - b) <= KEYFRAME_EPSILON;
 }
 
 function amountFor(easing: KeyframeSnapshot['easing'], amount: number): number {
@@ -23,7 +22,7 @@ function amountFor(easing: KeyframeSnapshot['easing'], amount: number): number {
 export function clipLocalTime(clip: Pick<TimelineClipSnapshot, 'start' | 'duration'>, timelineTime: number): number | null {
   if (!Number.isFinite(timelineTime)) return null;
   const local = timelineTime - clip.start;
-  if (local < -EPSILON || local > clip.duration + EPSILON) return null;
+  if (local < -TIMELINE_EPSILON || local > clip.duration + TIMELINE_EPSILON) return null;
   return Math.min(Math.max(0, local), clip.duration);
 }
 
@@ -52,7 +51,7 @@ export function sampleKeyframes(
     const right = frames[index + 1]!;
     if (localTime < left.t || localTime > right.t) continue;
     if (sameTime(localTime, right.t)) return right.value;
-    const span = Math.max(EPSILON, right.t - left.t);
+    const span = Math.max(KEYFRAME_EPSILON, right.t - left.t);
     const amount = amountFor(left.easing, (localTime - left.t) / span);
     return left.value + (right.value - left.value) * amount;
   }

@@ -255,6 +255,10 @@ export class EffectChain {
     this.luts.upsert(lut);
   }
 
+  pruneLuts(activeKeys: ReadonlySet<string>): void {
+    this.luts.prune(activeKeys);
+  }
+
   private encodeLut(
     encoder: GPUCommandEncoder,
     currentSrc: GPUTextureView,

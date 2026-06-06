@@ -170,7 +170,7 @@ export function parsePersistedClipLut(value: unknown): ClipLut | null | undefine
   const min = domainMin.map(Number);
   const max = domainMax.map(Number);
   if (min.some((n) => !Number.isFinite(n)) || max.some((n) => !Number.isFinite(n))) return null;
-  if ([...values].some((n) => !Number.isFinite(n))) return null;
+  if (values.some((n) => !Number.isFinite(n))) return null;
   return {
     key,
     fileName,
@@ -253,6 +253,14 @@ export class LutTextureCache {
 
   get(key: string): LutTextureHandle | null {
     return this.handles.get(key) ?? null;
+  }
+
+  prune(activeKeys: ReadonlySet<string>): void {
+    for (const [key, handle] of this.handles) {
+      if (activeKeys.has(key)) continue;
+      handle.texture.destroy();
+      this.handles.delete(key);
+    }
   }
 
   destroy(): void {

@@ -124,6 +124,9 @@ export interface KeyframeSnapshot {
   easing: KeyframeEasingSnapshot;
 }
 
+export const TIMELINE_EPSILON = 1e-6;
+export const KEYFRAME_EPSILON = 1e-4;
+
 export type TransformKeyframeParamSnapshot = Exclude<keyof TransformParamsSnapshot, 'fit'>;
 export type ClipKeyframeParamSnapshot = keyof ClipEffectParamsSnapshot | TransformKeyframeParamSnapshot;
 export type ClipKeyframesSnapshot = Partial<Record<ClipKeyframeParamSnapshot, KeyframeSnapshot[]>>;
@@ -338,6 +341,19 @@ interface SetKeyframeCommand {
   easing?: KeyframeEasingSnapshot;
 }
 
+interface SetKeyframesCommand {
+  type: 'set-keyframes';
+  trackId: string;
+  clipId: string;
+  /** Absolute timeline time in seconds; the worker stores it clip-local. */
+  t: number;
+  keyframes: Array<{
+    key: ClipKeyframeParamSnapshot;
+    value: number;
+    easing?: KeyframeEasingSnapshot;
+  }>;
+}
+
 interface DeleteKeyframeCommand {
   type: 'delete-keyframe';
   trackId: string;
@@ -510,6 +526,7 @@ export type WorkerCommand =
   | SetEffectParamCommand
   | SetTransformCommand
   | SetKeyframeCommand
+  | SetKeyframesCommand
   | DeleteKeyframeCommand
   | ImportLutCommand
   | SetLutStrengthCommand

@@ -5,11 +5,12 @@ import {
   deleteKeyframe,
   insertKeyframe,
   moveKeyframe,
+  normalizeKeyframeTrack,
   sampleClipParamsAt,
   sampleKeyframes,
   type Keyframe,
 } from './keyframes';
-import { defaultTimelineClip, setClipKeyframe, type Timeline } from './timeline';
+import { defaultTimelineClip, setClipKeyframe, setClipKeyframes, trimClip, type Timeline } from './timeline';
 
 describe('keyframes', () => {
   it('inserts sorted keyframes and replaces matching timestamps', () => {
@@ -24,6 +25,19 @@ describe('keyframes', () => {
     const replaced = insertKeyframe(track, { t: 1, value: 12, easing: 'hold' });
     expect(replaced).toHaveLength(3);
     expect(replaced[1]).toEqual({ t: 1, value: 12, easing: 'hold' });
+  });
+
+  it('normalizes tracks with one sort pass and keeps the last duplicate timestamp', () => {
+    const track = normalizeKeyframeTrack([
+      { t: 2, value: 20, easing: 'linear' },
+      { t: 1.00001, value: 11, easing: 'linear' },
+      { t: 1, value: 10, easing: 'ease' },
+      { t: 1.00002, value: 12, easing: 'hold' },
+    ]);
+    expect(track).toEqual([
+      { t: 1.00002, value: 12, easing: 'hold' },
+      { t: 2, value: 20, easing: 'linear' },
+    ]);
   });
 
   it('moves and deletes keyframes without mutating the input track', () => {
@@ -120,5 +134,68 @@ describe('keyframes', () => {
 
     const next = setClipKeyframe(timeline, 'track-video', 'clip-a', 'opacity', 12, 0.5, 'linear');
     expect(next[0]!.clips[0]!.keyframes?.opacity).toEqual([{ t: 2, value: 0.5, easing: 'linear' }]);
+  });
+
+  it('stores batched keyframe command values in one clip-local update', () => {
+    const timeline: Timeline = [
+      {
+        id: 'track-video',
+        type: 'video',
+        gain: 1,
+        pan: 0,
+        muted: false,
+        solo: false,
+        clips: [
+          defaultTimelineClip({
+            id: 'clip-a',
+            sourceId: 'source-a',
+            start: 10,
+            duration: 5,
+            inPoint: 0,
+          }),
+        ],
+      },
+    ];
+
+    const next = setClipKeyframes(timeline, 'track-video', 'clip-a', 12, [
+      { key: 'x', value: 0.25, easing: 'linear' },
+      { key: 'y', value: -0.5, easing: 'linear' },
+    ]);
+    const clip = next[0]!.clips[0]!;
+    expect(clip.keyframes?.x).toEqual([{ t: 2, value: 0.25, easing: 'linear' }]);
+    expect(clip.keyframes?.y).toEqual([{ t: 2, value: -0.5, easing: 'linear' }]);
+    expect(clip.transform.x).toBe(0.25);
+    expect(clip.transform.y).toBe(-0.5);
+  });
+
+  it('keeps keyframes normalized when trimming a clip shorter', () => {
+    const timeline: Timeline = [
+      {
+        id: 'track-video',
+        type: 'video',
+        gain: 1,
+        pan: 0,
+        muted: false,
+        solo: false,
+        clips: [
+          defaultTimelineClip({
+            id: 'clip-a',
+            sourceId: 'source-a',
+            start: 0,
+            duration: 5,
+            inPoint: 0,
+            keyframes: {
+              opacity: [
+                { t: 1, value: 0.5, easing: 'linear' },
+                { t: 4, value: 1, easing: 'linear' },
+              ],
+            },
+          }),
+        ],
+      },
+    ];
+
+    const next = trimClip(timeline, 'track-video', 'clip-a', { edge: 'out', time: 2 });
+    expect(next[0]!.clips[0]!.keyframes?.opacity).toEqual([{ t: 1, value: 0.5, easing: 'linear' }]);
   });
 });

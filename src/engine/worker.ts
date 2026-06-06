@@ -39,6 +39,7 @@ import {
   trimClip,
   setClipEffectParam,
   setClipKeyframe,
+  setClipKeyframes,
   deleteClipKeyframe,
   setClipTransform,
   setClipLut,
@@ -542,16 +543,17 @@ function ensureClockAndTimeline() {
   postTimelineState();
 }
 
-function uploadTimelineLuts(): void {
+function syncTimelineLuts(): void {
   if (!renderer) return;
-  const uploaded = new Set<string>();
+  const activeKeys = new Set<string>();
   for (const track of timeline) {
     for (const clip of track.clips) {
-      if (!clip.lut || uploaded.has(clip.lut.key)) continue;
+      if (!clip.lut || activeKeys.has(clip.lut.key)) continue;
       renderer.importLut(clip.lut);
-      uploaded.add(clip.lut.key);
+      activeKeys.add(clip.lut.key);
     }
   }
+  renderer.pruneLuts(activeKeys);
 }
 
 function sourceDescriptorFromHandle(
@@ -872,11 +874,13 @@ function commitTransitionMutation(
     coalesceKey?: HistoryCoalesceKey;
     refreshPlayback?: 'seek' | 'refresh' | 'none';
     prune?: boolean;
+    syncLuts?: boolean;
   } = {},
 ): boolean {
   return commitEditMutation(() => ({ timeline, transitions: mutate(), markers }), {
     refreshPlayback: 'refresh',
     prune: false,
+    syncLuts: false,
     ...options,
   });
 }
@@ -885,9 +889,13 @@ function afterTimelineMutation(options: {
   coalesceKey?: HistoryCoalesceKey;
   refreshPlayback?: 'seek' | 'refresh' | 'none';
   prune?: boolean;
+  syncLuts?: boolean;
 } = {}): void {
   if (options.prune !== false) {
     pruneUnusedSources();
+  }
+  if (options.syncLuts !== false) {
+    syncTimelineLuts();
   }
   // Refresh title rasters (no-op on unchanged content) before re-rendering so
   // the cached texture is current when playback refreshes the frame.
@@ -918,6 +926,7 @@ function commitEditMutation(
     coalesceKey?: HistoryCoalesceKey;
     refreshPlayback?: 'seek' | 'refresh' | 'none';
     prune?: boolean;
+    syncLuts?: boolean;
   } = {},
 ): boolean {
   const before = historySnapshot();
@@ -937,6 +946,7 @@ function commitTimelineMutation(
     coalesceKey?: HistoryCoalesceKey;
     refreshPlayback?: 'seek' | 'refresh' | 'none';
     prune?: boolean;
+    syncLuts?: boolean;
   } = {},
 ): boolean {
   return commitEditMutation(() => {
@@ -955,11 +965,13 @@ function commitMarkerMutation(
     coalesceKey?: HistoryCoalesceKey;
     refreshPlayback?: 'seek' | 'refresh' | 'none';
     prune?: boolean;
+    syncLuts?: boolean;
   } = {},
 ): boolean {
   return commitEditMutation(() => ({ timeline, transitions, markers: mutate() }), {
     refreshPlayback: 'none',
     prune: false,
+    syncLuts: false,
     ...options,
   });
 }
@@ -1038,7 +1050,7 @@ async function handleInit(
   // An import can arrive after `init` is sent but before `ready` is resolved
   // (the UI gates imports on `initSent`, not on `ready`). In that case the media
   // was set up with no renderer; wire up its preview now that the GPU is ready.
-  uploadTimelineLuts();
+  syncTimelineLuts();
   ensurePreview();
   postHistoryState();
   void checkRestoreAvailable();
@@ -1148,7 +1160,7 @@ async function handleRestoreProject(): Promise<void> {
   projectId = doc.projectId;
   timeline = cloneTimelineSnapshot(doc.timeline);
   markers = cloneMarkersSnapshot(doc.markers);
-  uploadTimelineLuts();
+  syncTimelineLuts();
   lastExportSettings = doc.exportSettings ?? null;
   masterGain = doc.masterGain;
   nextSourceId = nextSourceIdFromDescriptors(doc.sources);
@@ -1582,6 +1594,7 @@ function handleSetEffectParam(cmd: Extract<WorkerCommand, { type: 'set-effect-pa
       coalesceKey: { clipId: cmd.clipId, key: cmd.key },
       refreshPlayback: 'refresh',
       prune: false,
+      syncLuts: false,
     },
   );
 }
@@ -1595,6 +1608,7 @@ function handleSetTransform(cmd: Extract<WorkerCommand, { type: 'set-transform' 
       coalesceKey: { clipId: cmd.clipId, key: 'transform' },
       refreshPlayback: 'refresh',
       prune: false,
+      syncLuts: false,
     },
   );
 }
@@ -1606,6 +1620,30 @@ function handleSetKeyframe(cmd: Extract<WorkerCommand, { type: 'set-keyframe' }>
       coalesceKey: { clipId: cmd.clipId, key: `keyframe-${cmd.key}` },
       refreshPlayback: 'refresh',
       prune: false,
+      syncLuts: false,
+    },
+  );
+}
+
+function handleSetKeyframes(cmd: Extract<WorkerCommand, { type: 'set-keyframes' }>) {
+  commitTimelineMutation(
+    () =>
+      setClipKeyframes(
+        timeline,
+        cmd.trackId,
+        cmd.clipId,
+        cmd.t,
+        cmd.keyframes.map((frame) => ({
+          key: frame.key,
+          value: frame.value,
+          easing: frame.easing ?? 'linear',
+        })),
+      ),
+    {
+      coalesceKey: { clipId: cmd.clipId, key: 'keyframes' },
+      refreshPlayback: 'refresh',
+      prune: false,
+      syncLuts: false,
     },
   );
 }
@@ -1617,6 +1655,7 @@ function handleDeleteKeyframe(cmd: Extract<WorkerCommand, { type: 'delete-keyfra
       coalesceKey: { clipId: cmd.clipId, key: `keyframe-${cmd.key}` },
       refreshPlayback: 'refresh',
       prune: false,
+      syncLuts: false,
     },
   );
 }
@@ -1634,7 +1673,6 @@ async function handleImportLut(cmd: Extract<WorkerCommand, { type: 'import-lut' 
     postProjectWarning(`Could not import LUT: ${message}`);
     return;
   }
-  renderer.importLut(lut);
   commitTimelineMutation(
     () => setClipLut(timeline, cmd.trackId, cmd.clipId, lut),
     {
@@ -1652,6 +1690,7 @@ function handleSetLutStrength(cmd: Extract<WorkerCommand, { type: 'set-lut-stren
       coalesceKey: { clipId: cmd.clipId, key: 'lutStrength' },
       refreshPlayback: 'refresh',
       prune: false,
+      syncLuts: false,
     },
   );
 }
@@ -1661,6 +1700,7 @@ function handleSetTrackGain(cmd: Extract<WorkerCommand, { type: 'set-track-gain'
     coalesceKey: { clipId: cmd.trackId, key: 'gain' },
     refreshPlayback: 'none',
     prune: false,
+    syncLuts: false,
   });
 }
 
@@ -1668,6 +1708,7 @@ function handleSetTrackMute(cmd: Extract<WorkerCommand, { type: 'set-track-mute'
   commitTimelineMutation(() => setTrackMute(timeline, cmd.trackId, cmd.muted), {
     refreshPlayback: 'none',
     prune: false,
+    syncLuts: false,
   });
 }
 
@@ -1675,6 +1716,7 @@ function handleSetTrackSolo(cmd: Extract<WorkerCommand, { type: 'set-track-solo'
   commitTimelineMutation(() => setTrackSolo(timeline, cmd.trackId, cmd.solo), {
     refreshPlayback: 'none',
     prune: false,
+    syncLuts: false,
   });
 }
 
@@ -1683,6 +1725,7 @@ function handleSetTrackPan(cmd: Extract<WorkerCommand, { type: 'set-track-pan' }
     coalesceKey: { clipId: cmd.trackId, key: 'pan' },
     refreshPlayback: 'none',
     prune: false,
+    syncLuts: false,
   });
 }
 
@@ -1701,6 +1744,7 @@ function handleSetClipFade(cmd: Extract<WorkerCommand, { type: 'set-clip-fade' }
       coalesceKey: { clipId: cmd.clipId, key: `fade-${cmd.edge}` },
       refreshPlayback: 'none',
       prune: false,
+      syncLuts: false,
     },
   );
 }
@@ -1802,6 +1846,7 @@ function handleSetTitle(cmd: Extract<WorkerCommand, { type: 'set-title' }>) {
       coalesceKey: { clipId: cmd.clipId, key: 'title' },
       refreshPlayback: 'refresh',
       prune: false,
+      syncLuts: false,
     },
   );
 }
@@ -1810,6 +1855,7 @@ function handleAddTrack(cmd: Extract<WorkerCommand, { type: 'add-track' }>) {
   commitTimelineMutation(() => addTrack(timeline, cmd.trackType), {
     refreshPlayback: 'none',
     prune: false,
+    syncLuts: false,
   });
 }
 
@@ -1821,6 +1867,7 @@ function handleReorderTrack(cmd: Extract<WorkerCommand, { type: 'reorder-track' 
   commitTimelineMutation(() => reorderTrack(timeline, cmd.trackId, cmd.toIndex), {
     refreshPlayback: 'none',
     prune: false,
+    syncLuts: false,
   });
 }
 
@@ -1887,7 +1934,7 @@ function applyHistoryRestore(next: { timeline: Timeline; transitions: TimelineTr
   timeline = cloneTimelineSnapshot(next.timeline);
   transitions = reconcileTransitions(timeline, next.transitions);
   markers = cloneMarkersSnapshot(next.markers);
-  uploadTimelineLuts();
+  syncTimelineLuts();
   // Undo can resurrect clips of a source that was removed from the bin. Re-add
   // any still-described source the restored timeline references so the asset
   // returns to the bin (offline, re-linkable) instead of dangling.
@@ -2341,6 +2388,9 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
       break;
     case 'set-keyframe':
       handleSetKeyframe(cmd);
+      break;
+    case 'set-keyframes':
+      handleSetKeyframes(cmd);
       break;
     case 'delete-keyframe':
       handleDeleteKeyframe(cmd);
