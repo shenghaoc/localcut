@@ -368,7 +368,8 @@ export function App() {
 
   return (
     <div class={`app${isDraggingFile() ? ' is-dragging-file' : ''}`}>
-      <Toolbar
+      <Show when={!environmentIssue()}>
+        <Toolbar
         metadata={metadata()}
         playing={clock.playing}
         importAccept={VIDEO_ACCEPT}
