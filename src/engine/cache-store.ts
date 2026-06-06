@@ -1,5 +1,6 @@
 import type { ProxyManifest } from './cache-types';
 import type { CacheStorageEstimate } from './cache-budget';
+import { hashString } from './cache-key';
 
 export interface CacheWriteResult {
   readonly path: string;
@@ -38,6 +39,12 @@ interface IndexedCacheRecord {
 
 const CACHE_DB_NAME = 'localcut-cache-v1';
 const CACHE_STORE_NAME = 'chunks';
+
+export function opaqueCachePath(category: string, opaqueId: string, extension = 'bin'): string {
+  const safeCategory = category.replace(/[^a-zA-Z0-9_-]/g, '-');
+  const safeExtension = extension.replace(/[^a-zA-Z0-9]/g, '').slice(0, 12) || 'bin';
+  return `${safeCategory}/${hashString(opaqueId)}.${safeExtension}`;
+}
 
 function cleanPath(path: string): string[] {
   return path
@@ -186,7 +193,12 @@ function idbRequest<T>(request: IDBRequest<T>): Promise<T> {
 }
 
 class IndexedDbCacheStore implements CacheStore {
-  private readonly dbPromise = openIndexedCacheDb();
+  private dbPromise: Promise<IDBDatabase> | null = null;
+
+  private db(): Promise<IDBDatabase> {
+    this.dbPromise ??= openIndexedCacheDb();
+    return this.dbPromise;
+  }
 
   async readManifest(projectId: string): Promise<ProxyManifest | null> {
     const blob = await this.readChunk(manifestPath(projectId));
@@ -205,7 +217,7 @@ class IndexedDbCacheStore implements CacheStore {
 
   async writeChunk(path: string, data: ReadableStream<Uint8Array> | Blob): Promise<CacheWriteResult> {
     const blob = await blobFromData(data);
-    const db = await this.dbPromise;
+    const db = await this.db();
     const tx = db.transaction(CACHE_STORE_NAME, 'readwrite');
     const store = tx.objectStore(CACHE_STORE_NAME);
     const record: IndexedCacheRecord = { path, blob, updatedAt: Date.now() };
@@ -215,7 +227,7 @@ class IndexedDbCacheStore implements CacheStore {
   }
 
   async readChunk(path: string): Promise<Blob | null> {
-    const db = await this.dbPromise;
+    const db = await this.db();
     const tx = db.transaction(CACHE_STORE_NAME, 'readonly');
     const store = tx.objectStore(CACHE_STORE_NAME);
     const record = (await idbRequest(store.get(path))) as IndexedCacheRecord | undefined;
@@ -223,7 +235,7 @@ class IndexedDbCacheStore implements CacheStore {
   }
 
   async deletePaths(paths: readonly string[]): Promise<CacheDeleteResult> {
-    const db = await this.dbPromise;
+    const db = await this.db();
     const tx = db.transaction(CACHE_STORE_NAME, 'readwrite');
     const store = tx.objectStore(CACHE_STORE_NAME);
     const deletedPaths: string[] = [];
@@ -255,7 +267,11 @@ function transactionDone(tx: IDBTransaction): Promise<void> {
 export async function createCacheStore(): Promise<CacheStore> {
   const storage = navigator.storage as unknown as StorageManagerWithOptionalOpfs;
   if (storage.getDirectory) {
-    return new OpfsCacheStore(await storage.getDirectory());
+    try {
+      return new OpfsCacheStore(await storage.getDirectory());
+    } catch {
+      // Some browsers expose OPFS but reject it in private or embedded contexts.
+    }
   }
   return new IndexedDbCacheStore();
 }

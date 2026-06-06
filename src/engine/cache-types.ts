@@ -79,15 +79,6 @@ export interface CacheUsageSnapshot {
   readonly warning: 'ok' | 'near-limit' | 'over-budget' | 'storage-pressure';
 }
 
-export interface ProxyManifest {
-  readonly schemaVersion: typeof CACHE_SCHEMA_VERSION;
-  readonly cacheVersion: string;
-  readonly projectId: string;
-  readonly generatedAt: number;
-  readonly assetsBySourceFingerprint: Readonly<Record<string, readonly ProxyAsset[]>>;
-  readonly usage: CacheUsageSnapshot;
-}
-
 export interface SourceDependencyKey {
   readonly sourceId: string;
   readonly fingerprint: string;
@@ -150,6 +141,16 @@ export interface RenderCacheDependencySummary {
   readonly exportSettings?: ExportSettings;
 }
 
+export interface CacheDependencyIndex {
+  readonly bySourceId: Readonly<Record<string, readonly string[]>>;
+  readonly byClipId: Readonly<Record<string, readonly string[]>>;
+  readonly byTrackId: Readonly<Record<string, readonly string[]>>;
+  readonly byTransitionId: Readonly<Record<string, readonly string[]>>;
+  readonly byTitleHash: Readonly<Record<string, readonly string[]>>;
+  readonly byLutHash: Readonly<Record<string, readonly string[]>>;
+  readonly byKeyframeHash: Readonly<Record<string, readonly string[]>>;
+}
+
 export interface RenderCacheEntry {
   readonly entryId: string;
   readonly keyHash: string;
@@ -164,6 +165,17 @@ export interface RenderCacheEntry {
   readonly createdAt: number;
   readonly lastUsedAt: number;
   readonly diagnostics: readonly CacheDiagnostic[];
+}
+
+export interface ProxyManifest {
+  readonly schemaVersion: typeof CACHE_SCHEMA_VERSION;
+  readonly cacheVersion: string;
+  readonly projectId: string;
+  readonly generatedAt: number;
+  readonly assetsBySourceFingerprint: Readonly<Record<string, readonly ProxyAsset[]>>;
+  readonly renderEntriesByKeyHash: Readonly<Record<string, readonly RenderCacheEntry[]>>;
+  readonly dependencyIndex: CacheDependencyIndex;
+  readonly usage: CacheUsageSnapshot;
 }
 
 export interface CacheBudget {

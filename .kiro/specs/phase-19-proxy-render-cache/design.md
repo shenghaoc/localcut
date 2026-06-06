@@ -98,6 +98,8 @@ export interface ProxyManifest {
   readonly projectId: string;
   readonly generatedAt: number;
   readonly assetsBySourceFingerprint: Readonly<Record<string, readonly ProxyAsset[]>>;
+  readonly renderEntriesByKeyHash: Readonly<Record<string, readonly RenderCacheEntry[]>>;
+  readonly dependencyIndex: CacheDependencyIndex;
   readonly usage: CacheUsageSnapshot;
 }
 ```
@@ -144,6 +146,8 @@ export interface RenderCacheEntry {
 
 `sourceMode` is load-bearing. A preview chunk rendered from proxies is not valid for default export. A proxy-derived export entry is valid only when the user starts an export with explicit proxy export enabled.
 
+`RenderCacheEntry.dependencies` is an invalidation and repair index, not a second hit-validation source. A canonical `RenderCacheKey`/`keyHash` match already proves pixel-affecting dependencies match; the summary routes source/clip/title/LUT/keyframe edits to entries and helps startup repair find orphaned or missing chunks. `ProxyManifest.renderEntriesByKeyHash` persists render chunks across worker/browser restarts so valid OPFS/IndexedDB chunks remain discoverable.
+
 ```typescript
 export interface CacheBudget {
   readonly maxBytes: number;
@@ -180,7 +184,8 @@ export interface CacheStore {
 ```
 
 - OPFS is primary for large binary chunks and proxy files.
-- IndexedDB Blob fallback is acceptable when OPFS is unavailable, but the UI must label large proxy/render-cache features as reduced if quota or performance is limited.
+- IndexedDB Blob fallback is acceptable when OPFS is unavailable, including when `navigator.storage.getDirectory` exists but throws `SecurityError`/`DOMException` in private browsing or nested contexts; the UI must label large proxy/render-cache features as reduced if quota or performance is limited.
+- Cache paths are generated from opaque ids/hashes and sanitized before writing. Do not derive OPFS/IndexedDB paths from raw media file names, user-visible URLs, or other identifying strings.
 - Writes use temp paths followed by manifest commit. If a tab closes mid-write, repair deletes temp files and stale `writing` entries on the next startup.
 
 ## Proxy workflow
@@ -214,7 +219,7 @@ Proxy generation keeps at most:
 - 1 pending mux/storage write segment beyond the encoder drain point.
 - A bounded audio window queue.
 
-Before decoding another frame, check `VideoEncoder.encodeQueueSize` and the storage writer backlog. Cancellation closes queued frames and aborts encoder/muxer/file handles.
+Before decoding another frame, check `VideoEncoder.encodeQueueSize` and the storage writer backlog. Because WebCodecs does not emit a queue-size event, proxy jobs keep a pending drain promise and re-check/resume it from the encoder `output` callback whenever encoded chunks are delivered and `encodeQueueSize` drops below the threshold. Cancellation closes queued frames and aborts encoder/muxer/file handles.
 
 ### Priority
 
@@ -236,7 +241,7 @@ For a requested range:
 1. Build a `RenderCacheKey` from the current resolved timeline graph and output settings.
 2. Hash the canonical key.
 3. Query the cache manifest/dependency index.
-4. Use the chunk only when status is `ready`, file exists, key hash matches, and dependency summary still matches.
+4. Use the chunk only when status is `ready`, file exists, key hash matches, and the output descriptor is compatible with the request.
 5. On miss, render from the normal renderer and optionally write a new chunk.
 
 Preview cache and export cache have different `mode` values. Preview cache can be lower resolution and proxy-backed. Default export keys use `sourceMode: 'original'`.

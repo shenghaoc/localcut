@@ -4,14 +4,14 @@
 
 ## Cache foundations
 
-- [ ] **T1.1** Add `src/engine/cache-types.ts` defining `ProxyAsset`, `ProxyManifest`, `RenderCacheKey`, `RenderCacheEntry`, `CacheBudget`, `CacheUsageSnapshot`, and cache diagnostic/status unions.
+- [ ] **T1.1** Add `src/engine/cache-types.ts` defining `ProxyAsset`, `ProxyManifest`, `RenderCacheKey`, `RenderCacheEntry`, `CacheBudget`, `CacheUsageSnapshot`, `TimeRange`, `RenderCacheOutputDescriptor`, `RenderCacheDependencySummary`, `CacheDiagnostic`, `SourceDependencyKey`, `ClipDependencyKey`, and cache diagnostic/status unions.
   - Acceptance: exported types are strict, readonly where practical, contain no `any`, and encode proxy/original source mode explicitly.
 - [ ] **T1.2** Add `src/engine/cache-key.ts` with canonical serialization and hashing helpers for `RenderCacheKey` and proxy settings.
   - Acceptance: tests prove stable hashes across object insertion order, array ordering rules, schema-version changes, output-size changes, and proxy/original source-mode changes.
 - [ ] **T1.3** Add `src/engine/cache-store.ts` with a worker-only `CacheStore` interface and OPFS primary implementation.
-  - Acceptance: all file/blob writes happen through the worker-facing store; no OPFS handles or cache blobs cross into `src/ui/`.
+  - Acceptance: all file/blob writes happen through the worker-facing store; no OPFS handles or cache blobs cross into `src/ui/`; cache paths are generated from opaque ids/hashes and sanitized before writing, not raw media file names or remote identifiers.
 - [ ] **T1.4** Add an IndexedDB Blob fallback behind the same `CacheStore` interface.
-  - Acceptance: fallback is feature-detected, labeled as reduced for large caches, and covered by manifest read/write tests with a mocked store.
+  - Acceptance: fallback is feature-detected by actively calling `navigator.storage.getDirectory()` when present and catching `SecurityError`/`DOMException` failures before falling back; fallback is labeled as reduced for large caches and covered by manifest read/write tests with a mocked store.
 - [ ] **T1.5** Add manifest startup repair for temp files, missing files, orphaned files, and stale `writing` entries.
   - Acceptance: tests load damaged manifests and end with either valid ready entries or deleted/missing entries, never half-ready cache records.
 
@@ -20,7 +20,7 @@
 - [ ] **T2.1** Add `src/engine/proxy-cache-worker.ts` and a typed RPC bridge between the pipeline worker and cache worker.
   - Acceptance: the UI talks only to the pipeline worker; cache worker messages are structured-clone-safe and contain no UI-only types.
 - [ ] **T2.2** Move cache manifest reads/writes, chunk writes, chunk deletes, cache estimates, and cleanup operations into the cache worker.
-  - Acceptance: static search finds no cache write APIs in `src/ui/`; tests cover successful write, failed write, and cancellation cleanup.
+  - Acceptance: static search finds no cache write APIs in `src/ui/`; tests cover successful write, failed write, cancellation cleanup, and cache-worker descriptors/write paths for proxy files, render chunks, thumbnail bitmaps, filmstrip samples, and waveform peaks.
 - [ ] **T2.3** Add job lifecycle state: queued, running, paused, canceled, complete, failed.
   - Acceptance: jobs expose progress and cancellation tokens; cancel stops new decode/encode/storage work.
 - [ ] **T2.4** Add scheduler priority buckets for active timeline range, visible filmstrip range, selected sources, and background bin assets.
@@ -37,7 +37,7 @@
 - [ ] **T3.3** Implement the proxy decode -> scale -> encode -> mux path in the proxy/cache worker using worker-owned media adapters.
   - Acceptance: no media processing runs on main; every decoded `VideoFrame`/`AudioData` is closed exactly once; mux output is written to cache store.
 - [ ] **T3.4** Add encode and storage backpressure to proxy jobs.
-  - Acceptance: before decoding more frames, jobs honor `VideoEncoder.encodeQueueSize`, decoded-frame queue limits, and storage-writer backlog.
+  - Acceptance: before decoding more frames, jobs honor `VideoEncoder.encodeQueueSize`, decoded-frame queue limits, and storage-writer backlog; pending drain promises are resumed from the encoder `output` callback when `encodeQueueSize` falls below the threshold.
 - [ ] **T3.5** Persist ready proxies into `ProxyManifest` and mark stale proxies when source fingerprint, source conformance hash, or settings hash changes.
   - Acceptance: tests cover valid proxy reuse, stale detection, failed generation, and regeneration after settings change.
 - [ ] **T3.6** Add pause, cancel, retry, delete, and pin proxy operations.
@@ -65,7 +65,7 @@
 - [ ] **T5.3** Keep preview and export cache modes separate.
   - Acceptance: tests prove proxy-backed preview chunks cannot satisfy default original-source export keys.
 - [ ] **T5.4** Add render-cache entry validation before use.
-  - Acceptance: a hit requires ready status, existing chunk file, matching key hash, matching dependency summary, and compatible output descriptor.
+  - Acceptance: a hit requires ready status, existing chunk file, matching key hash, and compatible output descriptor; dependency summaries are used for invalidation routing and manifest repair, not as a second hit-validation gate.
 - [ ] **T5.5** Add unit tests for cache-key stability and invalidation-by-schema-version.
   - Acceptance: changing title hash, LUT hash, keyframe hash, output size, source fingerprint, source mode, or renderer version produces a different key.
 
@@ -87,7 +87,7 @@
 - [ ] **T7.1** Add `src/engine/cache-invalidation.ts` with dependency index types and range helpers.
   - Acceptance: helpers are pure and unit-tested with overlapping ranges.
 - [ ] **T7.2** Wire timeline edit commands to invalidate affected render-cache ranges.
-  - Acceptance: split, trim, move, delete, duplicate, paste, and track reorder invalidate old/new affected spans.
+  - Acceptance: split, trim, move, delete, duplicate, paste, place-clip, add-title, and track reorder invalidate old/new affected spans, including overlapping composite spans on other tracks where z-order can change the result.
 - [ ] **T7.3** Wire visual edits to invalidation.
   - Acceptance: effect, transform, opacity, transition, title, LUT, and keyframe edits invalidate only affected ranges where possible.
 - [ ] **T7.4** Wire source lifecycle changes to invalidation.
@@ -113,7 +113,9 @@
 ## UI and protocol
 
 - [ ] **T9.1** Extend `src/protocol.ts` with proxy/cache commands and state messages.
-  - Acceptance: commands cover generate, pause, cancel, retry, delete, pin, set budget, cleanup, and export source-mode selection.
+  - Acceptance: commands cover generate, pause, cancel, retry, delete, pin, set budget, cleanup, proxy generation preference (`disabled`/`ask`/`automatic`/`selected-only`), preview-proxy enable/disable, and export source-mode selection.
+- [ ] **T9.1a** Persist project/user proxy workflow settings.
+  - Acceptance: project/user settings store proxy generation preference and preview-proxy enablement; automatic proxy jobs never start unless the stored mode allows them, and the user can globally disable proxy preview without deleting generated proxies.
 - [ ] **T9.2** Add proxy status to the media bin.
   - Acceptance: each asset can show not generated, recommended, queued, generating, ready, stale, failed, disabled, and pinned states.
 - [ ] **T9.3** Add preview/cache status to persistent chrome.
