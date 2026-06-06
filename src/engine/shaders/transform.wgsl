@@ -6,10 +6,13 @@
 //
 // `u.m` holds the inverse 2x2 (m00, m01, m10, m11); `u.params` holds
 // (t0, t1, opacity, fitFlag). l = M·o + t, with o the output-normalized coord.
+// `u.card` holds (rectW, rectH, anchorX, anchorY): the layer "card" coordinate
+// k = 0.5 + (l − anchor)·rect bounds letterbox bars to the transformed layer.
 
 struct Transform {
   m : vec4<f32>,
   params : vec4<f32>,
+  card : vec4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> u : Transform;
@@ -36,9 +39,19 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
     let c = textureSampleLevel(srcTexture, srcSampler, l, 0.0);
     let a = c.a * u.params.z;
     textureStore(dstTexture, coord, vec4<f32>(c.rgb * a, a));
-  } else if (u.params.w > 0.5) {
-    textureStore(dstTexture, coord, vec4<f32>(0.0, 0.0, 0.0, 1.0));
-  } else {
-    textureStore(dstTexture, coord, vec4<f32>(0.0, 0.0, 0.0, 0.0));
+    return;
   }
+
+  // Letterbox bars: opaque black, but only within the transformed layer card so
+  // lower layers stay visible everywhere outside this layer. Anything else is
+  // transparent (fit/fill, or beyond a letterbox card).
+  if (u.params.w > 0.5) {
+    let k = vec2<f32>(0.5, 0.5) + (l - u.card.zw) * u.card.xy;
+    let inCard = k.x >= 0.0 && k.x <= 1.0 && k.y >= 0.0 && k.y <= 1.0;
+    if (inCard) {
+      textureStore(dstTexture, coord, vec4<f32>(0.0, 0.0, 0.0, 1.0));
+      return;
+    }
+  }
+  textureStore(dstTexture, coord, vec4<f32>(0.0, 0.0, 0.0, 0.0));
 }

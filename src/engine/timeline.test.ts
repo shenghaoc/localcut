@@ -698,4 +698,31 @@ describe('timeline tracks', () => {
       expect(setClipTransform(timeline, 'v', 'missing', { scale: 0.5 })).toBe(timeline);
     });
   });
+
+  describe('splitClipAt with overlapping tracks', () => {
+    function stacked(): TimelineTrack[] {
+      return [
+        {
+          id: 'video-base',
+          type: 'video',
+          ...DEFAULT_TRACK_MIX,
+          clips: [clip({ id: 'base', sourceId: 's1', start: 0, duration: 10, inPoint: 0 })],
+        },
+        {
+          id: 'video-top',
+          type: 'video',
+          ...DEFAULT_TRACK_MIX,
+          clips: [clip({ id: 'pip', sourceId: 's2', start: 0, duration: 10, inPoint: 0 })],
+        },
+      ];
+    }
+
+    it('splits the clip on the requested track, not the first overlapping one', () => {
+      const next = splitClipAt(stacked(), 'video-top', 4);
+      expect(next[0]!.clips.map((c) => c.id)).toEqual(['base']); // base untouched
+      expect(next[1]!.clips).toHaveLength(2); // top track split into two
+      expect(next[1]!.clips[0]!.duration).toBe(4);
+      expect(next[1]!.clips[1]!.inPoint).toBe(4);
+    });
+  });
 });

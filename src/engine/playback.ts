@@ -8,6 +8,19 @@ export interface DecodedFrame {
   close(): void;
 }
 
+/** A decoded composite layer: a frame plus caller-defined metadata the controller
+ *  treats opaquely and hands back, paired, to {@link PlaybackDeps.renderFrames}. */
+export interface DecodedLayer<M = unknown> {
+  decoded: DecodedFrame;
+  meta: M;
+}
+
+/** A layer ready to render: its derived `VideoFrame` paired with its metadata. */
+export interface RenderedLayer<M = unknown> {
+  frame: VideoFrame;
+  meta: M;
+}
+
 /** Clamp a requested time to [0, duration]. Negative durations are treated as 0. */
 export function clampTime(time: number, duration: number): number {
   if (Number.isNaN(time)) return 0;
@@ -122,17 +135,19 @@ class FrameLeakTracker {
   }
 }
 
-export interface PlaybackDeps {
+export interface PlaybackDeps<M = unknown> {
   duration: number;
   frameRate: number;
   /**
    * Decode the composite layer stack at `timestamp` (keyframe-accurate, ordered
-   * bottom → top). Returns `null`/`[]` when nothing resolves there. Phase 12: a
+   * bottom → top). Returns `null`/`[]` when nothing resolves there. Each layer
+   * carries opaque metadata paired back into {@link renderFrames}, so colour/
+   * transform association never relies on shared mutable state. Phase 12: a
    * single full-screen clip is just a one-element stack.
    */
-  getFrames: (timestamp: number) => Promise<DecodedFrame[] | null>;
+  getFrames: (timestamp: number) => Promise<DecodedLayer<M>[] | null>;
   /** Present a decoded layer stack to the canvas at `timestamp` (timeline seconds). */
-  renderFrames: (frames: VideoFrame[], timestamp: number) => void;
+  renderFrames: (layers: RenderedLayer<M>[], timestamp: number) => void;
   /** Write [currentTime, playing] to the shared clock. */
   writeClock: (currentTime: number, playing: boolean) => void;
   /** Per-frame wall time (decode + render), for adaptive resolution. */
@@ -153,8 +168,8 @@ export interface PlaybackDeps {
  * lags, frames are skipped rather than slowing playback (audio becomes master in
  * Phase 5). All decoded frames are closed exactly once.
  */
-export class PlaybackController {
-  private readonly deps: PlaybackDeps;
+export class PlaybackController<M = unknown> {
+  private readonly deps: PlaybackDeps<M>;
   private readonly now: () => number;
   private readonly scheduler: (cb: () => void, ms: number) => ReturnType<typeof setTimeout>;
   private readonly clearScheduler: (handle: ReturnType<typeof setTimeout>) => void;
@@ -169,7 +184,7 @@ export class PlaybackController {
   /** Serializes decodes so overlapping seeks never issue concurrent sink reads. */
   private decodeChain: Promise<void> = Promise.resolve();
 
-  constructor(deps: PlaybackDeps) {
+  constructor(deps: PlaybackDeps<M>) {
     this.deps = deps;
     this.now = deps.now ?? (() => performance.now());
     this.scheduler = deps.scheduler ?? ((cb, ms) => setTimeout(cb, ms));
@@ -221,24 +236,25 @@ export class PlaybackController {
     const decoded = await this.deps.getFrames(time);
     if (!decoded || decoded.length === 0) return;
     if (gen !== this.generation) {
-      for (const frame of decoded) frame.close();
+      for (const layer of decoded) layer.decoded.close();
       return;
     }
-    // Each layer's decoded sample yields one VideoFrame; every VideoFrame and
-    // every decoded sample is closed exactly once below. The compositor consumes
-    // all of them synchronously inside renderFrames (importExternalTexture +
-    // submit), so they are safe to close immediately afterwards.
+    // Each layer's decoded sample yields one VideoFrame, paired with its own
+    // metadata — no shared state. Every VideoFrame and every decoded sample is
+    // closed exactly once below. The compositor consumes all of them
+    // synchronously inside renderFrames (importExternalTexture + submit), so
+    // they are safe to close immediately afterwards.
     const ids: number[] = [];
-    const videoFrames: VideoFrame[] = [];
+    const rendered: RenderedLayer<M>[] = [];
     try {
-      for (const frame of decoded) {
+      for (const layer of decoded) {
         ids.push(this.leaks.track());
-        videoFrames.push(frame.toVideoFrame());
+        rendered.push({ frame: layer.decoded.toVideoFrame(), meta: layer.meta });
       }
-      this.deps.renderFrames(videoFrames, time);
+      this.deps.renderFrames(rendered, time);
     } finally {
-      for (const videoFrame of videoFrames) videoFrame.close();
-      for (const frame of decoded) frame.close();
+      for (const layer of rendered) layer.frame.close();
+      for (const layer of decoded) layer.decoded.close();
       for (const id of ids) this.leaks.release(id);
     }
   }

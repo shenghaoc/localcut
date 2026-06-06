@@ -103,4 +103,42 @@ describe('transform uniform packing', () => {
     expect(packTransformUniform({ ...DEFAULT_TRANSFORM, fit: 'letterbox' }, 16, 9, 9, 16)[7]).toBe(1);
     expect(packTransformUniform({ ...DEFAULT_TRANSFORM, fit: 'fit' }, 16, 9, 9, 16)[7]).toBe(0);
   });
+
+  it('packs the layer card extents (fit rect + anchor) for letterbox bounds', () => {
+    const packed = packTransformUniform(
+      { ...DEFAULT_TRANSFORM, fit: 'letterbox' },
+      1920,
+      1080,
+      1080,
+      1920,
+    );
+    const ratio = 1080 / 1920 / (1920 / 1080); // contain: portrait in landscape
+    expect(packed[8]).toBeCloseTo(ratio, 3); // rectW
+    expect(packed[9]).toBeCloseTo(1, 5); // rectH
+    expect(packed[10]).toBeCloseTo(0.5); // anchorX
+    expect(packed[11]).toBeCloseTo(0.5); // anchorY
+  });
+
+  it('bounds the letterbox card so k stays in [0,1] across the output at scale 1', () => {
+    // A full-frame letterbox layer: every output texel maps inside the card, so
+    // bars fill the whole frame (the base-layer letterbox case). With k derived
+    // as 0.5 + (l - anchor)·rect, the output corners land on the card edges.
+    const t = { ...DEFAULT_TRANSFORM, fit: 'letterbox' as const };
+    const [m00, m01, m10, m11, t0, t1, , , rectW, rectH, anchorX, anchorY] =
+      packTransformUniform(t, 1920, 1080, 1080, 1920);
+    for (const [ox, oy] of [
+      [0, 0],
+      [1, 1],
+      [0.5, 0.5],
+    ]) {
+      const lx = m00! * ox + m01! * oy + t0!;
+      const ly = m10! * ox + m11! * oy + t1!;
+      const kx = 0.5 + (lx - anchorX!) * rectW!;
+      const ky = 0.5 + (ly - anchorY!) * rectH!;
+      expect(kx).toBeGreaterThanOrEqual(-1e-6);
+      expect(kx).toBeLessThanOrEqual(1 + 1e-6);
+      expect(ky).toBeGreaterThanOrEqual(-1e-6);
+      expect(ky).toBeLessThanOrEqual(1 + 1e-6);
+    }
+  });
 });

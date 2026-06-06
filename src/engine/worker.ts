@@ -41,14 +41,12 @@ import {
   setClipAudioFade,
   defaultTimelineClip,
   DEFAULT_MASTER_GAIN,
-  DEFAULT_TRANSFORM,
   type Timeline,
   type TimelineMarker,
   type ClipboardTimelineClip,
   type ClipEffectParams,
   type TransformParams,
 } from './timeline';
-import { DEFAULT_CLIP_EFFECTS } from './effects';
 import {
   applyMixStageInPlace,
   type AudioTransitionCut,
@@ -75,6 +73,7 @@ import {
   buildPreviewLadder,
   PlaybackController,
   type DecodedFrame,
+  type DecodedLayer,
 } from './playback';
 import { probeEncodeThroughput } from './hardware-probe';
 import { FrameCache, makeFrameCacheKey } from './frame-cache';
@@ -109,7 +108,7 @@ import {
 let clockView: Float64Array | null = null;
 let renderer: PreviewRenderer | null = null;
 let primaryHandle: MediaInputHandle | null = null;
-let playback: PlaybackController | null = null;
+let playback: PlaybackController<LayerMeta> | null = null;
 let adaptive: AdaptiveResolution | null = null;
 let probeDone = false;
 let timeline: Timeline = createEmptyTimeline();
@@ -134,9 +133,6 @@ let autosaveInFlight: Promise<void> | null = null;
 let restoreOfferGeneration = 0;
 let frameCache: FrameCache | null = null;
 let currentProbe: ThroughputProbe | null = null;
-/** Per-layer colour/transform metadata for the most recent decoded preview stack,
- *  aligned by index with the VideoFrames handed to `renderFrames`. */
-let pendingLayerMeta: { effects: ClipEffectParams; transform: TransformParams }[] = [];
 let layerBudgetWarned = false;
 let exportAbort: AbortController | null = null;
 let lastExportSettings: ExportSettings | null = null;
@@ -1194,47 +1190,62 @@ function decodeFrameForLayer(
   return wrapDecodedFrameForPlayback(sourceHandle, sourceTime);
 }
 
+/** Colour/transform metadata carried per decoded layer (no shared mutable state). */
+interface LayerMeta {
+  effects: ClipEffectParams;
+  transform: TransformParams;
+}
+
 /**
- * Decodes the full video layer stack at `timestamp` (bottom → top) for the
- * compositor. Offline/audio-only layers are skipped; {@link pendingLayerMeta} is
- * left aligned by index with the returned frames so `renderFrames` can pair each
- * frame with its colour/transform params.
+ * Decodes the budgeted video layer stack at `timestamp` (bottom → top) for the
+ * compositor. Offline/audio-only layers are skipped (they don't consume budget);
+ * decoding stops once the throughput-derived budget of decodable layers is met,
+ * dropping the topmost extras with a one-time notice (T2.4). Each decoded layer
+ * carries its own colour/transform metadata so `renderFrames` pairs them
+ * directly. On a decode failure, every already-decoded layer is closed before
+ * the error propagates so no frame leaks.
  */
 function makeGetLayers() {
-  return async (timestamp: number): Promise<DecodedFrame[] | null> => {
+  return async (timestamp: number): Promise<DecodedLayer<LayerMeta>[] | null> => {
     const layers = resolveAllAt(timeline, timestamp);
-    const frames: DecodedFrame[] = [];
-    const meta: { effects: ClipEffectParams; transform: TransformParams }[] = [];
-    for (const layer of layers) {
-      const handle = sourceInputs.get(layer.clip.sourceId);
-      if (!handle?.frameSource) continue;
-      const decoded = await decodeFrameForLayer(handle, layer.clip.sourceId, layer.sourceTime);
-      if (!decoded) continue;
-      frames.push(decoded);
-      meta.push({ effects: layer.clip.effects, transform: layer.clip.transform });
+    const budget = layerBudgetFromProbe(currentProbe);
+    const decodedLayers: DecodedLayer<LayerMeta>[] = [];
+    let overBudget = false;
+    try {
+      for (const layer of layers) {
+        const handle = sourceInputs.get(layer.clip.sourceId);
+        if (!handle?.frameSource) continue;
+        if (decodedLayers.length >= budget) {
+          overBudget = true;
+          break;
+        }
+        const decoded = await decodeFrameForLayer(handle, layer.clip.sourceId, layer.sourceTime);
+        if (!decoded) continue;
+        decodedLayers.push({
+          decoded,
+          meta: { effects: layer.clip.effects, transform: layer.clip.transform },
+        });
+      }
+    } catch (error) {
+      for (const layer of decodedLayers) layer.decoded.close();
+      throw error;
     }
-    pendingLayerMeta = meta;
-    return frames.length > 0 ? frames : null;
+    noteLayerBudget(overBudget, budget);
+    return decodedLayers.length > 0 ? decodedLayers : null;
   };
 }
 
-/** Budget the concurrent layer count off the encode-throughput probe (T2.4),
- *  dropping the topmost over-budget layers with a one-time visible notice. */
-function applyLayerBudget(layers: CompositeLayer[]): CompositeLayer[] {
-  const budget = layerBudgetFromProbe(currentProbe);
-  if (layers.length <= budget) {
+/** Surfaces an over-budget composite stack once per episode (reset when back under). */
+function noteLayerBudget(overBudget: boolean, budget: number): void {
+  if (!overBudget) {
     layerBudgetWarned = false;
-    return layers;
+    return;
   }
-  if (!layerBudgetWarned) {
-    layerBudgetWarned = true;
-    postProjectWarning(
-      `Compositing ${layers.length} layers exceeds this device's budget of ${budget}; ` +
-        `dropping the top ${layers.length - budget}.`,
-    );
-  }
-  // resolveAllAt is bottom→top, so the tail holds the topmost layers.
-  return layers.slice(0, budget);
+  if (layerBudgetWarned) return;
+  layerBudgetWarned = true;
+  postProjectWarning(
+    `Composite stack exceeds this device's budget of ${budget} layers; dropping the topmost extras.`,
+  );
 }
 
 async function handleImport(file: File, fileHandle?: FileSystemFileHandle | null) {
@@ -1648,18 +1659,19 @@ function setupPlayback() {
   playback?.dispose();
 
   const getFrames = makeGetLayers();
-  playback = new PlaybackController({
+  playback = new PlaybackController<LayerMeta>({
     duration: getTimelineDuration(timeline),
     frameRate: handle.frameRate,
     getFrames,
-    renderFrames: (frames) => {
-      const stack: CompositeLayer[] = frames.map((frame, index) => ({
+    renderFrames: (layers) => {
+      // The stack is already budgeted + offline-skipped by makeGetLayers.
+      const stack: CompositeLayer[] = layers.map((layer) => ({
         kind: 'frame' as const,
-        frame,
-        effects: pendingLayerMeta[index]?.effects ?? DEFAULT_CLIP_EFFECTS,
-        transform: pendingLayerMeta[index]?.transform ?? DEFAULT_TRANSFORM,
+        frame: layer.frame,
+        effects: layer.meta.effects,
+        transform: layer.meta.transform,
       }));
-      renderer?.present(applyLayerBudget(stack));
+      renderer?.present(stack);
     },
     writeClock: writeTransport,
     onFrameTime: handleFrameTime,

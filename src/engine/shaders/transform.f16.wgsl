@@ -7,6 +7,7 @@ enable f16;
 struct Transform {
   m : vec4<f32>,
   params : vec4<f32>,
+  card : vec4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> u : Transform;
@@ -34,9 +35,17 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
     let a = f16(c.a) * f16(u.params.z);
     let rgb = vec3<f16>(c.rgb) * a;
     textureStore(dstTexture, coord, vec4<f32>(vec3<f32>(rgb), f32(a)));
-  } else if (u.params.w > 0.5) {
-    textureStore(dstTexture, coord, vec4<f32>(0.0, 0.0, 0.0, 1.0));
-  } else {
-    textureStore(dstTexture, coord, vec4<f32>(0.0, 0.0, 0.0, 0.0));
+    return;
   }
+
+  // Letterbox bars only within the transformed layer card; transparent elsewhere.
+  if (u.params.w > 0.5) {
+    let k = vec2<f32>(0.5, 0.5) + (l - u.card.zw) * u.card.xy;
+    let inCard = k.x >= 0.0 && k.x <= 1.0 && k.y >= 0.0 && k.y <= 1.0;
+    if (inCard) {
+      textureStore(dstTexture, coord, vec4<f32>(0.0, 0.0, 0.0, 1.0));
+      return;
+    }
+  }
+  textureStore(dstTexture, coord, vec4<f32>(0.0, 0.0, 0.0, 0.0));
 }

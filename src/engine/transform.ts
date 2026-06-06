@@ -115,8 +115,9 @@ export function computeFitRect(
   return ratio >= 1 ? { width: 1, height: 1 / ratio } : { width: ratio, height: 1 };
 }
 
-/** Floats per transform uniform (mat2 columns + translation + opacity + fit flag). */
-export const TRANSFORM_UNIFORM_FLOATS = 8;
+/** Floats per transform uniform: mat2 columns + translation + opacity + fit flag,
+ *  then the layer "card" extents (fit rect + anchor) used to bound letterbox bars. */
+export const TRANSFORM_UNIFORM_FLOATS = 12;
 export const TRANSFORM_UNIFORM_BYTES = TRANSFORM_UNIFORM_FLOATS * 4;
 
 /**
@@ -129,9 +130,12 @@ export const TRANSFORM_UNIFORM_BYTES = TRANSFORM_UNIFORM_FLOATS * 4;
  * Inverting gives `l = M·o + t`, where
  *   M = diag(1/sx, 1/sy) · R(−θ)  and  t = anchor − M·center.
  *
- * Layout: [m00, m01, m10, m11, t0, t1, opacity, fitFlag].
+ * Layout: [m00, m01, m10, m11, t0, t1, opacity, fitFlag, rectW, rectH, anchorX, anchorY].
  * `fitFlag` is 1 for `letterbox` (out-of-source texels become opaque black) and
- * 0 otherwise (out-of-source texels become transparent).
+ * 0 otherwise (out-of-source texels become transparent). The trailing `rect`/
+ * `anchor` let the shader recover the layer "card" coordinate
+ * `k = 0.5 + (l − anchor)·rect` and so paint letterbox bars only *inside* the
+ * transformed layer (`k ∈ [0,1]²`), leaving everything beyond it transparent.
  */
 export function packTransformUniform(
   t: TransformParams,
@@ -161,5 +165,9 @@ export function packTransformUniform(
 
   const fitFlag = t.fit === 'letterbox' ? 1 : 0;
 
-  return new Float32Array([m00, m01, m10, m11, t0, t1, clamp(t.opacity, 0, 1), fitFlag]);
+  return new Float32Array([
+    m00, m01, m10, m11,
+    t0, t1, clamp(t.opacity, 0, 1), fitFlag,
+    rect.width, rect.height, t.anchorX, t.anchorY,
+  ]);
 }

@@ -154,11 +154,19 @@ export function PreviewGizmo(props: PreviewGizmoProps) {
     }
   }
 
-  function onPointerUp() {
+  function endDrag() {
     drag = null;
     window.removeEventListener('pointermove', onPointerMove);
     window.removeEventListener('pointerup', onPointerUp);
   }
+
+  function onPointerUp() {
+    endDrag();
+  }
+
+  // Unmounting mid-drag (e.g. the selected clip is deleted) would otherwise leave
+  // the window pointer listeners — and this component — leaked.
+  onCleanup(endDrag);
 
   return (
     <Show when={gizmoStyle()}>

@@ -257,13 +257,14 @@ export function splitClipAt(
   time: number,
 ): Timeline {
   if (!finite(time)) return timeline;
-  const hit = resolveAt(timeline, time);
-  if (!hit || hit.trackId !== trackId) return timeline;
 
+  // Resolve the clip on the requested track directly: with multi-track
+  // compositing (Phase 12) a lower track can overlap the same timestamp, so a
+  // single-layer resolveAt would split the wrong (bottom) clip.
   const trackIndex = timeline.findIndex((track) => track.id === trackId);
   const track = timeline[trackIndex];
   if (!track) return timeline;
-  const clipIndex = track.clips.findIndex((clip) => clip.id === hit.clip.id);
+  const clipIndex = track.clips.findIndex((clip) => isInClip(time, clip));
   if (clipIndex < 0) return timeline;
 
   const clip = track.clips[clipIndex]!;

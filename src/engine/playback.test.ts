@@ -6,6 +6,7 @@ import {
   frameStepTarget,
   PlaybackController,
   type DecodedFrame,
+  type DecodedLayer,
 } from './playback';
 
 function mockFrame(): DecodedFrame {
@@ -117,7 +118,7 @@ describe('AdaptiveResolution', () => {
 
 describe('PlaybackController', () => {
   it('drops a stale decode when generation changes during getFrames', async () => {
-    const pending: Array<(frames: DecodedFrame[] | null) => void> = [];
+    const pending: Array<(layers: DecodedLayer[] | null) => void> = [];
     const frame = mockFrame();
     const writeClock = vi.fn();
     const renderFrames = vi.fn();
@@ -125,7 +126,7 @@ describe('PlaybackController', () => {
     const controller = new PlaybackController({
       duration: 10,
       frameRate: 30,
-      getFrames: () =>
+      getFrames: (): Promise<DecodedLayer[] | null> =>
         new Promise((resolve) => {
           pending.push(resolve);
         }),
@@ -138,7 +139,7 @@ describe('PlaybackController', () => {
     expect(pending).toHaveLength(1);
 
     controller.seek(5);
-    pending[0]!([frame]);
+    pending[0]!([{ decoded: frame, meta: undefined }]);
     await Promise.resolve();
 
     expect(frame.close).toHaveBeenCalledOnce();
@@ -200,7 +201,7 @@ describe('PlaybackController', () => {
     const controller = new PlaybackController({
       duration: 10,
       frameRate: 30,
-      getFrames: () => Promise.resolve([frame]),
+      getFrames: () => Promise.resolve([{ decoded: frame, meta: undefined }]),
       renderFrames,
       writeClock: vi.fn(),
       now: () => 0,
@@ -214,7 +215,10 @@ describe('PlaybackController', () => {
     controller.play();
     scheduled[0]!(); // run one tick
     await vi.waitFor(() => expect(renderFrames).toHaveBeenCalledOnce());
-    expect(renderFrames).toHaveBeenCalledWith([videoFrame], expect.any(Number));
+    expect(renderFrames).toHaveBeenCalledWith(
+      [{ frame: videoFrame, meta: undefined }],
+      expect.any(Number),
+    );
 
     // The DecodedFrame and the derived VideoFrame are both closed exactly once.
     expect((frame.close as ReturnType<typeof vi.fn>)).toHaveBeenCalledOnce();
@@ -229,7 +233,7 @@ describe('PlaybackController', () => {
     const controller = new PlaybackController({
       duration: 10,
       frameRate: 30,
-      getFrames: () => Promise.resolve([frame]),
+      getFrames: () => Promise.resolve([{ decoded: frame, meta: undefined }]),
       renderFrames,
       writeClock: vi.fn(),
       now: () => 0,

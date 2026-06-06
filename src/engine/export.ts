@@ -701,23 +701,26 @@ async function encodeVideoRange(
     const outputTimestamp = rebaseOutputTimestamp(frameIndex, plan.frameRate);
     const timelineTime = timelineTimeAt(plan, outputTimestamp);
     const duration = Math.max(1e-6, Math.min(frameDuration, plan.exportDuration - outputTimestamp));
-    // resolveAllAt is bottom→top; drop the topmost layers past the budget so
-    // export degrades identically to preview.
+    // resolveAllAt is bottom→top. Skip offline/non-decodable sources first, then
+    // keep the bottom `layerBudget` decodable layers (dropping the topmost
+    // extras) so export degrades identically to preview's makeGetLayers.
     const resolvedLayers = resolveAllAt(
       timeline,
       Math.min(timelineTime, plan.rangeStartS + plan.exportDuration - 1e-6),
-    ).slice(0, layerBudget);
+    );
 
     // Decode each layer's source frame, build the composite stack, and render
     // through the same compositor as preview. Every decoded VideoFrame is closed
-    // exactly once below, after the layered submission completes.
+    // exactly once below — including on a mid-stack decode failure.
     const decodedFrames: VideoFrame[] = [];
     const layers: CompositeLayer[] = [];
     let exportFrame: VideoFrame;
     try {
       for (const layer of resolvedLayers) {
         const sourceHandle = sources.get(layer.clip.sourceId);
-        const decoded = await sourceHandle?.frameSource?.frameAt(layer.sourceTime);
+        if (!sourceHandle?.frameSource) continue;
+        if (layers.length >= layerBudget) break;
+        const decoded = await sourceHandle.frameSource.frameAt(layer.sourceTime);
         if (!decoded) continue;
         let videoFrame: VideoFrame;
         try {
