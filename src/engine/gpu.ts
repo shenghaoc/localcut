@@ -6,6 +6,8 @@ import transformF32 from './shaders/transform.wgsl?raw';
 import transformF16 from './shaders/transform.f16.wgsl?raw';
 import compositeOverF32 from './shaders/composite-over.wgsl?raw';
 import compositeOverF16 from './shaders/composite-over.f16.wgsl?raw';
+import sourceNormalizeF32 from './shaders/source-normalize.wgsl?raw';
+import sourceNormalizeF16 from './shaders/source-normalize.f16.wgsl?raw';
 import outputConvertF32 from './shaders/output-convert.wgsl?raw';
 import outputConvertF16 from './shaders/output-convert.f16.wgsl?raw';
 import opacityF32 from './shaders/opacity.wgsl?raw';
@@ -94,6 +96,7 @@ export class PreviewRenderer {
   private readonly transformPipeline: GPUComputePipeline;
   private readonly compositePipeline: GPUComputePipeline;
   // Phase 21: new pipeline stages
+  private readonly sourceNormalizePipeline: GPUComputePipeline;
   private readonly outputConvertPipeline: GPUComputePipeline;
   private readonly opacityPipeline: GPUComputePipeline;
   private readonly clippingOverlayPipeline: GPUComputePipeline | null;
@@ -115,12 +118,18 @@ export class PreviewRenderer {
   // Phase 21: output-conversion scratch (post-composite, before present).
   private outConvTex: GPUTexture | null = null;
   private outConvView: GPUTextureView | null = null;
+  // Phase 21: opacity scratch (dedicated texture to avoid aliasing with storage.c).
+  private opacityTex: GPUTexture | null = null;
+  private opacityView: GPUTextureView | null = null;
   // Phase 21: zebra overlay texture (only allocated when toggled on).
   private zebraTex: GPUTexture | null = null;
   private zebraView: GPUTextureView | null = null;
   private zebraEnabled = false;
 
-  // Phase 21: per-layer opacity uniform buffers.
+  // Phase 21: per-layer normalization uniform buffers.
+  private readonly normalizeBuffers: GPUBuffer[] = [];
+  private readonly normalizeGroupLayout: GPUBindGroupLayout;
+  // Per-layer opacity uniform buffers.
   private readonly opacityBuffers: GPUBuffer[] = [];
   private readonly opacityGroupLayout: GPUBindGroupLayout;
   // Output-conversion uniform buffer.
@@ -180,6 +189,13 @@ export class PreviewRenderer {
     });
 
     // Phase 21: new stage pipelines
+    this.sourceNormalizePipeline = device.createComputePipeline({
+      layout: 'auto',
+      compute: {
+        module: device.createShaderModule({ code: useF16 ? sourceNormalizeF16 : sourceNormalizeF32 }),
+        entryPoint: 'main',
+      },
+    });
     this.outputConvertPipeline = device.createComputePipeline({
       layout: 'auto',
       compute: {
@@ -208,6 +224,7 @@ export class PreviewRenderer {
       }
     })();
 
+    this.normalizeGroupLayout = this.sourceNormalizePipeline.getBindGroupLayout(0);
     this.outConvGroupLayout = this.outputConvertPipeline.getBindGroupLayout(0);
     this.opacityGroupLayout = this.opacityPipeline.getBindGroupLayout(0);
 
@@ -295,6 +312,8 @@ export class PreviewRenderer {
     this.transformTex = this.device.createTexture({ size, format: 'rgba8unorm', usage });
     // Phase 21: output-conversion scratch
     this.outConvTex = this.device.createTexture({ size, format: 'rgba8unorm', usage });
+    // Phase 21: opacity scratch (dedicated to avoid aliasing)
+    this.opacityTex = this.device.createTexture({ size, format: 'rgba8unorm', usage });
     this.accTex = [
       this.device.createTexture({ size, format: 'rgba8unorm', usage }),
       this.device.createTexture({ size, format: 'rgba8unorm', usage }),
@@ -304,6 +323,7 @@ export class PreviewRenderer {
     this.storageCView = this.storageC.createView();
     this.transformView = this.transformTex.createView();
     this.outConvView = this.outConvTex!.createView();
+    this.opacityView = this.opacityTex!.createView();
     this.accView = [this.accTex[0].createView(), this.accTex[1].createView()];
 
     this.lastPresentView = null;
@@ -396,7 +416,7 @@ export class PreviewRenderer {
       // Stage 1: source-normalization + colour import
       const srcView =
         layer.kind === 'frame'
-          ? this.encodeSourceNormalize(encoder, layer, storage)
+          ? this.encodeSourceNormalize(encoder, layer, storage, slot)
           : layer.view;
 
       const srcWidth = layer.kind === 'frame' ? layer.frame.displayWidth : layer.sourceWidth;
@@ -422,7 +442,7 @@ export class PreviewRenderer {
       }
 
       // Stage 4: opacity
-      const opaqueView = this.encodeOpacity(encoder, lutView, storage, layer.transform, slot, wgX, wgY);
+      const opaqueView = this.encodeOpacity(encoder, lutView, layer.transform, slot, wgX, wgY);
 
       // Stage 5: transform
       this.encodeTransform(
@@ -459,30 +479,65 @@ export class PreviewRenderer {
     encoder: GPUCommandEncoder,
     layer: FrameCompositeLayer,
     storage: { a: GPUTextureView; b: GPUTextureView; c: GPUTextureView },
+    slot: number,
   ): GPUTextureView {
-    // Import the external texture via passthrough
-    return this.effectChain.encodeColourImport(
+    const wgX = Math.ceil(this.width / 8);
+    const wgY = Math.ceil(this.height / 8);
+
+    // Import external texture via passthrough into storage.a
+    const imported = this.effectChain.encodeColourImport(
       encoder,
       this.device.importExternalTexture({ source: layer.frame }),
       storage,
       this.width, this.height,
     );
+
+    // Source normalization: decode transfer + convert colour space to working linear.
+    // When per-clip colour metadata is available, the per-clip normalization params
+    // are written to the uniform buffer; currently defaults to identity (sRGB→linear).
+    let buffer = this.normalizeBuffers[slot];
+    if (!buffer) {
+      buffer = this.device.createBuffer({
+        size: 8, // inverseTransfer: u32 + fullRange: u32
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+      this.normalizeBuffers[slot] = buffer;
+    }
+    // Default: sRGB→linear, full range
+    this.device.queue.writeBuffer(buffer, 0, new Uint32Array([2, 1]));
+
+    // Normalize into storage.b (safe: storage.a holds the imported frame)
+    const dstView = storage.b;
+    const bindGroup = this.device.createBindGroup({
+      layout: this.normalizeGroupLayout,
+      entries: [
+        { binding: 0, resource: { buffer } },
+        { binding: 1, resource: imported },
+        { binding: 2, resource: dstView },
+      ],
+    });
+    const pass = encoder.beginComputePass();
+    pass.setPipeline(this.sourceNormalizePipeline);
+    pass.setBindGroup(0, bindGroup);
+    pass.dispatchWorkgroups(wgX, wgY);
+    pass.end();
+
+    return dstView;
   }
 
   /** Stage 4: opacity — multiply alpha by per-layer opacity uniform. */
   private encodeOpacity(
     encoder: GPUCommandEncoder,
     srcView: GPUTextureView,
-    storage: { a: GPUTextureView; b: GPUTextureView; c: GPUTextureView },
     transform: TransformParams,
     slot: number,
     wgX: number,
     wgY: number,
   ): GPUTextureView {
-    if (transform.opacity >= 1.0) return srcView;
+    if (transform.opacity >= 1.0 || !this.opacityView) return srcView;
 
-    // Use storage.c as the opacity output
-    const dstView = storage.c;  // safe: post base-correction+LUT, pre-transform
+    // Use dedicated opacity scratch texture to avoid aliasing with storage.c
+    const dstView = this.opacityView;
 
     let buffer = this.opacityBuffers[slot];
     if (!buffer) {
@@ -655,6 +710,8 @@ export class PreviewRenderer {
     this.destroyTextures();
     for (const buffer of this.transformBuffers) buffer.destroy();
     this.transformBuffers.length = 0;
+    for (const buffer of this.normalizeBuffers) buffer.destroy();
+    this.normalizeBuffers.length = 0;
     for (const buffer of this.opacityBuffers) buffer.destroy();
     this.opacityBuffers.length = 0;
     this.outConvUniform?.destroy();
@@ -671,6 +728,7 @@ export class PreviewRenderer {
     this.storageC?.destroy();
     this.transformTex?.destroy();
     this.outConvTex?.destroy();
+    this.opacityTex?.destroy();
     this.zebraTex?.destroy();
     this.accTex?.[0]?.destroy();
     this.accTex?.[1]?.destroy();
@@ -680,6 +738,8 @@ export class PreviewRenderer {
     this.transformTex = null;
     this.outConvTex = null;
     this.outConvView = null;
+    this.opacityTex = null;
+    this.opacityView = null;
     this.zebraTex = null;
     this.zebraView = null;
     this.accTex = null;

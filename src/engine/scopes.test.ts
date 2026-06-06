@@ -82,9 +82,10 @@ describe('Scope SAB ring-buffer', () => {
     return new Float32Array(scopeTotalBufferFloats(scopeResX));
   }
 
-  it('readScopeResult returns null when magic is 0', () => {
+  it('readScopeResult returns null when sequence is odd', () => {
     const buf = createTestBuffer();
     buf.fill(0);
+    buf[0] = 1; // odd = writer active
     const result = readScopeResult(buf, histogramSlotOffset(), SCOPE_HISTOGRAM_DATA_FLOATS);
     expect(result).toBeNull();
   });
@@ -109,23 +110,26 @@ describe('Scope SAB ring-buffer', () => {
     expect(result!.data[dataFloats - 1]).toBe(42);
   });
 
-  it('readScopeResult detects torn writes when magic changes', () => {
+  it('readScopeResult detects torn writes when sequence changes', () => {
     const buf = createTestBuffer();
     const slotOffset = histogramSlotOffset();
     const dataFloats = SCOPE_HISTOGRAM_DATA_FLOATS;
 
-    endScopeWrite(buf, slotOffset); // set magic to ready
-
-    // Simulate a torn write by modifying the magic between reads
-    // This is a unit test of the detection logic — real torn writes
-    // would happen with concurrent access, but we test the guard.
-    const originalMagic = buf[slotOffset];
-    expect(originalMagic).not.toBe(0);
-
-    // If a write started during our read, we'd get null
+    // Set up a completed write: begin → write → end gives even sequence
     beginScopeWrite(buf, slotOffset);
-    const result = readScopeResult(buf, slotOffset, dataFloats);
-    expect(result).toBeNull();
+    endScopeWrite(buf, slotOffset);
+    const originalSeq = buf[slotOffset];
+    expect(Math.round(originalSeq) % 2).toBe(0);
+
+    // Set up read context (sequence is even)
+    writeScopeHeader(buf, slotOffset, 3.0, 0);
+    void readScopeResult(buf, slotOffset, dataFloats);
+    // The read may or may not succeed depending on state — what matters
+    // is that if a write starts mid-read, the detection rejects it.
+    // Simulate: begin a new write (odd sequence), then verify read returns null
+    beginScopeWrite(buf, slotOffset);
+    const result2 = readScopeResult(buf, slotOffset, dataFloats);
+    expect(result2).toBeNull();
   });
 
   it('writeScopeHeader sets timestamp and clipCount', () => {

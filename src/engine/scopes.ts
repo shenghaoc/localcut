@@ -25,25 +25,35 @@ export interface ScopeFrameInput {
   features: ScopeFeatures;
 }
 
-/** The magic constant for detecting torn SAB writes. */
-const SCOPE_MAGIC_READY = 0x5C0E01;
-const SCOPE_MAGIC_WRITING = 0;
-
 // ─── SAB ring-buffer layout ────────────────────────────────────────────
 
 /**
- * Four scope slots in a shared ring-buffer:
- *   slot 0: histogram  — 4 × 256 floats (R/G/B/Y bins) + header
- *   slot 1: waveform   — 2 × scopeResX floats (min/max per column) + header
- *   slot 2: parade     — 6 × scopeResX floats (Rmin/Rmax, Gmin/Gmax, Bmin/Bmax) + header
- *   slot 3: vectorscope — N × N u32 hit counts + header
+ * Each scope slot in the SAB ring-buffer:
+ *   [0] sequence: f32 (incrementing counter, odd = writing, even = stable)
+ *   [1] timestamp: f32 (frame time)
+ *   [2] clipCount: u32 (pixels clipped this frame)
+ *   [3..N] data: f32[] (scope-specific layout)
  *
- * Each slot: [magic:f32, timestamp:f32, clipCount:u32, ...data]
- * Header = 3 floats (12 bytes). Writer writes magic=0 first, then data, then magic=SCOPE_MAGIC_READY.
- * Reader checks magic≠0 and re-checks after reading — if magic unchanged, data is valid.
+ * Writer protocol:
+ *   1. Increment sequence to an odd value (marks "writing").
+ *   2. Write timestamp, clipCount, and data.
+ *   3. Increment sequence to the next even value (marks "ready").
+ *
+ * Reader protocol:
+ *   1. Read sequence → s1.
+ *   2. If s1 is odd, skip (writer is active).
+ *   3. Read timestamp + data.
+ *   4. Read sequence → s2.
+ *   5. If s1 !== s2, torn write detected — discard and retry.
+ *
+ * An incrementing counter is stronger than a binary magic because a rapid
+ * double-write cannot produce a false match.
  */
 
-const SLOT_HEADER_FLOATS = 3;
+const SLOT_HEADER_FLOATS = 3; // [sequence, timestamp, clipCount]
+
+/** Sequence counter for the writer — increments by 2 each write (odd=during write, even=ready). */
+let _scopeWriteSeq = 0;
 
 export const SCOPE_HISTOGRAM_BINS = 256;
 export const SCOPE_HISTOGRAM_CHANNELS = 4; // R, G, B, Y
@@ -111,19 +121,21 @@ export function readScopeResult(
   slotOffset: number,
   dataFloats: number,
 ): ScopeResult | null {
-  // Read magic
-  const magic = buffer[slotOffset];
-  if (magic === SCOPE_MAGIC_WRITING) return null;
+  // Read sequence — odd means writer is active
+  const s1 = buffer[slotOffset];
+  if (Math.round(s1) % 2 !== 0) return null;
 
-  // Read timestamp
+  // Read timestamp and clipCount
   const timestamp = buffer[slotOffset + 1];
   const clipCount = buffer[slotOffset + 2];
 
   // Read data
-  const data = buffer.slice(slotOffset + SLOT_HEADER_FLOATS, slotOffset + SLOT_HEADER_FLOATS + dataFloats);
+  const dataStart = slotOffset + SLOT_HEADER_FLOATS;
+  const data = buffer.slice(dataStart, dataStart + dataFloats);
 
-  // Re-read magic to detect torn writes
-  if (buffer[slotOffset] !== magic) return null;
+  // Re-read sequence — if changed, torn write
+  const s2 = buffer[slotOffset];
+  if (s1 !== s2) return null;
 
   return {
     type: 'histogram', // caller overrides
@@ -135,14 +147,17 @@ export function readScopeResult(
 
 // ─── Ring-buffer write helpers (worker thread) ─────────────────────────
 
-/** Begin writing a scope slot: set magic to 0 (writing). */
-export function beginScopeWrite(buffer: Float32Array, slotOffset: number): void {
-  buffer[slotOffset] = SCOPE_MAGIC_WRITING;
+/** Begin writing a scope slot: set sequence to odd value (writer is active). */
+export function beginScopeWrite(buffer: Float32Array, slotOffset: number): number {
+  _scopeWriteSeq += 1; // odd number
+  buffer[slotOffset] = _scopeWriteSeq;
+  return _scopeWriteSeq;
 }
 
-/** Complete a scope write: set magic to SCOPE_MAGIC_READY. */
+/** Complete a scope write: set sequence to the next even value (data ready). */
 export function endScopeWrite(buffer: Float32Array, slotOffset: number): void {
-  buffer[slotOffset] = SCOPE_MAGIC_READY;
+  _scopeWriteSeq += 1; // even number
+  buffer[slotOffset] = _scopeWriteSeq;
 }
 
 /** Write header fields (timestamp, clipCount) to the slot. */

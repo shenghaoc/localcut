@@ -4,6 +4,7 @@
  *  plus any active HDR / gamut warnings.
  */
 
+import { For } from 'solid-js';
 import type { HDRWarningSnapshot } from '../protocol';
 
 export interface ColourInspectorProps {
@@ -44,15 +45,15 @@ export default function ColourInspector(props: ColourInspectorProps) {
 
       {hasWarnings && (
         <ul class="colour-warnings">
-          {props.warnings.map((w, i) => (
-            <li
-              class={`colour-warning colour-warning--${w.type === 'hdr-content-detected' ? 'amber' : 'red'}`}
-              // eslint-disable-next-line solid/no-react-key
-              data-key={i}
-            >
-              {w.message}
-            </li>
-          ))}
+          <For each={props.warnings}>
+            {(w) => (
+              <li
+                class={`colour-warning colour-warning--${w.type === 'hdr-content-detected' ? 'amber' : 'red'}`}
+              >
+                {w.message}
+              </li>
+            )}
+          </For>
         </ul>
       )}
     </section>

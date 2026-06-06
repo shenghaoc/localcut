@@ -14,7 +14,7 @@ struct Uniforms {
 fn inverseTransferSRGB(lin: vec3<f16>) -> vec3<f16> {
   var result: vec3<f16>;
   for (var i = 0u; i < 3u; i++) {
-    let c = lin[i];
+    let c = clamp(lin[i], f16(0.0), f16(1.0));
     if (c <= f16(0.04045)) {
       result[i] = c / f16(12.92);
     } else {

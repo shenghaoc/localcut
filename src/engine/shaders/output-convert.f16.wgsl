@@ -13,7 +13,7 @@ struct Uniforms {
 fn encodeSRGB(linear: vec3<f16>) -> vec3<f16> {
   var result: vec3<f16>;
   for (var i = 0u; i < 3u; i++) {
-    let c = linear[i];
+    let c = clamp(linear[i], f16(0.0), f16(1.0));
     if (c <= f16(0.0031308)) {
       result[i] = f16(12.92) * c;
     } else {

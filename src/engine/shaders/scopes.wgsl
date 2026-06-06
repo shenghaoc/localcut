@@ -1,15 +1,15 @@
 // Scopes compute shader — Phase 21.
 //
 // Combined compute pass that produces histogram bins, luma waveform min/max,
-// RGB parade min/max, and vectorscope hit counts from the composited frame.
-// Clipping counter is accumulated alongside the histogram.
+// RGB parade min/max from the composited frame. Vectorscope is computed in a
+// separate pass (vectorscope.wgsl) because storage-texture atomics are not
+// available in WebGPU — accumulation uses an atomic storage buffer instead.
 
 struct Uniforms {
   inputWidth: u32,
   inputHeight: u32,
   scopeResX: u32,   // reduced horizontal resolution for waveform/parade
   scopeResY: u32,
-  vecSize: u32,      // vectorscope output size (e.g. 128)
 }
 
 // Output buffers
@@ -20,21 +20,12 @@ struct HistogramBin {
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(0) @binding(1) var src: texture_2d<f32>;
 @group(0) @binding(2) var<storage, read_write> histogram: HistogramBin;
-@group(0) @binding(3) var<storage, read_write> waveform: array<atomic<u32>>;   // 2 × scopeResX: even=min accumulator, odd=max
+@group(0) @binding(3) var<storage, read_write> waveform: array<atomic<u32>>;   // 2 × scopeResX: even=min, odd=max
 @group(0) @binding(4) var<storage, read_write> parade: array<atomic<u32>>;     // 6 × scopeResX: Rmin,Rmax,Gmin,Gmax,Bmin,Bmax
-@group(0) @binding(5) var vecTex: texture_storage_2d<rgba32uint, read_write>;
-@group(0) @binding(6) var<storage, read_write> clipCounter: atomic<u32>;
+@group(0) @binding(5) var<storage, read_write> clipCounter: atomic<u32>;
 
 fn rgbToLuma(rgb: vec3<f32>) -> f32 {
   return 0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b;
-}
-
-fn rgbToCbCr(rgb: vec3<f32>) -> vec2<f32> {
-  // BT.709 Y'CbCr coefficients
-  let y = rgbToLuma(rgb);
-  let cb = (rgb.b - y) / 1.8556 + 0.5;
-  let cr = (rgb.r - y) / 1.5748 + 0.5;
-  return vec2(cb, cr);
 }
 
 @compute @workgroup_size(8, 8)
@@ -87,11 +78,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   atomicMin(&parade[pCol * 6u + 4u], bQ);  // B min
   atomicMax(&parade[pCol * 6u + 5u], bQ);  // B max
 
-  // ── Vectorscope accumulation ──
-  let cbcr = rgbToCbCr(color.rgb);
-  let vecX = u32(clamp(cbcr.x, 0.0, 0.9999) * f32(u.vecSize));
-  let vecY = u32(clamp(cbcr.y, 0.0, 0.9999) * f32(u.vecSize));
-  // Atomic add on storage texture
-  let old = textureLoad(vecTex, vec2(vecX, vecY), 0);
-  textureStore(vecTex, vec2(vecX, vecY), old + vec4(1u, 0u, 0u, 0u));
+  // Vectorscope accumulated in a separate pass (vectorscope.wgsl) using atomic
+  // storage buffers, because WebGPU lacks atomic ops on storage textures.
 }

@@ -11,10 +11,11 @@ struct Uniforms {
 @group(0) @binding(2) var dst: texture_storage_2d<rgba8unorm, write>;
 
 fn encodeSRGB(linear: vec3<f32>) -> vec3<f32> {
-  // sRGB OETF: linear RGB → sRGB non-linear
+  // sRGB OETF: linear RGB → sRGB non-linear.
+  // Clamp to [0, 1] before pow() to prevent NaN from negative inputs.
   var result: vec3<f32>;
   for (var i = 0u; i < 3u; i++) {
-    let c = linear[i];
+    let c = clamp(linear[i], 0.0, 1.0);
     if (c <= 0.0031308) {
       result[i] = 12.92 * c;
     } else {
