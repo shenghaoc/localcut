@@ -418,7 +418,7 @@ describe('timeline', () => {
     expect(pastedLut?.domainMin).toEqual([0.1, 0.2, 0.3]);
     expect(pastedLut?.domainMax).toEqual([0.9, 0.8, 0.7]);
     expect(pastedLut?.values).toBeInstanceOf(Float32Array);
-    expect(pastedLut?.values).not.toBe(lut.values);
+    expect(pastedLut?.values).toBe(lut.values);
   });
 
   it('returns the original timeline reference on no-op edits', () => {
@@ -459,6 +459,50 @@ describe('timeline', () => {
       start: 1,
       inPoint: 100,
     });
+  });
+
+  it('rebases keyframes when trimming a clip in edge', () => {
+    const timeline: TimelineTrack[] = [
+      {
+        id: 'video-track',
+        type: 'video',
+        ...DEFAULT_TRACK_MIX,
+        clips: [
+          defaultTimelineClip({
+            id: 'a',
+            sourceId: 'src-1',
+            start: 0,
+            duration: 6,
+            inPoint: 0,
+            effects: { ...defaultClipEffects(), brightness: 0 },
+            transform: { ...defaultClipTransform(), x: 0 },
+            keyframes: {
+              brightness: [
+                { t: 0, value: 0, easing: 'linear' },
+                { t: 6, value: 6, easing: 'linear' },
+              ],
+              x: [
+                { t: 1, value: 10, easing: 'linear' },
+                { t: 5, value: 50, easing: 'linear' },
+              ],
+            },
+          }),
+        ],
+      },
+    ];
+
+    const trimmed = trimClip(timeline, 'video-track', 'a', { edge: 'in', time: 2 });
+    const clip = trimmed[0]!.clips[0]!;
+    expect(clip.start).toBe(2);
+    expect(clip.duration).toBe(4);
+    expect(clip.keyframes?.brightness).toEqual([
+      { t: 0, value: 2, easing: 'linear' },
+      { t: 4, value: 6, easing: 'linear' },
+    ]);
+    expect(clip.keyframes?.x).toEqual([
+      { t: 0, value: 20, easing: 'linear' },
+      { t: 3, value: 50, easing: 'linear' },
+    ]);
   });
 
   it('extends the in-edge backward when the source has earlier content', () => {

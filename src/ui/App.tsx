@@ -260,19 +260,19 @@ export function App() {
     if (!track || track.type !== 'video') return null;
     const timelineClip = track.clips.find((c) => c.id === clip.clipId);
     if (!timelineClip) return null;
+    const localTime = clipLocalTime(timelineClip, clock.currentTime());
     // Title clips are source-less: their raster is a fixed 1920×1080 (16:9) card,
     // so the gizmo/inspector size against that rather than a media asset.
     if (timelineClip.kind === 'title') {
       return {
         trackId: track.id,
         clipId: timelineClip.id,
-        transform: timelineClip.transform,
+        transform: sampleTransformAt(timelineClip.transform, timelineClip.keyframes, localTime),
         sourceWidth: 1920,
         sourceHeight: 1080,
       };
     }
     const asset = assets().find((a) => a.sourceId === timelineClip.sourceId);
-    const localTime = clipLocalTime(timelineClip, clock.currentTime());
     return {
       trackId: track.id,
       clipId: timelineClip.id,
@@ -819,6 +819,7 @@ export function App() {
     const clips = selectedClipboardClips();
     if (clips.length === 0) return;
     setTimelineClipboard(clips);
+    bridge?.send({ type: 'cache-clipboard-luts', clips: selectedClipRefs() });
     setStatusLine(`Copied ${clips.length} clip${clips.length === 1 ? '' : 's'}`);
   }
 

@@ -149,6 +149,7 @@ const sourceDescriptors = new Map<string, SourceDescriptor>();
 /** Media-bin membership: every imported/restored source, placed or not. Pruning
  *  and persistence key off this set so unplaced assets survive. */
 const binSourceIds = new Set<string>();
+const clipboardLuts = new Map<string, ClipLut>();
 const restoringSourceIds = new Set<string>();
 let thumbnailGen: ThumbnailGenerator | null = null;
 const THUMBNAIL_WIDTH = 160;
@@ -1263,6 +1264,7 @@ function teardownMedia() {
   }
   sourceInputs.clear();
   binSourceIds.clear();
+  clipboardLuts.clear();
   primaryHandle = null;
   // Release cached title textures: clearing the timeline here (new project,
   // re-import, restore) would otherwise orphan them until worker disposal.
@@ -1548,11 +1550,21 @@ function timelineClipByRef(trackId: string, clipId: string): TimelineClip | null
   return timeline.find((track) => track.id === trackId)?.clips.find((clip) => clip.id === clipId) ?? null;
 }
 
+function handleCacheClipboardLuts(cmd: Extract<WorkerCommand, { type: 'cache-clipboard-luts' }>) {
+  clipboardLuts.clear();
+  for (const ref of cmd.clips) {
+    const lut = timelineClipByRef(ref.trackId, ref.clipId)?.lut;
+    if (lut) clipboardLuts.set(lut.key, cloneClipLut(lut)!);
+  }
+}
+
 function clipboardLutFromTimeline(item: TimelineClipboardClip): ClipLut | undefined {
   const snapshot = item.clip.lut;
   if (!snapshot) return undefined;
   const sourceClip = timelineClipByRef(item.trackId, item.clip.id);
   if (sourceClip?.lut?.key === snapshot.key) return cloneClipLut(sourceClip.lut);
+  const copied = clipboardLuts.get(snapshot.key);
+  if (copied) return cloneClipLut(copied);
   for (const track of timeline) {
     for (const clip of track.clips) {
       if (clip.lut?.key === snapshot.key) return cloneClipLut(clip.lut);
@@ -2386,6 +2398,9 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
       break;
     case 'paste-clips':
       handlePaste(cmd);
+      break;
+    case 'cache-clipboard-luts':
+      handleCacheClipboardLuts(cmd);
       break;
     case 'add-marker':
       handleAddMarker(cmd);

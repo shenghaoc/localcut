@@ -125,7 +125,9 @@ export function cloneCubeLut(lut: CubeLut): CubeLut {
     size: lut.size,
     domainMin: [...lut.domainMin],
     domainMax: [...lut.domainMax],
-    values: new Float32Array(lut.values),
+    // LUT sample tables are immutable after import/parse. Share the large table
+    // across clip/history clones and copy only the small mutable metadata arrays.
+    values: lut.values,
   };
 }
 

@@ -291,6 +291,11 @@ interface PasteTimelineClipsCommand {
   atTime: number;
 }
 
+interface CacheClipboardLutsCommand {
+  type: 'cache-clipboard-luts';
+  clips: TimelineClipReference[];
+}
+
 interface AddTimelineMarkerCommand {
   type: 'add-marker';
   time: number;
@@ -519,6 +524,7 @@ export type WorkerCommand =
   | MoveTimelineClipsCommand
   | DuplicateTimelineClipCommand
   | PasteTimelineClipsCommand
+  | CacheClipboardLutsCommand
   | AddTimelineMarkerCommand
   | DeleteTimelineMarkerCommand
   | CloseTimelineGapsCommand

@@ -559,6 +559,30 @@ function splitClipKeyframes(
   };
 }
 
+function rebaseTrimmedKeyframes(
+  clip: TimelineClip,
+  trimOffset: number,
+  nextDuration: number,
+): ClipKeyframes | undefined {
+  const keyframes = normalizeClipKeyframes(clip.keyframes, clip.duration);
+  if (!keyframes) return undefined;
+  const rebased: ClipKeyframes = {};
+
+  for (const [rawKey, track] of Object.entries(keyframes)) {
+    const key = rawKey as ClipKeyframeParam;
+    const boundaryValue = sampleKeyframes(track, trimOffset, clipKeyframeFallback(clip, key));
+    const shiftedTrack = track
+      .map((frame) => ({ ...frame, t: frame.t - trimOffset }))
+      .filter((frame) => frame.t >= 0 && frame.t <= nextDuration);
+    const nextTrack = insertKeyframe(shiftedTrack, { t: 0, value: boundaryValue, easing: 'linear' });
+    const normalized = normalizeClipKeyframes({ [key]: nextTrack }, nextDuration);
+    const normalizedTrack = normalized?.[key];
+    if (normalizedTrack?.length) rebased[key] = normalizedTrack;
+  }
+
+  return Object.keys(rebased).length > 0 ? rebased : undefined;
+}
+
 export function splitClipAt(
   timeline: Timeline,
   trackId: string,
@@ -843,7 +867,10 @@ export function trimClip(timeline: Timeline, trackId: string, clipId: string, op
     duration: nextDuration,
     inPoint: nextInPoint,
   };
-  const keyframes = normalizeClipKeyframes(nextClip.keyframes, nextDuration);
+  const keyframes =
+    edge === 'in'
+      ? rebaseTrimmedKeyframes(clip, nextStartOut - clip.start, nextDuration)
+      : normalizeClipKeyframes(nextClip.keyframes, nextDuration);
   if (keyframes) {
     nextClip.keyframes = keyframes;
   } else {

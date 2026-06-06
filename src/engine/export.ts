@@ -738,12 +738,13 @@ async function encodeVideoRange(
         if (isTitleClip(layer.clip)) {
           const texture = layer.clip.title ? titleTextureFor?.(layer.clip) : null;
           if (!texture) continue;
+          const sampled = sampleClipParamsAt(layer.clip, timelineTime);
           layers.push({
             kind: 'texture',
             view: texture.view,
             sourceWidth: texture.width,
             sourceHeight: texture.height,
-            transform: layer.clip.transform,
+            transform: sampled.transform,
           });
           continue;
         }
