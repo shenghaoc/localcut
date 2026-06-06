@@ -1,5 +1,5 @@
 import { createEffect, For, Show } from 'solid-js';
-import { Film, Image as ImageIcon, Music2, Plus, Trash2 } from 'lucide-solid';
+import { AlertTriangle, Film, Image as ImageIcon, Music2, Plus, Trash2 } from 'lucide-solid';
 import type { MediaAssetSnapshot } from '../protocol';
 import type { ThumbnailEntry } from './thumbnail-store';
 
@@ -42,9 +42,15 @@ function summarize(asset: MediaAssetSnapshot): string {
   }
   if (asset.video) {
     const fps = asset.video.frameRate ? ` · ${Math.round(asset.video.frameRate)}fps` : '';
-    return `${asset.video.width}×${asset.video.height}${fps}`;
+    const rotation = asset.video.rotationDeg ? ` · ${asset.video.rotationDeg}°` : '';
+    const rateMode = asset.video.frameRateMode === 'variable' ? ' · VFR' : '';
+    return `${asset.video.width}×${asset.video.height}${fps}${rotation}${rateMode}`;
   }
   return asset.mimeType ?? 'media';
+}
+
+function healthMessages(asset: MediaAssetSnapshot): string[] {
+  return asset.health?.warnings.map((warning) => warning.message) ?? [];
 }
 
 /** Single bin thumbnail: requests one frame and draws the transferred bitmap. */
@@ -119,19 +125,21 @@ export function MediaBin(props: MediaBinProps) {
           <For each={props.assets()}>
             {(asset) => {
               const offline = () => props.unresolvedIds().has(asset.sourceId);
+              const blocked = () => asset.health?.status === 'blocked';
+              const health = () => healthMessages(asset);
               return (
                 <li
-                  class={`media-bin-item${offline() ? ' is-offline' : ''}`}
-                  draggable={!offline()}
+                  class={`media-bin-item${offline() ? ' is-offline' : ''}${blocked() ? ' is-blocked' : ''}`}
+                  draggable={!offline() && !blocked()}
                   onDragStart={(event) => {
-                    if (offline() || !event.dataTransfer) {
+                    if (offline() || blocked() || !event.dataTransfer) {
                       event.preventDefault();
                       return;
                     }
                     event.dataTransfer.setData(ASSET_DRAG_MIME, asset.sourceId);
                     event.dataTransfer.effectAllowed = 'copy';
                   }}
-                  title={`${asset.fileName} · ${summarize(asset)}`}
+                  title={`${asset.fileName} · ${summarize(asset)}${health().length > 0 ? ` · ${health().join(' · ')}` : ''}`}
                 >
                   <BinThumbnail
                     asset={asset}
@@ -155,13 +163,25 @@ export function MediaBin(props: MediaBinProps) {
                       {summarize(asset)} · {formatDuration(asset.durationS)} · {formatSize(asset.byteSize)}
                       <Show when={offline()}> · offline</Show>
                     </span>
+                    <Show when={health().length > 0}>
+                      <ul class="media-bin-health">
+                        <For each={asset.health?.warnings ?? []}>
+                          {(warning) => (
+                            <li class={`media-bin-health-item is-${warning.severity}`}>
+                              <AlertTriangle size={11} aria-hidden="true" />
+                              <span>{warning.message}</span>
+                            </li>
+                          )}
+                        </For>
+                      </ul>
+                    </Show>
                   </div>
                   <div class="media-bin-actions">
                     <button
                       type="button"
                       class="media-bin-button"
                       onClick={() => props.onPlace(asset.sourceId)}
-                      disabled={offline()}
+                      disabled={offline() || blocked()}
                       aria-label={`Add ${asset.fileName} to timeline`}
                       title="Add to timeline"
                     >

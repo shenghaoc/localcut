@@ -12,6 +12,7 @@ import {
   deserializeProject,
   serializeProject,
   sourceDescriptorMatchesCandidate,
+  sourceDescriptorMismatchReasons,
   type SourceDescriptor,
 } from './project';
 
@@ -72,6 +73,37 @@ function sourceFixture(): SourceDescriptor {
       sampleRate: 48_000,
       codec: 'mp4a.40.2',
       canDecode: true,
+    },
+  };
+}
+
+function conformedSourceFixture(): SourceDescriptor {
+  const source = sourceFixture();
+  return {
+    ...source,
+    adapterId: 'mediabunny',
+    timing: {
+      normalizedStartS: 0,
+      durationS: 12.04,
+      video: { trackId: 'video-1', firstTimestampS: 0.42, lastTimestampS: 12.46, durationS: 12.04 },
+      audio: { trackId: 'audio-1', firstTimestampS: 0, lastTimestampS: 12.04, durationS: 12.04 },
+      avOffsetS: -0.42,
+      frameRateMode: 'constant',
+    },
+    video: {
+      ...source.video!,
+      codedWidth: 1920,
+      codedHeight: 1080,
+      frameRateMode: 'constant',
+      rotationDeg: 90,
+      color: { primaries: 'bt709', transfer: 'bt709', matrix: 'bt709', fullRange: false },
+      trackStartS: 0.42,
+      trackDurationS: 12.04,
+    },
+    audio: {
+      ...source.audio!,
+      trackStartS: 0,
+      trackDurationS: 12.04,
     },
   };
 }
@@ -427,5 +459,68 @@ describe('source descriptor matching', () => {
         durationS: 13,
       }),
     ).toBe(false);
+  });
+
+  it('matches relink candidates with conformance metadata inside timing tolerance', () => {
+    const source = conformedSourceFixture();
+    expect(
+      sourceDescriptorMatchesCandidate(source, {
+        fileName: source.fileName,
+        byteSize: source.byteSize,
+        durationS: source.durationS + 0.1,
+        video: source.video,
+        audio: source.audio,
+        timing: {
+          ...source.timing!,
+          video: {
+            ...source.timing!.video!,
+            firstTimestampS: source.timing!.video!.firstTimestampS + 0.04,
+          },
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('rejects relink candidates with mismatched timing, rotation, or audio conformance', () => {
+    const source = conformedSourceFixture();
+    const candidate = {
+      fileName: source.fileName,
+      byteSize: source.byteSize,
+      durationS: source.durationS,
+      video: source.video,
+      audio: source.audio,
+      timing: source.timing,
+    };
+
+    expect(
+      sourceDescriptorMismatchReasons(source, {
+        ...candidate,
+        timing: {
+          ...source.timing!,
+          video: {
+            ...source.timing!.video!,
+            firstTimestampS: source.timing!.video!.firstTimestampS + 0.2,
+          },
+        },
+      }),
+    ).toContain('track timing');
+    expect(
+      sourceDescriptorMismatchReasons(source, {
+        ...candidate,
+        video: { ...source.video!, rotationDeg: 0 },
+      }),
+    ).toContain('rotation');
+    expect(
+      sourceDescriptorMismatchReasons(source, {
+        ...candidate,
+        audio: { ...source.audio!, sampleRate: 44_100 },
+      }),
+    ).toContain('audio sample rate');
+    expect(
+      sourceDescriptorMismatchReasons(source, {
+        ...candidate,
+        audio: { ...source.audio!, channels: 1 },
+      }),
+    ).toContain('audio channel count');
   });
 });

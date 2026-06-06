@@ -1,4 +1,13 @@
-import type { ExportSettings, SourceDescriptorSnapshot } from '../protocol';
+import type {
+  ExportSettings,
+  NormalizedSourceTimingSnapshot,
+  SourceColorHintsSnapshot,
+  SourceDescriptorSnapshot,
+  SourceFrameRateModeSnapshot,
+  SourceHealthReportSnapshot,
+  SourceHealthWarningSnapshot,
+  SourceTrackTimingSnapshot,
+} from '../protocol';
 import {
   DEFAULT_CLIP_AUDIO_FADES,
   DEFAULT_MASTER_GAIN,
@@ -19,8 +28,9 @@ import {
 import { cloneClipKeyframes, parseClipKeyframes } from './keyframes';
 import { cloneClipLut, parsePersistedClipLut } from './lut';
 
-export const PROJECT_SCHEMA_VERSION = 6;
+export const PROJECT_SCHEMA_VERSION = 7;
 const DURATION_MATCH_TOLERANCE_S = 0.25;
+const TIMING_MATCH_TOLERANCE_S = 0.05;
 
 export type SourceDescriptor = SourceDescriptorSnapshot;
 
@@ -55,6 +65,9 @@ export interface SourceMatchCandidate {
   fileName: string;
   byteSize: number;
   durationS: number;
+  video?: SourceDescriptor['video'];
+  audio?: SourceDescriptor['audio'];
+  timing?: SourceDescriptor['timing'];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -189,11 +202,21 @@ function cloneSourceDescriptor(source: SourceDescriptor): SourceDescriptor {
     byteSize: source.byteSize,
     durationS: source.durationS,
     mimeType: source.mimeType,
+    adapterId: source.adapterId,
+    timing: cloneTiming(source.timing ?? defaultTimingForDescriptor(source.durationS, source.video, source.audio)),
+    health: source.health ? cloneHealthReport(source.health) : undefined,
     video: source.video
       ? {
           width: source.video.width,
           height: source.video.height,
+          codedWidth: source.video.codedWidth,
+          codedHeight: source.video.codedHeight,
           frameRate: source.video.frameRate,
+          frameRateMode: source.video.frameRateMode,
+          rotationDeg: source.video.rotationDeg,
+          color: source.video.color ? cloneColor(source.video.color) : undefined,
+          trackStartS: source.video.trackStartS,
+          trackDurationS: source.video.trackDurationS,
           codec: source.video.codec,
           canDecode: source.video.canDecode,
         }
@@ -202,10 +225,62 @@ function cloneSourceDescriptor(source: SourceDescriptor): SourceDescriptor {
       ? {
           channels: source.audio.channels,
           sampleRate: source.audio.sampleRate,
+          trackStartS: source.audio.trackStartS,
+          trackDurationS: source.audio.trackDurationS,
           codec: source.audio.codec,
           canDecode: source.audio.canDecode,
         }
       : undefined,
+  };
+}
+
+function cloneColor(color: SourceColorHintsSnapshot): SourceColorHintsSnapshot {
+  return {
+    primaries: color.primaries,
+    transfer: color.transfer,
+    matrix: color.matrix,
+    fullRange: color.fullRange,
+  };
+}
+
+function cloneTrackTiming(timing: SourceTrackTimingSnapshot): SourceTrackTimingSnapshot {
+  return {
+    trackId: timing.trackId,
+    firstTimestampS: timing.firstTimestampS,
+    lastTimestampS: timing.lastTimestampS,
+    durationS: timing.durationS,
+  };
+}
+
+function cloneTiming(timing: NormalizedSourceTimingSnapshot): NormalizedSourceTimingSnapshot {
+  return {
+    normalizedStartS: timing.normalizedStartS,
+    durationS: timing.durationS,
+    video: timing.video ? cloneTrackTiming(timing.video) : undefined,
+    audio: timing.audio ? cloneTrackTiming(timing.audio) : undefined,
+    avOffsetS: timing.avOffsetS,
+    frameRateMode: timing.frameRateMode,
+  };
+}
+
+function cloneHealthWarning(warning: SourceHealthWarningSnapshot): SourceHealthWarningSnapshot {
+  return {
+    code: warning.code,
+    severity: warning.severity,
+    blocking: warning.blocking,
+    sourceId: warning.sourceId,
+    trackId: warning.trackId,
+    message: warning.message,
+    details: { ...warning.details },
+  };
+}
+
+function cloneHealthReport(report: SourceHealthReportSnapshot): SourceHealthReportSnapshot {
+  return {
+    sourceId: report.sourceId,
+    fileName: report.fileName,
+    status: report.status,
+    warnings: report.warnings.map(cloneHealthWarning),
   };
 }
 
@@ -394,6 +469,183 @@ function parseMarker(value: unknown): TimelineMarker | null {
   return { id, time, label };
 }
 
+function parseFrameRateMode(value: unknown): SourceFrameRateModeSnapshot | undefined {
+  return value === 'constant' || value === 'variable' || value === 'unknown'
+    ? value
+    : undefined;
+}
+
+function parseColor(value: unknown): SourceColorHintsSnapshot | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) return undefined;
+  const primaries = optionalString(value.primaries);
+  const transfer = optionalString(value.transfer);
+  const matrix = optionalString(value.matrix);
+  const fullRange = value.fullRange === null || typeof value.fullRange === 'boolean' ? value.fullRange : undefined;
+  if (primaries === undefined || transfer === undefined || matrix === undefined || fullRange === undefined) {
+    return undefined;
+  }
+  return {
+    primaries: primaries ?? null,
+    transfer: transfer ?? null,
+    matrix: matrix ?? null,
+    fullRange,
+  };
+}
+
+function parseTrackTiming(value: unknown): SourceTrackTimingSnapshot | undefined {
+  if (!isRecord(value)) return undefined;
+  const trackId = requiredString(value.trackId);
+  const firstTimestampS = finiteNumber(value.firstTimestampS);
+  const lastTimestampS = value.lastTimestampS === null ? null : finiteNumber(value.lastTimestampS);
+  const durationS = value.durationS === null ? null : finiteNumber(value.durationS);
+  if (!trackId || firstTimestampS === null || lastTimestampS === undefined || durationS === undefined) {
+    return undefined;
+  }
+  return {
+    trackId,
+    firstTimestampS,
+    lastTimestampS,
+    durationS,
+  };
+}
+
+function defaultTimingForDescriptor(
+  durationS: number,
+  video?: SourceDescriptor['video'],
+  audio?: SourceDescriptor['audio'],
+): NormalizedSourceTimingSnapshot {
+  const videoStart = video?.trackStartS ?? 0;
+  const audioStart = audio?.trackStartS ?? 0;
+  const starts = [
+    video ? videoStart : undefined,
+    audio ? audioStart : undefined,
+  ].filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+  const normalizedStartS = Math.max(0, starts.length > 0 ? Math.min(...starts) : 0);
+  const duration = Math.max(0, durationS);
+  return {
+    normalizedStartS,
+    durationS: duration,
+    video: video
+      ? {
+          trackId: 'video-1',
+          firstTimestampS: videoStart,
+          lastTimestampS: videoStart + (video.trackDurationS ?? duration),
+          durationS: video.trackDurationS ?? duration,
+        }
+      : undefined,
+    audio: audio
+      ? {
+          trackId: 'audio-1',
+          firstTimestampS: audioStart,
+          lastTimestampS: audioStart + (audio.trackDurationS ?? duration),
+          durationS: audio.trackDurationS ?? duration,
+        }
+      : undefined,
+    avOffsetS: video && audio ? audioStart - videoStart : 0,
+    frameRateMode: video?.frameRateMode ?? 'unknown',
+  };
+}
+
+function parseTiming(
+  value: unknown,
+  durationS: number,
+  video?: SourceDescriptor['video'],
+  audio?: SourceDescriptor['audio'],
+): NormalizedSourceTimingSnapshot {
+  if (isRecord(value)) {
+    const normalizedStartS = finiteNumber(value.normalizedStartS);
+    const duration = finiteNumber(value.durationS);
+    const avOffsetS = finiteNumber(value.avOffsetS);
+    const frameRateMode = parseFrameRateMode(value.frameRateMode);
+    if (normalizedStartS !== null && duration !== null && avOffsetS !== null && frameRateMode) {
+      return {
+        normalizedStartS,
+        durationS: duration,
+        video: value.video === undefined ? undefined : parseTrackTiming(value.video),
+        audio: value.audio === undefined ? undefined : parseTrackTiming(value.audio),
+        avOffsetS,
+        frameRateMode,
+      };
+    }
+  }
+  return defaultTimingForDescriptor(durationS, video, audio);
+}
+
+function parseWarningCode(value: unknown): SourceHealthWarningSnapshot['code'] | null {
+  return value === 'variable-frame-rate' ||
+    value === 'non-zero-track-start' ||
+    value === 'audio-video-offset' ||
+    value === 'rotation-metadata' ||
+    value === 'mixed-audio-sample-rates' ||
+    value === 'unsupported-video-codec' ||
+    value === 'unsupported-audio-codec' ||
+    value === 'corrupt-or-truncated-file' ||
+    value === 'missing-duration' ||
+    value === 'undecodable-track'
+    ? value
+    : null;
+}
+
+function parseWarningDetails(value: unknown): SourceHealthWarningSnapshot['details'] {
+  if (!isRecord(value)) return {};
+  const details: SourceHealthWarningSnapshot['details'] = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (
+      typeof entry === 'string' ||
+      typeof entry === 'number' ||
+      typeof entry === 'boolean' ||
+      entry === null
+    ) {
+      details[key] = entry;
+    }
+  }
+  return details;
+}
+
+function parseHealthWarning(value: unknown): SourceHealthWarningSnapshot | null {
+  if (!isRecord(value)) return null;
+  const code = parseWarningCode(value.code);
+  const severity = value.severity === 'info' || value.severity === 'warning' || value.severity === 'error'
+    ? value.severity
+    : null;
+  const sourceId = requiredString(value.sourceId);
+  const trackId = optionalString(value.trackId);
+  const message = requiredString(value.message);
+  if (!code || !severity || !sourceId || trackId === undefined || !message || typeof value.blocking !== 'boolean') {
+    return null;
+  }
+  return {
+    code,
+    severity,
+    blocking: value.blocking,
+    sourceId,
+    trackId: trackId ?? undefined,
+    message,
+    details: parseWarningDetails(value.details),
+  };
+}
+
+function parseHealthReport(value: unknown, sourceId: string, fileName: string): SourceHealthReportSnapshot | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) return undefined;
+  const status = value.status === 'ok' || value.status === 'warnings' || value.status === 'blocked'
+    ? value.status
+    : null;
+  if (!status || !Array.isArray(value.warnings)) return undefined;
+  const warnings: SourceHealthWarningSnapshot[] = [];
+  for (const warning of value.warnings) {
+    const parsed = parseHealthWarning(warning);
+    if (parsed) warnings.push(parsed);
+  }
+  return {
+    sourceId,
+    fileName,
+    status,
+    warnings,
+  };
+}
+
 function parseMarkers(value: unknown): TimelineMarker[] | null {
   if (value === undefined) return [];
   if (!Array.isArray(value)) return null;
@@ -427,6 +679,14 @@ export function parseSourceDescriptor(value: unknown): SourceDescriptor | null {
     const height = finiteNumber(value.video.height);
     const frameRate = value.video.frameRate === null ? null : finiteNumber(value.video.frameRate);
     const codec = optionalString(value.video.codec);
+    const codedWidth = finiteNumber(value.video.codedWidth) ?? undefined;
+    const codedHeight = finiteNumber(value.video.codedHeight) ?? undefined;
+    const frameRateMode = parseFrameRateMode(value.video.frameRateMode);
+    const rotationDeg = finiteNumber(value.video.rotationDeg) ?? undefined;
+    const color = parseColor(value.video.color);
+    const trackStartS = finiteNumber(value.video.trackStartS) ?? undefined;
+    const trackDurationS =
+      value.video.trackDurationS === null ? null : finiteNumber(value.video.trackDurationS) ?? undefined;
     if (
       width === null ||
       height === null ||
@@ -439,7 +699,14 @@ export function parseSourceDescriptor(value: unknown): SourceDescriptor | null {
     video = {
       width,
       height,
+      codedWidth,
+      codedHeight,
       frameRate,
+      frameRateMode,
+      rotationDeg,
+      color,
+      trackStartS,
+      trackDurationS,
       codec,
       canDecode: value.video.canDecode,
     };
@@ -451,12 +718,17 @@ export function parseSourceDescriptor(value: unknown): SourceDescriptor | null {
     const channels = finiteNumber(value.audio.channels);
     const sampleRate = finiteNumber(value.audio.sampleRate);
     const codec = optionalString(value.audio.codec);
+    const trackStartS = finiteNumber(value.audio.trackStartS) ?? undefined;
+    const trackDurationS =
+      value.audio.trackDurationS === null ? null : finiteNumber(value.audio.trackDurationS) ?? undefined;
     if (channels === null || sampleRate === null || codec === undefined || typeof value.audio.canDecode !== 'boolean') {
       return null;
     }
     audio = {
       channels,
       sampleRate,
+      trackStartS,
+      trackDurationS,
       codec,
       canDecode: value.audio.canDecode,
     };
@@ -468,6 +740,12 @@ export function parseSourceDescriptor(value: unknown): SourceDescriptor | null {
       : hasVideoBlock
         ? 'video'
         : 'audio';
+  const adapterId =
+    value.adapterId === 'mediabunny' || value.adapterId === 'web-demuxer-diagnostics'
+      ? value.adapterId
+      : undefined;
+  const timing = parseTiming(value.timing, durationS, video, audio);
+  const health = parseHealthReport(value.health, sourceId, fileName);
 
   return {
     sourceId,
@@ -476,6 +754,9 @@ export function parseSourceDescriptor(value: unknown): SourceDescriptor | null {
     byteSize,
     durationS,
     mimeType,
+    adapterId,
+    timing,
+    health,
     video,
     audio,
   };
@@ -576,6 +857,7 @@ export function deserializeProject(value: unknown): DeserializeProjectResult {
       return deserializeV2(value);
     case 5:
     case 6:
+    case 7:
       // v6 adds source-less title clips plus keyframe/LUT clip sidecars; parseClip
       // handles both while the v5 path keeps transition parsing.
       return deserializeV6(value);
@@ -588,9 +870,43 @@ export function sourceDescriptorMatchesCandidate(
   descriptor: SourceDescriptor,
   candidate: SourceMatchCandidate,
 ): boolean {
+  return sourceDescriptorMismatchReasons(descriptor, candidate).length === 0;
+}
+
+function closeEnough(a: number | null | undefined, b: number | null | undefined, tolerance: number): boolean {
+  if (a === undefined || b === undefined) return true;
+  if (a === null || b === null) return a === b;
+  return Math.abs(a - b) <= tolerance;
+}
+
+function timingMatches(
+  descriptor: SourceDescriptor,
+  candidate: SourceMatchCandidate,
+): boolean {
+  if (!descriptor.timing || !candidate.timing) return true;
   return (
-    descriptor.fileName === candidate.fileName &&
-    descriptor.byteSize === candidate.byteSize &&
-    Math.abs(descriptor.durationS - candidate.durationS) <= DURATION_MATCH_TOLERANCE_S
+    closeEnough(descriptor.timing.normalizedStartS, candidate.timing.normalizedStartS, TIMING_MATCH_TOLERANCE_S) &&
+    closeEnough(descriptor.timing.video?.firstTimestampS, candidate.timing.video?.firstTimestampS, TIMING_MATCH_TOLERANCE_S) &&
+    closeEnough(descriptor.timing.audio?.firstTimestampS, candidate.timing.audio?.firstTimestampS, TIMING_MATCH_TOLERANCE_S) &&
+    closeEnough(descriptor.timing.avOffsetS, candidate.timing.avOffsetS, TIMING_MATCH_TOLERANCE_S)
   );
+}
+
+export function sourceDescriptorMismatchReasons(
+  descriptor: SourceDescriptor,
+  candidate: SourceMatchCandidate,
+): string[] {
+  const reasons: string[] = [];
+  if (descriptor.fileName !== candidate.fileName) reasons.push('name');
+  if (descriptor.byteSize !== candidate.byteSize) reasons.push('size');
+  if (Math.abs(descriptor.durationS - candidate.durationS) > DURATION_MATCH_TOLERANCE_S) reasons.push('duration');
+  if (!timingMatches(descriptor, candidate)) reasons.push('track timing');
+  if (descriptor.video?.rotationDeg !== undefined && candidate.video?.rotationDeg !== undefined) {
+    if (descriptor.video.rotationDeg !== candidate.video.rotationDeg) reasons.push('rotation');
+  }
+  if (descriptor.audio && candidate.audio) {
+    if (descriptor.audio.sampleRate !== candidate.audio.sampleRate) reasons.push('audio sample rate');
+    if (descriptor.audio.channels !== candidate.audio.channels) reasons.push('audio channel count');
+  }
+  return reasons;
 }

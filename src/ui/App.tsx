@@ -10,6 +10,7 @@ import {
   type MediaAssetSnapshot,
   type MediaMetadata,
   type SourceDescriptorSnapshot,
+  type SourceHealthReportSnapshot,
   type TimelineClipboardClip,
   type TimelineClipReference,
   type TimelineClipSnapshot,
@@ -167,6 +168,7 @@ export function App() {
   const [restoreOffer, setRestoreOffer] = createSignal<RestoreOfferState | null>(null);
   const [unresolvedSources, setUnresolvedSources] = createSignal<SourceDescriptorSnapshot[]>([]);
   const [assets, setAssets] = createSignal<MediaAssetSnapshot[]>([]);
+  const [latestHealthReport, setLatestHealthReport] = createSignal<SourceHealthReportSnapshot | null>(null);
   const [thumbnailVersion, setThumbnailVersion] = createSignal(0);
   const thumbnailStore = new ThumbnailStore();
 
@@ -391,6 +393,9 @@ export function App() {
         break;
       case 'media-assets': {
         setAssets(msg.assets);
+        setLatestHealthReport((prev) =>
+          prev && msg.assets.some((asset) => asset.sourceId === prev.sourceId) ? null : prev,
+        );
         // Free bitmaps for assets that left the bin.
         const live = new Set(msg.assets.map((asset) => asset.sourceId));
         for (const id of thumbnailStore.sourceIds()) {
@@ -423,6 +428,7 @@ export function App() {
         break;
       case 'restore-result':
         setRestoreOffer(null);
+        setLatestHealthReport(null);
         setUnresolvedSources(msg.unresolvedSources);
         setStatusLine(msg.message);
         if (msg.metadata) {
@@ -439,6 +445,7 @@ export function App() {
         break;
       case 'relink-result':
         setUnresolvedSources(msg.unresolvedSources);
+        setLatestHealthReport(null);
         setStatusLine(msg.message);
         if (msg.ok && msg.metadata) {
           setMetadata(msg.metadata);
@@ -492,6 +499,12 @@ export function App() {
         setExportError(msg.message);
         setStatusLine(`Export failed: ${msg.message}`);
         break;
+      case 'source-health': {
+        setLatestHealthReport(msg.report.status === 'ok' ? null : msg.report);
+        const first = msg.report.warnings[0];
+        if (first) setStatusLine(first.message);
+        break;
+      }
       case 'dispose-complete':
         break;
       case 'import-error':
@@ -605,6 +618,7 @@ export function App() {
     setTimelineClipboard([]);
     setWaveformPeaks({});
     setAssets([]);
+    setLatestHealthReport(null);
     thumbnailStore.clear();
     setThumbnailVersion((v) => v + 1);
     setHistoryState({ canUndo: false, canRedo: false });
@@ -1124,6 +1138,30 @@ export function App() {
             hidden
           />
         </section>
+      </Show>
+      <Show when={latestHealthReport()}>
+        {(report) => (
+          <section
+            class="source-health-banner"
+            role={report().status === 'blocked' ? 'alert' : undefined}
+          >
+            <div class="restore-banner-copy">
+              <p class="restore-banner-title">Media health · {report().fileName}</p>
+              <p class="restore-banner-detail">
+                {report().warnings.length} issue{report().warnings.length === 1 ? '' : 's'} detected.
+              </p>
+            </div>
+            <ul class="source-health-list">
+              <For each={report().warnings}>
+                {(warning) => (
+                  <li class={`source-health-item is-${warning.severity}`}>
+                    <span>{warning.message}</span>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </section>
+        )}
       </Show>
       <main class={`workspace${accelerated() ? ' has-bin' : ''}`}>
         <Show when={accelerated()}>

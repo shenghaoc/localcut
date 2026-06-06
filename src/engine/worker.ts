@@ -84,6 +84,9 @@ import {
   STILL_DEFAULT_DURATION_S,
   type MediaInputHandle,
 } from './media-io';
+import { healthReportForHandle } from './media-adapters/mediabunny-adapter';
+import { resolveSourceTimestamp } from './media-adapters/source-timing';
+import { sourceHealthReportFromError } from './media-adapters/source-health';
 import { ThumbnailGenerator } from './thumbnails';
 import { initGpu, type CompositeLayer, type PreviewRenderer } from './gpu';
 import { createCanvasTitleUploader, loadTitleFonts, TitleTextureCache } from './titles';
@@ -110,7 +113,7 @@ import {
   cloneTimelineSnapshot,
   cloneTransitionsSnapshot,
   serializeProject,
-  sourceDescriptorMatchesCandidate,
+  sourceDescriptorMismatchReasons,
   type ProjectDoc,
   type SourceDescriptor,
 } from './project';
@@ -374,6 +377,8 @@ function assetSnapshotFromDescriptor(descriptor: SourceDescriptor): MediaAssetSn
           width: descriptor.video.width,
           height: descriptor.video.height,
           frameRate: descriptor.video.frameRate,
+          frameRateMode: descriptor.video.frameRateMode,
+          rotationDeg: descriptor.video.rotationDeg,
         }
       : undefined,
     audio: descriptor.audio
@@ -382,7 +387,14 @@ function assetSnapshotFromDescriptor(descriptor: SourceDescriptor): MediaAssetSn
           sampleRate: descriptor.audio.sampleRate,
         }
       : undefined,
+    timing: descriptor.timing,
+    health: descriptor.health,
   };
+}
+
+function postSourceHealth(report: SourceDescriptor['health']): void {
+  if (!report || report.warnings.length === 0) return;
+  post({ type: 'source-health', report });
 }
 
 function postMediaAssets(): void {
@@ -473,7 +485,19 @@ async function pumpAudioOnce(): Promise<void> {
     pcm = pcmRemainder;
     pcmRemainder = null;
   } else {
-    pcm = await handle.audioSource.pcmAt(resolved.sourceTime, channels);
+    const sourceTimestamp = resolveSourceTimestamp({
+      clip: resolved.clip,
+      timelineTime,
+      trackKind: 'audio',
+      timing: handle.timing,
+    });
+    if (!sourceTimestamp.available) {
+      const silenceFrames = Math.min(freeFrames, 1024);
+      const written = writeRingPcm(audioRing, new Float32Array(silenceFrames * channels));
+      audioWriteFrames += written;
+      return;
+    }
+    pcm = await handle.audioSource.pcmAt(sourceTimestamp.adapterTimestampS, channels);
     if (!pcm) {
       const silenceFrames = Math.min(freeFrames, 1024);
       const written = writeRingPcm(audioRing, new Float32Array(silenceFrames * channels));
@@ -562,11 +586,19 @@ function sourceDescriptorFromHandle(
   file: File,
   handle: MediaInputHandle,
 ): SourceDescriptor {
+  const videoInspection = handle.inspection.tracks.find((track) => track.kind === 'video');
   const video = handle.metadata.video
     ? {
         width: handle.metadata.video.width,
         height: handle.metadata.video.height,
+        codedWidth: videoInspection?.kind === 'video' ? videoInspection.codedWidth : undefined,
+        codedHeight: videoInspection?.kind === 'video' ? videoInspection.codedHeight : undefined,
         frameRate: handle.metadata.video.frameRate,
+        frameRateMode: handle.timing.frameRateMode,
+        rotationDeg: videoInspection?.kind === 'video' ? videoInspection.rotationDeg : undefined,
+        color: videoInspection?.kind === 'video' ? videoInspection.color : undefined,
+        trackStartS: handle.timing.video?.firstTimestampS,
+        trackDurationS: handle.timing.video?.durationS,
         codec: handle.metadata.video.codec,
         canDecode: handle.metadata.video.canDecode,
       }
@@ -575,6 +607,8 @@ function sourceDescriptorFromHandle(
     ? {
         channels: handle.metadata.audio.channels,
         sampleRate: handle.metadata.audio.sampleRate,
+        trackStartS: handle.timing.audio?.firstTimestampS,
+        trackDurationS: handle.timing.audio?.durationS,
         codec: handle.metadata.audio.codec,
         canDecode: handle.metadata.audio.canDecode,
       }
@@ -587,6 +621,9 @@ function sourceDescriptorFromHandle(
     byteSize: file.size,
     durationS: handle.duration,
     mimeType: handle.metadata.mimeType,
+    adapterId: handle.adapterId,
+    timing: handle.timing,
+    health: healthReportForHandle(handle),
     video,
     audio,
   };
@@ -748,7 +785,7 @@ async function attachSourceFile(
   fileHandle?: FileSystemFileHandle | null,
   persist = false,
   canAttach: () => boolean = () => true,
-): Promise<{ ok: true; handle: MediaInputHandle } | { ok: false; message: string }> {
+): Promise<{ ok: true; handle: MediaInputHandle; descriptor: SourceDescriptor } | { ok: false; message: string }> {
   let mediaHandle: MediaInputHandle;
   try {
     mediaHandle = await openMediaFile(file, descriptor.sourceId);
@@ -758,11 +795,14 @@ async function attachSourceFile(
   }
 
   const candidate = sourceDescriptorFromHandle(descriptor.sourceId, file, mediaHandle);
-  if (!sourceDescriptorMatchesCandidate(descriptor, candidate)) {
+  const mismatchReasons = sourceDescriptorMismatchReasons(descriptor, candidate);
+  if (mismatchReasons.length > 0) {
     mediaHandle.dispose();
     return {
       ok: false,
-      message: `Picked file does not match ${descriptor.fileName}. Match requires the same name, size, and duration.`,
+      message:
+        `Picked file does not match ${descriptor.fileName}. ` +
+        `Mismatch: ${mismatchReasons.join(', ')}.`,
     };
   }
   if (!canAttach()) {
@@ -773,7 +813,7 @@ async function attachSourceFile(
   const previous = sourceInputs.get(descriptor.sourceId);
   if (previous && previous !== mediaHandle) previous.dispose();
   sourceInputs.set(descriptor.sourceId, mediaHandle);
-  sourceDescriptors.set(descriptor.sourceId, descriptor);
+  sourceDescriptors.set(descriptor.sourceId, candidate);
   if ((!primaryHandle || primaryHandle.sourceId === descriptor.sourceId) && mediaHandle.frameSource) {
     primaryHandle = mediaHandle;
   }
@@ -786,13 +826,14 @@ async function attachSourceFile(
   if (persist) {
     await persistSourceBestEffort({
       sourceId: descriptor.sourceId,
-      descriptor,
+      descriptor: candidate,
       file,
       fileHandle: fileHandle ?? undefined,
     });
   }
 
-  return { ok: true, handle: mediaHandle };
+  postSourceHealth(candidate.health);
+  return { ok: true, handle: mediaHandle, descriptor: candidate };
 }
 
 async function restoreStoredSources(
@@ -1404,7 +1445,18 @@ function makeGetLayers() {
           overBudget = true;
           continue;
         }
-        const decoded = await decodeFrameForLayer(handle, layer.clip.sourceId, layer.sourceTime);
+        const sourceTimestamp = resolveSourceTimestamp({
+          clip: layer.clip,
+          timelineTime: timestamp,
+          trackKind: 'video',
+          timing: handle.timing,
+        });
+        if (!sourceTimestamp.available) continue;
+        const decoded = await decodeFrameForLayer(
+          handle,
+          layer.clip.sourceId,
+          sourceTimestamp.adapterTimestampS,
+        );
         if (!decoded) continue;
         const sampled = sampleClipParamsAt(layer.clip, timestamp);
         decodedCount += 1;
@@ -1475,6 +1527,7 @@ async function handleImport(file: File, fileHandle?: FileSystemFileHandle | null
 
     ensureClockAndTimeline();
     postMediaAssets();
+    postSourceHealth(descriptor.health);
     postHistoryState();
     scheduleAutosave();
 
@@ -1494,6 +1547,9 @@ async function handleImport(file: File, fileHandle?: FileSystemFileHandle | null
       binSourceIds.delete(sourceId);
     }
     const message = e instanceof Error ? e.message : String(e);
+    if (sourceId) {
+      post({ type: 'source-health', report: sourceHealthReportFromError(sourceId, file.name, message) });
+    }
     post({ type: 'import-error', message });
   }
 }
@@ -2030,14 +2086,15 @@ async function handleRelinkSource(cmd: Extract<WorkerCommand, { type: 'relink-so
   setupPlayback();
   ensureClockAndTimeline();
   scheduleAutosave();
+  postMediaAssets();
   post({
     type: 'relink-result',
     sourceId: cmd.sourceId,
     ok: true,
-    descriptor,
+    descriptor: result.descriptor,
     metadata: activeMetadata(),
     unresolvedSources: unresolvedSourceDescriptors(),
-    message: `Re-linked ${descriptor.fileName}.`,
+    message: `Re-linked ${result.descriptor.fileName}.`,
   });
 }
 
