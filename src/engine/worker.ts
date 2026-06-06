@@ -6,15 +6,22 @@ import {
   type ThroughputProbe,
   type MediaMetadata,
   type SourceDescriptorSnapshot,
+  type TimelineClipboardClip,
   type TimelineTrackSnapshot,
   type WorkerCommand,
   type WorkerStateMessage,
 } from '../protocol';
 import {
+  addMarker,
+  closeGaps,
   createEmptyTimeline,
   DEFAULT_TRACK_MIX,
+  deleteMarker,
+  duplicateClips,
   getTimelineDuration,
-  reorderClip,
+  moveClips,
+  moveClipTo,
+  pasteClips,
   removeClip,
   resolveAt,
   resolveAudioAt,
@@ -29,6 +36,8 @@ import {
   defaultTimelineClip,
   DEFAULT_MASTER_GAIN,
   type Timeline,
+  type TimelineMarker,
+  type ClipboardTimelineClip,
 } from './timeline';
 import {
   applyMixStageInPlace,
@@ -63,6 +72,7 @@ import {
 } from './export';
 import { createTimelineHistory, type HistoryCoalesceKey } from './history';
 import {
+  cloneMarkersSnapshot,
   cloneTimelineSnapshot,
   serializeProject,
   sourceDescriptorMatchesCandidate,
@@ -86,6 +96,7 @@ let playback: PlaybackController | null = null;
 let adaptive: AdaptiveResolution | null = null;
 let probeDone = false;
 let timeline: Timeline = createEmptyTimeline();
+let markers: TimelineMarker[] = [];
 let masterGain = DEFAULT_MASTER_GAIN;
 /** Phase 13 will populate this; export crossfades only until preview dual-stream lands. */
 const audioTransitions: AudioTransitionCut[] = [];
@@ -146,7 +157,7 @@ function postTimelineState() {
       offline: sourceInputs.has(clip.sourceId) ? undefined : true,
     })),
   }));
-  post({ type: 'timeline-state', timeline: snapshot, masterGain });
+  post({ type: 'timeline-state', timeline: snapshot, markers: cloneMarkersSnapshot(markers), masterGain });
 }
 
 function postHistoryState(): void {
@@ -437,6 +448,7 @@ async function persistCurrentProject(): Promise<void> {
   const doc = serializeProject({
     projectId,
     timeline,
+    markers,
     sources: currentProjectSources(),
     masterGain,
     exportSettings: lastExportSettings ?? undefined,
@@ -674,6 +686,31 @@ function afterTimelineMutation(options: {
   void restoreMissingSources().catch(() => undefined);
 }
 
+function historySnapshot() {
+  return {
+    timeline,
+    markers,
+  };
+}
+
+function commitEditMutation(
+  mutate: () => { timeline: Timeline; markers: TimelineMarker[] },
+  options: {
+    coalesceKey?: HistoryCoalesceKey;
+    refreshPlayback?: 'seek' | 'refresh' | 'none';
+    prune?: boolean;
+  } = {},
+): boolean {
+  const before = historySnapshot();
+  const next = mutate();
+  if (next.timeline === timeline && next.markers === markers) return false;
+  history.push(before, { coalesceKey: options.coalesceKey });
+  timeline = next.timeline;
+  markers = next.markers;
+  afterTimelineMutation(options);
+  return true;
+}
+
 function commitTimelineMutation(
   mutate: () => Timeline,
   options: {
@@ -682,13 +719,22 @@ function commitTimelineMutation(
     prune?: boolean;
   } = {},
 ): boolean {
-  const before = timeline;
-  const next = mutate();
-  if (next === before) return false;
-  history.push(before, { coalesceKey: options.coalesceKey });
-  timeline = next;
-  afterTimelineMutation(options);
-  return true;
+  return commitEditMutation(() => ({ timeline: mutate(), markers }), options);
+}
+
+function commitMarkerMutation(
+  mutate: () => TimelineMarker[],
+  options: {
+    coalesceKey?: HistoryCoalesceKey;
+    refreshPlayback?: 'seek' | 'refresh' | 'none';
+    prune?: boolean;
+  } = {},
+): boolean {
+  return commitEditMutation(() => ({ timeline, markers: mutate() }), {
+    refreshPlayback: 'none',
+    prune: false,
+    ...options,
+  });
 }
 
 function ensureFrameCache() {
@@ -761,8 +807,16 @@ function projectHasClips(doc: ProjectDoc): boolean {
   return doc.timeline.some((track) => track.clips.length > 0);
 }
 
+/** An autosave is worth offering to restore when it holds any user content —
+ *  clips or markers. Marker-only projects (e.g. all clips deleted after placing
+ *  markers) are still persisted, so they must remain restore-eligible or the
+ *  saved marker data would be silently lost on the next launch. */
+function projectHasRestorableContent(doc: ProjectDoc): boolean {
+  return projectHasClips(doc) || doc.markers.length > 0;
+}
+
 function currentProjectIsEmpty(): boolean {
-  return sourceInputs.size === 0 && timelineSourceIds().size === 0;
+  return sourceInputs.size === 0 && timelineSourceIds().size === 0 && markers.length === 0;
 }
 
 async function checkRestoreAvailable(): Promise<void> {
@@ -773,7 +827,7 @@ async function checkRestoreAvailable(): Promise<void> {
     postProjectWarning(`Could not read autosaved project: ${result.reason}`);
     return;
   }
-  if (!result.doc || !projectHasClips(result.doc)) return;
+  if (!result.doc || !projectHasRestorableContent(result.doc)) return;
   if (
     generation !== restoreOfferGeneration ||
     projectId !== checkedProjectId ||
@@ -852,6 +906,7 @@ async function handleRestoreProject(): Promise<void> {
   restoreDoc = null;
   projectId = doc.projectId;
   timeline = cloneTimelineSnapshot(doc.timeline);
+  markers = cloneMarkersSnapshot(doc.markers);
   lastExportSettings = doc.exportSettings ?? null;
   masterGain = doc.masterGain;
   nextSourceId = nextSourceIdFromDescriptors(doc.sources);
@@ -893,6 +948,7 @@ async function handleNewProject(): Promise<void> {
   lastExportSettings = null;
   projectId = makeProjectId();
   nextSourceId = 1;
+  markers = [];
   masterGain = DEFAULT_MASTER_GAIN;
   ensureClockAndTimeline();
   postHistoryState();
@@ -942,6 +998,7 @@ function teardownMedia() {
   sourceInputs.clear();
   primaryHandle = null;
   timeline = createEmptyTimeline();
+  markers = [];
 }
 
 function wrapDecodedFrameForPlayback(frameSource: MediaInputHandle, sourceTimestamp: number): Promise<DecodedFrame | null> {
@@ -1034,11 +1091,12 @@ async function handleImport(file: File, fileHandle?: FileSystemFileHandle | null
       primaryHandle = handle;
     }
 
-    const before = timeline;
+    const beforeTimeline = timeline;
+    const before = historySnapshot();
     const start = getTimelineDuration(timeline);
     appendTrackForSource(handle, start);
     appendAudioTrackForSource(handle, start);
-    if (timeline !== before) {
+    if (timeline !== beforeTimeline) {
       history.push(before);
       afterTimelineMutation();
     } else {
@@ -1099,10 +1157,62 @@ function handleDelete(cmd: Extract<WorkerCommand, { type: 'delete-clip' }>) {
   commitTimelineMutation(() => removeClip(timeline, cmd.trackId, cmd.clipId));
 }
 
+function handleDeleteBatch(cmd: Extract<WorkerCommand, { type: 'delete-clips' }>) {
+  commitTimelineMutation(() => {
+    let next = timeline;
+    for (const clip of cmd.clips) {
+      next = removeClip(next, clip.trackId, clip.clipId);
+    }
+    return next;
+  });
+}
+
 function handleMove(cmd: Extract<WorkerCommand, { type: 'move-clip' }>) {
   commitTimelineMutation(() =>
-    reorderClip(timeline, cmd.fromTrackId, cmd.clipId, cmd.toTrackId, cmd.toIndex),
+    moveClipTo(timeline, cmd.fromTrackId, cmd.clipId, cmd.toTrackId, cmd.toStart),
   );
+}
+
+function handleMoveBatch(cmd: Extract<WorkerCommand, { type: 'move-clips' }>) {
+  commitTimelineMutation(() => moveClips(timeline, cmd.moves));
+}
+
+function handleDuplicate(cmd: Extract<WorkerCommand, { type: 'duplicate-clip' }>) {
+  commitTimelineMutation(() => duplicateClips(timeline, cmd.clips, cmd.atTime));
+}
+
+function clipboardClipFromMessage(item: TimelineClipboardClip): ClipboardTimelineClip {
+  return {
+    trackId: item.trackId,
+    clip: {
+      id: item.clip.id,
+      sourceId: item.clip.sourceId,
+      start: item.clip.start,
+      duration: item.clip.duration,
+      inPoint: item.clip.inPoint,
+      effects: { ...item.clip.effects },
+      audioFadeIn: item.clip.audioFadeIn,
+      audioFadeOut: item.clip.audioFadeOut,
+    },
+  };
+}
+
+function handlePaste(cmd: Extract<WorkerCommand, { type: 'paste-clips' }>) {
+  commitTimelineMutation(() =>
+    pasteClips(timeline, cmd.clips.map(clipboardClipFromMessage), cmd.atTime),
+  );
+}
+
+function handleAddMarker(cmd: Extract<WorkerCommand, { type: 'add-marker' }>) {
+  commitMarkerMutation(() => addMarker(markers, cmd.time, cmd.label));
+}
+
+function handleDeleteMarker(cmd: Extract<WorkerCommand, { type: 'delete-marker' }>) {
+  commitMarkerMutation(() => deleteMarker(markers, cmd.markerId));
+}
+
+function handleCloseGaps(cmd: Extract<WorkerCommand, { type: 'close-gaps' }>) {
+  commitTimelineMutation(() => closeGaps(timeline, cmd.trackId));
 }
 
 function handleSetEffectParam(cmd: Extract<WorkerCommand, { type: 'set-effect-param' }>) {
@@ -1172,22 +1282,27 @@ function handleTrim(cmd: Extract<WorkerCommand, { type: 'trim-clip' }>) {
   const track = timeline.find((t) => t.id === cmd.trackId);
   const clip = track?.clips.find((c) => c.id === cmd.clipId);
   const sourceDuration = clip ? sourceInputs.get(clip.sourceId)?.duration : undefined;
-  commitTimelineMutation(() =>
-    trimClip(timeline, cmd.trackId, cmd.clipId, {
-      edge: cmd.edge,
-      time: cmd.time,
-      sourceDuration,
-    }),
+  commitTimelineMutation(
+    () =>
+      trimClip(timeline, cmd.trackId, cmd.clipId, {
+        edge: cmd.edge,
+        time: cmd.time,
+        sourceDuration,
+      }),
+    // Coalesce the ~16/s debounced trim messages of a single drag into one
+    // history entry per clip+edge so a long drag doesn't exhaust the undo ring.
+    { coalesceKey: { clipId: cmd.clipId, key: `trim-${cmd.edge}` } },
   );
 }
 
-function applyHistoryRestore(next: Timeline): void {
-  timeline = next;
+function applyHistoryRestore(next: { timeline: Timeline; markers: TimelineMarker[] }): void {
+  timeline = cloneTimelineSnapshot(next.timeline);
+  markers = cloneMarkersSnapshot(next.markers);
   afterTimelineMutation();
 }
 
 function handleUndo(): void {
-  const next = history.undo(timeline);
+  const next = history.undo(historySnapshot());
   if (!next) {
     postHistoryState();
     return;
@@ -1196,7 +1311,7 @@ function handleUndo(): void {
 }
 
 function handleRedo(): void {
-  const next = history.redo(timeline);
+  const next = history.redo(historySnapshot());
   if (!next) {
     postHistoryState();
     return;
@@ -1555,8 +1670,29 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
     case 'delete-clip':
       handleDelete(cmd);
       break;
+    case 'delete-clips':
+      handleDeleteBatch(cmd);
+      break;
     case 'move-clip':
       handleMove(cmd);
+      break;
+    case 'move-clips':
+      handleMoveBatch(cmd);
+      break;
+    case 'duplicate-clip':
+      handleDuplicate(cmd);
+      break;
+    case 'paste-clips':
+      handlePaste(cmd);
+      break;
+    case 'add-marker':
+      handleAddMarker(cmd);
+      break;
+    case 'delete-marker':
+      handleDeleteMarker(cmd);
+      break;
+    case 'close-gaps':
+      handleCloseGaps(cmd);
       break;
     case 'trim-clip':
       handleTrim(cmd);

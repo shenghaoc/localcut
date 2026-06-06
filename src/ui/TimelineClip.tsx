@@ -1,27 +1,31 @@
-import { Show } from 'solid-js';
+import { createSignal, onCleanup, Show } from 'solid-js';
 import { type TimelineClipSnapshot as ProtocolTimelineClip, type WaveformPeaks } from '../protocol';
+import {
+  resolveSnap,
+  timelineTimeAtClientX,
+  type SnapTarget,
+} from './timeline-interaction';
 import { Waveform } from './Waveform';
 
 interface TimelineClipProps {
   trackId: string;
   clip: ProtocolTimelineClip;
-  totalDuration: number;
+  pxPerSecond: number;
+  snapEnabled: boolean;
+  snapTargets: readonly SnapTarget[];
+  onMove?: (trackId: string, clipId: string, toStart: number, fromStart: number) => void;
   onSplit?: (trackId: string, clipId: string, time: number) => void;
   onDelete?: (trackId: string, clipId: string) => void;
   onTrim?: (trackId: string, clipId: string, edge: 'in' | 'out', time: number) => void;
   selected?: boolean;
-  onSelect?: () => void;
+  onSelect?: (additive: boolean, exclusive: boolean) => void;
   peaks?: WaveformPeaks | null;
   isAudio?: boolean;
 }
 
 const EDGE_HANDLE_PX = 10;
 const TRIM_DEBOUNCE_MS = 60;
-
-function safePercent(value: number, total: number) {
-  if (total <= 0 || Number.isNaN(value) || Number.isNaN(total)) return 0;
-  return `${(value / total) * 100}%`;
-}
+const SNAP_THRESHOLD_PX = 8;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -33,10 +37,18 @@ function clamp(value: number, min: number, max: number) {
  * the clip's current bounds to extend it back out; the worker validates the
  * result against source-media bounds.
  */
-function trackTimeAt(clientX: number, trackRect: DOMRect, totalDuration: number): number | null {
-  if (trackRect.width <= 0 || totalDuration <= 0) return null;
-  const ratio = (clientX - trackRect.left) / trackRect.width;
-  return Math.max(0, ratio * totalDuration);
+function trackTimeAt(
+  clientX: number,
+  trackRect: DOMRect,
+  pxPerSecond: number,
+  snapEnabled: boolean,
+  snapTargets: readonly SnapTarget[],
+): number | null {
+  const time = timelineTimeAtClientX(clientX, trackRect.left, pxPerSecond);
+  if (time === null) return null;
+  return snapEnabled
+    ? resolveSnap(time, pxPerSecond, snapTargets, SNAP_THRESHOLD_PX).time
+    : time;
 }
 
 /** Clip block renderer from mirrored timeline data. */
@@ -44,18 +56,33 @@ export function TimelineClip(props: TimelineClipProps) {
   // Derived accessors (not one-shot values): a SolidJS component body runs once,
   // so reading props.* here directly would freeze position/size at first render and
   // never reflect a move/trim/duration change. Evaluate inside the tracking context.
-  const left = () => safePercent(props.clip.start, props.totalDuration);
-  const width = () => safePercent(props.clip.duration, props.totalDuration);
+  const [dragPreviewStart, setDragPreviewStart] = createSignal<number | null>(null);
+  const left = () => `${(dragPreviewStart() ?? props.clip.start) * props.pxPerSecond}px`;
+  const width = () => `${Math.max(10, props.clip.duration * props.pxPerSecond)}px`;
   const waveformWidth = () =>
-    Math.max(24, Math.floor((props.clip.duration / Math.max(props.totalDuration, 1)) * 900));
+    Math.max(24, Math.floor(props.clip.duration * props.pxPerSecond));
   const clipTitle = () => `${props.clip.id} (${props.clip.sourceId})`;
   let trimDebounce: ReturnType<typeof setTimeout> | null = null;
   let pendingTrimTime = props.clip.start;
   let activeTrimEdge: 'in' | 'out' | null = null;
+  let cleanupPointerListeners: (() => void) | null = null;
+
+  function clearPointerListeners() {
+    cleanupPointerListeners?.();
+    cleanupPointerListeners = null;
+  }
+
+  onCleanup(clearPointerListeners);
 
   function scheduleTrim(clientX: number, trackRect: DOMRect) {
     if (!activeTrimEdge || !props.onTrim) return;
-    const time = trackTimeAt(clientX, trackRect, props.totalDuration);
+    const time = trackTimeAt(
+      clientX,
+      trackRect,
+      props.pxPerSecond,
+      props.snapEnabled,
+      props.snapTargets,
+    );
     if (time === null) return;
     pendingTrimTime = time;
     if (trimDebounce) clearTimeout(trimDebounce);
@@ -97,14 +124,18 @@ export function TimelineClip(props: TimelineClipProps) {
     const onUp = (up: PointerEvent) => {
       scheduleTrim(up.clientX, trackRect);
       finalizeTrim();
+      clearPointerListeners();
+    };
+
+    clearPointerListeners();
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    cleanupPointerListeners = () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onUp);
   }
 
   /** Keyboard delete so clips of any duration (including those without the
@@ -137,10 +168,59 @@ export function TimelineClip(props: TimelineClipProps) {
     return null;
   }
 
+  function onMovePointerDown(event: PointerEvent) {
+    event.stopPropagation();
+    // Select on pointerdown so a group drag can begin immediately; App keeps an
+    // existing multi-selection intact when the clicked clip is already part of it.
+    props.onSelect?.(event.shiftKey, false);
+    if (!props.onMove) return;
+    event.preventDefault();
+    const clipEl = event.currentTarget as HTMLElement;
+    const trackEl = clipEl?.closest('.track-surface') as HTMLElement | null;
+    if (!trackEl) return;
+    const originX = event.clientX;
+    const originStart = props.clip.start;
+    let moved = false;
+    let finalStart = originStart;
+
+    const onMove = (move: PointerEvent) => {
+      const delta = (move.clientX - originX) / props.pxPerSecond;
+      const candidate = Math.max(0, originStart + delta);
+      finalStart = props.snapEnabled
+        ? resolveSnap(candidate, props.pxPerSecond, props.snapTargets, SNAP_THRESHOLD_PX).time
+        : candidate;
+      moved ||= Math.abs(finalStart - originStart) > 0.001;
+      setDragPreviewStart(finalStart);
+    };
+    const onUp = (up: PointerEvent) => {
+      onMove(up);
+      setDragPreviewStart(null);
+      clearPointerListeners();
+      if (moved) {
+        props.onMove?.(props.trackId, props.clip.id, finalStart, originStart);
+      } else if (!up.shiftKey) {
+        // A plain click (no drag, no shift) collapses any multi-selection down to
+        // just this clip; the pointerdown handler had preserved the group in case
+        // the user intended a drag.
+        props.onSelect?.(false, true);
+      }
+    };
+
+    clearPointerListeners();
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    cleanupPointerListeners = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+  }
+
   function onPointerDown(event: PointerEvent) {
     const edge = shouldSplitEdge(event);
     if (!edge) {
-      props.onSelect?.();
+      onMovePointerDown(event);
       return;
     }
     onTrimPointerDown(edge, event);
@@ -148,7 +228,7 @@ export function TimelineClip(props: TimelineClipProps) {
 
   return (
     <div
-      class={`timeline-clip${props.isAudio ? ' is-audio' : ''}${props.selected ? ' is-selected' : ''}${props.clip.offline ? ' is-offline' : ''}`}
+      class={`timeline-clip${props.isAudio ? ' is-audio' : ''}${props.selected ? ' is-selected' : ''}${dragPreviewStart() !== null ? ' is-dragging' : ''}${props.clip.offline ? ' is-offline' : ''}`}
       style={{ left: left(), width: width() }}
       title={clipTitle()}
       role="button"

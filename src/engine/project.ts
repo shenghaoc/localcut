@@ -4,12 +4,14 @@ import {
   DEFAULT_MASTER_GAIN,
   DEFAULT_TRACK_MIX,
   normalizeClipEffects,
+  sortMarkers,
   type Timeline,
   type TimelineClip,
+  type TimelineMarker,
   type TimelineTrack,
 } from './timeline';
 
-export const PROJECT_SCHEMA_VERSION = 1;
+export const PROJECT_SCHEMA_VERSION = 2;
 const DURATION_MATCH_TOLERANCE_S = 0.25;
 
 export type SourceDescriptor = SourceDescriptorSnapshot;
@@ -19,6 +21,7 @@ export interface ProjectDoc {
   projectId: string;
   savedAt: string;
   timeline: Timeline;
+  markers: TimelineMarker[];
   sources: SourceDescriptor[];
   masterGain: number;
   exportSettings?: ExportSettings;
@@ -27,6 +30,7 @@ export interface ProjectDoc {
 export interface SerializeProjectOptions {
   projectId: string;
   timeline: Timeline;
+  markers?: readonly TimelineMarker[];
   sources: readonly SourceDescriptor[];
   masterGain?: number;
   savedAt?: Date;
@@ -135,6 +139,16 @@ export function cloneTimelineSnapshot(timeline: Timeline): Timeline {
   }));
 }
 
+export function cloneMarkersSnapshot(markers: readonly TimelineMarker[]): TimelineMarker[] {
+  return sortMarkers(
+    markers.map((marker) => ({
+      id: marker.id,
+      time: marker.time,
+      label: marker.label,
+    })),
+  );
+}
+
 function cloneSourceDescriptor(source: SourceDescriptor): SourceDescriptor {
   return {
     sourceId: source.sourceId,
@@ -172,6 +186,7 @@ export function serializeProject(options: SerializeProjectOptions): ProjectDoc {
     projectId: options.projectId,
     savedAt: (options.savedAt ?? new Date()).toISOString(),
     timeline: cloneTimelineSnapshot(options.timeline),
+    markers: cloneMarkersSnapshot(options.markers ?? []),
     sources: options.sources.map(cloneSourceDescriptor),
     masterGain,
   };
@@ -251,6 +266,27 @@ function parseTrack(value: unknown): TimelineTrack | null {
     muted: value.muted,
     solo: value.solo,
   };
+}
+
+function parseMarker(value: unknown): TimelineMarker | null {
+  if (!isRecord(value)) return null;
+  const id = requiredString(value.id);
+  const time = finiteNumber(value.time);
+  const label = typeof value.label === 'string' ? value.label : null;
+  if (!id || time === null || time < 0 || label === null) return null;
+  return { id, time, label };
+}
+
+function parseMarkers(value: unknown): TimelineMarker[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) return null;
+  const markers: TimelineMarker[] = [];
+  for (const marker of value) {
+    const parsed = parseMarker(marker);
+    if (!parsed) return null;
+    markers.push(parsed);
+  }
+  return cloneMarkersSnapshot(markers);
 }
 
 export function parseSourceDescriptor(value: unknown): SourceDescriptor | null {
@@ -355,9 +391,24 @@ function deserializeV1(value: Record<string, unknown>): DeserializeProjectResult
       projectId,
       savedAt,
       timeline,
+      markers: [],
       sources,
       masterGain: Math.max(0, masterGain),
       ...(exportSettings ? { exportSettings } : {}),
+    },
+  };
+}
+
+function deserializeV2(value: Record<string, unknown>): DeserializeProjectResult {
+  const result = deserializeV1(value);
+  if (!result.ok) return result;
+  const markers = parseMarkers(value.markers);
+  if (!markers) return { ok: false, reason: 'Project markers are invalid.' };
+  return {
+    ok: true,
+    doc: {
+      ...result.doc,
+      markers,
     },
   };
 }
@@ -368,8 +419,10 @@ export function deserializeProject(value: unknown): DeserializeProjectResult {
   if (schemaVersion === null) return { ok: false, reason: 'Project document is missing schemaVersion.' };
 
   switch (schemaVersion) {
-    case PROJECT_SCHEMA_VERSION:
+    case 1:
       return deserializeV1(value);
+    case 2:
+      return deserializeV2(value);
     default:
       return { ok: false, reason: `Unsupported project schemaVersion ${schemaVersion}.` };
   }

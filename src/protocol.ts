@@ -98,6 +98,27 @@ export interface TimelineTrackSnapshot {
   solo: boolean;
 }
 
+export interface TimelineMarkerSnapshot {
+  id: string;
+  time: number;
+  label: string;
+}
+
+export interface TimelineClipReference {
+  trackId: string;
+  clipId: string;
+}
+
+export interface TimelineClipMove extends TimelineClipReference {
+  toTrackId: string;
+  toStart: number;
+}
+
+export interface TimelineClipboardClip {
+  trackId: string;
+  clip: TimelineClipSnapshot;
+}
+
 /** Min/max peak pairs (2 floats per bucket) for waveform rendering. */
 export type WaveformPeaks = Float32Array;
 
@@ -134,12 +155,50 @@ interface DeleteTimelineClipCommand {
   clipId: string;
 }
 
+interface DeleteTimelineClipsCommand {
+  type: 'delete-clips';
+  clips: TimelineClipReference[];
+}
+
 interface MoveTimelineClipCommand {
   type: 'move-clip';
   fromTrackId: string;
   toTrackId: string;
   clipId: string;
-  toIndex: number;
+  toStart: number;
+}
+
+interface MoveTimelineClipsCommand {
+  type: 'move-clips';
+  moves: TimelineClipMove[];
+}
+
+interface DuplicateTimelineClipCommand {
+  type: 'duplicate-clip';
+  clips: TimelineClipReference[];
+  atTime?: number;
+}
+
+interface PasteTimelineClipsCommand {
+  type: 'paste-clips';
+  clips: TimelineClipboardClip[];
+  atTime: number;
+}
+
+interface AddTimelineMarkerCommand {
+  type: 'add-marker';
+  time: number;
+  label?: string;
+}
+
+interface DeleteTimelineMarkerCommand {
+  type: 'delete-marker';
+  markerId: string;
+}
+
+interface CloseTimelineGapsCommand {
+  type: 'close-gaps';
+  trackId?: string;
 }
 
 interface TrimTimelineClipCommand {
@@ -212,7 +271,14 @@ export type WorkerCommand =
   | { type: 'relink-source'; sourceId: string; file: File; fileHandle?: FileSystemFileHandle | null }
   | SplitTimelineCommand
   | DeleteTimelineClipCommand
+  | DeleteTimelineClipsCommand
   | MoveTimelineClipCommand
+  | MoveTimelineClipsCommand
+  | DuplicateTimelineClipCommand
+  | PasteTimelineClipsCommand
+  | AddTimelineMarkerCommand
+  | DeleteTimelineMarkerCommand
+  | CloseTimelineGapsCommand
   | TrimTimelineClipCommand
   | SetEffectParamCommand
   | SetTrackGainCommand
@@ -280,7 +346,7 @@ export type WorkerStateMessage =
     }
   | { type: 'preview-resolution'; resolution: PreviewResolution }
   | { type: 'probe-result'; probe: ThroughputProbe }
-  | { type: 'timeline-state'; timeline: TimelineTrackSnapshot[]; masterGain: number }
+  | { type: 'timeline-state'; timeline: TimelineTrackSnapshot[]; markers: TimelineMarkerSnapshot[]; masterGain: number }
   | { type: 'waveform-peaks'; trackId: string; clipId: string; peaks: WaveformPeaks }
   | { type: 'export-codecs'; supported: ExportCodecSupport[]; settings: ExportSettings }
   | { type: 'export-progress'; progress: ExportProgress }
