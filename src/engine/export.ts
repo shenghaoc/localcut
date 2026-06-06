@@ -216,14 +216,26 @@ function firstVideoHandle(
   return null;
 }
 
-function firstAudioHandle(
+export function clipOverlapsRange(
+  clip: TimelineClip,
+  rangeStartS: number,
+  rangeEndS: number,
+): boolean {
+  const clipEnd = clip.start + clip.duration;
+  return clip.start < rangeEndS && clipEnd > rangeStartS;
+}
+
+function firstAudioHandleInRange(
   timeline: Timeline,
   sources: ReadonlyMap<string, MediaInputHandle>,
+  rangeStartS: number,
+  rangeEndS: number,
 ): MediaInputHandle | null {
   for (const track of timeline) {
     if (track.type !== 'audio') continue;
     if (!trackIsAudible(track, timeline)) continue;
     for (const clip of track.clips) {
+      if (!clipOverlapsRange(clip, rangeStartS, rangeEndS)) continue;
       const handle = sources.get(clip.sourceId);
       if (handle?.audioSource) return handle;
     }
@@ -312,7 +324,8 @@ export function buildExportPlan(
 
   const frameRate = normalized.fps;
   const { totalFrames } = exportFrameBounds(exportDuration, frameRate);
-  const audioHandle = firstAudioHandle(timeline, sources);
+  const rangeEndS = rangeStartS + exportDuration;
+  const audioHandle = firstAudioHandleInRange(timeline, sources, rangeStartS, rangeEndS);
   const estimatedFps = estimatedEncodeFps(probe, normalized.preset, normalized.codec);
   const audioSampleRate = audioHandle?.audioSampleRate ?? 48_000;
 
@@ -320,6 +333,7 @@ export function buildExportPlan(
     for (const track of timeline) {
       if (track.type !== 'audio' || !trackIsAudible(track, timeline)) continue;
       for (const clip of track.clips) {
+        if (!clipOverlapsRange(clip, rangeStartS, rangeEndS)) continue;
         const handle = sources.get(clip.sourceId);
         if (handle?.audioSource && handle.audioSampleRate !== audioSampleRate) {
           throw new Error(

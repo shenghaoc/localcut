@@ -66,11 +66,13 @@ function parseExportSettings(value: unknown): ExportSettings | undefined {
 
   let range: ExportSettings['range'];
   if (value.range !== undefined) {
-    if (!isRecord(value.range)) return undefined;
-    const startS = finiteNumber(value.range.startS);
-    const endS = finiteNumber(value.range.endS);
-    if (startS === null || endS === null || endS <= startS) return undefined;
-    range = { startS, endS };
+    if (isRecord(value.range)) {
+      const startS = finiteNumber(value.range.startS);
+      const endS = finiteNumber(value.range.endS);
+      if (startS !== null && endS !== null && endS > startS) {
+        range = { startS, endS };
+      }
+    }
   }
 
   return {

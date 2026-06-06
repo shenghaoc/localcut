@@ -52,6 +52,38 @@ function sourceFixture(): SourceDescriptor {
 }
 
 describe('project serialization', () => {
+  it('drops a malformed export range but keeps the other settings', () => {
+    const result = deserializeProject({
+      schemaVersion: PROJECT_SCHEMA_VERSION,
+      projectId: 'project-1',
+      savedAt: '2026-06-06T00:00:00.000Z',
+      timeline: timelineFixture(),
+      sources: [sourceFixture()],
+      exportSettings: {
+        preset: 'quality',
+        codec: 'h264',
+        container: 'mp4',
+        width: 1920,
+        height: 1080,
+        fps: 30,
+        videoBitrate: 8_000_000,
+        range: { startS: 4, endS: 4 },
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.doc.exportSettings).toEqual({
+      preset: 'quality',
+      codec: 'h264',
+      container: 'mp4',
+      width: 1920,
+      height: 1080,
+      fps: 30,
+      videoBitrate: 8_000_000,
+    });
+  });
+
   it('round-trips export settings when present', () => {
     const doc = serializeProject({
       projectId: 'project-1',

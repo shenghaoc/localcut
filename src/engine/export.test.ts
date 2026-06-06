@@ -219,6 +219,61 @@ describe('export planning', () => {
       'Audio source "b" has sample rate 44100 Hz but export target is 48000 Hz. Resampling is not supported.',
     );
   });
+
+  it('ignores out-of-range audio when validating sample rates for a sub-range export', () => {
+    const sources = new Map<string, MediaInputHandle>([
+      [
+        'video',
+        mediaHandle({ sourceId: 'video', frameSource: {} as MediaInputHandle['frameSource'] }),
+      ],
+      [
+        'a',
+        mediaHandle({
+          sourceId: 'a',
+          audioSource: {} as MediaInputHandle['audioSource'],
+          audioSampleRate: 48_000,
+        }),
+      ],
+      [
+        'b',
+        mediaHandle({
+          sourceId: 'b',
+          audioSource: {} as MediaInputHandle['audioSource'],
+          audioSampleRate: 44_100,
+        }),
+      ],
+    ]);
+    const edit: Timeline = [
+      ...timeline(),
+      {
+        id: 'a-track',
+        type: 'audio',
+        gain: 1,
+        muted: false,
+        solo: false,
+        clips: [{ id: 'a', sourceId: 'a', start: 0, duration: 2, inPoint: 0, effects: defaultClipEffects() }],
+      },
+      {
+        id: 'b-track',
+        type: 'audio',
+        gain: 1,
+        muted: false,
+        solo: false,
+        clips: [{ id: 'b', sourceId: 'b', start: 3, duration: 2, inPoint: 0, effects: defaultClipEffects() }],
+      },
+    ];
+
+    const plan = buildExportPlan(
+      edit,
+      sources,
+      qualitySettings({ range: { startS: 0, endS: 2 } }),
+      null,
+    );
+
+    expect(plan.hasAudio).toBe(true);
+    expect(plan.audioSampleRate).toBe(48_000);
+    expect(plan.totalFrames).toBe(60);
+  });
 });
 
 describe('codec probing', () => {
