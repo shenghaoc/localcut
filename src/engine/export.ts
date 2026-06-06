@@ -14,6 +14,15 @@ import type { ExportPreset, ExportProgress, ThroughputProbe } from '../protocol'
 import type { PreviewRenderer } from './gpu';
 import type { MediaInputHandle } from './media-io';
 import {
+  accumulateMix,
+  applyMasterAndClamp,
+  applyMixStage,
+  equalPowerCrossfadeGains,
+  resolveAudioTransitionAt,
+  type AudioTransitionCut,
+} from './audio-mix';
+import {
+  DEFAULT_MASTER_GAIN,
   getTimelineDuration,
   resolveAt,
   type Timeline,
@@ -62,6 +71,8 @@ export interface TimelineExportOptions {
   throughputProbe: ThroughputProbe | null;
   signal: AbortSignal;
   onProgress: (progress: ExportProgress) => void;
+  masterGain?: number;
+  transitions?: readonly AudioTransitionCut[];
 }
 
 export interface TimelineExportResult {
@@ -222,6 +233,11 @@ function nextClipStart(track: TimelineTrack, time: number): number {
   return next;
 }
 
+export interface MixAudioWindowOptions {
+  masterGain?: number;
+  transitions?: readonly AudioTransitionCut[];
+}
+
 export async function mixAudioWindow(
   timeline: Timeline,
   sources: ReadonlyMap<string, MediaInputHandle>,
@@ -229,9 +245,13 @@ export async function mixAudioWindow(
   frameCount: number,
   sampleRate: number,
   channels: number,
+  options: MixAudioWindowOptions = {},
 ): Promise<Float32Array> {
   const out = new Float32Array(Math.max(0, frameCount) * channels);
   if (frameCount <= 0 || channels <= 0) return out;
+
+  const masterGain = options.masterGain ?? DEFAULT_MASTER_GAIN;
+  const transitions = options.transitions ?? [];
 
   for (const track of timeline) {
     if (track.type !== 'audio' || !trackIsAudible(track, timeline)) continue;
@@ -239,6 +259,68 @@ export async function mixAudioWindow(
     let offsetFrames = 0;
     while (offsetFrames < frameCount) {
       const timelineTime = startTime + offsetFrames / sampleRate;
+      const transition = resolveAudioTransitionAt(track.id, track.clips, transitions, timelineTime);
+      if (transition) {
+        const outgoing = track.clips.find((clip) => clip.id === transition.outgoingClipId);
+        const incoming = track.clips.find((clip) => clip.id === transition.incomingClipId);
+        const transitionSpec = transitions.find(
+          (item) =>
+            item.trackId === track.id &&
+            item.fromClipId === transition.outgoingClipId &&
+            item.toClipId === transition.incomingClipId,
+        );
+        if (outgoing && incoming && transitionSpec) {
+          const cutTime = outgoing.start + outgoing.duration;
+          const half = transitionSpec.durationS * 0.5;
+          const windowEnd = cutTime + half;
+          const runFrames = Math.max(
+            1,
+            Math.min(frameCount - offsetFrames, Math.ceil((windowEnd - timelineTime) * sampleRate)),
+          );
+          const outHandle = sources.get(outgoing.sourceId);
+          const inHandle = sources.get(incoming.sourceId);
+          if (outHandle?.audioSource && inHandle?.audioSource) {
+            const outSourceTime = outgoing.inPoint + (timelineTime - outgoing.start);
+            const inSourceTime = incoming.inPoint + (timelineTime - incoming.start);
+            const [outPcm, inPcm] = await Promise.all([
+              outHandle.audioSource.pcmWindowAt(outSourceTime, runFrames, channels),
+              inHandle.audioSource.pcmWindowAt(inSourceTime, runFrames, channels),
+            ]);
+            const mixed = new Float32Array(runFrames * channels);
+            const windowStart = cutTime - half;
+            for (let frame = 0; frame < runFrames; frame += 1) {
+              const frameTime = timelineTime + frame / sampleRate;
+              const mixT = (frameTime - windowStart) / transitionSpec.durationS;
+              const gains = equalPowerCrossfadeGains(mixT);
+              const outMixed = applyMixStage(outPcm.subarray(frame * channels, (frame + 1) * channels), channels, {
+                gain: track.gain * gains.outgoing,
+                pan: track.pan,
+                fadeInS: outgoing.audioFadeIn,
+                fadeOutS: outgoing.audioFadeOut,
+                clipOffsetS: frameTime - outgoing.start,
+                clipDurationS: outgoing.duration,
+                sampleRate,
+              });
+              const inMixed = applyMixStage(inPcm.subarray(frame * channels, (frame + 1) * channels), channels, {
+                gain: track.gain * gains.incoming,
+                pan: track.pan,
+                fadeInS: incoming.audioFadeIn,
+                fadeOutS: incoming.audioFadeOut,
+                clipOffsetS: frameTime - incoming.start,
+                clipDurationS: incoming.duration,
+                sampleRate,
+              });
+              for (let ch = 0; ch < channels; ch += 1) {
+                mixed[frame * channels + ch] = (outMixed[ch] ?? 0) + (inMixed[ch] ?? 0);
+              }
+            }
+            accumulateMix(out, mixed, offsetFrames * channels);
+          }
+          offsetFrames += runFrames;
+          continue;
+        }
+      }
+
       const clip = clipAt(track, timelineTime);
       if (!clip) {
         const nextStart = nextClipStart(track, timelineTime);
@@ -266,18 +348,21 @@ export async function mixAudioWindow(
 
       const sourceTime = clip.inPoint + (timelineTime - clip.start);
       const pcm = await handle.audioSource.pcmWindowAt(sourceTime, runFrames, channels);
-      const gain = track.gain;
-      for (let i = 0; i < pcm.length; i += 1) {
-        out[offsetFrames * channels + i] += pcm[i]! * gain;
-      }
+      const mixed = applyMixStage(pcm, channels, {
+        gain: track.gain,
+        pan: track.pan,
+        fadeInS: clip.audioFadeIn,
+        fadeOutS: clip.audioFadeOut,
+        clipOffsetS: timelineTime - clip.start,
+        clipDurationS: clip.duration,
+        sampleRate,
+      });
+      accumulateMix(out, mixed, offsetFrames * channels);
       offsetFrames += runFrames;
     }
   }
 
-  for (let i = 0; i < out.length; i += 1) {
-    out[i] = Math.max(-1, Math.min(1, out[i]!));
-  }
-  return out;
+  return applyMasterAndClamp(out, masterGain);
 }
 
 async function assertVideoEncoderSupported(plan: ExportPlan): Promise<void> {
@@ -440,6 +525,10 @@ async function encodeAudioRange(
       frames,
       plan.audioSampleRate,
       plan.audioChannels,
+      {
+        masterGain: options.masterGain,
+        transitions: options.transitions,
+      },
     );
     const sample = new AudioSample({
       data: pcm,

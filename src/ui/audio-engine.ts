@@ -9,7 +9,7 @@ import {
   type AudioRingViews,
 } from '../engine/audio-ring';
 import { AUDIO_RING_BYTES } from '../engine/audio-ring';
-import { ClockIndex } from '../protocol';
+import { ClockIndex, METER_BUFFER_BYTES } from '../protocol';
 
 const WORKLET_URL = `${import.meta.env.BASE_URL}audio-playback.worklet.js`;
 
@@ -18,20 +18,39 @@ export class AudioEngine {
   private worklet: AudioWorkletNode | null = null;
   private masterGain: GainNode | null = null;
   private ringSab: SharedArrayBuffer | null = null;
+  private meterSab: SharedArrayBuffer | null = null;
   private ring: AudioRingViews | null = null;
   private clockView: Float64Array | null = null;
-  private ready: Promise<SharedArrayBuffer | null> | null = null;
+  private ready: Promise<{ audioSab: SharedArrayBuffer | null; meterSab: SharedArrayBuffer | null }> | null = null;
 
-  async init(clockSab: SharedArrayBuffer, sampleRate = 48_000, channels = 2): Promise<SharedArrayBuffer | null> {
+  async init(
+    clockSab: SharedArrayBuffer,
+    sampleRate = 48_000,
+    channels = 2,
+  ): Promise<{ audioSab: SharedArrayBuffer | null; meterSab: SharedArrayBuffer | null }> {
     if (this.ready) return this.ready;
     this.ready = this.setup(clockSab, sampleRate, channels);
     return this.ready;
   }
 
-  private async setup(clockSab: SharedArrayBuffer, sampleRate: number, channels: number): Promise<SharedArrayBuffer | null> {
+  getMeterSab(): SharedArrayBuffer | null {
+    return this.meterSab;
+  }
+
+  setMasterGain(gain: number): void {
+    if (!this.masterGain) return;
+    this.masterGain.gain.value = Number.isFinite(gain) ? Math.max(0, gain) : 1;
+  }
+
+  private async setup(
+    clockSab: SharedArrayBuffer,
+    sampleRate: number,
+    channels: number,
+  ): Promise<{ audioSab: SharedArrayBuffer | null; meterSab: SharedArrayBuffer | null }> {
     this.clockView = new Float64Array(clockSab);
     this.ringSab = new SharedArrayBuffer(AUDIO_RING_BYTES);
     this.ring = initAudioRing(this.ringSab, sampleRate, channels);
+    this.meterSab = new SharedArrayBuffer(METER_BUFFER_BYTES);
 
     try {
       this.context = new AudioContext({ sampleRate });
@@ -44,13 +63,14 @@ export class AudioEngine {
         processorOptions: {
           ringSab: this.ringSab,
           clockSab,
+          meterSab: this.meterSab,
         },
       });
 
       this.masterGain = this.context.createGain();
       this.worklet.connect(this.masterGain);
       this.masterGain.connect(this.context.destination);
-      return this.ringSab;
+      return { audioSab: this.ringSab, meterSab: this.meterSab };
     } catch (error) {
       this.dispose();
       throw error;
@@ -100,6 +120,7 @@ export class AudioEngine {
     this.masterGain = null;
     this.ring = null;
     this.ringSab = null;
+    this.meterSab = null;
     this.clockView = null;
     this.ready = null;
   }

@@ -10,14 +10,24 @@ export interface SelectedClip {
 export interface SelectedTrackMix {
   trackId: string;
   gain: number;
+  pan: number;
   muted: boolean;
   solo: boolean;
+}
+
+export interface SelectedClipFades {
+  trackId: string;
+  clipId: string;
+  duration: number;
+  audioFadeIn: number;
+  audioFadeOut: number;
 }
 
 interface InspectorProps {
   metadata: MediaMetadata | null;
   selectedClip: SelectedClip | null;
   selectedTrackMix: SelectedTrackMix | null;
+  selectedClipFades: SelectedClipFades | null;
   onEffectParam: (
     trackId: string,
     clipId: string,
@@ -27,6 +37,8 @@ interface InspectorProps {
   onTrackGain: (trackId: string, gain: number) => void;
   onTrackMute: (trackId: string, muted: boolean) => void;
   onTrackSolo: (trackId: string, solo: boolean) => void;
+  onTrackPan: (trackId: string, pan: number) => void;
+  onClipFade: (trackId: string, clipId: string, edge: 'in' | 'out', durationS: number) => void;
 }
 
 const PARAM_DEBOUNCE_MS = 80;
@@ -179,6 +191,22 @@ export function Inspector(props: InspectorProps) {
                       }
                     />
                   </label>
+                  <label class="effect-slider">
+                    <span class="effect-slider-label">
+                      Pan
+                      <span class="effect-slider-value tabular-nums">{mix().pan.toFixed(2)}</span>
+                    </span>
+                    <input
+                      type="range"
+                      min={-1}
+                      max={1}
+                      step={0.01}
+                      value={mix().pan}
+                      onInput={(e) =>
+                        props.onTrackPan(mix().trackId, Number((e.currentTarget as HTMLInputElement).value))
+                      }
+                    />
+                  </label>
                   <label class="mix-toggle">
                     <input
                       type="checkbox"
@@ -198,6 +226,55 @@ export function Inspector(props: InspectorProps) {
                       }
                     />
                     Solo
+                  </label>
+                </div>
+              )}
+            </Show>
+            <Show when={props.selectedClipFades}>
+              {(fades) => (
+                <div class="track-mix-controls">
+                  <h3 class="panel-subtitle">Audio fades</h3>
+                  <label class="effect-slider">
+                    <span class="effect-slider-label">
+                      Fade in
+                      <span class="effect-slider-value tabular-nums">{fades().audioFadeIn.toFixed(2)}s</span>
+                    </span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={fades().duration}
+                      step={0.01}
+                      value={fades().audioFadeIn}
+                      onInput={(e) =>
+                        props.onClipFade(
+                          fades().trackId,
+                          fades().clipId,
+                          'in',
+                          Number((e.currentTarget as HTMLInputElement).value),
+                        )
+                      }
+                    />
+                  </label>
+                  <label class="effect-slider">
+                    <span class="effect-slider-label">
+                      Fade out
+                      <span class="effect-slider-value tabular-nums">{fades().audioFadeOut.toFixed(2)}s</span>
+                    </span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={fades().duration}
+                      step={0.01}
+                      value={fades().audioFadeOut}
+                      onInput={(e) =>
+                        props.onClipFade(
+                          fades().trackId,
+                          fades().clipId,
+                          'out',
+                          Number((e.currentTarget as HTMLInputElement).value),
+                        )
+                      }
+                    />
                   </label>
                 </div>
               )}

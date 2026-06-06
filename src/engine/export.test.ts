@@ -7,8 +7,17 @@ import {
   mixAudioWindow,
   videoBitrateForPreset,
 } from './export';
-import { defaultClipEffects, type Timeline } from './timeline';
+import { DEFAULT_TRACK_MIX, defaultTimelineClip, type Timeline, type TimelineTrack } from './timeline';
 import type { MediaInputHandle } from './media-io';
+
+function audioTrack(
+  partial: Partial<Omit<TimelineTrack, 'type' | 'clips'>> & {
+    id: string;
+    clips: TimelineTrack['clips'];
+  },
+): TimelineTrack {
+  return { type: 'audio', ...DEFAULT_TRACK_MIX, ...partial };
+}
 
 function mediaHandle(partial: Partial<MediaInputHandle>): MediaInputHandle {
   return {
@@ -39,18 +48,15 @@ function timeline(): Timeline {
     {
       id: 'v1',
       type: 'video',
-      gain: 1,
-      muted: false,
-      solo: false,
+      ...DEFAULT_TRACK_MIX,
       clips: [
-        {
+        defaultTimelineClip({
           id: 'clip-v',
           sourceId: 'video',
           start: 0,
           duration: 5,
           inPoint: 0,
-          effects: defaultClipEffects(),
-        },
+        }),
       ],
     },
   ];
@@ -123,22 +129,14 @@ describe('export planning', () => {
     ]);
     const edit: Timeline = [
       ...timeline(),
-      {
+      audioTrack({
         id: 'a-track',
-        type: 'audio',
-        gain: 1,
-        muted: false,
-        solo: false,
-        clips: [{ id: 'a', sourceId: 'a', start: 0, duration: 1, inPoint: 0, effects: defaultClipEffects() }],
-      },
-      {
+        clips: [defaultTimelineClip({ id: 'a', sourceId: 'a', start: 0, duration: 1, inPoint: 0 })],
+      }),
+      audioTrack({
         id: 'b-track',
-        type: 'audio',
-        gain: 1,
-        muted: false,
-        solo: false,
-        clips: [{ id: 'b', sourceId: 'b', start: 0, duration: 1, inPoint: 0, effects: defaultClipEffects() }],
-      },
+        clips: [defaultTimelineClip({ id: 'b', sourceId: 'b', start: 0, duration: 1, inPoint: 0 })],
+      }),
     ];
 
     expect(() => buildExportPlan(edit, sources, 'quality', null)).toThrow(
@@ -164,22 +162,17 @@ describe('mixAudioWindow', () => {
       ['b', mediaHandle({ sourceId: 'b', audioSource: b as unknown as MediaInputHandle['audioSource'] })],
     ]);
     const edit: Timeline = [
-      {
+      audioTrack({
         id: 'a-track',
-        type: 'audio',
         gain: 0.5,
-        muted: false,
-        solo: false,
-        clips: [{ id: 'a', sourceId: 'a', start: 0, duration: 1, inPoint: 0, effects: defaultClipEffects() }],
-      },
-      {
+        clips: [defaultTimelineClip({ id: 'a', sourceId: 'a', start: 0, duration: 1, inPoint: 0 })],
+      }),
+      audioTrack({
         id: 'b-track',
-        type: 'audio',
         gain: 2,
-        muted: false,
         solo: true,
-        clips: [{ id: 'b', sourceId: 'b', start: 0, duration: 1, inPoint: 0, effects: defaultClipEffects() }],
-      },
+        clips: [defaultTimelineClip({ id: 'b', sourceId: 'b', start: 0, duration: 1, inPoint: 0 })],
+      }),
     ];
 
     const mixed = await mixAudioWindow(edit, sources, 0, 4, 4, 1);
@@ -195,14 +188,11 @@ describe('mixAudioWindow', () => {
       ['muted', mediaHandle({ sourceId: 'muted', audioSource: muted as unknown as MediaInputHandle['audioSource'] })],
     ]);
     const edit: Timeline = [
-      {
+      audioTrack({
         id: 'muted-track',
-        type: 'audio',
-        gain: 1,
         muted: true,
-        solo: false,
-        clips: [{ id: 'muted', sourceId: 'muted', start: 0, duration: 1, inPoint: 0, effects: defaultClipEffects() }],
-      },
+        clips: [defaultTimelineClip({ id: 'muted', sourceId: 'muted', start: 0, duration: 1, inPoint: 0 })],
+      }),
     ];
 
     const mixed = await mixAudioWindow(edit, sources, 0, 4, 4, 1);
@@ -219,22 +209,16 @@ describe('mixAudioWindow', () => {
       ['b', mediaHandle({ sourceId: 'b', audioSource: b as unknown as MediaInputHandle['audioSource'] })],
     ]);
     const edit: Timeline = [
-      {
+      audioTrack({
         id: 'a-track',
-        type: 'audio',
         gain: 2,
-        muted: false,
-        solo: false,
-        clips: [{ id: 'a', sourceId: 'a', start: 0, duration: 1, inPoint: 0, effects: defaultClipEffects() }],
-      },
-      {
+        clips: [defaultTimelineClip({ id: 'a', sourceId: 'a', start: 0, duration: 1, inPoint: 0 })],
+      }),
+      audioTrack({
         id: 'b-track',
-        type: 'audio',
         gain: 0.5,
-        muted: false,
-        solo: false,
-        clips: [{ id: 'b', sourceId: 'b', start: 0, duration: 1, inPoint: 0, effects: defaultClipEffects() }],
-      },
+        clips: [defaultTimelineClip({ id: 'b', sourceId: 'b', start: 0, duration: 1, inPoint: 0 })],
+      }),
     ];
 
     const mixed = await mixAudioWindow(edit, sources, 0, 2, 4, 1);
@@ -248,14 +232,10 @@ describe('mixAudioWindow', () => {
       ['a', mediaHandle({ sourceId: 'a', audioSource: source as unknown as MediaInputHandle['audioSource'] })],
     ]);
     const edit: Timeline = [
-      {
+      audioTrack({
         id: 'a-track',
-        type: 'audio',
-        gain: 1,
-        muted: false,
-        solo: false,
-        clips: [{ id: 'a', sourceId: 'a', start: 0.5, duration: 0.5, inPoint: 0, effects: defaultClipEffects() }],
-      },
+        clips: [defaultTimelineClip({ id: 'a', sourceId: 'a', start: 0.5, duration: 0.5, inPoint: 0 })],
+      }),
     ];
 
     const mixed = await mixAudioWindow(edit, sources, 0, 4, 4, 1);
@@ -272,22 +252,14 @@ describe('mixAudioWindow', () => {
       ['b', mediaHandle({ sourceId: 'b', audioSource: b as unknown as MediaInputHandle['audioSource'] })],
     ]);
     const edit: Timeline = [
-      {
+      audioTrack({
         id: 'a-track',
-        type: 'audio',
-        gain: 1,
-        muted: false,
-        solo: false,
-        clips: [{ id: 'a', sourceId: 'a', start: 0, duration: 1, inPoint: 0, effects: defaultClipEffects() }],
-      },
-      {
+        clips: [defaultTimelineClip({ id: 'a', sourceId: 'a', start: 0, duration: 1, inPoint: 0 })],
+      }),
+      audioTrack({
         id: 'b-track',
-        type: 'audio',
-        gain: 1,
-        muted: false,
-        solo: false,
-        clips: [{ id: 'b', sourceId: 'b', start: 0, duration: 1, inPoint: 0, effects: defaultClipEffects() }],
-      },
+        clips: [defaultTimelineClip({ id: 'b', sourceId: 'b', start: 0, duration: 1, inPoint: 0 })],
+      }),
     ];
 
     const mixed = await mixAudioWindow(edit, sources, 0, 2, 4, 1);
