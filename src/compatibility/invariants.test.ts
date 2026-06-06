@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import metadataSource from './metadata.ts?raw';
+import metadataSource from './video-events.ts?raw';
 import thumbnailSource from './thumbnail.ts?raw';
 
 const FORBIDDEN_IMPORTS = [
@@ -13,7 +13,7 @@ const FORBIDDEN_IMPORTS = [
 describe('compatibility engine invariants', () => {
   it('does not import accelerated engine modules', () => {
     for (const [name, source] of [
-      ['metadata.ts', metadataSource],
+      ['video-events.ts', metadataSource],
       ['thumbnail.ts', thumbnailSource],
     ] as const) {
       for (const forbidden of FORBIDDEN_IMPORTS) {

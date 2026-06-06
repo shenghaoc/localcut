@@ -156,7 +156,7 @@ export function Toolbar(props: ToolbarProps) {
           </Button>
           <Button
             onClick={() => props.onPause()}
-            disabled={props.transportDisabled || !props.playing()}
+            disabled={transportDisabled() || !props.playing()}
           >
             <Pause size={14} aria-hidden="true" />
             Pause

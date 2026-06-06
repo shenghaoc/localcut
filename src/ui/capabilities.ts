@@ -54,11 +54,14 @@ function hasSharedArrayBuffer(): boolean {
 }
 
 function hasAudioWorklet(): boolean {
-  if (typeof AudioContext === 'undefined') {
-    return typeof (globalThis as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext !==
-      'undefined';
-  }
-  return typeof AudioContext.prototype.audioWorklet !== 'undefined';
+  return (
+    typeof AudioContext !== 'undefined' &&
+    typeof AudioContext.prototype.audioWorklet !== 'undefined'
+  );
+}
+
+function hasAcceleratedFeatures(snapshot: CapabilitySnapshot): boolean {
+  return ACCELERATED_FEATURES.every((feature) => snapshot[feature]);
 }
 
 /** Feature-detect browser APIs independently (no user-agent inference). */
@@ -87,9 +90,16 @@ export function deriveCapabilityTier(
   runtime: CapabilityRuntime,
 ): CapabilityTier {
   if (!snapshot.fileApi) return 'blocked';
-  if (runtime.workerReady && runtime.webgpuReady) return 'accelerated';
-  if (runtime.workerReady && !runtime.webgpuReady) return 'limited';
-  if (!runtime.workerReady && snapshot.crossOriginIsolated && snapshot.sharedArrayBuffer) {
+  if (runtime.workerReady && runtime.webgpuReady && hasAcceleratedFeatures(snapshot)) {
+    return 'accelerated';
+  }
+  if (runtime.workerReady) return 'limited';
+  if (
+    !runtime.workerReady &&
+    snapshot.crossOriginIsolated &&
+    snapshot.sharedArrayBuffer &&
+    !runtime.runtimeIssue
+  ) {
     return 'starting';
   }
   if (!snapshot.crossOriginIsolated || !snapshot.sharedArrayBuffer || runtime.runtimeIssue) {

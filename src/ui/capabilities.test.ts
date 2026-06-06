@@ -36,7 +36,7 @@ describe('deriveCapabilityTier', () => {
     audioWorklet: true,
   });
 
-  it('returns accelerated only when worker and WebGPU are ready', () => {
+  it('returns accelerated only when worker, WebGPU, and required APIs are ready', () => {
     expect(
       deriveCapabilityTier(isolated, {
         workerReady: true,
@@ -46,12 +46,36 @@ describe('deriveCapabilityTier', () => {
     ).toBe('accelerated');
   });
 
+  it('returns limited when worker is ready without WebCodecs', () => {
+    const snapshot = probeCapabilities({
+      ...isolated,
+      webCodecs: false,
+    });
+    expect(
+      deriveCapabilityTier(snapshot, {
+        workerReady: true,
+        webgpuReady: true,
+        runtimeIssue: null,
+      }),
+    ).toBe('limited');
+  });
+
   it('returns limited when worker is ready without WebGPU', () => {
     expect(
       deriveCapabilityTier(isolated, {
         workerReady: true,
         webgpuReady: false,
         runtimeIssue: 'WebGPU unavailable',
+      }),
+    ).toBe('limited');
+  });
+
+  it('returns limited when a runtime issue is present during startup', () => {
+    expect(
+      deriveCapabilityTier(isolated, {
+        workerReady: false,
+        webgpuReady: false,
+        runtimeIssue: 'Worker failed to initialize',
       }),
     ).toBe('limited');
   });

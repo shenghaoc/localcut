@@ -34,8 +34,8 @@
 
 | Module | Responsibility |
 |--------|----------------|
-| `metadata.ts` | One-shot video metadata probe for limited tier |
-| `thumbnail.ts` | Decode-only reduced-resolution thumbnail preview |
+| `video-events.ts` | Timed media element event helpers |
+| `thumbnail.ts` | Decode-only reduced-resolution compatibility preview |
 
 ## UI Components (`src/ui/`)
 

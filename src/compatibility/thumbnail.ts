@@ -1,3 +1,5 @@
+import { waitForEvent } from './video-events';
+
 const THUMBNAIL_SEEK_SECONDS = 0.05;
 
 export interface CompatibilityThumbnail {
@@ -7,23 +9,13 @@ export interface CompatibilityThumbnail {
   revoke: () => void;
 }
 
-function waitForEvent(target: EventTarget, type: string): Promise<Event> {
-  return new Promise((resolve, reject) => {
-    const onSuccess = (event: Event) => {
-      cleanup();
-      resolve(event);
-    };
-    const onError = () => {
-      cleanup();
-      reject(new Error(`Failed while waiting for ${type}.`));
-    };
-    const cleanup = () => {
-      target.removeEventListener(type, onSuccess);
-      target.removeEventListener('error', onError);
-    };
-    target.addEventListener(type, onSuccess, { once: true });
-    target.addEventListener('error', onError, { once: true });
-  });
+export interface CompatibilityPreviewResult {
+  fileName: string;
+  mimeType: string;
+  duration: number;
+  sourceWidth: number;
+  sourceHeight: number;
+  thumbnail: CompatibilityThumbnail;
 }
 
 function scaleToMaxEdge(width: number, height: number, maxEdge: number) {
@@ -36,13 +28,13 @@ function scaleToMaxEdge(width: number, height: number, maxEdge: number) {
 }
 
 /**
- * Decode-only reduced-resolution thumbnail for the limited tier.
- * Uses HTMLVideoElement + Canvas2D (explicit compatibility path, not accelerated preview).
+ * Decode-only reduced-resolution preview for the limited tier.
+ * Uses one HTMLVideoElement + Canvas2D (explicit compatibility path, not accelerated preview).
  */
-export async function extractCompatibilityThumbnail(
+export async function extractCompatibilityPreview(
   file: File,
   maxEdge = 640,
-): Promise<CompatibilityThumbnail> {
+): Promise<CompatibilityPreviewResult> {
   const url = URL.createObjectURL(file);
   const video = document.createElement('video');
   video.preload = 'auto';
@@ -54,12 +46,15 @@ export async function extractCompatibilityThumbnail(
     if (video.readyState < 1) {
       await waitForEvent(video, 'loadedmetadata');
     }
-    video.currentTime = Math.min(THUMBNAIL_SEEK_SECONDS, Math.max(0, video.duration - 0.001));
-    if (video.readyState < 2) {
-      await waitForEvent(video, 'seeked');
-    }
 
-    const target = scaleToMaxEdge(video.videoWidth, video.videoHeight, maxEdge);
+    const duration = Number.isFinite(video.duration) ? video.duration : 0;
+    const sourceWidth = video.videoWidth;
+    const sourceHeight = video.videoHeight;
+
+    video.currentTime = Math.min(THUMBNAIL_SEEK_SECONDS, Math.max(0, duration - 0.001));
+    await waitForEvent(video, 'seeked');
+
+    const target = scaleToMaxEdge(sourceWidth, sourceHeight, maxEdge);
     const canvas = document.createElement('canvas');
     canvas.width = target.width;
     canvas.height = target.height;
@@ -74,10 +69,17 @@ export async function extractCompatibilityThumbnail(
     }
     const thumbUrl = URL.createObjectURL(blob);
     return {
-      url: thumbUrl,
-      width: target.width,
-      height: target.height,
-      revoke: () => URL.revokeObjectURL(thumbUrl),
+      fileName: file.name,
+      mimeType: file.type || 'video/mp4',
+      duration,
+      sourceWidth,
+      sourceHeight,
+      thumbnail: {
+        url: thumbUrl,
+        width: target.width,
+        height: target.height,
+        revoke: () => URL.revokeObjectURL(thumbUrl),
+      },
     };
   } finally {
     video.removeAttribute('src');

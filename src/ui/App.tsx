@@ -30,8 +30,7 @@ import {
   type CapabilitySnapshot,
   type CapabilityTier,
 } from './capabilities';
-import { extractCompatibilityMetadata } from '../compatibility/metadata';
-import { extractCompatibilityThumbnail } from '../compatibility/thumbnail';
+import { extractCompatibilityPreview } from '../compatibility/thumbnail';
 import PipelineWorker from '../engine/worker.ts?worker';
 
 const VIDEO_ACCEPT = 'video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm';
@@ -94,6 +93,7 @@ export function App() {
   let bridge: ReturnType<typeof createWorkerBridge> | null = null;
   let worker: Worker | null = null;
   let initSent = false;
+  let compatibilityImportGeneration = 0;
   const audioEngine = new AudioEngine();
   let audioReady: Promise<SharedArrayBuffer | null> | null = null;
 
@@ -124,6 +124,7 @@ export function App() {
   const compatibilityImportEnabled = () =>
     pipelineMode() === 'limited' && canCompatibilityPreview(capabilities());
   const importBlocked = () =>
+    importing() ||
     pipelineMode() === 'blocked' ||
     pipelineMode() === 'starting' ||
     (pipelineMode() === 'limited' && !canCompatibilityPreview(capabilities()));
@@ -236,6 +237,7 @@ export function App() {
       case 'import-error':
       case 'error':
         setImporting(false);
+        setRuntimeIssue(msg.message);
         setStatusLine(msg.message);
         break;
     }
@@ -275,30 +277,33 @@ export function App() {
   }
 
   async function importCompatibilityMedia(file: File) {
+    if (importing()) return;
+    const generation = ++compatibilityImportGeneration;
     setImporting(true);
     setStatusLine('Loading compatibility preview…');
     try {
-      const [meta, thumb] = await Promise.all([
-        extractCompatibilityMetadata(file),
-        extractCompatibilityThumbnail(file),
-      ]);
+      const preview = await extractCompatibilityPreview(file);
+      if (generation !== compatibilityImportGeneration) {
+        preview.thumbnail.revoke();
+        return;
+      }
       clearCompatibilityPreview();
       setCompatibilityPreview({
-        url: thumb.url,
-        width: thumb.width,
-        height: thumb.height,
-        fileName: meta.fileName,
-        duration: meta.duration,
-        revoke: thumb.revoke,
+        url: preview.thumbnail.url,
+        width: preview.thumbnail.width,
+        height: preview.thumbnail.height,
+        fileName: preview.fileName,
+        duration: preview.duration,
+        revoke: preview.thumbnail.revoke,
       });
       setMetadata({
-        fileName: meta.fileName,
-        duration: meta.duration,
-        mimeType: meta.mimeType,
+        fileName: preview.fileName,
+        duration: preview.duration,
+        mimeType: preview.mimeType,
         video: {
           codec: null,
-          width: meta.width,
-          height: meta.height,
+          width: preview.sourceWidth,
+          height: preview.sourceHeight,
           frameRate: null,
           canDecode: false,
         },
@@ -307,16 +312,20 @@ export function App() {
       });
       setTimeline([]);
       setSelectedClip(null);
-      setStatusLine(`Loaded ${meta.fileName} · compatibility preview`);
+      setStatusLine(`Loaded ${preview.fileName} · compatibility preview`);
     } catch (error) {
+      if (generation !== compatibilityImportGeneration) return;
       const message = error instanceof Error ? error.message : String(error);
       setStatusLine(`Compatibility import failed: ${message}`);
     } finally {
-      setImporting(false);
+      if (generation === compatibilityImportGeneration) {
+        setImporting(false);
+      }
     }
   }
 
   function importMedia(file: File) {
+    if (importing()) return;
     if (accelerated()) {
       const { bridge: b } = ensureWorker();
       b.send({ type: 'import', file });
@@ -494,7 +503,7 @@ export function App() {
         onOpenCapabilities={() => setCapabilityPanelOpen(true)}
         exportControl={
           <ExportDialog
-            hasMedia={metadata() !== null}
+            hasMedia={metadata() !== null && accelerated()}
             exporting={exporting()}
             progress={exportProgress()}
             lastResult={exportResult()}
@@ -585,7 +594,7 @@ export function App() {
         currentTime={clock.currentTime}
         duration={clock.duration}
         frameRate={() => metadata()?.video?.frameRate ?? null}
-        hasMedia={metadata() !== null}
+        hasMedia={metadata() !== null && accelerated()}
         timeline={timeline}
         waveformPeaks={() => waveformPeaks()}
         onSeek={(t) => {
