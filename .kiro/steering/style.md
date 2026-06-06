@@ -10,7 +10,7 @@
 
 ## SolidJS (main thread)
 
-Follow the [`solid-patterns`](.kiro/skills/solid-patterns/) skill. Key style points:
+Follow the [`solid-patterns`](../skills/solid-patterns/) skill. Key style points:
 
 - **Signals at the leaf** — derive computed values with `createMemo`; avoid threading signals through many components manually.
 - **`<Show keyed>`** when narrowing nullable props (prevents stale closure access).

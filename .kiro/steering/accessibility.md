@@ -1,6 +1,6 @@
 ---
 inclusion: fileMatch
-fileMatchPattern: "src/ui/**"
+fileMatchPattern: ["src/ui/**"]
 ---
 
 # Accessibility Standards
