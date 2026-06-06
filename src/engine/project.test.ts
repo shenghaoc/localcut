@@ -139,11 +139,23 @@ describe('project serialization', () => {
     if (!result.ok) return;
     expect(result.doc.transitions).toEqual(doc.transitions);
 
-    const invalid = deserializeProject({
+    const invalidDuration = deserializeProject({
       ...doc,
       transitions: [{ ...doc.transitions[0], durationS: 0 }],
     });
-    expect(invalid.ok).toBe(false);
+    expect(invalidDuration.ok).toBe(false);
+
+    const invalidKind = deserializeProject({
+      ...doc,
+      transitions: [{ ...doc.transitions[0], kind: 'zoom-blur' }],
+    });
+    expect(invalidKind.ok).toBe(false);
+
+    const invalidParams = deserializeProject({
+      ...doc,
+      transitions: [{ ...doc.transitions[0], params: { direction: 'diagonal' } }],
+    });
+    expect(invalidParams.ok).toBe(false);
   });
 
   it('round-trips a versioned project document', () => {

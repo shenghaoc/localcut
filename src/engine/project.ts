@@ -305,6 +305,22 @@ function parseTrack(value: unknown): TimelineTrack | null {
   };
 }
 
+function parseTransitionKind(value: unknown): TimelineTransition['kind'] | null {
+  return value === 'cross-dissolve' || value === 'dip-to-black' || value === 'wipe' || value === 'slide'
+    ? value
+    : null;
+}
+
+function parseTransitionParams(value: unknown): TimelineTransition['params'] | null {
+  if (value === undefined || value === null) return {};
+  if (!isRecord(value)) return null;
+  if (value.direction === undefined || value.direction === null) return {};
+  if (value.direction === 'left' || value.direction === 'right' || value.direction === 'up' || value.direction === 'down') {
+    return { direction: value.direction };
+  }
+  return null;
+}
+
 function parseTransition(value: unknown): TimelineTransition | null {
   if (!isRecord(value)) return null;
   const id = requiredString(value.id);
@@ -312,20 +328,19 @@ function parseTransition(value: unknown): TimelineTransition | null {
   const fromClipId = requiredString(value.fromClipId);
   const toClipId = requiredString(value.toClipId);
   const durationS = finiteNumber(value.durationS);
-  if (!id || !trackId || !fromClipId || !toClipId || durationS === null || durationS <= 0) return null;
-  const params = isRecord(value.params) ? value.params : {};
+  const kind = parseTransitionKind(value.kind);
+  const params = parseTransitionParams(value.params);
+  if (!id || !trackId || !fromClipId || !toClipId || durationS === null || durationS <= 0 || !kind || !params) {
+    return null;
+  }
   return {
     id,
     trackId,
     fromClipId,
     toClipId,
     durationS,
-    kind: normalizeTransitionKind(value.kind),
-    params: normalizeTransitionParams({
-      direction: params.direction === 'left' || params.direction === 'right' || params.direction === 'up' || params.direction === 'down'
-        ? params.direction
-        : undefined,
-    }),
+    kind,
+    params,
   };
 }
 
