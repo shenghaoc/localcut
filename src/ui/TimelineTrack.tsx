@@ -1,5 +1,5 @@
 import { Show } from 'solid-js';
-import { ChevronDown, ChevronUp, Film, Headphones, Music2, Trash2, VolumeX } from 'lucide-solid';
+import { ChevronDown, ChevronUp, Eye, EyeOff, Film, Headphones, Link2, Lock, Music2, Target, Trash2, Unlock, VolumeX } from 'lucide-solid';
 import { type TimelineTrackSnapshot as ProtocolTimelineTrack } from '../protocol';
 
 interface TimelineTrackProps {
@@ -9,6 +9,10 @@ interface TimelineTrackProps {
   onRemove: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
+  onSetLock: (locked: boolean) => void;
+  onSetVisible: (visible: boolean) => void;
+  onSetSyncLock: (syncLocked: boolean) => void;
+  onSetEditTarget: (editTarget: boolean) => void;
 }
 
 /** Track label + management controls (reorder / remove) for timeline mirror models. */
@@ -43,6 +47,46 @@ export function TimelineTrack(props: TimelineTrackProps) {
         </span>
       </Show>
       <span class="track-controls">
+        <button
+          type="button"
+          class={`track-control-button${props.track.locked ? ' is-active' : ''}`}
+          onClick={() => props.onSetLock(!props.track.locked)}
+          aria-label={props.track.locked ? `Unlock ${props.track.id}` : `Lock ${props.track.id}`}
+          aria-pressed={props.track.locked}
+          title={props.track.locked ? 'Unlock track' : 'Lock track'}
+        >
+          {props.track.locked ? <Lock size={12} aria-hidden="true" /> : <Unlock size={12} aria-hidden="true" />}
+        </button>
+        <button
+          type="button"
+          class={`track-control-button${!props.track.visible ? ' is-active' : ''}`}
+          onClick={() => props.onSetVisible(!props.track.visible)}
+          aria-label={props.track.visible ? `Hide ${props.track.id}` : `Show ${props.track.id}`}
+          aria-pressed={!props.track.visible}
+          title={props.track.visible ? 'Hide track' : 'Show track'}
+        >
+          {props.track.visible ? <Eye size={12} aria-hidden="true" /> : <EyeOff size={12} aria-hidden="true" />}
+        </button>
+        <button
+          type="button"
+          class={`track-control-button${props.track.syncLocked ? ' is-active' : ''}`}
+          onClick={() => props.onSetSyncLock(!props.track.syncLocked)}
+          aria-label={props.track.syncLocked ? `Unsync ${props.track.id}` : `Sync-lock ${props.track.id}`}
+          aria-pressed={props.track.syncLocked}
+          title={props.track.syncLocked ? 'Disable sync lock' : 'Enable sync lock'}
+        >
+          <Link2 size={12} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          class={`track-control-button${props.track.editTarget ? ' is-active' : ''}`}
+          onClick={() => props.onSetEditTarget(!props.track.editTarget)}
+          aria-label={props.track.editTarget ? `Untarget ${props.track.id}` : `Target ${props.track.id}`}
+          aria-pressed={props.track.editTarget}
+          title={props.track.editTarget ? 'Disable edit target' : 'Enable edit target'}
+        >
+          <Target size={12} aria-hidden="true" />
+        </button>
         <button
           type="button"
           class="track-control-button"

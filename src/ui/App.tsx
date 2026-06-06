@@ -1442,6 +1442,10 @@ export function App() {
         onAddTrack={(trackType) => bridge?.send({ type: 'add-track', trackType })}
         onRemoveTrack={(trackId) => bridge?.send({ type: 'remove-track', trackId })}
         onReorderTrack={(trackId, toIndex) => bridge?.send({ type: 'reorder-track', trackId, toIndex })}
+        onSetTrackLock={(trackId, locked) => bridge?.send({ type: 'set-track-lock', trackId, locked })}
+        onSetTrackVisible={(trackId, visible) => bridge?.send({ type: 'set-track-visible', trackId, visible })}
+        onSetTrackSyncLock={(trackId, syncLocked) => bridge?.send({ type: 'set-track-sync-lock', trackId, syncLocked })}
+        onSetTrackEditTarget={(trackId, editTarget) => bridge?.send({ type: 'set-track-edit-target', trackId, editTarget })}
         getThumbnail={(sourceId, timestamp) => thumbnailStore.get(sourceId, timestamp)}
         thumbnailVersion={thumbnailVersion}
         onRequestThumbnails={(sourceId, timestamps) =>

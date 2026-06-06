@@ -213,6 +213,7 @@ export interface TimelineClipSnapshot {
   offline?: boolean;
   /** Present iff `kind === 'title'`. */
   title?: TitleContentSnapshot;
+  linkedGroupId?: string;
 }
 
 export interface TimelineTrackSnapshot {
@@ -223,6 +224,10 @@ export interface TimelineTrackSnapshot {
   pan: number;
   muted: boolean;
   solo: boolean;
+  locked: boolean;
+  visible: boolean;
+  syncLocked: boolean;
+  editTarget: boolean;
 }
 
 export interface TimelineMarkerSnapshot {
@@ -649,6 +654,99 @@ export interface BundleIntegrityReportSnapshot {
   };
 }
 
+interface InsertEditCommand {
+  type: 'insert-edit';
+  clips: TimelineClipboardClip[];
+  atTime: number;
+}
+
+interface OverwriteEditCommand {
+  type: 'overwrite-edit';
+  clips: TimelineClipboardClip[];
+  atTime: number;
+}
+
+interface RippleDeleteCommand {
+  type: 'ripple-delete';
+  clips: TimelineClipReference[];
+}
+
+interface RippleTrimCommand {
+  type: 'ripple-trim';
+  trackId: string;
+  clipId: string;
+  edge: 'in' | 'out';
+  time: number;
+}
+
+interface RollTrimCommand {
+  type: 'roll-trim';
+  trackId: string;
+  clipId: string;
+  edge: 'in' | 'out';
+  time: number;
+}
+
+interface SlipEditCommand {
+  type: 'slip-edit';
+  trackId: string;
+  clipId: string;
+  deltaS: number;
+}
+
+interface SlideEditCommand {
+  type: 'slide-edit';
+  trackId: string;
+  clipId: string;
+  deltaS: number;
+}
+
+interface LiftRegionCommand {
+  type: 'lift-region';
+  startTime: number;
+  endTime: number;
+}
+
+interface ExtractRegionCommand {
+  type: 'extract-region';
+  startTime: number;
+  endTime: number;
+}
+
+interface LinkClipsCommand {
+  type: 'link-clips';
+  clips: TimelineClipReference[];
+}
+
+interface UnlinkClipsCommand {
+  type: 'unlink-clips';
+  clips: TimelineClipReference[];
+}
+
+interface SetTrackLockCommand {
+  type: 'set-track-lock';
+  trackId: string;
+  locked: boolean;
+}
+
+interface SetTrackVisibleCommand {
+  type: 'set-track-visible';
+  trackId: string;
+  visible: boolean;
+}
+
+interface SetTrackSyncLockCommand {
+  type: 'set-track-sync-lock';
+  trackId: string;
+  syncLocked: boolean;
+}
+
+interface SetTrackEditTargetCommand {
+  type: 'set-track-edit-target';
+  trackId: string;
+  editTarget: boolean;
+}
+
 export type WorkerCommand =
   | { type: 'init'; canvas: OffscreenCanvas; sab: SharedArrayBuffer; audioSab?: SharedArrayBuffer | null }
   | { type: 'import'; file: File; fileHandle?: FileSystemFileHandle | null }
@@ -721,6 +819,21 @@ export type WorkerCommand =
     }
   | { type: 'cancel-bundle-job'; jobId: string }
   | { type: 'bundle-replace-decision'; jobId: string; action: 'replace' | 'cancel' }
+  | InsertEditCommand
+  | OverwriteEditCommand
+  | RippleDeleteCommand
+  | RippleTrimCommand
+  | RollTrimCommand
+  | SlipEditCommand
+  | SlideEditCommand
+  | LiftRegionCommand
+  | ExtractRegionCommand
+  | LinkClipsCommand
+  | UnlinkClipsCommand
+  | SetTrackLockCommand
+  | SetTrackVisibleCommand
+  | SetTrackSyncLockCommand
+  | SetTrackEditTargetCommand
   | { type: 'dispose' };
 
 /** A measured preview resolution tier (adaptive downscale of the decode path). */

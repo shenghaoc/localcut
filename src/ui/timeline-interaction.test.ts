@@ -16,6 +16,10 @@ function timelineFixture(): TimelineTrackSnapshot[] {
       pan: 0,
       muted: false,
       solo: false,
+      locked: false,
+      visible: true,
+      syncLocked: false,
+      editTarget: true,
       clips: [
         {
           id: 'a',

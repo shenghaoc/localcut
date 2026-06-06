@@ -10,7 +10,7 @@ import {
   sampleKeyframes,
   type Keyframe,
 } from './keyframes';
-import { defaultTimelineClip, setClipKeyframe, setClipKeyframes, trimClip, type Timeline } from './timeline';
+import { DEFAULT_TRACK_MIX, defaultTimelineClip, setClipKeyframe, setClipKeyframes, trimClip, type Timeline } from './timeline';
 
 describe('keyframes', () => {
   it('inserts sorted keyframes and replaces matching timestamps', () => {
@@ -116,10 +116,7 @@ describe('keyframes', () => {
       {
         id: 'track-video',
         type: 'video',
-        gain: 1,
-        pan: 0,
-        muted: false,
-        solo: false,
+        ...DEFAULT_TRACK_MIX,
         clips: [
           defaultTimelineClip({
             id: 'clip-a',
@@ -141,10 +138,7 @@ describe('keyframes', () => {
       {
         id: 'track-video',
         type: 'video',
-        gain: 1,
-        pan: 0,
-        muted: false,
-        solo: false,
+        ...DEFAULT_TRACK_MIX,
         clips: [
           defaultTimelineClip({
             id: 'clip-a',
@@ -173,10 +167,7 @@ describe('keyframes', () => {
       {
         id: 'track-video',
         type: 'video',
-        gain: 1,
-        pan: 0,
-        muted: false,
-        solo: false,
+        ...DEFAULT_TRACK_MIX,
         clips: [
           defaultTimelineClip({
             id: 'clip-a',

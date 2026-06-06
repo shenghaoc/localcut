@@ -54,6 +54,8 @@ export interface TimelineClip {
   audioFadeOut: number;
   /** Text + style for `kind: 'title'` clips; absent otherwise (Phase 14). */
   title?: TitleContent;
+  /** Shared group id linking A/V clips from the same source (Phase 20). */
+  linkedGroupId?: string;
 }
 
 /** A title clip carries source-less text; it composites as a cached texture. */
@@ -69,6 +71,10 @@ export interface TimelineTrack {
   pan: number;
   muted: boolean;
   solo: boolean;
+  locked: boolean;
+  visible: boolean;
+  syncLocked: boolean;
+  editTarget: boolean;
 }
 
 export interface TimelineMarker {
@@ -113,6 +119,10 @@ export const DEFAULT_TRACK_MIX = {
   pan: 0,
   muted: false,
   solo: false,
+  locked: false,
+  visible: true,
+  syncLocked: false,
+  editTarget: true,
 } as const;
 
 export const DEFAULT_CLIP_AUDIO_FADES = {
@@ -141,6 +151,10 @@ function cloneTimeline(timeline: Timeline): Timeline {
     pan: track.pan,
     muted: track.muted,
     solo: track.solo,
+    locked: track.locked,
+    visible: track.visible,
+    syncLocked: track.syncLocked,
+    editTarget: track.editTarget,
     clips: track.clips.map(cloneClip),
   }));
 }
@@ -221,6 +235,7 @@ export function resolveAllAt(timeline: Timeline, time: number): ResolveResult[] 
   if (!finite(time) || time < 0) return layers;
   for (const track of timeline) {
     if (track.type !== 'video') continue;
+    if (!track.visible) continue;
     for (const clip of track.clips) {
       if (!isInClip(time, clip)) continue;
       layers.push({
@@ -474,6 +489,7 @@ function cloneClip(clip: TimelineClip): TimelineClip {
     audioFadeIn: clip.audioFadeIn,
     audioFadeOut: clip.audioFadeOut,
     title: clip.title ? cloneTitleContent(clip.title) : undefined,
+    linkedGroupId: clip.linkedGroupId,
   };
   const keyframes = cloneClipKeyframes(clip.keyframes);
   if (keyframes) cloned.keyframes = keyframes;
@@ -1209,14 +1225,14 @@ export function setClipAudioFade(
   return next;
 }
 
-/** Appends a new empty track of the given type with default mix settings. */
+/** Appends a new empty track of the given type with default mix/state settings. */
 export function addTrack(timeline: Timeline, type: TimelineTrack['type']): Timeline {
   return [
     ...timeline,
     {
       id: newId(`track-${type}`),
       type,
-      clips: [],
+      clips: [] as TimelineClip[],
       ...DEFAULT_TRACK_MIX,
     },
   ];
@@ -1321,6 +1337,642 @@ export function sortMarkers(markers: readonly TimelineMarker[]): TimelineMarker[
     if (timeDiff !== 0) return timeDiff;
     return a.id.localeCompare(b.id);
   });
+}
+
+// --- Phase 20: Editing Tools V2 ---
+
+export function setTrackLock(timeline: Timeline, trackId: string, locked: boolean): Timeline {
+  const track = findTrack(timeline, trackId);
+  if (!track || track.locked === locked) return timeline;
+  const next = cloneTimeline(timeline);
+  const idx = next.findIndex((t) => t.id === trackId);
+  next[idx] = { ...next[idx]!, locked };
+  return next;
+}
+
+export function setTrackVisible(timeline: Timeline, trackId: string, visible: boolean): Timeline {
+  const track = findTrack(timeline, trackId);
+  if (!track || track.visible === visible) return timeline;
+  const next = cloneTimeline(timeline);
+  const idx = next.findIndex((t) => t.id === trackId);
+  next[idx] = { ...next[idx]!, visible };
+  return next;
+}
+
+export function setTrackSyncLock(timeline: Timeline, trackId: string, syncLocked: boolean): Timeline {
+  const track = findTrack(timeline, trackId);
+  if (!track || track.syncLocked === syncLocked) return timeline;
+  const next = cloneTimeline(timeline);
+  const idx = next.findIndex((t) => t.id === trackId);
+  next[idx] = { ...next[idx]!, syncLocked };
+  return next;
+}
+
+export function setTrackEditTarget(timeline: Timeline, trackId: string, editTarget: boolean): Timeline {
+  const track = findTrack(timeline, trackId);
+  if (!track || track.editTarget === editTarget) return timeline;
+  const next = cloneTimeline(timeline);
+  const idx = next.findIndex((t) => t.id === trackId);
+  next[idx] = { ...next[idx]!, editTarget };
+  return next;
+}
+
+export function linkClips(timeline: Timeline, refs: readonly ClipReference[]): Timeline {
+  if (refs.length < 2) return timeline;
+  for (const ref of refs) {
+    if (!trackWithClip(timeline, ref.trackId, ref.clipId)) return timeline;
+  }
+  const groupId = newId('link');
+  const next = cloneTimeline(timeline);
+  const refSet = new Set(refs.map((r) => `${r.trackId}:${r.clipId}`));
+  for (const track of next) {
+    for (let i = 0; i < track.clips.length; i++) {
+      if (refSet.has(`${track.id}:${track.clips[i]!.id}`)) {
+        track.clips[i] = { ...track.clips[i]!, linkedGroupId: groupId };
+      }
+    }
+  }
+  return next;
+}
+
+export function unlinkClips(timeline: Timeline, refs: readonly ClipReference[]): Timeline {
+  if (refs.length === 0) return timeline;
+  for (const ref of refs) {
+    if (!trackWithClip(timeline, ref.trackId, ref.clipId)) return timeline;
+  }
+  const next = cloneTimeline(timeline);
+  const refSet = new Set(refs.map((r) => `${r.trackId}:${r.clipId}`));
+  let changed = false;
+  for (const track of next) {
+    for (let i = 0; i < track.clips.length; i++) {
+      if (refSet.has(`${track.id}:${track.clips[i]!.id}`) && track.clips[i]!.linkedGroupId) {
+        track.clips[i] = { ...track.clips[i]!, linkedGroupId: undefined };
+        changed = true;
+      }
+    }
+  }
+  return changed ? next : timeline;
+}
+
+export function expandLinkedGroup(timeline: Timeline, refs: readonly ClipReference[]): ClipReference[] {
+  const groupIds = new Set<string>();
+  const seen = new Set<string>();
+  for (const ref of refs) {
+    const key = `${ref.trackId}:${ref.clipId}`;
+    seen.add(key);
+    const loc = trackWithClip(timeline, ref.trackId, ref.clipId);
+    if (!loc) continue;
+    const clip = timeline[loc.trackIndex]!.clips[loc.clipIndex]!;
+    if (clip.linkedGroupId) groupIds.add(clip.linkedGroupId);
+  }
+  if (groupIds.size === 0) return refs as ClipReference[];
+  const expanded: ClipReference[] = [...refs];
+  for (const track of timeline) {
+    for (const clip of track.clips) {
+      const key = `${track.id}:${clip.id}`;
+      if (!seen.has(key) && clip.linkedGroupId && groupIds.has(clip.linkedGroupId)) {
+        expanded.push({ trackId: track.id, clipId: clip.id });
+        seen.add(key);
+      }
+    }
+  }
+  return expanded;
+}
+
+function isTrackLocked(timeline: Timeline, trackId: string): boolean {
+  return timeline.find((t) => t.id === trackId)?.locked === true;
+}
+
+function anyRefOnLockedTrack(timeline: Timeline, refs: readonly ClipReference[]): boolean {
+  return refs.some((ref) => isTrackLocked(timeline, ref.trackId));
+}
+
+export function shiftMarkers(
+  markers: readonly TimelineMarker[],
+  afterTime: number,
+  deltaS: number,
+): TimelineMarker[] {
+  if (deltaS === 0 || !finite(deltaS)) return markers as TimelineMarker[];
+  let changed = false;
+  const next = markers.map((marker) => {
+    if (marker.time >= afterTime - TIMELINE_EPSILON) {
+      const shifted = Math.max(0, marker.time + deltaS);
+      if (shifted !== marker.time) {
+        changed = true;
+        return { ...marker, time: shifted };
+      }
+    }
+    return marker;
+  });
+  return changed ? sortMarkers(next) : (markers as TimelineMarker[]);
+}
+
+function shiftClipsOnTrack(
+  track: TimelineTrack,
+  afterTime: number,
+  deltaS: number,
+): TimelineClip[] {
+  return track.clips.map((clip) => {
+    if (clip.start >= afterTime - TIMELINE_EPSILON) {
+      return { ...clip, start: Math.max(0, clip.start + deltaS) };
+    }
+    return clip;
+  });
+}
+
+export function rippleDelete(
+  timeline: Timeline,
+  refs: readonly ClipReference[],
+  syncLockedTrackIds: readonly string[],
+): Timeline {
+  if (refs.length === 0) return timeline;
+  const expanded = expandLinkedGroup(timeline, refs);
+  if (anyRefOnLockedTrack(timeline, expanded)) return timeline;
+  for (const sid of syncLockedTrackIds) {
+    if (isTrackLocked(timeline, sid)) return timeline;
+  }
+
+  const next = cloneTimeline(timeline);
+  const syncSet = new Set(syncLockedTrackIds);
+  const refsByTrack = new Map<string, Set<string>>();
+  for (const ref of expanded) {
+    let set = refsByTrack.get(ref.trackId);
+    if (!set) { set = new Set(); refsByTrack.set(ref.trackId, set); }
+    set.add(ref.clipId);
+  }
+
+  const trackDeltas = new Map<string, { afterTime: number; delta: number }>();
+
+  for (const track of next) {
+    const clipIds = refsByTrack.get(track.id);
+    if (!clipIds) continue;
+    const removed = track.clips.filter((c) => clipIds.has(c.id));
+    if (removed.length === 0) continue;
+    const remaining = track.clips.filter((c) => !clipIds.has(c.id));
+    let totalDelta = 0;
+    let earliestRemoved = Number.POSITIVE_INFINITY;
+    for (const clip of removed) {
+      totalDelta += clip.duration;
+      earliestRemoved = Math.min(earliestRemoved, clip.start);
+    }
+    trackDeltas.set(track.id, { afterTime: earliestRemoved, delta: -totalDelta });
+    track.clips = remaining.map((clip) => {
+      if (clip.start >= earliestRemoved - TIMELINE_EPSILON) {
+        return { ...clip, start: Math.max(0, clip.start - totalDelta) };
+      }
+      return clip;
+    });
+  }
+
+  // Shift sync-locked tracks by largest delta
+  for (const track of next) {
+    if (!syncSet.has(track.id) || refsByTrack.has(track.id)) continue;
+    let bestDelta = 0;
+    let bestAfter = Number.POSITIVE_INFINITY;
+    for (const [, d] of trackDeltas) {
+      if (d.delta < bestDelta) {
+        bestDelta = d.delta;
+        bestAfter = d.afterTime;
+      }
+    }
+    if (bestDelta !== 0) {
+      track.clips = shiftClipsOnTrack(track, bestAfter, bestDelta);
+    }
+  }
+
+  for (const track of next) {
+    if (trackHasOverlaps(track.clips)) return timeline;
+  }
+  return next;
+}
+
+export function rippleTrim(
+  timeline: Timeline,
+  trackId: string,
+  clipId: string,
+  edge: 'in' | 'out',
+  time: number,
+  syncLockedTrackIds: readonly string[],
+  sourceDuration?: number,
+): Timeline {
+  if (!finite(time)) return timeline;
+  const loc = trackWithClip(timeline, trackId, clipId);
+  if (!loc) return timeline;
+  if (isTrackLocked(timeline, trackId)) return timeline;
+  for (const sid of syncLockedTrackIds) {
+    if (isTrackLocked(timeline, sid)) return timeline;
+  }
+
+  const clip = timeline[loc.trackIndex]!.clips[loc.clipIndex]!;
+  const oldEnd = clipEnd(clip);
+  const trimmed = trimClip(timeline, trackId, clipId, { edge, time, sourceDuration });
+  if (trimmed === timeline) return timeline;
+
+  const trimmedClip = trimmed[loc.trackIndex]!.clips[loc.clipIndex]!;
+  const newEnd = clipEnd(trimmedClip);
+  const delta = edge === 'out' ? newEnd - oldEnd : trimmedClip.start - clip.start;
+  if (delta === 0) return trimmed;
+
+  const afterTime = edge === 'out' ? oldEnd : clip.start;
+  const next = cloneTimeline(trimmed);
+  const track = next[loc.trackIndex]!;
+  track.clips = track.clips.map((c, i) => {
+    if (i === loc.clipIndex) return c;
+    if (c.start >= afterTime - TIMELINE_EPSILON) {
+      return { ...c, start: Math.max(0, c.start + delta) };
+    }
+    return c;
+  });
+
+  const syncSet = new Set(syncLockedTrackIds);
+  for (const t of next) {
+    if (t.id === trackId || !syncSet.has(t.id)) continue;
+    t.clips = shiftClipsOnTrack(t, afterTime, delta);
+  }
+
+  for (const t of next) {
+    if (trackHasOverlaps(t.clips)) return timeline;
+  }
+  return next;
+}
+
+export function rollTrim(
+  timeline: Timeline,
+  trackId: string,
+  clipId: string,
+  edge: 'in' | 'out',
+  time: number,
+  sourceDurations: { durationForSource: (sourceId: string) => number | undefined },
+): Timeline {
+  if (!finite(time)) return timeline;
+  if (isTrackLocked(timeline, trackId)) return timeline;
+  const loc = trackWithClip(timeline, trackId, clipId);
+  if (!loc) return timeline;
+
+  const track = timeline[loc.trackIndex]!;
+  const sorted = sortByStart(track.clips);
+  const sortedIdx = sorted.findIndex((c) => c.id === clipId);
+  if (sortedIdx < 0) return timeline;
+
+  const clip = sorted[sortedIdx]!;
+  let neighbor: TimelineClip;
+  if (edge === 'in') {
+    if (sortedIdx === 0) return timeline;
+    neighbor = sorted[sortedIdx - 1]!;
+    if (Math.abs(clipEnd(neighbor) - clip.start) > TIMELINE_EPSILON) return timeline;
+  } else {
+    if (sortedIdx >= sorted.length - 1) return timeline;
+    neighbor = sorted[sortedIdx + 1]!;
+    if (Math.abs(clipEnd(clip) - neighbor.start) > TIMELINE_EPSILON) return timeline;
+  }
+
+  const clipSourceDur = sourceDurations.durationForSource(clip.sourceId);
+  const neighborSourceDur = sourceDurations.durationForSource(neighbor.sourceId);
+  if (clipSourceDur === undefined || neighborSourceDur === undefined) return timeline;
+
+  if (edge === 'in') {
+    const cutPoint = time;
+    if (cutPoint <= neighbor.start || cutPoint >= clipEnd(clip)) return timeline;
+    const neighborNewDuration = cutPoint - neighbor.start;
+    const neighborMaxOut = neighborSourceDur - neighbor.inPoint;
+    if (neighborNewDuration > neighborMaxOut) return timeline;
+    const clipDelta = cutPoint - clip.start;
+    const clipNewInPoint = clip.inPoint + clipDelta;
+    if (clipNewInPoint < 0) return timeline;
+
+    const next = cloneTimeline(timeline);
+    const nextTrack = next[loc.trackIndex]!;
+    const nIdx = nextTrack.clips.findIndex((c) => c.id === neighbor.id);
+    const cIdx = nextTrack.clips.findIndex((c) => c.id === clip.id);
+    if (nIdx < 0 || cIdx < 0) return timeline;
+    nextTrack.clips[nIdx] = { ...nextTrack.clips[nIdx]!, duration: neighborNewDuration };
+    nextTrack.clips[cIdx] = {
+      ...nextTrack.clips[cIdx]!,
+      start: cutPoint,
+      duration: clip.duration - clipDelta,
+      inPoint: clipNewInPoint,
+    };
+    return next;
+  } else {
+    const cutPoint = time;
+    if (cutPoint <= clip.start || cutPoint >= clipEnd(neighbor)) return timeline;
+    const clipNewDuration = cutPoint - clip.start;
+    const clipMaxOut = clipSourceDur - clip.inPoint;
+    if (clipNewDuration > clipMaxOut) return timeline;
+    const neighborDelta = cutPoint - neighbor.start;
+    const neighborNewInPoint = neighbor.inPoint + neighborDelta;
+    if (neighborNewInPoint < 0) return timeline;
+
+    const next = cloneTimeline(timeline);
+    const nextTrack = next[loc.trackIndex]!;
+    const cIdx = nextTrack.clips.findIndex((c) => c.id === clip.id);
+    const nIdx = nextTrack.clips.findIndex((c) => c.id === neighbor.id);
+    if (cIdx < 0 || nIdx < 0) return timeline;
+    nextTrack.clips[cIdx] = { ...nextTrack.clips[cIdx]!, duration: clipNewDuration };
+    nextTrack.clips[nIdx] = {
+      ...nextTrack.clips[nIdx]!,
+      start: cutPoint,
+      duration: neighbor.duration - neighborDelta,
+      inPoint: neighborNewInPoint,
+    };
+    return next;
+  }
+}
+
+export function slipEdit(
+  timeline: Timeline,
+  trackId: string,
+  clipId: string,
+  deltaS: number,
+  sourceDuration: number,
+): Timeline {
+  if (!finite(deltaS) || deltaS === 0) return timeline;
+  if (!finite(sourceDuration)) return timeline;
+  if (isTrackLocked(timeline, trackId)) return timeline;
+  const loc = trackWithClip(timeline, trackId, clipId);
+  if (!loc) return timeline;
+
+  const clip = timeline[loc.trackIndex]!.clips[loc.clipIndex]!;
+  if (isTitleClip(clip)) return timeline;
+  const newInPoint = clip.inPoint + deltaS;
+  if (newInPoint < 0 || newInPoint + clip.duration > sourceDuration + TIMELINE_EPSILON) return timeline;
+  if (newInPoint === clip.inPoint) return timeline;
+
+  const next = cloneTimeline(timeline);
+  next[loc.trackIndex]!.clips[loc.clipIndex] = {
+    ...next[loc.trackIndex]!.clips[loc.clipIndex]!,
+    inPoint: newInPoint,
+  };
+  return next;
+}
+
+export function slideEdit(
+  timeline: Timeline,
+  trackId: string,
+  clipId: string,
+  deltaS: number,
+  sourceDurations: { durationForSource: (sourceId: string) => number | undefined },
+): Timeline {
+  if (!finite(deltaS) || deltaS === 0) return timeline;
+  if (isTrackLocked(timeline, trackId)) return timeline;
+  const loc = trackWithClip(timeline, trackId, clipId);
+  if (!loc) return timeline;
+
+  const track = timeline[loc.trackIndex]!;
+  const sorted = sortByStart(track.clips);
+  const sortedIdx = sorted.findIndex((c) => c.id === clipId);
+  if (sortedIdx < 0) return timeline;
+
+  const clip = sorted[sortedIdx]!;
+  const predecessor = sortedIdx > 0 ? sorted[sortedIdx - 1]! : null;
+  const successor = sortedIdx < sorted.length - 1 ? sorted[sortedIdx + 1]! : null;
+
+  if (predecessor && Math.abs(clipEnd(predecessor) - clip.start) > TIMELINE_EPSILON) return timeline;
+  if (successor && Math.abs(clipEnd(clip) - successor.start) > TIMELINE_EPSILON) return timeline;
+  if (!predecessor && !successor) return timeline;
+
+  let clampedDelta = deltaS;
+
+  if (predecessor) {
+    const predSourceDur = sourceDurations.durationForSource(predecessor.sourceId);
+    if (predSourceDur === undefined) return timeline;
+    const predMaxExtend = predSourceDur - (predecessor.inPoint + predecessor.duration);
+    if (clampedDelta > 0) clampedDelta = Math.min(clampedDelta, predMaxExtend);
+    const predMinShrink = -predecessor.duration + TIMELINE_EPSILON;
+    if (clampedDelta < predMinShrink) return timeline;
+  } else {
+    if (clampedDelta < 0) {
+      clampedDelta = Math.max(clampedDelta, -clip.start);
+    }
+  }
+
+  if (successor) {
+    const succSourceDur = sourceDurations.durationForSource(successor.sourceId);
+    if (succSourceDur === undefined) return timeline;
+    const succMaxExtend = successor.inPoint;
+    if (clampedDelta < 0) clampedDelta = Math.max(clampedDelta, -succMaxExtend);
+    const succMinShrink = successor.duration - TIMELINE_EPSILON;
+    if (clampedDelta > succMinShrink) return timeline;
+  }
+
+  if (Math.abs(clampedDelta) < TIMELINE_EPSILON) return timeline;
+
+  const next = cloneTimeline(timeline);
+  const nextTrack = next[loc.trackIndex]!;
+  const cIdx = nextTrack.clips.findIndex((c) => c.id === clipId);
+  if (cIdx < 0) return timeline;
+  nextTrack.clips[cIdx] = { ...nextTrack.clips[cIdx]!, start: clip.start + clampedDelta };
+
+  if (predecessor) {
+    const pIdx = nextTrack.clips.findIndex((c) => c.id === predecessor.id);
+    if (pIdx >= 0) {
+      nextTrack.clips[pIdx] = {
+        ...nextTrack.clips[pIdx]!,
+        duration: predecessor.duration + clampedDelta,
+      };
+    }
+  }
+
+  if (successor) {
+    const sIdx = nextTrack.clips.findIndex((c) => c.id === successor.id);
+    if (sIdx >= 0) {
+      nextTrack.clips[sIdx] = {
+        ...nextTrack.clips[sIdx]!,
+        start: successor.start + clampedDelta,
+        duration: successor.duration - clampedDelta,
+        inPoint: successor.inPoint + clampedDelta,
+      };
+    }
+  }
+
+  nextTrack.clips = sortByStart(nextTrack.clips);
+  if (trackHasOverlaps(nextTrack.clips)) return timeline;
+  return next;
+}
+
+export function insertEdit(
+  timeline: Timeline,
+  targetTrackIds: readonly string[],
+  clips: readonly ClipboardTimelineClip[],
+  atTime: number,
+  syncLockedTrackIds: readonly string[],
+): Timeline {
+  if (clips.length === 0 || !finite(atTime) || atTime < 0) return timeline;
+  for (const tid of targetTrackIds) {
+    if (isTrackLocked(timeline, tid)) return timeline;
+  }
+  for (const sid of syncLockedTrackIds) {
+    if (isTrackLocked(timeline, sid)) return timeline;
+  }
+
+  let insertDuration = 0;
+  for (const item of clips) {
+    insertDuration = Math.max(insertDuration, item.clip.duration);
+  }
+  if (insertDuration <= 0) return timeline;
+
+  const targetSet = new Set(targetTrackIds);
+  const syncSet = new Set(syncLockedTrackIds);
+  const next = cloneTimeline(timeline);
+
+  for (const track of next) {
+    if (targetSet.has(track.id) || syncSet.has(track.id)) {
+      track.clips = shiftClipsOnTrack(track, atTime, insertDuration);
+    }
+  }
+
+  for (const item of clips) {
+    const dest = next.find((t) => t.id === item.trackId);
+    if (!dest || !targetSet.has(dest.id)) continue;
+    const placed = {
+      ...cloneWithNewId(item.clip),
+      start: atTime,
+    };
+    dest.clips = sortByStart([...dest.clips, placed]);
+  }
+
+  for (const track of next) {
+    if (trackHasOverlaps(track.clips)) return timeline;
+  }
+  return next;
+}
+
+export function overwriteEdit(
+  timeline: Timeline,
+  targetTrackIds: readonly string[],
+  clips: readonly ClipboardTimelineClip[],
+  atTime: number,
+): Timeline {
+  if (clips.length === 0 || !finite(atTime) || atTime < 0) return timeline;
+  for (const tid of targetTrackIds) {
+    if (isTrackLocked(timeline, tid)) return timeline;
+  }
+
+  const targetSet = new Set(targetTrackIds);
+  let next = cloneTimeline(timeline);
+
+  for (const item of clips) {
+    const dest = next.find((t) => t.id === item.trackId);
+    if (!dest || !targetSet.has(dest.id)) continue;
+    const regionStart = atTime;
+    const regionEnd = atTime + item.clip.duration;
+    const surviving: TimelineClip[] = [];
+
+    for (const existing of dest.clips) {
+      const eStart = existing.start;
+      const eEnd = clipEnd(existing);
+      if (eEnd <= regionStart + TIMELINE_EPSILON || eStart >= regionEnd - TIMELINE_EPSILON) {
+        surviving.push(existing);
+        continue;
+      }
+      if (eStart < regionStart - TIMELINE_EPSILON) {
+        const leftDuration = regionStart - eStart;
+        surviving.push({ ...existing, duration: leftDuration });
+      }
+      if (eEnd > regionEnd + TIMELINE_EPSILON) {
+        const rightStart = regionEnd;
+        const trimDelta = regionEnd - eStart;
+        surviving.push({
+          ...existing,
+          id: newId(existing.id),
+          start: rightStart,
+          duration: eEnd - regionEnd,
+          inPoint: existing.inPoint + trimDelta,
+        });
+      }
+    }
+
+    const placed = {
+      ...cloneWithNewId(item.clip),
+      start: atTime,
+    };
+    dest.clips = sortByStart([...surviving, placed]);
+  }
+
+  for (const track of next) {
+    if (trackHasOverlaps(track.clips)) return timeline;
+  }
+  return next;
+}
+
+export function liftRegion(
+  timeline: Timeline,
+  targetTrackIds: readonly string[],
+  startTime: number,
+  endTime: number,
+): Timeline {
+  if (!finite(startTime) || !finite(endTime) || endTime <= startTime) return timeline;
+  for (const tid of targetTrackIds) {
+    if (isTrackLocked(timeline, tid)) return timeline;
+  }
+
+  const targetSet = new Set(targetTrackIds);
+  const next = cloneTimeline(timeline);
+  let changed = false;
+
+  for (const track of next) {
+    if (!targetSet.has(track.id)) continue;
+    const surviving: TimelineClip[] = [];
+    for (const clip of track.clips) {
+      const cEnd = clipEnd(clip);
+      if (cEnd <= startTime + TIMELINE_EPSILON || clip.start >= endTime - TIMELINE_EPSILON) {
+        surviving.push(clip);
+        continue;
+      }
+      changed = true;
+      if (clip.start < startTime - TIMELINE_EPSILON) {
+        surviving.push({ ...clip, duration: startTime - clip.start });
+      }
+      if (cEnd > endTime + TIMELINE_EPSILON) {
+        const trimDelta = endTime - clip.start;
+        surviving.push({
+          ...clip,
+          id: newId(clip.id),
+          start: endTime,
+          duration: cEnd - endTime,
+          inPoint: clip.inPoint + trimDelta,
+        });
+      }
+    }
+    track.clips = surviving;
+  }
+
+  return changed ? next : timeline;
+}
+
+export function extractRegion(
+  timeline: Timeline,
+  targetTrackIds: readonly string[],
+  startTime: number,
+  endTime: number,
+  syncLockedTrackIds: readonly string[],
+): Timeline {
+  if (!finite(startTime) || !finite(endTime) || endTime <= startTime) return timeline;
+  for (const tid of targetTrackIds) {
+    if (isTrackLocked(timeline, tid)) return timeline;
+  }
+  for (const sid of syncLockedTrackIds) {
+    if (isTrackLocked(timeline, sid)) return timeline;
+  }
+
+  const lifted = liftRegion(timeline, targetTrackIds, startTime, endTime);
+  if (lifted === timeline) return timeline;
+
+  const regionDuration = endTime - startTime;
+  const targetSet = new Set(targetTrackIds);
+  const syncSet = new Set(syncLockedTrackIds);
+  const next = cloneTimeline(lifted);
+
+  for (const track of next) {
+    if (targetSet.has(track.id) || syncSet.has(track.id)) {
+      track.clips = shiftClipsOnTrack(track, endTime, -regionDuration);
+    }
+  }
+
+  for (const track of next) {
+    if (trackHasOverlaps(track.clips)) return timeline;
+  }
+  return next;
 }
 
 export { normalizeClipEffects, type ClipEffectParams };

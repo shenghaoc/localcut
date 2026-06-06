@@ -53,6 +53,23 @@ import {
   defaultTimelineClip,
   defaultTitleClip,
   isTitleClip,
+  linkClips,
+  unlinkClips,
+  setTrackLock,
+  setTrackVisible,
+  setTrackSyncLock,
+  setTrackEditTarget,
+  rippleDelete,
+  rippleTrim,
+  rollTrim,
+  slipEdit,
+  slideEdit,
+  insertEdit,
+  overwriteEdit,
+  liftRegion,
+  extractRegion,
+  shiftMarkers,
+  expandLinkedGroup,
   DEFAULT_MASTER_GAIN,
   DEFAULT_TITLE_DURATION_S,
   type Timeline,
@@ -229,6 +246,10 @@ function postTimelineState() {
     pan: track.pan,
     muted: track.muted,
     solo: track.solo,
+    locked: track.locked,
+    visible: track.visible,
+    syncLocked: track.syncLocked,
+    editTarget: track.editTarget,
     clips: track.clips.map((clip) => ({
       id: clip.id,
       ...(clip.kind === 'title' && clip.title
@@ -244,9 +265,8 @@ function postTimelineState() {
       lut: lutSnapshot(clip.lut),
       audioFadeIn: clip.audioFadeIn,
       audioFadeOut: clip.audioFadeOut,
-      // Title clips are source-less and never "offline"; source clips report
-      // offline when their decoder handle is missing.
       offline: clip.kind === 'title' || sourceInputs.has(clip.sourceId) ? undefined : true,
+      linkedGroupId: clip.linkedGroupId,
     })),
   }));
   const transitionSnapshot: TimelineTransitionSnapshot[] = cloneTransitionsSnapshot(transitions);
@@ -2043,6 +2063,189 @@ function handleTrim(cmd: Extract<WorkerCommand, { type: 'trim-clip' }>) {
   );
 }
 
+function getSyncLockedTrackIds(): string[] {
+  return timeline.filter((t) => t.syncLocked).map((t) => t.id);
+}
+
+function getEditTargetTrackIds(): string[] {
+  return timeline.filter((t) => t.editTarget).map((t) => t.id);
+}
+
+function handleInsertEdit(cmd: Extract<WorkerCommand, { type: 'insert-edit' }>) {
+  const targetTrackIds = getEditTargetTrackIds();
+  const syncLockedTrackIds = getSyncLockedTrackIds();
+  commitEditMutation(() => {
+    const nextTimeline = insertEdit(
+      timeline,
+      targetTrackIds,
+      cmd.clips.map(clipboardClipFromMessage),
+      cmd.atTime,
+      syncLockedTrackIds,
+    );
+    const nextMarkers = shiftMarkers(markers, cmd.atTime, cmd.clips.reduce(
+      (max, c) => Math.max(max, c.clip.duration), 0,
+    ));
+    return {
+      timeline: nextTimeline,
+      transitions: reconcileTransitions(nextTimeline, transitions),
+      markers: nextMarkers,
+    };
+  });
+}
+
+function handleOverwriteEdit(cmd: Extract<WorkerCommand, { type: 'overwrite-edit' }>) {
+  const targetTrackIds = getEditTargetTrackIds();
+  commitTimelineMutation(() =>
+    overwriteEdit(timeline, targetTrackIds, cmd.clips.map(clipboardClipFromMessage), cmd.atTime),
+  );
+}
+
+function handleRippleDelete(cmd: Extract<WorkerCommand, { type: 'ripple-delete' }>) {
+  const syncLockedTrackIds = getSyncLockedTrackIds();
+  const expanded = expandLinkedGroup(timeline, cmd.clips);
+  let removedDuration = 0;
+  let earliestRemoved = Number.POSITIVE_INFINITY;
+  for (const ref of expanded) {
+    const track = timeline.find((t) => t.id === ref.trackId);
+    const clip = track?.clips.find((c) => c.id === ref.clipId);
+    if (clip) {
+      removedDuration = Math.max(removedDuration, clip.duration);
+      earliestRemoved = Math.min(earliestRemoved, clip.start);
+    }
+  }
+  commitEditMutation(() => {
+    const nextTimeline = rippleDelete(timeline, cmd.clips, syncLockedTrackIds);
+    const nextMarkers = Number.isFinite(earliestRemoved)
+      ? shiftMarkers(markers, earliestRemoved, -removedDuration)
+      : markers;
+    return {
+      timeline: nextTimeline,
+      transitions: reconcileTransitions(nextTimeline, transitions),
+      markers: nextMarkers,
+    };
+  });
+}
+
+function handleRippleTrim(cmd: Extract<WorkerCommand, { type: 'ripple-trim' }>) {
+  const syncLockedTrackIds = getSyncLockedTrackIds();
+  const clip = timeline.find((t) => t.id === cmd.trackId)?.clips.find((c) => c.id === cmd.clipId);
+  const sourceDuration = clip ? sourceInputs.get(clip.sourceId)?.duration : undefined;
+  const oldEnd = clip ? clip.start + clip.duration : 0;
+  commitEditMutation(() => {
+    const nextTimeline = rippleTrim(timeline, cmd.trackId, cmd.clipId, cmd.edge, cmd.time, syncLockedTrackIds, sourceDuration);
+    if (nextTimeline === timeline) return { timeline, transitions, markers };
+    const trimmedClip = nextTimeline.find((t) => t.id === cmd.trackId)?.clips.find((c) => c.id === cmd.clipId);
+    const newEnd = trimmedClip ? trimmedClip.start + trimmedClip.duration : oldEnd;
+    const afterTime = cmd.edge === 'out' ? oldEnd : (clip?.start ?? 0);
+    const delta = cmd.edge === 'out' ? newEnd - oldEnd : (trimmedClip?.start ?? 0) - (clip?.start ?? 0);
+    const nextMarkers = delta !== 0 ? shiftMarkers(markers, afterTime, delta) : markers;
+    return {
+      timeline: nextTimeline,
+      transitions: reconcileTransitions(nextTimeline, transitions),
+      markers: nextMarkers,
+    };
+  }, { coalesceKey: { clipId: cmd.clipId, key: `ripple-trim-${cmd.edge}` } });
+}
+
+function handleRollTrim(cmd: Extract<WorkerCommand, { type: 'roll-trim' }>) {
+  commitTimelineMutation(
+    () => rollTrim(timeline, cmd.trackId, cmd.clipId, cmd.edge, cmd.time, transitionSourceDurations()),
+    { coalesceKey: { clipId: cmd.clipId, key: `roll-trim-${cmd.edge}` } },
+  );
+}
+
+function handleSlipEdit(cmd: Extract<WorkerCommand, { type: 'slip-edit' }>) {
+  const clip = timeline.find((t) => t.id === cmd.trackId)?.clips.find((c) => c.id === cmd.clipId);
+  const sourceDuration = clip ? sourceInputs.get(clip.sourceId)?.duration : undefined;
+  if (sourceDuration === undefined) return;
+  commitTimelineMutation(
+    () => slipEdit(timeline, cmd.trackId, cmd.clipId, cmd.deltaS, sourceDuration),
+    {
+      coalesceKey: { clipId: cmd.clipId, key: 'slip' },
+      refreshPlayback: 'refresh',
+      prune: false,
+      syncLuts: false,
+    },
+  );
+}
+
+function handleSlideEdit(cmd: Extract<WorkerCommand, { type: 'slide-edit' }>) {
+  commitTimelineMutation(
+    () => slideEdit(timeline, cmd.trackId, cmd.clipId, cmd.deltaS, transitionSourceDurations()),
+    { coalesceKey: { clipId: cmd.clipId, key: 'slide' } },
+  );
+}
+
+function handleLiftRegion(cmd: Extract<WorkerCommand, { type: 'lift-region' }>) {
+  const targetTrackIds = getEditTargetTrackIds();
+  commitTimelineMutation(() => liftRegion(timeline, targetTrackIds, cmd.startTime, cmd.endTime));
+}
+
+function handleExtractRegion(cmd: Extract<WorkerCommand, { type: 'extract-region' }>) {
+  const targetTrackIds = getEditTargetTrackIds();
+  const syncLockedTrackIds = getSyncLockedTrackIds();
+  const regionDuration = cmd.endTime - cmd.startTime;
+  commitEditMutation(() => {
+    const nextTimeline = extractRegion(timeline, targetTrackIds, cmd.startTime, cmd.endTime, syncLockedTrackIds);
+    const nextMarkers = nextTimeline !== timeline
+      ? shiftMarkers(markers, cmd.endTime, -regionDuration)
+      : markers;
+    return {
+      timeline: nextTimeline,
+      transitions: reconcileTransitions(nextTimeline, transitions),
+      markers: nextMarkers,
+    };
+  });
+}
+
+function handleLinkClips(cmd: Extract<WorkerCommand, { type: 'link-clips' }>) {
+  commitTimelineMutation(() => linkClips(timeline, cmd.clips), {
+    refreshPlayback: 'none',
+    prune: false,
+    syncLuts: false,
+  });
+}
+
+function handleUnlinkClips(cmd: Extract<WorkerCommand, { type: 'unlink-clips' }>) {
+  commitTimelineMutation(() => unlinkClips(timeline, cmd.clips), {
+    refreshPlayback: 'none',
+    prune: false,
+    syncLuts: false,
+  });
+}
+
+function handleSetTrackLock(cmd: Extract<WorkerCommand, { type: 'set-track-lock' }>) {
+  commitTimelineMutation(() => setTrackLock(timeline, cmd.trackId, cmd.locked), {
+    refreshPlayback: 'none',
+    prune: false,
+    syncLuts: false,
+  });
+}
+
+function handleSetTrackVisible(cmd: Extract<WorkerCommand, { type: 'set-track-visible' }>) {
+  commitTimelineMutation(() => setTrackVisible(timeline, cmd.trackId, cmd.visible), {
+    refreshPlayback: 'refresh',
+    prune: false,
+    syncLuts: false,
+  });
+}
+
+function handleSetTrackSyncLock(cmd: Extract<WorkerCommand, { type: 'set-track-sync-lock' }>) {
+  commitTimelineMutation(() => setTrackSyncLock(timeline, cmd.trackId, cmd.syncLocked), {
+    refreshPlayback: 'none',
+    prune: false,
+    syncLuts: false,
+  });
+}
+
+function handleSetTrackEditTarget(cmd: Extract<WorkerCommand, { type: 'set-track-edit-target' }>) {
+  commitTimelineMutation(() => setTrackEditTarget(timeline, cmd.trackId, cmd.editTarget), {
+    refreshPlayback: 'none',
+    prune: false,
+    syncLuts: false,
+  });
+}
+
 function applyHistoryRestore(next: { timeline: Timeline; transitions: TimelineTransition[]; markers: TimelineMarker[] }): void {
   timeline = cloneTimelineSnapshot(next.timeline);
   transitions = reconcileTransitions(timeline, next.transitions);
@@ -2713,6 +2916,51 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
       break;
     case 'bundle-replace-decision':
       resolveBundleReplaceDecision(cmd.jobId, cmd.action);
+      break;
+    case 'insert-edit':
+      handleInsertEdit(cmd);
+      break;
+    case 'overwrite-edit':
+      handleOverwriteEdit(cmd);
+      break;
+    case 'ripple-delete':
+      handleRippleDelete(cmd);
+      break;
+    case 'ripple-trim':
+      handleRippleTrim(cmd);
+      break;
+    case 'roll-trim':
+      handleRollTrim(cmd);
+      break;
+    case 'slip-edit':
+      handleSlipEdit(cmd);
+      break;
+    case 'slide-edit':
+      handleSlideEdit(cmd);
+      break;
+    case 'lift-region':
+      handleLiftRegion(cmd);
+      break;
+    case 'extract-region':
+      handleExtractRegion(cmd);
+      break;
+    case 'link-clips':
+      handleLinkClips(cmd);
+      break;
+    case 'unlink-clips':
+      handleUnlinkClips(cmd);
+      break;
+    case 'set-track-lock':
+      handleSetTrackLock(cmd);
+      break;
+    case 'set-track-visible':
+      handleSetTrackVisible(cmd);
+      break;
+    case 'set-track-sync-lock':
+      handleSetTrackSyncLock(cmd);
+      break;
+    case 'set-track-edit-target':
+      handleSetTrackEditTarget(cmd);
       break;
     case 'dispose':
       void handleDispose();

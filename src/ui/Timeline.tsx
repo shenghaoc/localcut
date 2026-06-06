@@ -56,6 +56,10 @@ interface TimelineProps {
   onAddTrack: (trackType: 'video' | 'audio') => void;
   onRemoveTrack: (trackId: string) => void;
   onReorderTrack: (trackId: string, toIndex: number) => void;
+  onSetTrackLock: (trackId: string, locked: boolean) => void;
+  onSetTrackVisible: (trackId: string, visible: boolean) => void;
+  onSetTrackSyncLock: (trackId: string, syncLocked: boolean) => void;
+  onSetTrackEditTarget: (trackId: string, editTarget: boolean) => void;
   getThumbnail: (sourceId: string, timestamp: number) => ThumbnailEntry | null;
   thumbnailVersion: () => number;
   onRequestThumbnails: (sourceId: string, timestamps: number[]) => void;
@@ -540,6 +544,10 @@ export function Timeline(props: TimelineProps) {
                   onRemove={() => props.onRemoveTrack(track.id)}
                   onMoveUp={() => props.onReorderTrack(track.id, index() - 1)}
                   onMoveDown={() => props.onReorderTrack(track.id, index() + 1)}
+                  onSetLock={(locked) => props.onSetTrackLock(track.id, locked)}
+                  onSetVisible={(visible) => props.onSetTrackVisible(track.id, visible)}
+                  onSetSyncLock={(syncLocked) => props.onSetTrackSyncLock(track.id, syncLocked)}
+                  onSetEditTarget={(editTarget) => props.onSetTrackEditTarget(track.id, editTarget)}
                 />
               )}
             </For>
