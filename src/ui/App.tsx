@@ -458,6 +458,7 @@ export function App() {
             bridge?.send({ type: 'set-track-solo', trackId, solo });
           }}
         />
+<<<<<<< HEAD
       </main>
       <Timeline
         currentTime={clock.currentTime}
