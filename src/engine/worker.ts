@@ -2,6 +2,7 @@
 import {
   assertCrossOriginIsolated,
   ClockIndex,
+  TIMELINE_EPSILON,
   type ExportSettings,
   type MediaAssetSnapshot,
   type ThroughputProbe,
@@ -24,7 +25,6 @@ import {
   getTimelineDuration,
   insertClip,
   moveClips,
-  moveClipTo,
   pasteClips,
   removeClip,
   removeTrack,
@@ -53,6 +53,24 @@ import {
   defaultTimelineClip,
   defaultTitleClip,
   isTitleClip,
+  linkClips,
+  unlinkClips,
+  setTrackLock,
+  setTrackVisible,
+  setTrackSyncLock,
+  setTrackEditTarget,
+  rippleDelete,
+  rippleTrim,
+  rollTrim,
+  slipEdit,
+  slideEdit,
+  insertEdit,
+  overwriteEdit,
+  liftRegion,
+  extractRegion,
+  shiftMarkers,
+  removeMarkersInRange,
+  expandLinkedGroup,
   DEFAULT_MASTER_GAIN,
   DEFAULT_TITLE_DURATION_S,
   type Timeline,
@@ -61,6 +79,7 @@ import {
   type TimelineTransition,
   type ClipboardTimelineClip,
   type ClipEffectParams,
+  type MoveClipTarget,
   type TransformParams,
 } from './timeline';
 import { sampleClipParamsAt } from './keyframes';
@@ -229,6 +248,10 @@ function postTimelineState() {
     pan: track.pan,
     muted: track.muted,
     solo: track.solo,
+    locked: track.locked,
+    visible: track.visible,
+    syncLocked: track.syncLocked,
+    editTarget: track.editTarget,
     clips: track.clips.map((clip) => ({
       id: clip.id,
       ...(clip.kind === 'title' && clip.title
@@ -244,9 +267,8 @@ function postTimelineState() {
       lut: lutSnapshot(clip.lut),
       audioFadeIn: clip.audioFadeIn,
       audioFadeOut: clip.audioFadeOut,
-      // Title clips are source-less and never "offline"; source clips report
-      // offline when their decoder handle is missing.
       offline: clip.kind === 'title' || sourceInputs.has(clip.sourceId) ? undefined : true,
+      linkedGroupId: clip.linkedGroupId,
     })),
   }));
   const transitionSnapshot: TimelineTransitionSnapshot[] = cloneTransitionsSnapshot(transitions);
@@ -1596,36 +1618,97 @@ function pruneUnusedSources(): void {
   }
 }
 
+function isTrackLockedWorker(trackId: string): boolean {
+  return timeline.find((t) => t.id === trackId)?.locked === true;
+}
+
 function handleSplit(cmd: Extract<WorkerCommand, { type: 'split' }>) {
-  commitTimelineMutation(() => splitClipAt(timeline, cmd.trackId, cmd.time));
+  if (isTrackLockedWorker(cmd.trackId)) return;
+  const track = timeline.find((t) => t.id === cmd.trackId);
+  const targetClip = track?.clips.find((c) => cmd.time >= c.start && cmd.time < c.start + c.duration);
+  if (!targetClip) return;
+  const refs = expandLinkedGroup(timeline, [{ trackId: cmd.trackId, clipId: targetClip.id }]);
+  if (refs.some((r) => isTrackLockedWorker(r.trackId))) return;
+  commitTimelineMutation(() => {
+    let tl = timeline;
+    for (const ref of refs) {
+      tl = splitClipAt(tl, ref.trackId, cmd.time);
+    }
+    return tl;
+  });
 }
 
 function handleDelete(cmd: Extract<WorkerCommand, { type: 'delete-clip' }>) {
-  commitTimelineMutation(() => removeClip(timeline, cmd.trackId, cmd.clipId));
-}
-
-function handleDeleteBatch(cmd: Extract<WorkerCommand, { type: 'delete-clips' }>) {
+  const expanded = expandLinkedGroup(timeline, [{ trackId: cmd.trackId, clipId: cmd.clipId }]);
+  if (expanded.some((c) => isTrackLockedWorker(c.trackId))) return;
   commitTimelineMutation(() => {
     let next = timeline;
-    for (const clip of cmd.clips) {
-      next = removeClip(next, clip.trackId, clip.clipId);
+    for (const ref of expanded) {
+      next = removeClip(next, ref.trackId, ref.clipId);
     }
     return next;
   });
 }
 
+function handleDeleteBatch(cmd: Extract<WorkerCommand, { type: 'delete-clips' }>) {
+  const expanded = expandLinkedGroup(timeline, cmd.clips);
+  if (expanded.some((c) => isTrackLockedWorker(c.trackId))) return;
+  commitTimelineMutation(() => {
+    let next = timeline;
+    for (const ref of expanded) {
+      next = removeClip(next, ref.trackId, ref.clipId);
+    }
+    return next;
+  });
+}
+
+function expandMovesForLinkedGroups(moves: readonly MoveClipTarget[]): MoveClipTarget[] {
+  const expanded: MoveClipTarget[] = [...moves];
+  const seen = new Set(moves.map((m) => `${m.trackId}:${m.clipId}`));
+  for (const move of moves) {
+    const clip = timeline.find((t) => t.id === move.trackId)?.clips.find((c) => c.id === move.clipId);
+    if (!clip) continue;
+    const deltaS = move.toStart - clip.start;
+    const partners = expandLinkedGroup(timeline, [{ trackId: move.trackId, clipId: move.clipId }]);
+    for (const partner of partners) {
+      const key = `${partner.trackId}:${partner.clipId}`;
+      if (seen.has(key)) continue;
+      const partnerClip = timeline.find((t) => t.id === partner.trackId)?.clips.find((c) => c.id === partner.clipId);
+      if (!partnerClip) continue;
+      expanded.push({
+        trackId: partner.trackId,
+        clipId: partner.clipId,
+        toTrackId: partner.trackId,
+        toStart: partnerClip.start + deltaS,
+      });
+      seen.add(key);
+    }
+  }
+  return expanded;
+}
+
 function handleMove(cmd: Extract<WorkerCommand, { type: 'move-clip' }>) {
-  commitTimelineMutation(() =>
-    moveClipTo(timeline, cmd.fromTrackId, cmd.clipId, cmd.toTrackId, cmd.toStart),
-  );
+  handleMoveBatch({
+    type: 'move-clips',
+    moves: [{
+      trackId: cmd.fromTrackId,
+      clipId: cmd.clipId,
+      toTrackId: cmd.toTrackId,
+      toStart: cmd.toStart,
+    }],
+  });
 }
 
 function handleMoveBatch(cmd: Extract<WorkerCommand, { type: 'move-clips' }>) {
-  commitTimelineMutation(() => moveClips(timeline, cmd.moves));
+  const expanded = expandMovesForLinkedGroups(cmd.moves);
+  if (expanded.some((m) => isTrackLockedWorker(m.trackId) || isTrackLockedWorker(m.toTrackId))) return;
+  commitTimelineMutation(() => moveClips(timeline, expanded));
 }
 
 function handleDuplicate(cmd: Extract<WorkerCommand, { type: 'duplicate-clip' }>) {
-  commitTimelineMutation(() => duplicateClips(timeline, cmd.clips, cmd.atTime));
+  const expanded = expandLinkedGroup(timeline, cmd.clips);
+  if (expanded.some((c) => isTrackLockedWorker(c.trackId))) return;
+  commitTimelineMutation(() => duplicateClips(timeline, expanded, cmd.atTime));
 }
 
 function timelineClipByRef(trackId: string, clipId: string): TimelineClip | null {
@@ -1683,6 +1766,7 @@ function clipboardClipFromMessage(item: TimelineClipboardClip): ClipboardTimelin
 }
 
 function handlePaste(cmd: Extract<WorkerCommand, { type: 'paste-clips' }>) {
+  if (cmd.clips.some((c) => isTrackLockedWorker(c.trackId))) return;
   commitTimelineMutation(() =>
     pasteClips(timeline, cmd.clips.map(clipboardClipFromMessage), cmd.atTime),
   );
@@ -2024,9 +2108,7 @@ function handleRequestThumbnails(cmd: Extract<WorkerCommand, { type: 'request-th
 }
 
 function handleTrim(cmd: Extract<WorkerCommand, { type: 'trim-clip' }>) {
-  // Look up the underlying source's duration so trimClip can bound an outward
-  // extension. Without it, trimClip would refuse to grow the clip past its
-  // current edge — preventing the user from restoring a previously-shrunk clip.
+  if (isTrackLockedWorker(cmd.trackId)) return;
   const track = timeline.find((t) => t.id === cmd.trackId);
   const clip = track?.clips.find((c) => c.id === cmd.clipId);
   const sourceDuration = clip ? sourceInputs.get(clip.sourceId)?.duration : undefined;
@@ -2041,6 +2123,214 @@ function handleTrim(cmd: Extract<WorkerCommand, { type: 'trim-clip' }>) {
     // history entry per clip+edge so a long drag doesn't exhaust the undo ring.
     { coalesceKey: { clipId: cmd.clipId, key: `trim-${cmd.edge}` } },
   );
+}
+
+function getSyncLockedTrackIds(): string[] {
+  return timeline.filter((t) => t.syncLocked).map((t) => t.id);
+}
+
+function getEditTargetTrackIds(): string[] {
+  return timeline.filter((t) => t.editTarget).map((t) => t.id);
+}
+
+function handleInsertEdit(cmd: Extract<WorkerCommand, { type: 'insert-edit' }>) {
+  const targetTrackIds = getEditTargetTrackIds();
+  const syncLockedTrackIds = getSyncLockedTrackIds();
+  commitEditMutation(() => {
+    const nextTimeline = insertEdit(
+      timeline,
+      targetTrackIds,
+      cmd.clips.map(clipboardClipFromMessage),
+      cmd.atTime,
+      syncLockedTrackIds,
+    );
+    if (nextTimeline === timeline) return { timeline, transitions, markers };
+    const targetMarkersSet = new Set(targetTrackIds);
+    const insertDuration = cmd.clips.reduce(
+      (max, c) => targetMarkersSet.has(c.trackId) ? Math.max(max, c.clip.duration) : max, 0,
+    );
+    const nextMarkers = shiftMarkers(markers, cmd.atTime, insertDuration);
+    return {
+      timeline: nextTimeline,
+      transitions: reconcileTransitions(nextTimeline, transitions),
+      markers: nextMarkers,
+    };
+  });
+}
+
+function handleOverwriteEdit(cmd: Extract<WorkerCommand, { type: 'overwrite-edit' }>) {
+  const targetTrackIds = getEditTargetTrackIds();
+  commitTimelineMutation(() =>
+    overwriteEdit(timeline, targetTrackIds, cmd.clips.map(clipboardClipFromMessage), cmd.atTime),
+  );
+}
+
+function handleRippleDelete(cmd: Extract<WorkerCommand, { type: 'ripple-delete' }>) {
+  const syncLockedTrackIds = getSyncLockedTrackIds();
+  const expanded = expandLinkedGroup(timeline, cmd.clips);
+  const removedRegions: { start: number; end: number }[] = [];
+  for (const ref of expanded) {
+    const track = timeline.find((t) => t.id === ref.trackId);
+    const clip = track?.clips.find((c) => c.id === ref.clipId);
+    if (clip) removedRegions.push({ start: clip.start, end: clip.start + clip.duration });
+  }
+  commitEditMutation(() => {
+    const nextTimeline = rippleDelete(timeline, cmd.clips, syncLockedTrackIds);
+    if (nextTimeline === timeline) return { timeline, transitions, markers };
+    let nextMarkers: TimelineMarker[] = markers as TimelineMarker[];
+    const sorted = [...removedRegions].sort((a, b) => a.start - b.start);
+    const merged: { start: number; end: number }[] = [];
+    for (const r of sorted) {
+      if (merged.length > 0 && r.start <= merged[merged.length - 1]!.end + TIMELINE_EPSILON) {
+        merged[merged.length - 1]!.end = Math.max(merged[merged.length - 1]!.end, r.end);
+      } else {
+        merged.push({ start: r.start, end: r.end });
+      }
+    }
+    for (const r of merged) {
+      nextMarkers = removeMarkersInRange(nextMarkers, r.start, r.end);
+    }
+    let cumulativeDelta = 0;
+    for (const r of merged) {
+      const dur = r.end - r.start;
+      nextMarkers = shiftMarkers(nextMarkers, r.start - cumulativeDelta, -dur);
+      cumulativeDelta += dur;
+    }
+    return {
+      timeline: nextTimeline,
+      transitions: reconcileTransitions(nextTimeline, transitions),
+      markers: nextMarkers,
+    };
+  });
+}
+
+function handleRippleTrim(cmd: Extract<WorkerCommand, { type: 'ripple-trim' }>) {
+  const syncLockedTrackIds = getSyncLockedTrackIds();
+  const clip = timeline.find((t) => t.id === cmd.trackId)?.clips.find((c) => c.id === cmd.clipId);
+  const sourceDuration = clip ? sourceInputs.get(clip.sourceId)?.duration : undefined;
+  const oldEnd = clip ? clip.start + clip.duration : 0;
+  commitEditMutation(() => {
+    const nextTimeline = rippleTrim(timeline, cmd.trackId, cmd.clipId, cmd.edge, cmd.time, syncLockedTrackIds, sourceDuration);
+    if (nextTimeline === timeline) return { timeline, transitions, markers };
+    const trimmedClip = nextTimeline.find((t) => t.id === cmd.trackId)?.clips.find((c) => c.id === cmd.clipId);
+    const newEnd = trimmedClip ? trimmedClip.start + trimmedClip.duration : oldEnd;
+    const afterTime = cmd.edge === 'out' ? oldEnd : (clip?.start ?? 0);
+    const delta = cmd.edge === 'out' ? newEnd - oldEnd : Math.min(0, (clip?.start ?? 0) - (trimmedClip?.start ?? 0));
+    const nextMarkers = delta !== 0 ? shiftMarkers(markers, afterTime, delta) : markers;
+    return {
+      timeline: nextTimeline,
+      transitions: reconcileTransitions(nextTimeline, transitions),
+      markers: nextMarkers,
+    };
+  }, { coalesceKey: { clipId: cmd.clipId, key: `ripple-trim-${cmd.edge}` } });
+}
+
+function handleRollTrim(cmd: Extract<WorkerCommand, { type: 'roll-trim' }>) {
+  commitTimelineMutation(
+    () => rollTrim(timeline, cmd.trackId, cmd.clipId, cmd.edge, cmd.time, transitionSourceDurations()),
+    { coalesceKey: { clipId: cmd.clipId, key: `roll-trim-${cmd.edge}` } },
+  );
+}
+
+function handleSlipEdit(cmd: Extract<WorkerCommand, { type: 'slip-edit' }>) {
+  const refs = expandLinkedGroup(timeline, [{ trackId: cmd.trackId, clipId: cmd.clipId }]);
+  commitTimelineMutation(
+    () => {
+      let tl = timeline;
+      for (const ref of refs) {
+        const clip = tl.find((t) => t.id === ref.trackId)?.clips.find((c) => c.id === ref.clipId);
+        const sourceDuration = clip ? sourceInputs.get(clip.sourceId)?.duration : undefined;
+        if (sourceDuration === undefined) return timeline;
+        const next = slipEdit(tl, ref.trackId, ref.clipId, cmd.deltaS, sourceDuration);
+        if (next === tl) return timeline;
+        tl = next;
+      }
+      return tl;
+    },
+    {
+      coalesceKey: { clipId: cmd.clipId, key: 'slip' },
+      refreshPlayback: 'refresh',
+      prune: false,
+      syncLuts: false,
+    },
+  );
+}
+
+function handleSlideEdit(cmd: Extract<WorkerCommand, { type: 'slide-edit' }>) {
+  commitTimelineMutation(
+    () => slideEdit(timeline, cmd.trackId, cmd.clipId, cmd.deltaS, transitionSourceDurations()),
+    { coalesceKey: { clipId: cmd.clipId, key: 'slide' } },
+  );
+}
+
+function handleLiftRegion(cmd: Extract<WorkerCommand, { type: 'lift-region' }>) {
+  const targetTrackIds = getEditTargetTrackIds();
+  commitTimelineMutation(() => liftRegion(timeline, targetTrackIds, cmd.startTime, cmd.endTime));
+}
+
+function handleExtractRegion(cmd: Extract<WorkerCommand, { type: 'extract-region' }>) {
+  const targetTrackIds = getEditTargetTrackIds();
+  const syncLockedTrackIds = getSyncLockedTrackIds();
+  const regionDuration = cmd.endTime - cmd.startTime;
+  commitEditMutation(() => {
+    const nextTimeline = extractRegion(timeline, targetTrackIds, cmd.startTime, cmd.endTime, syncLockedTrackIds);
+    if (nextTimeline === timeline) return { timeline, transitions, markers };
+    const pruned = removeMarkersInRange(markers, cmd.startTime, cmd.endTime);
+    const nextMarkers = shiftMarkers(pruned, cmd.endTime, -regionDuration);
+    return {
+      timeline: nextTimeline,
+      transitions: reconcileTransitions(nextTimeline, transitions),
+      markers: nextMarkers,
+    };
+  });
+}
+
+function handleLinkClips(cmd: Extract<WorkerCommand, { type: 'link-clips' }>) {
+  commitTimelineMutation(() => linkClips(timeline, cmd.clips), {
+    refreshPlayback: 'none',
+    prune: false,
+    syncLuts: false,
+  });
+}
+
+function handleUnlinkClips(cmd: Extract<WorkerCommand, { type: 'unlink-clips' }>) {
+  commitTimelineMutation(() => unlinkClips(timeline, cmd.clips), {
+    refreshPlayback: 'none',
+    prune: false,
+    syncLuts: false,
+  });
+}
+
+function handleSetTrackLock(cmd: Extract<WorkerCommand, { type: 'set-track-lock' }>) {
+  commitTimelineMutation(() => setTrackLock(timeline, cmd.trackId, cmd.locked), {
+    refreshPlayback: 'none',
+    prune: false,
+    syncLuts: false,
+  });
+}
+
+function handleSetTrackVisible(cmd: Extract<WorkerCommand, { type: 'set-track-visible' }>) {
+  commitTimelineMutation(() => setTrackVisible(timeline, cmd.trackId, cmd.visible), {
+    refreshPlayback: 'refresh',
+    prune: false,
+    syncLuts: false,
+  });
+}
+
+function handleSetTrackSyncLock(cmd: Extract<WorkerCommand, { type: 'set-track-sync-lock' }>) {
+  commitTimelineMutation(() => setTrackSyncLock(timeline, cmd.trackId, cmd.syncLocked), {
+    refreshPlayback: 'none',
+    prune: false,
+    syncLuts: false,
+  });
+}
+
+function handleSetTrackEditTarget(cmd: Extract<WorkerCommand, { type: 'set-track-edit-target' }>) {
+  commitTimelineMutation(() => setTrackEditTarget(timeline, cmd.trackId, cmd.editTarget), {
+    refreshPlayback: 'none',
+    prune: false,
+    syncLuts: false,
+  });
 }
 
 function applyHistoryRestore(next: { timeline: Timeline; transitions: TimelineTransition[]; markers: TimelineMarker[] }): void {
@@ -2713,6 +3003,51 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
       break;
     case 'bundle-replace-decision':
       resolveBundleReplaceDecision(cmd.jobId, cmd.action);
+      break;
+    case 'insert-edit':
+      handleInsertEdit(cmd);
+      break;
+    case 'overwrite-edit':
+      handleOverwriteEdit(cmd);
+      break;
+    case 'ripple-delete':
+      handleRippleDelete(cmd);
+      break;
+    case 'ripple-trim':
+      handleRippleTrim(cmd);
+      break;
+    case 'roll-trim':
+      handleRollTrim(cmd);
+      break;
+    case 'slip-edit':
+      handleSlipEdit(cmd);
+      break;
+    case 'slide-edit':
+      handleSlideEdit(cmd);
+      break;
+    case 'lift-region':
+      handleLiftRegion(cmd);
+      break;
+    case 'extract-region':
+      handleExtractRegion(cmd);
+      break;
+    case 'link-clips':
+      handleLinkClips(cmd);
+      break;
+    case 'unlink-clips':
+      handleUnlinkClips(cmd);
+      break;
+    case 'set-track-lock':
+      handleSetTrackLock(cmd);
+      break;
+    case 'set-track-visible':
+      handleSetTrackVisible(cmd);
+      break;
+    case 'set-track-sync-lock':
+      handleSetTrackSyncLock(cmd);
+      break;
+    case 'set-track-edit-target':
+      handleSetTrackEditTarget(cmd);
       break;
     case 'dispose':
       void handleDispose();

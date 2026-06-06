@@ -28,7 +28,7 @@ import {
 import { cloneClipKeyframes, parseClipKeyframes } from './keyframes';
 import { cloneClipLut, parsePersistedClipLut } from './lut';
 
-export const PROJECT_SCHEMA_VERSION = 7;
+export const PROJECT_SCHEMA_VERSION = 8;
 const DURATION_MATCH_TOLERANCE_S = 0.25;
 const TIMING_MATCH_TOLERANCE_S = 0.05;
 
@@ -160,6 +160,7 @@ function cloneClip(clip: TimelineClip): TimelineClip {
     cloned.kind = 'title';
     cloned.title = normalizeTitleContent(clip.title);
   }
+  if (clip.linkedGroupId) cloned.linkedGroupId = clip.linkedGroupId;
   const keyframes = cloneClipKeyframes(clip.keyframes);
   if (keyframes) cloned.keyframes = keyframes;
   const lut = cloneClipLut(clip.lut);
@@ -175,6 +176,10 @@ export function cloneTimelineSnapshot(timeline: Timeline): Timeline {
     pan: track.pan,
     muted: track.muted,
     solo: track.solo,
+    locked: track.locked,
+    visible: track.visible,
+    syncLocked: track.syncLocked,
+    editTarget: track.editTarget,
     clips: track.clips.map(cloneClip),
   }));
 }
@@ -343,6 +348,9 @@ function parseClip(value: unknown): TimelineClip | null {
   const audioFadeIn = finiteNumber(value.audioFadeIn) ?? DEFAULT_CLIP_AUDIO_FADES.audioFadeIn;
   const audioFadeOut = finiteNumber(value.audioFadeOut) ?? DEFAULT_CLIP_AUDIO_FADES.audioFadeOut;
 
+  const linkedGroupId = typeof value.linkedGroupId === 'string' && value.linkedGroupId.length > 0
+    ? value.linkedGroupId
+    : undefined;
   const clip: TimelineClip = {
     id,
     ...(isTitle
@@ -374,6 +382,7 @@ function parseClip(value: unknown): TimelineClip | null {
     audioFadeIn: Math.max(0, audioFadeIn),
     audioFadeOut: Math.max(0, audioFadeOut),
   };
+  if (linkedGroupId) clip.linkedGroupId = linkedGroupId;
   if (keyframes) clip.keyframes = keyframes;
   if (lut) clip.lut = lut;
   return clip;
@@ -414,6 +423,10 @@ function parseTrack(value: unknown): TimelineTrack | null {
     pan,
     muted: value.muted,
     solo: value.solo,
+    locked: typeof value.locked === 'boolean' ? value.locked : DEFAULT_TRACK_MIX.locked,
+    visible: typeof value.visible === 'boolean' ? value.visible : DEFAULT_TRACK_MIX.visible,
+    syncLocked: typeof value.syncLocked === 'boolean' ? value.syncLocked : DEFAULT_TRACK_MIX.syncLocked,
+    editTarget: typeof value.editTarget === 'boolean' ? value.editTarget : DEFAULT_TRACK_MIX.editTarget,
   };
 }
 
@@ -839,9 +852,10 @@ export function deserializeProject(value: unknown): DeserializeProjectResult {
     case 5:
     case 6:
     case 7:
+    case 8:
       // v6 adds title/keyframe/LUT clip sidecars; v7 adds Phase 18 source
-      // conformance fields. Shared parsers handle both while v5 keeps
-      // transition parsing.
+      // conformance fields; v8 adds Phase 20 track state + linked clips.
+      // Shared parsers handle all while v5 keeps transition parsing.
       return deserializeV6(value);
     default:
       return { ok: false, reason: `Unsupported project schemaVersion ${schemaVersion}.` };
