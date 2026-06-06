@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, Show, onMount, onCleanup } from 'solid-js';
+import { createMemo, createSignal, Show, onMount, onCleanup } from 'solid-js';
 import { useRegisterSW } from 'virtual:pwa-register/solid';
 import {
   assertCrossOriginIsolated,
@@ -22,21 +22,6 @@ import { cn } from '../lib/utils';
 import PipelineWorker from '../engine/worker.ts?worker';
 
 const VIDEO_ACCEPT = 'video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm';
-type Theme = 'light' | 'dark';
-
-function initialTheme(): Theme {
-  if (typeof window === 'undefined') return 'light';
-  try {
-    const stored = window.localStorage.getItem('browser-editor-theme');
-    if (stored === 'light' || stored === 'dark') return stored;
-  } catch {
-    // Local storage is cosmetic; the editor remains fully functional without it.
-  }
-  if (typeof window.matchMedia === 'function') {
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-  }
-  return 'light';
-}
 
 function initialOnlineStatus(): boolean {
   return typeof navigator === 'undefined' ? true : navigator.onLine;
@@ -61,7 +46,6 @@ export function App() {
   const [hasActiveSW, setHasActiveSW] = createSignal(false);
   const [audioWarning, setAudioWarning] = createSignal<string | null>(null);
   const [isDraggingFile, setIsDraggingFile] = createSignal(false);
-  const [theme, setTheme] = createSignal<Theme>(initialTheme());
 
   const {
     offlineReady: [offlineReady],
@@ -97,22 +81,6 @@ export function App() {
   });
 
   const clock = createSharedClock(sab);
-
-  createEffect(() => {
-    document.documentElement.dataset.theme = theme();
-  });
-
-  function toggleTheme() {
-    setTheme((current) => {
-      const next = current === 'dark' ? 'light' : 'dark';
-      try {
-        window.localStorage.setItem('browser-editor-theme', next);
-      } catch {
-        // Persistence is optional; avoid turning a storage denial into UI failure.
-      }
-      return next;
-    });
-  }
 
   function handleState(msg: import('../protocol').WorkerStateMessage) {
     switch (msg.type) {
@@ -388,8 +356,9 @@ export function App() {
           }}
           onStep={(direction) => bridge?.send({ type: 'step', direction })}
           disabled={!workerReady()}
-          theme={theme()}
-          onToggleTheme={toggleTheme}
+          workerReady={workerReady()}
+          previewLabel={previewLabel()}
+          encodeFps={encodeFps()}
           exportControl={
             <ExportDialog
               hasMedia={metadata() !== null}

@@ -1,5 +1,16 @@
 import { Show, type JSX } from 'solid-js';
-import { FolderOpen, Moon, Pause, Play, SkipBack, SkipForward, Sun } from 'lucide-solid';
+import {
+  Activity,
+  FolderOpen,
+  Gauge,
+  HardDrive,
+  Pause,
+  Play,
+  Scissors,
+  ShieldCheck,
+  SkipBack,
+  SkipForward,
+} from 'lucide-solid';
 import { cn } from '../lib/utils';
 import { Button, buttonVariants } from './components/button';
 import type { MediaMetadata } from '../protocol';
@@ -13,9 +24,10 @@ interface ToolbarProps {
   onPause: () => void;
   onStep: (direction: 1 | -1) => void;
   disabled?: boolean;
+  workerReady: boolean;
+  previewLabel: string | null;
+  encodeFps: number | null;
   exportControl?: JSX.Element;
-  theme: 'light' | 'dark';
-  onToggleTheme: () => void;
 }
 
 export function Toolbar(props: ToolbarProps) {
@@ -32,8 +44,13 @@ export function Toolbar(props: ToolbarProps) {
     <header class="toolbar">
       <div class="toolbar-left">
         <div class="app-brand">
-          <span class="app-glyph" aria-hidden="true" />
-          <h1 class="app-title">Browser Editor</h1>
+          <span class="app-glyph" aria-hidden="true">
+            <Scissors size={15} />
+          </span>
+          <div class="app-brand-copy">
+            <h1 class="app-title">LocalCut Studio</h1>
+            <span class="app-kicker">Browser-native NLE</span>
+          </div>
         </div>
         <label
           class={cn(
@@ -55,8 +72,38 @@ export function Toolbar(props: ToolbarProps) {
         </label>
       </div>
       <div class="toolbar-center">
-        <span class="file-name">
-          <Show when={props.metadata} fallback="No media loaded">
+        <div class="pipeline-strip" aria-label="Pipeline status">
+          <span class={`pipeline-chip ${props.workerReady ? 'is-ok' : 'is-waiting'}`}>
+            <Gauge size={13} aria-hidden="true" />
+            {props.workerReady ? 'Pipeline ready' : 'Starting pipeline'}
+          </span>
+          <span class="pipeline-chip">
+            <HardDrive size={13} aria-hidden="true" />
+            Local only
+          </span>
+          <span class="pipeline-chip is-ok">
+            <ShieldCheck size={13} aria-hidden="true" />
+            Isolated
+          </span>
+          <Show when={props.previewLabel}>
+            {(label) => (
+              <span class="pipeline-chip">
+                <Activity size={13} aria-hidden="true" />
+                Preview {label()}
+              </span>
+            )}
+          </Show>
+          <Show when={props.encodeFps}>
+            {(fps) => (
+              <span class="pipeline-chip">
+                <Activity size={13} aria-hidden="true" />
+                Encode {Math.round(fps())} fps
+              </span>
+            )}
+          </Show>
+        </div>
+        <span class="file-name" title={props.metadata?.fileName ?? 'No source loaded'}>
+          <Show when={props.metadata} fallback="No source">
             {(meta) => meta().fileName}
           </Show>
         </span>
@@ -98,18 +145,6 @@ export function Toolbar(props: ToolbarProps) {
           </Button>
         </div>
         {props.exportControl}
-        <Button
-          size="icon"
-          onClick={() => props.onToggleTheme()}
-          aria-label={props.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-          title={props.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-        >
-          {props.theme === 'dark' ? (
-            <Sun size={14} aria-hidden="true" />
-          ) : (
-            <Moon size={14} aria-hidden="true" />
-          )}
-        </Button>
       </div>
     </header>
   );

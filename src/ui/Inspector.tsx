@@ -140,11 +140,25 @@ export function Inspector(props: InspectorProps) {
       <h2 class="panel-title">Inspector</h2>
       <Show
         when={props.selectedClip}
-        fallback={<p class="placeholder-text">Select a clip to edit</p>}
+        fallback={
+          <div class="inspector-empty">
+            <p class="inspector-empty-title">No clip selected</p>
+            <p class="placeholder-text">Select a timeline clip to adjust colour and track mix.</p>
+          </div>
+        }
       >
         {(clip) => (
           <div class="inspector-section">
-            <p class="inspector-clip-id">{clip().clipId}</p>
+            <dl class="clip-summary">
+              <div>
+                <dt>Track</dt>
+                <dd>{clip().trackId}</dd>
+              </div>
+              <div>
+                <dt>Clip</dt>
+                <dd>{clip().clipId}</dd>
+              </div>
+            </dl>
             <Show when={props.selectedTrackMix}>
               {(mix) => (
                 <div class="track-mix-controls">
