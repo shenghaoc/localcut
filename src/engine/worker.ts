@@ -1,6 +1,8 @@
 /// <reference lib="webworker" />
 import {
   assertCrossOriginIsolated,
+  type CaptionExportSettingsSnapshot,
+  type CaptionTrackSnapshot,
   ClockIndex,
   TIMELINE_EPSILON,
   type ExportSettings,
@@ -14,6 +16,29 @@ import {
   type WorkerCommand,
   type WorkerStateMessage,
 } from '../protocol';
+import {
+  exportCaptionSidecars,
+} from './captions/export';
+import {
+  activeCaptionPayloadsAt,
+  captionTextureId,
+} from './captions/render';
+import {
+  buildCaptionSnapTargets,
+  makeCaptionSegmentId,
+  makeCaptionTrackId,
+  mergeCaptionSegments,
+  setCaptionSegmentStyle,
+  setCaptionSegmentText,
+  setCaptionSegmentTiming,
+  setCaptionTrackProps,
+  snapCaptionTime,
+  splitCaptionSegment,
+  deleteCaptionSegments,
+} from './captions/model';
+import { captionTrackFromSrt } from './captions/srt';
+import { captionTrackFromWebVtt } from './captions/webvtt';
+import { createCaptionTrack, type CaptionTrack } from './captions/types';
 import {
   addMarker,
   addTrack,
@@ -132,6 +157,7 @@ import {
 import { createTimelineHistory, type HistoryCoalesceKey } from './history';
 import {
   cloneMarkersSnapshot,
+  cloneCaptionTracksSnapshot,
   cloneTimelineSnapshot,
   cloneTransitionsSnapshot,
   serializeProject,
@@ -173,6 +199,7 @@ let playback: PlaybackController<LayerMeta> | null = null;
 let adaptive: AdaptiveResolution | null = null;
 let probeDone = false;
 let timeline: Timeline = createEmptyTimeline();
+let captionTracks: CaptionTrack[] = [];
 let transitions: TimelineTransition[] = [];
 let markers: TimelineMarker[] = [];
 let masterGain = DEFAULT_MASTER_GAIN;
@@ -271,10 +298,43 @@ function postTimelineState() {
       linkedGroupId: clip.linkedGroupId,
     })),
   }));
+  const captionSnapshot: CaptionTrackSnapshot[] = captionTracks.map((track) => ({
+    id: track.id,
+    kind: 'caption',
+    name: track.name,
+    language: track.language ?? null,
+    segments: track.segments.map((segment: CaptionTrack['segments'][number]) => ({
+      id: segment.id,
+      start: segment.start,
+      duration: segment.duration,
+      text: segment.text,
+      style: segment.style
+        ? {
+            presetId: segment.style.presetId ?? null,
+            overrides: segment.style.overrides ? { ...segment.style.overrides } : {},
+            anchor: segment.style.anchor,
+            insetPx: segment.style.insetPx ? { ...segment.style.insetPx } : undefined,
+            maxWidthPercent: segment.style.maxWidthPercent,
+            lineWrap: segment.style.lineWrap,
+          }
+        : undefined,
+    })),
+    defaultStyle: {
+      presetId: track.defaultStyle.presetId ?? null,
+      overrides: track.defaultStyle.overrides ? { ...track.defaultStyle.overrides } : {},
+      anchor: track.defaultStyle.anchor,
+      insetPx: track.defaultStyle.insetPx ? { ...track.defaultStyle.insetPx } : undefined,
+      maxWidthPercent: track.defaultStyle.maxWidthPercent,
+      lineWrap: track.defaultStyle.lineWrap,
+    },
+    burnedIn: track.burnedIn,
+    visible: track.visible,
+  }));
   const transitionSnapshot: TimelineTransitionSnapshot[] = cloneTransitionsSnapshot(transitions);
   post({
     type: 'timeline-state',
     timeline: snapshot,
+    captionTracks: captionSnapshot,
     transitions: transitionSnapshot,
     markers: cloneMarkersSnapshot(markers),
     masterGain,
@@ -722,6 +782,7 @@ async function persistCurrentProject(): Promise<void> {
   const doc = serializeProject({
     projectId,
     timeline,
+    captionTracks,
     transitions,
     markers,
     sources: currentProjectSources(),
@@ -967,7 +1028,7 @@ function commitTransitionMutation(
     syncLuts?: boolean;
   } = {},
 ): boolean {
-  return commitEditMutation(() => ({ timeline, transitions: mutate(), markers }), {
+  return commitEditMutation(() => ({ timeline, captionTracks, transitions: mutate(), markers }), {
     refreshPlayback: 'refresh',
     prune: false,
     syncLuts: false,
@@ -1005,13 +1066,14 @@ function afterTimelineMutation(options: {
 function historySnapshot() {
   return {
     timeline,
+    captionTracks,
     transitions,
     markers,
   };
 }
 
 function commitEditMutation(
-  mutate: () => { timeline: Timeline; transitions: TimelineTransition[]; markers: TimelineMarker[] },
+  mutate: () => { timeline: Timeline; captionTracks: CaptionTrack[]; transitions: TimelineTransition[]; markers: TimelineMarker[] },
   options: {
     coalesceKey?: HistoryCoalesceKey;
     refreshPlayback?: 'seek' | 'refresh' | 'none';
@@ -1021,9 +1083,17 @@ function commitEditMutation(
 ): boolean {
   const before = historySnapshot();
   const next = mutate();
-  if (next.timeline === timeline && next.transitions === transitions && next.markers === markers) return false;
+  if (
+    next.timeline === timeline &&
+    next.captionTracks === captionTracks &&
+    next.transitions === transitions &&
+    next.markers === markers
+  ) {
+    return false;
+  }
   history.push(before, { coalesceKey: options.coalesceKey });
   timeline = next.timeline;
+  captionTracks = next.captionTracks;
   transitions = next.transitions;
   markers = next.markers;
   afterTimelineMutation(options);
@@ -1043,6 +1113,7 @@ function commitTimelineMutation(
     const nextTimeline = mutate();
     return {
       timeline: nextTimeline,
+      captionTracks,
       transitions: reconcileTransitions(nextTimeline, transitions),
       markers,
     };
@@ -1058,8 +1129,24 @@ function commitMarkerMutation(
     syncLuts?: boolean;
   } = {},
 ): boolean {
-  return commitEditMutation(() => ({ timeline, transitions, markers: mutate() }), {
+  return commitEditMutation(() => ({ timeline, captionTracks, transitions, markers: mutate() }), {
     refreshPlayback: 'none',
+    prune: false,
+    syncLuts: false,
+    ...options,
+  });
+}
+
+function commitCaptionMutation(
+  mutate: () => CaptionTrack[],
+  options: {
+    coalesceKey?: HistoryCoalesceKey;
+    refreshPlayback?: 'seek' | 'refresh' | 'none';
+    prune?: boolean;
+    syncLuts?: boolean;
+  } = {},
+): boolean {
+  return commitEditMutation(() => ({ timeline, captionTracks: mutate(), transitions, markers }), {
     prune: false,
     syncLuts: false,
     ...options,
@@ -1153,7 +1240,7 @@ async function handleInit(
 }
 
 function projectHasClips(doc: ProjectDoc): boolean {
-  return doc.timeline.some((track) => track.clips.length > 0);
+  return doc.timeline.some((track) => track.clips.length > 0) || doc.captionTracks.some((track) => track.segments.length > 0);
 }
 
 /** An autosave is worth offering to restore when it holds any user content —
@@ -1165,7 +1252,13 @@ function projectHasRestorableContent(doc: ProjectDoc): boolean {
 }
 
 function currentProjectIsEmpty(): boolean {
-  return sourceInputs.size === 0 && timelineSourceIds().size === 0 && transitions.length === 0 && markers.length === 0;
+  return (
+    sourceInputs.size === 0 &&
+    timelineSourceIds().size === 0 &&
+    captionTracks.every((track) => track.segments.length === 0) &&
+    transitions.length === 0 &&
+    markers.length === 0
+  );
 }
 
 async function checkRestoreAvailable(): Promise<void> {
@@ -1255,6 +1348,7 @@ async function handleRestoreProject(): Promise<void> {
   restoreDoc = null;
   projectId = doc.projectId;
   timeline = cloneTimelineSnapshot(doc.timeline);
+  captionTracks = cloneCaptionTracksSnapshot(doc.captionTracks);
   markers = cloneMarkersSnapshot(doc.markers);
   syncTimelineLuts();
   lastExportSettings = doc.exportSettings ?? null;
@@ -1306,6 +1400,7 @@ async function handleNewProject(): Promise<void> {
   lastExportSettings = null;
   projectId = makeProjectId();
   nextSourceId = 1;
+  captionTracks = [];
   markers = [];
   masterGain = DEFAULT_MASTER_GAIN;
   ensureClockAndTimeline();
@@ -1337,9 +1432,10 @@ async function handleNewProject(): Promise<void> {
 function ensurePreview() {
   if (!renderer || !adaptive) return;
   // Render when there's a decodable video source or any title clip (title-only
-  // timelines composite source-less titles over black).
+  // timelines composite source-less overlays over black).
   const source = getPlaybackSource();
-  if (!source?.frameSource && titleClips().length === 0) return;
+  const hasBurnedInCaptions = captionTracks.some((track) => track.burnedIn && track.visible && track.segments.length > 0);
+  if (!source?.frameSource && titleClips().length === 0 && !hasBurnedInCaptions) return;
   const tier = adaptive.current();
   renderer.setPreviewSize(tier.width, tier.height);
   post({ type: 'preview-resolution', resolution: tier });
@@ -1365,6 +1461,7 @@ function teardownMedia() {
   // re-import, restore) would otherwise orphan them until worker disposal.
   titleCache?.retain(EMPTY_CLIP_IDS);
   timeline = createEmptyTimeline();
+  captionTracks = [];
   transitions = [];
   markers = [];
 }
@@ -1455,6 +1552,17 @@ function syncTitleRasters(): void {
   titleCache.retain(active);
 }
 
+function activeCaptionLayersAt(timestamp: number): Array<{ clipId: string; transform: TransformParams }> {
+  if (!titleCache) return [];
+  const layers: Array<{ clipId: string; transform: TransformParams }> = [];
+  for (const payload of activeCaptionPayloadsAt(captionTracks, timestamp)) {
+    const clipId = captionTextureId(payload.trackId, payload.segmentId);
+    titleCache.ensure(clipId, payload.content);
+    layers.push({ clipId, transform: payload.transform });
+  }
+  return layers;
+}
+
 /**
  * Colour/transform metadata carried per decoded layer (no shared mutable state).
  * Title layers carry no decode — they composite from the cached title texture.
@@ -1522,6 +1630,12 @@ function makeGetLayers() {
             transform: sampled.transform,
             lut: layer.clip.lut,
           },
+        });
+      }
+      for (const caption of activeCaptionLayersAt(timestamp)) {
+        decodedLayers.push({
+          decoded: null,
+          meta: { kind: 'title', clipId: caption.clipId, transform: caption.transform },
         });
       }
     } catch (error) {
@@ -2150,16 +2264,17 @@ function handleInsertEdit(cmd: Extract<WorkerCommand, { type: 'insert-edit' }>) 
       cmd.atTime,
       syncLockedTrackIds,
     );
-    if (nextTimeline === timeline) return { timeline, transitions, markers };
+    if (nextTimeline === timeline) return { timeline, captionTracks, transitions, markers };
     const targetMarkersSet = new Set(targetTrackIds);
     const insertDuration = cmd.clips.reduce(
       (max, c) => targetMarkersSet.has(c.trackId) ? Math.max(max, c.clip.duration) : max, 0,
     );
     const nextMarkers = shiftMarkers(markers, cmd.atTime, insertDuration);
-    return {
-      timeline: nextTimeline,
-      transitions: reconcileTransitions(nextTimeline, transitions),
-      markers: nextMarkers,
+      return {
+        timeline: nextTimeline,
+        captionTracks,
+        transitions: reconcileTransitions(nextTimeline, transitions),
+        markers: nextMarkers,
     };
   });
 }
@@ -2182,7 +2297,7 @@ function handleRippleDelete(cmd: Extract<WorkerCommand, { type: 'ripple-delete' 
   }
   commitEditMutation(() => {
     const nextTimeline = rippleDelete(timeline, cmd.clips, syncLockedTrackIds);
-    if (nextTimeline === timeline) return { timeline, transitions, markers };
+    if (nextTimeline === timeline) return { timeline, captionTracks, transitions, markers };
     let nextMarkers: TimelineMarker[] = markers as TimelineMarker[];
     const sorted = [...removedRegions].sort((a, b) => a.start - b.start);
     const merged: { start: number; end: number }[] = [];
@@ -2204,6 +2319,7 @@ function handleRippleDelete(cmd: Extract<WorkerCommand, { type: 'ripple-delete' 
     }
     return {
       timeline: nextTimeline,
+      captionTracks,
       transitions: reconcileTransitions(nextTimeline, transitions),
       markers: nextMarkers,
     };
@@ -2217,7 +2333,7 @@ function handleRippleTrim(cmd: Extract<WorkerCommand, { type: 'ripple-trim' }>) 
   const oldEnd = clip ? clip.start + clip.duration : 0;
   commitEditMutation(() => {
     const nextTimeline = rippleTrim(timeline, cmd.trackId, cmd.clipId, cmd.edge, cmd.time, syncLockedTrackIds, sourceDuration);
-    if (nextTimeline === timeline) return { timeline, transitions, markers };
+    if (nextTimeline === timeline) return { timeline, captionTracks, transitions, markers };
     const trimmedClip = nextTimeline.find((t) => t.id === cmd.trackId)?.clips.find((c) => c.id === cmd.clipId);
     const newEnd = trimmedClip ? trimmedClip.start + trimmedClip.duration : oldEnd;
     const afterTime = cmd.edge === 'out' ? oldEnd : (clip?.start ?? 0);
@@ -2225,6 +2341,7 @@ function handleRippleTrim(cmd: Extract<WorkerCommand, { type: 'ripple-trim' }>) 
     const nextMarkers = delta !== 0 ? shiftMarkers(markers, afterTime, delta) : markers;
     return {
       timeline: nextTimeline,
+      captionTracks,
       transitions: reconcileTransitions(nextTimeline, transitions),
       markers: nextMarkers,
     };
@@ -2280,11 +2397,12 @@ function handleExtractRegion(cmd: Extract<WorkerCommand, { type: 'extract-region
   const regionDuration = cmd.endTime - cmd.startTime;
   commitEditMutation(() => {
     const nextTimeline = extractRegion(timeline, targetTrackIds, cmd.startTime, cmd.endTime, syncLockedTrackIds);
-    if (nextTimeline === timeline) return { timeline, transitions, markers };
+    if (nextTimeline === timeline) return { timeline, captionTracks, transitions, markers };
     const pruned = removeMarkersInRange(markers, cmd.startTime, cmd.endTime);
     const nextMarkers = shiftMarkers(pruned, cmd.endTime, -regionDuration);
     return {
       timeline: nextTimeline,
+      captionTracks,
       transitions: reconcileTransitions(nextTimeline, transitions),
       markers: nextMarkers,
     };
@@ -2339,8 +2457,132 @@ function handleSetTrackEditTarget(cmd: Extract<WorkerCommand, { type: 'set-track
   });
 }
 
-function applyHistoryRestore(next: { timeline: Timeline; transitions: TimelineTransition[]; markers: TimelineMarker[] }): void {
+function appendImportedCaptionTrack(trackId: string | undefined, imported: CaptionTrack): CaptionTrack[] {
+  if (!trackId) {
+    return [...captionTracks, imported];
+  }
+  const existing = captionTracks.find((track) => track.id === trackId);
+  if (!existing) return [...captionTracks, imported];
+  return captionTracks.map((track) =>
+    track.id !== trackId
+      ? track
+      : createCaptionTrack({
+          ...track,
+          segments: [...track.segments, ...imported.segments.map((segment: CaptionTrack['segments'][number]) => ({ ...segment, id: segment.id }))],
+        }),
+  );
+}
+
+async function handleImportCaptions(cmd: Extract<WorkerCommand, { type: 'import-captions' }>): Promise<void> {
+  const text = await cmd.file.text();
+  const lower = cmd.file.name.toLowerCase();
+  const newTrackId = cmd.trackId ?? makeCaptionTrackId();
+  const parsed =
+    lower.endsWith('.vtt') || text.trimStart().startsWith('WEBVTT')
+      ? captionTrackFromWebVtt(text, newTrackId, cmd.file.name.replace(/\.[^.]+$/, ''))
+      : captionTrackFromSrt(text, newTrackId, cmd.file.name.replace(/\.[^.]+$/, ''));
+  const importedTrack = createCaptionTrack({
+    ...parsed.track,
+    id: newTrackId,
+    segments: parsed.track.segments.map((segment: CaptionTrack['segments'][number]) => ({ ...segment, id: makeCaptionSegmentId() })),
+  });
+  if (importedTrack.segments.length === 0) {
+    post({ type: 'caption-import-result', result: { ...parsed, track: importedTrack } });
+    return;
+  }
+  commitCaptionMutation(() => appendImportedCaptionTrack(cmd.trackId, importedTrack), {
+    refreshPlayback: 'refresh',
+  });
+  post({
+    type: 'caption-import-result',
+    result: {
+      ...parsed,
+      track: importedTrack,
+    },
+  });
+}
+
+function handleExportCaptions(cmd: Extract<WorkerCommand, { type: 'export-captions' }>): void {
+  const track = captionTracks.find((item) => item.id === cmd.settings.trackId);
+  if (!track) {
+    postProjectWarning('Selected caption track no longer exists.');
+    return;
+  }
+  post({ type: 'caption-export-result', files: exportCaptionSidecars(track, cmd.settings as CaptionExportSettingsSnapshot) });
+}
+
+function handleSetCaptionTrack(cmd: Extract<WorkerCommand, { type: 'set-caption-track' }>): void {
+  commitCaptionMutation(() => setCaptionTrackProps(captionTracks, cmd.trackId, {
+    name: cmd.name,
+    language: cmd.language,
+    burnedIn: cmd.burnedIn,
+    visible: cmd.visible,
+    defaultStyle: cmd.defaultStyle,
+  }), { refreshPlayback: 'refresh' });
+}
+
+function handleSetCaptionSegmentText(cmd: Extract<WorkerCommand, { type: 'set-caption-segment-text' }>): void {
+  commitCaptionMutation(() => setCaptionSegmentText(captionTracks, cmd.trackId, cmd.segmentId, cmd.text), {
+    coalesceKey: { clipId: cmd.segmentId, key: 'caption-text' },
+    refreshPlayback: 'refresh',
+  });
+}
+
+function handleSetCaptionSegmentTiming(cmd: Extract<WorkerCommand, { type: 'set-caption-segment-timing' }>): void {
+  commitCaptionMutation(() => setCaptionSegmentTiming(captionTracks, cmd.trackId, cmd.segmentId, cmd.start, cmd.end), {
+    coalesceKey: { clipId: cmd.segmentId, key: 'caption-time' },
+    refreshPlayback: 'refresh',
+  });
+}
+
+function handleSetCaptionSegmentStyle(cmd: Extract<WorkerCommand, { type: 'set-caption-segment-style' }>): void {
+  commitCaptionMutation(() => setCaptionSegmentStyle(captionTracks, cmd.trackId, cmd.segmentId, cmd.style), {
+    coalesceKey: { clipId: cmd.segmentId, key: 'caption-style' },
+    refreshPlayback: 'refresh',
+  });
+}
+
+function handleSplitCaptionSegment(cmd: Extract<WorkerCommand, { type: 'split-caption-segment' }>): void {
+  commitCaptionMutation(() => splitCaptionSegment(captionTracks, cmd.trackId, cmd.segmentId, cmd.time), {
+    refreshPlayback: 'refresh',
+  });
+}
+
+function handleMergeCaptionSegments(cmd: Extract<WorkerCommand, { type: 'merge-caption-segments' }>): void {
+  commitCaptionMutation(() => mergeCaptionSegments(captionTracks, cmd.trackId, cmd.segmentIds), {
+    refreshPlayback: 'refresh',
+  });
+}
+
+function handleDeleteCaptionSegments(cmd: Extract<WorkerCommand, { type: 'delete-caption-segments' }>): void {
+  commitCaptionMutation(() => deleteCaptionSegments(captionTracks, cmd.trackId, cmd.segmentIds), {
+    refreshPlayback: 'refresh',
+  });
+}
+
+function handleSnapCaptionSegment(cmd: Extract<WorkerCommand, { type: 'snap-caption-segment' }>): void {
+  const track = captionTracks.find((item: CaptionTrack) => item.id === cmd.trackId);
+  const segment = track?.segments.find((item: CaptionTrack['segments'][number]) => item.id === cmd.segmentId);
+  if (!track || !segment) return;
+  const targets = buildCaptionSnapTargets(timeline, markers, captionTracks, clockView?.[0] ?? 0, track.id, [segment.id]);
+  let start = segment.start;
+  let end = segment.start + segment.duration;
+  if (cmd.edge === 'start' || cmd.edge === 'both') start = snapCaptionTime(start, targets);
+  if (cmd.edge === 'end' || cmd.edge === 'both') end = snapCaptionTime(end, targets);
+  if (end <= start) end = start + segment.duration;
+  commitCaptionMutation(() => setCaptionSegmentTiming(captionTracks, cmd.trackId, cmd.segmentId, start, end), {
+    refreshPlayback: 'refresh',
+  });
+}
+
+function applyHistoryRestore(next: {
+  timeline: Timeline;
+  captionTracks?: CaptionTrack[];
+  transitions: TimelineTransition[];
+  markers: TimelineMarker[];
+}): void {
   timeline = cloneTimelineSnapshot(next.timeline);
+  captionTracks = cloneCaptionTracksSnapshot(next.captionTracks ?? []);
   transitions = reconcileTransitions(timeline, next.transitions);
   markers = cloneMarkersSnapshot(next.markers);
   syncTimelineLuts();
@@ -2658,7 +2900,8 @@ function firstExportVideoHandle(): MediaInputHandle | null {
 function exportSettingsForProbe(): ExportSettings | null {
   const videoHandle = firstExportVideoHandle();
   // Title-only timelines export over the default canvas (no decodable video).
-  if (!videoHandle && titleClips().length === 0) return null;
+  const hasBurnedInCaptions = captionTracks.some((track) => track.burnedIn && track.visible && track.segments.length > 0);
+  if (!videoHandle && titleClips().length === 0 && !hasBurnedInCaptions) return null;
   const width = videoHandle?.displayWidth ?? TITLE_ONLY_CANVAS.width;
   const height = videoHandle?.displayHeight ?? TITLE_ONLY_CANVAS.height;
   const frameRate = videoHandle?.frameRate ?? TITLE_ONLY_CANVAS.frameRate;
@@ -2754,6 +2997,19 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
       // per title on the cold export path, never per frame.
       titleTextureFor: (clip) =>
         clip.title ? titleCache?.ensure(clip.id, clip.title) ?? null : null,
+      overlayTextureLayersAt: (timelineTime) =>
+        activeCaptionLayersAt(timelineTime)
+          .map((layer) => {
+            const texture = titleCache?.get(layer.clipId);
+            if (!texture) return null;
+            return {
+              view: texture.view,
+              sourceWidth: texture.width,
+              sourceHeight: texture.height,
+              transform: layer.transform,
+            };
+          })
+          .filter((layer): layer is { view: GPUTextureView; sourceWidth: number; sourceHeight: number; transform: TransformParams } => layer !== null),
     });
     post({ type: 'export-complete', fileName: cmd.output.name, mimeType: result.mimeType });
   } catch (error) {
@@ -2857,6 +3113,15 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
           message: `Re-link failed: ${message}`,
         });
       });
+      break;
+    case 'import-captions':
+      void handleImportCaptions(cmd).catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        postProjectWarning(`Caption import failed: ${message}`);
+      });
+      break;
+    case 'export-captions':
+      handleExportCaptions(cmd);
       break;
     case 'split':
       handleSplit(cmd);
@@ -3063,6 +3328,30 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
       renderer?.setZebraEnabled(cmd.enabled);
       break;
     }
+    case 'set-caption-track':
+      handleSetCaptionTrack(cmd);
+      break;
+    case 'set-caption-segment-text':
+      handleSetCaptionSegmentText(cmd);
+      break;
+    case 'set-caption-segment-timing':
+      handleSetCaptionSegmentTiming(cmd);
+      break;
+    case 'set-caption-segment-style':
+      handleSetCaptionSegmentStyle(cmd);
+      break;
+    case 'split-caption-segment':
+      handleSplitCaptionSegment(cmd);
+      break;
+    case 'merge-caption-segments':
+      handleMergeCaptionSegments(cmd);
+      break;
+    case 'delete-caption-segments':
+      handleDeleteCaptionSegments(cmd);
+      break;
+    case 'snap-caption-segment':
+      handleSnapCaptionSegment(cmd);
+      break;
     case 'dispose':
       void handleDispose();
       break;

@@ -1,4 +1,5 @@
 import type {
+  CaptionTrackSnapshot,
   ExportSettings,
   NormalizedSourceTimingSnapshot,
   SourceColorHintsSnapshot,
@@ -8,6 +9,15 @@ import type {
   SourceHealthWarningSnapshot,
   SourceTrackTimingSnapshot,
 } from '../protocol';
+import {
+  cloneCaptionTrack,
+  createCaptionTrack,
+  normalizeCaptionStyle,
+  sortCaptionSegments,
+  type CaptionSegment,
+  type CaptionStyle,
+  type CaptionTrack,
+} from './captions/types';
 import {
   DEFAULT_CLIP_AUDIO_FADES,
   DEFAULT_MASTER_GAIN,
@@ -28,7 +38,7 @@ import {
 import { cloneClipKeyframes, parseClipKeyframes } from './keyframes';
 import { cloneClipLut, parsePersistedClipLut } from './lut';
 
-export const PROJECT_SCHEMA_VERSION = 8;
+export const PROJECT_SCHEMA_VERSION = 9;
 const DURATION_MATCH_TOLERANCE_S = 0.25;
 const TIMING_MATCH_TOLERANCE_S = 0.05;
 
@@ -39,6 +49,7 @@ export interface ProjectDoc {
   projectId: string;
   savedAt: string;
   timeline: Timeline;
+  captionTracks: CaptionTrack[];
   transitions: TimelineTransition[];
   markers: TimelineMarker[];
   sources: SourceDescriptor[];
@@ -49,6 +60,7 @@ export interface ProjectDoc {
 export interface SerializeProjectOptions {
   projectId: string;
   timeline: Timeline;
+  captionTracks?: readonly CaptionTrack[];
   transitions?: readonly TimelineTransition[];
   markers?: readonly TimelineMarker[];
   sources: readonly SourceDescriptor[];
@@ -184,6 +196,10 @@ export function cloneTimelineSnapshot(timeline: Timeline): Timeline {
   }));
 }
 
+export function cloneCaptionTracksSnapshot(captionTracks: readonly CaptionTrack[]): CaptionTrack[] {
+  return captionTracks.map(cloneCaptionTrack);
+}
+
 export function cloneTransitionsSnapshot(transitions: readonly TimelineTransition[]): TimelineTransition[] {
   return transitions.map((transition) => ({
     id: transition.id,
@@ -307,6 +323,7 @@ export function serializeProject(options: SerializeProjectOptions): ProjectDoc {
     projectId: options.projectId,
     savedAt: (options.savedAt ?? new Date()).toISOString(),
     timeline: cloneTimelineSnapshot(options.timeline),
+    captionTracks: cloneCaptionTracksSnapshot(options.captionTracks ?? []),
     transitions: cloneTransitionsSnapshot(options.transitions ?? []),
     markers: cloneMarkersSnapshot(options.markers ?? []),
     sources: options.sources.map(cloneSourceDescriptor),
@@ -386,6 +403,99 @@ function parseClip(value: unknown): TimelineClip | null {
   if (keyframes) clip.keyframes = keyframes;
   if (lut) clip.lut = lut;
   return clip;
+}
+
+function parseCaptionStyle(value: unknown): CaptionStyle | null {
+  if (value === undefined || value === null) return normalizeCaptionStyle({});
+  if (!isRecord(value)) return null;
+  return normalizeCaptionStyle({
+    presetId:
+      value.presetId === 'subtitle' || value.presetId === 'lower-third' || value.presetId === 'note'
+        ? value.presetId
+        : undefined,
+    overrides: isRecord(value.overrides)
+      ? (value.overrides as Partial<CaptionTrackSnapshot['defaultStyle']['overrides']>)
+      : undefined,
+    anchor:
+      value.anchor === 'bottom-center' ||
+      value.anchor === 'bottom-left' ||
+      value.anchor === 'bottom-right' ||
+      value.anchor === 'top-center' ||
+      value.anchor === 'custom'
+        ? value.anchor
+        : undefined,
+    insetPx: isRecord(value.insetPx)
+      ? { x: finiteNumber(value.insetPx.x) ?? 0, y: finiteNumber(value.insetPx.y) ?? 0 }
+      : undefined,
+    maxWidthPercent: finiteNumber(value.maxWidthPercent) ?? undefined,
+    lineWrap: value.lineWrap === 'balanced' || value.lineWrap === 'greedy' ? value.lineWrap : undefined,
+  });
+}
+
+function parseCaptionSegment(value: unknown): CaptionSegment | null {
+  if (!isRecord(value)) return null;
+  const id = requiredString(value.id);
+  const start = finiteNumber(value.start);
+  const duration = finiteNumber(value.duration);
+  const text = typeof value.text === 'string' ? value.text : null;
+  if (!id || start === null || duration === null || duration <= 0 || start < 0 || text === null) return null;
+  const style = parseCaptionStyle(value.style);
+  if (style === null) return null;
+  return {
+    id,
+    start,
+    duration,
+    text,
+    style: value.style === undefined || value.style === null ? undefined : style,
+  };
+}
+
+function parseCaptionTrack(value: unknown): CaptionTrack | null {
+  if (!isRecord(value)) return null;
+  const id = requiredString(value.id);
+  const kind = value.kind === 'caption' ? value.kind : null;
+  const name = typeof value.name === 'string' ? value.name : null;
+  const language = optionalString(value.language);
+  if (
+    !id ||
+    !kind ||
+    name === null ||
+    language === undefined ||
+    typeof value.burnedIn !== 'boolean' ||
+    typeof value.visible !== 'boolean' ||
+    !Array.isArray(value.segments)
+  ) {
+    return null;
+  }
+  const segments: CaptionSegment[] = [];
+  for (const segment of value.segments) {
+    const parsed = parseCaptionSegment(segment);
+    if (!parsed) return null;
+    segments.push(parsed);
+  }
+  const defaultStyle = parseCaptionStyle(value.defaultStyle);
+  if (defaultStyle === null) return null;
+  return createCaptionTrack({
+    id,
+    name,
+    language: language ?? null,
+    segments: sortCaptionSegments(segments),
+    defaultStyle,
+    burnedIn: value.burnedIn,
+    visible: value.visible,
+  });
+}
+
+function parseCaptionTracks(value: unknown): CaptionTrack[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) return null;
+  const tracks: CaptionTrack[] = [];
+  for (const item of value) {
+    const parsed = parseCaptionTrack(item);
+    if (!parsed) return null;
+    tracks.push(parsed);
+  }
+  return cloneCaptionTracksSnapshot(tracks);
 }
 
 function parseTrack(value: unknown): TimelineTrack | null {
@@ -791,6 +901,7 @@ function deserializeV1(value: Record<string, unknown>): DeserializeProjectResult
       projectId,
       savedAt,
       timeline,
+      captionTracks: [],
       transitions: [],
       markers: [],
       sources,
@@ -834,6 +945,21 @@ function deserializeV6(value: Record<string, unknown>): DeserializeProjectResult
   return deserializeV5(value);
 }
 
+function deserializeV9(value: Record<string, unknown>): DeserializeProjectResult {
+  const result = deserializeV6(value);
+  if (!result.ok) return result;
+  const captionTracks = parseCaptionTracks(value.captionTracks);
+  if (!captionTracks) return { ok: false, reason: 'Project caption tracks are invalid.' };
+  return {
+    ok: true,
+    doc: {
+      ...result.doc,
+      schemaVersion: PROJECT_SCHEMA_VERSION,
+      captionTracks,
+    },
+  };
+}
+
 export function deserializeProject(value: unknown): DeserializeProjectResult {
   if (!isRecord(value)) return { ok: false, reason: 'Project document is not an object.' };
   const schemaVersion = finiteNumber(value.schemaVersion);
@@ -857,6 +983,8 @@ export function deserializeProject(value: unknown): DeserializeProjectResult {
       // conformance fields; v8 adds Phase 20 track state + linked clips.
       // Shared parsers handle all while v5 keeps transition parsing.
       return deserializeV6(value);
+    case 9:
+      return deserializeV9(value);
     default:
       return { ok: false, reason: `Unsupported project schemaVersion ${schemaVersion}.` };
   }

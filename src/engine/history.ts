@@ -1,5 +1,6 @@
 import type { Timeline, TimelineMarker, TimelineTransition } from './timeline';
-import { cloneMarkersSnapshot, cloneTimelineSnapshot, cloneTransitionsSnapshot } from './project';
+import type { CaptionTrack } from './captions/types';
+import { cloneCaptionTracksSnapshot, cloneMarkersSnapshot, cloneTimelineSnapshot, cloneTransitionsSnapshot } from './project';
 
 const DEFAULT_HISTORY_LIMIT = 100;
 const DEFAULT_COALESCE_WINDOW_MS = 80;
@@ -22,6 +23,7 @@ export interface TimelineHistoryOptions {
 
 export interface TimelineHistorySnapshot {
   timeline: Timeline;
+  captionTracks?: CaptionTrack[];
   transitions: TimelineTransition[];
   markers: TimelineMarker[];
 }
@@ -53,11 +55,15 @@ export function createTimelineHistory(options: TimelineHistoryOptions = {}): Tim
   const future: TimelineHistorySnapshot[] = [];
 
   function cloneSnapshot(snapshot: TimelineHistorySnapshot): TimelineHistorySnapshot {
-    return {
+    const cloned: TimelineHistorySnapshot = {
       timeline: cloneTimelineSnapshot(snapshot.timeline),
       transitions: cloneTransitionsSnapshot(snapshot.transitions),
       markers: cloneMarkersSnapshot(snapshot.markers),
     };
+    if (snapshot.captionTracks !== undefined) {
+      cloned.captionTracks = cloneCaptionTracksSnapshot(snapshot.captionTracks);
+    }
+    return cloned;
   }
 
   function push(snapshot: TimelineHistorySnapshot, pushOptions: { coalesceKey?: HistoryCoalesceKey } = {}): void {

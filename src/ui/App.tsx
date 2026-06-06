@@ -3,6 +3,9 @@ import { useRegisterSW } from 'virtual:pwa-register/solid';
 import { Link2, RotateCcw, Plus } from 'lucide-solid';
 import {
   CLOCK_BUFFER_BYTES,
+  type CaptionDiagnosticSnapshot,
+  type CaptionExportSettingsSnapshot,
+  type CaptionTrackSnapshot,
   type ClipKeyframeParamSnapshot,
   type ExportCodecSupport,
   type ExportProgress,
@@ -30,6 +33,7 @@ import { Toolbar } from './Toolbar';
 import { Timeline } from './Timeline';
 import { Inspector, type SelectedClip } from './Inspector';
 import { MediaBin } from './MediaBin';
+import { TranscriptPanel } from './TranscriptPanel';
 import { ThumbnailStore } from './thumbnail-store';
 import { AudioEngine } from './audio-engine';
 import { ExportDialog } from './ExportDialog';
@@ -128,6 +132,16 @@ function formatSavedAt(value: string): string {
   });
 }
 
+function downloadTextFile(fileName: string, mimeType: string, content: string): void {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
 export function App() {
   const [capabilities, setCapabilities] = createSignal<CapabilitySnapshot>(probeCapabilities());
   const [runtimeIssue, setRuntimeIssue] = createSignal<string | null>(null);
@@ -148,10 +162,14 @@ export function App() {
   const [safeAreaGuides, setSafeAreaGuides] = createSignal(false);
   const [encodeFps, setEncodeFps] = createSignal<number | null>(null);
   const [timeline, setTimeline] = createSignal<TimelineTrackSnapshot[]>([]);
+  const [captionTracks, setCaptionTracks] = createSignal<CaptionTrackSnapshot[]>([]);
+  const [captionDiagnostics, setCaptionDiagnostics] = createSignal<CaptionDiagnosticSnapshot[]>([]);
   const [markers, setMarkers] = createSignal<TimelineMarkerSnapshot[]>([]);
   const [transitions, setTransitions] = createSignal<TimelineTransitionSnapshot[]>([]);
   const [masterGain, setMasterGain] = createSignal(1);
   const [selectedClipRefs, setSelectedClipRefs] = createSignal<TimelineClipReference[]>([]);
+  const [selectedCaptionTrackId, setSelectedCaptionTrackId] = createSignal<string | null>(null);
+  const [selectedCaptionSegmentIds, setSelectedCaptionSegmentIds] = createSignal<string[]>([]);
   const [timelineClipboard, setTimelineClipboard] = createSignal<TimelineClipboardClip[]>([]);
   const [waveformPeaks, setWaveformPeaks] = createSignal<Record<string, WaveformPeaks>>({});
   const [exporting, setExporting] = createSignal(false);
@@ -307,7 +325,9 @@ export function App() {
     };
   });
 
-  const hasTimeline = createMemo(() => timeline().some((track) => track.clips.length > 0));
+  const hasTimeline = createMemo(
+    () => timeline().some((track) => track.clips.length > 0) || captionTracks().some((track) => track.segments.length > 0),
+  );
 
   const clock = createSharedClock(sab);
 
@@ -384,10 +404,14 @@ export function App() {
         break;
       case 'timeline-state':
         setTimeline(msg.timeline);
+        setCaptionTracks(msg.captionTracks);
         setTransitions(msg.transitions);
         setMarkers(msg.markers);
         setMasterGain(msg.masterGain);
         audioEngine.setMasterGain(msg.masterGain);
+        const nextCaptionTrackId = msg.captionTracks.some((track) => track.id === selectedCaptionTrackId())
+          ? selectedCaptionTrackId()
+          : (msg.captionTracks[0]?.id ?? null);
         setSelectedClipRefs((prev) => {
           const live = new Set<string>();
           for (const track of msg.timeline) {
@@ -395,6 +419,33 @@ export function App() {
           }
           return prev.filter((ref) => live.has(`${ref.trackId}:${ref.clipId}`));
         });
+        setSelectedCaptionTrackId(nextCaptionTrackId);
+        setSelectedCaptionSegmentIds((prev) => {
+          const live = new Set(
+            msg.captionTracks
+              .filter((track) => track.id === nextCaptionTrackId)
+              .flatMap((track) => track.segments.map((segment) => segment.id)),
+          );
+          const next = prev.filter((id) => live.has(id));
+          const first = live.values().next().value as string | undefined;
+          return next.length > 0 ? next : (first ? [first] : []);
+        });
+        break;
+      case 'caption-import-result':
+        setCaptionDiagnostics([...msg.result.diagnostics]);
+        setSelectedCaptionTrackId(msg.result.track.id);
+        setSelectedCaptionSegmentIds(msg.result.track.segments[0] ? [msg.result.track.segments[0].id] : []);
+        setStatusLine(
+          msg.result.diagnostics.length > 0
+            ? `Imported captions with ${msg.result.diagnostics.length} diagnostic${msg.result.diagnostics.length === 1 ? '' : 's'}`
+            : 'Imported captions',
+        );
+        break;
+      case 'caption-export-result':
+        for (const file of msg.files) {
+          downloadTextFile(file.fileName, file.mimeType, file.content);
+        }
+        setStatusLine(`Exported ${msg.files.length} caption file${msg.files.length === 1 ? '' : 's'}`);
         break;
       case 'history-state':
         setHistoryState({ canUndo: msg.canUndo, canRedo: msg.canRedo });
@@ -1366,52 +1417,87 @@ export function App() {
             <div class="preview-overlay">Importing…</div>
           </Show>
         </section>
-        <Inspector
-          metadata={metadata()}
-          selectedClip={selectedClip()}
-          selectedTrackMix={selectedTrackMix()}
-          selectedClipFades={selectedClipFades()}
-          selectedClipTransform={selectedClipTransform()}
-          selectedTitle={selectedTitle()}
-          onSetTitle={(trackId, clipId, patch) =>
-            bridge?.send({ type: 'set-title', trackId, clipId, ...patch })
-          }
-          onEffectParam={(trackId, clipId, key, value) =>
-            bridge?.send({ type: 'set-effect-param', trackId, clipId, key, value })
-          }
-          onTransform={(trackId, clipId, transform) =>
-            bridge?.send({ type: 'set-transform', trackId, clipId, transform })
-          }
-          playheadTime={clock.currentTime()}
-          onSeek={(time) => bridge?.send({ type: 'seek', time })}
-          onSetKeyframe={(trackId, clipId, key, t, value, easing) =>
-            bridge?.send({ type: 'set-keyframe', trackId, clipId, key, t, value, easing })
-          }
-          onDeleteKeyframe={(trackId, clipId, key, t) =>
-            bridge?.send({ type: 'delete-keyframe', trackId, clipId, key, t })
-          }
-          onImportLut={(trackId, clipId, file) =>
-            bridge?.send({ type: 'import-lut', trackId, clipId, file })
-          }
-          onLutStrength={(trackId, clipId, strength) =>
-            bridge?.send({ type: 'set-lut-strength', trackId, clipId, strength })
-          }
-          onTrackGain={(trackId, gain) => {
-            bridge?.send({ type: 'set-track-gain', trackId, gain });
-          }}
-          onTrackMute={(trackId, muted) => {
-            bridge?.send({ type: 'set-track-mute', trackId, muted });
-          }}
-          onTrackSolo={(trackId, solo) => {
-            bridge?.send({ type: 'set-track-solo', trackId, solo });
-          }}
-          onTrackPan={(trackId, pan) => {
-            bridge?.send({ type: 'set-track-pan', trackId, pan });
-          }}
-          onClipFade={(trackId, clipId, edge, durationS) => {
-            bridge?.send({ type: 'set-clip-fade', trackId, clipId, edge, durationS });
-          }}
-        />
+        <div class="side-rail">
+          <Inspector
+            metadata={metadata()}
+            selectedClip={selectedClip()}
+            selectedTrackMix={selectedTrackMix()}
+            selectedClipFades={selectedClipFades()}
+            selectedClipTransform={selectedClipTransform()}
+            selectedTitle={selectedTitle()}
+            onSetTitle={(trackId, clipId, patch) =>
+              bridge?.send({ type: 'set-title', trackId, clipId, ...patch })
+            }
+            onEffectParam={(trackId, clipId, key, value) =>
+              bridge?.send({ type: 'set-effect-param', trackId, clipId, key, value })
+            }
+            onTransform={(trackId, clipId, transform) =>
+              bridge?.send({ type: 'set-transform', trackId, clipId, transform })
+            }
+            playheadTime={clock.currentTime()}
+            onSeek={(time) => bridge?.send({ type: 'seek', time })}
+            onSetKeyframe={(trackId, clipId, key, t, value, easing) =>
+              bridge?.send({ type: 'set-keyframe', trackId, clipId, key, t, value, easing })
+            }
+            onDeleteKeyframe={(trackId, clipId, key, t) =>
+              bridge?.send({ type: 'delete-keyframe', trackId, clipId, key, t })
+            }
+            onImportLut={(trackId, clipId, file) =>
+              bridge?.send({ type: 'import-lut', trackId, clipId, file })
+            }
+            onLutStrength={(trackId, clipId, strength) =>
+              bridge?.send({ type: 'set-lut-strength', trackId, clipId, strength })
+            }
+            onTrackGain={(trackId, gain) => {
+              bridge?.send({ type: 'set-track-gain', trackId, gain });
+            }}
+            onTrackMute={(trackId, muted) => {
+              bridge?.send({ type: 'set-track-mute', trackId, muted });
+            }}
+            onTrackSolo={(trackId, solo) => {
+              bridge?.send({ type: 'set-track-solo', trackId, solo });
+            }}
+            onTrackPan={(trackId, pan) => {
+              bridge?.send({ type: 'set-track-pan', trackId, pan });
+            }}
+            onClipFade={(trackId, clipId, edge, durationS) => {
+              bridge?.send({ type: 'set-clip-fade', trackId, clipId, edge, durationS });
+            }}
+          />
+          <TranscriptPanel
+            captionTracks={captionTracks()}
+            diagnostics={captionDiagnostics()}
+            playheadTime={clock.currentTime()}
+            selectedTrackId={selectedCaptionTrackId()}
+            selectedSegmentIds={selectedCaptionSegmentIds()}
+            onSelectTrack={setSelectedCaptionTrackId}
+            onSelectSegmentIds={setSelectedCaptionSegmentIds}
+            onImport={(file, trackId) => bridge?.send(trackId ? { type: 'import-captions', file, trackId } : { type: 'import-captions', file })}
+            onExport={(settings: CaptionExportSettingsSnapshot) => bridge?.send({ type: 'export-captions', settings })}
+            onSetTrack={(trackId, patch) => bridge?.send({ type: 'set-caption-track', trackId, ...patch })}
+            onSetSegmentText={(trackId, segmentId, text) =>
+              bridge?.send({ type: 'set-caption-segment-text', trackId, segmentId, text })
+            }
+            onSetSegmentTiming={(trackId, segmentId, start, end) =>
+              bridge?.send({ type: 'set-caption-segment-timing', trackId, segmentId, start, end })
+            }
+            onSetSegmentStyle={(trackId, segmentId, style) =>
+              bridge?.send({ type: 'set-caption-segment-style', trackId, segmentId, style })
+            }
+            onSplit={(trackId, segmentId, time) =>
+              bridge?.send({ type: 'split-caption-segment', trackId, segmentId, time })
+            }
+            onMerge={(trackId, segmentIds) =>
+              bridge?.send({ type: 'merge-caption-segments', trackId, segmentIds })
+            }
+            onDelete={(trackId, segmentIds) =>
+              bridge?.send({ type: 'delete-caption-segments', trackId, segmentIds })
+            }
+            onSnap={(trackId, segmentId, edge) =>
+              bridge?.send({ type: 'snap-caption-segment', trackId, segmentId, edge })
+            }
+          />
+        </div>
       </main>
       <Timeline
         currentTime={clock.currentTime}

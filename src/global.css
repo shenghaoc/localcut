@@ -1085,6 +1085,202 @@ body {
   min-width: 0;
 }
 
+.side-rail {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) minmax(260px, 42%);
+  min-width: 0;
+  min-height: 0;
+  gap: 0.65rem;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-control);
+  color: var(--text);
+  font-size: var(--text-xs);
+}
+
+.button.secondary {
+  background: var(--bg-control);
+}
+
+.button.danger {
+  color: var(--destructive);
+  border-color: color-mix(in srgb, var(--destructive) 35%, var(--border));
+}
+
+.button:disabled {
+  opacity: 0.5;
+}
+
+.transcript-panel {
+  padding: 0.95rem;
+  overflow: auto;
+  min-width: 0;
+}
+
+.transcript-header,
+.transcript-actions,
+.transcript-track-controls,
+.transcript-editor-actions,
+.transcript-track-list,
+.transcript-timing-grid {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.transcript-header {
+  align-items: start;
+  justify-content: space-between;
+  margin-bottom: 0.8rem;
+}
+
+.transcript-subtitle {
+  margin: 0.35rem 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.transcript-track-list {
+  flex-wrap: wrap;
+  margin-bottom: 0.8rem;
+}
+
+.transcript-track-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgb(255 255 255 / 3%);
+  color: inherit;
+  font-size: var(--text-xs);
+}
+
+.transcript-track-chip.is-active {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.transcript-track-controls,
+.transcript-timing-grid {
+  flex-wrap: wrap;
+}
+
+.transcript-track-controls label,
+.transcript-editor label {
+  display: grid;
+  gap: 0.25rem;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.transcript-track-controls input,
+.transcript-track-controls select,
+.transcript-editor input,
+.transcript-editor select,
+.transcript-editor textarea {
+  min-width: 0;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-control);
+  color: var(--text);
+}
+
+.transcript-inline-check {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.transcript-segment-list {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.8rem 0;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.transcript-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.45rem;
+  align-items: start;
+  padding: 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgb(255 255 255 / 3%);
+}
+
+.transcript-row.is-selected {
+  border-color: color-mix(in srgb, var(--primary) 50%, var(--border));
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.transcript-row-main {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  text-align: left;
+  padding: 0;
+}
+
+.transcript-time {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+}
+
+.transcript-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+}
+
+.transcript-editor {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.transcript-timing-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.transcript-diagnostics {
+  display: grid;
+  gap: 0.3rem;
+  margin-top: 0.8rem;
+}
+
+.transcript-diagnostic {
+  margin: 0;
+  padding: 0.45rem 0.55rem;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  background: rgb(255 255 255 / 3%);
+}
+
+.transcript-diagnostic.is-warning {
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+}
+
+.transcript-diagnostic.is-error {
+  background: color-mix(in srgb, var(--destructive) 12%, transparent);
+}
+
 .metadata-list {
   margin: 0;
   display: grid;
