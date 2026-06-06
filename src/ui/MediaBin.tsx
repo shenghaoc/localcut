@@ -1,5 +1,5 @@
 import { createEffect, For, Show } from 'solid-js';
-import { AlertTriangle, Film, Image as ImageIcon, Music2, Plus, Trash2 } from 'lucide-solid';
+import { AlertTriangle, Film, Gauge, Image as ImageIcon, Music2, Plus, Trash2 } from 'lucide-solid';
 import type { MediaAssetSnapshot } from '../protocol';
 import type { ThumbnailEntry } from './thumbnail-store';
 
@@ -51,6 +51,18 @@ function summarize(asset: MediaAssetSnapshot): string {
 
 function healthMessages(asset: MediaAssetSnapshot): string[] {
   return asset.health?.warnings.map((warning) => warning.message) ?? [];
+}
+
+function proxyLabel(asset: MediaAssetSnapshot): string | null {
+  const proxy = asset.proxy;
+  if (!proxy || proxy.status === 'not-generated' || proxy.status === 'disabled') return null;
+  if (proxy.status === 'recommended') return proxy.reason ?? 'Proxy recommended for smoother preview.';
+  if (proxy.status === 'ready' && proxy.width && proxy.height) return `Proxy ready · ${proxy.width}×${proxy.height}`;
+  if (proxy.status === 'generating') {
+    const progress = proxy.progress !== undefined ? ` · ${Math.round(proxy.progress * 100)}%` : '';
+    return `Generating proxy${progress}`;
+  }
+  return `Proxy ${proxy.status}`;
 }
 
 /** Single bin thumbnail: requests one frame and draws the transferred bitmap. */
@@ -127,6 +139,7 @@ export function MediaBin(props: MediaBinProps) {
               const offline = () => props.unresolvedIds().has(asset.sourceId);
               const blocked = () => asset.health?.status === 'blocked';
               const health = () => healthMessages(asset);
+              const proxy = () => proxyLabel(asset);
               return (
                 <li
                   class={`media-bin-item${offline() ? ' is-offline' : ''}${blocked() ? ' is-blocked' : ''}`}
@@ -174,6 +187,14 @@ export function MediaBin(props: MediaBinProps) {
                           )}
                         </For>
                       </ul>
+                    </Show>
+                    <Show when={proxy()} keyed>
+                      {(label) => (
+                        <span class="media-bin-proxy">
+                          <Gauge size={11} aria-hidden="true" />
+                          <span>{label}</span>
+                        </span>
+                      )}
                     </Show>
                   </div>
                   <div class="media-bin-actions">

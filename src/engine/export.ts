@@ -328,7 +328,7 @@ export function normalizeExportSettings(
     const { rangeStartS, exportDuration } = resolveExportRange(timelineDuration, range);
     range = exportDuration > 0 ? { startS: rangeStartS, endS: rangeStartS + exportDuration } : undefined;
   }
-  return {
+  const normalizedSettings: ExportSettings = {
     preset: settings.preset,
     codec: settings.codec,
     container,
@@ -338,6 +338,10 @@ export function normalizeExportSettings(
     videoBitrate: videoBitrateForPreset(settings.preset, width, height, settings.videoBitrate),
     range,
   };
+  if (settings.sourceMode === 'proxy') {
+    normalizedSettings.sourceMode = 'proxy';
+  }
+  return normalizedSettings;
 }
 
 export function buildExportPlan(
@@ -368,6 +372,9 @@ export function buildExportPlan(
     videoHandle?.frameRate ?? TITLE_ONLY_EXPORT_FPS,
     timelineDuration,
   );
+  if (normalized.sourceMode === 'proxy') {
+    throw new Error('Proxy export is not available until proxy source routing is implemented. Use original-source export.');
+  }
   const { rangeStartS, exportDuration } = resolveExportRange(timelineDuration, normalized.range);
   if (exportDuration <= 0) {
     throw new Error('Export range must have a positive duration.');

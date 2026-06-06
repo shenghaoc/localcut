@@ -2231,6 +2231,22 @@ button.status-badge:hover {
   white-space: nowrap;
 }
 
+.media-bin-proxy {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  color: var(--accent);
+  font-size: var(--text-2xs);
+}
+
+.media-bin-proxy span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .media-bin-actions {
   display: flex;
   gap: 0.2rem;

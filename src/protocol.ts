@@ -28,6 +28,7 @@ export type MediaKind = 'video' | 'image' | 'audio';
 export type ExportPreset = 'quality' | 'fast';
 export type ExportVideoCodec = 'h264' | 'vp9' | 'av1';
 export type ExportContainer = 'mp4' | 'webm';
+export type ExportSourceMode = 'original' | 'proxy';
 
 export interface ExportRange {
   startS: number;
@@ -43,6 +44,8 @@ export interface ExportSettings {
   fps: number;
   videoBitrate: number;
   range?: ExportRange;
+  /** Original sources are the default. Proxy export requires explicit opt-in. */
+  sourceMode?: ExportSourceMode;
 }
 
 export interface ExportCodecSupport {
@@ -317,13 +320,39 @@ export interface MediaAssetSnapshot {
     frameRate: number | null;
     frameRateMode?: SourceFrameRateModeSnapshot;
     rotationDeg?: number;
+    codec?: string | null;
+    canDecode?: boolean;
   };
   audio?: {
     channels: number;
     sampleRate: number;
+    codec?: string | null;
+    canDecode?: boolean;
   };
   timing?: NormalizedSourceTimingSnapshot;
   health?: SourceHealthReportSnapshot;
+  proxy?: ProxyAssetSnapshot;
+}
+
+export type ProxyAssetUiStatus =
+  | 'not-generated'
+  | 'recommended'
+  | 'queued'
+  | 'generating'
+  | 'ready'
+  | 'stale'
+  | 'failed'
+  | 'disabled';
+
+export interface ProxyAssetSnapshot {
+  status: ProxyAssetUiStatus;
+  mode: 'original' | 'proxy';
+  reason?: string;
+  progress?: number;
+  width?: number;
+  height?: number;
+  byteSize?: number;
+  pinned?: boolean;
 }
 
 interface SplitTimelineCommand {

@@ -112,7 +112,7 @@ function parseExportSettings(value: unknown): ExportSettings | undefined {
     }
   }
 
-  return {
+  const parsed: ExportSettings = {
     preset,
     codec,
     container,
@@ -122,10 +122,15 @@ function parseExportSettings(value: unknown): ExportSettings | undefined {
     videoBitrate,
     range,
   };
+  const sourceMode = value.sourceMode;
+  if (sourceMode === 'proxy' || sourceMode === 'original') {
+    parsed.sourceMode = sourceMode;
+  }
+  return parsed;
 }
 
 function cloneExportSettings(settings: ExportSettings): ExportSettings {
-  return {
+  const cloned: ExportSettings = {
     preset: settings.preset,
     codec: settings.codec,
     container: settings.container,
@@ -135,6 +140,8 @@ function cloneExportSettings(settings: ExportSettings): ExportSettings {
     videoBitrate: settings.videoBitrate,
     range: settings.range ? { ...settings.range } : undefined,
   };
+  if (settings.sourceMode) cloned.sourceMode = settings.sourceMode;
+  return cloned;
 }
 
 function cloneClip(clip: TimelineClip): TimelineClip {

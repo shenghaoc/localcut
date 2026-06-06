@@ -7,6 +7,7 @@ import {
   estimateEtaSeconds,
   exportFrameBounds,
   mixAudioWindow,
+  normalizeExportSettings,
   probeExportCodecs,
   rebaseOutputTimestamp,
   resolveExportRange,
@@ -156,6 +157,43 @@ describe('export planning', () => {
       container: 'mp4',
     });
     expect(plan.videoBitrate).toBe(videoBitrateForPreset('quality', 1920, 1080));
+  });
+
+  it('keeps original-source export mode implicit when normalizing settings', () => {
+    expect(
+      normalizeExportSettings(
+        qualitySettings({ sourceMode: 'original' }),
+        1920,
+        1080,
+        30,
+        5,
+      ).sourceMode,
+    ).toBeUndefined();
+    expect(
+      normalizeExportSettings(
+        qualitySettings({ sourceMode: 'proxy' }),
+        1920,
+        1080,
+        30,
+        5,
+      ).sourceMode,
+    ).toBe('proxy');
+  });
+
+  it('rejects proxy export until proxy source routing is implemented', () => {
+    const sources = new Map<string, MediaInputHandle>([
+      [
+        'video',
+        mediaHandle({
+          sourceId: 'video',
+          frameSource: {} as MediaInputHandle['frameSource'],
+        }),
+      ],
+    ]);
+
+    expect(() => buildExportPlan(timeline(), sources, qualitySettings({ sourceMode: 'proxy' }), null)).toThrow(
+      'Proxy export is not available until proxy source routing is implemented.',
+    );
   });
 
   it('plans a title-only export (no decodable video) over the default canvas', () => {
