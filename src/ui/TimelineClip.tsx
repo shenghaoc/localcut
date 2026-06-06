@@ -151,6 +151,9 @@ export function TimelineClip(props: TimelineClipProps) {
       class={`timeline-clip${props.isAudio ? ' is-audio' : ''}${props.selected ? ' is-selected' : ''}`}
       style={{ left: left(), width: width() }}
       title={clipTitle()}
+      role="button"
+      aria-pressed={!!props.selected}
+      aria-label={clipTitle()}
       tabindex="0"
       onKeyDown={onKeyDown}
       onPointerDown={onPointerDown}
@@ -166,18 +169,19 @@ export function TimelineClip(props: TimelineClipProps) {
         <span class="timeline-clip-left-handle" />
         <span class="timeline-clip-right-handle" />
         {props.clip.duration > 0.2 ? (
-          <button
+          <span
             class="timeline-clip-delete"
-            type="button"
+            role="button"
+            tabIndex={-1}
+            aria-label={`Delete ${props.clip.id}`}
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation();
               props.onDelete?.(props.trackId, props.clip.id);
             }}
-            aria-label={`Delete ${props.clip.id}`}
           >
             ×
-          </button>
+          </span>
         ) : null}
       </span>
     </div>
