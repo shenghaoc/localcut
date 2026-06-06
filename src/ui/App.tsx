@@ -274,10 +274,13 @@ export function App() {
         if (msg.metadata) {
           clearCompatibilityPreview();
           setMetadata(msg.metadata);
-        } else if (!msg.restored) {
+        } else {
+          clearCompatibilityPreview();
           setMetadata(null);
-          setSelectedClip(null);
           setWaveformPeaks({});
+          if (!msg.restored) {
+            setSelectedClip(null);
+          }
         }
         break;
       case 'relink-result':

@@ -811,7 +811,7 @@ async function handleRestoreProject(): Promise<void> {
 
 async function handleNewProject(): Promise<void> {
   restoreOfferGeneration += 1;
-  clearAutosaveTimer();
+  await flushPendingAutosave();
   restoreDoc = null;
   teardownMedia();
   sourceDescriptors.clear();
@@ -820,6 +820,13 @@ async function handleNewProject(): Promise<void> {
   nextSourceId = 1;
   ensureClockAndTimeline();
   postHistoryState();
+  let message = 'Started a new project.';
+  try {
+    await deleteStoredProject();
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    message = `Started a new project, but autosave could not be cleared: ${reason}`;
+  }
   post({
     type: 'restore-result',
     projectId,
@@ -827,9 +834,8 @@ async function handleNewProject(): Promise<void> {
     savedAt: null,
     metadata: null,
     unresolvedSources: [],
-    message: 'Started a new project.',
+    message,
   });
-  await deleteStoredProject();
 }
 
 /**
@@ -1334,7 +1340,7 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
     case 'new-project':
       void handleNewProject().catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
-        postProjectWarning(`Could not clear autosave: ${message}`);
+        postProjectWarning(`Could not start new project: ${message}`);
       });
       break;
     case 'relink-source':
