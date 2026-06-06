@@ -34,6 +34,8 @@ export function CapabilityPanel(props: CapabilityPanelProps) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="capability-panel-title"
+        tabIndex={-1}
+        onKeyDown={(e) => { if (e.key === 'Escape') props.onClose(); }}
       >
         <header class="capability-panel-header">
           <div>
