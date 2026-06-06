@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, Show } from 'solid-js';
+import { createEffect, createMemo, createSignal, For, Show, untrack } from 'solid-js';
 import { Popover } from '@kobalte/core/popover';
 import { Download } from 'lucide-solid';
 import { Button } from './components/button';
@@ -89,7 +89,7 @@ export function ExportDialog(props: ExportDialogProps) {
     } else {
       setUseRange(false);
       setRangeStart(0);
-      setRangeEnd(props.timelineDuration);
+      setRangeEnd(untrack(() => props.timelineDuration));
     }
   });
 

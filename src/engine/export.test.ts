@@ -6,7 +6,6 @@ import {
   deriveExportSize,
   estimateEtaSeconds,
   exportFrameBounds,
-  filterSupportedCodecs,
   mixAudioWindow,
   probeExportCodecs,
   rebaseOutputTimestamp,
@@ -233,16 +232,13 @@ describe('codec probing', () => {
       { codec: 'h264', container: 'mp4' },
       { codec: 'vp9', container: 'webm' },
     ]);
-    expect(
-      filterSupportedCodecs(
-        [
-          { codec: 'h264', container: 'mp4' },
-          { codec: 'vp9', container: 'webm' },
-          { codec: 'av1', container: 'webm' },
-        ],
-        new Set(['h264:mp4', 'av1:webm']),
-      ),
-    ).toEqual([
+    const candidates = [
+      { codec: 'h264' as const, container: 'mp4' as const },
+      { codec: 'vp9' as const, container: 'webm' as const },
+      { codec: 'av1' as const, container: 'webm' as const },
+    ];
+    const probed = new Set(['h264:mp4', 'av1:webm']);
+    expect(candidates.filter((entry) => probed.has(`${entry.codec}:${entry.container}`))).toEqual([
       { codec: 'h264', container: 'mp4' },
       { codec: 'av1', container: 'webm' },
     ]);

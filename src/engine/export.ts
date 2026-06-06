@@ -388,13 +388,6 @@ export async function probeExportCodecs(
   return supported;
 }
 
-export function filterSupportedCodecs(
-  candidates: readonly ExportCodecSupport[],
-  probed: ReadonlySet<string>,
-): ExportCodecSupport[] {
-  return candidates.filter((entry) => probed.has(`${entry.codec}:${entry.container}`));
-}
-
 function trackIsAudible(track: TimelineTrack, timeline: Timeline): boolean {
   if (track.muted) return false;
   const anySolo = timeline.some((candidate) => candidate.type === 'audio' && candidate.solo);
@@ -577,7 +570,7 @@ async function encodeVideoRange(
     const duration = Math.max(1e-6, Math.min(frameDuration, plan.exportDuration - outputTimestamp));
     const resolved = resolveAt(
       timeline,
-      Math.min(timelineTime, Math.max(plan.rangeStartS, plan.rangeStartS + plan.exportDuration - 1e-6)),
+      Math.min(timelineTime, plan.rangeStartS + plan.exportDuration - 1e-6),
     );
 
     let exportFrame: VideoFrame;
@@ -713,7 +706,7 @@ export async function exportTimeline(
   await assertAudioEncoderSupported(plan);
 
   const candidate = codecConfig(plan.codec);
-  const chunkBytes = plan.container === 'mp4' ? MP4_CHUNK_BYTES : MP4_CHUNK_BYTES;
+  const chunkBytes = MP4_CHUNK_BYTES;
 
   let writable: FileSystemWritableFileStream | null = null;
   let output: Output<Mp4OutputFormat | WebMOutputFormat, StreamTarget> | null = null;
@@ -789,6 +782,3 @@ export async function exportTimeline(
     throw error;
   }
 }
-
-/** @deprecated Use {@link exportTimeline}. */
-export const exportTimelineToMp4 = exportTimeline;

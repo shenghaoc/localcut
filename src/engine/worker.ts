@@ -49,7 +49,6 @@ import { probeEncodeThroughput } from './hardware-probe';
 import { FrameCache, makeFrameCacheKey } from './frame-cache';
 import {
   ExportCancelledError,
-  buildExportPlan,
   defaultExportSettings,
   exportTimeline,
   normalizeExportSettings,
@@ -1324,8 +1323,9 @@ function exportSettingsForProbe(): ExportSettings | null {
 }
 
 async function handleExportProbe() {
+  const videoHandle = firstExportVideoHandle();
   const settings = exportSettingsForProbe();
-  if (!settings) {
+  if (!settings || !videoHandle) {
     post({ type: 'export-codecs', supported: [], settings: defaultExportSettings('quality', 1920, 1080, 30, 0) });
     return;
   }
@@ -1336,14 +1336,21 @@ async function handleExportProbe() {
     settings.fps,
     settings.videoBitrate,
   );
+
+  const handleAfterProbe = firstExportVideoHandle();
+  if (!handleAfterProbe) {
+    post({ type: 'export-codecs', supported: [], settings: defaultExportSettings('quality', 1920, 1080, 30, 0) });
+    return;
+  }
+
   const preferredCodec = supported.some((entry) => entry.codec === settings.codec)
     ? settings.codec
     : (supported[0]?.codec ?? settings.codec);
   const resolved = normalizeExportSettings(
     { ...settings, codec: preferredCodec, container: preferredCodec === 'h264' ? 'mp4' : 'webm' },
-    firstExportVideoHandle()!.displayWidth,
-    firstExportVideoHandle()!.displayHeight,
-    firstExportVideoHandle()!.frameRate,
+    handleAfterProbe.displayWidth,
+    handleAfterProbe.displayHeight,
+    handleAfterProbe.frameRate,
     getTimelineDuration(timeline),
   );
   post({ type: 'export-codecs', supported, settings: resolved });
@@ -1365,14 +1372,14 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
 
   try {
     const exportTimelineSnapshot = cloneTimelineForExport();
+    const videoHandle = firstExportVideoHandle();
     const settings = normalizeExportSettings(
       cmd.settings,
-      firstExportVideoHandle()?.displayWidth ?? 1920,
-      firstExportVideoHandle()?.displayHeight ?? 1080,
-      firstExportVideoHandle()?.frameRate ?? 30,
+      videoHandle?.displayWidth ?? 1920,
+      videoHandle?.displayHeight ?? 1080,
+      videoHandle?.frameRate ?? 30,
       getTimelineDuration(exportTimelineSnapshot),
     );
-    buildExportPlan(exportTimelineSnapshot, sourceInputs, settings, currentProbe);
     lastExportSettings = settings;
     scheduleAutosave();
 
