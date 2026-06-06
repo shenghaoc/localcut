@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_TRACK_MIX, type Timeline } from '../timeline';
-import { PROJECT_SCHEMA_VERSION, serializeProject, type SourceDescriptor } from '../project';
+import { PROJECT_SCHEMA_VERSION, deserializeProject, serializeProject, type SourceDescriptor } from '../project';
 import { fingerprintBlob } from './fingerprint';
 import { parseBundleManifest, serializeBundleManifest } from './manifest';
 import { createMemoryDirectorySink } from './memory-sink';
+import { BundleJobCanceledError } from './errors';
 import { exportProjectBundle } from './export';
+import { serializeProjectDocForBundle } from './serialize-doc';
 import { importProjectBundle, validateProjectBundle } from './import';
 import { BUNDLE_SCHEMA_VERSION } from './types';
 
@@ -112,6 +114,19 @@ describe('project bundle fingerprint', () => {
   });
 });
 
+describe('project bundle fingerprint limits', () => {
+  it('rejects fingerprinting large blobs without DigestStream', async () => {
+    const previous = (globalThis as { DigestStream?: unknown }).DigestStream;
+    (globalThis as { DigestStream?: unknown }).DigestStream = undefined;
+    try {
+      const big = new Blob([new Uint8Array(65 * 1024)]);
+      await expect(fingerprintBlob(big)).rejects.toThrow(/DigestStream/);
+    } finally {
+      (globalThis as { DigestStream?: unknown }).DigestStream = previous;
+    }
+  });
+});
+
 describe('project bundle export/import', () => {
   it('round-trips an embedded bundle through memory sink', async () => {
     const sink = createMemoryDirectorySink();
@@ -180,6 +195,7 @@ describe('project bundle export/import', () => {
     const result = await importProjectBundle(sink, {
       attachSource: async () => ({ ok: true }),
     });
+    expect(result.ok).toBe(true);
     expect(result.doc?.projectId).toBe('project-ref');
     expect(result.boundSourceIds).toEqual([]);
     expect(result.report.summary.sourcesOffline).toBeGreaterThan(0);
@@ -210,3 +226,90 @@ describe('project bundle export/import', () => {
     expect(result.report.items.some((item) => item.code === 'fingerprint-mismatch')).toBe(true);
   });
 });
+
+describe('bundle project.json serialization', () => {
+  it('writes LUT sample tables as JSON arrays', () => {
+    const doc = serializeProject({
+      projectId: 'lut-project',
+      timeline: [
+        {
+          id: 'track-1',
+          type: 'video',
+          ...DEFAULT_TRACK_MIX,
+          clips: [
+            {
+              id: 'clip-1',
+              sourceId: 'source-1',
+              start: 0,
+              duration: 2,
+              inPoint: 0,
+              effects: {
+                brightness: 0,
+                contrast: 0,
+                saturation: 1,
+                temperature: 0,
+                temperatureStrength: 0,
+                lutStrength: 0.5,
+              },
+              transform: {
+                x: 0,
+                y: 0,
+                scale: 1,
+                rotation: 0,
+                opacity: 1,
+                anchorX: 0.5,
+                anchorY: 0.5,
+                fit: 'fill',
+              },
+              lut: {
+                key: 'grade.cube:8:1',
+                fileName: 'grade.cube',
+                title: 'Grade',
+                size: 2,
+                domainMin: [0, 0, 0],
+                domainMax: [1, 1, 1],
+                values: new Float32Array([0, 0, 0, 1, 1, 1, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.75, 0.75, 0.75, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]),
+              },
+              audioFadeIn: 0,
+              audioFadeOut: 0,
+            },
+          ],
+        },
+      ],
+      sources: [sourceFixture()],
+    });
+    const json = serializeProjectDocForBundle(doc);
+    const parsed = JSON.parse(json) as { timeline: Array<{ clips: Array<{ lut?: { values: unknown } }> }> };
+    expect(Array.isArray(parsed.timeline[0]?.clips[0]?.lut?.values)).toBe(true);
+    const result = deserializeProject(parsed);
+    expect(result.ok).toBe(true);
+  });
+});
+
+describe('bundle export cancellation', () => {
+  it('does not finalize manifest after cancel', async () => {
+    const sink = createMemoryDirectorySink();
+    const file = new File([new Uint8Array([1, 2, 3])], 'clip.mp4', { type: 'video/mp4' });
+    const doc = serializeProject({
+      projectId: 'cancel-export',
+      timeline: timelineFixture(),
+      sources: [sourceFixture({ byteSize: file.size })],
+    });
+    let cancel = false;
+    await expect(
+      exportProjectBundle(sink, {
+        doc,
+        displayName: 'clip',
+        policy: { mode: 'embed-media' },
+        resolveSourceFile: async () => {
+          cancel = true;
+          return file;
+        },
+        collectLuts: () => [],
+        isCancelled: () => cancel,
+      }),
+    ).rejects.toBeInstanceOf(BundleJobCanceledError);
+    expect(await sink.exists('manifest.json')).toBe(false);
+  });
+});
+

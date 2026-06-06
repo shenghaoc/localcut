@@ -1,6 +1,8 @@
 import { serializeCubeLut, type ClipLut } from '../lut';
 import type { ProjectDoc, SourceDescriptor } from '../project';
+import { throwIfBundleJobCanceled } from './errors';
 import { fingerprintBlob } from './fingerprint';
+import { serializeProjectDocForBundle } from './serialize-doc';
 import { addIntegrityItem, createEmptyIntegrityReport, integrityItem } from './integrity';
 import {
   defaultAppVersion,
@@ -59,10 +61,10 @@ export async function exportProjectBundle(
   }
 
   progress('project');
-  await sink.writeText(PROJECT_PATH, JSON.stringify(options.doc, null, 2));
+  await sink.writeText(PROJECT_PATH, serializeProjectDocForBundle(options.doc));
 
   for (const descriptor of options.doc.sources) {
-    if (options.isCancelled?.()) break;
+    throwIfBundleJobCanceled(options.isCancelled);
     const entry: BundleSourceEntry = {
       sourceId: descriptor.sourceId,
       descriptor: { ...descriptor },
@@ -147,7 +149,7 @@ export async function exportProjectBundle(
       if (!lutByKey.has(lut.key)) lutByKey.set(lut.key, lut);
     }
     for (const lut of lutByKey.values()) {
-      if (options.isCancelled?.()) break;
+      throwIfBundleJobCanceled(options.isCancelled);
       const cubeText = serializeCubeLut(lut);
       const blob = new Blob([cubeText], { type: 'text/plain' });
       const fingerprint = await fingerprintBlob(blob);
@@ -170,6 +172,8 @@ export async function exportProjectBundle(
       }
     }
   }
+
+  throwIfBundleJobCanceled(options.isCancelled);
 
   const manifest: ProjectBundleManifest = {
     bundleSchemaVersion: 1,

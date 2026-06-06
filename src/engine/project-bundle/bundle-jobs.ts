@@ -2,6 +2,7 @@ import type { BundleSourcePolicySnapshot, BundleIntegrityReportSnapshot } from '
 import type { ClipLut } from '../lut';
 import { loadStoredProject, type StoredSourceRecord } from '../persistence';
 import { serializeProject, type ProjectDoc } from '../project';
+import { BundleJobCanceledError } from './errors';
 import { exportProjectBundle } from './export';
 import { importProjectBundle } from './import';
 import { createFsDirectorySink } from './sinks';
@@ -122,6 +123,10 @@ export async function runExportProjectBundle(
       report.ok ? 'Project bundle exported.' : 'Export finished with integrity warnings.',
     );
   } catch (error) {
+    if (error instanceof BundleJobCanceledError) {
+      ctx.postImportResult(jobId, false, undefined, 'Bundle job canceled.');
+      return;
+    }
     const message = error instanceof Error ? error.message : String(error);
     ctx.postIntegrity(jobId, {
       bundleId: jobId,
@@ -198,6 +203,10 @@ export async function runImportProjectBundle(
     await ctx.applyImportedDoc(result.doc, result.boundSourceIds);
     ctx.postImportResult(jobId, true, result.doc.projectId, 'Imported portable project bundle.');
   } catch (error) {
+    if (error instanceof BundleJobCanceledError) {
+      ctx.postImportResult(jobId, false, undefined, 'Bundle job canceled.');
+      return;
+    }
     const message = error instanceof Error ? error.message : String(error);
     ctx.postImportResult(jobId, false, undefined, message);
   } finally {

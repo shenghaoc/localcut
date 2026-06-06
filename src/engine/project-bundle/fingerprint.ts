@@ -1,6 +1,5 @@
 import type { MediaFingerprint } from './types';
 
-const DEFAULT_CHUNK_SIZE = 256 * 1024;
 const SMALL_BLOB_LIMIT = 64 * 1024;
 
 function bufferToHex(buffer: ArrayBuffer): string {
@@ -68,7 +67,6 @@ export async function fingerprintBlob(
   blob: Blob,
   options: FingerprintOptions = {},
 ): Promise<MediaFingerprint> {
-  const chunkSize = options.chunkSize ?? DEFAULT_CHUNK_SIZE;
   if (blob.size <= SMALL_BLOB_LIMIT) {
     const buffer = await blob.arrayBuffer();
     options.trackMaxChunkBytes?.(buffer.byteLength);
@@ -77,38 +75,13 @@ export async function fingerprintBlob(
     return { algorithm: 'sha-256', digest: bufferToHex(digest) };
   }
 
-  if (blob.size > chunkSize && getDigestStreamConstructor()) {
+  if (getDigestStreamConstructor()) {
     return fingerprintWithDigestStream(blob, options.onProgress, options.trackMaxChunkBytes);
   }
 
-  // Fallback: stream in bounded chunks and hash each chunk's digest chain is wrong.
-  // For environments without DigestStream on large blobs, read in chunks and merge via
-  // a second pass using small buffer only (still bounded by chunkSize, not full file).
-  const reader = blob.stream().getReader();
-  const chunks: Uint8Array[] = [];
-  let bytesDone = 0;
-  let maxChunk = 0;
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    if (!value) continue;
-    if (value.byteLength > chunkSize) {
-      throw new Error(`Fingerprint chunk exceeded limit (${value.byteLength} > ${chunkSize}).`);
-    }
-    maxChunk = Math.max(maxChunk, value.byteLength);
-    bytesDone += value.byteLength;
-    options.onProgress?.(bytesDone);
-    chunks.push(value);
-  }
-  options.trackMaxChunkBytes?.(maxChunk);
-  const merged = new Uint8Array(bytesDone);
-  let offset = 0;
-  for (const chunk of chunks) {
-    merged.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  const digest = await crypto.subtle.digest('SHA-256', merged);
-  return { algorithm: 'sha-256', digest: bufferToHex(digest) };
+  throw new Error(
+    `Cannot fingerprint ${blob.size} byte blob: DigestStream is required for files larger than ${SMALL_BLOB_LIMIT} bytes.`,
+  );
 }
 
 export function fingerprintsEqual(a: MediaFingerprint, b: MediaFingerprint): boolean {

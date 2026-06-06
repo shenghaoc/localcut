@@ -180,13 +180,18 @@ export async function importProjectBundle(
     );
   }
 
-  const ok = report.summary.sourcesOffline === 0 || boundSourceIds.length > 0;
+  const expectsEmbeddedMedia = manifest.sources.some((entry) => entry.status === 'embedded');
+  const ok =
+    !expectsEmbeddedMedia || boundSourceIds.length > 0 || doc.sources.length === 0;
   return {
     ok,
     doc,
     report,
     boundSourceIds,
-    reason: boundSourceIds.length === 0 && doc.sources.length > 0 ? 'No media could be bound from the bundle.' : undefined,
+    reason:
+      !ok && expectsEmbeddedMedia && doc.sources.length > 0
+        ? 'No media could be bound from the bundle.'
+        : undefined,
   };
 }
 
