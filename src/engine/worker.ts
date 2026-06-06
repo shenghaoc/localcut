@@ -85,7 +85,10 @@ import {
   type MediaInputHandle,
 } from './media-io';
 import { healthReportForHandle } from './media-adapters/mediabunny-adapter';
-import { resolveSourceTimestamp } from './media-adapters/source-timing';
+import {
+  resolveSourceTimestamp,
+  unavailableAudioSilenceFrames,
+} from './media-adapters/source-timing';
 import { sourceHealthReportFromError } from './media-adapters/source-health';
 import { ThumbnailGenerator } from './thumbnails';
 import { initGpu, type CompositeLayer, type PreviewRenderer } from './gpu';
@@ -492,7 +495,14 @@ async function pumpAudioOnce(): Promise<void> {
       timing: handle.timing,
     });
     if (!sourceTimestamp.available) {
-      const silenceFrames = Math.min(freeFrames, 1024);
+      const silenceFrames = unavailableAudioSilenceFrames({
+        resolution: sourceTimestamp,
+        timing: handle.timing,
+        clip: resolved.clip,
+        timelineTime,
+        sampleRate,
+        maxFrames: Math.min(freeFrames, 1024),
+      });
       const written = writeRingPcm(audioRing, new Float32Array(silenceFrames * channels));
       audioWriteFrames += written;
       return;

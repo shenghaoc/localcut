@@ -4,6 +4,7 @@ import {
   buildNormalizedSourceTiming,
   resolveNormalizedSourceTimestamp,
   resolveSourceTimestamp,
+  unavailableAudioSilenceFrames,
 } from './source-timing';
 import type { SourceAudioTrackInspection, SourceVideoTrackInspection } from './types';
 
@@ -99,5 +100,50 @@ describe('source timestamp normalization', () => {
     expect(resolveNormalizedSourceTimestamp(timing, 'video', -0.1).fill).toBe('outside-source');
     expect(resolveNormalizedSourceTimestamp(timing, 'video', 3.2).fill).toBe('outside-source');
     expect(timing.frameRateMode).toBe('variable');
+  });
+
+  it('limits unavailable audio silence to the next non-zero track start', () => {
+    const timing = buildNormalizedSourceTiming({
+      durationS: 1,
+      video: { ...videoTrack, startS: 0, durationS: 1 },
+      audio: { ...audioTrack, startS: 0.5, durationS: 0.5 },
+      frameRateMode: 'constant',
+    });
+    const clip = defaultTimelineClip({ id: 'clip', sourceId: 'src', start: 0, duration: 1, inPoint: 0 });
+    const resolution = resolveSourceTimestamp({ clip, timelineTime: 0, trackKind: 'audio', timing });
+
+    expect(resolution).toMatchObject({ available: false, fill: 'before-track-start' });
+    expect(
+      unavailableAudioSilenceFrames({
+        resolution,
+        timing,
+        clip,
+        timelineTime: 0,
+        sampleRate: 4,
+        maxFrames: 1024,
+      }),
+    ).toBe(2);
+  });
+
+  it('returns the full silence budget when unavailable audio cannot resume inside the block', () => {
+    const timing = buildNormalizedSourceTiming({
+      durationS: 1,
+      audio: { ...audioTrack, startS: 0, durationS: 1 },
+      frameRateMode: 'constant',
+    });
+    const clip = defaultTimelineClip({ id: 'clip', sourceId: 'src', start: 0, duration: 1, inPoint: 0 });
+    const resolution = resolveSourceTimestamp({ clip, timelineTime: 1.25, trackKind: 'audio', timing });
+
+    expect(resolution).toMatchObject({ available: false, fill: 'outside-source' });
+    expect(
+      unavailableAudioSilenceFrames({
+        resolution,
+        timing,
+        clip,
+        timelineTime: 1.25,
+        sampleRate: 4,
+        maxFrames: 16,
+      }),
+    ).toBe(16);
   });
 });

@@ -43,7 +43,10 @@ import {
 } from './timeline';
 import type { TitleTexture } from './titles';
 import { sampleClipParamsAt } from './keyframes';
-import { resolveSourceTimestamp } from './media-adapters/source-timing';
+import {
+  resolveSourceTimestamp,
+  unavailableAudioSilenceFrames,
+} from './media-adapters/source-timing';
 
 const AUDIO_BLOCK_FRAMES = 1024;
 const EXPORT_INTERLEAVE_SECONDS = 2;
@@ -217,24 +220,6 @@ export function rebaseOutputTimestamp(frameIndex: number, frameRate: number): nu
 
 export function timelineTimeAt(plan: ExportPlan, outputTimestamp: number): number {
   return plan.rangeStartS + outputTimestamp;
-}
-
-function unavailableAudioSkipFrames(
-  resolution: ReturnType<typeof resolveSourceTimestamp>,
-  handle: MediaInputHandle,
-  clip: TimelineClip,
-  timelineTime: number,
-  sampleRate: number,
-  runFrames: number,
-): number {
-  if (resolution.available) return 0;
-  if (resolution.fill === 'before-track-start' && handle.timing.audio) {
-    const normalizedTrackStartS = handle.timing.audio.firstTimestampS - handle.timing.normalizedStartS;
-    const nextTimelineTime = clip.start + (normalizedTrackStartS - clip.inPoint);
-    const framesUntilTrackStart = Math.ceil((nextTimelineTime - timelineTime) * sampleRate);
-    if (framesUntilTrackStart > 0) return Math.min(runFrames, framesUntilTrackStart);
-  }
-  return runFrames;
 }
 
 export function estimatedEncodeFps(
@@ -561,10 +546,24 @@ export async function mixAudioWindow(
               : null;
             if (!outPcm && !inPcm) {
               const outSkip = outSourceTime && outHandle
-                ? unavailableAudioSkipFrames(outSourceTime, outHandle, outgoing, timelineTime, sampleRate, runFrames)
+                ? unavailableAudioSilenceFrames({
+                    resolution: outSourceTime,
+                    timing: outHandle.timing,
+                    clip: outgoing,
+                    timelineTime,
+                    sampleRate,
+                    maxFrames: runFrames,
+                  })
                 : runFrames;
               const inSkip = inSourceTime && inHandle
-                ? unavailableAudioSkipFrames(inSourceTime, inHandle, incoming, timelineTime, sampleRate, runFrames)
+                ? unavailableAudioSilenceFrames({
+                    resolution: inSourceTime,
+                    timing: inHandle.timing,
+                    clip: incoming,
+                    timelineTime,
+                    sampleRate,
+                    maxFrames: runFrames,
+                  })
                 : runFrames;
               offsetFrames += Math.max(1, Math.min(runFrames, outSkip, inSkip));
               continue;
@@ -645,7 +644,14 @@ export async function mixAudioWindow(
         timing: handle.timing,
       });
       if (!sourceTime.available) {
-        offsetFrames += unavailableAudioSkipFrames(sourceTime, handle, clip, timelineTime, sampleRate, runFrames);
+        offsetFrames += unavailableAudioSilenceFrames({
+          resolution: sourceTime,
+          timing: handle.timing,
+          clip,
+          timelineTime,
+          sampleRate,
+          maxFrames: runFrames,
+        });
         continue;
       }
       const pcm = await handle.audioSource.pcmWindowAt(sourceTime.adapterTimestampS, runFrames, channels);

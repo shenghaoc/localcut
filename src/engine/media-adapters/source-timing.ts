@@ -27,6 +27,15 @@ export interface ResolveSourceTimestampOptions {
   readonly timing: NormalizedSourceTiming;
 }
 
+export interface UnavailableAudioSilenceFramesOptions {
+  readonly resolution: SourceTimestampResolution;
+  readonly timing: NormalizedSourceTiming;
+  readonly clip: TimelineClip;
+  readonly timelineTime: number;
+  readonly sampleRate: number;
+  readonly maxFrames: number;
+}
+
 export interface BuildNormalizedSourceTimingOptions {
   readonly durationS: number;
   readonly video?: SourceTrackInspection;
@@ -165,4 +174,25 @@ export function resolveSourceTimestamp(
 ): SourceTimestampResolution {
   const normalizedSourceS = options.clip.inPoint + (options.timelineTime - options.clip.start);
   return resolveNormalizedSourceTimestamp(options.timing, options.trackKind, normalizedSourceS);
+}
+
+export function unavailableAudioSilenceFrames(
+  options: UnavailableAudioSilenceFramesOptions,
+): number {
+  const maxFrames = Math.max(0, Math.floor(finiteOr(options.maxFrames, 0)));
+  if (options.resolution.available || maxFrames <= 0) return 0;
+
+  if (
+    options.resolution.fill === 'before-track-start' &&
+    options.timing.audio &&
+    Number.isFinite(options.sampleRate) &&
+    options.sampleRate > 0
+  ) {
+    const normalizedTrackStartS = options.timing.audio.firstTimestampS - options.timing.normalizedStartS;
+    const nextTimelineTime = options.clip.start + (normalizedTrackStartS - options.clip.inPoint);
+    const framesUntilTrackStart = Math.ceil((nextTimelineTime - options.timelineTime) * options.sampleRate);
+    if (framesUntilTrackStart > 0) return Math.min(maxFrames, framesUntilTrackStart);
+  }
+
+  return maxFrames;
 }
