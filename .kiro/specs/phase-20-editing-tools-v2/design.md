@@ -33,7 +33,7 @@ Defaults: `locked: false`, `visible: true`, `syncLocked: false`, `editTarget: tr
 
 - **Locked** — the track-lock guard is a precondition check at the top of every mutating pure function in `timeline.ts`. If the target track is locked, the function returns the original timeline reference (no-op), which `commitTimelineMutation` detects as unchanged and skips history push.
 - **Visible** — consumed by `resolveAllAt` and `compositeLayers` in the pipeline worker to skip hidden tracks during preview and export compositing. Hidden tracks are still editable.
-- **Sync locked** — consumed only by ripple-class operations (ripple delete, ripple trim, insert, extract). When a ripple shifts clips on track A by delta, every sync-locked track shifts all clips whose start is at or after the ripple point by the same delta. If a sync-locked track is also locked, the entire ripple is rejected.
+- **Sync locked** — consumed only by ripple-class operations (ripple delete, ripple trim, insert, extract). When a ripple shifts clips on track A by delta, every sync-locked track shifts all clips whose start is at or after the ripple point by the same delta. If a sync-locked clip *spans* the ripple point (starts before, ends after), the entire operation is rejected rather than silently desyncing. If a sync-locked track is also locked, the entire ripple is rejected. For extract, any clip overlap (not just spanning) on a non-targeted sync-locked track rejects the operation.
 - **Edit target** — consumed only by insert and overwrite. Non-targeted tracks are skipped; if the only matching target track is locked, the operation is rejected.
 
 ### New pure functions in `timeline.ts`
@@ -62,10 +62,11 @@ Every function returns the original timeline reference on no-op (locked-track re
 
 A helper `expandLinkedGroup(timeline, clipRefs)` returns the full set of clips including all linked partners. Edit operations call this before executing:
 
-- **Positional operations** (move, ripple delete, insert, overwrite, extract, slide): expand to linked group, check all target tracks are unlocked, apply to all or reject entirely.
-- **Slip**: applied to the single clip only (slip changes source window, which is per-stream).
+- **Positional operations** (move, delete, ripple delete, duplicate, insert, overwrite, extract, slide): expand to linked group, check all target tracks are unlocked, apply to all or reject entirely.
+- **Split**: expands to linked group — all linked partners are split at the same timeline time. `linkedGroupId` is cleared on all halves (pragmatic unlink-on-split to avoid ambiguous group membership across fragments).
+- **Slip**: expands to linked group — all members slip by the same delta to maintain A/V sync.
 - **Roll trim**: applied to adjacent pair only; if either clip has linked partners on other tracks, those partners are not rolled (roll is a same-track boundary operation).
-- **Unlink**: only then can members be edited independently.
+- **Unlink**: only then can members be edited independently. Orphaned sole members (groups with < 2 remaining members) have their `linkedGroupId` cleared automatically.
 
 If expanding the linked group finds a member on a locked track, the operation returns the original timeline (no-op).
 
@@ -125,7 +126,7 @@ The active tool determines how a drag on a clip or clip edge is interpreted:
 | Slip (Y) | Slip edit | — | — |
 | Slide (U) | Slide edit | — | — |
 
-*Ripple move = move + ripple-close the vacated gap. Implemented as ripple-delete at old position + insert at new position, coalesced as one history entry.
+*Ripple move = move + ripple-close the vacated gap. Implemented as ripple-delete at old position + insert at new position, coalesced as one history entry. If the insertion point is downstream of the deleted clip, the target time must be adjusted by the delete's ripple delta (since deletion shifts all downstream timecodes left).
 
 Tool mode is a UI-only signal; the worker commands are tool-agnostic.
 
@@ -166,14 +167,32 @@ All operations call the existing `reconcileTransitions` path after mutation. Tra
 ### Markers
 
 - Ripple operations (ripple delete, ripple trim, insert, extract) shift markers that are at or after the ripple point by the same delta.
+- Ripple delete and extract first remove markers inside the deleted/extracted range (exclusive end: markers at the range boundary are preserved), then shift remaining markers.
+- For linked A/V ripple deletes, overlapping removal regions are merged before marker shifting to prevent double-shifting.
 - Non-ripple operations (overwrite, lift, roll, slip, slide) leave markers in place.
-- Marker shift is part of the same atomic mutation and undo entry.
+- Marker shift is part of the same atomic mutation and undo entry; if the underlying operation is rejected (returns original timeline), markers are not shifted.
 
-A new helper `shiftMarkers(markers, afterTime, deltaS)` returns an updated marker list.
+Helpers: `shiftMarkers(markers, afterTime, deltaS)`, `removeMarkersInRange(markers, startTime, endTime)` (exclusive end).
 
 ### Offline media
 
-Clips with unresolved sources participate in all positional operations (move, delete, ripple, insert, overwrite, lift, extract, slide). They block slip and roll operations that require `sourceDuration` for clamping — returning no-op rather than corrupting bounds.
+Clips with unresolved sources participate in all positional operations (move, delete, ripple, insert, overwrite, lift, extract). They block slip, roll, and slide operations that require `sourceDuration` for clamping — returning no-op rather than corrupting bounds. Slide edits extend adjacent clips, which requires knowing their source duration; if any adjacent clip has an unresolved source, the slide is rejected.
+
+### Ripple trim semantics
+
+- **Out-edge**: shift downstream clips by the change in duration (shrink → shift left; extend → shift right).
+- **In-edge inward** (shrink, trimming head right): close the gap by shifting the trimmed clip and all downstream clips left. This reduces the timeline duration.
+- **In-edge outward** (extend, trimming head left): the out-edge stays put, so no downstream shift is needed. This is equivalent to a non-ripple trim for the extension direction.
+
+### Keyframe rebasing
+
+When overwrite or lift splits a clip into left/right fragments, keyframes are rebased:
+- Left fragment: keyframes are normalized to the shorter duration (tracks beyond the new duration are removed).
+- Right fragment: keyframes are rebased via `rebaseTrimmedKeyframes` so that local time 0 corresponds to the fragment's new start in the source.
+
+### Duplicate/paste link isolation
+
+`cloneWithNewId` (used by duplicate and paste) clears `linkedGroupId` on the clone. This prevents duplicated clips from remaining in the original's link group, which would cause subsequent linked operations to affect both originals and copies.
 
 ## Modules
 

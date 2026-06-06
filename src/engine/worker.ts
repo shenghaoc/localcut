@@ -25,7 +25,6 @@ import {
   getTimelineDuration,
   insertClip,
   moveClips,
-  moveClipTo,
   pasteClips,
   removeClip,
   removeTrack,
@@ -80,6 +79,7 @@ import {
   type TimelineTransition,
   type ClipboardTimelineClip,
   type ClipEffectParams,
+  type MoveClipTarget,
   type TransformParams,
 } from './timeline';
 import { sampleClipParamsAt } from './keyframes';
@@ -1624,40 +1624,91 @@ function isTrackLockedWorker(trackId: string): boolean {
 
 function handleSplit(cmd: Extract<WorkerCommand, { type: 'split' }>) {
   if (isTrackLockedWorker(cmd.trackId)) return;
-  commitTimelineMutation(() => splitClipAt(timeline, cmd.trackId, cmd.time));
+  const track = timeline.find((t) => t.id === cmd.trackId);
+  const targetClip = track?.clips.find((c) => cmd.time >= c.start && cmd.time < c.start + c.duration);
+  if (!targetClip) return;
+  const refs = expandLinkedGroup(timeline, [{ trackId: cmd.trackId, clipId: targetClip.id }]);
+  if (refs.some((r) => isTrackLockedWorker(r.trackId))) return;
+  commitTimelineMutation(() => {
+    let tl = timeline;
+    for (const ref of refs) {
+      tl = splitClipAt(tl, ref.trackId, cmd.time);
+    }
+    return tl;
+  });
 }
 
 function handleDelete(cmd: Extract<WorkerCommand, { type: 'delete-clip' }>) {
-  if (isTrackLockedWorker(cmd.trackId)) return;
-  commitTimelineMutation(() => removeClip(timeline, cmd.trackId, cmd.clipId));
-}
-
-function handleDeleteBatch(cmd: Extract<WorkerCommand, { type: 'delete-clips' }>) {
-  if (cmd.clips.some((c) => isTrackLockedWorker(c.trackId))) return;
+  const expanded = expandLinkedGroup(timeline, [{ trackId: cmd.trackId, clipId: cmd.clipId }]);
+  if (expanded.some((c) => isTrackLockedWorker(c.trackId))) return;
   commitTimelineMutation(() => {
     let next = timeline;
-    for (const clip of cmd.clips) {
-      next = removeClip(next, clip.trackId, clip.clipId);
+    for (const ref of expanded) {
+      next = removeClip(next, ref.trackId, ref.clipId);
     }
     return next;
   });
 }
 
+function handleDeleteBatch(cmd: Extract<WorkerCommand, { type: 'delete-clips' }>) {
+  const expanded = expandLinkedGroup(timeline, cmd.clips);
+  if (expanded.some((c) => isTrackLockedWorker(c.trackId))) return;
+  commitTimelineMutation(() => {
+    let next = timeline;
+    for (const ref of expanded) {
+      next = removeClip(next, ref.trackId, ref.clipId);
+    }
+    return next;
+  });
+}
+
+function expandMovesForLinkedGroups(moves: readonly MoveClipTarget[]): MoveClipTarget[] {
+  const expanded: MoveClipTarget[] = [...moves];
+  const seen = new Set(moves.map((m) => `${m.trackId}:${m.clipId}`));
+  for (const move of moves) {
+    const clip = timeline.find((t) => t.id === move.trackId)?.clips.find((c) => c.id === move.clipId);
+    if (!clip) continue;
+    const deltaS = move.toStart - clip.start;
+    const partners = expandLinkedGroup(timeline, [{ trackId: move.trackId, clipId: move.clipId }]);
+    for (const partner of partners) {
+      const key = `${partner.trackId}:${partner.clipId}`;
+      if (seen.has(key)) continue;
+      const partnerClip = timeline.find((t) => t.id === partner.trackId)?.clips.find((c) => c.id === partner.clipId);
+      if (!partnerClip) continue;
+      expanded.push({
+        trackId: partner.trackId,
+        clipId: partner.clipId,
+        toTrackId: partner.trackId,
+        toStart: partnerClip.start + deltaS,
+      });
+      seen.add(key);
+    }
+  }
+  return expanded;
+}
+
 function handleMove(cmd: Extract<WorkerCommand, { type: 'move-clip' }>) {
-  if (isTrackLockedWorker(cmd.fromTrackId) || isTrackLockedWorker(cmd.toTrackId)) return;
-  commitTimelineMutation(() =>
-    moveClipTo(timeline, cmd.fromTrackId, cmd.clipId, cmd.toTrackId, cmd.toStart),
-  );
+  handleMoveBatch({
+    type: 'move-clips',
+    moves: [{
+      trackId: cmd.fromTrackId,
+      clipId: cmd.clipId,
+      toTrackId: cmd.toTrackId,
+      toStart: cmd.toStart,
+    }],
+  });
 }
 
 function handleMoveBatch(cmd: Extract<WorkerCommand, { type: 'move-clips' }>) {
-  if (cmd.moves.some((m) => isTrackLockedWorker(m.trackId) || isTrackLockedWorker(m.toTrackId))) return;
-  commitTimelineMutation(() => moveClips(timeline, cmd.moves));
+  const expanded = expandMovesForLinkedGroups(cmd.moves);
+  if (expanded.some((m) => isTrackLockedWorker(m.trackId) || isTrackLockedWorker(m.toTrackId))) return;
+  commitTimelineMutation(() => moveClips(timeline, expanded));
 }
 
 function handleDuplicate(cmd: Extract<WorkerCommand, { type: 'duplicate-clip' }>) {
-  if (cmd.clips.some((c) => isTrackLockedWorker(c.trackId))) return;
-  commitTimelineMutation(() => duplicateClips(timeline, cmd.clips, cmd.atTime));
+  const expanded = expandLinkedGroup(timeline, cmd.clips);
+  if (expanded.some((c) => isTrackLockedWorker(c.trackId))) return;
+  commitTimelineMutation(() => duplicateClips(timeline, expanded, cmd.atTime));
 }
 
 function timelineClipByRef(trackId: string, clipId: string): TimelineClip | null {
@@ -2094,9 +2145,11 @@ function handleInsertEdit(cmd: Extract<WorkerCommand, { type: 'insert-edit' }>) 
       syncLockedTrackIds,
     );
     if (nextTimeline === timeline) return { timeline, transitions, markers };
-    const nextMarkers = shiftMarkers(markers, cmd.atTime, cmd.clips.reduce(
-      (max, c) => Math.max(max, c.clip.duration), 0,
-    ));
+    const targetMarkersSet = new Set(targetTrackIds);
+    const insertDuration = cmd.clips.reduce(
+      (max, c) => targetMarkersSet.has(c.trackId) ? Math.max(max, c.clip.duration) : max, 0,
+    );
+    const nextMarkers = shiftMarkers(markers, cmd.atTime, insertDuration);
     return {
       timeline: nextTimeline,
       transitions: reconcileTransitions(nextTimeline, transitions),
@@ -2162,7 +2215,7 @@ function handleRippleTrim(cmd: Extract<WorkerCommand, { type: 'ripple-trim' }>) 
     const trimmedClip = nextTimeline.find((t) => t.id === cmd.trackId)?.clips.find((c) => c.id === cmd.clipId);
     const newEnd = trimmedClip ? trimmedClip.start + trimmedClip.duration : oldEnd;
     const afterTime = cmd.edge === 'out' ? oldEnd : (clip?.start ?? 0);
-    const delta = cmd.edge === 'out' ? newEnd - oldEnd : (trimmedClip?.start ?? 0) - (clip?.start ?? 0);
+    const delta = cmd.edge === 'out' ? newEnd - oldEnd : Math.min(0, (clip?.start ?? 0) - (trimmedClip?.start ?? 0));
     const nextMarkers = delta !== 0 ? shiftMarkers(markers, afterTime, delta) : markers;
     return {
       timeline: nextTimeline,

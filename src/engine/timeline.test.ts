@@ -1738,4 +1738,39 @@ describe('review fixes', () => {
     const next = pasteClips(tl, pasted, 0);
     expect(next[0]!.clips[0]!.linkedGroupId).toBeUndefined();
   });
+
+  it('rippleTrim in-edge outward extension does not shift downstream', () => {
+    // Clip a starts at 2 with inPoint 2 — extend head left to 0 (outward extension)
+    const a = clip({ id: 'a', sourceId: 'src-1', start: 2, duration: 5, inPoint: 2 });
+    const b = clip({ id: 'b', sourceId: 'src-1', start: 7, duration: 3, inPoint: 0 });
+    const tl = [track('v', 'video', [a, b])];
+    const next = rippleTrim(tl, 'v', 'a', 'in', 0, []);
+    // Out-edge didn't change: downstream clip b stays at 7
+    expect(next[0]!.clips[0]!.start).toBe(0);
+    expect(next[0]!.clips[0]!.duration).toBe(7);
+    expect(next[0]!.clips[0]!.inPoint).toBe(0);
+    expect(next[0]!.clips[1]!.start).toBe(7);
+  });
+
+  it('liftRegion rebases keyframes on split fragments', () => {
+    const kf = {
+      brightness: [
+        { t: 0, value: 0, easing: 'linear' as const },
+        { t: 10, value: 1, easing: 'linear' as const },
+      ],
+    };
+    const a = clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 10, inPoint: 0, keyframes: kf });
+    const tl = [track('v', 'video', [a])];
+    // Lift [3, 7]: left fragment [0,3], right fragment [7,10]
+    const next = liftRegion(tl, ['v'], 3, 7);
+    const leftFrag = next[0]!.clips[0]!;
+    const rightFrag = next[0]!.clips[1]!;
+    expect(leftFrag.duration).toBe(3);
+    expect(rightFrag.start).toBe(7);
+    expect(rightFrag.duration).toBe(3);
+    // Right fragment keyframes rebased: original t=7 maps to local t=0
+    if (rightFrag.keyframes?.brightness) {
+      expect(rightFrag.keyframes.brightness[0]!.t).toBe(0);
+    }
+  });
 });

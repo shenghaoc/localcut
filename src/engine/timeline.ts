@@ -1611,7 +1611,9 @@ export function rippleTrim(
 
   const trimmedClip = trimmed[loc.trackIndex]!.clips[loc.clipIndex]!;
   const newEnd = clipEnd(trimmedClip);
-  const delta = edge === 'out' ? newEnd - oldEnd : clip.start - trimmedClip.start;
+  const rawDelta = edge === 'out' ? newEnd - oldEnd : clip.start - trimmedClip.start;
+  // In-edge outward extension (positive delta): out-edge stays put, no ripple needed.
+  const delta = (edge === 'in' && rawDelta > 0) ? 0 : rawDelta;
   if (delta === 0) return trimmed;
 
   const afterTime = edge === 'out' ? oldEnd : clip.start;
