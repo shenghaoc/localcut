@@ -89,6 +89,20 @@ describe('project serialization', () => {
     expect(result.reason).toContain('Unsupported project schemaVersion');
   });
 
+  it('rejects tracks with negative gain on load', () => {
+    const doc = serializeProject({
+      projectId: 'project-1',
+      timeline: timelineFixture(),
+      sources: [sourceFixture()],
+    });
+    const raw = {
+      ...doc,
+      timeline: [{ ...doc.timeline[0]!, gain: -0.5 }],
+    };
+    const result = deserializeProject(raw);
+    expect(result.ok).toBe(false);
+  });
+
   it('defaults master gain when older project documents omit it', () => {
     const doc = serializeProject({
       projectId: 'project-1',

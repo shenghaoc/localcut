@@ -168,6 +168,7 @@ function parseTrack(value: unknown): TimelineTrack | null {
     !id ||
     !type ||
     gain === null ||
+    gain < 0 ||
     pan < -1 ||
     pan > 1 ||
     typeof value.muted !== 'boolean' ||

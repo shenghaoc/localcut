@@ -247,6 +247,7 @@ function trackAudible(trackId: string): number {
   return track.gain;
 }
 
+/** Live preview pumps the first resolved audio clip only; export sums all audible tracks. */
 async function pumpAudioOnce(): Promise<void> {
   if (!audioRing || !clockView) return;
   if (Atomics.load(audioRing.header, RingHeader.STATE) !== RingState.PLAYING) return;
@@ -1106,6 +1107,7 @@ function handleSetEffectParam(cmd: Extract<WorkerCommand, { type: 'set-effect-pa
 
 function handleSetTrackGain(cmd: Extract<WorkerCommand, { type: 'set-track-gain' }>) {
   commitTimelineMutation(() => setTrackGain(timeline, cmd.trackId, cmd.gain), {
+    coalesceKey: { clipId: cmd.trackId, key: 'gain' },
     refreshPlayback: 'none',
     prune: false,
   });
@@ -1127,6 +1129,7 @@ function handleSetTrackSolo(cmd: Extract<WorkerCommand, { type: 'set-track-solo'
 
 function handleSetTrackPan(cmd: Extract<WorkerCommand, { type: 'set-track-pan' }>) {
   commitTimelineMutation(() => setTrackPan(timeline, cmd.trackId, cmd.pan), {
+    coalesceKey: { clipId: cmd.trackId, key: 'pan' },
     refreshPlayback: 'none',
     prune: false,
   });
@@ -1143,7 +1146,11 @@ function handleSetMasterGain(cmd: Extract<WorkerCommand, { type: 'set-master-gai
 function handleSetClipFade(cmd: Extract<WorkerCommand, { type: 'set-clip-fade' }>) {
   commitTimelineMutation(
     () => setClipAudioFade(timeline, cmd.trackId, cmd.clipId, cmd.edge, cmd.durationS),
-    { refreshPlayback: 'none', prune: false },
+    {
+      coalesceKey: { clipId: cmd.clipId, key: `fade-${cmd.edge}` },
+      refreshPlayback: 'none',
+      prune: false,
+    },
   );
 }
 

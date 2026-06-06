@@ -733,7 +733,10 @@ export function App() {
         onOpenCapabilities={() => setCapabilityPanelOpen(true)}
         masterGain={masterGain()}
         meterSab={meterSab()}
-        onMasterGain={(gain) => bridge?.send({ type: 'set-master-gain', gain })}
+        onMasterGain={(gain) => {
+          audioEngine.setMasterGain(gain);
+          bridge?.send({ type: 'set-master-gain', gain });
+        }}
         exportControl={
           <ExportDialog
             hasMedia={metadata() !== null && accelerated()}

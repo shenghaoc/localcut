@@ -281,13 +281,17 @@ export async function mixAudioWindow(
           );
           const outHandle = sources.get(outgoing.sourceId);
           const inHandle = sources.get(incoming.sourceId);
-          if (outHandle?.audioSource && inHandle?.audioSource) {
+          const hasOut = Boolean(outHandle?.audioSource);
+          const hasIn = Boolean(inHandle?.audioSource);
+          if (hasOut || hasIn) {
             const outSourceTime = outgoing.inPoint + (timelineTime - outgoing.start);
             const inSourceTime = incoming.inPoint + (timelineTime - incoming.start);
-            const [outPcm, inPcm] = await Promise.all([
-              outHandle.audioSource.pcmWindowAt(outSourceTime, runFrames, channels),
-              inHandle.audioSource.pcmWindowAt(inSourceTime, runFrames, channels),
-            ]);
+            const outPcm = hasOut
+              ? await outHandle!.audioSource!.pcmWindowAt(outSourceTime, runFrames, channels)
+              : null;
+            const inPcm = hasIn
+              ? await inHandle!.audioSource!.pcmWindowAt(inSourceTime, runFrames, channels)
+              : null;
             const windowStart = cutTime - half;
             const { left, right } = panCoefficients(track.pan, channels);
             for (let frame = 0; frame < runFrames; frame += 1) {
@@ -306,29 +310,29 @@ export async function mixAudioWindow(
                 incoming.audioFadeIn,
                 incoming.audioFadeOut,
               );
-              const outScale = track.gain * gains.outgoing * outFade;
-              const inScale = track.gain * gains.incoming * inFade;
+              const outScale = hasOut ? track.gain * gains.outgoing * outFade : 0;
+              const inScale = hasIn ? track.gain * gains.incoming * inFade : 0;
               const srcFrame = frame * channels;
               const destFrame = (offsetFrames + frame) * channels;
 
               if (channels === 1) {
-                const outVal = (outPcm[srcFrame] ?? 0) * outScale;
-                const inVal = (inPcm[srcFrame] ?? 0) * inScale;
+                const outVal = outPcm ? (outPcm[srcFrame] ?? 0) * outScale : 0;
+                const inVal = inPcm ? (inPcm[srcFrame] ?? 0) * inScale : 0;
                 out[destFrame] = (out[destFrame] ?? 0) + outVal + inVal;
               } else {
-                const outL = outPcm[srcFrame] ?? 0;
-                const outR = outPcm[srcFrame + 1] ?? outL;
-                const inL = inPcm[srcFrame] ?? 0;
-                const inR = inPcm[srcFrame + 1] ?? inL;
+                const outL = outPcm ? (outPcm[srcFrame] ?? 0) : 0;
+                const outR = outPcm ? (outPcm[srcFrame + 1] ?? outL) : 0;
+                const inL = inPcm ? (inPcm[srcFrame] ?? 0) : 0;
+                const inR = inPcm ? (inPcm[srcFrame + 1] ?? inL) : 0;
 
                 out[destFrame] = (out[destFrame] ?? 0) + outL * left * outScale + inL * left * inScale;
                 out[destFrame + 1] =
                   (out[destFrame + 1] ?? 0) + outR * right * outScale + inR * right * inScale;
               }
             }
+            offsetFrames += runFrames;
+            continue;
           }
-          offsetFrames += runFrames;
-          continue;
         }
       }
 
