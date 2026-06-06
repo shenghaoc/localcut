@@ -21,7 +21,7 @@
 
 ## Meters
 
-- [ ] **T4.1** AudioWorklet peak/RMS written to a dedicated fixed-index SAB region (single writer); document beside the clock layout; pass at `init`.
+- [ ] **T4.1** AudioWorklet peak/RMS written to a dedicated fixed-index SAB region (single writer); document beside the clock layout in `protocol.ts` and mirror it into architecture.md's shared-layout docs; pass at `init`.
 - [ ] **T4.2** Add `src/ui/meters.ts` rAF reader + meter strip; master fader UI.
 
 ## Verification

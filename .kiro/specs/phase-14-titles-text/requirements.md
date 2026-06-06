@@ -8,8 +8,8 @@
 ## R2 — Edit-Time Raster
 
 - **R2.1** Titles rasterize only when text or style changes — debounced, event-driven — never per frame.
-- **R2.2** The raster uploads once per edit to a cached GPU texture keyed by clip id + style hash; playback frames composite the cached texture without touching Canvas2D.
-- **R2.3** Any style or text change invalidates exactly the affected cache entry.
+- **R2.2** The raster uploads once per edit to a cached GPU texture keyed by clip id + a content hash covering the text and every style field; playback frames composite the cached texture without touching Canvas2D.
+- **R2.3** Any text or style change invalidates exactly the affected cache entry; a text-only edit must never serve a stale texture.
 
 ## R3 — Styles + Fonts
 
@@ -24,4 +24,4 @@
 ## R5 — Tests
 
 - **R5.1** Unit-test title clip model operations and serialization.
-- **R5.2** Unit-test raster cache keying: every style field change invalidates; unchanged styles reuse the cached texture.
+- **R5.2** Unit-test raster cache keying: text changes and every style field change invalidate; unchanged content reuses the cached texture; a text-only edit re-rasters.

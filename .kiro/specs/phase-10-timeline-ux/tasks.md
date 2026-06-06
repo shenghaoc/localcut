@@ -4,15 +4,15 @@
 
 ## Gap model
 
-- [ ] **T2.1** Add `moveClipTo(toStart)` with same-track overlap rejection; retire index-based `reorderClip`.
-- [ ] **T2.2** Change the `move-clip` payload to `toStart`; bump the project `schemaVersion` with the Phase 9 serializer.
-- [ ] **T2.3** Keep `relayoutSequential` behind an explicit `close-gaps` command only.
-- [ ] **T2.4** Unit-test moves, overlap rejection, gap preservation, and old-project compatibility.
+- [ ] **T1.1** Add `moveClipTo(toStart)` with same-track overlap rejection; retire index-based `reorderClip`.
+- [ ] **T1.2** Change the `move-clip` payload to `toStart`; bump the project `schemaVersion` with the Phase 9 serializer.
+- [ ] **T1.3** Keep `relayoutSequential` behind an explicit `close-gaps` command only.
+- [ ] **T1.4** Unit-test moves, overlap rejection, gap preservation, and old-project compatibility.
 
 ## Zoom + scroll
 
-- [ ] **T1.1** `pxPerSecond` signal + scroll container in `Timeline.tsx`; clip geometry from `start × pps`.
-- [ ] **T1.2** Zoom controls + keyboard, recentred on the playhead; adaptive ruler ticks.
+- [ ] **T2.1** `pxPerSecond` signal + scroll container in `Timeline.tsx`; clip geometry from `start × pps`.
+- [ ] **T2.2** Zoom controls + keyboard, recentred on the playhead; adaptive ruler ticks.
 
 ## Snapping
 

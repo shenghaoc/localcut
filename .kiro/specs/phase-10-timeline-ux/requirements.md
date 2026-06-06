@@ -1,15 +1,15 @@
 # Requirements: Phase 10 — Timeline UX + Gap Model
 
-## R1 — Zoom + Scroll
+## R1 — Gap-Tolerant Moves
 
-- **R1.1** Timeline geometry derives from a pixels-per-second scale with horizontal scrolling, replacing percent-of-duration layout.
-- **R1.2** Zoom in/out (control + keyboard) recentres on the playhead; ruler ticks adapt to the zoom level.
+- **R1.1** Clip moves become time-based: `move-clip` carries an absolute target start, tolerates gaps, and replaces index-based reordering.
+- **R1.2** Same-track overlap is rejected at the model level — an overlap would shadow later clips in `resolveAt`.
+- **R1.3** Sequential relayout survives only behind an explicit "close gaps" action, never as an implicit side effect.
 
-## R2 — Gap-Tolerant Moves
+## R2 — Zoom + Scroll
 
-- **R2.1** Clip moves become time-based: `move-clip` carries an absolute target start, tolerates gaps, and replaces index-based reordering.
-- **R2.2** Same-track overlap is rejected at the model level — an overlap would shadow later clips in `resolveAt`.
-- **R2.3** Sequential relayout survives only behind an explicit "close gaps" action, never as an implicit side effect.
+- **R2.1** Timeline geometry derives from a pixels-per-second scale with horizontal scrolling, replacing percent-of-duration layout.
+- **R2.2** Zoom in/out (control + keyboard) recentres on the playhead; ruler ticks adapt to the zoom level.
 
 ## R3 — Snapping
 

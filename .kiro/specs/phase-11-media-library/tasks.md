@@ -11,8 +11,8 @@
 ## Thumbnails
 
 - [ ] **T2.1** Add `src/engine/thumbnails.ts`: per-asset sink, `createImageBitmap` downscale, bitmap transfer.
-- [ ] **T2.2** Budget generation (bounded concurrency, per-frame ceiling) and LRU-cache keyed `(sourceId, tBucket)`.
-- [ ] **T2.3** Close every decoded `VideoFrame` exactly once; unit-test cache keys + eviction.
+- [ ] **T2.2** Budget generation in the worker (bounded concurrency, per-frame ceiling); UI-side LRU store keyed `(sourceId, tBucket)`.
+- [ ] **T2.3** Close every decoded `VideoFrame` exactly once and every evicted/replaced/unmounted `ImageBitmap` via `close()`; unit-test cache keys + eviction-closes-bitmap.
 
 ## Stills + audio-only
 

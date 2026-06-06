@@ -16,6 +16,7 @@ Turn the fixed percent-of-duration timeline into a zoomable, scrollable, snap-aw
 ## Protocol
 
 - `move-clip` payload changes `toIndex` → `toStart` — coordinated `schemaVersion` bump with the Phase 9 serializer.
+- Migration is additive: persisted v1 documents already store absolute clip `start`s, so the v1→v2 upgrade in the Phase 9 deserializer only defaults `markers: []` and rewrites nothing positional. Commands and undo history are transient (in-memory, never persisted), so only the live protocol changes shape; the upgrade step gets its own unit test.
 - New commands: `move-clips`, `duplicate-clip`, `paste-clips`, `add-marker`, `delete-marker`, `close-gaps`.
 - `timeline-state` carries markers.
 

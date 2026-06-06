@@ -12,6 +12,7 @@
 - **R2.2** Frames downscale via `createImageBitmap` resize and transfer as bitmaps; no `getImageData`, no Canvas2D readback, no GPU round-trip.
 - **R2.3** Generation is budgeted (bounded concurrency, per-frame ceiling) and LRU-cached; playback never stalls behind thumbnails.
 - **R2.4** Every decoded `VideoFrame` in the thumbnail path closes exactly once.
+- **R2.5** Transferred `ImageBitmap`s have one explicit owner: the UI store closes evicted, replaced, and unmounted bitmaps via `ImageBitmap.close()`, mirroring the `VideoFrame` discipline.
 
 ## R3 — Stills + Audio-Only Sources
 
@@ -31,4 +32,4 @@
 
 - **R6.1** Unit-test the still source's frame model and clip-driven duration.
 - **R6.2** Unit-test track add/remove/reorder and prune-by-bin-membership.
-- **R6.3** Unit-test thumbnail cache keys and eviction.
+- **R6.3** Unit-test thumbnail cache keys and eviction, including that eviction closes the evicted bitmap.

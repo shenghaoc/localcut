@@ -11,8 +11,8 @@
 ## Raster path
 
 - [ ] **T2.1** Add `src/engine/titles.ts`: worker OffscreenCanvas 2D raster, debounced on `set-title`.
-- [ ] **T2.2** Upload via `copyExternalImageToTexture` into a texture cache keyed `(clipId, styleHash)`; comment the edit-only nature explicitly.
-- [ ] **T2.3** Unit-test cache keying and invalidation across every style field.
+- [ ] **T2.2** Upload via `copyExternalImageToTexture` into a texture cache keyed `(clipId, contentHash)` where the hash covers the text and every style field; comment the edit-only nature explicitly.
+- [ ] **T2.3** Unit-test cache keying and invalidation across text changes and every style field, including the text-only-edit case.
 
 ## Composite integration
 

@@ -11,9 +11,15 @@ Persist the worker-owned timeline across reloads and give every mutating command
 ```
 ProjectDoc {
   schemaVersion: 1, projectId, savedAt,
-  timeline: TimelineSnapshot,     // existing mirror types
-  sources: SourceDescriptor[]     // { sourceId, fileName, byteSize, durationS,
-}                                 //   video?: { width, height }, audio?: { channels, sampleRate } }
+  timeline: TimelineSnapshot,   // existing mirror types
+  sources: SourceDescriptor[]
+}
+
+SourceDescriptor {
+  sourceId, fileName, byteSize, durationS,
+  video?: { width, height },
+  audio?: { channels, sampleRate }
+}
 ```
 
 Descriptors carry identity metadata only; media bytes stay in the user's files (or a stored `File` blob), never inside the document.

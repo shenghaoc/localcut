@@ -9,10 +9,15 @@ Render every overlapping video layer, not just the first match: `resolveAt` (`sr
 ## Frame encoder sketch
 
 ```
+Layer = { input: 'frame', frame: VideoFrame }      // video — imported per frame
+       | { input: 'texture', texture: GPUTexture } // pre-cached (Phase 14 titles)
+       + per-layer effects + transform
+
 ONE GPUCommandEncoder per frame:
   clear accumulator
   for each layer in resolveAllAt(t):     // track order = z-order, last on top
-    importExternalTexture(frame)         // re-imported every frame, never cached
+    bind input: importExternalTexture(frame)   // 'frame' — re-imported every frame, never cached
+                or the cached GPUTexture       // 'texture' — no import, no raster
     colour chain (A/B/C scratch, per-layer params)
     transform pass (position/scale/rotation/anchor)
     composite-over (premultiplied) → accumulator
@@ -26,6 +31,8 @@ Multiple `importExternalTexture` calls per frame are expected and allowed — th
 ## Key refactor
 
 `EffectChain` currently holds `params` as instance state (`src/engine/effects.ts`); layers differ within a frame, so `encodeColourChain` takes params per call. Both `present` and `renderForExport` (`src/engine/gpu.ts`) route through one new `compositeLayers(encoder, layers, accumulator)` — preview equals export by construction, and compositing is never re-implemented in `export.ts`.
+
+`compositeLayers` takes the discriminated layer union above from day one: this phase only produces `'frame'` layers, but the `'texture'` arm is the designed entry point for Phase 14 title textures (and any future pre-rendered overlay), so later phases extend the union instead of special-casing the loop or forking the submission.
 
 ## Model + protocol
 

@@ -16,7 +16,8 @@ dedicated per-asset sink → VideoFrame
 
 - Never the playback iterator: `SequentialFrameSource` forbids overlapping `frameAt` (`src/engine/frame-source.ts`), so thumbnails open their own sink per asset.
 - Browser-side bitmap resize only — no `getImageData`, no Canvas2D readback, no GPU round-trip.
-- Bounded concurrency + per-frame ceiling; LRU cache keyed `(sourceId, tBucket)` mirroring `src/engine/frame-cache.ts`; filmstrips re-sample on trim.
+- Bounded concurrency + per-frame ceiling in the worker; transferred bitmaps land in a UI-side LRU store keyed `(sourceId, tBucket)` whose eviction discipline mirrors `src/engine/frame-cache.ts`; filmstrips re-sample on trim.
+- Ownership is explicit: transfer detaches the bitmap from the worker, so the UI store owns it and must call `ImageBitmap.close()` on eviction, replacement, and unmount — closing frees GPU-side pixels, the same discipline as `VideoFrame.close()`. The worker keeps request bookkeeping only and regenerates on demand.
 - Lives in new `src/engine/thumbnails.ts`, deliberately distinct from the limited-tier `src/compatibility/thumbnail.ts`.
 
 ## Still sources

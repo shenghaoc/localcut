@@ -19,7 +19,7 @@ Replace the duplicated sum-with-gain mixes with one pure mix stage used by the l
 
 ## Meters
 
-The AudioWorklet computes peak/RMS and writes to a small dedicated SAB region — fixed indices, single writer, documented beside the clock layout in `src/protocol.ts` and passed at `init` alongside the audio ring. The UI reads via rAF in new `src/ui/meters.ts` plus a meter strip component. No per-sample `postMessage`.
+The AudioWorklet computes peak/RMS and writes to a small dedicated SAB region — fixed indices, single writer, documented beside the clock layout in `src/protocol.ts` and passed at `init` alongside the audio ring. When the region lands, mirror its layout into the shared-layout documentation in `.kiro/steering/architecture.md` so steering stays current. The UI reads via rAF in new `src/ui/meters.ts` plus a meter strip component. No per-sample `postMessage`.
 
 ## Protocol + UI
 

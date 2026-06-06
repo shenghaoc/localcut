@@ -11,7 +11,7 @@
 ## Composite encoder
 
 - [ ] **T2.1** Refactor `EffectChain` so `encodeColourChain` takes per-call params instead of instance state.
-- [ ] **T2.2** Add `compositeLayers(encoder, layers, accumulator)` in `gpu.ts`; wire `present` and `renderForExport` through it.
+- [ ] **T2.2** Add `compositeLayers(encoder, layers, accumulator)` in `gpu.ts` taking the discriminated layer union (`'frame'` now; `'texture'` arm reserved for Phase 14); wire `present` and `renderForExport` through it.
 - [ ] **T2.3** Add `transform.wgsl` + `composite-over.wgsl` (+ `.f16` variants); accumulator texture cleared per frame.
 - [ ] **T2.4** Derive the layer budget from the throughput probe; degrade over-budget stacks visibly.
 
