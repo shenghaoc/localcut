@@ -148,12 +148,12 @@ export function TimelineClip(props: TimelineClipProps) {
 
   return (
     <div
-      class={`timeline-clip${props.isAudio ? ' is-audio' : ''}${props.selected ? ' is-selected' : ''}`}
+      class={`timeline-clip${props.isAudio ? ' is-audio' : ''}${props.selected ? ' is-selected' : ''}${props.clip.offline ? ' is-offline' : ''}`}
       style={{ left: left(), width: width() }}
       title={clipTitle()}
       role="button"
       aria-pressed={!!props.selected}
-      aria-label={clipTitle()}
+      aria-label={`${clipTitle()}${props.clip.offline ? ' offline' : ''}`}
       tabindex="0"
       onKeyDown={onKeyDown}
       onPointerDown={onPointerDown}

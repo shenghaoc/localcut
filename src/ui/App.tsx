@@ -1,11 +1,14 @@
-import { createMemo, createSignal, Show, onMount, onCleanup } from 'solid-js';
+import { createMemo, createSignal, For, Show, onMount, onCleanup } from 'solid-js';
 import { useRegisterSW } from 'virtual:pwa-register/solid';
+import { Link2, RotateCcw, Plus } from 'lucide-solid';
 import {
   CLOCK_BUFFER_BYTES,
   type ExportPreset,
   type ExportProgress,
   type MediaMetadata,
+  type SourceDescriptorSnapshot,
   type TimelineTrackSnapshot,
+  type WorkerStateMessage,
   type WaveformPeaks,
 } from '../protocol';
 import { createSharedClock } from './clock';
@@ -16,7 +19,7 @@ import { Timeline } from './Timeline';
 import { Inspector, type SelectedClip } from './Inspector';
 import { AudioEngine } from './audio-engine';
 import { ExportDialog } from './ExportDialog';
-import { buttonVariants } from './components/button';
+import { Button, buttonVariants } from './components/button';
 import { cn } from '../lib/utils';
 import { CapabilityPanel } from './CapabilityPanel';
 import { LimitedPreview } from './LimitedPreview';
@@ -34,6 +37,16 @@ import { extractCompatibilityPreview } from '../compatibility/thumbnail';
 import PipelineWorker from '../engine/worker.ts?worker';
 
 const VIDEO_ACCEPT = 'video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm';
+const VIDEO_PICKER_TYPES = [
+  {
+    description: 'Video files',
+    accept: {
+      'video/mp4': ['.mp4'],
+      'video/quicktime': ['.mov'],
+      'video/webm': ['.webm'],
+    },
+  },
+];
 
 interface CompatibilityPreviewState {
   url: string;
@@ -44,8 +57,46 @@ interface CompatibilityPreviewState {
   revoke: () => void;
 }
 
+interface HistoryUiState {
+  canUndo: boolean;
+  canRedo: boolean;
+}
+
+interface RestoreOfferState {
+  projectId: string;
+  savedAt: string;
+  sources: SourceDescriptorSnapshot[];
+}
+
 function initialOnlineStatus(): boolean {
   return typeof navigator === 'undefined' ? true : navigator.onLine;
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
+}
+
+function formatSourceSummary(source: SourceDescriptorSnapshot): string {
+  const mb = source.byteSize / 1_000_000;
+  return `${source.fileName} · ${mb.toFixed(mb >= 10 ? 0 : 1)} MB · ${source.durationS.toFixed(2)}s`;
+}
+
+function formatSavedAt(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  const tag = target.tagName.toLowerCase();
+  return tag === 'input' || tag === 'textarea' || tag === 'select';
 }
 
 export function App() {
@@ -75,6 +126,12 @@ export function App() {
   const [hasActiveSW, setHasActiveSW] = createSignal(false);
   const [audioWarning, setAudioWarning] = createSignal<string | null>(null);
   const [isDraggingFile, setIsDraggingFile] = createSignal(false);
+  const [historyState, setHistoryState] = createSignal<HistoryUiState>({
+    canUndo: false,
+    canRedo: false,
+  });
+  const [restoreOffer, setRestoreOffer] = createSignal<RestoreOfferState | null>(null);
+  const [unresolvedSources, setUnresolvedSources] = createSignal<SourceDescriptorSnapshot[]>([]);
 
   const {
     offlineReady: [offlineReady],
@@ -94,6 +151,8 @@ export function App() {
   let worker: Worker | null = null;
   let initSent = false;
   let compatibilityImportGeneration = 0;
+  let relinkInput: HTMLInputElement | undefined;
+  let pendingRelinkSourceId: string | null = null;
   const audioEngine = new AudioEngine();
   let audioReady: Promise<SharedArrayBuffer | null> | null = null;
 
@@ -109,6 +168,7 @@ export function App() {
       solo: track.solo,
     };
   });
+  const hasTimeline = createMemo(() => timeline().some((track) => track.clips.length > 0));
 
   const clock = createSharedClock(sab);
 
@@ -148,7 +208,7 @@ export function App() {
     setCompatibilityPreview(null);
   }
 
-  function handleState(msg: import('../protocol').WorkerStateMessage) {
+  function handleState(msg: WorkerStateMessage) {
     switch (msg.type) {
       case 'ready':
         setWorkerReady(true);
@@ -172,6 +232,8 @@ export function App() {
       case 'import-complete':
         setImporting(false);
         clearCompatibilityPreview();
+        setRestoreOffer(null);
+        setUnresolvedSources([]);
         setMetadata(msg.metadata);
         setPreviewLabel(null);
         // Do NOT clear the timeline here: the worker posts `timeline-state` (with
@@ -193,6 +255,41 @@ export function App() {
           }
           return null;
         });
+        break;
+      case 'history-state':
+        setHistoryState({ canUndo: msg.canUndo, canRedo: msg.canRedo });
+        break;
+      case 'restore-available':
+        setRestoreOffer({
+          projectId: msg.projectId,
+          savedAt: msg.savedAt,
+          sources: msg.sources,
+        });
+        setStatusLine(`Autosave available · ${formatSavedAt(msg.savedAt)}`);
+        break;
+      case 'restore-result':
+        setRestoreOffer(null);
+        setUnresolvedSources(msg.unresolvedSources);
+        setStatusLine(msg.message);
+        if (msg.metadata) {
+          clearCompatibilityPreview();
+          setMetadata(msg.metadata);
+        } else {
+          clearCompatibilityPreview();
+          setMetadata(null);
+          setWaveformPeaks({});
+          if (!msg.restored) {
+            setSelectedClip(null);
+          }
+        }
+        break;
+      case 'relink-result':
+        setUnresolvedSources(msg.unresolvedSources);
+        setStatusLine(msg.message);
+        if (msg.ok && msg.metadata) {
+          setMetadata(msg.metadata);
+          clearCompatibilityPreview();
+        }
         break;
       case 'preview-resolution':
         setPreviewLabel(msg.resolution.label);
@@ -234,8 +331,13 @@ export function App() {
         setExportError(msg.message);
         setStatusLine(`Export failed: ${msg.message}`);
         break;
+      case 'dispose-complete':
+        break;
       case 'import-error':
         setImporting(false);
+        setStatusLine(msg.message);
+        break;
+      case 'project-warning':
         setStatusLine(msg.message);
         break;
       case 'error':
@@ -327,11 +429,33 @@ export function App() {
     }
   }
 
-  function importMedia(file: File) {
+  function resetProjectUiState() {
+    setRestoreOffer(null);
+    setUnresolvedSources([]);
+    setMetadata(null);
+    setTimeline([]);
+    setSelectedClip(null);
+    setWaveformPeaks({});
+    setHistoryState({ canUndo: false, canRedo: false });
+  }
+
+  function startNewProject() {
+    resetProjectUiState();
+    clearCompatibilityPreview();
+    bridge?.send({ type: 'new-project' });
+  }
+
+  function discardRestoreBeforeImport() {
+    if (!restoreOffer() && unresolvedSources().length === 0) return;
+    startNewProject();
+  }
+
+  function importMedia(file: File, fileHandle?: FileSystemFileHandle | null) {
     if (importing()) return;
+    discardRestoreBeforeImport();
     if (accelerated()) {
       const { bridge: b } = ensureWorker();
-      b.send({ type: 'import', file });
+      b.send({ type: 'import', file, fileHandle });
       return;
     }
     if (compatibilityImportEnabled()) {
@@ -339,6 +463,54 @@ export function App() {
       return;
     }
     setStatusLine(importHint() ?? 'Import unavailable in limited mode');
+  }
+
+  async function pickImportMedia(): Promise<boolean> {
+    if (typeof window.showOpenFilePicker !== 'function') return false;
+    try {
+      const [handle] = await window.showOpenFilePicker({
+        types: VIDEO_PICKER_TYPES,
+        multiple: false,
+      });
+      if (!handle) return true;
+      const file = await handle.getFile();
+      importMedia(file, handle);
+      return true;
+    } catch (error) {
+      if (isAbortError(error)) return true;
+      setStatusLine(`Import picker failed: ${error instanceof Error ? error.message : String(error)}`);
+      return false;
+    }
+  }
+
+  async function pickRelinkFile(sourceId: string) {
+    if (typeof window.showOpenFilePicker === 'function') {
+      try {
+        const [handle] = await window.showOpenFilePicker({
+          types: VIDEO_PICKER_TYPES,
+          multiple: false,
+        });
+        if (!handle) return;
+        const file = await handle.getFile();
+        bridge?.send({ type: 'relink-source', sourceId, file, fileHandle: handle });
+        return;
+      } catch (error) {
+        if (isAbortError(error)) return;
+        setStatusLine(`Re-link picker failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    pendingRelinkSourceId = sourceId;
+    relinkInput?.click();
+  }
+
+  function handleRelinkInput(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    input.value = '';
+    const sourceId = pendingRelinkSourceId;
+    pendingRelinkSourceId = null;
+    if (!file || !sourceId) return;
+    bridge?.send({ type: 'relink-source', sourceId, file });
   }
 
   function handleImportInput(event: Event) {
@@ -409,16 +581,7 @@ export function App() {
   function onFileDrop(file: File) {
     setIsDraggingFile(false);
     if (importing()) return;
-    if (accelerated()) {
-      const { bridge: b } = ensureWorker();
-      b.send({ type: 'import', file });
-      return;
-    }
-    if (compatibilityImportEnabled()) {
-      void importCompatibilityMedia(file);
-      return;
-    }
-    setStatusLine(importHint() ?? 'Import unavailable in limited mode');
+    importMedia(file);
   }
 
   onMount(() => {
@@ -437,8 +600,21 @@ export function App() {
       setStatusLine('Limited shell · COOP/COEP needed for accelerated client compute');
     }
 
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (isEditableTarget(event.target)) return;
+      if ((!event.metaKey && !event.ctrlKey) || event.altKey) return;
+      const key = event.key.toLowerCase();
+      if (key === 'z') {
+        event.preventDefault();
+        bridge?.send({ type: event.shiftKey ? 'redo' : 'undo' });
+      } else if (key === 'y') {
+        event.preventDefault();
+        bridge?.send({ type: 'redo' });
+      }
+    };
     const handleOffline = () => setIsOffline(true);
     const handleOnline = () => setIsOffline(false);
+    window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('offline', handleOffline);
     window.addEventListener('online', handleOnline);
 
@@ -468,16 +644,34 @@ export function App() {
     window.addEventListener('dragleave', onDragLeave);
     window.addEventListener('drop', onDrop);
     onCleanup(() => {
+      window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('dragover', onDragOver);
       window.removeEventListener('dragleave', onDragLeave);
       window.removeEventListener('drop', onDrop);
       compatibilityImportGeneration++;
+      pendingRelinkSourceId = null;
       clearCompatibilityPreview();
-      bridge?.send({ type: 'dispose' });
+      if (worker && bridge) {
+        const workerToDispose = worker;
+        let terminateFallback: ReturnType<typeof setTimeout>;
+        const onDisposeComplete = (event: MessageEvent<WorkerStateMessage>) => {
+          if (event.data.type !== 'dispose-complete') return;
+          clearTimeout(terminateFallback);
+          workerToDispose.removeEventListener('message', onDisposeComplete);
+          workerToDispose.terminate();
+        };
+        workerToDispose.addEventListener('message', onDisposeComplete);
+        terminateFallback = setTimeout(() => {
+          workerToDispose.removeEventListener('message', onDisposeComplete);
+          workerToDispose.terminate();
+        }, 1500);
+        bridge.send({ type: 'dispose' });
+      } else {
+        worker?.terminate();
+      }
       audioEngine.dispose();
-      worker?.terminate();
     });
   });
 
@@ -488,6 +682,7 @@ export function App() {
         playing={clock.playing}
         importAccept={VIDEO_ACCEPT}
         onImportFile={importMedia}
+        onPickImport={pickImportMedia}
         onPlay={() => {
           const t = clock.currentTime();
           void audioEngine.play(t);
@@ -498,6 +693,10 @@ export function App() {
           audioEngine.pause();
         }}
         onStep={(direction) => bridge?.send({ type: 'step', direction })}
+        canUndo={historyState().canUndo}
+        canRedo={historyState().canRedo}
+        onUndo={() => bridge?.send({ type: 'undo' })}
+        onRedo={() => bridge?.send({ type: 'redo' })}
         transportDisabled={!accelerated()}
         importBlocked={importBlocked()}
         importHint={importHint()}
@@ -518,6 +717,75 @@ export function App() {
           />
         }
       />
+      <Show when={restoreOffer() || unresolvedSources().length > 0}>
+        <section
+          class="restore-banner"
+          role={unresolvedSources().length > 0 ? 'alert' : undefined}
+        >
+          <div class="restore-banner-copy">
+            <Show
+              when={restoreOffer()}
+              fallback={
+                <>
+                  <p class="restore-banner-title">Offline media</p>
+                  <p class="restore-banner-detail">
+                    {unresolvedSources().length} source{unresolvedSources().length === 1 ? '' : 's'} need re-linking.
+                  </p>
+                </>
+              }
+            >
+              {(offer) => (
+                <>
+                  <p class="restore-banner-title">Autosave from {formatSavedAt(offer().savedAt)}</p>
+                  <p class="restore-banner-detail">
+                    {offer().sources.length} source{offer().sources.length === 1 ? '' : 's'} in the saved project.
+                  </p>
+                </>
+              )}
+            </Show>
+          </div>
+          <Show when={unresolvedSources().length > 0}>
+            <ul class="restore-source-list">
+              <For each={unresolvedSources()}>
+                {(source) => (
+                  <li class="restore-source-item">
+                    <span title={formatSourceSummary(source)}>{formatSourceSummary(source)}</span>
+                    <Button
+                      size="sm"
+                      onClick={() => void pickRelinkFile(source.sourceId)}
+                      title={`Re-link ${source.fileName}`}
+                    >
+                      <Link2 size={13} aria-hidden="true" />
+                      Re-link
+                    </Button>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </Show>
+          <Show when={restoreOffer()}>
+            <div class="restore-actions">
+              <Button onClick={() => bridge?.send({ type: 'restore-project' })}>
+                <RotateCcw size={14} aria-hidden="true" />
+                Restore
+              </Button>
+              <Button variant="outline" onClick={startNewProject}>
+                <Plus size={14} aria-hidden="true" />
+                New
+              </Button>
+            </div>
+          </Show>
+          <input
+            ref={(el) => {
+              relinkInput = el;
+            }}
+            type="file"
+            accept={VIDEO_ACCEPT}
+            onChange={handleRelinkInput}
+            hidden
+          />
+        </section>
+      </Show>
       <main class="workspace">
         <section class="preview panel">
           <PreviewCanvas onOffscreenReady={sendInit} />
@@ -530,7 +798,7 @@ export function App() {
               duration={compatibilityPreview()!.duration}
             />
           </Show>
-          <Show when={!metadata() && !importing()}>
+          <Show when={!metadata() && !importing() && !hasTimeline()}>
             <div class="preview-empty">
               <div>
                 <p class="preview-empty-eyebrow">
@@ -599,7 +867,7 @@ export function App() {
         currentTime={clock.currentTime}
         duration={clock.duration}
         frameRate={() => metadata()?.video?.frameRate ?? null}
-        hasMedia={metadata() !== null && accelerated()}
+        hasMedia={(metadata() !== null || hasTimeline()) && accelerated()}
         timeline={timeline}
         waveformPeaks={() => waveformPeaks()}
         onSeek={(t) => {

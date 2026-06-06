@@ -49,6 +49,7 @@ export interface TimelineClipSnapshot {
   duration: number;
   inPoint: number;
   effects: ClipEffectParamsSnapshot;
+  offline?: boolean;
 }
 
 export interface TimelineTrackSnapshot {
@@ -62,6 +63,27 @@ export interface TimelineTrackSnapshot {
 
 /** Min/max peak pairs (2 floats per bucket) for waveform rendering. */
 export type WaveformPeaks = Float32Array;
+
+export interface SourceDescriptorSnapshot {
+  sourceId: string;
+  fileName: string;
+  byteSize: number;
+  durationS: number;
+  mimeType: string | null;
+  video?: {
+    width: number;
+    height: number;
+    frameRate: number | null;
+    codec: string | null;
+    canDecode: boolean;
+  };
+  audio?: {
+    channels: number;
+    sampleRate: number;
+    codec: string | null;
+    canDecode: boolean;
+  };
+}
 
 interface SplitTimelineCommand {
   type: 'split';
@@ -119,13 +141,18 @@ interface SetTrackSoloCommand {
 
 export type WorkerCommand =
   | { type: 'init'; canvas: OffscreenCanvas; sab: SharedArrayBuffer; audioSab?: SharedArrayBuffer | null }
-  | { type: 'import'; file: File }
+  | { type: 'import'; file: File; fileHandle?: FileSystemFileHandle | null }
   | { type: 'play' }
   | { type: 'pause' }
   | { type: 'seek'; time: number }
   | { type: 'step'; direction: 1 | -1 }
   | { type: 'export-start'; preset: ExportPreset; output: FileSystemFileHandle }
   | { type: 'export-cancel' }
+  | { type: 'undo' }
+  | { type: 'redo' }
+  | { type: 'restore-project' }
+  | { type: 'new-project' }
+  | { type: 'relink-source'; sourceId: string; file: File; fileHandle?: FileSystemFileHandle | null }
   | SplitTimelineCommand
   | DeleteTimelineClipCommand
   | MoveTimelineClipCommand
@@ -168,6 +195,27 @@ export type WorkerStateMessage =
   | { type: 'import-progress'; stage: 'reading' | 'metadata' }
   | { type: 'import-complete'; metadata: MediaMetadata }
   | { type: 'import-error'; message: string }
+  | { type: 'project-warning'; message: string }
+  | { type: 'history-state'; canUndo: boolean; canRedo: boolean }
+  | { type: 'restore-available'; projectId: string; savedAt: string; sources: SourceDescriptorSnapshot[] }
+  | {
+      type: 'restore-result';
+      projectId: string;
+      restored: boolean;
+      savedAt: string | null;
+      metadata: MediaMetadata | null;
+      unresolvedSources: SourceDescriptorSnapshot[];
+      message: string;
+    }
+  | {
+      type: 'relink-result';
+      sourceId: string;
+      ok: boolean;
+      descriptor: SourceDescriptorSnapshot | null;
+      metadata: MediaMetadata | null;
+      unresolvedSources: SourceDescriptorSnapshot[];
+      message: string;
+    }
   | { type: 'preview-resolution'; resolution: PreviewResolution }
   | { type: 'probe-result'; probe: ThroughputProbe }
   | { type: 'timeline-state'; timeline: TimelineTrackSnapshot[] }
@@ -176,6 +224,7 @@ export type WorkerStateMessage =
   | { type: 'export-complete'; fileName: string; mimeType: string }
   | { type: 'export-canceled' }
   | { type: 'export-error'; message: string }
+  | { type: 'dispose-complete' }
   | { type: 'error'; message: string };
 
 export function assertCrossOriginIsolated(context: string): void {

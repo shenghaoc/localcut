@@ -3,6 +3,8 @@ import {
   assertCrossOriginIsolated,
   ClockIndex,
   type ThroughputProbe,
+  type MediaMetadata,
+  type SourceDescriptorSnapshot,
   type TimelineTrackSnapshot,
   type WorkerCommand,
   type WorkerStateMessage,
@@ -45,6 +47,23 @@ import {
 import { probeEncodeThroughput } from './hardware-probe';
 import { FrameCache, makeFrameCacheKey } from './frame-cache';
 import { ExportCancelledError, exportTimelineToMp4 } from './export';
+import { createTimelineHistory, type HistoryCoalesceKey } from './history';
+import {
+  cloneTimelineSnapshot,
+  serializeProject,
+  sourceDescriptorMatchesCandidate,
+  type ProjectDoc,
+  type SourceDescriptor,
+} from './project';
+import {
+  deleteStoredProject,
+  loadStoredProject,
+  loadStoredSource,
+  saveStoredProject,
+  saveStoredSource,
+  saveStoredSourceWithoutHandle,
+  type StoredSourceRecord,
+} from './persistence';
 
 let clockView: Float64Array | null = null;
 let renderer: PreviewRenderer | null = null;
@@ -55,6 +74,14 @@ let probeDone = false;
 let timeline: Timeline = createEmptyTimeline();
 let nextSourceId = 1;
 const sourceInputs = new Map<string, MediaInputHandle>();
+const sourceDescriptors = new Map<string, SourceDescriptor>();
+const restoringSourceIds = new Set<string>();
+const history = createTimelineHistory();
+let projectId = makeProjectId();
+let restoreDoc: ProjectDoc | null = null;
+let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
+let autosaveInFlight: Promise<void> | null = null;
+let restoreOfferGeneration = 0;
 let frameCache: FrameCache | null = null;
 let currentProbe: ThroughputProbe | null = null;
 let exportAbort: AbortController | null = null;
@@ -64,9 +91,17 @@ let audioWriteAnchor = 0;
 let audioWriteFrames = 0;
 let pcmRemainder: Float32Array | null = null;
 let audioPumpGen = 0;
+const AUTOSAVE_DEBOUNCE_MS = 300;
 
 function makeSourceId(): string {
   return `source-${nextSourceId++}`;
+}
+
+function makeProjectId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return `project-${crypto.randomUUID()}`;
+  }
+  return `project-${Math.random().toString(36).slice(2)}`;
 }
 
 function post(msg: WorkerStateMessage) {
@@ -87,9 +122,18 @@ function postTimelineState() {
       duration: clip.duration,
       inPoint: clip.inPoint,
       effects: { ...clip.effects },
+      offline: sourceInputs.has(clip.sourceId) ? undefined : true,
     })),
   }));
   post({ type: 'timeline-state', timeline: snapshot });
+}
+
+function postHistoryState(): void {
+  post({ type: 'history-state', ...history.state() });
+}
+
+function postProjectWarning(message: string): void {
+  post({ type: 'project-warning', message });
 }
 
 function publishClockFromTimeline() {
@@ -284,6 +328,337 @@ function ensureClockAndTimeline() {
   postTimelineState();
 }
 
+function sourceDescriptorFromHandle(
+  sourceId: string,
+  file: File,
+  handle: MediaInputHandle,
+): SourceDescriptor {
+  const video = handle.metadata.video
+    ? {
+        width: handle.metadata.video.width,
+        height: handle.metadata.video.height,
+        frameRate: handle.metadata.video.frameRate,
+        codec: handle.metadata.video.codec,
+        canDecode: handle.metadata.video.canDecode,
+      }
+    : undefined;
+  const audio = handle.metadata.audio
+    ? {
+        channels: handle.metadata.audio.channels,
+        sampleRate: handle.metadata.audio.sampleRate,
+        codec: handle.metadata.audio.codec,
+        canDecode: handle.metadata.audio.canDecode,
+      }
+    : undefined;
+
+  return {
+    sourceId,
+    fileName: file.name,
+    byteSize: file.size,
+    durationS: handle.duration,
+    mimeType: handle.metadata.mimeType,
+    video,
+    audio,
+  };
+}
+
+function timelineSourceIds(): Set<string> {
+  const ids = new Set<string>();
+  for (const track of timeline) {
+    for (const clip of track.clips) {
+      ids.add(clip.sourceId);
+    }
+  }
+  return ids;
+}
+
+function currentProjectSources(): SourceDescriptor[] {
+  const ids = timelineSourceIds();
+  const descriptors: SourceDescriptor[] = [];
+  for (const id of ids) {
+    const descriptor = sourceDescriptors.get(id);
+    if (descriptor) descriptors.push(descriptor);
+  }
+  return descriptors;
+}
+
+function unresolvedSourceDescriptors(): SourceDescriptorSnapshot[] {
+  const unresolved: SourceDescriptorSnapshot[] = [];
+  for (const id of timelineSourceIds()) {
+    if (sourceInputs.has(id)) continue;
+    const descriptor = sourceDescriptors.get(id);
+    if (descriptor) unresolved.push(descriptor);
+  }
+  return unresolved;
+}
+
+function activeMetadata(): MediaMetadata | null {
+  const source = getPlaybackSource() ?? sourceInputs.values().next().value ?? null;
+  return source?.metadata ?? null;
+}
+
+function clearAutosaveTimer(): void {
+  if (!autosaveTimer) return;
+  clearTimeout(autosaveTimer);
+  autosaveTimer = null;
+}
+
+async function persistCurrentProject(): Promise<void> {
+  const doc = serializeProject({
+    projectId,
+    timeline,
+    sources: currentProjectSources(),
+  });
+  await saveStoredProject(doc);
+}
+
+function runAutosave(): Promise<void> {
+  let save: Promise<void>;
+  save = persistCurrentProject()
+    .catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      postProjectWarning(`Autosave failed: ${message}`);
+    })
+    .finally(() => {
+      if (autosaveInFlight === save) {
+        autosaveInFlight = null;
+      }
+    });
+  autosaveInFlight = save;
+  return save;
+}
+
+function scheduleAutosave(): void {
+  clearAutosaveTimer();
+  autosaveTimer = setTimeout(() => {
+    autosaveTimer = null;
+    void runAutosave();
+  }, AUTOSAVE_DEBOUNCE_MS);
+}
+
+async function flushPendingAutosave(): Promise<void> {
+  const shouldSave = autosaveTimer !== null;
+  clearAutosaveTimer();
+  if (shouldSave) {
+    await runAutosave();
+  } else if (autosaveInFlight) {
+    await autosaveInFlight;
+  }
+}
+
+async function persistSource(record: StoredSourceRecord): Promise<void> {
+  try {
+    await saveStoredSource(record);
+  } catch (error) {
+    if (!record.fileHandle) throw error;
+    await saveStoredSourceWithoutHandle(record);
+  }
+}
+
+async function persistSourceBestEffort(record: StoredSourceRecord): Promise<void> {
+  try {
+    await persistSource(record);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    postProjectWarning(`Source autosave failed for ${record.descriptor.fileName}: ${message}`);
+  }
+}
+
+function nextSourceIdFromDescriptors(descriptors: readonly SourceDescriptor[]): number {
+  let next = 1;
+  for (const descriptor of descriptors) {
+    const match = /^source-(\d+)$/.exec(descriptor.sourceId);
+    if (!match) continue;
+    next = Math.max(next, Number(match[1]) + 1);
+  }
+  return next;
+}
+
+async function computeWaveformsForSource(handle: MediaInputHandle): Promise<void> {
+  if (!handle.audioSource) return;
+  const jobs: Promise<void>[] = [];
+  for (const track of timeline) {
+    if (track.type !== 'audio') continue;
+    for (const clip of track.clips) {
+      if (clip.sourceId === handle.sourceId) {
+        jobs.push(computeAndPostWaveform(handle, track.id, clip.id));
+      }
+    }
+  }
+  await Promise.all(jobs);
+}
+
+async function fileFromHandle(handle: FileSystemFileHandle): Promise<File | null> {
+  try {
+    const permissionRequest = { mode: 'read' as const };
+    const queryPermission = handle.queryPermission;
+    if (queryPermission) {
+      const state = await queryPermission.call(handle, permissionRequest);
+      if (state === 'denied') return null;
+      if (state === 'granted') return await handle.getFile();
+    }
+    const requestPermission = handle.requestPermission;
+    if (requestPermission) {
+      const state = await requestPermission.call(handle, permissionRequest);
+      if (state !== 'granted') return null;
+    }
+    return await handle.getFile();
+  } catch {
+    return null;
+  }
+}
+
+async function attachSourceFile(
+  descriptor: SourceDescriptor,
+  file: File,
+  fileHandle?: FileSystemFileHandle | null,
+  persist = false,
+  canAttach: () => boolean = () => true,
+): Promise<{ ok: true; handle: MediaInputHandle } | { ok: false; message: string }> {
+  let mediaHandle: MediaInputHandle;
+  try {
+    mediaHandle = await openMediaFile(file, descriptor.sourceId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { ok: false, message };
+  }
+
+  const candidate = sourceDescriptorFromHandle(descriptor.sourceId, file, mediaHandle);
+  if (!sourceDescriptorMatchesCandidate(descriptor, candidate)) {
+    mediaHandle.dispose();
+    return {
+      ok: false,
+      message: `Picked file does not match ${descriptor.fileName}. Match requires the same name, size, and duration.`,
+    };
+  }
+  if (!canAttach()) {
+    mediaHandle.dispose();
+    return { ok: false, message: 'Restore was superseded by a newer project action.' };
+  }
+
+  const previous = sourceInputs.get(descriptor.sourceId);
+  if (previous && previous !== mediaHandle) previous.dispose();
+  sourceInputs.set(descriptor.sourceId, mediaHandle);
+  sourceDescriptors.set(descriptor.sourceId, descriptor);
+  if ((!primaryHandle || primaryHandle.sourceId === descriptor.sourceId) && mediaHandle.frameSource) {
+    primaryHandle = mediaHandle;
+  }
+  if (mediaHandle.audioSource && audioRing) {
+    Atomics.store(audioRing.header, RingHeader.SAMPLE_RATE, mediaHandle.audioSampleRate);
+    Atomics.store(audioRing.header, RingHeader.CHANNELS, mediaHandle.audioChannels);
+  }
+  void computeWaveformsForSource(mediaHandle);
+
+  if (persist) {
+    await persistSourceBestEffort({
+      sourceId: descriptor.sourceId,
+      descriptor,
+      file,
+      fileHandle: fileHandle ?? undefined,
+    });
+  }
+
+  return { ok: true, handle: mediaHandle };
+}
+
+async function restoreStoredSources(
+  descriptors: readonly SourceDescriptor[],
+  isCurrent: () => boolean = () => true,
+): Promise<SourceDescriptorSnapshot[]> {
+  const unresolved: SourceDescriptorSnapshot[] = [];
+  for (const descriptor of descriptors) {
+    if (!isCurrent()) break;
+    if (sourceInputs.has(descriptor.sourceId)) continue;
+    if (restoringSourceIds.has(descriptor.sourceId)) {
+      unresolved.push(descriptor);
+      continue;
+    }
+    restoringSourceIds.add(descriptor.sourceId);
+    sourceDescriptors.set(descriptor.sourceId, descriptor);
+    let attached = false;
+    try {
+      const stored = await loadStoredSource(descriptor.sourceId).catch(() => null);
+      if (!isCurrent()) break;
+      if (stored?.file) {
+        const result = await attachSourceFile(
+          descriptor,
+          stored.file,
+          stored.fileHandle ?? null,
+          false,
+          isCurrent,
+        );
+        attached = result.ok;
+      }
+      if (!isCurrent()) break;
+      if (!attached && stored?.fileHandle) {
+        const file = await fileFromHandle(stored.fileHandle);
+        if (!isCurrent()) break;
+        if (file) {
+          const result = await attachSourceFile(
+            descriptor,
+            file,
+            stored.fileHandle,
+            false,
+            isCurrent,
+          );
+          attached = result.ok;
+        }
+      }
+      if (!attached) {
+        unresolved.push(descriptor);
+      }
+    } finally {
+      restoringSourceIds.delete(descriptor.sourceId);
+    }
+  }
+  return unresolved;
+}
+
+async function restoreMissingSources(): Promise<void> {
+  const missing = unresolvedSourceDescriptors();
+  if (missing.length === 0) return;
+  await restoreStoredSources(missing);
+  setupPlayback();
+  ensureClockAndTimeline();
+}
+
+function afterTimelineMutation(options: {
+  coalesceKey?: HistoryCoalesceKey;
+  refreshPlayback?: 'seek' | 'refresh' | 'none';
+  prune?: boolean;
+} = {}): void {
+  if (options.prune !== false) {
+    pruneUnusedSources();
+  }
+  ensureClockAndTimeline();
+  postHistoryState();
+  scheduleAutosave();
+  if (options.refreshPlayback === 'refresh') {
+    playback?.refresh();
+  } else if (options.refreshPlayback !== 'none') {
+    playback?.setDuration(getTimelineDuration(timeline));
+    playback?.seek(clockView?.[0] ?? 0);
+  }
+  void restoreMissingSources().catch(() => undefined);
+}
+
+function commitTimelineMutation(
+  mutate: () => Timeline,
+  options: {
+    coalesceKey?: HistoryCoalesceKey;
+    refreshPlayback?: 'seek' | 'refresh' | 'none';
+    prune?: boolean;
+  } = {},
+): boolean {
+  const before = timeline;
+  const next = mutate();
+  if (next === before) return false;
+  history.push(before, { coalesceKey: options.coalesceKey });
+  timeline = next;
+  afterTimelineMutation(options);
+  return true;
+}
+
 function ensureFrameCache() {
   if (frameCache) return frameCache;
   frameCache = new FrameCache({
@@ -346,6 +721,161 @@ async function handleInit(
   // (the UI gates imports on `initSent`, not on `ready`). In that case the media
   // was set up with no renderer; wire up its preview now that the GPU is ready.
   ensurePreview();
+  postHistoryState();
+  void checkRestoreAvailable();
+}
+
+function projectHasClips(doc: ProjectDoc): boolean {
+  return doc.timeline.some((track) => track.clips.length > 0);
+}
+
+function currentProjectIsEmpty(): boolean {
+  return sourceInputs.size === 0 && timelineSourceIds().size === 0;
+}
+
+async function checkRestoreAvailable(): Promise<void> {
+  const generation = restoreOfferGeneration;
+  const checkedProjectId = projectId;
+  const result = await loadStoredProject();
+  if (!result.ok) {
+    postProjectWarning(`Could not read autosaved project: ${result.reason}`);
+    return;
+  }
+  if (!result.doc || !projectHasClips(result.doc)) return;
+  if (
+    generation !== restoreOfferGeneration ||
+    projectId !== checkedProjectId ||
+    !currentProjectIsEmpty()
+  ) {
+    return;
+  }
+  restoreDoc = result.doc;
+  post({
+    type: 'restore-available',
+    projectId: result.doc.projectId,
+    savedAt: result.doc.savedAt,
+    sources: result.doc.sources,
+  });
+}
+
+async function handleRestoreProject(): Promise<void> {
+  restoreOfferGeneration += 1;
+  const restoreGeneration = restoreOfferGeneration;
+  const emptyProjectId = projectId;
+  let doc = restoreDoc;
+  if (!currentProjectIsEmpty()) {
+    restoreDoc = null;
+    post({
+      type: 'restore-result',
+      projectId,
+      restored: false,
+      savedAt: null,
+      metadata: activeMetadata(),
+      unresolvedSources: unresolvedSourceDescriptors(),
+      message: 'Restore offer expired after the current project changed.',
+    });
+    return;
+  }
+  if (!doc) {
+    const loaded = await loadStoredProject();
+    if (!loaded.ok) {
+      post({
+        type: 'restore-result',
+        projectId,
+        restored: false,
+        savedAt: null,
+        metadata: null,
+        unresolvedSources: [],
+        message: `Could not read autosaved project: ${loaded.reason}`,
+      });
+      return;
+    }
+    if (
+      restoreOfferGeneration !== restoreGeneration ||
+      projectId !== emptyProjectId ||
+      !currentProjectIsEmpty()
+    ) {
+      restoreDoc = null;
+      return;
+    }
+    doc = loaded.doc;
+  }
+  if (!doc) {
+    post({
+      type: 'restore-result',
+      projectId,
+      restored: false,
+      savedAt: null,
+      metadata: null,
+      unresolvedSources: [],
+      message: 'No autosaved project was found.',
+    });
+    return;
+  }
+
+  teardownMedia();
+  clearAutosaveTimer();
+  sourceDescriptors.clear();
+  history.clear();
+  restoreDoc = null;
+  projectId = doc.projectId;
+  timeline = cloneTimelineSnapshot(doc.timeline);
+  nextSourceId = nextSourceIdFromDescriptors(doc.sources);
+  for (const descriptor of doc.sources) {
+    sourceDescriptors.set(descriptor.sourceId, descriptor);
+  }
+
+  const restoreProjectId = projectId;
+  const isCurrentRestore = () =>
+    restoreOfferGeneration === restoreGeneration && projectId === restoreProjectId;
+  const unresolved = await restoreStoredSources(doc.sources, isCurrentRestore);
+  if (!isCurrentRestore()) {
+    return;
+  }
+  setupPlayback();
+  ensureClockAndTimeline();
+  postHistoryState();
+  post({
+    type: 'restore-result',
+    projectId,
+    restored: true,
+    savedAt: doc.savedAt,
+    metadata: activeMetadata(),
+    unresolvedSources: unresolved,
+    message:
+      unresolved.length > 0
+        ? `Restored project shell with ${unresolved.length} offline source${unresolved.length === 1 ? '' : 's'}.`
+        : 'Restored autosaved project.',
+  });
+}
+
+async function handleNewProject(): Promise<void> {
+  restoreOfferGeneration += 1;
+  await flushPendingAutosave();
+  restoreDoc = null;
+  teardownMedia();
+  sourceDescriptors.clear();
+  history.clear();
+  projectId = makeProjectId();
+  nextSourceId = 1;
+  ensureClockAndTimeline();
+  postHistoryState();
+  let message = 'Started a new project.';
+  try {
+    await deleteStoredProject();
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    message = `Started a new project, but autosave could not be cleared: ${reason}`;
+  }
+  post({
+    type: 'restore-result',
+    projectId,
+    restored: false,
+    savedAt: null,
+    metadata: null,
+    unresolvedSources: [],
+    message,
+  });
 }
 
 /**
@@ -443,7 +973,9 @@ function makeGetFrame() {
   };
 }
 
-async function handleImport(file: File) {
+async function handleImport(file: File, fileHandle?: FileSystemFileHandle | null) {
+  restoreOfferGeneration += 1;
+  restoreDoc = null;
   post({ type: 'import-progress', stage: 'reading' });
 
   post({ type: 'import-progress', stage: 'metadata' });
@@ -453,15 +985,31 @@ async function handleImport(file: File) {
     sourceId = makeSourceId();
     handle = await openMediaFile(file, sourceId);
     sourceInputs.set(sourceId, handle);
+    const descriptor = sourceDescriptorFromHandle(sourceId, file, handle);
+    sourceDescriptors.set(sourceId, descriptor);
+    await persistSourceBestEffort({
+      sourceId,
+      descriptor,
+      file,
+      fileHandle: fileHandle ?? undefined,
+    });
 
     if (!primaryHandle && handle.frameSource) {
       primaryHandle = handle;
     }
 
+    const before = timeline;
     const start = getTimelineDuration(timeline);
     appendTrackForSource(handle, start);
     appendAudioTrackForSource(handle, start);
-    ensureClockAndTimeline();
+    if (timeline !== before) {
+      history.push(before);
+      afterTimelineMutation();
+    } else {
+      ensureClockAndTimeline();
+      postHistoryState();
+      scheduleAutosave();
+    }
 
     if (handle.audioSource && audioRing) {
       Atomics.store(audioRing.header, RingHeader.SAMPLE_RATE, handle.audioSampleRate);
@@ -481,6 +1029,7 @@ async function handleImport(file: File) {
     }
     if (sourceId) {
       sourceInputs.delete(sourceId);
+      sourceDescriptors.delete(sourceId);
     }
     const message = e instanceof Error ? e.message : String(e);
     post({ type: 'import-error', message });
@@ -506,50 +1055,50 @@ function pruneUnusedSources(): void {
   }
 }
 
-function applyTimelineCommand(): void {
-  pruneUnusedSources();
-  ensureClockAndTimeline();
-  // The controller was built with the pre-edit duration; refresh it so the loop and
-  // clamps respect a timeline that an edit may have shortened, then re-seek to
-  // re-render the (possibly changed) frame under the playhead.
-  playback?.setDuration(getTimelineDuration(timeline));
-  playback?.seek(clockView?.[0] ?? 0);
-}
-
 function handleSplit(cmd: Extract<WorkerCommand, { type: 'split' }>) {
-  timeline = splitClipAt(timeline, cmd.trackId, cmd.time);
-  applyTimelineCommand();
+  commitTimelineMutation(() => splitClipAt(timeline, cmd.trackId, cmd.time));
 }
 
 function handleDelete(cmd: Extract<WorkerCommand, { type: 'delete-clip' }>) {
-  timeline = removeClip(timeline, cmd.trackId, cmd.clipId);
-  applyTimelineCommand();
+  commitTimelineMutation(() => removeClip(timeline, cmd.trackId, cmd.clipId));
 }
 
 function handleMove(cmd: Extract<WorkerCommand, { type: 'move-clip' }>) {
-  timeline = reorderClip(timeline, cmd.fromTrackId, cmd.clipId, cmd.toTrackId, cmd.toIndex);
-  applyTimelineCommand();
+  commitTimelineMutation(() =>
+    reorderClip(timeline, cmd.fromTrackId, cmd.clipId, cmd.toTrackId, cmd.toIndex),
+  );
 }
 
 function handleSetEffectParam(cmd: Extract<WorkerCommand, { type: 'set-effect-param' }>) {
-  timeline = setClipEffectParam(timeline, cmd.trackId, cmd.clipId, cmd.key, cmd.value);
-  postTimelineState();
-  playback?.refresh();
+  commitTimelineMutation(
+    () => setClipEffectParam(timeline, cmd.trackId, cmd.clipId, cmd.key, cmd.value),
+    {
+      coalesceKey: { clipId: cmd.clipId, key: cmd.key },
+      refreshPlayback: 'refresh',
+      prune: false,
+    },
+  );
 }
 
 function handleSetTrackGain(cmd: Extract<WorkerCommand, { type: 'set-track-gain' }>) {
-  timeline = setTrackGain(timeline, cmd.trackId, cmd.gain);
-  postTimelineState();
+  commitTimelineMutation(() => setTrackGain(timeline, cmd.trackId, cmd.gain), {
+    refreshPlayback: 'none',
+    prune: false,
+  });
 }
 
 function handleSetTrackMute(cmd: Extract<WorkerCommand, { type: 'set-track-mute' }>) {
-  timeline = setTrackMute(timeline, cmd.trackId, cmd.muted);
-  postTimelineState();
+  commitTimelineMutation(() => setTrackMute(timeline, cmd.trackId, cmd.muted), {
+    refreshPlayback: 'none',
+    prune: false,
+  });
 }
 
 function handleSetTrackSolo(cmd: Extract<WorkerCommand, { type: 'set-track-solo' }>) {
-  timeline = setTrackSolo(timeline, cmd.trackId, cmd.solo);
-  postTimelineState();
+  commitTimelineMutation(() => setTrackSolo(timeline, cmd.trackId, cmd.solo), {
+    refreshPlayback: 'none',
+    prune: false,
+  });
 }
 
 function handleTrim(cmd: Extract<WorkerCommand, { type: 'trim-clip' }>) {
@@ -559,12 +1108,79 @@ function handleTrim(cmd: Extract<WorkerCommand, { type: 'trim-clip' }>) {
   const track = timeline.find((t) => t.id === cmd.trackId);
   const clip = track?.clips.find((c) => c.id === cmd.clipId);
   const sourceDuration = clip ? sourceInputs.get(clip.sourceId)?.duration : undefined;
-  timeline = trimClip(timeline, cmd.trackId, cmd.clipId, {
-    edge: cmd.edge,
-    time: cmd.time,
-    sourceDuration,
+  commitTimelineMutation(() =>
+    trimClip(timeline, cmd.trackId, cmd.clipId, {
+      edge: cmd.edge,
+      time: cmd.time,
+      sourceDuration,
+    }),
+  );
+}
+
+function applyHistoryRestore(next: Timeline): void {
+  timeline = next;
+  afterTimelineMutation();
+}
+
+function handleUndo(): void {
+  const next = history.undo(timeline);
+  if (!next) {
+    postHistoryState();
+    return;
+  }
+  applyHistoryRestore(next);
+}
+
+function handleRedo(): void {
+  const next = history.redo(timeline);
+  if (!next) {
+    postHistoryState();
+    return;
+  }
+  applyHistoryRestore(next);
+}
+
+async function handleRelinkSource(cmd: Extract<WorkerCommand, { type: 'relink-source' }>): Promise<void> {
+  const descriptor = sourceDescriptors.get(cmd.sourceId);
+  if (!descriptor) {
+    post({
+      type: 'relink-result',
+      sourceId: cmd.sourceId,
+      ok: false,
+      descriptor: null,
+      metadata: activeMetadata(),
+      unresolvedSources: unresolvedSourceDescriptors(),
+      message: 'This source is not part of the restored project.',
+    });
+    return;
+  }
+
+  const result = await attachSourceFile(descriptor, cmd.file, cmd.fileHandle ?? null, true);
+  if (!result.ok) {
+    post({
+      type: 'relink-result',
+      sourceId: cmd.sourceId,
+      ok: false,
+      descriptor,
+      metadata: activeMetadata(),
+      unresolvedSources: unresolvedSourceDescriptors(),
+      message: result.message,
+    });
+    return;
+  }
+
+  setupPlayback();
+  ensureClockAndTimeline();
+  scheduleAutosave();
+  post({
+    type: 'relink-result',
+    sourceId: cmd.sourceId,
+    ok: true,
+    descriptor,
+    metadata: activeMetadata(),
+    unresolvedSources: unresolvedSourceDescriptors(),
+    message: `Re-linked ${descriptor.fileName}.`,
   });
-  applyTimelineCommand();
 }
 
 function setupPlayback() {
@@ -655,10 +1271,7 @@ function handleSeek(time: number) {
 }
 
 function cloneTimelineForExport(): Timeline {
-  return timeline.map((track) => ({
-    ...track,
-    clips: track.clips.map((clip) => ({ ...clip, effects: { ...clip.effects } })),
-  }));
+  return cloneTimelineSnapshot(timeline);
 }
 
 async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-start' }>) {
@@ -705,13 +1318,16 @@ function handleExportCancel() {
   exportAbort?.abort();
 }
 
-function handleDispose() {
+async function handleDispose(): Promise<void> {
+  restoreOfferGeneration += 1;
+  await flushPendingAutosave();
   stopAudioPump();
   teardownMedia();
   renderer?.destroy();
   renderer = null;
   clockView = null;
   audioRing = null;
+  post({ type: 'dispose-complete' });
 }
 
 self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
@@ -721,7 +1337,7 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
       void handleInit(cmd.canvas, cmd.sab, cmd.audioSab);
       break;
     case 'import':
-      void handleImport(cmd.file);
+      void handleImport(cmd.file, cmd.fileHandle);
       break;
     case 'play':
       handlePlay();
@@ -740,6 +1356,46 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
       break;
     case 'export-cancel':
       handleExportCancel();
+      break;
+    case 'undo':
+      handleUndo();
+      break;
+    case 'redo':
+      handleRedo();
+      break;
+    case 'restore-project':
+      void handleRestoreProject().catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        post({
+          type: 'restore-result',
+          projectId,
+          restored: false,
+          savedAt: null,
+          metadata: null,
+          unresolvedSources: unresolvedSourceDescriptors(),
+          message: `Restore failed: ${message}`,
+        });
+      });
+      break;
+    case 'new-project':
+      void handleNewProject().catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        postProjectWarning(`Could not start new project: ${message}`);
+      });
+      break;
+    case 'relink-source':
+      void handleRelinkSource(cmd).catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        post({
+          type: 'relink-result',
+          sourceId: cmd.sourceId,
+          ok: false,
+          descriptor: sourceDescriptors.get(cmd.sourceId) ?? null,
+          metadata: activeMetadata(),
+          unresolvedSources: unresolvedSourceDescriptors(),
+          message: `Re-link failed: ${message}`,
+        });
+      });
       break;
     case 'split':
       handleSplit(cmd);
@@ -766,7 +1422,7 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
       handleSetTrackSolo(cmd);
       break;
     case 'dispose':
-      handleDispose();
+      void handleDispose();
       break;
     default: {
       const _exhaustive: never = cmd;
