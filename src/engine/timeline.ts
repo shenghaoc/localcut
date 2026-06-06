@@ -1404,16 +1404,33 @@ export function unlinkClips(timeline: Timeline, refs: readonly ClipReference[]):
   }
   const next = cloneTimeline(timeline);
   const refSet = new Set(refs.map((r) => `${r.trackId}:${r.clipId}`));
+  const clearedGroupIds = new Set<string>();
   let changed = false;
   for (const track of next) {
     for (let i = 0; i < track.clips.length; i++) {
       if (refSet.has(`${track.id}:${track.clips[i]!.id}`) && track.clips[i]!.linkedGroupId) {
+        clearedGroupIds.add(track.clips[i]!.linkedGroupId!);
         track.clips[i] = { ...track.clips[i]!, linkedGroupId: undefined };
         changed = true;
       }
     }
   }
-  return changed ? next : timeline;
+  if (!changed) return timeline;
+  // Clear orphaned sole members
+  for (const gid of clearedGroupIds) {
+    const members: { trackIdx: number; clipIdx: number }[] = [];
+    for (let ti = 0; ti < next.length; ti++) {
+      for (let ci = 0; ci < next[ti]!.clips.length; ci++) {
+        if (next[ti]!.clips[ci]!.linkedGroupId === gid) members.push({ trackIdx: ti, clipIdx: ci });
+      }
+    }
+    if (members.length < 2) {
+      for (const m of members) {
+        next[m.trackIdx]!.clips[m.clipIdx] = { ...next[m.trackIdx]!.clips[m.clipIdx]!, linkedGroupId: undefined };
+      }
+    }
+  }
+  return next;
 }
 
 export function expandLinkedGroup(timeline: Timeline, refs: readonly ClipReference[]): ClipReference[] {
@@ -1898,7 +1915,7 @@ export function overwriteEdit(
       }
       if (eStart < regionStart - TIMELINE_EPSILON) {
         const leftDuration = regionStart - eStart;
-        surviving.push({ ...existing, duration: leftDuration });
+        surviving.push({ ...existing, duration: leftDuration, linkedGroupId: undefined });
       }
       if (eEnd > regionEnd + TIMELINE_EPSILON) {
         const rightStart = regionEnd;
@@ -1909,6 +1926,7 @@ export function overwriteEdit(
           start: rightStart,
           duration: eEnd - regionEnd,
           inPoint: existing.inPoint + trimDelta,
+          linkedGroupId: undefined,
         });
       }
     }
@@ -1952,7 +1970,7 @@ export function liftRegion(
       }
       changed = true;
       if (clip.start < startTime - TIMELINE_EPSILON) {
-        surviving.push({ ...clip, duration: startTime - clip.start });
+        surviving.push({ ...clip, duration: startTime - clip.start, linkedGroupId: undefined });
       }
       if (cEnd > endTime + TIMELINE_EPSILON) {
         const trimDelta = endTime - clip.start;
@@ -1962,6 +1980,7 @@ export function liftRegion(
           start: endTime,
           duration: cEnd - endTime,
           inPoint: clip.inPoint + trimDelta,
+          linkedGroupId: undefined,
         });
       }
     }

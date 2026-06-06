@@ -1175,6 +1175,15 @@ describe('linked clips', () => {
     const tl = [track('v', 'video', [a])];
     expect(linkClips(tl, [{ trackId: 'v', clipId: 'a' }])).toBe(tl);
   });
+
+  it('unlinkClips clears orphaned sole member', () => {
+    const a = clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 0, linkedGroupId: 'g1' });
+    const b = clip({ id: 'b', sourceId: 'src-1', start: 0, duration: 5, inPoint: 0, linkedGroupId: 'g1' });
+    const tl = [track('v', 'video', [a]), track('a', 'audio', [b])];
+    const next = unlinkClips(tl, [{ trackId: 'v', clipId: 'a' }]);
+    expect(next[0]!.clips[0]!.linkedGroupId).toBeUndefined();
+    expect(next[1]!.clips[0]!.linkedGroupId).toBeUndefined();
+  });
 });
 
 describe('lock guard', () => {
@@ -1264,6 +1273,31 @@ describe('rippleTrim', () => {
     const next = rippleTrim(tl, 'v', 'a', 'out', 3, []);
     expect(next[0]!.clips[0]!.duration).toBe(3);
     expect(next[0]!.clips[1]!.start).toBe(3);
+  });
+
+  it('trims in-edge inward and shifts downstream left', () => {
+    const a = clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 0 });
+    const b = clip({ id: 'b', sourceId: 'src-1', start: 5, duration: 3, inPoint: 5 });
+    const tl = [track('v', 'video', [a, b])];
+    const next = rippleTrim(tl, 'v', 'a', 'in', 2, []);
+    expect(next[0]!.clips[0]!.start).toBe(2);
+    expect(next[0]!.clips[0]!.duration).toBe(3);
+    expect(next[0]!.clips[0]!.inPoint).toBe(2);
+    expect(next[0]!.clips[1]!.start).toBe(7);
+  });
+
+  it('in-edge inward ripple shifts downstream by start delta', () => {
+    // Trimming in-edge inward (start 0→2): delta = +2, downstream shifts right.
+    // This documents the current contract: in-edge ripple uses the start-position
+    // delta, so shrinking from the left pushes downstream right (not left).
+    const a = clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 0 });
+    const b = clip({ id: 'b', sourceId: 'src-1', start: 5, duration: 3, inPoint: 5 });
+    const tl = [track('v', 'video', [a, b])];
+    const next = rippleTrim(tl, 'v', 'a', 'in', 2, []);
+    expect(next[0]!.clips[0]!.start).toBe(2);
+    expect(next[0]!.clips[0]!.inPoint).toBe(2);
+    expect(next[0]!.clips[0]!.duration).toBe(3);
+    expect(next[0]!.clips[1]!.start).toBe(7);
   });
 
   it('rejects on locked track', () => {
@@ -1437,6 +1471,15 @@ describe('overwriteEdit', () => {
     const newClip = clip({ id: 'new', sourceId: 'src-2', start: 0, duration: 2, inPoint: 0 });
     expect(overwriteEdit(tl, ['v'], [{ trackId: 'v', clip: newClip }], 1)).toBe(tl);
   });
+
+  it('clears linkedGroupId on split fragments', () => {
+    const a = clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 10, inPoint: 0, linkedGroupId: 'g1' });
+    const tl = [track('v', 'video', [a])];
+    const newClip = clip({ id: 'new', sourceId: 'src-2', start: 0, duration: 3, inPoint: 0 });
+    const next = overwriteEdit(tl, ['v'], [{ trackId: 'v', clip: newClip }], 3);
+    expect(next[0]!.clips[0]!.linkedGroupId).toBeUndefined();
+    expect(next[0]!.clips[2]!.linkedGroupId).toBeUndefined();
+  });
 });
 
 describe('liftRegion', () => {
@@ -1455,6 +1498,14 @@ describe('liftRegion', () => {
     const a = clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 5, inPoint: 0 });
     const tl = [track('v', 'video', [a], { locked: true })];
     expect(liftRegion(tl, ['v'], 1, 3)).toBe(tl);
+  });
+
+  it('clears linkedGroupId on split fragments', () => {
+    const a = clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 10, inPoint: 0, linkedGroupId: 'g1' });
+    const tl = [track('v', 'video', [a])];
+    const next = liftRegion(tl, ['v'], 3, 7);
+    expect(next[0]!.clips[0]!.linkedGroupId).toBeUndefined();
+    expect(next[0]!.clips[1]!.linkedGroupId).toBeUndefined();
   });
 });
 

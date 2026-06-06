@@ -2114,13 +2114,15 @@ function handleRippleDelete(cmd: Extract<WorkerCommand, { type: 'ripple-delete' 
     const nextTimeline = rippleDelete(timeline, cmd.clips, syncLockedTrackIds);
     if (nextTimeline === timeline) return { timeline, transitions, markers };
     let nextMarkers: TimelineMarker[] = markers as TimelineMarker[];
-    for (const r of removedRegions) {
+    const sorted = [...removedRegions].sort((a, b) => a.start - b.start);
+    for (const r of sorted) {
       nextMarkers = removeMarkersInRange(nextMarkers, r.start, r.end);
     }
-    if (removedRegions.length > 0) {
-      const earliest = Math.min(...removedRegions.map((r) => r.start));
-      const totalRemoved = removedRegions.reduce((sum, r) => sum + (r.end - r.start), 0);
-      nextMarkers = shiftMarkers(nextMarkers, earliest, -totalRemoved);
+    let cumulativeDelta = 0;
+    for (const r of sorted) {
+      const dur = r.end - r.start;
+      nextMarkers = shiftMarkers(nextMarkers, r.start - cumulativeDelta, -dur);
+      cumulativeDelta += dur;
     }
     return {
       timeline: nextTimeline,
