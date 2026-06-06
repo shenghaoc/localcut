@@ -57,7 +57,12 @@ function BinThumbnail(props: {
 }) {
   let canvas: HTMLCanvasElement | undefined;
 
-  const sampleTime = () => Math.min(0.1, Math.max(0, props.asset.durationS / 2));
+  // Sample ~10% in (capped at 2s, never past the end) so the bin thumbnail
+  // isn't always the first frame — which is often black/letterboxed.
+  const sampleTime = () => {
+    const d = Math.max(0, props.asset.durationS);
+    return Math.min(d * 0.1, 2, Math.max(0, d - 0.05));
+  };
 
   createEffect(() => {
     props.thumbnailVersion();
