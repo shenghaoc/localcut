@@ -28,9 +28,11 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 
 **Active:**
 
-- [**Phase 8: Capability-tier UX + compatibility planning**](.kiro/specs/phase-8-capability-tiers/tasks.md) — preserve the accelerated path while making missing browser capabilities understandable and recoverable.
+- _(none)_
 
 **Completed:**
+
+- [**Phase 8: Capability-tier UX + compatibility engine**](.kiro/specs/phase-8-capability-tiers/tasks.md) — preserve the accelerated path while making missing browser capabilities understandable and recoverable.
 
 - [**Phase 7: PWA + deployment**](.kiro/specs/phase-7-pwa-deployment/tasks.md) — installable offline PWA; Cloudflare Pages; production `crossOriginIsolated`.
 - [**Phase 6: Export**](.kiro/specs/phase-6-export/tasks.md) — pipelined decode → effects → encode → mux; backpressure; quality/speed presets; ETA.

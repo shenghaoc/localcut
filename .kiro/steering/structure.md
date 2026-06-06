@@ -9,6 +9,7 @@
   - **`settings/mcp.json`** — workspace MCP server configuration.
 - **`src/ui/`** — Main-thread SolidJS. **No media objects.** Reads SAB clock; sends commands to worker.
 - **`src/engine/`** — Pipeline worker modules. Pure TypeScript; no DOM; no SolidJS.
+- **`src/compatibility/`** — Client-side limited-tier helpers (decode-only thumbnails, metadata probes). Must not import accelerated engine GPU/playback paths.
 - **`src/protocol.ts`** — Shared message types and `assertCrossOriginIsolated`.
 - **`public/_headers`** — COOP/COEP for Cloudflare Pages.
 - **`public/icons/`** — PWA manifest icons.
@@ -29,6 +30,13 @@
 | `hardware-probe.ts` | Startup throughput probe |
 | `shaders/*.wgsl` | Compute shader sources |
 
+## Compatibility Modules (`src/compatibility/`)
+
+| Module | Responsibility |
+|--------|----------------|
+| `metadata.ts` | One-shot video metadata probe for limited tier |
+| `thumbnail.ts` | Decode-only reduced-resolution thumbnail preview |
+
 ## UI Components (`src/ui/`)
 
 | Component | Role |
@@ -40,6 +48,9 @@
 | `Timeline.tsx` / `TimelineTrack.tsx` / `TimelineClip.tsx` | Timeline UI |
 | `Inspector.tsx` | Effect parameters |
 | `Toolbar.tsx` | Import, transport, export |
+| `capabilities.ts` | Feature detection and tier derivation |
+| `CapabilityPanel.tsx` | Capability drawer with recovery actions |
+| `LimitedPreview.tsx` | Labeled compatibility thumbnail preview |
 | `ExportDialog.tsx` | Export progress |
 | `Waveform.tsx` | Audio lane waveforms |
 

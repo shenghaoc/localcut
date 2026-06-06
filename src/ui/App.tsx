@@ -18,23 +18,48 @@ import { AudioEngine } from './audio-engine';
 import { ExportDialog } from './ExportDialog';
 import { buttonVariants } from './components/button';
 import { cn } from '../lib/utils';
+import { CapabilityPanel } from './CapabilityPanel';
+import { LimitedPreview } from './LimitedPreview';
+import {
+  canCompatibilityPreview,
+  deriveCapabilityTier,
+  importUnavailableReason,
+  listCapabilityFeatures,
+  primaryLimitedIssue,
+  probeCapabilities,
+  type CapabilitySnapshot,
+  type CapabilityTier,
+} from './capabilities';
+import { extractCompatibilityMetadata } from '../compatibility/metadata';
+import { extractCompatibilityThumbnail } from '../compatibility/thumbnail';
 import PipelineWorker from '../engine/worker.ts?worker';
 
 const VIDEO_ACCEPT = 'video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm';
 
-type PipelineMode = 'accelerated' | 'starting' | 'limited';
+interface CompatibilityPreviewState {
+  url: string;
+  width: number;
+  height: number;
+  fileName: string;
+  duration: number;
+  revoke: () => void;
+}
 
 function initialOnlineStatus(): boolean {
   return typeof navigator === 'undefined' ? true : navigator.onLine;
 }
 
 export function App() {
-  const [environmentIssue, setEnvironmentIssue] = createSignal<string | null>(null);
+  const [capabilities, setCapabilities] = createSignal<CapabilitySnapshot>(probeCapabilities());
+  const [runtimeIssue, setRuntimeIssue] = createSignal<string | null>(null);
   const [isIsolated, setIsIsolated] = createSignal(
     typeof globalThis.crossOriginIsolated === 'boolean' ? globalThis.crossOriginIsolated : false,
   );
   const [workerReady, setWorkerReady] = createSignal(false);
   const [webgpuAvailable, setWebgpuAvailable] = createSignal(false);
+  const [capabilityPanelOpen, setCapabilityPanelOpen] = createSignal(false);
+  const [compatibilityPreview, setCompatibilityPreview] =
+    createSignal<CompatibilityPreviewState | null>(null);
   const [metadata, setMetadata] = createSignal<MediaMetadata | null>(null);
   const [importing, setImporting] = createSignal(false);
   const [statusLine, setStatusLine] = createSignal('Checking client capabilities…');
@@ -87,13 +112,40 @@ export function App() {
 
   const clock = createSharedClock(sab);
 
-  const pipelineMode = createMemo<PipelineMode>(() => {
-    if (workerReady() && webgpuAvailable()) return 'accelerated';
-    if (environmentIssue()) return 'limited';
-    return 'starting';
-  });
+  const pipelineMode = createMemo<CapabilityTier>(() =>
+    deriveCapabilityTier(capabilities(), {
+      workerReady: workerReady(),
+      webgpuReady: webgpuAvailable(),
+      runtimeIssue: runtimeIssue(),
+    }),
+  );
 
   const accelerated = () => pipelineMode() === 'accelerated';
+  const compatibilityImportEnabled = () =>
+    pipelineMode() === 'limited' && canCompatibilityPreview(capabilities());
+  const importBlocked = () =>
+    pipelineMode() === 'blocked' ||
+    pipelineMode() === 'starting' ||
+    (pipelineMode() === 'limited' && !canCompatibilityPreview(capabilities()));
+  const importHint = () =>
+    importBlocked() ? importUnavailableReason(pipelineMode(), capabilities(), {
+      workerReady: workerReady(),
+      webgpuReady: webgpuAvailable(),
+      runtimeIssue: runtimeIssue(),
+    }) : compatibilityImportEnabled()
+      ? 'Loads a reduced compatibility thumbnail only. Accelerated editing requires the full pipeline.'
+      : null;
+  const limitedIssue = () => primaryLimitedIssue(capabilities(), {
+    workerReady: workerReady(),
+    webgpuReady: webgpuAvailable(),
+    runtimeIssue: runtimeIssue(),
+  });
+
+  function clearCompatibilityPreview() {
+    const preview = compatibilityPreview();
+    if (preview) preview.revoke();
+    setCompatibilityPreview(null);
+  }
 
   function handleState(msg: import('../protocol').WorkerStateMessage) {
     switch (msg.type) {
@@ -101,7 +153,7 @@ export function App() {
         setWorkerReady(true);
         setWebgpuAvailable(msg.webgpu);
         if (!msg.webgpu) {
-          setEnvironmentIssue(
+          setRuntimeIssue(
             msg.gpuUnavailableReason ??
               'WebGPU is unavailable in this browser. Accelerated import, playback, effects, and export require a WebGPU-capable Chromium browser.',
           );
@@ -118,6 +170,7 @@ export function App() {
         break;
       case 'import-complete':
         setImporting(false);
+        clearCompatibilityPreview();
         setMetadata(msg.metadata);
         setPreviewLabel(null);
         // Do NOT clear the timeline here: the worker posts `timeline-state` (with
@@ -198,7 +251,7 @@ export function App() {
   async function sendInit(canvas: OffscreenCanvas) {
     if (initSent) return;
     if (!isIsolated() || !sab) {
-      setEnvironmentIssue(
+      setRuntimeIssue(
         'This browser or origin cannot expose SharedArrayBuffer. The app shell stays client-side, but accelerated import, playback, effects, and export need SAB plus COOP/COEP headers so the local CPU/GPU path can run safely.',
       );
       setStatusLine('Limited shell · COOP/COEP needed for accelerated client compute');
@@ -221,15 +274,59 @@ export function App() {
     b.send({ type: 'init', canvas, sab, audioSab }, [canvas]);
   }
 
+  async function importCompatibilityMedia(file: File) {
+    setImporting(true);
+    setStatusLine('Loading compatibility preview…');
+    try {
+      const [meta, thumb] = await Promise.all([
+        extractCompatibilityMetadata(file),
+        extractCompatibilityThumbnail(file),
+      ]);
+      clearCompatibilityPreview();
+      setCompatibilityPreview({
+        url: thumb.url,
+        width: thumb.width,
+        height: thumb.height,
+        fileName: meta.fileName,
+        duration: meta.duration,
+        revoke: thumb.revoke,
+      });
+      setMetadata({
+        fileName: meta.fileName,
+        duration: meta.duration,
+        mimeType: meta.mimeType,
+        video: {
+          codec: null,
+          width: meta.width,
+          height: meta.height,
+          frameRate: null,
+          canDecode: false,
+        },
+        audio: null,
+        trackCount: 1,
+      });
+      setTimeline([]);
+      setSelectedClip(null);
+      setStatusLine(`Loaded ${meta.fileName} · compatibility preview`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setStatusLine(`Compatibility import failed: ${message}`);
+    } finally {
+      setImporting(false);
+    }
+  }
+
   function importMedia(file: File) {
-    if (!accelerated()) {
-      setStatusLine(
-        environmentIssue() ? 'Import unavailable in limited mode' : 'Waiting for preview canvas…',
-      );
+    if (accelerated()) {
+      const { bridge: b } = ensureWorker();
+      b.send({ type: 'import', file });
       return;
     }
-    const { bridge: b } = ensureWorker();
-    b.send({ type: 'import', file });
+    if (compatibilityImportEnabled()) {
+      void importCompatibilityMedia(file);
+      return;
+    }
+    setStatusLine(importHint() ?? 'Import unavailable in limited mode');
   }
 
   function handleImportInput(event: Event) {
@@ -299,24 +396,27 @@ export function App() {
 
   function onFileDrop(file: File) {
     setIsDraggingFile(false);
-    if (!accelerated()) {
-      setStatusLine(
-        environmentIssue() ? 'Import unavailable in limited mode' : 'Drop again after preview is ready',
-      );
+    if (accelerated()) {
+      const { bridge: b } = ensureWorker();
+      b.send({ type: 'import', file });
       return;
     }
-    const { bridge: b } = ensureWorker();
-    b.send({ type: 'import', file });
+    if (compatibilityImportEnabled()) {
+      void importCompatibilityMedia(file);
+      return;
+    }
+    setStatusLine(importHint() ?? 'Import unavailable in limited mode');
   }
 
   onMount(() => {
     const isolated = globalThis.crossOriginIsolated === true;
     setIsIsolated(isolated);
+    setCapabilities(probeCapabilities({ crossOriginIsolated: isolated, sharedArrayBuffer: sab != null }));
     if (isolated && sab) {
       ensureWorker();
       setStatusLine('Starting pipeline worker…');
     } else {
-      setEnvironmentIssue(
+      setRuntimeIssue(
         !isolated
           ? 'This page is missing COOP/COEP headers. LocalCut still runs as a client-side shell, but accelerated import, playback, effects, and export need those headers so the browser can expose SharedArrayBuffer for local CPU/GPU work.'
           : 'This browser or origin cannot expose SharedArrayBuffer. The app shell stays client-side, but accelerated import, playback, effects, and export need SAB plus COOP/COEP headers so the local CPU/GPU path can run safely.',
@@ -360,6 +460,7 @@ export function App() {
       window.removeEventListener('dragover', onDragOver);
       window.removeEventListener('dragleave', onDragLeave);
       window.removeEventListener('drop', onDrop);
+      clearCompatibilityPreview();
       bridge?.send({ type: 'dispose' });
       audioEngine.dispose();
       worker?.terminate();
@@ -383,11 +484,14 @@ export function App() {
           audioEngine.pause();
         }}
         onStep={(direction) => bridge?.send({ type: 'step', direction })}
-        disabled={!accelerated()}
+        transportDisabled={!accelerated()}
+        importBlocked={importBlocked()}
+        importHint={importHint()}
         crossOriginIsolated={isIsolated()}
         pipelineMode={pipelineMode()}
         previewLabel={previewLabel()}
         encodeFps={encodeFps()}
+        onOpenCapabilities={() => setCapabilityPanelOpen(true)}
         exportControl={
           <ExportDialog
             hasMedia={metadata() !== null}
@@ -403,18 +507,34 @@ export function App() {
       <main class="workspace">
         <section class="preview panel">
           <PreviewCanvas onOffscreenReady={sendInit} />
+          <Show when={compatibilityPreview() !== null}>
+            <LimitedPreview
+              thumbnailUrl={compatibilityPreview()!.url}
+              fileName={compatibilityPreview()!.fileName}
+              width={compatibilityPreview()!.width}
+              height={compatibilityPreview()!.height}
+              duration={compatibilityPreview()!.duration}
+            />
+          </Show>
           <Show when={!metadata() && !importing()}>
             <div class="preview-empty">
               <div>
                 <p class="preview-empty-eyebrow">
-                  {pipelineMode() === 'limited' ? 'Compatibility' : 'Preview'}
+                  {pipelineMode() === 'limited' || pipelineMode() === 'blocked'
+                    ? 'Compatibility'
+                    : 'Preview'}
                 </p>
                 <p class="preview-empty-title">
-                  {pipelineMode() === 'limited' ? 'Accelerated engine unavailable' : 'No source loaded'}
+                  {pipelineMode() === 'limited' || pipelineMode() === 'blocked'
+                    ? 'Accelerated engine unavailable'
+                    : 'No source loaded'}
                 </p>
                 <p class="preview-empty-copy">
-                  {pipelineMode() === 'limited'
-                    ? environmentIssue()
+                  {pipelineMode() === 'limited' || pipelineMode() === 'blocked'
+                    ? limitedIssue() ??
+                      (compatibilityImportEnabled()
+                        ? 'Import still loads a reduced compatibility thumbnail so you can inspect a local clip.'
+                        : 'This browser cannot run the accelerated pipeline yet.')
                     : 'Drop an MP4, MOV, or WebM here.'}
                 </p>
               </div>
@@ -422,8 +542,9 @@ export function App() {
                 class={cn(
                   buttonVariants({ variant: 'default' }),
                   'import-picker',
-                  !accelerated() && 'is-disabled pointer-events-none',
+                  importBlocked() && 'is-disabled pointer-events-none',
                 )}
+                title={importHint() ?? undefined}
               >
                 Import
                 <input
@@ -431,8 +552,9 @@ export function App() {
                   type="file"
                   accept={VIDEO_ACCEPT}
                   onChange={handleImportInput}
-                  disabled={!accelerated()}
+                  disabled={importBlocked()}
                   aria-label="Import media"
+                  title={importHint() ?? undefined}
                 />
               </label>
             </div>
@@ -511,6 +633,14 @@ export function App() {
           </Show>
         </span>
       </footer>
+      <CapabilityPanel
+        open={capabilityPanelOpen()}
+        tier={pipelineMode()}
+        features={listCapabilityFeatures(capabilities())}
+        primaryIssue={limitedIssue()}
+        compatibilityPreviewAvailable={canCompatibilityPreview(capabilities())}
+        onClose={() => setCapabilityPanelOpen(false)}
+      />
     </div>
   );
 }

@@ -11,7 +11,7 @@ Make LocalCut useful even when the premium browser APIs are not all available. T
 | Tier | Requirements | Experience |
 |------|--------------|------------|
 | Accelerated | WebCodecs, WebGPU, OffscreenCanvas, `SharedArrayBuffer`, COOP/COEP | Full preview, effects, audio sync, timeline editing, export |
-| Limited | Missing SAB or WebGPU, but app shell can run | Explain missing capability; allow future low-res preview/import where feasible |
+- First fallback: **decode-only thumbnail** via `HTMLVideoElement` + one-shot Canvas2D in `src/compatibility/` (not WebGL2; keeps the path clearly separate from WebGPU preview).
 | Blocked | Browser lacks core file/media APIs or unsupported security context | Show exact blocker and next action |
 
 ## Architecture
