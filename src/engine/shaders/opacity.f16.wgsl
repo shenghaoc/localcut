@@ -16,6 +16,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
   let coord = vec2<u32>(gid.x, gid.y);
   let color = textureLoad(src, coord, 0);
-  let newAlpha = color.a * f16(u.opacity);
+  let newAlpha = f16(color.a) * f16(u.opacity);
   textureStore(dst, coord, vec4(color.rgb, f32(newAlpha)));
 }

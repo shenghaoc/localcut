@@ -354,7 +354,7 @@ export class PreviewRenderer {
     // accumulator so isClipped() can detect out-of-range values.
     let presentView = finalView;
     if (this.zebraEnabled && this.clippingOverlayPipeline && this.zebraView && this._lastAccView) {
-      presentView = this.encodeZebraOverlay(encoder, this._lastAccView);
+      presentView = this.encodeZebraOverlay(encoder, finalView, this._lastAccView);
     }
 
     // Phase 21: scope dispatch when enabled (post-composite, pre-present)
@@ -533,8 +533,9 @@ export class PreviewRenderer {
     // Default: sRGB→linear, full range
     this.device.queue.writeBuffer(buffer, 0, new Uint32Array([2, 1]));
 
-    // Normalize into storage.b (safe: storage.a holds the imported frame)
-    const dstView = storage.b;
+    // Normalize into storage.c (not storage.b — storage.a holds the imported
+    // frame and storage.b is the first ping-pong slot in encodeBaseCorrection)
+    const dstView = storage.c;
     const bindGroup = this.device.createBindGroup({
       layout: this.normalizeGroupLayout,
       entries: [
@@ -696,12 +697,13 @@ export class PreviewRenderer {
     return this.renderLayeredForExport([], timestamp, duration);
   }
 
-  /** Phase 21: encodes the zebra clipping overlay on top of the composited frame. */
+  /** Phase 21: encodes the zebra clipping overlay composited on top of the frame. */
   private encodeZebraOverlay(
     encoder: GPUCommandEncoder,
-    srcView: GPUTextureView,
+    compositedView: GPUTextureView,
+    preClampView: GPUTextureView,
   ): GPUTextureView {
-    if (!this.clippingOverlayPipeline || !this.zebraView) return srcView;
+    if (!this.clippingOverlayPipeline || !this.zebraView) return compositedView;
 
     const wgX = Math.ceil(this.width / 8);
     const wgY = Math.ceil(this.height / 8);
@@ -722,8 +724,9 @@ export class PreviewRenderer {
       layout: this.clippingOverlayPipeline.getBindGroupLayout(0),
       entries: [
         { binding: 0, resource: { buffer: this._zebraUniform } },
-        { binding: 1, resource: srcView },
-        { binding: 2, resource: this.zebraView },
+        { binding: 1, resource: compositedView },
+        { binding: 2, resource: preClampView },
+        { binding: 3, resource: this.zebraView },
       ],
     });
     const pass = encoder.beginComputePass();

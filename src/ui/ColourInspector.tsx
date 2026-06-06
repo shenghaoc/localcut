@@ -4,7 +4,7 @@
  *  plus any active HDR / gamut warnings.
  */
 
-import { For } from 'solid-js';
+import { For, createMemo } from 'solid-js';
 import type { HDRWarningSnapshot } from '../protocol';
 
 export interface ColourInspectorProps {
@@ -17,18 +17,18 @@ export interface ColourInspectorProps {
 }
 
 export default function ColourInspector(props: ColourInspectorProps) {
-  const hasMetadata = props.origin !== null && props.origin !== 'none';
-  const hasWarnings = props.warnings.length > 0;
+  const hasMetadata = createMemo(() => props.origin !== null && props.origin !== 'none');
+  const hasWarnings = createMemo(() => props.warnings.length > 0);
 
   return (
     <section class="inspector-section colour-section">
       <h3 class="inspector-heading">Colour</h3>
 
-      {!hasMetadata && !hasWarnings && (
+      {!hasMetadata() && !hasWarnings() && (
         <p class="colour-none">No colour metadata available.</p>
       )}
 
-      {hasMetadata && (
+      {hasMetadata() && (
         <dl class="colour-metadata">
           <dt>Origin</dt>
           <dd>{props.origin}</dd>
@@ -43,7 +43,7 @@ export default function ColourInspector(props: ColourInspectorProps) {
         </dl>
       )}
 
-      {hasWarnings && (
+      {hasWarnings() && (
         <ul class="colour-warnings">
           <For each={props.warnings}>
             {(w) => (
