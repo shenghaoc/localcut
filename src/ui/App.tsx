@@ -464,7 +464,7 @@ export function App() {
                 Offline
               </span>
             </Show>
-            <Show when={previewLabel()}>
+            <Show when={previewLabel() !== null}>
               <span class="status-badge" title="Adaptive preview resolution">
                 Preview: {previewLabel()}
               </span>

@@ -85,13 +85,11 @@ export function Toolbar(props: ToolbarProps) {
             <ShieldCheck size={13} aria-hidden="true" />
             Isolated
           </span>
-          <Show when={props.previewLabel}>
-            {(label) => (
-              <span class="pipeline-chip">
-                <Activity size={13} aria-hidden="true" />
-                Preview {label()}
-              </span>
-            )}
+          <Show when={props.previewLabel !== null}>
+            <span class="pipeline-chip">
+              <Activity size={13} aria-hidden="true" />
+              Preview {props.previewLabel}
+            </span>
           </Show>
           <Show when={props.encodeFps !== null}>
             <span class="pipeline-chip">
