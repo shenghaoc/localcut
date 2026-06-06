@@ -54,14 +54,23 @@ function hasSharedArrayBuffer(): boolean {
 }
 
 function hasAudioWorklet(): boolean {
-  return (
-    typeof AudioContext !== 'undefined' &&
-    typeof AudioContext.prototype.audioWorklet !== 'undefined'
-  );
+  if (typeof AudioContext === 'undefined') return false;
+  try {
+    // `audioWorklet` is an instance accessor; reading it from the prototype throws
+    // "Illegal invocation". Presence checks avoid calling the getter.
+    return 'audioWorklet' in AudioContext.prototype;
+  } catch {
+    return false;
+  }
 }
 
-function hasAcceleratedFeatures(snapshot: CapabilitySnapshot): boolean {
-  return ACCELERATED_FEATURES.every((feature) => snapshot[feature]);
+function hasFileSystemAccess(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return 'showOpenFilePicker' in window || 'showSaveFilePicker' in window;
+  } catch {
+    return false;
+  }
 }
 
 /** Feature-detect browser APIs independently (no user-agent inference). */
@@ -76,13 +85,13 @@ export function probeCapabilities(
     webgpu: env.webgpu ?? (typeof navigator !== 'undefined' && 'gpu' in navigator),
     webCodecs: env.webCodecs ?? typeof VideoDecoder !== 'undefined',
     offscreenCanvas: env.offscreenCanvas ?? typeof OffscreenCanvas !== 'undefined',
-    fileSystemAccess:
-      env.fileSystemAccess ??
-      (typeof window !== 'undefined' &&
-        (typeof window.showOpenFilePicker === 'function' ||
-          typeof window.showSaveFilePicker === 'function')),
+    fileSystemAccess: env.fileSystemAccess ?? hasFileSystemAccess(),
     audioWorklet: env.audioWorklet ?? hasAudioWorklet(),
   };
+}
+
+function hasAcceleratedFeatures(snapshot: CapabilitySnapshot): boolean {
+  return ACCELERATED_FEATURES.every((feature) => snapshot[feature]);
 }
 
 export function deriveCapabilityTier(

@@ -7,6 +7,10 @@ import {
 } from './capabilities';
 
 describe('probeCapabilities', () => {
+  it('does not throw when probing browser APIs', () => {
+    expect(() => probeCapabilities()).not.toThrow();
+  });
+
   it('detects each API independently from overrides', () => {
     const snapshot = probeCapabilities({
       fileApi: true,
