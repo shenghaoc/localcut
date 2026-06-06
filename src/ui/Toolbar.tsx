@@ -93,13 +93,11 @@ export function Toolbar(props: ToolbarProps) {
               </span>
             )}
           </Show>
-          <Show when={props.encodeFps}>
-            {(fps) => (
-              <span class="pipeline-chip">
-                <Activity size={13} aria-hidden="true" />
-                Encode {Math.round(fps())} fps
-              </span>
-            )}
+          <Show when={props.encodeFps !== null}>
+            <span class="pipeline-chip">
+              <Activity size={13} aria-hidden="true" />
+              Encode {Math.round(props.encodeFps!)} fps
+            </span>
           </Show>
         </div>
         <span class="file-name" title={props.metadata?.fileName ?? 'No source loaded'}>

@@ -43,6 +43,7 @@
 
   --bg-app: var(--background);
   --bg-app-top: var(--background);
+  --toolbar-bg: #18181d;
   --bg-panel: var(--card);
   --bg-elevated: var(--muted);
   --bg-control: var(--secondary);
@@ -200,7 +201,7 @@ body {
   min-height: var(--toolbar-h);
   padding: 0.45rem 0.85rem;
   border-bottom: 1px solid var(--border);
-  background: #18181d;
+  background: var(--toolbar-bg);
 }
 
 .toolbar-left,

@@ -469,7 +469,7 @@ export function App() {
                 Preview: {previewLabel()}
               </span>
             </Show>
-            <Show when={encodeFps()}>
+            <Show when={encodeFps() !== null}>
               <span class="status-badge" title="Estimated encode throughput (session)">
                 Encode: {Math.round(encodeFps()!)} fps
               </span>
