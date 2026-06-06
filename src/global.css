@@ -169,15 +169,6 @@ body {
   overflow: hidden;
 }
 
-.fatal-banner {
-  margin: 2rem;
-  padding: 1.25rem;
-  border: 1px solid var(--danger);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--destructive-soft) 70%, var(--card));
-  box-shadow: var(--shadow-md);
-}
-
 .panel {
   background: var(--card);
   border: 1px solid var(--border);
@@ -277,6 +268,12 @@ body {
   border-color: color-mix(in srgb, var(--warn) 36%, var(--border));
   color: color-mix(in srgb, var(--warn) 88%, var(--text));
   background: color-mix(in srgb, var(--warn) 12%, transparent);
+}
+
+.pipeline-chip.is-warn {
+  border-color: color-mix(in srgb, var(--danger) 38%, var(--border));
+  color: color-mix(in srgb, var(--danger) 88%, var(--text));
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 
 .app-brand {

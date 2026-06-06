@@ -1,15 +1,17 @@
-> **Note for AI Agents:** Please read [`AGENTS.md`](AGENTS.md) before proposing or making changes. Architecture invariants (off-main-thread media, zero-copy GPU, SAB clock) are non-negotiable.
+> **Note for AI Agents:** Please read [`AGENTS.md`](AGENTS.md) before proposing or making changes. The current invariant is client-compute-first: Cloudflare serves the static app and headers, while media work runs in the user's browser with accelerated and limited capability tiers.
 
-# Browser Video Editor
+# LocalCut Studio
 
-Fully client-side, open-source, browser-based non-linear video editor. Performance-first: WebCodecs, WebGPU, Mediabunny, all local.
+Client-compute-first, browser-native non-linear video editor. Performance-first when the browser supports it: WebCodecs, WebGPU, Mediabunny, workers, and `SharedArrayBuffer`; honest capability tiers when it does not.
+
+The deployment assumption is intentionally cheap: Cloudflare serves static assets and COOP/COEP headers, while the user's browser supplies the CPU/GPU for editing and export.
 
 ## Stack
 
 - SolidJS + Vite + TypeScript (strict)
 - Mediabunny — lazy `BlobSource` demux/mux
-- WebGPU + WebCodecs (pipeline worker)
-- Static PWA on Cloudflare Pages
+- WebGPU + WebCodecs accelerated engine (pipeline worker)
+- Static PWA on Cloudflare static hosting; no server media pipeline
 
 ## Kiro workflow and repository docs
 
@@ -34,16 +36,19 @@ Top-level Markdown: [`AGENTS.md`](AGENTS.md) is canonical; [`CLAUDE.md`](CLAUDE.
 
 **Phase 7 (done):** [PWA + deployment](.kiro/specs/phase-7-pwa-deployment/tasks.md).
 
+**Phase 8 (active):** [capability tiers + compatibility planning](.kiro/specs/phase-8-capability-tiers/tasks.md).
+
 ## Requirements
 
-- Modern Chromium desktop browser (WebCodecs + WebGPU for full functionality)
-- `crossOriginIsolated === true` (COOP/COEP in `public/_headers` and Vite config)
+- Modern Chromium desktop browser with WebCodecs + WebGPU + `crossOriginIsolated === true` for the full-performance tier
+- Reduced/limited client-side mode when required browser capabilities are missing
+- COOP/COEP in `public/_headers` and Vite config for the accelerated SAB clock
 
 ## Development
 
 ```bash
 npm install
-npm run dev      # http://localhost:5173 — check status bar for crossOriginIsolated
+npm run dev      # http://localhost:5173 — check status bar for COOP/COEP OK
 npm run build
 npm run preview
 npm test

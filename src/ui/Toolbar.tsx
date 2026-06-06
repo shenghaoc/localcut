@@ -1,9 +1,9 @@
 import { Show, type JSX } from 'solid-js';
 import {
   Activity,
+  Cpu,
   FolderOpen,
   Gauge,
-  HardDrive,
   Pause,
   Play,
   Scissors,
@@ -24,7 +24,8 @@ interface ToolbarProps {
   onPause: () => void;
   onStep: (direction: 1 | -1) => void;
   disabled?: boolean;
-  workerReady: boolean;
+  crossOriginIsolated: boolean;
+  pipelineMode: 'accelerated' | 'starting' | 'limited';
   previewLabel: string | null;
   encodeFps: number | null;
   exportControl?: JSX.Element;
@@ -73,17 +74,29 @@ export function Toolbar(props: ToolbarProps) {
       </div>
       <div class="toolbar-center">
         <div class="pipeline-strip" aria-label="Pipeline status">
-          <span class={`pipeline-chip ${props.workerReady ? 'is-ok' : 'is-waiting'}`}>
+          <span
+            class={`pipeline-chip ${
+              props.pipelineMode === 'accelerated'
+                ? 'is-ok'
+                : props.pipelineMode === 'limited'
+                  ? 'is-warn'
+                  : 'is-waiting'
+            }`}
+          >
             <Gauge size={13} aria-hidden="true" />
-            {props.workerReady ? 'Pipeline ready' : 'Starting pipeline'}
+            {props.pipelineMode === 'accelerated'
+              ? 'Accelerated'
+              : props.pipelineMode === 'limited'
+                ? 'Limited shell'
+                : 'Starting pipeline'}
           </span>
           <span class="pipeline-chip">
-            <HardDrive size={13} aria-hidden="true" />
-            Local only
+            <Cpu size={13} aria-hidden="true" />
+            Client compute
           </span>
-          <span class="pipeline-chip is-ok">
+          <span class={`pipeline-chip ${props.crossOriginIsolated ? 'is-ok' : 'is-warn'}`}>
             <ShieldCheck size={13} aria-hidden="true" />
-            Isolated
+            {props.crossOriginIsolated ? 'COOP/COEP OK' : 'COOP/COEP needed'}
           </span>
           <Show when={props.previewLabel !== null}>
             <span class="pipeline-chip">
