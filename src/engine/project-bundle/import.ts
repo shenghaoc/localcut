@@ -141,7 +141,20 @@ export async function importProjectBundle(
     }
 
     if (asset.fingerprint) {
-      const actual = await fingerprintBlob(blob);
+      let actual;
+      try {
+        actual = await fingerprintBlob(blob);
+      } catch (e) {
+        report = addIntegrityItem(
+          report,
+          integrityItem('fingerprint-mismatch', 'error', `Failed to compute fingerprint for ${descriptor.fileName}: ${e instanceof Error ? e.message : String(e)}`, {
+            sourceId: descriptor.sourceId,
+            assetId: asset.assetId,
+            relativePath: asset.relativePath,
+          }),
+        );
+        continue;
+      }
       if (!fingerprintsEqual(actual, asset.fingerprint)) {
         report = addIntegrityItem(
           report,

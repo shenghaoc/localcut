@@ -52,6 +52,8 @@ export async function exportProjectBundle(
     options.onProgress?.({ phase, bytesDone, bytesTotal: bytesTotal > 0 ? bytesTotal : null });
   };
 
+  let mediaBytesAccumulated = 0;
+
   const embed = shouldEmbedMedia(options.policy);
   for (const descriptor of options.doc.sources) {
     bytesTotal += descriptor.byteSize;
@@ -112,9 +114,13 @@ export async function exportProjectBundle(
         originalFileName: file.name,
         refs: [descriptor.sourceId],
       };
-      await sink.writeBlob(relativePath, file, (n) =>
-        options.onProgress?.({ phase: 'media', bytesDone: n, bytesTotal: file.size }),
-      );
+      let fileBytesDone = 0;
+      await sink.writeBlob(relativePath, file, (n) => {
+        const delta = n - fileBytesDone;
+        fileBytesDone = n;
+        mediaBytesAccumulated += delta;
+        options.onProgress?.({ phase: 'media', bytesDone: mediaBytesAccumulated, bytesTotal: bytesTotal > 0 ? bytesTotal : null });
+      });
       digestToAsset.set(fingerprint.digest, asset);
       assets.push(asset);
       report = addIntegrityItem(

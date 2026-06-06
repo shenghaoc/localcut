@@ -26,10 +26,15 @@ function isAbortError(error: unknown): boolean {
 }
 
 async function pickDirectory(mode: 'read' | 'readwrite'): Promise<FileSystemDirectoryHandle | null> {
-  const picker = (window as Window & { showDirectoryPicker?: (options: { mode: 'read' | 'readwrite' }) => Promise<FileSystemDirectoryHandle> }).showDirectoryPicker;
+  const picker = (window as Window & { showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle> }).showDirectoryPicker;
   if (!picker) return null;
   try {
-    return await picker({ mode });
+    const handle = await picker();
+    if (mode === 'readwrite' && handle.requestPermission) {
+      const status = await handle.requestPermission({ mode: 'readwrite' });
+      if (status !== 'granted') return null;
+    }
+    return handle;
   } catch (error) {
     if (isAbortError(error)) return null;
     throw error;
