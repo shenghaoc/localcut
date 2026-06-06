@@ -122,6 +122,10 @@ let clockView: Float64Array | null = null;
 let renderer: PreviewRenderer | null = null;
 /** Phase 14 title raster cache; created once the GPU device is ready. */
 let titleCache: TitleTextureCache | null = null;
+/** Shared empty set for dropping every cached title texture via `retain`. */
+const EMPTY_CLIP_IDS: ReadonlySet<string> = new Set<string>();
+/** Default preview/export geometry for title-only timelines (no video source). */
+const TITLE_ONLY_CANVAS = { width: 1920, height: 1080, frameRate: 30 } as const;
 let primaryHandle: MediaInputHandle | null = null;
 let playback: PlaybackController<LayerMeta> | null = null;
 let adaptive: AdaptiveResolution | null = null;
@@ -985,9 +989,15 @@ async function handleInit(
     if (renderer) {
       titleCache = new TitleTextureCache(createCanvasTitleUploader(renderer.gpuDevice));
       // Load bundled fonts before the first raster; resolves even when a bundle
-      // is missing (generic fallback keeps titles offline-safe). Re-raster once
-      // fonts land so metrics reflect the loaded face.
-      void loadTitleFonts().then(() => syncTitleRasters());
+      // is missing (generic fallback keeps titles offline-safe). Font availability
+      // isn't part of the content hash, so titles rastered during the load race
+      // hold fallback metrics — drop those textures, re-raster with the loaded
+      // faces, and refresh the current frame.
+      void loadTitleFonts().then(() => {
+        titleCache?.retain(EMPTY_CLIP_IDS);
+        syncTitleRasters();
+        playback?.refresh();
+      });
     }
     post({
       type: 'ready',
@@ -1195,8 +1205,11 @@ async function handleNewProject(): Promise<void> {
  * are ready), so it reconciles whichever of GPU-init / import completes last.
  */
 function ensurePreview() {
+  if (!renderer || !adaptive) return;
+  // Render when there's a decodable video source or any title clip (title-only
+  // timelines composite source-less titles over black).
   const source = getPlaybackSource();
-  if (!renderer || !adaptive || !source?.frameSource) return;
+  if (!source?.frameSource && titleClips().length === 0) return;
   const tier = adaptive.current();
   renderer.setPreviewSize(tier.width, tier.height);
   post({ type: 'preview-resolution', resolution: tier });
@@ -1217,6 +1230,9 @@ function teardownMedia() {
   sourceInputs.clear();
   binSourceIds.clear();
   primaryHandle = null;
+  // Release cached title textures: clearing the timeline here (new project,
+  // re-import, restore) would otherwise orphan them until worker disposal.
+  titleCache?.retain(EMPTY_CLIP_IDS);
   timeline = createEmptyTimeline();
   transitions = [];
   markers = [];
@@ -1346,8 +1362,10 @@ function makeGetLayers() {
         const handle = sourceInputs.get(layer.clip.sourceId);
         if (!handle?.frameSource) continue;
         if (decodedCount >= budget) {
+          // Stop decoding video past the budget but keep scanning: source-less
+          // title layers above the budgeted stack still composite (no decode).
           overBudget = true;
-          break;
+          continue;
         }
         const decoded = await decodeFrameForLayer(handle, layer.clip.sourceId, layer.sourceTime);
         if (!decoded) continue;
@@ -1666,7 +1684,7 @@ function makeTitleClipId(): string {
  * collides with footage on the base track (Phase 14).
  */
 function handleAddTitle(cmd: Extract<WorkerCommand, { type: 'add-title' }>) {
-  commitTimelineMutation(() => {
+  const added = commitTimelineMutation(() => {
     const start = cmd.start !== undefined && Number.isFinite(cmd.start) && cmd.start >= 0 ? cmd.start : 0;
     const makeClip = () =>
       defaultTitleClip({ id: makeTitleClipId(), start, duration: DEFAULT_TITLE_DURATION_S });
@@ -1683,6 +1701,9 @@ function handleAddTitle(cmd: Extract<WorkerCommand, { type: 'add-title' }>) {
     const overlayTrackId = withTrack[withTrack.length - 1]!.id;
     return insertClip(withTrack, overlayTrackId, makeClip());
   });
+  // First title on a footage-free timeline: stand up playback so the title-only
+  // preview renders (afterTimelineMutation only refreshes an existing controller).
+  if (added && !playback) setupPlayback();
 }
 
 function handleSetTitle(cmd: Extract<WorkerCommand, { type: 'set-title' }>) {
@@ -1856,12 +1877,20 @@ async function handleRelinkSource(cmd: Extract<WorkerCommand, { type: 'relink-so
 
 function setupPlayback() {
   const handle = getPlaybackSource();
-  if (!handle?.frameSource) return;
+  // Title-only timelines have no decodable video source but are still renderable
+  // (source-less title cards over black). Fall back to a default 1080p/30 canvas
+  // so preview/playback work without footage (Phase 14 full support).
+  const hasTitles = titleClips().length > 0;
+  if (!handle?.frameSource && !hasTitles) return;
 
-  const ladder = buildPreviewLadder(handle.displayWidth, handle.displayHeight);
+  const width = handle?.frameSource ? handle.displayWidth : TITLE_ONLY_CANVAS.width;
+  const height = handle?.frameSource ? handle.displayHeight : TITLE_ONLY_CANVAS.height;
+  const frameRate = handle?.frameSource && handle.frameRate > 0 ? handle.frameRate : TITLE_ONLY_CANVAS.frameRate;
+
+  const ladder = buildPreviewLadder(width, height);
   // Budget the adaptive downgrade to the source frame period (e.g. ~16.6ms at
   // 60fps, ~41.6ms at 24fps), falling back to 33ms (~30fps) for unknown rates.
-  const budgetMs = handle.frameRate > 0 ? 1000 / handle.frameRate : 33;
+  const budgetMs = frameRate > 0 ? 1000 / frameRate : 33;
   adaptive = new AdaptiveResolution(ladder, budgetMs);
   ensureFrameCache();
 
@@ -1872,7 +1901,7 @@ function setupPlayback() {
   const getFrames = makeGetLayers();
   playback = new PlaybackController<LayerMeta>({
     duration: getTimelineDuration(timeline),
-    frameRate: handle.frameRate,
+    frameRate,
     getFrames,
     renderFrames: (layers) => {
       // The stack is already budgeted + offline-skipped + z-ordered by
@@ -1981,25 +2010,16 @@ function firstExportVideoHandle(): MediaInputHandle | null {
 
 function exportSettingsForProbe(): ExportSettings | null {
   const videoHandle = firstExportVideoHandle();
-  if (!videoHandle) return null;
+  // Title-only timelines export over the default canvas (no decodable video).
+  if (!videoHandle && titleClips().length === 0) return null;
+  const width = videoHandle?.displayWidth ?? TITLE_ONLY_CANVAS.width;
+  const height = videoHandle?.displayHeight ?? TITLE_ONLY_CANVAS.height;
+  const frameRate = videoHandle?.frameRate ?? TITLE_ONLY_CANVAS.frameRate;
   const timelineDuration = getTimelineDuration(timeline);
   const base =
-    lastExportSettings ??
-    defaultExportSettings(
-      'quality',
-      videoHandle.displayWidth,
-      videoHandle.displayHeight,
-      videoHandle.frameRate,
-      timelineDuration,
-    );
+    lastExportSettings ?? defaultExportSettings('quality', width, height, frameRate, timelineDuration);
   try {
-    return normalizeExportSettings(
-      base,
-      videoHandle.displayWidth,
-      videoHandle.displayHeight,
-      videoHandle.frameRate,
-      timelineDuration,
-    );
+    return normalizeExportSettings(base, width, height, frameRate, timelineDuration);
   } catch {
     return null;
   }

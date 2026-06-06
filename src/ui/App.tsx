@@ -981,7 +981,7 @@ export function App() {
         }}
         exportControl={
           <ExportDialog
-            hasMedia={metadata() !== null && accelerated()}
+            hasMedia={(metadata() !== null || hasTimeline()) && accelerated()}
             exporting={exporting()}
             progress={exportProgress()}
             lastResult={exportResult()}

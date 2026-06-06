@@ -911,4 +911,33 @@ describe('title clips', () => {
     expect(moved[0]!.clips[0]!.start).toBe(5);
     expect(removeClip(moved, 'v', 'title-1')[0]!.clips).toHaveLength(0);
   });
+
+  it('title out-edge can extend past its current end (still-like, no source)', () => {
+    const title = defaultTitleClip({ id: 'title-1', start: 0, duration: 5 });
+    const timeline = [videoTrack([title])];
+
+    // Shrink, then lengthen back out past the original end — no sourceDuration.
+    const shorter = trimClip(timeline, 'v', 'title-1', { edge: 'out', time: 3 });
+    expect(shorter[0]!.clips[0]!.duration).toBe(3);
+    const longer = trimClip(shorter, 'v', 'title-1', { edge: 'out', time: 9 });
+    expect(longer[0]!.clips[0]!.duration).toBe(9);
+  });
+
+  it('title in-edge can extend left and keeps in-point at 0', () => {
+    const title = defaultTitleClip({ id: 'title-1', start: 4, duration: 4 });
+    const timeline = [videoTrack([title])];
+    const extended = trimClip(timeline, 'v', 'title-1', { edge: 'in', time: 1 });
+    expect(extended[0]!.clips[0]!.start).toBe(1);
+    expect(extended[0]!.clips[0]!.duration).toBe(7);
+    expect(extended[0]!.clips[0]!.inPoint).toBe(0);
+  });
+
+  it('title out-edge is still bounded by the next neighbor', () => {
+    const title = defaultTitleClip({ id: 'title-1', start: 0, duration: 4 });
+    const blocker = defaultTitleClip({ id: 'title-2', start: 6, duration: 2 });
+    const timeline = [videoTrack([title, blocker])];
+    // Extending past the neighbor's start (6) is rejected.
+    expect(trimClip(timeline, 'v', 'title-1', { edge: 'out', time: 7 })).toBe(timeline);
+    expect(trimClip(timeline, 'v', 'title-1', { edge: 'out', time: 6 })[0]!.clips[0]!.duration).toBe(6);
+  });
 });

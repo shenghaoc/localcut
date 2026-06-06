@@ -735,6 +735,10 @@ export function trimClip(timeline: Timeline, trackId: string, clipId: string, op
     if (other.start >= clipEnd && other.start < nextStart) nextStart = other.start;
   }
 
+  // Title clips are source-less and still-like: no decoded media bounds them, so
+  // both edges move freely (neighbor-bounded only) and the in-point stays 0.
+  const title = isTitleClip(clip);
+
   let nextStartOut: number;
   let nextDuration: number;
   let nextInPoint: number;
@@ -748,16 +752,18 @@ export function trimClip(timeline: Timeline, trackId: string, clipId: string, op
     if (time < prevEnd) return timeline;
     const offset = time - clip.start;
     const candidateInPoint = clip.inPoint + offset;
-    // The new source-side in-point can't be negative.
-    if (candidateInPoint < 0) return timeline;
+    // The new source-side in-point can't be negative (titles have none).
+    if (!title && candidateInPoint < 0) return timeline;
     nextStartOut = time;
     nextDuration = clip.duration - offset;
-    nextInPoint = candidateInPoint;
+    nextInPoint = title ? 0 : candidateInPoint;
   } else {
     if (time <= clip.start) return timeline;
     // Must not overlap the next neighbor.
     if (time > nextStart) return timeline;
-    if (sourceDuration !== undefined && finite(sourceDuration)) {
+    if (title) {
+      // Still-like: out-edge bounded only by the next neighbor (checked above).
+    } else if (sourceDuration !== undefined && finite(sourceDuration)) {
       // Out-edge extension is bounded by available source content.
       const maxOutTime = clip.start + (sourceDuration - clip.inPoint);
       if (time > maxOutTime) return timeline;

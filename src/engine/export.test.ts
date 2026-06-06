@@ -13,7 +13,13 @@ import {
   timelineTimeAt,
   videoBitrateForPreset,
 } from './export';
-import { DEFAULT_TRACK_MIX, defaultTimelineClip, type Timeline, type TimelineTrack } from './timeline';
+import {
+  DEFAULT_TRACK_MIX,
+  defaultTimelineClip,
+  defaultTitleClip,
+  type Timeline,
+  type TimelineTrack,
+} from './timeline';
 import type { MediaInputHandle } from './media-io';
 
 function audioTrack(
@@ -118,6 +124,19 @@ describe('export planning', () => {
       container: 'mp4',
     });
     expect(plan.videoBitrate).toBe(videoBitrateForPreset('quality', 1920, 1080));
+  });
+
+  it('plans a title-only export (no decodable video) over the default canvas', () => {
+    const titleTimeline: Timeline = [
+      {
+        id: 'v1',
+        type: 'video',
+        ...DEFAULT_TRACK_MIX,
+        clips: [defaultTitleClip({ id: 'clip-title-1', start: 0, duration: 4 })],
+      },
+    ];
+    const plan = buildExportPlan(titleTimeline, new Map(), qualitySettings(), null);
+    expect(plan).toMatchObject({ width: 1920, height: 1080, frameRate: 30, hasAudio: false });
   });
 
   it('clamps range export and re-bases output timestamps', () => {

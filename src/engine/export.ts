@@ -49,6 +49,10 @@ const MAX_EXPORT_WIDTH = 1920;
 const MAX_EXPORT_HEIGHT = 1080;
 const MP4_CHUNK_BYTES = 4 * 1024 * 1024;
 const DEFAULT_EXPORT_FPS = 30;
+/** Default export geometry for title-only timelines (no decodable video). */
+const TITLE_ONLY_EXPORT_WIDTH = 1920;
+const TITLE_ONLY_EXPORT_HEIGHT = 1080;
+const TITLE_ONLY_EXPORT_FPS = 30;
 const AAC_CODEC = 'mp4a.40.2';
 const OPUS_CODEC = 'opus';
 const H264_CODEC = 'avc1.640028';
@@ -337,7 +341,12 @@ export function buildExportPlan(
   probe: ThroughputProbe | null,
 ): ExportPlan {
   const videoHandle = firstVideoHandle(timeline, sources);
-  if (!videoHandle) {
+  // Title-only timelines have no decodable video but are still exportable
+  // (source-less titles over black) using the default canvas geometry below.
+  const hasTitles = timeline.some(
+    (track) => track.type === 'video' && track.clips.some(isTitleClip),
+  );
+  if (!videoHandle && !hasTitles) {
     throw new Error('Export requires at least one decodable video clip.');
   }
 
@@ -348,9 +357,9 @@ export function buildExportPlan(
 
   const normalized = normalizeExportSettings(
     settings,
-    videoHandle.displayWidth,
-    videoHandle.displayHeight,
-    videoHandle.frameRate,
+    videoHandle?.displayWidth ?? TITLE_ONLY_EXPORT_WIDTH,
+    videoHandle?.displayHeight ?? TITLE_ONLY_EXPORT_HEIGHT,
+    videoHandle?.frameRate ?? TITLE_ONLY_EXPORT_FPS,
     timelineDuration,
   );
   const { rangeStartS, exportDuration } = resolveExportRange(timelineDuration, normalized.range);
@@ -739,7 +748,9 @@ async function encodeVideoRange(
         }
         const sourceHandle = sources.get(layer.clip.sourceId);
         if (!sourceHandle?.frameSource) continue;
-        if (decodedCount >= layerBudget) break;
+        // Stop decoding video past the budget but keep scanning so source-less
+        // title layers above the budgeted stack still composite (preview parity).
+        if (decodedCount >= layerBudget) continue;
         const decoded = await sourceHandle.frameSource.frameAt(layer.sourceTime);
         if (!decoded) continue;
         decodedCount += 1;
