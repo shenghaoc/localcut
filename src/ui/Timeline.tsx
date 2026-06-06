@@ -149,9 +149,13 @@ export function Timeline(props: TimelineProps) {
     const ticks: { time: number; label: string }[] = [];
     const interval = rulerInterval();
     const duration = modelDuration();
-    for (let time = 0; time <= duration + 0.0001; time += interval) {
-      const rounded = Math.round(time * 1000) / 1000;
-      ticks.push({ time: rounded, label: formatTick(rounded) });
+    // Integer indexing avoids the rounding drift of `time += interval` (e.g.
+    // 0.1 accumulating to 9.99999…) and the phantom trailing tick a float guard
+    // could emit.
+    const count = Math.ceil(duration / interval);
+    for (let i = 0; i <= count; i++) {
+      const time = Math.round(i * interval * 1000) / 1000;
+      ticks.push({ time, label: formatTick(time) });
     }
     return ticks;
   });

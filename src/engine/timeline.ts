@@ -356,7 +356,10 @@ export function duplicateClips(
     const clip = timeline[loc.trackIndex]!.clips[loc.clipIndex]!;
     earliestStart = Math.min(earliestStart, clip.start);
     latestEnd = Math.max(latestEnd, clipEnd(clip));
-    clips.push({ trackId: ref.trackId, clip: cloneWithNewId(clip) });
+    // Use cloneClip (not cloneWithNewId): pasteClips assigns the single fresh
+    // id below, so cloning with a new id here too would compound the id on every
+    // duplicate (clip-<orig>-<uuid1>-<uuid2>...).
+    clips.push({ trackId: ref.trackId, clip: cloneClip(clip) });
   }
 
   const pasteAt = atTime !== undefined ? normalizeMoveStart(atTime) : latestEnd;

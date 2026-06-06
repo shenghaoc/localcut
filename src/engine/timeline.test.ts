@@ -299,6 +299,16 @@ describe('timeline', () => {
       { trackId: 'video-track', clipId: 'b' },
     ]);
     expect(duplicated[0]!.clips.map((item) => item.start)).toEqual([0, 3, 4, 7]);
+    // Duplicated clips get exactly one fresh id segment appended to the source
+    // id (e.g. "a-<uuid>"), not a compounded "a-<uuid>-<uuid>" from cloning twice.
+    const dupIds = [duplicated[0]!.clips[2]!.id, duplicated[0]!.clips[3]!.id];
+    expect(dupIds[0]!.startsWith('a-')).toBe(true);
+    expect(dupIds[1]!.startsWith('b-')).toBe(true);
+    // A single appended UUID yields 6 dash-separated segments; a compounded id
+    // would have 11.
+    expect(dupIds[0]!.split('-')).toHaveLength(6);
+    expect(dupIds[1]!.split('-')).toHaveLength(6);
+    expect(new Set(dupIds).size).toBe(2);
 
     const pasted = pasteClips(
       timeline,

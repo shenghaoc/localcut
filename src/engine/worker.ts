@@ -1282,12 +1282,16 @@ function handleTrim(cmd: Extract<WorkerCommand, { type: 'trim-clip' }>) {
   const track = timeline.find((t) => t.id === cmd.trackId);
   const clip = track?.clips.find((c) => c.id === cmd.clipId);
   const sourceDuration = clip ? sourceInputs.get(clip.sourceId)?.duration : undefined;
-  commitTimelineMutation(() =>
-    trimClip(timeline, cmd.trackId, cmd.clipId, {
-      edge: cmd.edge,
-      time: cmd.time,
-      sourceDuration,
-    }),
+  commitTimelineMutation(
+    () =>
+      trimClip(timeline, cmd.trackId, cmd.clipId, {
+        edge: cmd.edge,
+        time: cmd.time,
+        sourceDuration,
+      }),
+    // Coalesce the ~16/s debounced trim messages of a single drag into one
+    // history entry per clip+edge so a long drag doesn't exhaust the undo ring.
+    { coalesceKey: { clipId: cmd.clipId, key: `trim-${cmd.edge}` } },
   );
 }
 
