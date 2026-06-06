@@ -27,14 +27,17 @@ describe('computeCacheUsage', () => {
         entry({ id: 'proxy', category: 'proxies', byteSize: 300 }),
         entry({ id: 'render', category: 'render-chunks', byteSize: 450 }),
         entry({ id: 'waveform', category: 'waveforms', byteSize: 25 }),
+        entry({ id: 'manifest', category: 'metadata', byteSize: 10 }),
       ],
       budget,
       { usageBytes: 900, quotaBytes: 1_000 },
     );
 
-    expect(usage.totalBytes).toBe(775);
+    expect(usage.totalBytes).toBe(785);
     expect(usage.categories.proxies).toBe(300);
     expect(usage.categories.renderChunks).toBe(450);
+    expect(usage.categories.metadata).toBe(10);
+    expect(DEFAULT_CACHE_BUDGET.categorySoftLimits.metadata).toBeGreaterThan(0);
     expect(usage.warning).toBe('storage-pressure');
   });
 });

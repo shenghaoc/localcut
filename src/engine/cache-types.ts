@@ -189,6 +189,7 @@ export interface CacheBudget {
     readonly thumbnails: number;
     readonly filmstrips: number;
     readonly waveforms: number;
+    readonly metadata: number;
   };
   readonly protectedRanges: readonly TimeRange[];
   readonly pinnedProxyIds: readonly string[];
@@ -205,6 +206,7 @@ export const DEFAULT_CACHE_BUDGET: CacheBudget = {
     thumbnails: 256 * 1024 * 1024,
     filmstrips: 512 * 1024 * 1024,
     waveforms: 128 * 1024 * 1024,
+    metadata: 64 * 1024 * 1024,
   },
   protectedRanges: [],
   pinnedProxyIds: [],

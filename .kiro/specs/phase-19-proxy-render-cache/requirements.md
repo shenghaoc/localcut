@@ -27,7 +27,7 @@
 - **R3.2** Define `ProxyManifest` as the cache-local manifest that maps source fingerprints to proxy assets and records schema version, cache version, project id, source conformance hash, generation settings, and category usage.
 - **R3.3** Define `RenderCacheKey` as a canonical, stable key covering timeline range, frame rate, preview/export mode, source fingerprints, proxy/original source mode, effects, transforms, transitions, title texture hashes, LUT hashes, keyframes, output size, color/output settings, and cache schema version.
 - **R3.4** Define `RenderCacheEntry` as the cache-local record for a rendered chunk, including key hash, timeline range, frame range, output descriptor, dependency summary, chunk path, byte size, status, created/last-used timestamps, and validation diagnostics.
-- **R3.5** Define `CacheBudget` as the project/user budget policy for total bytes, per-category soft limits, minimum free-space reserve, warning threshold, eviction threshold, and protected active ranges.
+- **R3.5** Define `CacheBudget` as the project/user budget policy for total bytes, per-category soft limits including metadata, minimum free-space reserve, warning threshold, eviction threshold, and protected active ranges.
 
 **Acceptance criteria:** exported types are strict, readonly where practical, and contain no `any`; key serialization is deterministic across object insertion order and process restarts.
 
@@ -43,7 +43,7 @@
 
 ## R5 - Render Cache Keying and Reuse
 
-- **R5.1** Cache rendered chunks by canonical `RenderCacheKey`; a hit is valid only when every timeline, source, effect, transform, transition, title, LUT, keyframe, output-size, and source-mode dependency matches.
+- **R5.1** Cache rendered chunks by canonical `RenderCacheKey`; a hit is valid only when the key hash matches and the full canonical key comparison proves every timeline, source, effect, transform, transition, title, LUT, keyframe, output-size, and source-mode dependency matches.
 - **R5.2** Preview render cache and export render cache are separate modes. Export cache entries generated from proxies are usable only for explicit proxy export, never for default original-source export.
 - **R5.3** Render cache chunks are produced by the same accelerated render path used for preview/export compositing. Do not introduce a second implementation of effects, transforms, transitions, titles, LUTs, or keyframe sampling.
 - **R5.4** Render-cache reads and writes must not add CPU pixel readback to the premium hot path. Cache capture uses encoded video chunks, GPU-owned output frames, or browser-native transfer paths that preserve the no-`getImageData` rule.

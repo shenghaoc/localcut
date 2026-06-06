@@ -2,9 +2,10 @@ import type {
   ClipDependencyKey,
   ProxyGenerationSettings,
   RenderCacheKey,
+  RenderCacheEntry,
   SourceDependencyKey,
 } from './cache-types';
-import type { SourceDescriptorSnapshot } from '../protocol';
+import type { ExportSettings, SourceDescriptorSnapshot } from '../protocol';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -115,8 +116,45 @@ export function proxySettingsHash(settings: ProxyGenerationSettings): string {
   return hashStableValue('proxy-settings', settings);
 }
 
+export function canonicalExportSettingsForCache(settings: ExportSettings): ExportSettings {
+  const canonical: ExportSettings = {
+    preset: settings.preset,
+    codec: settings.codec,
+    container: settings.container,
+    width: settings.width,
+    height: settings.height,
+    fps: settings.fps,
+    videoBitrate: settings.videoBitrate,
+  };
+  if (settings.range) {
+    canonical.range = {
+      startS: settings.range.startS,
+      endS: settings.range.endS,
+    };
+  }
+  if (settings.sourceMode === 'proxy') {
+    canonical.sourceMode = 'proxy';
+  }
+  return canonical;
+}
+
+export function exportSettingsHash(settings: ExportSettings): string {
+  return hashStableValue('export-settings', canonicalExportSettingsForCache(settings));
+}
+
 export function renderCacheKeyHash(key: RenderCacheKey): string {
   return hashStableValue('render-cache-key', canonicalRenderCacheKey(key));
+}
+
+export function renderCacheKeysEqual(a: RenderCacheKey, b: RenderCacheKey): boolean {
+  return stableStringify(canonicalRenderCacheKey(a)) === stableStringify(canonicalRenderCacheKey(b));
+}
+
+export function renderCacheEntryMatchesKey(
+  entry: Pick<RenderCacheEntry, 'keyHash' | 'key'>,
+  requestedKey: RenderCacheKey,
+): boolean {
+  return entry.keyHash === renderCacheKeyHash(requestedKey) && renderCacheKeysEqual(entry.key, requestedKey);
 }
 
 function sortStrings(values: readonly string[]): string[] {

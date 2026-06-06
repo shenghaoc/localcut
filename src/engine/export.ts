@@ -340,8 +340,6 @@ export function normalizeExportSettings(
   };
   if (settings.sourceMode === 'proxy') {
     normalizedSettings.sourceMode = 'proxy';
-  } else if (settings.sourceMode === 'original') {
-    normalizedSettings.sourceMode = 'original';
   }
   return normalizedSettings;
 }

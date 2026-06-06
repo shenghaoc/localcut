@@ -160,6 +160,7 @@ export interface CacheBudget {
     readonly thumbnails: number;
     readonly filmstrips: number;
     readonly waveforms: number;
+    readonly metadata: number;
   };
   readonly protectedRanges: readonly TimeRange[];
   readonly pinnedProxyIds: readonly string[];
@@ -187,6 +188,7 @@ export interface CacheStore {
 - IndexedDB Blob fallback is acceptable when OPFS is unavailable, including when `navigator.storage.getDirectory` exists but throws `SecurityError`/`DOMException` in private browsing or nested contexts; the UI must label large proxy/render-cache features as reduced if quota or performance is limited.
 - Cache paths are generated from opaque ids/hashes and sanitized before writing. Do not derive OPFS/IndexedDB paths from raw media file names, user-visible URLs, or other identifying strings.
 - Writes use temp paths followed by manifest commit. If a tab closes mid-write, repair deletes temp files and stale `writing` entries on the next startup.
+- Delete operations report deleted and missing paths separately for both OPFS and IndexedDB fallback stores so repair can distinguish cleanup success from already-missing derivatives.
 
 ## Proxy workflow
 
@@ -196,7 +198,7 @@ export interface CacheStore {
 
 - Recommend proxies for sources above configured resolution/bitrate thresholds, heavy codecs, VFR sources, or sources whose measured preview decode/render throughput falls below the project timeline fps.
 - Prefer sources used in the active timeline over unused bin assets.
-- Respect user setting: disabled, ask, automatic when recommended, or selected sources only.
+- Respect user setting: disabled, ask, automatic when recommended, or selected sources only. Ask-mode plans are marked as requiring user confirmation before a scheduler may start them.
 
 ### Generation path
 
@@ -241,10 +243,10 @@ For a requested range:
 1. Build a `RenderCacheKey` from the current resolved timeline graph and output settings.
 2. Hash the canonical key.
 3. Query the cache manifest/dependency index.
-4. Use the chunk only when status is `ready`, file exists, key hash matches, and the output descriptor is compatible with the request.
+4. Use the hash only as a fast filter; use the chunk only when status is `ready`, file exists, key hash matches, full canonical key comparison passes, and the output descriptor is compatible with the request.
 5. On miss, render from the normal renderer and optionally write a new chunk.
 
-Preview cache and export cache have different `mode` values. Preview cache can be lower resolution and proxy-backed. Default export keys use `sourceMode: 'original'`.
+Preview cache and export cache have different `mode` values. Preview cache can be lower resolution and proxy-backed. Default export keys use `sourceMode: 'original'`. Export settings hashes canonicalize omitted `sourceMode` and explicit `sourceMode: 'original'` as the same input so original-source export remains the default without causing avoidable cache misses.
 
 ### Generation
 

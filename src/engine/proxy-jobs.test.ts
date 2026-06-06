@@ -15,6 +15,15 @@ function sourceFixture(patch: Partial<SourceDescriptorSnapshot> = {}): SourceDes
     byteSize: 500_000_000,
     durationS: 60,
     mimeType: 'video/mp4',
+    adapterId: 'mediabunny',
+    timing: {
+      normalizedStartS: 0,
+      durationS: 60,
+      video: { trackId: 'v1', firstTimestampS: 0, lastTimestampS: 60, durationS: 60 },
+      audio: { trackId: 'a1', firstTimestampS: 0, lastTimestampS: 60, durationS: 60 },
+      avOffsetS: 0,
+      frameRateMode: 'constant',
+    },
     video: {
       width: 3840,
       height: 2160,
@@ -95,6 +104,7 @@ describe('planProxyCandidates', () => {
     expect(plans[0]!.activeRanges).toEqual([{ startS: 3, endS: 6 }]);
     expect(plans[0]!.settings.width).toBe(1280);
     expect(plans[0]!.settings.height).toBe(720);
+    expect(plans.every((plan) => !plan.requiresConfirmation)).toBe(true);
   });
 
   it('respects selected-only and disabled preferences', () => {
@@ -106,6 +116,12 @@ describe('planProxyCandidates', () => {
         selectedSourceIds: new Set(['b']),
       }).map((plan) => plan.sourceId),
     ).toEqual(['b']);
+  });
+
+  it('marks ask-mode plans as pending user confirmation', () => {
+    const [plan] = planProxyCandidates([sourceFixture()], { preference: 'ask' });
+
+    expect(plan?.requiresConfirmation).toBe(true);
   });
 });
 
@@ -124,16 +140,44 @@ describe('proxyStatusForAsset', () => {
         height: source.video!.height,
         frameRate: source.video!.frameRate,
         frameRateMode: source.video!.frameRateMode,
+        codec: source.video!.codec,
+        canDecode: source.video!.canDecode,
       },
       audio: {
         channels: source.audio!.channels,
         sampleRate: source.audio!.sampleRate,
+        codec: source.audio!.codec,
+        canDecode: source.audio!.canDecode,
       },
     };
 
     expect(proxyStatusForAsset(asset, null)).toMatchObject({
       status: 'recommended',
       mode: 'original',
+    });
+  });
+
+  it('preserves heavy-codec recommendations in media-bin snapshots', () => {
+    const asset: MediaAssetSnapshot = {
+      sourceId: 'source-heavy',
+      fileName: 'small-hevc.mov',
+      kind: 'video',
+      durationS: 60,
+      byteSize: 30_000_000,
+      mimeType: 'video/quicktime',
+      video: {
+        width: 1920,
+        height: 1080,
+        frameRate: 30,
+        frameRateMode: 'constant',
+        codec: 'hvc1.1.6.L120',
+        canDecode: true,
+      },
+    };
+
+    expect(proxyStatusForAsset(asset, null)).toMatchObject({
+      status: 'recommended',
+      reason: 'Recommended for heavy codec.',
     });
   });
 });

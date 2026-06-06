@@ -320,10 +320,14 @@ export interface MediaAssetSnapshot {
     frameRate: number | null;
     frameRateMode?: SourceFrameRateModeSnapshot;
     rotationDeg?: number;
+    codec?: string | null;
+    canDecode?: boolean;
   };
   audio?: {
     channels: number;
     sampleRate: number;
+    codec?: string | null;
+    canDecode?: boolean;
   };
   timing?: NormalizedSourceTimingSnapshot;
   health?: SourceHealthReportSnapshot;

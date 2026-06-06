@@ -1,4 +1,5 @@
 import type { TimeRange } from './cache-types';
+import { stableStringify } from './cache-key';
 import { getTimelineDuration, isTitleClip, type Timeline, type TimelineClip, type TimelineTransition } from './timeline';
 
 export interface CacheInvalidation {
@@ -42,7 +43,7 @@ export function clipRange(clip: Pick<TimelineClip, 'start' | 'duration'>): TimeR
 }
 
 function clipSignature(clip: TimelineClip): string {
-  return JSON.stringify({
+  return stableStringify({
     kind: clip.kind ?? 'video',
     sourceId: clip.sourceId,
     start: clip.start,
@@ -66,7 +67,7 @@ function clipSignature(clip: TimelineClip): string {
 }
 
 function transitionSignature(transition: TimelineTransition): string {
-  return JSON.stringify({
+  return stableStringify({
     trackId: transition.trackId,
     fromClipId: transition.fromClipId,
     toClipId: transition.toClipId,
@@ -211,9 +212,10 @@ export function transitionRange(timeline: Timeline, transition: TimelineTransiti
 }
 
 export function invalidateTransitionEdit(
-  timeline: Timeline,
+  beforeTimeline: Timeline,
   before: readonly TimelineTransition[],
   after: readonly TimelineTransition[],
+  afterTimeline: Timeline = beforeTimeline,
 ): CacheInvalidation {
   const beforeById = new Map(before.map((transition) => [transition.id, transition]));
   const afterById = new Map(after.map((transition) => [transition.id, transition]));
@@ -225,7 +227,7 @@ export function invalidateTransitionEdit(
   for (const [id, previous] of beforeById) {
     const next = afterById.get(id);
     if (!next || transitionSignature(previous) !== transitionSignature(next)) {
-      const range = transitionRange(timeline, previous);
+      const range = transitionRange(beforeTimeline, previous);
       if (range) ranges.push(range);
       clipIds.push(previous.fromClipId, previous.toClipId);
       trackIds.push(previous.trackId);
@@ -235,11 +237,11 @@ export function invalidateTransitionEdit(
   for (const [id, next] of afterById) {
     const previous = beforeById.get(id);
     if (!previous || transitionSignature(previous) !== transitionSignature(next)) {
-      const range = transitionRange(timeline, next);
+      const range = transitionRange(afterTimeline, next);
       if (range) ranges.push(range);
       clipIds.push(next.fromClipId, next.toClipId);
       trackIds.push(next.trackId);
-      if (!previous) reasons.push('transition-added');
+      reasons.push(previous ? 'transition-edited' : 'transition-added');
     }
   }
 

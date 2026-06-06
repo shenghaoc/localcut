@@ -3,6 +3,7 @@ import {
   invalidateSourceChange,
   invalidateTimelineEdit,
   invalidateTransitionEdit,
+  mergeInvalidations,
   rangesOverlap,
   transitionRange,
 } from './cache-invalidation';
@@ -73,6 +74,33 @@ describe('invalidateTimelineEdit', () => {
     expect(invalidation.reasons).toContain('track-order');
     expect(invalidation.ranges).toEqual([{ startS: 0, endS: 10 }]);
   });
+
+  it('does not invalidate identical clips that deserialize with different key order', () => {
+    const before = timelineFixture();
+    const previous = before[0]!.clips[0]!;
+    const after = timelineFixture();
+    after[0]!.clips[0] = {
+      title: previous.title,
+      audioFadeOut: previous.audioFadeOut,
+      audioFadeIn: previous.audioFadeIn,
+      lut: previous.lut,
+      keyframes: previous.keyframes,
+      transform: { ...previous.transform },
+      effects: { ...previous.effects },
+      inPoint: previous.inPoint,
+      duration: previous.duration,
+      start: previous.start,
+      sourceId: previous.sourceId,
+      kind: previous.kind,
+      id: previous.id,
+    };
+
+    expect(invalidateTimelineEdit(before, after)).toMatchObject({
+      ranges: [],
+      clipIds: [],
+      reasons: [],
+    });
+  });
 });
 
 describe('transition invalidation', () => {
@@ -96,6 +124,45 @@ describe('transition invalidation', () => {
     expect(invalidation.clipIds).toEqual(['clip-a', 'clip-b']);
     expect(invalidation.ranges).toEqual([{ startS: 3.5, endS: 6.5 }]);
     expect(invalidation.reasons).toContain('transition-edited');
+  });
+
+  it('uses before and after timelines when a transition edit moves its clips', () => {
+    const beforeTimeline = timelineFixture();
+    const afterTimeline = timelineFixture();
+    afterTimeline[0]!.clips = [
+      clip('clip-a', 'source-a', 10, 5),
+      clip('clip-b', 'source-b', 15, 5),
+    ];
+
+    const invalidation = invalidateTransitionEdit(
+      beforeTimeline,
+      [transition],
+      [{ ...transition, durationS: 3 }],
+      afterTimeline,
+    );
+
+    expect(invalidation.ranges).toEqual([
+      { startS: 4, endS: 6 },
+      { startS: 13.5, endS: 16.5 },
+    ]);
+    expect(invalidation.reasons).toEqual(['transition-edited']);
+  });
+
+  it('combines clip-move and transition-edit invalidation without losing the old transition range', () => {
+    const beforeTimeline = timelineFixture();
+    const afterTimeline = timelineFixture();
+    afterTimeline[0]!.clips = [
+      clip('clip-a', 'source-a', 10, 5),
+      clip('clip-b', 'source-b', 15, 5),
+    ];
+
+    const invalidation = mergeInvalidations(
+      invalidateTimelineEdit(beforeTimeline, afterTimeline),
+      invalidateTransitionEdit(beforeTimeline, [transition], [{ ...transition, durationS: 3 }], afterTimeline),
+    );
+
+    expect(invalidation.ranges).toEqual([{ startS: 0, endS: 20 }]);
+    expect(invalidation.reasons).toEqual(['clip-edited', 'transition-edited']);
   });
 });
 

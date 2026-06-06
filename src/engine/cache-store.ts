@@ -57,6 +57,15 @@ function manifestPath(projectId: string): string {
   return `manifests/${projectId}.json`;
 }
 
+function temporaryPathFor(path: string): string {
+  const cryptoLike = globalThis.crypto;
+  const suffix =
+    cryptoLike && 'randomUUID' in cryptoLike
+      ? cryptoLike.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(16).slice(2)}`;
+  return `${path}.tmp-${suffix}`;
+}
+
 async function blobFromData(data: ReadableStream<Uint8Array> | Blob): Promise<Blob> {
   if (data instanceof Blob) return data;
   return new Response(data).blob();
@@ -112,9 +121,19 @@ class OpfsCacheStore implements CacheStore {
   }
 
   async writeChunk(path: string, data: ReadableStream<Uint8Array> | Blob): Promise<CacheWriteResult> {
-    const file = await this.fileHandle(path, true);
-    const byteSize = await writeDataToFile(file, data);
-    return { path, byteSize };
+    const tempPath = temporaryPathFor(path);
+    let byteSize = 0;
+    try {
+      const tempFile = await this.fileHandle(tempPath, true);
+      byteSize = await writeDataToFile(tempFile, data);
+      const tempBlob = await this.readChunk(tempPath);
+      if (!tempBlob) throw new Error('Temporary cache write disappeared before commit.');
+      const finalFile = await this.fileHandle(path, true);
+      await writeDataToFile(finalFile, tempBlob);
+      return { path, byteSize };
+    } finally {
+      await this.removePath(tempPath).catch(() => undefined);
+    }
   }
 
   async readChunk(path: string): Promise<Blob | null> {
@@ -160,6 +179,14 @@ class OpfsCacheStore implements CacheStore {
     if (!fileName) throw new Error('Cache path must include a file name.');
     const dir = await this.directoryForParts(parts, create);
     return dir.getFileHandle(fileName, { create });
+  }
+
+  private async removePath(path: string): Promise<void> {
+    const parts = cleanPath(path);
+    const fileName = parts.pop();
+    if (!fileName) return;
+    const dir = await this.directoryForParts(parts, false);
+    await dir.removeEntry(fileName);
   }
 
   private async directoryForParts(parts: readonly string[], create: boolean): Promise<OpfsDirectoryHandle> {
@@ -239,12 +266,18 @@ class IndexedDbCacheStore implements CacheStore {
     const tx = db.transaction(CACHE_STORE_NAME, 'readwrite');
     const store = tx.objectStore(CACHE_STORE_NAME);
     const deletedPaths: string[] = [];
+    const missingPaths: string[] = [];
     for (const path of paths) {
+      const existing = (await idbRequest(store.get(path))) as IndexedCacheRecord | undefined;
+      if (!existing) {
+        missingPaths.push(path);
+        continue;
+      }
       await idbRequest(store.delete(path));
       deletedPaths.push(path);
     }
     await transactionDone(tx);
-    return { deletedPaths, missingPaths: [] };
+    return { deletedPaths, missingPaths };
   }
 
   async estimate(): Promise<CacheStorageEstimate> {

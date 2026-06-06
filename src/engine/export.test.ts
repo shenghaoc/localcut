@@ -7,6 +7,7 @@ import {
   estimateEtaSeconds,
   exportFrameBounds,
   mixAudioWindow,
+  normalizeExportSettings,
   probeExportCodecs,
   rebaseOutputTimestamp,
   resolveExportRange,
@@ -156,6 +157,27 @@ describe('export planning', () => {
       container: 'mp4',
     });
     expect(plan.videoBitrate).toBe(videoBitrateForPreset('quality', 1920, 1080));
+  });
+
+  it('keeps original-source export mode implicit when normalizing settings', () => {
+    expect(
+      normalizeExportSettings(
+        qualitySettings({ sourceMode: 'original' }),
+        1920,
+        1080,
+        30,
+        5,
+      ).sourceMode,
+    ).toBeUndefined();
+    expect(
+      normalizeExportSettings(
+        qualitySettings({ sourceMode: 'proxy' }),
+        1920,
+        1080,
+        30,
+        5,
+      ).sourceMode,
+    ).toBe('proxy');
   });
 
   it('plans a title-only export (no decodable video) over the default canvas', () => {

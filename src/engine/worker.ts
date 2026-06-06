@@ -392,12 +392,16 @@ function assetSnapshotFromDescriptor(descriptor: SourceDescriptor): MediaAssetSn
           frameRate: descriptor.video.frameRate,
           frameRateMode: descriptor.video.frameRateMode,
           rotationDeg: descriptor.video.rotationDeg,
+          codec: descriptor.video.codec,
+          canDecode: descriptor.video.canDecode,
         }
       : undefined,
     audio: descriptor.audio
       ? {
           channels: descriptor.audio.channels,
           sampleRate: descriptor.audio.sampleRate,
+          codec: descriptor.audio.codec,
+          canDecode: descriptor.audio.canDecode,
         }
       : undefined,
     timing: descriptor.timing,

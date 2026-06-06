@@ -26,6 +26,7 @@ export interface ProxyJobPlan {
   readonly sourceConformanceHash: string;
   readonly priority: ProxyJobPriority;
   readonly reasons: readonly ProxyRecommendationReason[];
+  readonly requiresConfirmation: boolean;
   readonly settings: ProxyGenerationSettings;
   readonly settingsHash: string;
   readonly activeRanges: readonly TimeRange[];
@@ -149,6 +150,7 @@ export function planProxyCandidates(
       sourceConformanceHash: sourceConformanceHash(source),
       priority: priorityForSource(source.sourceId, options),
       reasons,
+      requiresConfirmation: options.preference === 'ask',
       settings,
       settingsHash: proxySettingsHash(settings),
       activeRanges: options.activeSourceIds?.has(source.sourceId) ? (options.activeRanges ?? []) : [],
@@ -188,15 +190,15 @@ export function proxyStatusForAsset(
     video: asset.video
       ? {
           ...asset.video,
-          codec: null,
-          canDecode: asset.health?.status !== 'blocked',
+          codec: asset.video.codec ?? null,
+          canDecode: asset.video.canDecode ?? asset.health?.status !== 'blocked',
         }
       : undefined,
     audio: asset.audio
       ? {
           ...asset.audio,
-          codec: null,
-          canDecode: asset.health?.status !== 'blocked',
+          codec: asset.audio.codec ?? null,
+          canDecode: asset.audio.canDecode ?? asset.health?.status !== 'blocked',
         }
       : undefined,
   };

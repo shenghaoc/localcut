@@ -9,9 +9,9 @@
 - [ ] **T1.2** Add `src/engine/cache-key.ts` with canonical serialization and hashing helpers for `RenderCacheKey` and proxy settings.
   - Acceptance: tests prove stable hashes across object insertion order, array ordering rules, schema-version changes, output-size changes, and proxy/original source-mode changes.
 - [ ] **T1.3** Add `src/engine/cache-store.ts` with a worker-only `CacheStore` interface and OPFS primary implementation.
-  - Acceptance: all file/blob writes happen through the worker-facing store; no OPFS handles or cache blobs cross into `src/ui/`; cache paths are generated from opaque ids/hashes and sanitized before writing, not raw media file names or remote identifiers.
+  - Acceptance: all file/blob writes happen through the worker-facing store; no OPFS handles or cache blobs cross into `src/ui/`; cache paths are generated from opaque ids/hashes and sanitized before writing, not raw media file names or remote identifiers; OPFS chunk writes use temp paths before final manifest commit.
 - [ ] **T1.4** Add an IndexedDB Blob fallback behind the same `CacheStore` interface.
-  - Acceptance: fallback is feature-detected by actively calling `navigator.storage.getDirectory()` when present and catching `SecurityError`/`DOMException` failures before falling back; fallback is labeled as reduced for large caches and covered by manifest read/write tests with a mocked store.
+  - Acceptance: fallback is feature-detected by actively calling `navigator.storage.getDirectory()` when present and catching `SecurityError`/`DOMException` failures before falling back; fallback is labeled as reduced for large caches and covered by manifest read/write tests with a mocked store; delete results distinguish actually deleted paths from missing keys.
 - [ ] **T1.5** Add manifest startup repair for temp files, missing files, orphaned files, and stale `writing` entries.
   - Acceptance: tests load damaged manifests and end with either valid ready entries or deleted/missing entries, never half-ready cache records.
 
@@ -31,7 +31,7 @@
 ## Proxy generation
 
 - [ ] **T3.1** Add `src/engine/proxy-jobs.ts` with `planProxyCandidates()` using Phase 18 `SourceInspection`, `SourceConformance`, source fingerprints, and hardware throughput.
-  - Acceptance: tests recommend proxies for large/heavy/VFR/slow sources and do not recommend proxies for small sources under budget.
+  - Acceptance: tests recommend proxies for large/heavy/VFR/slow sources and do not recommend proxies for small sources under budget; ask-mode recommendations are marked as requiring user confirmation before scheduling.
 - [ ] **T3.2** Add proxy settings selection and support probing for local preview codecs/containers.
   - Acceptance: unsupported encoder/container combinations are not scheduled; the chosen proxy format is recorded in `ProxyAsset`.
 - [ ] **T3.3** Implement the proxy decode -> scale -> encode -> mux path in the proxy/cache worker using worker-owned media adapters.
@@ -65,7 +65,7 @@
 - [ ] **T5.3** Keep preview and export cache modes separate.
   - Acceptance: tests prove proxy-backed preview chunks cannot satisfy default original-source export keys.
 - [ ] **T5.4** Add render-cache entry validation before use.
-  - Acceptance: a hit requires ready status, existing chunk file, matching key hash, and compatible output descriptor; dependency summaries are used for invalidation routing and manifest repair, not as a second hit-validation gate.
+  - Acceptance: a hit requires ready status, existing chunk file, matching key hash, full canonical key comparison, and compatible output descriptor; dependency summaries are used for invalidation routing and manifest repair, not as a second hit-validation gate.
 - [ ] **T5.5** Add unit tests for cache-key stability and invalidation-by-schema-version.
   - Acceptance: changing title hash, LUT hash, keyframe hash, output size, source fingerprint, source mode, or renderer version produces a different key.
 
@@ -100,7 +100,7 @@
 ## Budgeting, eviction, and cleanup
 
 - [ ] **T8.1** Add `src/engine/cache-budget.ts` for usage accounting and eviction ranking.
-  - Acceptance: tests cover per-category totals, quota estimates, warning thresholds, eviction thresholds, and minimum-free-space reserve.
+  - Acceptance: tests cover per-category totals including metadata, quota estimates, warning thresholds, eviction thresholds, and minimum-free-space reserve.
 - [ ] **T8.2** Implement LRU-plus-priority eviction.
   - Acceptance: active ranges, in-flight writes, active export chunks, and pinned proxies are protected; old render chunks/thumbnails/filmstrips/waveforms evict before unpinned proxies.
 - [ ] **T8.3** Add storage-pressure handling to proxy/cache worker.

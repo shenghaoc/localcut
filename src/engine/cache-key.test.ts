@@ -1,14 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
+  canonicalExportSettingsForCache,
+  exportSettingsHash,
   hashStableValue,
   proxySettingsHash,
+  renderCacheEntryMatchesKey,
   renderCacheKeyHash,
   sourceConformanceHash,
   sourceFingerprintFromDescriptor,
   stableStringify,
 } from './cache-key';
 import { RENDER_CACHE_SCHEMA_VERSION, type RenderCacheKey } from './cache-types';
-import type { SourceDescriptorSnapshot } from '../protocol';
+import type { ExportSettings, SourceDescriptorSnapshot } from '../protocol';
 
 function sourceFixture(patch: Partial<SourceDescriptorSnapshot> = {}): SourceDescriptorSnapshot {
   return {
@@ -132,6 +135,32 @@ describe('proxySettingsHash', () => {
   });
 });
 
+describe('exportSettingsHash', () => {
+  function exportSettings(patch: Partial<ExportSettings> = {}): ExportSettings {
+    return {
+      preset: 'quality',
+      codec: 'h264',
+      container: 'mp4',
+      width: 1920,
+      height: 1080,
+      fps: 30,
+      videoBitrate: 8_000_000,
+      ...patch,
+    };
+  }
+
+  it('treats implicit and explicit original source mode as the same cache input', () => {
+    const implicitOriginal = exportSettings();
+    const explicitOriginal = exportSettings({ sourceMode: 'original' });
+
+    expect(canonicalExportSettingsForCache(explicitOriginal)).not.toHaveProperty('sourceMode');
+    expect(exportSettingsHash(implicitOriginal)).toBe(exportSettingsHash(explicitOriginal));
+    expect(exportSettingsHash(implicitOriginal)).not.toBe(
+      exportSettingsHash(exportSettings({ sourceMode: 'proxy' })),
+    );
+  });
+});
+
 describe('renderCacheKeyHash', () => {
   it('sorts unordered dependencies before hashing', () => {
     const a = renderKey();
@@ -155,5 +184,20 @@ describe('renderCacheKeyHash', () => {
     expect(renderCacheKeyHash(key)).not.toBe(renderCacheKeyHash(renderKey({ lutHashes: ['lut-b'] })));
     expect(renderCacheKeyHash(key)).not.toBe(renderCacheKeyHash(renderKey({ keyframeHashes: ['kf-b'] })));
     expect(renderCacheKeyHash(key)).not.toBe(renderCacheKeyHash(renderKey({ rendererVersion: 'renderer-v2' })));
+  });
+
+  it('uses the full canonical key as the render-cache correctness gate', () => {
+    const requestedKey = renderKey();
+    const differentKey = renderKey({ rendererVersion: 'renderer-v2' });
+
+    expect(
+      renderCacheEntryMatchesKey(
+        {
+          keyHash: renderCacheKeyHash(requestedKey),
+          key: differentKey,
+        },
+        requestedKey,
+      ),
+    ).toBe(false);
   });
 });
