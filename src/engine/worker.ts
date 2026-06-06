@@ -513,6 +513,7 @@ async function attachSourceFile(
   file: File,
   fileHandle?: FileSystemFileHandle | null,
   persist = false,
+  canAttach: () => boolean = () => true,
 ): Promise<{ ok: true; handle: MediaInputHandle } | { ok: false; message: string }> {
   let mediaHandle: MediaInputHandle;
   try {
@@ -529,6 +530,10 @@ async function attachSourceFile(
       ok: false,
       message: `Picked file does not match ${descriptor.fileName}. Match requires the same name, size, and duration.`,
     };
+  }
+  if (!canAttach()) {
+    mediaHandle.dispose();
+    return { ok: false, message: 'Restore was superseded by a newer project action.' };
   }
 
   const previous = sourceInputs.get(descriptor.sourceId);
@@ -556,9 +561,13 @@ async function attachSourceFile(
   return { ok: true, handle: mediaHandle };
 }
 
-async function restoreStoredSources(descriptors: readonly SourceDescriptor[]): Promise<SourceDescriptorSnapshot[]> {
+async function restoreStoredSources(
+  descriptors: readonly SourceDescriptor[],
+  isCurrent: () => boolean = () => true,
+): Promise<SourceDescriptorSnapshot[]> {
   const unresolved: SourceDescriptorSnapshot[] = [];
   for (const descriptor of descriptors) {
+    if (!isCurrent()) break;
     if (sourceInputs.has(descriptor.sourceId)) continue;
     if (restoringSourceIds.has(descriptor.sourceId)) {
       unresolved.push(descriptor);
@@ -569,14 +578,29 @@ async function restoreStoredSources(descriptors: readonly SourceDescriptor[]): P
     let attached = false;
     try {
       const stored = await loadStoredSource(descriptor.sourceId).catch(() => null);
+      if (!isCurrent()) break;
       if (stored?.file) {
-        const result = await attachSourceFile(descriptor, stored.file, stored.fileHandle ?? null);
+        const result = await attachSourceFile(
+          descriptor,
+          stored.file,
+          stored.fileHandle ?? null,
+          false,
+          isCurrent,
+        );
         attached = result.ok;
       }
+      if (!isCurrent()) break;
       if (!attached && stored?.fileHandle) {
         const file = await fileFromHandle(stored.fileHandle);
+        if (!isCurrent()) break;
         if (file) {
-          const result = await attachSourceFile(descriptor, file, stored.fileHandle, true);
+          const result = await attachSourceFile(
+            descriptor,
+            file,
+            stored.fileHandle,
+            false,
+            isCurrent,
+          );
           attached = result.ok;
         }
       }
@@ -736,6 +760,8 @@ async function checkRestoreAvailable(): Promise<void> {
 
 async function handleRestoreProject(): Promise<void> {
   restoreOfferGeneration += 1;
+  const restoreGeneration = restoreOfferGeneration;
+  const emptyProjectId = projectId;
   let doc = restoreDoc;
   if (!currentProjectIsEmpty()) {
     restoreDoc = null;
@@ -762,6 +788,14 @@ async function handleRestoreProject(): Promise<void> {
         unresolvedSources: [],
         message: `Could not read autosaved project: ${loaded.reason}`,
       });
+      return;
+    }
+    if (
+      restoreOfferGeneration !== restoreGeneration ||
+      projectId !== emptyProjectId ||
+      !currentProjectIsEmpty()
+    ) {
+      restoreDoc = null;
       return;
     }
     doc = loaded.doc;
@@ -791,7 +825,13 @@ async function handleRestoreProject(): Promise<void> {
     sourceDescriptors.set(descriptor.sourceId, descriptor);
   }
 
-  const unresolved = await restoreStoredSources(doc.sources);
+  const restoreProjectId = projectId;
+  const isCurrentRestore = () =>
+    restoreOfferGeneration === restoreGeneration && projectId === restoreProjectId;
+  const unresolved = await restoreStoredSources(doc.sources, isCurrentRestore);
+  if (!isCurrentRestore()) {
+    return;
+  }
   setupPlayback();
   ensureClockAndTimeline();
   postHistoryState();
