@@ -52,6 +52,29 @@ function sourceFixture(): SourceDescriptor {
 }
 
 describe('project serialization', () => {
+  it('round-trips export settings when present', () => {
+    const doc = serializeProject({
+      projectId: 'project-1',
+      timeline: timelineFixture(),
+      sources: [sourceFixture()],
+      exportSettings: {
+        preset: 'fast',
+        codec: 'vp9',
+        container: 'webm',
+        width: 1280,
+        height: 720,
+        fps: 24,
+        videoBitrate: 4_000_000,
+        range: { startS: 1, endS: 8 },
+      },
+    });
+
+    const result = deserializeProject(doc);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.doc.exportSettings).toEqual(doc.exportSettings);
+  });
+
   it('round-trips a versioned project document', () => {
     const doc = serializeProject({
       projectId: 'project-1',

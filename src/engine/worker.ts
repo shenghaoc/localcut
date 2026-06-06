@@ -2,6 +2,7 @@
 import {
   assertCrossOriginIsolated,
   ClockIndex,
+  type ExportSettings,
   type ThroughputProbe,
   type MediaMetadata,
   type SourceDescriptorSnapshot,
@@ -46,7 +47,14 @@ import {
 } from './playback';
 import { probeEncodeThroughput } from './hardware-probe';
 import { FrameCache, makeFrameCacheKey } from './frame-cache';
-import { ExportCancelledError, exportTimelineToMp4 } from './export';
+import {
+  ExportCancelledError,
+  buildExportPlan,
+  defaultExportSettings,
+  exportTimeline,
+  normalizeExportSettings,
+  probeExportCodecs,
+} from './export';
 import { createTimelineHistory, type HistoryCoalesceKey } from './history';
 import {
   cloneTimelineSnapshot,
@@ -85,6 +93,7 @@ let restoreOfferGeneration = 0;
 let frameCache: FrameCache | null = null;
 let currentProbe: ThroughputProbe | null = null;
 let exportAbort: AbortController | null = null;
+let lastExportSettings: ExportSettings | null = null;
 const FRAME_CACHE_BUDGET_BYTES = 64 * 1024 * 1024;
 let audioRing: AudioRingViews | null = null;
 let audioWriteAnchor = 0;
@@ -408,6 +417,7 @@ async function persistCurrentProject(): Promise<void> {
     projectId,
     timeline,
     sources: currentProjectSources(),
+    exportSettings: lastExportSettings ?? undefined,
   });
   await saveStoredProject(doc);
 }
@@ -820,6 +830,7 @@ async function handleRestoreProject(): Promise<void> {
   restoreDoc = null;
   projectId = doc.projectId;
   timeline = cloneTimelineSnapshot(doc.timeline);
+  lastExportSettings = doc.exportSettings ?? null;
   nextSourceId = nextSourceIdFromDescriptors(doc.sources);
   for (const descriptor of doc.sources) {
     sourceDescriptors.set(descriptor.sourceId, descriptor);
@@ -856,6 +867,7 @@ async function handleNewProject(): Promise<void> {
   teardownMedia();
   sourceDescriptors.clear();
   history.clear();
+  lastExportSettings = null;
   projectId = makeProjectId();
   nextSourceId = 1;
   ensureClockAndTimeline();
@@ -1274,6 +1286,69 @@ function cloneTimelineForExport(): Timeline {
   return cloneTimelineSnapshot(timeline);
 }
 
+function firstExportVideoHandle(): MediaInputHandle | null {
+  for (const track of timeline) {
+    if (track.type !== 'video') continue;
+    for (const clip of track.clips) {
+      const handle = sourceInputs.get(clip.sourceId);
+      if (handle?.frameSource) return handle;
+    }
+  }
+  return null;
+}
+
+function exportSettingsForProbe(): ExportSettings | null {
+  const videoHandle = firstExportVideoHandle();
+  if (!videoHandle) return null;
+  const timelineDuration = getTimelineDuration(timeline);
+  const base =
+    lastExportSettings ??
+    defaultExportSettings(
+      'quality',
+      videoHandle.displayWidth,
+      videoHandle.displayHeight,
+      videoHandle.frameRate,
+      timelineDuration,
+    );
+  try {
+    return normalizeExportSettings(
+      base,
+      videoHandle.displayWidth,
+      videoHandle.displayHeight,
+      videoHandle.frameRate,
+      timelineDuration,
+    );
+  } catch {
+    return null;
+  }
+}
+
+async function handleExportProbe() {
+  const settings = exportSettingsForProbe();
+  if (!settings) {
+    post({ type: 'export-codecs', supported: [], settings: defaultExportSettings('quality', 1920, 1080, 30, 0) });
+    return;
+  }
+
+  const supported = await probeExportCodecs(
+    settings.width,
+    settings.height,
+    settings.fps,
+    settings.videoBitrate,
+  );
+  const preferredCodec = supported.some((entry) => entry.codec === settings.codec)
+    ? settings.codec
+    : (supported[0]?.codec ?? settings.codec);
+  const resolved = normalizeExportSettings(
+    { ...settings, codec: preferredCodec, container: preferredCodec === 'h264' ? 'mp4' : 'webm' },
+    firstExportVideoHandle()!.displayWidth,
+    firstExportVideoHandle()!.displayHeight,
+    firstExportVideoHandle()!.frameRate,
+    getTimelineDuration(timeline),
+  );
+  post({ type: 'export-codecs', supported, settings: resolved });
+}
+
 async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-start' }>) {
   if (exportAbort) {
     post({ type: 'export-error', message: 'An export is already running.' });
@@ -1289,12 +1364,24 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
   exportAbort = controller;
 
   try {
-    const result = await exportTimelineToMp4({
-      timeline: cloneTimelineForExport(),
+    const exportTimelineSnapshot = cloneTimelineForExport();
+    const settings = normalizeExportSettings(
+      cmd.settings,
+      firstExportVideoHandle()?.displayWidth ?? 1920,
+      firstExportVideoHandle()?.displayHeight ?? 1080,
+      firstExportVideoHandle()?.frameRate ?? 30,
+      getTimelineDuration(exportTimelineSnapshot),
+    );
+    buildExportPlan(exportTimelineSnapshot, sourceInputs, settings, currentProbe);
+    lastExportSettings = settings;
+    scheduleAutosave();
+
+    const result = await exportTimeline({
+      timeline: exportTimelineSnapshot,
       sources: sourceInputs,
       renderer,
       outputHandle: cmd.output,
-      preset: cmd.preset,
+      settings,
       throughputProbe: currentProbe,
       signal: controller.signal,
       onProgress: (progress) => post({ type: 'export-progress', progress }),
@@ -1350,6 +1437,9 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
       break;
     case 'step':
       playback?.step(cmd.direction);
+      break;
+    case 'export-probe':
+      void handleExportProbe();
       break;
     case 'export-start':
       void handleExportStart(cmd);

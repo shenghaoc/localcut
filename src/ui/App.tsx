@@ -3,8 +3,9 @@ import { useRegisterSW } from 'virtual:pwa-register/solid';
 import { Link2, RotateCcw, Plus } from 'lucide-solid';
 import {
   CLOCK_BUFFER_BYTES,
-  type ExportPreset,
+  type ExportCodecSupport,
   type ExportProgress,
+  type ExportSettings,
   type MediaMetadata,
   type SourceDescriptorSnapshot,
   type TimelineTrackSnapshot,
@@ -122,6 +123,8 @@ export function App() {
   const [exportProgress, setExportProgress] = createSignal<ExportProgress | null>(null);
   const [exportResult, setExportResult] = createSignal<string | null>(null);
   const [exportError, setExportError] = createSignal<string | null>(null);
+  const [exportCodecs, setExportCodecs] = createSignal<ExportCodecSupport[]>([]);
+  const [exportSettings, setExportSettings] = createSignal<ExportSettings | null>(null);
   const [isOffline, setIsOffline] = createSignal(!initialOnlineStatus());
   const [hasActiveSW, setHasActiveSW] = createSignal(false);
   const [audioWarning, setAudioWarning] = createSignal<string | null>(null);
@@ -303,12 +306,18 @@ export function App() {
           [`${msg.trackId}:${msg.clipId}`]: msg.peaks,
         }));
         break;
+      case 'export-codecs':
+        setExportCodecs(msg.supported);
+        setExportSettings(msg.settings);
+        break;
       case 'export-progress':
         setExporting(true);
         setExportError(null);
         setExportResult(null);
         setExportProgress(msg.progress);
-        setStatusLine(`Exporting MP4 · ${Math.round(msg.progress.percent * 100)}%`);
+        setStatusLine(
+          `Exporting ${msg.progress.codec.toUpperCase()} ${msg.progress.container.toUpperCase()} · ${Math.round(msg.progress.percent * 100)}%`,
+        );
         break;
       case 'export-complete':
         setExporting(false);
@@ -520,23 +529,30 @@ export function App() {
     if (file) importMedia(file);
   }
 
-  function exportFileName(): string {
+  function exportFileName(settings: ExportSettings): string {
     const sourceName = metadata()?.fileName.replace(/\.[^.]+$/, '') || 'export';
-    return `${sourceName}.mp4`;
+    const extension = settings.container === 'webm' ? '.webm' : '.mp4';
+    return `${sourceName}${extension}`;
   }
 
-  async function pickOutputHandle(): Promise<FileSystemFileHandle | null> {
+  async function pickOutputHandle(settings: ExportSettings): Promise<FileSystemFileHandle | null> {
     if (typeof window.showSaveFilePicker !== 'function') {
       throw new Error('Export requires the File System Access API in a Chromium desktop browser.');
     }
+    const isWebm = settings.container === 'webm';
     try {
       return await window.showSaveFilePicker({
-        suggestedName: exportFileName(),
+        suggestedName: exportFileName(settings),
         types: [
-          {
-            description: 'MP4 video',
-            accept: { 'video/mp4': ['.mp4'] },
-          },
+          isWebm
+            ? {
+                description: 'WebM video',
+                accept: { 'video/webm': ['.webm'] },
+              }
+            : {
+                description: 'MP4 video',
+                accept: { 'video/mp4': ['.mp4'] },
+              },
         ],
       });
     } catch (e) {
@@ -545,7 +561,11 @@ export function App() {
     }
   }
 
-  async function startExport(preset: ExportPreset) {
+  function probeExportCodecs() {
+    bridge?.send({ type: 'export-probe' });
+  }
+
+  async function startExport(settings: ExportSettings) {
     if (!metadata() || exporting()) return;
     if (!accelerated()) {
       setExportError(
@@ -561,7 +581,7 @@ export function App() {
     setExportError(null);
     setStatusLine('Choosing export destination…');
     try {
-      const output = await pickOutputHandle();
+      const output = await pickOutputHandle(settings);
       if (!output) {
         setExporting(false);
         setStatusLine('Export canceled');
@@ -569,7 +589,7 @@ export function App() {
       }
       const { bridge: b } = ensureWorker();
       setStatusLine('Starting export…');
-      b.send({ type: 'export-start', preset, output });
+      b.send({ type: 'export-start', settings, output });
     } catch (e) {
       setExporting(false);
       const message = e instanceof Error ? e.message : String(e);
@@ -712,6 +732,10 @@ export function App() {
             progress={exportProgress()}
             lastResult={exportResult()}
             error={exportError()}
+            timelineDuration={clock.duration()}
+            supportedCodecs={exportCodecs()}
+            initialSettings={exportSettings()}
+            onProbe={probeExportCodecs}
             onStart={startExport}
             onCancel={() => bridge?.send({ type: 'export-cancel' })}
           />

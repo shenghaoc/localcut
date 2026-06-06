@@ -524,13 +524,52 @@ body {
   color: var(--muted-foreground);
 }
 
-.export-presets {
+.export-presets,
+.export-codecs {
   display: grid;
   grid-template-columns: 1fr 1fr;
   margin-bottom: 0.75rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   overflow: hidden;
+}
+
+.export-codecs {
+  grid-template-columns: 1fr;
+}
+
+.export-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
+  margin-bottom: 0.75rem;
+}
+
+.export-field {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.export-field input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--secondary);
+  color: var(--foreground);
+  font: inherit;
+}
+
+.export-range-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.55rem;
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .segmented-btn {

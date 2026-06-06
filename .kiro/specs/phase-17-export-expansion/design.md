@@ -1,6 +1,6 @@
 # Design: Phase 17 — Export Expansion
 
-> Status: **Planned** — probed codec choice, output overrides, and range export; never offer an option the browser can't encode.
+> Status: **Complete** — probed codec choice, output overrides, and range export; never offer an option the browser can't encode.
 
 ## Goal
 

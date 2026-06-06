@@ -1,4 +1,4 @@
-import type { SourceDescriptorSnapshot } from '../protocol';
+import type { ExportSettings, SourceDescriptorSnapshot } from '../protocol';
 import { normalizeClipEffects, type Timeline, type TimelineClip, type TimelineTrack } from './timeline';
 
 export const PROJECT_SCHEMA_VERSION = 1;
@@ -12,6 +12,7 @@ export interface ProjectDoc {
   savedAt: string;
   timeline: Timeline;
   sources: SourceDescriptor[];
+  exportSettings?: ExportSettings;
 }
 
 export interface SerializeProjectOptions {
@@ -19,6 +20,7 @@ export interface SerializeProjectOptions {
   timeline: Timeline;
   sources: readonly SourceDescriptor[];
   savedAt?: Date;
+  exportSettings?: ExportSettings;
 }
 
 export type DeserializeProjectResult =
@@ -45,6 +47,55 @@ function requiredString(value: unknown): string | null {
 
 function optionalString(value: unknown): string | null | undefined {
   return value === undefined || value === null || typeof value === 'string' ? value : undefined;
+}
+
+function parseExportSettings(value: unknown): ExportSettings | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!isRecord(value)) return undefined;
+  const preset = value.preset === 'quality' || value.preset === 'fast' ? value.preset : null;
+  const codec = value.codec === 'h264' || value.codec === 'vp9' || value.codec === 'av1' ? value.codec : null;
+  const container = value.container === 'mp4' || value.container === 'webm' ? value.container : null;
+  const width = finiteNumber(value.width);
+  const height = finiteNumber(value.height);
+  const fps = finiteNumber(value.fps);
+  const videoBitrate = finiteNumber(value.videoBitrate);
+  if (!preset || !codec || !container || width === null || height === null || fps === null || videoBitrate === null) {
+    return undefined;
+  }
+  if (width <= 0 || height <= 0 || fps <= 0 || videoBitrate <= 0) return undefined;
+
+  let range: ExportSettings['range'];
+  if (value.range !== undefined) {
+    if (!isRecord(value.range)) return undefined;
+    const startS = finiteNumber(value.range.startS);
+    const endS = finiteNumber(value.range.endS);
+    if (startS === null || endS === null || endS <= startS) return undefined;
+    range = { startS, endS };
+  }
+
+  return {
+    preset,
+    codec,
+    container,
+    width,
+    height,
+    fps,
+    videoBitrate,
+    range,
+  };
+}
+
+function cloneExportSettings(settings: ExportSettings): ExportSettings {
+  return {
+    preset: settings.preset,
+    codec: settings.codec,
+    container: settings.container,
+    width: settings.width,
+    height: settings.height,
+    fps: settings.fps,
+    videoBitrate: settings.videoBitrate,
+    range: settings.range ? { ...settings.range } : undefined,
+  };
 }
 
 function cloneClip(clip: TimelineClip): TimelineClip {
@@ -97,13 +148,17 @@ function cloneSourceDescriptor(source: SourceDescriptor): SourceDescriptor {
 }
 
 export function serializeProject(options: SerializeProjectOptions): ProjectDoc {
-  return {
+  const doc: ProjectDoc = {
     schemaVersion: PROJECT_SCHEMA_VERSION,
     projectId: options.projectId,
     savedAt: (options.savedAt ?? new Date()).toISOString(),
     timeline: cloneTimelineSnapshot(options.timeline),
     sources: options.sources.map(cloneSourceDescriptor),
   };
+  if (options.exportSettings) {
+    doc.exportSettings = cloneExportSettings(options.exportSettings);
+  }
+  return doc;
 }
 
 function parseClip(value: unknown): TimelineClip | null {
@@ -254,6 +309,8 @@ function deserializeV1(value: Record<string, unknown>): DeserializeProjectResult
     sources.push(parsed);
   }
 
+  const exportSettings = parseExportSettings(value.exportSettings);
+
   return {
     ok: true,
     doc: {
@@ -262,6 +319,7 @@ function deserializeV1(value: Record<string, unknown>): DeserializeProjectResult
       savedAt,
       timeline,
       sources,
+      ...(exportSettings ? { exportSettings } : {}),
     },
   };
 }
