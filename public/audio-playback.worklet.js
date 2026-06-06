@@ -35,10 +35,15 @@ class AudioPlaybackProcessor extends AudioWorkletProcessor {
     this.generation = -1;
     this.timelineAnchor = 0;
     this.framesConsumed = 0;
+    this.masterGain = 1;
     this.port.onmessage = (event) => {
       if (event.data?.type === 'seek') {
         this.timelineAnchor = event.data.time;
         this.framesConsumed = 0;
+      }
+      if (event.data?.type === 'master-gain') {
+        const gain = event.data.gain;
+        this.masterGain = Number.isFinite(gain) ? Math.max(0, gain) : 1;
       }
     };
   }
@@ -83,7 +88,7 @@ class AudioPlaybackProcessor extends AudioWorkletProcessor {
       const src = ringFrame * this.channels;
       for (let ch = 0; ch < outChannels; ch += 1) {
         const srcCh = Math.min(ch, this.channels - 1);
-        const sample = this.pcm[src + srcCh] ?? 0;
+        const sample = (this.pcm[src + srcCh] ?? 0) * this.masterGain;
         output[ch][frame] = sample;
         const abs = Math.abs(sample);
         if (ch === 0) {

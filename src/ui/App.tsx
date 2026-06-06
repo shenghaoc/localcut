@@ -404,7 +404,7 @@ export function App() {
       setAudioWarning(`Audio disabled: ${message}`);
       setStatusLine('Audio disabled · starting video pipeline');
     }
-    b.send({ type: 'init', canvas, sab, audioSab, meterSab: meterBuffer }, [canvas]);
+    b.send({ type: 'init', canvas, sab, audioSab }, [canvas]);
   }
 
   async function importCompatibilityMedia(file: File) {

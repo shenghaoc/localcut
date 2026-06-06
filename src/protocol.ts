@@ -173,13 +173,7 @@ interface SetClipFadeCommand {
 }
 
 export type WorkerCommand =
-  | {
-      type: 'init';
-      canvas: OffscreenCanvas;
-      sab: SharedArrayBuffer;
-      audioSab?: SharedArrayBuffer | null;
-      meterSab?: SharedArrayBuffer | null;
-    }
+  | { type: 'init'; canvas: OffscreenCanvas; sab: SharedArrayBuffer; audioSab?: SharedArrayBuffer | null }
   | { type: 'import'; file: File; fileHandle?: FileSystemFileHandle | null }
   | { type: 'play' }
   | { type: 'pause' }

@@ -42,6 +42,23 @@ export function equalPowerPanLaw(pan: number): { left: number; right: number } {
   };
 }
 
+/** Stereo balance pan: unity at center; hard-pans by attenuating the opposite channel. */
+export function stereoBalancePanLaw(pan: number): { left: number; right: number } {
+  const p = clampPan(pan);
+  if (p <= 0) {
+    return { left: 1, right: 1 + p };
+  }
+  return { left: 1 - p, right: 1 };
+}
+
+/** Mono output ignores pan; stereo tracks use balance panning. */
+export function panCoefficients(pan: number, channels: number): { left: number; right: number } {
+  if (channels <= 1) {
+    return { left: 1, right: 1 };
+  }
+  return stereoBalancePanLaw(pan);
+}
+
 /** Equal-power crossfade gains for transition mixT ∈ [0, 1]. */
 export function equalPowerCrossfadeGains(mixT: number): { outgoing: number; incoming: number } {
   const t = clamp01(mixT);
@@ -98,7 +115,7 @@ export function applyMixStageInPlace(
   const frames = Math.floor(pcm.length / ch);
   if (frames <= 0) return;
 
-  const { left, right } = equalPowerPanLaw(params.pan);
+  const { left, right } = panCoefficients(params.pan, ch);
   const gain = params.gain;
 
   for (let frame = 0; frame < frames; frame += 1) {
@@ -138,37 +155,6 @@ export function applyMasterAndClamp(pcm: Float32Array, masterGain: number): Floa
     pcm[i] = Math.max(-1, Math.min(1, scaled));
   }
   return pcm;
-}
-
-/** Shared fixture exercised by preview pump and export mixer equality tests. */
-export function mixPreviewExportFixture(): { preview: Float32Array; exported: Float32Array } {
-  const channels = 2;
-  const sampleRate = 4;
-  const frameCount = 4;
-  const source = new Float32Array([0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]);
-  const mixParams: MixStageParams = {
-    gain: 1.2,
-    pan: -0.5,
-    fadeInS: 0.25,
-    fadeOutS: 0.25,
-    clipOffsetS: 0,
-    clipDurationS: 1,
-    sampleRate,
-  };
-
-  const previewPcm = source.slice(0, frameCount * channels);
-  applyMixStageInPlace(previewPcm, channels, mixParams);
-  const previewOut = new Float32Array(frameCount * channels);
-  accumulateMix(previewOut, previewPcm);
-  applyMasterAndClamp(previewOut, 0.9);
-
-  const exportPcm = source.slice(0, frameCount * channels);
-  const exportMixed = applyMixStage(exportPcm, channels, mixParams);
-  const exportOut = new Float32Array(frameCount * channels);
-  accumulateMix(exportOut, exportMixed);
-  applyMasterAndClamp(exportOut, 0.9);
-
-  return { preview: previewOut, exported: exportOut };
 }
 
 export function resolveAudioTransitionAt(

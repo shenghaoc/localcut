@@ -80,6 +80,7 @@ let adaptive: AdaptiveResolution | null = null;
 let probeDone = false;
 let timeline: Timeline = createEmptyTimeline();
 let masterGain = DEFAULT_MASTER_GAIN;
+/** Phase 13 will populate this; export crossfades only until preview dual-stream lands. */
 const audioTransitions: AudioTransitionCut[] = [];
 let nextSourceId = 1;
 const sourceInputs = new Map<string, MediaInputHandle>();

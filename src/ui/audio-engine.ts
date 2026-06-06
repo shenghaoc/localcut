@@ -16,7 +16,7 @@ const WORKLET_URL = `${import.meta.env.BASE_URL}audio-playback.worklet.js`;
 export class AudioEngine {
   private context: AudioContext | null = null;
   private worklet: AudioWorkletNode | null = null;
-  private masterGain: GainNode | null = null;
+  private masterGainValue = 1;
   private ringSab: SharedArrayBuffer | null = null;
   private meterSab: SharedArrayBuffer | null = null;
   private ring: AudioRingViews | null = null;
@@ -38,8 +38,9 @@ export class AudioEngine {
   }
 
   setMasterGain(gain: number): void {
-    if (!this.masterGain) return;
-    this.masterGain.gain.value = Number.isFinite(gain) ? Math.max(0, gain) : 1;
+    const value = Number.isFinite(gain) ? Math.max(0, gain) : 1;
+    this.masterGainValue = value;
+    this.worklet?.port.postMessage({ type: 'master-gain', gain: value });
   }
 
   private async setup(
@@ -67,9 +68,8 @@ export class AudioEngine {
         },
       });
 
-      this.masterGain = this.context.createGain();
-      this.worklet.connect(this.masterGain);
-      this.masterGain.connect(this.context.destination);
+      this.worklet.connect(this.context.destination);
+      this.worklet.port.postMessage({ type: 'master-gain', gain: this.masterGainValue });
       return { audioSab: this.ringSab, meterSab: this.meterSab };
     } catch (error) {
       this.dispose();
@@ -113,11 +113,9 @@ export class AudioEngine {
   dispose(): void {
     if (this.ring) Atomics.store(this.ring.header, RingHeader.STATE, RingState.IDLE);
     this.worklet?.disconnect();
-    this.masterGain?.disconnect();
     void this.context?.close();
     this.context = null;
     this.worklet = null;
-    this.masterGain = null;
     this.ring = null;
     this.ringSab = null;
     this.meterSab = null;

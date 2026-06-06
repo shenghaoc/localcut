@@ -19,7 +19,7 @@ import {
   applyMixStage,
   computeClipFadeGain,
   equalPowerCrossfadeGains,
-  equalPowerPanLaw,
+  panCoefficients,
   resolveAudioTransitionAt,
   type AudioTransitionCut,
 } from './audio-mix';
@@ -289,7 +289,7 @@ export async function mixAudioWindow(
               inHandle.audioSource.pcmWindowAt(inSourceTime, runFrames, channels),
             ]);
             const windowStart = cutTime - half;
-            const { left, right } = equalPowerPanLaw(track.pan);
+            const { left, right } = panCoefficients(track.pan, channels);
             for (let frame = 0; frame < runFrames; frame += 1) {
               const frameTime = timelineTime + frame / sampleRate;
               const mixT = (frameTime - windowStart) / transitionSpec.durationS;
