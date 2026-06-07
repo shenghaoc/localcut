@@ -497,6 +497,100 @@ body {
 	color: var(--primary) !important;
 }
 
+.capability-matrix {
+	margin-top: 1rem;
+	padding-top: 1rem;
+	border-top: 1px solid var(--border);
+}
+
+.capability-v2-badge {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+	margin-bottom: 0.75rem;
+	padding: 0.6rem 0.7rem;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-md);
+	background: var(--bg-elevated);
+	font-size: var(--text-sm);
+}
+
+.capability-v2-badge strong {
+	font-size: var(--text-xs);
+	text-transform: uppercase;
+	letter-spacing: var(--tracking-wide);
+}
+
+.capability-v2-badge.is-core-webgpu {
+	border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+}
+
+.capability-v2-badge.is-compatibility-webgpu,
+.capability-v2-badge.is-limited-webcodecs {
+	border-color: color-mix(in srgb, var(--warn) 42%, var(--border));
+}
+
+.capability-matrix details {
+	margin-bottom: 0.75rem;
+	color: var(--text-muted);
+	font-size: var(--text-xs);
+}
+
+.capability-matrix details p {
+	margin: 0.4rem 0 0;
+	overflow-wrap: anywhere;
+	line-height: 1.45;
+}
+
+.capability-matrix-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: grid;
+	gap: 0.45rem;
+}
+
+.capability-matrix-row {
+	display: grid;
+	grid-template-columns: minmax(8rem, 1fr) auto auto;
+	gap: 0.45rem;
+	align-items: center;
+	padding: 0.5rem;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+	background: color-mix(in srgb, var(--bg-elevated) 72%, transparent);
+	font-size: var(--text-xs);
+}
+
+.capability-matrix-row .capability-item-action {
+	grid-column: 1 / -1;
+	margin: 0 !important;
+}
+
+.support-chip {
+	padding: 0.15rem 0.35rem;
+	border-radius: var(--radius-pill);
+	border: 1px solid var(--border);
+	font-size: var(--text-2xs);
+	text-transform: uppercase;
+	letter-spacing: var(--tracking-wide);
+}
+
+.support-chip.is-supported {
+	color: var(--accent);
+	border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+
+.support-chip.is-unsupported {
+	color: var(--warn);
+	border-color: color-mix(in srgb, var(--warn) 40%, var(--border));
+}
+
+.support-chip.is-unknown {
+	color: var(--text-muted);
+}
+
 .diagnostics-panel {
 	position: fixed;
 	top: 0;
@@ -948,6 +1042,45 @@ body {
 
 .export-error {
 	color: var(--danger);
+}
+
+.export-tier-constraints {
+	margin: 0 0 0.75rem;
+	padding: 0.65rem 0.7rem;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-md);
+	background: var(--bg-elevated);
+	color: var(--text-muted);
+	font-size: var(--text-xs);
+}
+
+.export-tier-constraints summary {
+	cursor: pointer;
+	color: var(--foreground);
+	font-weight: 600;
+}
+
+.export-tier-constraints ul {
+	list-style: none;
+	margin: 0.6rem 0;
+	padding: 0;
+	display: grid;
+	gap: 0.35rem;
+}
+
+.export-tier-constraints li {
+	display: grid;
+	gap: 0.15rem;
+}
+
+.export-why-link {
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: var(--primary);
+	font: inherit;
+	font-weight: 600;
+	cursor: pointer;
 }
 
 .export-preset-selector {

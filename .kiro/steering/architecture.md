@@ -100,6 +100,7 @@ Build capability tracks in an order that protects the premium path while making 
 | 15 | Keyframed parameters with shared preview/export sampling; `.cube` LUT grading | Planned |
 | 16 | Audio mixing: shared mix stage, master bus, pan, fades/crossfades, SAB level meters | Active |
 | 17 | Export expansion: probed codecs (H.264/VP9/AV1), size/fps/bitrate overrides, range export | Planned |
+| 26 | Cross-browser compatibility engine: CapabilityTierV2 probes, optional-SAB init, diagnostics, export constraints, reduced-tier helpers | Active |
 
 ## Critical Implementation Details
 

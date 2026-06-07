@@ -4,6 +4,7 @@ import { Download, ListPlus, Save } from 'lucide-solid';
 import { Button } from './components/button';
 import { validateOutputTemplate } from '../engine/export-presets';
 import type {
+  CapabilityProbeResult,
   ExportCodecSupport,
   ExportPreset,
   ExportPresetDoc,
@@ -21,12 +22,14 @@ interface ExportDialogProps {
   error: string | null;
   timelineDuration: number;
   supportedCodecs: ExportCodecSupport[];
+  capabilityProbeV2: CapabilityProbeResult | null;
   initialSettings: ExportSettings | null;
   presets: ExportPresetDoc[];
   markers: TimelineMarkerSnapshot[];
   onProbe: () => void;
   onStart: (settings: ExportSettings) => void;
   onCancel: () => void;
+  onWhyConstraints: () => void;
   onSavePreset: (preset: ExportPresetDoc) => void;
   onDeletePreset: (presetId: string) => void;
   onEnqueue: (
@@ -69,6 +72,30 @@ function defaultSettings(preset: ExportPreset): ExportSettings {
   };
 }
 
+const CODEC_OPTIONS: readonly ExportCodecSupport[] = [
+  { codec: 'h264', container: 'mp4' },
+  { codec: 'vp9', container: 'webm' },
+  { codec: 'av1', container: 'webm' },
+];
+
+function disabledCodecReason(codec: ExportVideoCodec, probe: CapabilityProbeResult | null): string {
+  if (!probe) return 'Codec support has not been probed yet.';
+  switch (codec) {
+    case 'h264':
+      return probe.codecs.h264Encode === 'supported'
+        ? 'MP4 muxing unavailable for this browser tier.'
+        : 'H.264 encode is not available in this browser tier.';
+    case 'vp9':
+      return probe.codecs.vp9Encode === 'supported'
+        ? 'WebM muxing unavailable for this browser tier.'
+        : 'VP9 encode is not available in this browser tier.';
+    case 'av1':
+      return probe.tier === 'core-webgpu'
+        ? 'AV1 encode is not available in this browser.'
+        : 'AV1 export is reserved for the core WebGPU tier.';
+  }
+}
+
 /** Export UI — Phase 6 shell, Phase 17 settings, Phase 24 presets + queue. */
 export function ExportDialog(props: ExportDialogProps) {
   const [open, setOpen] = createSignal(false);
@@ -88,6 +115,10 @@ export function ExportDialog(props: ExportDialogProps) {
   const supportedCodecSet = createMemo(
     () => new Set(props.supportedCodecs.map((entry) => `${entry.codec}:${entry.container}`)),
   );
+  const nonCoreProbe = createMemo(() => {
+    const probe = props.capabilityProbeV2;
+    return probe && probe.tier !== 'core-webgpu' ? probe : null;
+  });
 
   createEffect(() => {
     if (props.exporting || props.error || props.lastResult) setOpen(true);
@@ -306,23 +337,49 @@ export function ExportDialog(props: ExportDialogProps) {
             </button>
           </div>
 
-          <Show when={props.supportedCodecs.length > 0}>
-            <p class="export-eyebrow">Codec</p>
-            <div class="export-codecs" role="group" aria-label="Export codec">
-              <For each={props.supportedCodecs}>
-                {(entry) => (
+          <p class="export-eyebrow">Codec</p>
+          <div class="export-codecs" role="group" aria-label="Export codec">
+            <For each={CODEC_OPTIONS}>
+              {(entry) => {
+                const supported = createMemo(() => supportedCodecSet().has(`${entry.codec}:${entry.container}`));
+                return (
                   <button
                     type="button"
                     class={`segmented-btn${settings().codec === entry.codec ? ' is-active' : ''}`}
                     aria-pressed={settings().codec === entry.codec}
-                    disabled={props.exporting}
+                    disabled={props.exporting || !supported()}
+                    title={supported() ? undefined : disabledCodecReason(entry.codec, props.capabilityProbeV2)}
                     onClick={() => setCodec(entry.codec)}
                   >
                     {codecLabel(entry.codec)} · {entry.container.toUpperCase()}
                   </button>
-                )}
-              </For>
-            </div>
+                );
+              }}
+            </For>
+          </div>
+
+          <Show when={nonCoreProbe()}>
+            {(probe) => (
+              <details class="export-tier-constraints" open>
+                <summary>Current tier constraints</summary>
+                <p class="export-note">
+                  {probe().tier} limits export to codecs and containers that this browser can encode and mux.
+                </p>
+                <ul>
+                  <For each={CODEC_OPTIONS.filter((entry) => !supportedCodecSet().has(`${entry.codec}:${entry.container}`))}>
+                    {(entry) => (
+                      <li>
+                        <span>{codecLabel(entry.codec)} · {entry.container.toUpperCase()}</span>
+                        <span>{disabledCodecReason(entry.codec, probe())}</span>
+                      </li>
+                    )}
+                  </For>
+                </ul>
+                <button type="button" class="export-why-link" onClick={props.onWhyConstraints}>
+                  Why?
+                </button>
+              </details>
+            )}
           </Show>
 
           <div class="export-fields">

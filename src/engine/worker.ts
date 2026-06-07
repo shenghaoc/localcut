@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 import {
   assertCrossOriginIsolated,
+  type CapabilityProbeResult,
   type CaptionTrackSnapshot,
   ClockIndex,
   TIMELINE_EPSILON,
@@ -215,6 +216,7 @@ import { buildWorkerDiagnosticSnapshot } from './diagnostics';
 import { createEmptyRecentErrorLog, logRecentError, type RecentErrorInput } from '../diagnostics/recent-errors';
 
 let clockView: Float64Array | null = null;
+let capabilityProbeV2: CapabilityProbeResult | null = null;
 let renderer: PreviewRenderer | null = null;
 /** Phase 14 title raster cache; created once the GPU device is ready. */
 let titleCache: TitleTextureCache | null = null;
@@ -1244,20 +1246,40 @@ function writeTransport(currentTime: number, playing: boolean) {
 
 async function handleInit(
   canvas: OffscreenCanvas,
-  sab: SharedArrayBuffer,
+  sab?: SharedArrayBuffer | null,
   audioSab?: SharedArrayBuffer | null,
   scopeSab?: SharedArrayBuffer | null,
+  probeResult?: CapabilityProbeResult,
 ) {
-  assertCrossOriginIsolated('Pipeline worker');
-  clockView = new Float64Array(sab);
-  writeClockFull(0, 0, false);
+  capabilityProbeV2 = probeResult ?? null;
+  if (probeResult) {
+    post({ type: 'capability-probe-v2', result: probeResult });
+  }
+  if (sab) {
+    assertCrossOriginIsolated('Pipeline worker');
+    clockView = new Float64Array(sab);
+    writeClockFull(0, 0, false);
+  } else {
+    clockView = null;
+  }
   audioRing = audioSab ? mapAudioRing(audioSab) : null;
 
   // initGpu() resolves with an unavailableReason for expected failures, but shader
   // module / pipeline compilation can still throw; catch so the worker always posts
   // `ready` (the UI would otherwise hang in a loading state).
   try {
-    const gpu = await initGpu(canvas);
+    const gpu = probeResult?.tier === 'limited-webcodecs' || probeResult?.tier === 'shell-only'
+      ? {
+          renderer: null,
+          features: [],
+          limits: {},
+          unavailableReason:
+            probeResult.tier === 'limited-webcodecs'
+              ? 'WebGPU unavailable; limited WebCodecs tier uses compatibility preview only.'
+              : 'Preview unavailable in shell-only tier.',
+          deviceLost: null,
+        }
+      : await initGpu(canvas);
     renderer = gpu.renderer;
     lastWebgpuFeatures = gpu.features;
     lastWebgpuLimits = gpu.limits;
@@ -3571,7 +3593,17 @@ async function handleDispose(): Promise<void> {
   renderer = null;
   clockView = null;
   audioRing = null;
+  capabilityProbeV2 = null;
   post({ type: 'dispose-complete' });
+}
+
+function handleClockTick(time: number): void {
+  if (capabilityProbeV2?.sharedArrayBuffer === 'supported') return;
+  if (!Number.isFinite(time) || time < 0) return;
+  if (clockView) {
+    clockView[ClockIndex.CURRENT_TIME] = time;
+  }
+  playback?.seek(time);
 }
 
 async function handleDiagnosticSnapshot(requestId: string): Promise<void> {
@@ -3603,7 +3635,10 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
   const cmd = event.data;
   switch (cmd.type) {
     case 'init':
-      void handleInit(cmd.canvas, cmd.sab, cmd.audioSab, cmd.scopeSab);
+      void handleInit(cmd.canvas, cmd.sab, cmd.audioSab, cmd.scopeSab, 'probeResult' in cmd ? cmd.probeResult : undefined);
+      break;
+    case 'clock-tick':
+      handleClockTick(cmd.time);
       break;
     case 'import':
       void handleImport(cmd.file, cmd.fileHandle);

@@ -8,7 +8,7 @@
 - **R0.2** Reduced-capability modes must remain fully client-side; browser limitations may not be solved by uploading user media to a server.
 - **R0.3** All tier selection must derive from runtime feature probes. User-agent string must never be used for branching logic, only for display in the diagnostic panel.
 - **R0.4** Reduced modes must not claim desktop-class performance or full export parity with the premium tier.
-- **R0.5** Missing codec or export support must be surfaced to the user before they attempt the operation, not discovered after a failure.
+- **R0.5** Missing codec, container muxing, or export support must be surfaced to the user before they attempt the operation, not discovered after a failure.
 - **R0.6** No unbounded main-thread decode, encode, composite, or pixel-processing loops in any capability tier.
 - **R0.7** Every `VideoFrame` and `ImageBitmap` created in any compatibility path must be `.close()`d or released exactly once.
 
@@ -22,9 +22,9 @@
 ## R2 — CapabilityTierV2
 
 - **R2.1** Define four named tiers in ascending capability order:
-  - `core-webgpu` — WebCodecs encode+decode + WebGPU standard adapter + SAB + OffscreenCanvas + `crossOriginIsolated`. Full premium experience with no restrictions.
-  - `compatibility-webgpu` — WebGPU (standard or compatibility adapter) present + WebCodecs decode present; SAB or COOP/COEP absent, or encode codec set is reduced. GPU-rendered preview with SAB when available or rAF-message clock when SAB is absent; encode where probed; no required SAB-dependent features.
-  - `limited-webcodecs` — WebCodecs decode present; no WebGPU. Canvas2D OffscreenCanvas compositing, SAB when available or rAF-message clock when SAB is absent, no WGSL effects.
+  - `core-webgpu` — WebCodecs decode + WebGPU standard adapter + SAB + OffscreenCanvas + `crossOriginIsolated` + the full required video encode probe set (H.264, VP9, AV1). Full premium experience with no restrictions.
+  - `compatibility-webgpu` — WebGPU (standard or compatibility adapter) present + WebCodecs decode present + OffscreenCanvas present; SAB or COOP/COEP absent, or encode codec set is reduced. GPU-rendered preview with SAB when available or rAF-message clock when SAB is absent; encode where probed; no required SAB-dependent features.
+  - `limited-webcodecs` — WebCodecs decode present + OffscreenCanvas present; no WebGPU. Canvas2D OffscreenCanvas compositing, SAB when available or rAF-message clock when SAB is absent, no WGSL effects.
   - `shell-only` — Neither WebGPU nor WebCodecs available. Timeline editing and project management only; no preview or export.
 - **R2.2** Tier derivation must be a pure function of the probe result; identical probe inputs must always produce the same tier.
 - **R2.3** The active tier must be visible in the persistent status bar and in the diagnostic panel at all times.
@@ -32,12 +32,14 @@
 
 ## R3 — WebGPU Compatibility Mode
 
-- **R3.1** When the standard `requestAdapter()` probe fails but `requestAdapter({ featureLevel: 'compatibility' })` succeeds, record `webGPUCompat: 'supported'` and set `compatibilityAdapter: true` in the probe result; classify the session as `compatibility-webgpu`.
+- **R3.1** When the standard `requestAdapter()` probe fails but `requestAdapter({ featureLevel: 'compatibility' })` succeeds, record `webGPUCompat: 'supported'` and set `compatibilityAdapter: true` in the probe result; classify the session as `compatibility-webgpu` if WebCodecs decode and OffscreenCanvas are also present.
+- **R3.1a** Standard-adapter sessions must also use the reduced compatibility preview path when the resolved tier is `compatibility-webgpu` because of missing SAB/COOP or reduced encode support.
 - **R3.2** The compatibility-mode pipeline must not call `importExternalTexture`; frame ingestion must use `copyExternalImageToTexture` via `createImageBitmap` instead.
 - **R3.3** Shaders compiled for the compatibility pipeline must not request `shader-f16`, `subgroups`, or `timestamp-query` unless each is independently re-probed on the compatibility adapter.
 - **R3.4** Ping-pong textures in the compatibility pipeline must use `rgba8unorm` when f16 storage is unavailable.
 - **R3.5** A single `queue.submit` per frame must be preserved in the compatibility GPU pipeline.
 - **R3.6** The status bar must display a distinct label (e.g. "GPU (compat)") when the compatibility adapter is active; it must not display the same badge as `core-webgpu`.
+- **R3.7** The `ImageBitmap` created for `copyExternalImageToTexture` must be closed immediately after the GPU copy.
 
 ## R4 — Reduced Preview
 
@@ -49,8 +51,8 @@
 
 ## R5 — Reduced Export
 
-- **R5.1** The export dialog must display an encode support summary for the active tier before the user initiates export; supported codecs are selectable, unsupported ones are visibly flagged with a reason.
-- **R5.2** `compatibility-webgpu` export: WebCodecs encode where the per-codec encode probe reports `supported`; unavailable codecs are disabled in the picker but not hidden; falls back to a blob download if the File System Access API is unavailable.
+- **R5.1** The export dialog must display an encode and mux support summary for the active tier before the user initiates export; supported codec/container pairs are selectable, unsupported pairs are visibly flagged with a reason.
+- **R5.2** `compatibility-webgpu` export: WebCodecs encode where the per-codec encode probe reports `supported` and a muxable container pair is known; unavailable codecs remain visible but disabled in the picker; falls back to a blob download if the File System Access API is unavailable.
 - **R5.3** `limited-webcodecs` export: Canvas2D raster path per frame → WebCodecs encode (H.264 or VP9 only, probed) → Mediabunny mux → download blob; GPU effects are not applied; output is labeled "Limited export — GPU effects not applied".
 - **R5.4** `shell-only`: export controls are not rendered; the export button shows an unavailability message explaining which feature is missing and what browser would enable it.
 - **R5.5** Export backpressure must be enforced in all tiers: check `encoder.encodeQueueSize` before each frame and await when the queue is full; no frame may be submitted to an unbounded encode queue.
@@ -62,7 +64,7 @@
 - **R6.2** Each row must show: feature name, probe result chip (`supported` / `unsupported` / `unknown`), whether the feature is active in the current tier, and a suggested action when the feature is absent.
 - **R6.3** The panel must display the resolved `CapabilityTierV2` badge prominently at the top with the same color coding used in the status bar.
 - **R6.4** Browser name and approximate version derived from `navigator.userAgent` must appear in the panel for user-facing diagnostics; this string must not be used to gate any code path.
-- **R6.5** The panel must surface actionable guidance when COOP/COEP headers are absent (explaining that serving the app with the required headers would enable `core-webgpu`).
+- **R6.5** The panel must surface actionable guidance when COOP/COEP headers are absent. It may say headers would unlock `core-webgpu` only when all other core prerequisites are already supported; otherwise it must phrase COOP/COEP as one missing requirement.
 - **R6.6** The codec sub-section must list all ten probed codec/direction combinations with their individual support state, not just the active export codec.
 
 ## R7 — Tests

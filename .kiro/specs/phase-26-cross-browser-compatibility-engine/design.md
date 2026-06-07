@@ -10,9 +10,9 @@ Define and implement `CapabilityTierV2`: a four-level tier system that maps each
 
 | Tier | Minimum requirements | Preview | Export | Clock |
 |------|----------------------|---------|--------|-------|
-| `core-webgpu` | WebGPU standard adapter + WebCodecs encode+decode + SAB + OffscreenCanvas + `crossOriginIsolated` | Full GPU: effect chain, multi-layer, full resolution | H.264 / VP9 / AV1 (probed) | SAB `Float64Array` |
-| `compatibility-webgpu` | WebGPU (standard or compat adapter) + WebCodecs decode; SAB not required | GPU render via OffscreenCanvas; reduced effect set; proxy resolution | Encode where probed; blob download fallback | SAB (if available) / rAF-message |
-| `limited-webcodecs` | WebCodecs `VideoDecoder` present; no WebGPU | Canvas2D OffscreenCanvas compositing, ≤720p | WebCodecs H.264/VP9 encode where probed; blob download fallback | SAB (if available) / rAF-message |
+| `core-webgpu` | WebGPU standard adapter + WebCodecs decode + full H.264/VP9/AV1 encode probes + SAB + OffscreenCanvas + `crossOriginIsolated` | Full GPU: effect chain, multi-layer, full resolution | H.264 / VP9 / AV1 (probed muxable pairs) | SAB `Float64Array` |
+| `compatibility-webgpu` | WebGPU (standard or compat adapter) + WebCodecs decode + OffscreenCanvas; SAB not required | GPU render via OffscreenCanvas; reduced effect set; proxy resolution | Encode where probed; File System Access or blob download | SAB (if available) / rAF-message |
+| `limited-webcodecs` | WebCodecs `VideoDecoder` + OffscreenCanvas present; no WebGPU | Canvas2D OffscreenCanvas compositing, <=720p | WebCodecs H.264/VP9 encode where probed; File System Access or blob download | SAB (if available) / rAF-message |
 | `shell-only` | Neither WebGPU nor WebCodecs | Static unavailability message | Controls hidden | N/A |
 
 ## Reference capability matrix
@@ -103,15 +103,19 @@ Tier derivation — pure function, evaluated in order:
 function deriveCapabilityTierV2(p: Omit<CapabilityProbeResult, 'tier'>): CapabilityTierV2 {
   const hasGPU     = p.webGPUCore === 'supported' || p.webGPUCompat === 'supported';
   const hasDecoder = p.webCodecsDecode === 'supported';
-  const hasEncoder = p.webCodecsEncode === 'supported';
+  const hasFullVideoEncodeSet =
+    p.webCodecsEncode === 'supported' &&
+    p.codecs.h264Encode === 'supported' &&
+    p.codecs.vp9Encode === 'supported' &&
+    p.codecs.av1Encode === 'supported';
   const hasSAB     = p.sharedArrayBuffer === 'supported';
   const hasOC      = p.offscreenCanvas   === 'supported';
 
-  if (p.webGPUCore === 'supported' && hasDecoder && hasEncoder && hasSAB && hasOC && p.crossOriginIsolated)
+  if (p.webGPUCore === 'supported' && hasDecoder && hasFullVideoEncodeSet && hasSAB && hasOC && p.crossOriginIsolated)
     return 'core-webgpu';
-  if (hasGPU && hasDecoder)
+  if (hasGPU && hasDecoder && hasOC)
     return 'compatibility-webgpu';
-  if (hasDecoder)
+  if (hasDecoder && hasOC)
     return 'limited-webcodecs';
   return 'shell-only';
 }
@@ -132,16 +136,17 @@ The rAF-message clock is only activated when SAB is unavailable (`hasSAB === fal
 
 ## WebGPU compatibility mode pipeline
 
-When the probe reports `compatibilityAdapter: true`, the worker initializes a modified GPU pipeline in `src/engine/compatibility/compat-webgpu-preview.ts` instead of the standard one. Key differences from the premium path:
+When the resolved tier is `compatibility-webgpu`, the worker initializes a modified GPU pipeline in `src/engine/compatibility/compat-webgpu-preview.ts` instead of the standard one. This applies both to compatibility-adapter sessions and standard-adapter sessions downgraded by missing SAB/COOP or reduced encode support. Key differences from the premium path:
 
 | Aspect | Premium (`core-webgpu`) | Compat GPU (`compatibility-webgpu`) |
 |--------|------------------------|-------------------------------------|
-| Frame ingestion | `importExternalTexture(videoFrame)` | `createImageBitmap(videoFrame)` → `copyExternalImageToTexture` |
+| Frame ingestion | `importExternalTexture(videoFrame)` | `createImageBitmap(videoFrame)` -> `copyExternalImageToTexture` |
 | Texture format | `rgba16float` (with f16) | `rgba8unorm` |
 | Shader features | f16, subgroups, timestamp-query (probed) | None assumed; re-probed per-adapter |
 | Effect set | Full (color-grade, LUT, transform, composite, custom) | `color-grade` and `transform` only |
 | `queue.submit` | Once per frame | Once per frame (unchanged) |
 | `videoFrame.close()` | After `importExternalTexture` | After `createImageBitmap` |
+| `ImageBitmap.close()` | N/A | After `copyExternalImageToTexture` |
 
 The module must not import any symbol from `src/engine/worker.ts` or the effect pipeline. It may import the WGSL shader loader helper and the timeline resolver.
 
@@ -153,7 +158,7 @@ The module must not import any symbol from `src/engine/worker.ts` or the effect 
 Timeline resolveAllAt(t)
   → per clip: VideoDecoder.decode(chunk)
   → VideoFrame
-  → createImageBitmap(frame, { resizeWidth, resizeHeight })  // capped at 1280×720
+  → createImageBitmap(frame, { resizeWidth, resizeHeight })  // aspect-preserving cap within 1280×720
   → frame.close()                                             // exactly once
   → OffscreenCanvas 2D context:
       ctx.clearRect(...)
@@ -161,13 +166,14 @@ Timeline resolveAllAt(t)
         ctx.globalAlpha = clip.opacity
         ctx.drawImage(bitmap, dstX, dstY, dstW, dstH)
         bitmap.close()                                        // exactly once
-  → transferToImageBitmap()  →  postMessage to main (display)
+  → transferToImageBitmap()  →  postMessage to main (display; receiver closes the previous displayed bitmap before replacement)
 ```
 
 Constraints enforced at the module boundary:
 - Decoded frame queue bounded to 3 frames per track (drop oldest if full).
 - Decode loop driven by incoming `clock-tick` messages; loop exits cleanly on `pause` or `seek` via `AbortController`.
-- Resolution cap: `resizeWidth = Math.min(sourceWidth, 1280)` applied at `createImageBitmap`.
+- Resolution cap: aspect-preserving `resizeWidth` and `resizeHeight` are computed so neither dimension exceeds 1280×720 before `createImageBitmap`.
+- The transferred display bitmap is owned by the main preview consumer, which closes it after drawing or before replacing it with a newer frame.
 - Effects unavailable notice is encoded in the worker's init response, not inferred at the UI layer.
 
 ## Compatibility export (`limited-webcodecs` tier)
@@ -181,7 +187,7 @@ Timeline frames (Canvas compositor output — ImageBitmap)
   → VideoEncoder (H.264 or VP9, first probe success)
       encodeQueueSize guard: await until < 4 before each frame
   → EncodedVideoChunk[]
-  → Mediabunny mux → Uint8Array[] → Blob → download
+  → Mediabunny mux for a probed codec/container pair → Uint8Array[] → Blob → download
   → videoFrame.close()            // exactly once
 ```
 
@@ -189,6 +195,7 @@ Export constraints:
 - Only H.264 and VP9 are attempted; AV1 is not attempted in this tier.
 - Audio is muxed if `AudioDecoder`+`AudioEncoder` probes succeed for the matching codec; otherwise the export is video-only and the user is notified.
 - GPU effects are not applied; the exported clip is ungraded.
+- Unsupported codec/container pairs are disabled before export starts; blob download is a destination fallback, not a fallback for unmuxable encoded chunks.
 - The download filename includes a `(limited)` suffix to distinguish from premium exports.
 - The existing `ExportProgress` model is reused for progress reporting to the UI.
 
@@ -197,6 +204,7 @@ Export constraints:
 ```typescript
 // New message type for probe delivery to worker
 interface WorkerInitV2 extends WorkerInit {
+  sab?: SharedArrayBuffer | null;
   probeResult: CapabilityProbeResult;
 }
 
@@ -207,7 +215,7 @@ interface CapabilityProbeV2Message {
 }
 ```
 
-The existing `capability-probe` message from Phase 8 remains; the new `capability-probe-v2` message is sent alongside it. The UI may display either; migrating to V2 is progressive.
+The existing `capability-probe` message from Phase 8 remains; the main thread stores the V2 probe immediately after probing, before deciding whether a worker should start. When a worker is started, it echoes `capability-probe-v2` after init so diagnostics can verify that worker state matches the startup probe.
 
 ## Diagnostic panel extension
 
@@ -220,7 +228,7 @@ The existing `<CapabilityPanel>` gains a `<CapabilityMatrixPanel>` sub-section. 
 Example rows:
 - `WebGPU standard`  `✗`  `—`  `"Enable hardware acceleration in browser settings"`
 - `H.264 encode`  `✓`  `✓ (active)`  `—`
-- `SharedArrayBuffer`  `✗`  `—`  `"Serve app with COOP/COEP headers to unlock"`
+- `SharedArrayBuffer`  `✗`  `—`  `"Serve app with COOP/COEP headers to satisfy one core-tier requirement"` (only shown as an unlock when all other core prerequisites are supported)
 - `File System Access`  `✗`  `—`  `"Use Chrome or Edge for direct file saving"`
 
 Panel header shows: tier badge + browser name (from `navigator.userAgent`, display only).
