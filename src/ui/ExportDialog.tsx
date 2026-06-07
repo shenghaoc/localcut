@@ -116,6 +116,9 @@ export function ExportDialog(props: ExportDialogProps) {
 
   const effectiveSupportedCodecs = createMemo<readonly ExportCodecSupport[]>(() => {
     if (props.supportedCodecs.length > 0) return props.supportedCodecs;
+    // If the geometry-specific probe already ran (initialSettings non-null) and
+    // returned empty, respect that — don't fall back to broader constraints.
+    if (props.initialSettings) return [];
     const probe = props.capabilityProbeV2;
     return probe ? exportConstraintsForProbe(probe) : [];
   });

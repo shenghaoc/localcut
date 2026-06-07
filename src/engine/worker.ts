@@ -1962,7 +1962,8 @@ async function handleImport(file: File, fileHandle?: FileSystemFileHandle | null
       Atomics.store(audioRing.header, RingHeader.CHANNELS, handle.audioChannels);
     }
 
-    if (!timelineHasClips()) {
+    const hasVideoOnTimeline = timeline.some((track) => track.type === 'video' && track.clips.length > 0);
+    if (!hasVideoOnTimeline && handle.frameSource) {
       const importedHandle = handle;
       const hadPlayback = playback !== null;
       const placed = commitTimelineMutation(
@@ -1971,7 +1972,16 @@ async function handleImport(file: File, fileHandle?: FileSystemFileHandle | null
       );
       if (placed) {
         void computeWaveformsForSource(importedHandle);
-        if (importedHandle.metadata.video && hadPlayback) setupPlayback();
+        if (hadPlayback) setupPlayback();
+      }
+    } else if (!timelineHasClips()) {
+      const importedHandle = handle;
+      const placed = commitTimelineMutation(
+        () => placeAsset(timeline, importedHandle, undefined, 0),
+        { prune: false },
+      );
+      if (placed) {
+        void computeWaveformsForSource(importedHandle);
       }
     }
 
