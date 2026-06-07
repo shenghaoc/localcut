@@ -747,6 +747,15 @@ export function App() {
       const message = error instanceof Error ? error.message : String(error);
       setAudioWarning(`Audio disabled: ${message}`);
       setStatusLine('Audio disabled · starting video pipeline');
+      setRecentErrorLog((prev) => addRecentError(prev, {
+        id: `ui-audio-${Date.now()}`,
+        code: 'audio.init_failed',
+        subsystem: 'audio',
+        severity: 'warning',
+        occurredAt: new Date().toISOString(),
+        message: `Audio init failed: ${message}`,
+        recoveryActionIds: ['retry-audio'],
+      }));
     }
     b.send({ type: 'init', canvas, sab, audioSab }, [canvas]);
   }

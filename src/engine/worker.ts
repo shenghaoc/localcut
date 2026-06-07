@@ -1295,6 +1295,33 @@ async function handleInit(
         recoveryActionIds: ['retry-gpu-device', 'reload-app'],
       });
     }
+    if (gpu.deviceLost) {
+      void gpu.deviceLost.then((info) => {
+        lastDeviceLost = {
+          reason: String(info.reason),
+          message: info.message,
+          occurredAt: new Date().toISOString(),
+          recoveryAttempts: 0,
+          fallbackMode: 'limited-preview',
+        };
+        lastGpuUnavailableReason = `GPU device lost: ${info.message || info.reason}`;
+        playback?.pause();
+        renderer?.destroy();
+        renderer = null;
+        recordRecentError({
+          code: 'gpu.device_lost',
+          subsystem: 'gpu',
+          severity: 'error',
+          message: `GPU device lost (${info.reason}): ${info.message}`,
+          recoveryActionIds: ['retry-gpu-device', 'reload-app'],
+        });
+        post({
+          type: 'recovery-state',
+          state: 'recovering',
+          actions: [],
+        });
+      });
+    }
   } catch (e) {
     const message = errorMessage(e);
     lastWebgpuFeatures = [];
