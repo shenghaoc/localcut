@@ -144,9 +144,9 @@ Add title cards to your project:
 2. A title clip is created at the playhead position.
 3. Select the title clip and use the Inspector to edit:
    - **Text**: The title content.
-   - **Font Family**: Choose from Inter or Lora.
-   - **Font Size**, **Weight**, **Color**, **Alignment**.
-   - **Background**: Optional solid or gradient background behind the text.
+   - **Font Size**, **Color**, **Alignment**.
+   - **Background**: Optional background with adjustable opacity.
+   - **Outline**: Adjustable outline width around the text.
 
 Title clips are rasterized at 1920×1080 and composited like any video clip — they support transforms, effects, and keyframes.
 
@@ -235,8 +235,10 @@ If source files are moved or renamed, they appear as "offline" with a re-link pr
 Click **Diagnostics** in the status bar to view:
 
 - **Capability Summary**: What your browser supports and what's missing.
+- **GPU + Codecs**: WebGPU device status, decode/encode support.
+- **Storage + Cache**: Disk usage, quota, OPFS and cache availability.
+- **Performance Budgets**: Runtime metrics like decode queue depth and frame drops.
 - **Recent Errors**: A log of recent issues with codes and recovery suggestions.
-- **Source Health**: Status of all imported media files.
 - **Actions**: Recovery actions like restarting the pipeline worker or retrying audio initialization.
 
 ### Crash Recovery
