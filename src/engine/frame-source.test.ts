@@ -131,6 +131,43 @@ describe('SequentialFrameSource', () => {
     expect(await fs.frameAt(1.1)).not.toBeNull();
   });
 
+  it('advances short-duration VFR frames at their actual duration when minFrameDuration is near zero', async () => {
+    // Simulates VFR content with alternating 16ms/33ms frames (mixed 30/60fps).
+    // With minFrameDuration = 1/30 those 16ms frames would be held for 33ms each,
+    // causing the next frame to be skipped. With minFrameDuration = 1e-4 each frame
+    // advances at its actual reported duration.
+    const frames = [
+      new FakeSample(0, 0.016),
+      new FakeSample(0.016, 0.033),
+      new FakeSample(0.049, 0.016),
+      new FakeSample(0.065, 0.033),
+    ];
+    const fs = new SequentialFrameSource(new FakeSource(frames), 1e-4, 10);
+
+    const f0 = await fs.frameAt(0);
+    const f1 = await fs.frameAt(0.016); // short frame ends at 0.016+1e-4; must advance
+    const f2 = await fs.frameAt(0.049); // must reach frame @0.049, not stay on @0.016
+
+    expect((f0 as FakeSample).timestamp).toBe(0);
+    expect((f1 as FakeSample).timestamp).toBe(0.016);
+    expect((f2 as FakeSample).timestamp).toBe(0.049);
+  });
+
+  it('holds short-duration frames for the nominal interval when minFrameDuration = 1/fps (CFR)', async () => {
+    // CFR path: a 16ms frame at 30fps nominal is held for 33ms; the iterator
+    // must NOT advance at 16ms.
+    const frames = [new FakeSample(0, 0.016), new FakeSample(0.016, 0.033)];
+    const fs = new SequentialFrameSource(new FakeSource(frames), 1 / 30, 10);
+
+    const f0 = await fs.frameAt(0);
+    const fStill = await fs.frameAt(0.016); // still within the 33ms nominal window
+    const f1 = await fs.frameAt(1 / 30 + 0.001); // just past the 33ms window
+
+    expect((f0 as FakeSample).timestamp).toBe(0);
+    expect((fStill as FakeSample).timestamp).toBe(0); // still frame 0
+    expect((f1 as FakeSample).timestamp).toBe(0.016); // now frame 1
+  });
+
   it('reset() closes the held frame and forces a re-seek', async () => {
     const frames = makeFrames();
     const source = new FakeSource(frames);

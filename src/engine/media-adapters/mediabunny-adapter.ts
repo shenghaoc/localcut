@@ -489,7 +489,12 @@ export const mediabunnyAdapter: MediaAdapter = {
 
       if (primaryVideo && primaryVideoInspection?.canDecode) {
         const sink = new VideoSampleSink(primaryVideo);
-        frameSource = new SequentialFrameSource(sink, frameRate > 0 ? 1 / frameRate : 0);
+        // VFR: use a tiny floor (guards zero-duration frames only) so each frame
+        // advances at its actual Mediabunny-reported duration rather than being
+        // held for a full nominal-rate interval.
+        const minFrameDuration =
+          primaryVideoInspection.frameRateMode === 'variable' ? 1e-4 : frameRate > 0 ? 1 / frameRate : 0;
+        frameSource = new SequentialFrameSource(sink, minFrameDuration);
         thumbnailSink = new VideoSampleSink(primaryVideo);
       }
 

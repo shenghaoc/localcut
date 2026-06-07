@@ -103,6 +103,7 @@ import {
   expandLinkedGroup,
   DEFAULT_MASTER_GAIN,
   DEFAULT_TITLE_DURATION_S,
+  normalizeTransform,
   type Timeline,
   type TimelineClip,
   type TimelineMarker,
@@ -112,6 +113,7 @@ import {
   type MoveClipTarget,
   type TransformParams,
 } from './timeline';
+import type { SourceVideoTrackInspection } from './media-adapters/types';
 import { sampleClipParamsAt } from './keyframes';
 import { clipLutFromCubeFile, cloneClipLut, lutSnapshot, type ClipLut } from './lut';
 import {
@@ -487,6 +489,14 @@ function placeAsset(
 ): Timeline {
   // A video/still with no decodable frames would render black and can't export.
   if (handle.kind !== 'audio' && !handle.frameSource) return tl;
+
+  // Apply the source file's rotation metadata as the clip's initial transform so
+  // portrait-mode phone videos (90°/270°) appear upright without manual correction.
+  const videoTrack = handle.inspection.tracks.find(
+    (t): t is SourceVideoTrackInspection => t.kind === 'video',
+  );
+  const sourceRotation = videoTrack?.rotationDeg ?? 0;
+
   if (handle.kind === 'audio') {
     const [withTrack, audioTrackId] = ensureTrack(tl, 'audio', trackId);
     const clipStart = start ?? trackEnd(withTrack, audioTrackId);
@@ -516,6 +526,7 @@ function placeAsset(
       start: clipStart,
       duration: clipDuration,
       inPoint: 0,
+      transform: normalizeTransform({ rotation: sourceRotation }),
     }),
   );
   if (next === withVideoTrack) return tl; // overlap rejected
