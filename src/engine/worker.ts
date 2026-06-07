@@ -213,7 +213,7 @@ import {
 } from './project-bundle/bundle-jobs';
 import { proxyStatusForAsset } from './proxy-jobs';
 import { buildWorkerDiagnosticSnapshot } from './diagnostics';
-import { createEmptyRecentErrorLog, logRecentError, type RecentErrorInput } from '../diagnostics/recent-errors';
+import { createEmptyRecentErrorLog, createRecentError, logRecentError, type RecentErrorInput } from '../diagnostics/recent-errors';
 
 let clockView: Float64Array | null = null;
 let renderer: PreviewRenderer | null = null;
@@ -318,8 +318,12 @@ function postRecoveryCheckpoint(): void {
 
 function recordRecentError(input: RecentErrorInput): void {
   recentErrors = logRecentError(recentErrors, input);
-  const latest = recentErrors.entries[0];
-  if (latest) post({ type: 'recent-error', error: latest });
+  // Post a single-occurrence delta (count 1), NOT the worker's merged aggregate.
+  // The UI's addRecentError folds by subsystem+code and adds occurrence counts, so
+  // posting the aggregate would double-count (1, then 1+2, then 3+3, …). A later
+  // diagnostic-snapshot still replaces the UI log with the worker's authoritative
+  // aggregate, keeping the two in sync.
+  post({ type: 'recent-error', error: createRecentError(input) });
 }
 
 function errorMessage(error: unknown): string {
@@ -1239,7 +1243,14 @@ function writeClockFull(currentTime: number, duration: number, playing: boolean)
 /** Playback's per-frame writer: owns currentTime and playState, leaves duration. */
 function writeTransport(currentTime: number, playing: boolean) {
   if (clockView) {
-    if (!audioRing || !hasAudioTimeline()) clockView[ClockIndex.CURRENT_TIME] = currentTime;
+    // The audio worklet owns CURRENT_TIME only while *actively playing* an audio
+    // timeline (it advances the field every audio quantum). For paused/discrete
+    // transport (seek, step, pause) the worklet is idle, so the worker writes
+    // CURRENT_TIME itself — keeping the worker the sole transport-clock writer and
+    // moving the playhead on a paused seek without any main-thread SAB write.
+    if (!playing || !audioRing || !hasAudioTimeline()) {
+      clockView[ClockIndex.CURRENT_TIME] = currentTime;
+    }
     clockView[ClockIndex.PLAY_STATE] = playing ? 1 : 0;
     return;
   }

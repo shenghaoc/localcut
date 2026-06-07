@@ -1,6 +1,8 @@
 # Tasks: Phase 26 — Cross-browser Compatibility Engine
 
 > Status: **Active / foundation implemented**. Probe, tier derivation, protocol wiring, diagnostics, export constraints, clock degradation, and compatibility resource-lifetime helpers are implemented. Full reduced preview/export worker pipelines remain the open build-out.
+>
+> **Bugfix note (`bugfix-phase-merge-stability`):** `deriveCapabilityTierV2` was corrected so `core-webgpu` no longer requires AV1/full encode (B1) and reduced tiers derive from real per-codec decode probes rather than the `VideoDecoder` constructor (B2). The unfinished reduced pipelines below (T3/T4/T5) are now honestly labeled via `src/engine/compatibility/compat-status.ts` (B3) and remain **not implemented** — no checkboxes below changed.
 
 ## T1 — Probe and CapabilityTierV2 model
 

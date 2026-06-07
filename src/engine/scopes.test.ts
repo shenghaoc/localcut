@@ -18,6 +18,8 @@ import {
   writeScopeHeader,
   writeScopeData,
   readScopeResult,
+  resetScopeSlot,
+  SCOPES_FEATURE_ENABLED,
 } from './scopes';
 
 describe('Scope constants', () => {
@@ -148,5 +150,30 @@ describe('Scope SAB ring-buffer', () => {
     // Data starts at slotOffset + 3 (header)
     expect(buf[slotOffset + 3]).toBe(1);
     expect(buf[slotOffset + 7]).toBe(5);
+  });
+
+  it('resetScopeSlot clears header + data but preserves the seqlock sequence', () => {
+    const buf = createTestBuffer();
+    const slotOffset = histogramSlotOffset();
+    const dataFloats = 5;
+    // Dirty the slot from a previous frame.
+    writeScopeHeader(buf, slotOffset, 9.9, 7);
+    writeScopeData(buf, slotOffset, new Float32Array([1, 2, 3, 4, 5]));
+    buf[slotOffset] = 123;
+
+    const cleared = resetScopeSlot(buf, slotOffset, dataFloats);
+    expect(cleared).toBe(3 + dataFloats);
+    // Everything after the sequence guard is zeroed...
+    for (let i = 1; i < cleared; i += 1) {
+      expect(buf[slotOffset + i]).toBe(0);
+    }
+    // ...but the sequence number at slotOffset is preserved (race-safety).
+    expect(buf[slotOffset]).toBe(123);
+  });
+});
+
+describe('Scopes feature flag (B7)', () => {
+  it('ships disabled so no scope pass runs by default', () => {
+    expect(SCOPES_FEATURE_ENABLED).toBe(false);
   });
 });

@@ -33,6 +33,8 @@ export function createRecentError(input: RecentErrorInput): RecentError {
     subsystem: input.subsystem,
     severity: input.severity,
     occurredAt,
+    firstOccurredAt: occurredAt,
+    occurrenceCount: 1,
     message: redactDiagnosticText(input.message),
     redactedDetail: input.detail ? redactDiagnosticText(input.detail) : undefined,
     affectedJobId: input.affectedJobId,
@@ -44,7 +46,24 @@ export function createRecentError(input: RecentErrorInput): RecentError {
 }
 
 export function addRecentError(log: RecentErrorLog, error: RecentError): RecentErrorLog {
-  const entries = [error, ...log.entries.filter((entry) => entry.code !== error.code || entry.subsystem !== error.subsystem)];
+  // Repeated errors that share subsystem+code are *folded* into a single entry
+  // rather than dropped: we keep the latest message/timestamp but preserve the
+  // first-seen time and bump the occurrence count, so recurring failures stay
+  // visible (and countable) instead of silently collapsing to one event.
+  const prior = log.entries.find(
+    (entry) => entry.code === error.code && entry.subsystem === error.subsystem,
+  );
+  const merged: RecentError = prior
+    ? {
+        ...error,
+        firstOccurredAt: prior.firstOccurredAt,
+        occurrenceCount: prior.occurrenceCount + error.occurrenceCount,
+      }
+    : error;
+  const rest = log.entries.filter(
+    (entry) => entry.code !== error.code || entry.subsystem !== error.subsystem,
+  );
+  const entries = [merged, ...rest];
   const kept = entries.slice(0, log.capacity);
   return {
     capacity: log.capacity,

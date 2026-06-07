@@ -6,6 +6,16 @@
 
 // ─── Types ─────────────────────────────────────────────────────────────
 
+/**
+ * Phase 21 scopes feature flag (B7).
+ *
+ * The full scope UI/worker/SAB/throttling pipeline is unfinished: `dispatchScopes`
+ * is a placeholder and `ScopePanel` is not wired into the app. Until the pipeline
+ * is complete, scopes must be impossible to enable so no scope pass ever runs by
+ * default. Flip this to `true` only when the end-to-end path lands.
+ */
+export const SCOPES_FEATURE_ENABLED = false;
+
 export type ScopeType = 'histogram' | 'waveform-luma' | 'parade-rgb' | 'vectorscope';
 
 export interface ScopeFeatures {
@@ -146,6 +156,28 @@ export function readScopeResult(
 }
 
 // ─── Ring-buffer write helpers (worker thread) ─────────────────────────
+
+/**
+ * Zero a scope slot's header + data region before accumulation. Scope passes
+ * accumulate (histogram bins, waveform min/max) into the SAB slot, so the slot
+ * must be reset before each dispatch or stale values from the previous frame leak
+ * into the new result. Returns the number of floats cleared.
+ */
+export function resetScopeSlot(
+  buffer: Float32Array,
+  slotOffset: number,
+  dataFloats: number,
+): number {
+  // Preserve the sequence counter at `slotOffset` (the seqlock guard): zeroing it
+  // would briefly publish an even value over a half-cleared slot, letting a
+  // concurrent main-thread reader treat it as stable and read garbage. Only the
+  // timestamp/clipCount header fields and the data region are cleared; the writer
+  // owns the sequence via beginScopeWrite/endScopeWrite.
+  const start = slotOffset + 1;
+  const count = SLOT_HEADER_FLOATS - 1 + dataFloats;
+  buffer.fill(0, start, start + count);
+  return count + 1;
+}
 
 /** Begin writing a scope slot: set sequence to odd value (writer is active). */
 export function beginScopeWrite(buffer: Float32Array, slotOffset: number): number {

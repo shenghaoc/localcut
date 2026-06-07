@@ -14,15 +14,24 @@ export function createSharedClock(sab: SharedArrayBuffer | null) {
   const [duration, setDuration] = createSignal(0);
   const [playing, setPlaying] = createSignal(false);
 
+  // The reader detaches from the SAB while the worker is down. If the worker
+  // crashes — especially when restart is throttled, so no restarted worker
+  // republishes an authoritative reset — the rAF reader would otherwise keep
+  // surfacing the dead worker's last (possibly "playing") transport values. We
+  // freeze the read instead of ever writing the SAB from the main thread.
+  let active = true;
+
   // SAB path: poll shared memory each frame. Without SAB the rAF reader would only
   // ever observe zeros, so it is skipped entirely and the clock is driven by
   // `applyUpdate` from worker `clock-update` messages instead.
   if (view) {
     let rafId = 0;
     const tick = () => {
-      setCurrentTime(view[0] ?? 0);
-      setDuration(view[1] ?? 0);
-      setPlaying((view[2] ?? 0) === 1);
+      if (active) {
+        setCurrentTime(view[0] ?? 0);
+        setDuration(view[1] ?? 0);
+        setPlaying((view[2] ?? 0) === 1);
+      }
       rafId = requestAnimationFrame(tick);
     };
     rafId = requestAnimationFrame(tick);
@@ -38,5 +47,13 @@ export function createSharedClock(sab: SharedArrayBuffer | null) {
     setPlaying(next.playing);
   }
 
-  return { currentTime, duration, playing, applyUpdate };
+  // Attach/detach the read-side from the SAB without ever writing it. Detaching
+  // forces a stopped display; the worker re-publishes the authoritative state and
+  // the UI re-attaches once a fresh worker reports ready.
+  function setActive(next: boolean) {
+    active = next;
+    if (!next) setPlaying(false);
+  }
+
+  return { currentTime, duration, playing, applyUpdate, setActive };
 }

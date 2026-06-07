@@ -50,7 +50,7 @@ describe('recent errors', () => {
     expect(log.droppedCount).toBe(1);
   });
 
-  it('deduplicates repeated subsystem/code pairs', () => {
+  it('folds repeated subsystem/code pairs while preserving recurrence', () => {
     let log = createEmptyRecentErrorLog(5);
     log = addRecentError(log, createRecentError({
       code: 'webgpu.unavailable',
@@ -67,6 +67,37 @@ describe('recent errors', () => {
       occurredAt: '2026-06-07T00:00:01.000Z',
     }));
     expect(log.entries).toHaveLength(1);
+    // Latest message wins, but the recurrence is not silently dropped.
     expect(log.entries[0]?.message).toBe('new');
+    expect(log.entries[0]?.occurrenceCount).toBe(2);
+    expect(log.entries[0]?.firstOccurredAt).toBe('2026-06-07T00:00:00.000Z');
+    expect(log.entries[0]?.occurredAt).toBe('2026-06-07T00:00:01.000Z');
+    // Folding a duplicate is not a capacity drop.
+    expect(log.droppedCount).toBe(0);
+  });
+
+  it('accumulates single-occurrence deltas without double-counting (worker posts deltas)', () => {
+    // Mirrors the worker posting one count-1 delta per occurrence: three deltas
+    // must read as occurrenceCount 3, not 1+2+3.
+    let log = createEmptyRecentErrorLog(5);
+    for (let i = 0; i < 3; i += 1) {
+      log = addRecentError(log, createRecentError({
+        code: 'gpu.device_lost',
+        subsystem: 'gpu',
+        severity: 'error',
+        message: `loss ${i}`,
+        occurredAt: `2026-06-07T00:00:0${i}.000Z`,
+      }));
+    }
+    expect(log.entries).toHaveLength(1);
+    expect(log.entries[0]?.occurrenceCount).toBe(3);
+  });
+
+  it('keeps distinct subsystem/code pairs separate', () => {
+    let log = createEmptyRecentErrorLog(5);
+    log = logRecentError(log, { code: 'a', subsystem: 'gpu', severity: 'warning', message: 'a' });
+    log = logRecentError(log, { code: 'b', subsystem: 'gpu', severity: 'warning', message: 'b' });
+    expect(log.entries).toHaveLength(2);
+    expect(log.entries.every((entry) => entry.occurrenceCount === 1)).toBe(true);
   });
 });

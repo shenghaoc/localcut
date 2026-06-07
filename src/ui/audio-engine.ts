@@ -84,9 +84,13 @@ export class AudioEngine {
     resetRingPointers(this.ring);
     Atomics.store(this.ring.header, RingHeader.STATE, RingState.PLAYING);
     this.worklet.port.postMessage({ type: 'seek', time: fromSeconds });
+    // Prime ONLY the audio-clock anchor (index 3), never the transport clock
+    // (CURRENT_TIME/index 0). The audio worklet (audio thread) reads AUDIO_CLOCK as
+    // its generation-sync anchor and could otherwise race the postMessage 'seek';
+    // the pipeline worker owns CURRENT_TIME. This keeps the main thread off the
+    // transport clock entirely.
     if (this.clockView) {
       this.clockView[ClockIndex.AUDIO_CLOCK] = fromSeconds;
-      this.clockView[ClockIndex.CURRENT_TIME] = fromSeconds;
     }
   }
 
@@ -101,9 +105,10 @@ export class AudioEngine {
     bumpRingGeneration(this.ring);
     resetRingPointers(this.ring);
     this.worklet.port.postMessage({ type: 'seek', time });
+    // Anchor only (index 3); the pipeline worker owns CURRENT_TIME — on a paused
+    // seek its writeTransport writes the playhead. See play() for the rationale.
     if (this.clockView) {
       this.clockView[ClockIndex.AUDIO_CLOCK] = time;
-      this.clockView[ClockIndex.CURRENT_TIME] = time;
     }
     if (Atomics.load(this.ring.header, RingHeader.STATE) === RingState.PLAYING) {
       if (this.context?.state === 'suspended') await this.context.resume();

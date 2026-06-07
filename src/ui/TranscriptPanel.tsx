@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, For, Show } from 'solid-js';
+import { TRANSCRIPT_WINDOW_RADIUS, computeSegmentWindow } from './transcript-window';
 import type {
   CaptionDiagnosticSnapshot,
   CaptionExportSettingsSnapshot,
@@ -62,6 +63,71 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
     return track.segments.find((segment) => segment.id === props.selectedSegmentIds[0]) ?? track.segments[0] ?? null;
   });
   const [draftText, setDraftText] = createSignal('');
+
+  // Memoize the selection as a Set so per-row membership is O(1) instead of an
+  // O(segments × selection) `Array.includes` scan during render.
+  const selectedIdSet = createMemo(() => new Set(props.selectedSegmentIds));
+
+  // Window the rendered rows around the active/playhead segment so large caption
+  // files (thousands of segments) never materialize every row at once.
+  const activeSegmentIndex = createMemo(() => {
+    const track = activeTrack();
+    if (!track || track.segments.length === 0) return 0;
+    const selectedId = props.selectedSegmentIds[0];
+    if (selectedId) {
+      const byId = track.segments.findIndex((segment) => segment.id === selectedId);
+      if (byId >= 0) return byId;
+    }
+    // Fall back to the segment under the playhead. Caption segments are sorted by
+    // start time, so binary search keeps this O(log N) — playheadTime updates ~60×
+    // per second during playback and would otherwise rescan the whole track.
+    const t = props.playheadTime;
+    let low = 0;
+    let high = track.segments.length - 1;
+    let byTime = -1;
+    while (low <= high) {
+      const mid = (low + high) >> 1;
+      const segment = track.segments[mid]!;
+      if (t >= segment.start && t < segment.start + segment.duration) {
+        byTime = mid;
+        break;
+      } else if (t < segment.start) {
+        high = mid - 1;
+      } else {
+        low = mid + 1;
+      }
+    }
+    return byTime >= 0 ? byTime : 0;
+  });
+  // Manual paging anchor: lets the user reach caption rows outside the
+  // active/playhead-centered window (B5 windowing would otherwise make distant
+  // rows unreachable in a long SRT/WebVTT import). Cleared whenever the selection
+  // or active track changes so selecting a segment recenters the view.
+  const [viewAnchor, setViewAnchor] = createSignal<number | null>(null);
+  createEffect(() => {
+    props.selectedSegmentIds[0];
+    activeTrack()?.id;
+    setViewAnchor(null);
+  });
+  const windowCenter = createMemo(() => viewAnchor() ?? activeSegmentIndex());
+  const segmentWindow = createMemo(() =>
+    computeSegmentWindow(activeTrack()?.segments.length ?? 0, windowCenter()),
+  );
+  function pageWindow(direction: -1 | 1): void {
+    const total = activeTrack()?.segments.length ?? 0;
+    const { start, end } = segmentWindow();
+    const next =
+      direction < 0
+        ? Math.max(0, start - TRANSCRIPT_WINDOW_RADIUS)
+        : Math.min(total - 1, end - 1 + TRANSCRIPT_WINDOW_RADIUS);
+    setViewAnchor(next);
+  }
+  const visibleSegments = createMemo(() => {
+    const track = activeTrack();
+    if (!track) return [];
+    const { start, end } = segmentWindow();
+    return track.segments.slice(start, end);
+  });
 
   const exportStem = createMemo(() => {
     const track = activeTrack();
@@ -213,13 +279,18 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
               </div>
 
               <div class="transcript-segment-list">
-                <For each={track().segments}>
+                <Show when={segmentWindow().before > 0}>
+                  <button type="button" class="transcript-window-hint" onClick={() => pageWindow(-1)}>
+                    Show {segmentWindow().before} earlier segment{segmentWindow().before === 1 ? '' : 's'}
+                  </button>
+                </Show>
+                <For each={visibleSegments()}>
                   {(segment) => (
-                    <div class={`transcript-row${props.selectedSegmentIds.includes(segment.id) ? ' is-selected' : ''}`}>
+                    <div class={`transcript-row${selectedIdSet().has(segment.id) ? ' is-selected' : ''}`}>
                       <input
                         type="checkbox"
                         aria-label={`Select caption segment ${segment.id}`}
-                        checked={props.selectedSegmentIds.includes(segment.id)}
+                        checked={selectedIdSet().has(segment.id)}
                         onChange={(event) => toggleSegment(segment.id, event.currentTarget.checked)}
                       />
                       <button
@@ -239,6 +310,11 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
                     </div>
                   )}
                 </For>
+                <Show when={segmentWindow().after > 0}>
+                  <button type="button" class="transcript-window-hint" onClick={() => pageWindow(1)}>
+                    Show {segmentWindow().after} later segment{segmentWindow().after === 1 ? '' : 's'}
+                  </button>
+                </Show>
               </div>
 
               <Show when={activeSegment()}>

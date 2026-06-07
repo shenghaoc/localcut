@@ -99,3 +99,32 @@ describe('PreviewRenderer single submission', () => {
     expect(submit).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('PreviewRenderer scope gating (B7)', () => {
+  it('does not enable scopes via setScopesEnabled while the feature flag is off', () => {
+    const { device, submit } = fakeDevice();
+    const renderer = new PreviewRenderer(device, fakeContext(), 'rgba8unorm', fakeCanvas(), false);
+    renderer.setPreviewSize(64, 64);
+    renderer.setScopeSab(new SharedArrayBuffer(64));
+    renderer.setScopesEnabled(true);
+
+    expect(renderer.scopesActive).toBe(false);
+    renderer.present([layer(1920, 1080)]);
+    expect(submit).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a single submission per frame even when scope dispatch is forced on', () => {
+    const { device, submit } = fakeDevice();
+    const renderer = new PreviewRenderer(device, fakeContext(), 'rgba8unorm', fakeCanvas(), false);
+    renderer.setPreviewSize(64, 64);
+    renderer.setScopeSab(new SharedArrayBuffer(64));
+    // Force the internal flag past the feature gate to prove the dispatch itself
+    // never adds a queue.submit; it runs inside the one per-frame encoder.
+    (renderer as unknown as { scopesEnabled: boolean }).scopesEnabled = true;
+
+    submit.mockClear();
+    renderer.present([layer(1920, 1080)]);
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(renderer.lastFrameSubmissionCount).toBe(1);
+  });
+});
