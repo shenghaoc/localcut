@@ -274,6 +274,24 @@ describe('render-queue', () => {
       const restored = deserializeQueueHistory(persisted);
       expect(restored[0]!.status).toBe('failed');
     });
+
+    it('caps terminal history without reordering remaining jobs', () => {
+      const jobs = Array.from({ length: 55 }, (_, index) => ({
+        ...createJob(baseSettings, { mode: 'full' }, null, null),
+        id: `job-${index}`,
+        status: index % 5 === 1 ? 'completed' as const : index % 5 === 2 ? 'failed' as const : index % 5 === 3 ? 'canceled' as const : 'pending' as const,
+      }));
+      const state: RenderQueueState = { jobs, stopOnError: false, activeJobId: null };
+
+      const persisted = serializeQueueHistory(state);
+      const persistedIds = persisted.map((job) => job.id);
+      const originalRelativeOrder = jobs
+        .filter((job) => persistedIds.includes(job.id))
+        .map((job) => job.id);
+
+      expect(persisted).toHaveLength(50);
+      expect(persistedIds).toEqual(originalRelativeOrder);
+    });
   });
 
   describe('queueSummary', () => {

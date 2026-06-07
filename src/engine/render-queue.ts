@@ -296,15 +296,7 @@ export function deserializeQueueHistory(jobs: PersistedQueueJob[]): RenderQueueJ
 
 function enforceHistoryCap(jobs: PersistedQueueJob[]): PersistedQueueJob[] {
   if (jobs.length <= MAX_QUEUE_HISTORY) return jobs;
-  const pending = jobs.filter((j) => j.status === 'pending');
-  const completed = jobs.filter((j) => j.status === 'completed');
-  const failed = jobs.filter((j) => j.status === 'failed');
-  const canceled = jobs.filter((j) => j.status === 'canceled');
-  const other = jobs.filter((j) =>
-    j.status !== 'pending' && j.status !== 'completed' && j.status !== 'failed' && j.status !== 'canceled',
-  );
-
-  let result = [...pending, ...other, ...failed, ...canceled, ...completed];
+  const result = [...jobs];
   while (result.length > MAX_QUEUE_HISTORY) {
     const oldestCompletedIdx = result.findIndex((j) => j.status === 'completed');
     if (oldestCompletedIdx !== -1) {
@@ -316,7 +308,12 @@ function enforceHistoryCap(jobs: PersistedQueueJob[]): PersistedQueueJob[] {
       result.splice(oldestFailedIdx, 1);
       continue;
     }
-    result.pop();
+    const oldestCanceledIdx = result.findIndex((j) => j.status === 'canceled');
+    if (oldestCanceledIdx !== -1) {
+      result.splice(oldestCanceledIdx, 1);
+      continue;
+    }
+    result.shift();
   }
   return result;
 }

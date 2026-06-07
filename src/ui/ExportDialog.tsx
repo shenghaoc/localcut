@@ -28,7 +28,12 @@ interface ExportDialogProps {
   onCancel: () => void;
   onSavePreset: (preset: ExportPresetDoc) => void;
   onDeletePreset: (presetId: string) => void;
-  onEnqueue: (settings: ExportSettings, rangeMode: 'full' | 'range' | 'markers') => void;
+  onEnqueue: (
+    settings: ExportSettings,
+    rangeMode: 'full' | 'range' | 'markers',
+    presetId: string | null,
+    outputTemplate: string | null,
+  ) => void;
 }
 
 function formatDuration(seconds: number | null): string {
@@ -191,7 +196,8 @@ export function ExportDialog(props: ExportDialogProps) {
   }
 
   function handleEnqueue() {
-    props.onEnqueue(buildSettings(), rangeMode());
+    const preset = props.presets.find((p) => p.id === selectedPresetId());
+    props.onEnqueue(buildSettings(), rangeMode(), selectedPresetId(), preset?.outputTemplate ?? null);
   }
 
   return (

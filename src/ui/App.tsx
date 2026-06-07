@@ -904,9 +904,14 @@ export function App() {
     bridge?.send({ type: 'preset-delete', presetId });
   }
 
-  function handleEnqueue(settings: ExportSettings, rangeMode: 'full' | 'range' | 'markers') {
+  function handleEnqueue(
+    settings: ExportSettings,
+    rangeMode: 'full' | 'range' | 'markers',
+    presetId: string | null,
+    outputTemplate: string | null,
+  ) {
     if (rangeMode === 'markers') {
-      const jobs = createJobsFromMarkers(markers(), settings, null, null);
+      const jobs = createJobsFromMarkers(markers(), settings, presetId, outputTemplate);
       for (const job of jobs) {
         bridge?.send({ type: 'queue-enqueue', job });
       }
@@ -916,7 +921,7 @@ export function App() {
         : settings.range
           ? { mode: 'range' as const, startS: settings.range.startS, endS: settings.range.endS }
           : { mode: 'full' as const };
-      const job = createJob(settings, jobRange, null, null);
+      const job = createJob(settings, jobRange, presetId, outputTemplate);
       bridge?.send({ type: 'queue-enqueue', job });
     }
   }

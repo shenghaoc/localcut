@@ -1000,7 +1000,7 @@ function parsePersistedQueueHistory(value: unknown): PersistedQueueJob[] {
     const id = typeof v.id === 'string' ? v.id : null;
     if (!id) continue;
     const status = v.status as PersistedQueueJob['status'];
-    const validStatuses = ['pending', 'completed', 'failed', 'canceled'];
+    const validStatuses = ['pending', 'choosing-destination', 'running', 'finalizing', 'completed', 'failed', 'canceled'];
     if (!validStatuses.includes(status)) continue;
     const settings = parseExportSettingsForQueue(v.settings);
     if (!settings) continue;

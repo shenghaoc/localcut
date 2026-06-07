@@ -15,6 +15,7 @@ import {
   sourceDescriptorMismatchReasons,
   type SourceDescriptor,
 } from './project';
+import { deserializeQueueHistory } from './render-queue';
 
 function timelineFixture(): Timeline {
   return [
@@ -365,6 +366,45 @@ describe('project serialization', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toContain('Unsupported project schemaVersion');
+  });
+
+  it('preserves active render queue statuses so restore can mark them failed', () => {
+    const doc = serializeProject({
+      projectId: 'project-queue',
+      timeline: timelineFixture(),
+      sources: [sourceFixture()],
+      renderQueueHistory: [
+        {
+          id: 'job-running',
+          presetId: null,
+          settings: {
+            preset: 'quality',
+            codec: 'h264',
+            container: 'mp4',
+            width: 1920,
+            height: 1080,
+            fps: 30,
+            videoBitrate: 10_000_000,
+          },
+          jobRange: { mode: 'full' },
+          outputTemplate: null,
+          outputFileName: null,
+          status: 'running',
+          error: null,
+          enqueuedAt: '2026-06-07T00:00:00.000Z',
+          startedAt: '2026-06-07T00:00:01.000Z',
+          completedAt: null,
+          elapsedSeconds: null,
+          outputBytes: null,
+        },
+      ],
+    });
+
+    const result = deserializeProject(doc);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.doc.renderQueueHistory?.[0]?.status).toBe('running');
+    expect(deserializeQueueHistory(result.doc.renderQueueHistory ?? [])[0]?.status).toBe('failed');
   });
 
   it('rejects tracks with negative gain on load', () => {

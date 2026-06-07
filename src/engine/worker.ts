@@ -156,7 +156,7 @@ import {
   normalizeExportSettings,
   probeExportCodecs,
 } from './export';
-import { mergePresetsWithBuiltIns } from './export-presets';
+import { BUILT_IN_PRESETS, buildTemplateContext, expandOutputTemplate, mergePresetsWithBuiltIns } from './export-presets';
 import {
   advanceQueue,
   cancelAllPending,
@@ -3184,7 +3184,12 @@ function handleQueueReorder(cmd: Extract<WorkerCommand, { type: 'queue-reorder' 
 
 function handleQueueCancelJob(cmd: Extract<WorkerCommand, { type: 'queue-cancel-job' }>) {
   if (queueState.activeJobId === cmd.jobId) {
-    queueJobAbort?.abort();
+    if (queueJobAbort) {
+      queueJobAbort.abort();
+    } else if (queueJobOutputResolve) {
+      queueJobOutputResolve(null);
+      queueJobOutputResolve = null;
+    }
   } else {
     queueState = markJobCanceled(queueState, cmd.jobId);
     postQueueState();
@@ -3193,7 +3198,12 @@ function handleQueueCancelJob(cmd: Extract<WorkerCommand, { type: 'queue-cancel-
 }
 
 function handleQueueCancelAll() {
-  queueJobAbort?.abort();
+  if (queueJobAbort) {
+    queueJobAbort.abort();
+  } else if (queueJobOutputResolve) {
+    queueJobOutputResolve(null);
+    queueJobOutputResolve = null;
+  }
   queueState = cancelAllPending(queueState);
   queueRunning = false;
   postQueueState();
@@ -3223,7 +3233,26 @@ function handleQueueSetStopOnError(cmd: Extract<WorkerCommand, { type: 'queue-se
 
 function exportFileNameForJob(job: RenderQueueJob): string {
   const extension = job.settings.container === 'webm' ? '.webm' : '.mp4';
-  const baseName = job.outputFileName || 'export';
+  let baseName = job.outputFileName;
+  if (!baseName && job.outputTemplate) {
+    let presetName = 'Custom';
+    if (job.presetId) {
+      const preset = exportPresets.find((p) => p.id === job.presetId) ?? BUILT_IN_PRESETS.find((p) => p.id === job.presetId);
+      if (preset) presetName = preset.name;
+    }
+    const range = resolveJobRange(job.jobRange);
+    const jobIndex = queueState.jobs.findIndex((item) => item.id === job.id) + 1;
+    const context = buildTemplateContext(
+      projectDisplayName(),
+      presetName,
+      job.settings.codec,
+      range?.startS,
+      range?.endS,
+      jobIndex > 0 ? jobIndex : 1,
+    );
+    baseName = expandOutputTemplate(job.outputTemplate, context);
+  }
+  baseName ||= 'export';
   if (baseName.endsWith(extension)) return baseName;
   return `${baseName}${extension}`;
 }
