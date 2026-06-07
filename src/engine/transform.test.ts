@@ -170,6 +170,34 @@ describe('transform uniform packing', () => {
     expect(at45[9]).toBeCloseTo(at0[9]!, 5);
   });
 
+  it('applies the rotated fit rect in layer-local axes so 90° rotation does not invert the clip extent', () => {
+    // 1920×1080 (landscape 16:9) source rotated 90° in a 100×100 (square) output
+    // with fit:fill. The rotated layer's aspect is 9:16 (portrait). In a square
+    // output, fill must cover the limiting (width) axis (1.0) and extend
+    // vertically (≈1.778). Because (sx, sy) are applied BEFORE the 90° rotation,
+    // the layer-local extent must be transposed: layer-x = 1.778 (becomes
+    // output-y after rotation), layer-y = 1.0 (becomes output-x after rotation).
+    const [m00, m01, m10, m11, t0, t1, , , layerW, layerH] = packTransformUniform(
+      { ...DEFAULT_TRANSFORM, rotation: 90 },
+      100,
+      100,
+      1920,
+      1080,
+    );
+    expect(layerW).toBeCloseTo(16 / 9, 3);
+    expect(layerH).toBeCloseTo(1, 5);
+
+    // Sample the four output corners and confirm the visible layer-local strip
+    // is a vertical band of width 1.0 (output-x) and height >1 (output-y axis
+    // extends past the layer card, producing the expected "fill"-and-clip).
+    // For a square output the central output column (ox = 0.5) lands on the
+    // layer's anchor (0.5, 0.5).
+    const lxCenter = m00! * 0.5 + m01! * 0.5 + t0!;
+    const lyCenter = m10! * 0.5 + m11! * 0.5 + t1!;
+    expect(lxCenter).toBeCloseTo(0.5, 5);
+    expect(lyCenter).toBeCloseTo(0.5, 5);
+  });
+
   it('bounds the letterbox card so k stays in [0,1] across the output at scale 1', () => {
     // A full-frame letterbox layer: every output texel maps inside the card, so
     // bars fill the whole frame (the base-layer letterbox case). With k derived

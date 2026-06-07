@@ -73,7 +73,10 @@ function metaRows(asset: MediaAssetSnapshot): { label: string; value: string }[]
   if (v) {
     rows.push({ label: 'Resolution', value: `${v.width}×${v.height}` });
     if (v.frameRate) {
-      const fps = v.frameRate % 1 === 0 ? `${v.frameRate}` : v.frameRate.toFixed(2).replace(/0+$/, '');
+      const fps =
+        v.frameRate % 1 === 0
+          ? `${v.frameRate}`
+          : v.frameRate.toFixed(2).replace(/\.?0+$/, '');
       const mode = v.frameRateMode === 'variable' ? ' (variable)' : '';
       rows.push({ label: 'Frame rate', value: `${fps} fps${mode}` });
     }
@@ -120,7 +123,7 @@ function MetaInfoPopover(props: { asset: MediaAssetSnapshot }) {
           </dl>
           <Show when={(props.asset.health?.warnings.length ?? 0) > 0}>
             <ul class="media-info-health">
-              <For each={props.asset.health!.warnings}>
+              <For each={props.asset.health?.warnings}>
                 {(w) => (
                   <li class={`media-info-health-item is-${w.severity}`}>
                     <AlertTriangle size={11} aria-hidden="true" />

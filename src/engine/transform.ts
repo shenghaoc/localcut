@@ -156,7 +156,14 @@ export function packTransformUniform(
   const swap = isQuarterTurn && ((nearestQuarter % 2) + 2) % 2 === 1;
   const fitSourceWidth = swap ? sourceHeight : sourceWidth;
   const fitSourceHeight = swap ? sourceWidth : sourceHeight;
-  const rect = computeFitRect(fitSourceWidth, fitSourceHeight, outputWidth, outputHeight, t.fit);
+  // `fitRect` is the rotated layer's extent in OUTPUT axes. The scale (sx, sy)
+  // and the trailing packed rect are consumed in LAYER-LOCAL (pre-rotation) axes,
+  // so for 90°/270° rotations we need to transpose back: layer-x corresponds to
+  // what becomes output-y after rotation, and vice versa.
+  const fitRect = computeFitRect(fitSourceWidth, fitSourceHeight, outputWidth, outputHeight, t.fit);
+  const rect = swap
+    ? { width: fitRect.height, height: fitRect.width }
+    : fitRect;
   const sx = Math.max(1e-6, rect.width * t.scale);
   const sy = Math.max(1e-6, rect.height * t.scale);
   const theta = (t.rotation * Math.PI) / 180;
