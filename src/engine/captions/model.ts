@@ -255,6 +255,7 @@ export function snapCaptionTime(time: number, targets: readonly CaptionSnapTarge
 
 export function activeCaptionSegmentAt(track: CaptionTrack, time: number): CaptionSegment | null {
   for (const segment of track.segments) {
+    if (segment.start > time) break;
     if (time >= segment.start && time < captionSegmentEnd(segment)) return segment;
   }
   return null;

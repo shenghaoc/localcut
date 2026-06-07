@@ -215,9 +215,10 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
               <div class="transcript-segment-list">
                 <For each={track().segments}>
                   {(segment) => (
-                    <label class={`transcript-row${props.selectedSegmentIds.includes(segment.id) ? ' is-selected' : ''}`}>
+                    <div class={`transcript-row${props.selectedSegmentIds.includes(segment.id) ? ' is-selected' : ''}`}>
                       <input
                         type="checkbox"
+                        aria-label={`Select caption segment ${segment.id}`}
                         checked={props.selectedSegmentIds.includes(segment.id)}
                         onChange={(event) => toggleSegment(segment.id, event.currentTarget.checked)}
                       />
@@ -235,7 +236,7 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
                         </span>
                         <span class="transcript-text">{segment.text}</span>
                       </button>
-                    </label>
+                    </div>
                   )}
                 </For>
               </div>

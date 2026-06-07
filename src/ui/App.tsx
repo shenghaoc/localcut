@@ -703,6 +703,10 @@ export function App() {
     setMetadata(null);
     setTimeline([]);
     setMarkers([]);
+    setCaptionTracks([]);
+    setCaptionDiagnostics([]);
+    setSelectedCaptionTrackId(null);
+    setSelectedCaptionSegmentIds([]);
     setSelectedClipRefs([]);
     setTimelineClipboard([]);
     setWaveformPeaks({});

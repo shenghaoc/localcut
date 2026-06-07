@@ -1,7 +1,6 @@
 /// <reference lib="webworker" />
 import {
   assertCrossOriginIsolated,
-  type CaptionExportSettingsSnapshot,
   type CaptionTrackSnapshot,
   ClockIndex,
   TIMELINE_EPSILON,
@@ -38,7 +37,7 @@ import {
 } from './captions/model';
 import { captionTrackFromSrt } from './captions/srt';
 import { captionTrackFromWebVtt } from './captions/webvtt';
-import { createCaptionTrack, type CaptionTrack } from './captions/types';
+import { createCaptionTrack, type CaptionExportSettings, type CaptionTrack } from './captions/types';
 import {
   addMarker,
   addTrack,
@@ -2508,7 +2507,8 @@ function handleExportCaptions(cmd: Extract<WorkerCommand, { type: 'export-captio
     postProjectWarning('Selected caption track no longer exists.');
     return;
   }
-  post({ type: 'caption-export-result', files: exportCaptionSidecars(track, cmd.settings as CaptionExportSettingsSnapshot) });
+  const settings = cmd.settings as CaptionExportSettings;
+  post({ type: 'caption-export-result', files: exportCaptionSidecars(track, settings) });
 }
 
 function handleSetCaptionTrack(cmd: Extract<WorkerCommand, { type: 'set-caption-track' }>): void {
