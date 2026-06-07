@@ -156,7 +156,7 @@ export function ExportDialog(props: ExportDialogProps) {
   createEffect(() => {
     const supported = effectiveSupportedCodecs();
     if (supported.length === 0) return;
-    const current = settings();
+    const current = untrack(settings);
     if (supported.some((entry) => entry.codec === current.codec && entry.container === current.container)) {
       return;
     }

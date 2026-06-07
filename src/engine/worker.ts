@@ -1964,13 +1964,14 @@ async function handleImport(file: File, fileHandle?: FileSystemFileHandle | null
 
     if (!timelineHasClips()) {
       const importedHandle = handle;
+      const hadPlayback = playback !== null;
       const placed = commitTimelineMutation(
         () => placeAsset(timeline, importedHandle, undefined, 0),
         { prune: false },
       );
       if (placed) {
         void computeWaveformsForSource(importedHandle);
-        if (importedHandle.metadata.video) setupPlayback();
+        if (importedHandle.metadata.video && hadPlayback) setupPlayback();
       }
     }
 
