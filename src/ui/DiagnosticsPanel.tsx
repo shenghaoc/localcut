@@ -58,6 +58,10 @@ export function DiagnosticsPanel(props: DiagnosticsPanelProps) {
   async function copyReport() {
     const text = reportText();
     if (!text) return;
+    if (!navigator.clipboard) {
+      setCopyStatus('Copy failed: Clipboard API is not available (requires HTTPS).');
+      return;
+    }
     try {
       await navigator.clipboard.writeText(text);
       setCopyStatus('Diagnostics report copied.');
