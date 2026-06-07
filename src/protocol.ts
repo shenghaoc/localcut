@@ -1,4 +1,5 @@
 /** Shared types for main ↔ pipeline worker messages. */
+import type { DiagnosticSnapshot, RecentError, RecoveryAction } from './diagnostics/types';
 
 /** Clock SAB layout: [0] currentTime, [1] duration, [2] playState, [3] audioClock. */
 export const CLOCK_FIELD_COUNT = 4;
@@ -1073,6 +1074,8 @@ export type WorkerCommand =
   | { type: 'queue-job-output'; jobId: string; handle: FileSystemFileHandle }
   | { type: 'queue-job-skip'; jobId: string }
   | { type: 'queue-set-stop-on-error'; stopOnError: boolean }
+  | { type: 'request-diagnostic-snapshot'; requestId: string }
+  | { type: 'run-recovery-action'; actionId: string }
   | { type: 'dispose' };
 
 /** A measured preview resolution tier (adaptive downscale of the decode path). */
@@ -1173,6 +1176,9 @@ export type WorkerStateMessage =
   | { type: 'queue-job-failed'; jobId: string; error: string }
   | { type: 'queue-job-canceled'; jobId: string }
   | { type: 'queue-complete'; completedCount: number; failedCount: number; canceledCount: number }
+  | { type: 'diagnostic-snapshot'; requestId?: string; snapshot: DiagnosticSnapshot }
+  | { type: 'recent-error'; error: RecentError }
+  | { type: 'recovery-state'; state: 'idle' | 'recovering' | 'failed'; actions: readonly RecoveryAction[] }
   | { type: 'error'; message: string };
 
 export function assertCrossOriginIsolated(context: string): void {

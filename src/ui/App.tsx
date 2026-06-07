@@ -27,10 +27,14 @@ import {
   type WorkerStateMessage,
   type WaveformPeaks,
 } from '../protocol';
+import type { DiagnosticSnapshot, DiagnosticSourceInput } from '../diagnostics/types';
+import { createEmptyRecentErrorLog, addRecentError } from '../diagnostics/recent-errors';
 import { createSharedClock } from './clock';
 import { createWorkerBridge } from './worker-bridge';
 import { PreviewCanvas } from './PreviewCanvas';
 import { PreviewGizmo } from './PreviewGizmo';
+import { DiagnosticsPanel } from './DiagnosticsPanel';
+import { buildUiDiagnosticSnapshot } from './diagnostic-snapshot';
 import { Toolbar } from './Toolbar';
 import { Timeline } from './Timeline';
 import { Inspector, type SelectedClip } from './Inspector';
@@ -172,6 +176,9 @@ export function App() {
   const [workerReady, setWorkerReady] = createSignal(false);
   const [webgpuAvailable, setWebgpuAvailable] = createSignal(false);
   const [capabilityPanelOpen, setCapabilityPanelOpen] = createSignal(false);
+  const [diagnosticsPanelOpen, setDiagnosticsPanelOpen] = createSignal(false);
+  const [diagnosticSnapshot, setDiagnosticSnapshot] = createSignal<DiagnosticSnapshot | null>(null);
+  const [recentErrorLog, setRecentErrorLog] = createSignal(createEmptyRecentErrorLog());
   const [compatibilityPreview, setCompatibilityPreview] =
     createSignal<CompatibilityPreviewState | null>(null);
   const [metadata, setMetadata] = createSignal<MediaMetadata | null>(null);
@@ -385,6 +392,36 @@ export function App() {
     webgpuReady: webgpuAvailable(),
     runtimeIssue: runtimeIssue(),
   });
+  const diagnosticSources = createMemo<DiagnosticSourceInput[]>(() => [
+    ...assets(),
+    ...unresolvedSources().map((source) => ({ ...source, offline: true })),
+  ]);
+
+  async function refreshDiagnostics(workerSnapshot?: DiagnosticSnapshot | null) {
+    const snapshot = await buildUiDiagnosticSnapshot({
+      capabilities: capabilities(),
+      tier: pipelineMode(),
+      runtimeIssue: runtimeIssue() ?? audioWarning(),
+      webgpuReady: webgpuAvailable(),
+      exportSettings: exportSettings(),
+      assets: assets(),
+      recentErrors: workerSnapshot?.recentErrors ?? recentErrorLog(),
+      workerSnapshot,
+    });
+    setDiagnosticSnapshot(snapshot);
+  }
+
+  function openDiagnostics() {
+    setDiagnosticsPanelOpen(true);
+    void refreshDiagnostics();
+    if (bridge) {
+      const requestId =
+        typeof crypto !== 'undefined' && 'randomUUID' in crypto
+          ? crypto.randomUUID()
+          : `diag-${Date.now()}`;
+      bridge.send({ type: 'request-diagnostic-snapshot', requestId });
+    }
+  }
 
   function clearCompatibilityPreview() {
     const preview = compatibilityPreview();
@@ -609,6 +646,22 @@ export function App() {
         break;
       case 'queue-complete':
         setStatusLine(`Queue done: ${msg.completedCount} completed, ${msg.failedCount} failed, ${msg.canceledCount} canceled`);
+        break;
+      case 'diagnostic-snapshot':
+        setRecentErrorLog(msg.snapshot.recentErrors);
+        void refreshDiagnostics(msg.snapshot);
+        break;
+      case 'recent-error':
+        setRecentErrorLog((prev) => addRecentError(prev, msg.error));
+        break;
+      case 'recovery-state':
+        setStatusLine(
+          msg.state === 'idle'
+            ? 'Recovery state updated.'
+            : msg.state === 'recovering'
+              ? 'Recovery in progress…'
+              : 'Recovery failed.',
+        );
         break;
       case 'source-health': {
         setLatestHealthReport(msg.report.status === 'ok' ? null : msg.report);
@@ -1790,6 +1843,9 @@ export function App() {
               Audio Disabled
             </span>
           </Show>
+          <button type="button" class="status-badge" onClick={openDiagnostics} title="Open diagnostics">
+            Diagnostics
+          </button>
           <Show when={isIsolated()}>
             <span class="status-ok">COOP/COEP OK</span>
           </Show>
@@ -1802,6 +1858,13 @@ export function App() {
         primaryIssue={limitedIssue()}
         compatibilityPreviewAvailable={canCompatibilityPreview(capabilities())}
         onClose={() => setCapabilityPanelOpen(false)}
+      />
+      <DiagnosticsPanel
+        open={diagnosticsPanelOpen()}
+        snapshot={diagnosticSnapshot()}
+        sources={diagnosticSources()}
+        onRefresh={openDiagnostics}
+        onClose={() => setDiagnosticsPanelOpen(false)}
       />
     </div>
   );

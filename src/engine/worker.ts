@@ -211,6 +211,8 @@ import {
   type BundleWorkerContext,
 } from './project-bundle/bundle-jobs';
 import { proxyStatusForAsset } from './proxy-jobs';
+import { buildWorkerDiagnosticSnapshot } from './diagnostics';
+import { createEmptyRecentErrorLog, logRecentError, type RecentErrorInput } from '../diagnostics/recent-errors';
 
 let clockView: Float64Array | null = null;
 let renderer: PreviewRenderer | null = null;
@@ -260,6 +262,9 @@ let queueJobAbort: AbortController | null = null;
 let queueJobOutputResolve: ((handle: FileSystemFileHandle | null) => void) | null = null;
 let queueJobOutputJobId: string | null = null;
 const queueJobOutputHandles = new Map<string, FileSystemFileHandle>();
+let recentErrors = createEmptyRecentErrorLog();
+let lastWebgpuFeatures: string[] = [];
+let lastGpuUnavailableReason: string | null = null;
 const FRAME_CACHE_BUDGET_BYTES = 64 * 1024 * 1024;
 let audioRing: AudioRingViews | null = null;
 let audioWriteAnchor = 0;
@@ -299,6 +304,16 @@ function makeProjectId(): string {
 
 function post(msg: WorkerStateMessage) {
   self.postMessage(msg);
+}
+
+function recordRecentError(input: RecentErrorInput): void {
+  recentErrors = logRecentError(recentErrors, input);
+  const latest = recentErrors.entries[0];
+  if (latest) post({ type: 'recent-error', error: latest });
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function postTimelineState() {
@@ -1235,6 +1250,8 @@ async function handleInit(
   try {
     const gpu = await initGpu(canvas);
     renderer = gpu.renderer;
+    lastWebgpuFeatures = gpu.features;
+    lastGpuUnavailableReason = gpu.unavailableReason;
 
     // Phase 21: wire scope SAB to renderer if provided
     if (scopeSab && renderer) {
@@ -1259,13 +1276,31 @@ async function handleInit(
       features: gpu.features,
       gpuUnavailableReason: gpu.unavailableReason,
     });
+    if (!renderer && gpu.unavailableReason) {
+      recordRecentError({
+        code: 'webgpu.unavailable',
+        subsystem: 'gpu',
+        severity: 'warning',
+        message: gpu.unavailableReason,
+        recoveryActionIds: ['retry-gpu-device', 'reload-app'],
+      });
+    }
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
+    const message = errorMessage(e);
+    lastWebgpuFeatures = [];
+    lastGpuUnavailableReason = `WebGPU initialization failed: ${message}`;
+    recordRecentError({
+      code: 'webgpu.init_failed',
+      subsystem: 'gpu',
+      severity: 'error',
+      message: lastGpuUnavailableReason,
+      recoveryActionIds: ['reload-app'],
+    });
     post({
       type: 'ready',
       webgpu: false,
       features: [],
-      gpuUnavailableReason: `WebGPU initialization failed: ${message}`,
+      gpuUnavailableReason: lastGpuUnavailableReason,
     });
   }
 
@@ -1798,7 +1833,15 @@ async function handleImport(file: File, fileHandle?: FileSystemFileHandle | null
       sourceDescriptors.delete(sourceId);
       binSourceIds.delete(sourceId);
     }
-    const message = e instanceof Error ? e.message : String(e);
+    const message = errorMessage(e);
+    recordRecentError({
+      code: 'media.import_failed',
+      subsystem: 'import',
+      severity: 'error',
+      message,
+      affectedSourceAlias: sourceId ?? undefined,
+      recoveryActionIds: ['retry-import'],
+    });
     if (sourceId) {
       post({ type: 'source-health', report: sourceHealthReportFromError(sourceId, file.name, message) });
     }
@@ -2915,7 +2958,14 @@ function setupPlayback() {
     writeClock: writeTransport,
     onFrameTime: handleFrameTime,
     onPlaybackError: (e) => {
-      const message = e instanceof Error ? e.message : String(e);
+      const message = errorMessage(e);
+      recordRecentError({
+        code: 'playback.failed',
+        subsystem: 'worker',
+        severity: 'error',
+        message,
+        recoveryActionIds: ['reload-app'],
+      });
       post({ type: 'error', message: `Playback error: ${message}` });
     },
     getMasterTime,
@@ -3050,14 +3100,35 @@ async function handleExportProbe() {
 
 async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-start' }>) {
   if (exportAbort) {
+    recordRecentError({
+      code: 'export.already_running',
+      subsystem: 'export',
+      severity: 'warning',
+      message: 'An export is already running.',
+      recoveryActionIds: ['cancel-job'],
+    });
     post({ type: 'export-error', message: 'An export is already running.' });
     return;
   }
   if (queueRunning) {
+    recordRecentError({
+      code: 'export.queue_running',
+      subsystem: 'export',
+      severity: 'warning',
+      message: 'Cannot start export while the render queue is running.',
+      recoveryActionIds: ['cancel-job'],
+    });
     post({ type: 'export-error', message: 'Cannot start export while the render queue is running.' });
     return;
   }
   if (!renderer) {
+    recordRecentError({
+      code: 'export.webgpu_unavailable',
+      subsystem: 'export',
+      severity: 'error',
+      message: 'Export requires WebGPU preview to be available.',
+      recoveryActionIds: ['retry-gpu-device'],
+    });
     post({ type: 'export-error', message: 'Export requires WebGPU preview to be available.' });
     return;
   }
@@ -3131,7 +3202,14 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
     if (error instanceof ExportCancelledError) {
       post({ type: 'export-canceled' });
     } else {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = errorMessage(error);
+      recordRecentError({
+        code: 'export.failed',
+        subsystem: 'export',
+        severity: 'error',
+        message,
+        recoveryActionIds: ['retry-export'],
+      });
       post({ type: 'export-error', message });
     }
   } finally {
@@ -3457,6 +3535,21 @@ async function handleDispose(): Promise<void> {
   post({ type: 'dispose-complete' });
 }
 
+async function handleDiagnosticSnapshot(requestId: string): Promise<void> {
+  const sources = [...sourceDescriptors.values()].map(assetSnapshotFromDescriptor);
+  const snapshot = await buildWorkerDiagnosticSnapshot({
+    appVersion: '0.1.0',
+    webgpuReady: renderer !== null,
+    webgpuFeatures: lastWebgpuFeatures,
+    gpuUnavailableReason: lastGpuUnavailableReason,
+    rendererSubmissionCount: renderer?.lastFrameSubmissionCount ?? null,
+    activeExportSettings: lastExportSettings,
+    recentErrors,
+    sources,
+  });
+  post({ type: 'diagnostic-snapshot', requestId, snapshot });
+}
+
 self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
   const cmd = event.data;
   switch (cmd.type) {
@@ -3495,7 +3588,14 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
       break;
     case 'restore-project':
       void handleRestoreProject().catch((error) => {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = errorMessage(error);
+        recordRecentError({
+          code: 'project.restore_failed',
+          subsystem: 'worker',
+          severity: 'error',
+          message,
+          recoveryActionIds: ['reload-app'],
+        });
         post({
           type: 'restore-result',
           projectId,
@@ -3509,13 +3609,27 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
       break;
     case 'new-project':
       void handleNewProject().catch((error) => {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = errorMessage(error);
+        recordRecentError({
+          code: 'project.new_failed',
+          subsystem: 'worker',
+          severity: 'error',
+          message,
+        });
         postProjectWarning(`Could not start new project: ${message}`);
       });
       break;
     case 'relink-source':
       void handleRelinkSource(cmd).catch((error) => {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = errorMessage(error);
+        recordRecentError({
+          code: 'source.relink_failed',
+          subsystem: 'import',
+          severity: 'error',
+          message,
+          affectedSourceAlias: cmd.sourceId,
+          recoveryActionIds: ['relink-source'],
+        });
         post({
           type: 'relink-result',
           sourceId: cmd.sourceId,
@@ -3529,7 +3643,13 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
       break;
     case 'import-captions':
       void handleImportCaptions(cmd).catch((error) => {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = errorMessage(error);
+        recordRecentError({
+          code: 'caption.import_failed',
+          subsystem: 'import',
+          severity: 'error',
+          message,
+        });
         postProjectWarning(`Caption import failed: ${message}`);
       });
       break;
@@ -3650,7 +3770,15 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
     case 'export-project-bundle':
       void runExportProjectBundle(bundleWorkerContext, cmd.jobId, cmd.policy, cmd.outputDir).catch(
         (error) => {
-          const message = error instanceof Error ? error.message : String(error);
+          const message = errorMessage(error);
+          recordRecentError({
+            code: 'bundle.export_failed',
+            subsystem: 'export',
+            severity: 'error',
+            message,
+            affectedJobId: cmd.jobId,
+            recoveryActionIds: ['export-project-bundle'],
+          });
           post({ type: 'error', message: `Export bundle failed: ${message}` });
         },
       );
@@ -3662,7 +3790,15 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
         cmd.bundleDir,
         cmd.replaceConfirmed,
       ).catch((error) => {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = errorMessage(error);
+        recordRecentError({
+          code: 'bundle.import_failed',
+          subsystem: 'import',
+          severity: 'error',
+          message,
+          affectedJobId: cmd.jobId,
+          recoveryActionIds: ['retry-import'],
+        });
         post({
           type: 'bundle-import-result',
           jobId: cmd.jobId,
@@ -3678,7 +3814,15 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
         cmd.relocate,
         cmd.outputDir,
       ).catch((error) => {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = errorMessage(error);
+        recordRecentError({
+          code: 'bundle.collect_failed',
+          subsystem: 'storage',
+          severity: 'error',
+          message,
+          affectedJobId: cmd.jobId,
+          recoveryActionIds: ['open-storage-cleanup'],
+        });
         post({ type: 'error', message: `Collect media failed: ${message}` });
       });
       break;
@@ -3800,6 +3944,37 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
       break;
     case 'queue-set-stop-on-error':
       handleQueueSetStopOnError(cmd);
+      break;
+    case 'request-diagnostic-snapshot':
+      void handleDiagnosticSnapshot(cmd.requestId).catch((error) => {
+        const message = errorMessage(error);
+        recordRecentError({
+          code: 'diagnostic.snapshot_failed',
+          subsystem: 'worker',
+          severity: 'error',
+          message,
+        });
+        post({ type: 'error', message: `Diagnostics failed: ${message}` });
+      });
+      break;
+    case 'run-recovery-action':
+      post({
+        type: 'recovery-state',
+        state: 'idle',
+        actions: [
+          {
+            actionId: cmd.actionId,
+            kind: cmd.actionId === 'reload-app' ? 'reload-app' : 'export-project-bundle',
+            label: cmd.actionId === 'reload-app' ? 'Reload app' : 'Export project bundle',
+            description: 'Recovery actions are surfaced by diagnostics; UI-owned actions run on the main thread.',
+            enabled: false,
+            destructive: false,
+            requiresUserGesture: true,
+            reasonDisabled: 'This recovery action is handled by the UI in this implementation slice.',
+            relatedErrorIds: [],
+          },
+        ],
+      });
       break;
     case 'dispose':
       void handleDispose();
