@@ -101,6 +101,12 @@ describe('canvas compatibility compositor helpers', () => {
     expect(canvasCompositorSource.indexOf('this.titleCtx.clearRect(0, 0, TITLE_RASTER_WIDTH, TITLE_RASTER_HEIGHT);'))
       .toBeLessThan(canvasCompositorSource.indexOf('rasterizeTitleToCanvas(this.titleCtx, TITLE_RASTER_WIDTH, TITLE_RASTER_HEIGHT, layer.content);'));
   });
+
+  it('fills the whole transformed card for Canvas2D letterbox bars', () => {
+    expect(canvasCompositorSource).toContain('const cardWidth = outputWidth * transform.scale;');
+    expect(canvasCompositorSource).toContain('drawWidth * transform.anchorX - cardWidth / 2');
+    expect(canvasCompositorSource).toContain('drawHeight * transform.anchorY - cardHeight / 2');
+  });
 });
 
 describe('compat WebGPU upload', () => {
@@ -167,6 +173,12 @@ describe('compat export helpers', () => {
   it('documents that VideoSample.close owns reduced export VideoFrame cleanup', () => {
     expect(compatExportSource).toContain('sample.close() releases exportFrame');
     expect(compatExportSource).toContain('exportFrame.close();');
+  });
+
+  it('streams reduced exports directly to File System Access handles', () => {
+    expect(compatExportSource).toContain('new StreamTarget(');
+    expect(compatExportSource).toContain('await options.outputHandle.createWritable()');
+    expect(compatExportSource).toContain('const bufferTarget = streamTarget ? null : new BufferTarget();');
   });
 
   it('reuses a single reduced export plan for progress reporting', () => {

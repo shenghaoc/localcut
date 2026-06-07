@@ -17,6 +17,19 @@ describe('backend readiness UI gating', () => {
     expect(appSource).toContain("b.send({ type: 'export-start', settings, output })");
   });
 
+  it('keeps reduced export warnings visible after success clears errors', () => {
+    expect(appSource).toContain('const [exportWarnings, setExportWarnings] = createSignal<string[]>([])');
+    expect(appSource).toContain('setExportWarnings((warnings) => [...warnings, msg.message])');
+    expect(appSource).toContain('warnings={exportWarnings()}');
+  });
+
+  it('starts the audio engine whenever the worker has an SAB audio ring', () => {
+    expect(appSource).toContain('const [audioSabReady, setAudioSabReady] = createSignal(false)');
+    expect(appSource).toContain('setAudioSabReady(audioSab !== null)');
+    expect(appSource).toContain('if (audioSabReady()) void audioEngine.play(t)');
+    expect(appSource).toContain('if (audioSabReady()) void audioEngine.seek(t)');
+  });
+
   it('labels render queue as core WebGPU only when reduced direct export is available', () => {
     expect(appSource).toContain("if (exportBackend() !== 'core-webgpu')");
     expect(appSource).toContain('Render queue requires the Core WebGPU export tier. Use direct export in this browser tier.');

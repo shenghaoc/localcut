@@ -232,6 +232,7 @@ export function App() {
   const [exportProgress, setExportProgress] = createSignal<ExportProgress | null>(null);
   const [exportResult, setExportResult] = createSignal<string | null>(null);
   const [exportError, setExportError] = createSignal<string | null>(null);
+  const [exportWarnings, setExportWarnings] = createSignal<string[]>([]);
   const [exportCodecs, setExportCodecs] = createSignal<ExportCodecSupport[]>([]);
   const [exportSettings, setExportSettings] = createSignal<ExportSettings | null>(null);
   const [exportPresets, setExportPresets] = createSignal<ExportPresetDoc[]>(
@@ -285,6 +286,7 @@ export function App() {
   let audioReady: Promise<{ audioSab: SharedArrayBuffer | null; meterSab: SharedArrayBuffer | null }> | null =
     null;
   const [meterSab, setMeterSab] = createSignal<SharedArrayBuffer | null>(null);
+  const [audioSabReady, setAudioSabReady] = createSignal(false);
 
   const recoveryMachine = createRecoveryMachine();
   const [workerRecoveryState, setWorkerRecoveryState] = createSignal<WorkerRecoveryState>('running');
@@ -710,13 +712,14 @@ export function App() {
         break;
       }
       case 'export-warning':
-        setExportError(msg.message);
+        setExportWarnings((warnings) => [...warnings, msg.message]);
         setStatusLine(`Export warning: ${msg.message}`);
         break;
       case 'export-canceled':
         setExporting(false);
         setExportProgress(null);
         setExportError(null);
+        setExportWarnings([]);
         setExportResult('Export canceled');
         setStatusLine('Export canceled');
         break;
@@ -725,6 +728,7 @@ export function App() {
         setExportProgress(null);
         setExportResult(null);
         setExportError(msg.message);
+        setExportWarnings([]);
         setStatusLine(`Export failed: ${msg.message}`);
         break;
       case 'presets-state':
@@ -950,10 +954,12 @@ export function App() {
         audioSab = audioInit.audioSab;
         meterBuffer = audioInit.meterSab;
         setMeterSab(meterBuffer);
+        setAudioSabReady(audioSab !== null);
         setAudioWarning(null);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         setAudioWarning(`Audio disabled: ${message}`);
+        setAudioSabReady(false);
         setStatusLine('Audio disabled · starting video pipeline');
         setRecentErrorLog((prev) => addRecentError(prev, createRecentError({
           code: 'audio.init_failed',
@@ -1381,6 +1387,7 @@ export function App() {
     setExportProgress(null);
     setExportResult(null);
     setExportError(null);
+    setExportWarnings([]);
     setStatusLine('Choosing export destination…');
     try {
       let output: FileSystemFileHandle | null = null;
@@ -1536,7 +1543,7 @@ export function App() {
   function playFromKeyboard() {
     if (!previewSurfaceAvailable()) return;
     const t = clock.currentTime();
-    if (accelerated()) void audioEngine.play(t);
+    if (audioSabReady()) void audioEngine.play(t);
     bridge?.send({ type: 'play' });
   }
 
@@ -1683,7 +1690,7 @@ export function App() {
         onPickImport={pickImportMedia}
         onPlay={() => {
           const t = clock.currentTime();
-          if (accelerated()) void audioEngine.play(t);
+          if (audioSabReady()) void audioEngine.play(t);
           bridge?.send({ type: 'play' });
         }}
         onPause={() => {
@@ -1730,6 +1737,7 @@ export function App() {
             progress={exportProgress()}
             lastResult={exportResult()}
             error={exportError()}
+            warnings={exportWarnings()}
             timelineDuration={clock.duration()}
             supportedCodecs={exportCodecs()}
             capabilityProbeV2={capabilityProbeV2()}
@@ -2046,7 +2054,7 @@ export function App() {
         selectedClipRefs={selectedClipRefs}
         waveformPeaks={() => waveformPeaks()}
         onSeek={(t) => {
-          if (accelerated()) void audioEngine.seek(t);
+          if (audioSabReady()) void audioEngine.seek(t);
           bridge?.send({ type: 'seek', time: t });
         }}
         onSplit={(trackId, _clipId, time) => bridge?.send({ type: 'split', trackId, time })}

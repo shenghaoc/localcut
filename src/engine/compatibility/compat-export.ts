@@ -4,6 +4,8 @@ import {
   BufferTarget,
   Mp4OutputFormat,
   Output,
+  StreamTarget,
+  type StreamTargetChunk,
   VideoSample,
   VideoSampleSource,
   WebMOutputFormat,
@@ -188,17 +190,6 @@ async function reducedAudioSupported(container: 'mp4' | 'webm', channels: number
   }
 }
 
-async function writeBufferToHandle(handle: FileSystemFileHandle, buffer: ArrayBuffer): Promise<void> {
-  const writable = await handle.createWritable();
-  try {
-    await writable.write(new Uint8Array(buffer));
-    await writable.close();
-  } catch (error) {
-    await writable.abort().catch(() => undefined);
-    throw error;
-  }
-}
-
 async function encodeReducedVideo(
   options: ReducedTimelineExportOptions,
   videoSource: VideoSampleSource,
@@ -340,8 +331,15 @@ export async function exportTimelineReduced(
     warnings.push('Audio was omitted because this reduced browser tier cannot encode the required audio track.');
   }
 
-  const target = new BufferTarget();
-  let output: Output<Mp4OutputFormat | WebMOutputFormat, BufferTarget> | null = null;
+  const streamTarget = options.outputHandle
+    ? new StreamTarget(
+        await options.outputHandle.createWritable() as WritableStream<StreamTargetChunk>,
+        { chunked: true },
+      )
+    : null;
+  const bufferTarget = streamTarget ? null : new BufferTarget();
+  const target: StreamTarget | BufferTarget = streamTarget ?? bufferTarget!;
+  let output: Output<Mp4OutputFormat | WebMOutputFormat, BufferTarget | StreamTarget> | null = null;
   let videoSource: VideoSampleSource | null = null;
   let audioSource: AudioSampleSource | null = null;
   try {
@@ -385,16 +383,15 @@ export async function exportTimelineReduced(
     const mimeType = await output.getMimeType().catch(() => fallbackMime);
     await output.finalize();
     output = null;
-    const buffer = target.buffer;
-    if (!buffer) throw new Error('Reduced export did not produce an output buffer.');
     const fileName =
       options.outputHandle?.name ??
       options.fallbackFileName ??
       `localcut-reduced.${plan.container === 'webm' ? 'webm' : 'mp4'}`;
     if (options.outputHandle) {
-      await writeBufferToHandle(options.outputHandle, buffer);
       return { mimeType, fileName, blob: null, warnings };
     }
+    const buffer = bufferTarget?.buffer;
+    if (!buffer) throw new Error('Reduced export did not produce an output buffer.');
     return { mimeType, fileName, blob: new Blob([buffer], { type: mimeType }), warnings };
   } catch (error) {
     videoSource?.close();

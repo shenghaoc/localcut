@@ -161,6 +161,7 @@ import {
   probeExportCodecs,
 } from './export';
 import { exportTimelineReduced } from './compatibility/compat-export';
+import { exportConstraintsForProbe } from './capability-probe-v2';
 import {
   CanvasCompatibilityRenderer,
   type CanvasCompatibilityLayer,
@@ -264,6 +265,7 @@ let autosaveInFlight: Promise<void> | null = null;
 let restoreOfferGeneration = 0;
 let frameCache: FrameCache | null = null;
 let currentProbe: ThroughputProbe | null = null;
+let currentCapabilityProbe: CapabilityProbeResult | null = null;
 let layerBudgetWarned = false;
 let exportAbort: AbortController | null = null;
 let lastExportSettings: ExportSettings | null = null;
@@ -1279,6 +1281,7 @@ async function handleInit(
   scopeSab?: SharedArrayBuffer | null,
   probeResult?: CapabilityProbeResult,
 ) {
+  currentCapabilityProbe = probeResult ?? null;
   if (probeResult) {
     post({ type: 'capability-probe-v2', result: probeResult });
   }
@@ -1300,6 +1303,7 @@ async function handleInit(
     previewBackend = 'none';
     exportBackend = 'none';
 
+    const useCompatibilityAdapter = probeResult?.compatibilityAdapter === true;
     const gpu =
       probeResult?.tier === 'limited-webcodecs'
         ? {
@@ -1317,7 +1321,7 @@ async function handleInit(
               unavailableReason: 'Preview unavailable in shell-only tier.',
               deviceLost: null,
             }
-          : probeResult?.tier === 'compatibility-webgpu' || probeResult?.compatibilityAdapter
+          : useCompatibilityAdapter
             ? await initCompatibilityGpu(canvas)
             : await initGpu(canvas);
 
@@ -1331,7 +1335,7 @@ async function handleInit(
     lastWebgpuFeatures = gpu.features;
     lastWebgpuLimits = gpu.limits;
     if (renderer) {
-      previewBackend = probeResult?.tier === 'compatibility-webgpu' || probeResult?.compatibilityAdapter
+      previewBackend = useCompatibilityAdapter
         ? 'compat-webgpu'
         : 'core-webgpu';
       exportBackend = previewBackend;
@@ -3232,12 +3236,20 @@ async function handleExportProbe() {
     return;
   }
 
-  const supported = await probeExportCodecs(
+  const probedSupported = await probeExportCodecs(
     settings.width,
     settings.height,
     settings.fps,
     settings.videoBitrate,
   );
+  const capabilityProbe = currentCapabilityProbe;
+  const supported = capabilityProbe
+    ? probedSupported.filter((entry) =>
+        exportConstraintsForProbe(capabilityProbe).some(
+          (allowed) => allowed.codec === entry.codec && allowed.container === entry.container,
+        ),
+      )
+    : probedSupported;
 
   if (supported.length === 0) {
     post({ type: 'export-codecs', supported: [], settings });
@@ -3747,6 +3759,7 @@ async function handleDispose(): Promise<void> {
   reducedRenderer = null;
   previewBackend = 'none';
   exportBackend = 'none';
+  currentCapabilityProbe = null;
   clockView = null;
   audioRing = null;
   post({ type: 'dispose-complete' });

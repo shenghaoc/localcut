@@ -137,6 +137,8 @@ function drawTransformedImage(
   const rect = computeFitRect(sourceWidth, sourceHeight, outputWidth, outputHeight, transform.fit);
   const drawWidth = outputWidth * rect.width * transform.scale;
   const drawHeight = outputHeight * rect.height * transform.scale;
+  const cardWidth = outputWidth * transform.scale;
+  const cardHeight = outputHeight * transform.scale;
   const centerX = outputWidth * (0.5 + transform.x);
   const centerY = outputHeight * (0.5 + transform.y);
 
@@ -148,7 +150,12 @@ function drawTransformedImage(
     ctx.translate(-drawWidth * transform.anchorX, -drawHeight * transform.anchorY);
     if (transform.fit === 'letterbox') {
       ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, drawWidth, drawHeight);
+      ctx.fillRect(
+        drawWidth * transform.anchorX - cardWidth / 2,
+        drawHeight * transform.anchorY - cardHeight / 2,
+        cardWidth,
+        cardHeight,
+      );
     }
     ctx.drawImage(image, 0, 0, drawWidth, drawHeight);
   } finally {
