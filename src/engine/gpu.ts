@@ -844,27 +844,35 @@ export class PreviewRenderer {
   }
 }
 
-export async function initGpu(canvas: OffscreenCanvas): Promise<GpuInit> {
+type AdapterOptionsWithFeatureLevel = GPURequestAdapterOptions & {
+  featureLevel?: 'core' | 'compatibility';
+};
+
+async function initGpuWithOptions(
+  canvas: OffscreenCanvas,
+  adapterOptions: AdapterOptionsWithFeatureLevel,
+  options: { optionalFeatures: boolean; unavailableLabel: string },
+): Promise<GpuInit> {
   if (!navigator.gpu) {
     return unavailable(
       'This browser does not expose the WebGPU API. Use a recent Chromium-based desktop browser (Chrome/Edge 113+).',
     );
   }
 
-  const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+  const adapter = await navigator.gpu.requestAdapter(adapterOptions);
   if (!adapter) {
     return unavailable(
-      'No WebGPU adapter was found. Enable hardware acceleration and update your GPU drivers, then reload.',
+      `No ${options.unavailableLabel} adapter was found. Enable hardware acceleration and update your GPU drivers, then reload.`,
     );
   }
 
   const wantedFeatures: GPUFeatureName[] = [];
-  const useF16 = adapter.features.has('shader-f16');
+  const useF16 = options.optionalFeatures && adapter.features.has('shader-f16');
   const hasSubgroups = adapter.features.has('subgroups');
   const hasTimestampQuery = adapter.features.has('timestamp-query');
   if (useF16) wantedFeatures.push('shader-f16');
-  if (hasSubgroups) wantedFeatures.push('subgroups');
-  if (hasTimestampQuery) wantedFeatures.push('timestamp-query');
+  if (options.optionalFeatures && hasSubgroups) wantedFeatures.push('subgroups');
+  if (options.optionalFeatures && hasTimestampQuery) wantedFeatures.push('timestamp-query');
 
   let device: GPUDevice;
   try {
@@ -905,6 +913,22 @@ export async function initGpu(canvas: OffscreenCanvas): Promise<GpuInit> {
     limits,
     deviceLost,
   };
+}
+
+export async function initGpu(canvas: OffscreenCanvas): Promise<GpuInit> {
+  return initGpuWithOptions(
+    canvas,
+    { powerPreference: 'high-performance' },
+    { optionalFeatures: true, unavailableLabel: 'WebGPU' },
+  );
+}
+
+export async function initCompatibilityGpu(canvas: OffscreenCanvas): Promise<GpuInit> {
+  return initGpuWithOptions(
+    canvas,
+    { powerPreference: 'low-power', featureLevel: 'compatibility' },
+    { optionalFeatures: false, unavailableLabel: 'WebGPU compatibility' },
+  );
 }
 
 export { DEFAULT_TRANSFORM };

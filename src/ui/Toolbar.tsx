@@ -37,6 +37,7 @@ interface ToolbarProps {
 	importHint?: string | null;
 	crossOriginIsolated: boolean;
 	pipelineMode: CapabilityTier;
+	pipelineLabel: string;
 	previewLabel: string | null;
 	encodeFps: number | null;
 	onOpenCapabilities?: () => void;
@@ -192,13 +193,7 @@ export function Toolbar(props: ToolbarProps) {
 					)}
 				>
 					<Gauge size={13} aria-hidden="true" />
-					{props.pipelineMode === 'accelerated'
-						? 'Accelerated'
-						: props.pipelineMode === 'limited'
-							? 'Limited shell'
-							: props.pipelineMode === 'blocked'
-								? 'Blocked'
-								: 'Starting pipeline'}
+					{props.pipelineLabel}
 				</span>
 				<span class="pipeline-chip">
 					<Cpu size={13} aria-hidden="true" />

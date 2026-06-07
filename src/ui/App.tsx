@@ -9,9 +9,11 @@ import {
   type CaptionTrackSnapshot,
   type ClipKeyframeParamSnapshot,
   type ExportCodecSupport,
+  type ExportBackend,
   type ExportPresetDoc,
   type ExportProgress,
   type ExportSettings,
+  type PreviewBackend,
   type RenderQueueState,
   type BundleIntegrityReportSnapshot,
   type BundleSourcePolicySnapshot,
@@ -197,6 +199,10 @@ export function App() {
   );
   const [workerReady, setWorkerReady] = createSignal(false);
   const [webgpuAvailable, setWebgpuAvailable] = createSignal(false);
+  const [previewBackend, setPreviewBackend] = createSignal<PreviewBackend>('none');
+  const [exportBackend, setExportBackend] = createSignal<ExportBackend>('none');
+  const [previewReady, setPreviewReady] = createSignal(false);
+  const [exportReady, setExportReady] = createSignal(false);
   const [capabilityPanelOpen, setCapabilityPanelOpen] = createSignal(false);
   const [diagnosticsPanelOpen, setDiagnosticsPanelOpen] = createSignal(false);
   const [diagnosticSnapshot, setDiagnosticSnapshot] = createSignal<DiagnosticSnapshot | null>(null);
@@ -392,29 +398,50 @@ export function App() {
   const clock = createSharedClock(sab);
 
   const pipelineMode = createMemo<CapabilityTier>(() =>
-    deriveCapabilityTier(capabilities(), {
-      workerReady: workerReady(),
-      webgpuReady: webgpuAvailable(),
-      runtimeIssue: runtimeIssue(),
-    }),
+    workerReady()
+      ? previewBackend() === 'core-webgpu'
+        ? 'accelerated'
+        : 'limited'
+      : deriveCapabilityTier(capabilities(), {
+          workerReady: workerReady(),
+          webgpuReady: webgpuAvailable(),
+          runtimeIssue: runtimeIssue(),
+        }),
   );
 
-  const accelerated = () => pipelineMode() === 'accelerated';
-  const exportSurfaceAvailable = () => accelerated();
+  const accelerated = () => previewBackend() === 'core-webgpu';
+  const previewSurfaceAvailable = () => previewReady();
+  const exportSurfaceAvailable = () => exportReady();
+  const pipelineLabel = createMemo(() => {
+    switch (previewBackend()) {
+      case 'core-webgpu':
+        return 'Accelerated';
+      case 'compat-webgpu':
+        return 'GPU compat';
+      case 'canvas2d':
+        return 'Limited WebCodecs';
+      case 'none':
+        if (pipelineMode() === 'starting') return 'Starting pipeline';
+        if (pipelineMode() === 'blocked') return 'Blocked';
+        return capabilityProbeV2()?.tier === 'shell-only' ? 'Shell only' : 'Limited shell';
+    }
+  });
   const compatibilityImportEnabled = () =>
-    pipelineMode() === 'limited' && canCompatibilityPreview(capabilities());
+    pipelineMode() === 'limited' && (previewSurfaceAvailable() || canCompatibilityPreview(capabilities()));
   const importBlocked = () =>
     importing() ||
     pipelineMode() === 'blocked' ||
     pipelineMode() === 'starting' ||
-    (pipelineMode() === 'limited' && !canCompatibilityPreview(capabilities()));
+    (pipelineMode() === 'limited' && !previewSurfaceAvailable() && !canCompatibilityPreview(capabilities()));
   const importHint = () =>
     importBlocked() ? importUnavailableReason(pipelineMode(), capabilities(), {
       workerReady: workerReady(),
       webgpuReady: webgpuAvailable(),
       runtimeIssue: runtimeIssue(),
-    }) : compatibilityImportEnabled()
-      ? 'Loads a reduced compatibility thumbnail only. Accelerated editing requires the full pipeline.'
+    }) : pipelineMode() === 'limited' && previewSurfaceAvailable()
+      ? 'Loads media into the reduced client-side preview/export path.'
+      : compatibilityImportEnabled()
+      ? 'Loads a reduced compatibility thumbnail for inspection.'
       : null;
   const limitedIssue = () => primaryLimitedIssue(capabilities(), {
     workerReady: workerReady(),
@@ -471,6 +498,10 @@ export function App() {
       case 'ready':
         setWorkerReady(true);
         setWebgpuAvailable(msg.webgpu);
+        setPreviewBackend(msg.previewBackend);
+        setExportBackend(msg.exportBackend);
+        setPreviewReady(msg.previewReady);
+        setExportReady(msg.exportReady);
         // A fresh worker has republished its authoritative clock reset; re-attach
         // the read-side that handleWorkerCrash detached.
         clock.setActive(true);
@@ -479,16 +510,26 @@ export function App() {
           recoveryMachine.recordRestartSuccess();
           setWorkerRecoveryState('running');
         }
-        if (!msg.webgpu) {
+        if (msg.previewBackend === 'canvas2d') {
+          setRuntimeIssue('Limited WebCodecs tier active. Preview/export use a reduced worker Canvas2D backend.');
+        } else if (msg.previewBackend === 'compat-webgpu') {
+          setRuntimeIssue('Compatibility GPU tier active. Preview/export use a reduced GPU backend.');
+        } else if (!msg.webgpu) {
           setRuntimeIssue(
             msg.gpuUnavailableReason ??
               'WebGPU is unavailable in this browser. Accelerated import, playback, effects, and export require a WebGPU-capable Chromium browser.',
           );
+        } else {
+          setRuntimeIssue(null);
         }
         setStatusLine(
-          msg.webgpu
+          msg.previewBackend === 'core-webgpu'
             ? `Pipeline ready · WebGPU (${msg.features.join(', ') || 'default'})`
-            : `Limited shell · ${msg.gpuUnavailableReason ?? 'WebGPU unavailable'}`,
+            : msg.previewBackend === 'compat-webgpu'
+              ? 'Compatibility GPU ready · reduced effects/export'
+              : msg.previewBackend === 'canvas2d'
+                ? 'Limited WebCodecs ready · Canvas2D preview/export'
+                : `Limited shell · ${msg.gpuUnavailableReason ?? 'preview unavailable'}`,
         );
         break;
       case 'import-progress':
@@ -651,6 +692,27 @@ export function App() {
         setExportResult(`Exported ${msg.fileName}`);
         setStatusLine(`Export complete · ${msg.mimeType}`);
         break;
+      case 'export-download-ready': {
+        const url = URL.createObjectURL(msg.blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = msg.fileName;
+        anchor.rel = 'noopener';
+        document.body.append(anchor);
+        anchor.click();
+        anchor.remove();
+        queueMicrotask(() => URL.revokeObjectURL(url));
+        setExporting(false);
+        setExportProgress(null);
+        setExportError(null);
+        setExportResult(`Exported ${msg.fileName}`);
+        setStatusLine(`Export ready · ${msg.mimeType}`);
+        break;
+      }
+      case 'export-warning':
+        setExportError(msg.message);
+        setStatusLine(`Export warning: ${msg.message}`);
+        break;
       case 'export-canceled':
         setExporting(false);
         setExportProgress(null);
@@ -713,9 +775,17 @@ export function App() {
       case 'recovery-state':
         if (msg.state === 'recovering') {
           setWebgpuAvailable(false);
+          setPreviewBackend('none');
+          setExportBackend('none');
+          setPreviewReady(false);
+          setExportReady(false);
           setStatusLine('GPU recovery in progress…');
         } else if (msg.state === 'failed') {
           setWebgpuAvailable(false);
+          setPreviewBackend('none');
+          setExportBackend('none');
+          setPreviewReady(false);
+          setExportReady(false);
           setRuntimeIssue('GPU recovery failed. Accelerated features are unavailable.');
           setStatusLine('GPU recovery failed · limited mode');
         } else {
@@ -793,6 +863,10 @@ export function App() {
     // The crashed worker no longer owns a WebGPU device; reflect that until the
     // restarted worker re-publishes its `ready` (with the true webgpu flag).
     setWebgpuAvailable(false);
+    setPreviewBackend('none');
+    setExportBackend('none');
+    setPreviewReady(false);
+    setExportReady(false);
     setExporting(false);
     setExportProgress(null);
     setImporting(false);
@@ -855,6 +929,10 @@ export function App() {
       return;
     }
     if (probe.tier === 'shell-only') {
+      setPreviewBackend('none');
+      setExportBackend('none');
+      setPreviewReady(false);
+      setExportReady(false);
       setRuntimeIssue('Preview unavailable: this browser exposes neither WebGPU nor WebCodecs decode support.');
       setStatusLine('Shell-only · preview and export unavailable');
       return;
@@ -971,7 +1049,7 @@ export function App() {
 
   function importMedia(file: File, fileHandle?: FileSystemFileHandle | null) {
     discardRestoreBeforeImport();
-    if (accelerated()) {
+    if (previewSurfaceAvailable()) {
       // The worker queues imports independently, so a batch (multi-file picker
       // or drop) must not be gated on `importing()` — that would silently drop
       // every file after the first once the first import flips the flag.
@@ -1214,6 +1292,10 @@ export function App() {
     presetId: string | null,
     outputTemplate: string | null,
   ) {
+    if (!accelerated()) {
+      setStatusLine('Render queue requires the accelerated WebGPU export path. Use direct export in this browser tier.');
+      return;
+    }
     if (rangeMode === 'markers') {
       const jobs = createJobsFromMarkers(markers(), settings, presetId, outputTemplate);
       for (const job of jobs) {
@@ -1287,10 +1369,10 @@ export function App() {
   async function startExport(settings: ExportSettings) {
     // Title-only projects have no source metadata but are still exportable.
     if ((!metadata() && !hasTimeline()) || exporting()) return;
-    if (!accelerated()) {
+    if (!exportSurfaceAvailable()) {
       setExportError(
         pipelineMode() === 'limited'
-          ? 'Export is unavailable because the accelerated engine is not running.'
+          ? 'Export is unavailable because this browser tier has no export backend.'
           : 'Waiting for preview canvas before export can start.',
       );
       return;
@@ -1301,11 +1383,16 @@ export function App() {
     setExportError(null);
     setStatusLine('Choosing export destination…');
     try {
-      const output = await pickOutputHandle(settings);
-      if (!output) {
-        setExporting(false);
-        setStatusLine('Export canceled');
-        return;
+      let output: FileSystemFileHandle | null = null;
+      if (typeof window.showSaveFilePicker === 'function') {
+        output = await pickOutputHandle(settings);
+        if (!output) {
+          setExporting(false);
+          setStatusLine('Export canceled');
+          return;
+        }
+      } else if (exportBackend() !== 'canvas2d') {
+        throw new Error('Export requires the File System Access API in this browser tier.');
       }
       const { bridge: b } = ensureWorker();
       setStatusLine('Starting export…');
@@ -1447,9 +1534,9 @@ export function App() {
   }
 
   function playFromKeyboard() {
-    if (!accelerated()) return;
+    if (!previewSurfaceAvailable()) return;
     const t = clock.currentTime();
-    void audioEngine.play(t);
+    if (accelerated()) void audioEngine.play(t);
     bridge?.send({ type: 'play' });
   }
 
@@ -1596,7 +1683,7 @@ export function App() {
         onPickImport={pickImportMedia}
         onPlay={() => {
           const t = clock.currentTime();
-          void audioEngine.play(t);
+          if (accelerated()) void audioEngine.play(t);
           bridge?.send({ type: 'play' });
         }}
         onPause={() => {
@@ -1608,11 +1695,12 @@ export function App() {
         canRedo={historyState().canRedo}
         onUndo={() => bridge?.send({ type: 'undo' })}
         onRedo={() => bridge?.send({ type: 'redo' })}
-        transportDisabled={!accelerated()}
+        transportDisabled={!previewSurfaceAvailable()}
         importBlocked={importBlocked()}
         importHint={importHint()}
         crossOriginIsolated={isIsolated()}
         pipelineMode={pipelineMode()}
+        pipelineLabel={pipelineLabel()}
         previewLabel={previewLabel()}
         encodeFps={encodeFps()}
         onOpenCapabilities={() => setCapabilityPanelOpen(true)}
@@ -1752,8 +1840,8 @@ export function App() {
           </section>
         )}
       </Show>
-      <main class={`workspace${accelerated() ? ' has-bin' : ''}`}>
-        <Show when={accelerated()}>
+      <main class={`workspace${previewSurfaceAvailable() ? ' has-bin' : ''}`}>
+        <Show when={previewSurfaceAvailable()}>
           <MediaBin
             assets={assets}
             unresolvedIds={unresolvedIds}
@@ -1770,7 +1858,7 @@ export function App() {
           <Show when={previewKey() + 1} keyed>
             {(_k) => <PreviewCanvas onOffscreenReady={sendInit} onCanvasEl={setPreviewCanvasEl} />}
           </Show>
-          <Show when={accelerated() && selectedClipTransform() && previewSize()}>
+          <Show when={previewSurfaceAvailable() && selectedClipTransform() && previewSize()}>
             <PreviewGizmo
               transform={selectedClipTransform()!.transform}
               sourceWidth={selectedClipTransform()!.sourceWidth}
@@ -1788,13 +1876,13 @@ export function App() {
               }}
             />
           </Show>
-          <Show when={accelerated() && safeAreaGuides()}>
+          <Show when={previewSurfaceAvailable() && safeAreaGuides()}>
             <div class="safe-area-overlay" aria-hidden="true">
               <div class="safe-area-rect safe-area-action" />
               <div class="safe-area-rect safe-area-title" />
             </div>
           </Show>
-          <Show when={accelerated()}>
+          <Show when={previewSurfaceAvailable()}>
             <button
               type="button"
               class={`safe-area-toggle${safeAreaGuides() ? ' is-active' : ''}`}
@@ -1823,12 +1911,16 @@ export function App() {
                     : 'Preview'}
                 </p>
                 <p class="preview-empty-title">
-                  {pipelineMode() === 'limited' || pipelineMode() === 'blocked'
-                    ? 'Accelerated engine unavailable'
-                    : 'No source loaded'}
+                  {previewSurfaceAvailable()
+                    ? 'No source loaded'
+                    : pipelineMode() === 'limited' || pipelineMode() === 'blocked'
+                      ? 'Preview unavailable'
+                      : 'No source loaded'}
                 </p>
                 <p class="preview-empty-copy">
-                  {pipelineMode() === 'limited' || pipelineMode() === 'blocked'
+                  {previewSurfaceAvailable()
+                    ? 'Drop an MP4, MOV, or WebM here.'
+                    : pipelineMode() === 'limited' || pipelineMode() === 'blocked'
                     ? limitedIssue() ??
                       (compatibilityImportEnabled()
                         ? 'Import still loads a reduced compatibility thumbnail so you can inspect a local clip.'
@@ -1948,13 +2040,13 @@ export function App() {
         currentTime={clock.currentTime}
         duration={clock.duration}
         frameRate={() => metadata()?.video?.frameRate ?? null}
-        hasMedia={(metadata() !== null || hasTimeline() || transitions().length > 0 || markers().length > 0 || assets().length > 0) && accelerated()}
+        hasMedia={(metadata() !== null || hasTimeline() || transitions().length > 0 || markers().length > 0 || assets().length > 0) && previewSurfaceAvailable()}
         timeline={timeline}
         markers={markers}
         selectedClipRefs={selectedClipRefs}
         waveformPeaks={() => waveformPeaks()}
         onSeek={(t) => {
-          void audioEngine.seek(t);
+          if (accelerated()) void audioEngine.seek(t);
           bridge?.send({ type: 'seek', time: t });
         }}
         onSplit={(trackId, _clipId, time) => bridge?.send({ type: 'split', trackId, time })}
@@ -2045,9 +2137,12 @@ export function App() {
       <CapabilityPanel
         open={capabilityPanelOpen()}
         tier={pipelineMode()}
+        tierLabel={pipelineLabel()}
         features={listCapabilityFeatures(capabilities())}
         primaryIssue={limitedIssue()}
         compatibilityPreviewAvailable={canCompatibilityPreview(capabilities())}
+        previewReady={previewReady()}
+        exportReady={exportReady()}
         capabilityProbeV2={capabilityProbeV2()}
         onClose={() => setCapabilityPanelOpen(false)}
       />

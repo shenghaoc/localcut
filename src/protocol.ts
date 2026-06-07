@@ -38,6 +38,9 @@ export type CapabilityTierV2 =
   | 'limited-webcodecs'
   | 'shell-only';
 
+export type PreviewBackend = 'core-webgpu' | 'compat-webgpu' | 'canvas2d' | 'none';
+export type ExportBackend = 'core-webgpu' | 'compat-webgpu' | 'canvas2d' | 'none';
+
 export interface CodecProbeResult {
   h264Decode: FeatureSupport;
   vp9Decode: FeatureSupport;
@@ -1020,7 +1023,7 @@ export type WorkerCommand =
   | { type: 'seek'; time: number }
   | { type: 'step'; direction: 1 | -1 }
   | { type: 'export-probe' }
-  | { type: 'export-start'; settings: ExportSettings; output: FileSystemFileHandle }
+  | { type: 'export-start'; settings: ExportSettings; output?: FileSystemFileHandle | null }
   | { type: 'export-cancel' }
   | { type: 'undo' }
   | { type: 'redo' }
@@ -1165,7 +1168,16 @@ export interface HDRWarningSnapshot {
 }
 
 export type WorkerStateMessage =
-  | { type: 'ready'; webgpu: boolean; features: string[]; gpuUnavailableReason: string | null }
+  | {
+      type: 'ready';
+      webgpu: boolean;
+      features: string[];
+      gpuUnavailableReason: string | null;
+      previewBackend: PreviewBackend;
+      exportBackend: ExportBackend;
+      previewReady: boolean;
+      exportReady: boolean;
+    }
   | { type: 'capability-probe-v2'; result: CapabilityProbeResult }
   // Reduced tiers without SharedArrayBuffer: the worker stays the sole clock
   // source but reports transport over postMessage instead of shared memory.
@@ -1213,6 +1225,8 @@ export type WorkerStateMessage =
   | { type: 'export-codecs'; supported: ExportCodecSupport[]; settings: ExportSettings }
   | { type: 'export-progress'; progress: ExportProgress }
   | { type: 'export-complete'; fileName: string; mimeType: string }
+  | { type: 'export-download-ready'; fileName: string; mimeType: string; blob: Blob }
+  | { type: 'export-warning'; message: string }
   | { type: 'export-canceled' }
   | { type: 'export-error'; message: string }
   | { type: 'dispose-complete' }

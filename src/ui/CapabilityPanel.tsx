@@ -8,24 +8,14 @@ import { CapabilityMatrixPanel } from './CapabilityMatrixPanel';
 interface CapabilityPanelProps {
   open: boolean;
   tier: CapabilityTier;
+  tierLabel: string;
   features: CapabilityFeatureInfo[];
   primaryIssue: string | null;
   compatibilityPreviewAvailable: boolean;
+  previewReady: boolean;
+  exportReady: boolean;
   capabilityProbeV2: CapabilityProbeResult | null;
   onClose: () => void;
-}
-
-function tierLabel(tier: CapabilityTier): string {
-  switch (tier) {
-    case 'accelerated':
-      return 'Accelerated';
-    case 'limited':
-      return 'Limited shell';
-    case 'starting':
-      return 'Starting pipeline';
-    case 'blocked':
-      return 'Blocked';
-  }
 }
 
 export function CapabilityPanel(props: CapabilityPanelProps) {
@@ -45,7 +35,7 @@ export function CapabilityPanel(props: CapabilityPanelProps) {
             <p class="panel-title" id="capability-panel-title">
               Browser capabilities
             </p>
-            <p class="capability-panel-tier">Active tier: {tierLabel(props.tier)}</p>
+            <p class="capability-panel-tier">Active tier: {props.tierLabel}</p>
           </div>
           <Button size="icon" variant="ghost" onClick={props.onClose} aria-label="Close capability panel">
             <X size={16} aria-hidden="true" />
@@ -58,8 +48,9 @@ export function CapabilityPanel(props: CapabilityPanelProps) {
 
         <Show when={props.compatibilityPreviewAvailable && props.tier === 'limited'}>
           <p class="capability-panel-note">
-            Compatibility preview is available: import shows a reduced thumbnail only. Timeline,
-            transport, effects, and export remain disabled until the accelerated tier is active.
+            {props.previewReady
+              ? `Reduced preview${props.exportReady ? ' and export are' : ' is'} available in this browser tier. Advanced GPU effects remain limited.`
+              : 'Compatibility import can still show a reduced thumbnail for inspection, but timeline preview and export are unavailable.'}
           </p>
         </Show>
 

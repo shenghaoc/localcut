@@ -1,28 +1,20 @@
 import type { CapabilityTierV2 } from '../../protocol';
 
 /**
- * Honest readiness of the compatibility paths (B3).
+ * Honest readiness of the compatibility paths.
  *
  * The Phase 26 reduced pipelines (compat WebGPU preview T3, Canvas2D compositor
- * T4, compatibility/limited export T5) are foundation-only — probing, tiering,
- * diagnostics, and export *constraints* exist, but the reduced preview/export
- * pipelines are not wired. These flags are the single source of truth so the UI
- * can label those tiers honestly instead of implying full editing/export works.
- *
- * Flip a flag to `true` only when the corresponding pipeline is implemented and
- * tested; the UI keys its preview/export controls off these values.
+ * T4, compatibility/limited export T5) are real reduced paths. These flags are
+ * the single source of truth so the UI can label those tiers honestly.
  */
-export const COMPAT_PREVIEW_IMPLEMENTED = false; // Phase 26 T3 — compat-webgpu preview
-export const COMPAT_EXPORT_IMPLEMENTED = false; // Phase 26 T5 — compat-webgpu export
-export const LIMITED_PREVIEW_IMPLEMENTED = false; // Phase 26 T4 — Canvas2D compositor
-export const LIMITED_EXPORT_IMPLEMENTED = false; // Phase 26 T5 — limited-webcodecs export
+export const COMPAT_PREVIEW_IMPLEMENTED = true; // Phase 26 T3 — compat-webgpu preview
+export const COMPAT_EXPORT_IMPLEMENTED = true; // Phase 26 T5 — compat-webgpu export
+export const LIMITED_PREVIEW_IMPLEMENTED = true; // Phase 26 T4 — Canvas2D compositor
+export const LIMITED_EXPORT_IMPLEMENTED = true; // Phase 26 T5 — limited-webcodecs export
 
 /**
- * The ONE reduced surface that is actually wired today: a single still-frame
- * thumbnail import (`extractCompatibilityPreview`), explicitly labeled at its own
- * control as "reduced thumbnail only". It is not the full reduced preview pipeline
- * above, so it is tracked separately to keep this module consistent with the UI's
- * real behavior rather than implying compat tiers have no preview at all.
+ * Still-frame thumbnail import remains available as a fast inspect path, but it
+ * is no longer the only reduced surface.
  */
 export const STILL_THUMBNAIL_IMPORT_IMPLEMENTED = true;
 
@@ -42,8 +34,7 @@ export interface CompatibilityReadiness {
 
 /**
  * Report what is actually wired for a tier. `core-webgpu` is fully implemented;
- * `shell-only` has no media path at all; the two compatibility tiers are
- * foundation-only until their pipelines land.
+ * `shell-only` has no media path at all.
  */
 export function compatibilityReadiness(tier: CapabilityTierV2): CompatibilityReadiness {
   switch (tier) {
