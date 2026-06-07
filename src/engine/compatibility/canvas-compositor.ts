@@ -214,6 +214,7 @@ export class CanvasCompatibilityRenderer {
             layer.transform,
           );
         } else {
+          this.titleCtx.clearRect(0, 0, TITLE_RASTER_WIDTH, TITLE_RASTER_HEIGHT);
           rasterizeTitleToCanvas(this.titleCtx, TITLE_RASTER_WIDTH, TITLE_RASTER_HEIGHT, layer.content);
           drawTransformedImage(
             this.ctx,

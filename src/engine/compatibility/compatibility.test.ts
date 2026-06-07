@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { chooseLimitedExportCodec, makeVideoFrameFromBitmap, waitForEncodeQueue } from './compat-export';
 import { probeResultFor } from './capability-fixtures';
 import { bitmapFromFrame, BoundedFrameQueue, drawLayers, fitWithin720p } from './canvas-compositor';
+import canvasCompositorSource from './canvas-compositor.ts?raw';
 import { uploadCompatFrame } from './compat-webgpu-preview';
 
 describe('canvas compatibility compositor helpers', () => {
@@ -90,6 +91,14 @@ describe('canvas compatibility compositor helpers', () => {
     drawLayers(target, [{ bitmap, opacity: 0.5, x: 0, y: 0, width: 100, height: 50 }], 100, 50);
     expect(bitmapClose).toHaveBeenCalledTimes(1);
     expect(target.drawImage).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears the shared title raster canvas before each title layer draw', () => {
+    expect(canvasCompositorSource).toContain(
+      'this.titleCtx.clearRect(0, 0, TITLE_RASTER_WIDTH, TITLE_RASTER_HEIGHT);',
+    );
+    expect(canvasCompositorSource.indexOf('this.titleCtx.clearRect(0, 0, TITLE_RASTER_WIDTH, TITLE_RASTER_HEIGHT);'))
+      .toBeLessThan(canvasCompositorSource.indexOf('rasterizeTitleToCanvas(this.titleCtx, TITLE_RASTER_WIDTH, TITLE_RASTER_HEIGHT, layer.content);'));
   });
 });
 
