@@ -13,12 +13,13 @@ describe('compatibilityReadiness', () => {
     expect(compatibilityReadiness('core-webgpu')).toEqual({
       previewReady: true,
       exportReady: true,
+      thumbnailImportAvailable: true,
       note: null,
     });
   });
 
-  it('labels unfinished compatibility tiers honestly', () => {
-    // Guard: these stay foundation-only until the pipelines are wired.
+  it('labels unfinished compatibility tiers honestly but keeps the still-thumbnail import', () => {
+    // Guard: the full reduced pipelines stay foundation-only until wired...
     expect(COMPAT_PREVIEW_IMPLEMENTED).toBe(false);
     expect(COMPAT_EXPORT_IMPLEMENTED).toBe(false);
     expect(LIMITED_PREVIEW_IMPLEMENTED).toBe(false);
@@ -27,11 +28,14 @@ describe('compatibilityReadiness', () => {
     const compat = compatibilityReadiness('compatibility-webgpu');
     expect(compat.previewReady).toBe(false);
     expect(compat.exportReady).toBe(false);
+    // ...while the labeled still-frame thumbnail import IS available (matches the UI).
+    expect(compat.thumbnailImportAvailable).toBe(true);
     expect(compat.note).toBe(COMPAT_NOT_READY_NOTE);
 
     const limited = compatibilityReadiness('limited-webcodecs');
     expect(limited.previewReady).toBe(false);
     expect(limited.exportReady).toBe(false);
+    expect(limited.thumbnailImportAvailable).toBe(true);
     expect(limited.note).toBe(COMPAT_NOT_READY_NOTE);
   });
 
@@ -39,6 +43,7 @@ describe('compatibilityReadiness', () => {
     const shell = compatibilityReadiness('shell-only');
     expect(shell.previewReady).toBe(false);
     expect(shell.exportReady).toBe(false);
+    expect(shell.thumbnailImportAvailable).toBe(false);
     expect(shell.note).toMatch(/Shell only/);
   });
 });

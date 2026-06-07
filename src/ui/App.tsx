@@ -471,6 +471,9 @@ export function App() {
       case 'ready':
         setWorkerReady(true);
         setWebgpuAvailable(msg.webgpu);
+        // A fresh worker has republished its authoritative clock reset; re-attach
+        // the read-side that handleWorkerCrash detached.
+        clock.setActive(true);
         if (recoveryMachine.state !== 'running') {
           awaitingRestartReady = false;
           recoveryMachine.recordRestartSuccess();
@@ -794,10 +797,12 @@ export function App() {
     setExportProgress(null);
     setImporting(false);
     // Do NOT zero the transport-clock SAB from the main thread: the worker is the
-    // sole writer of the transport clock and the restarted worker republishes an
-    // authoritative reset (writeClockFull(0,0,false)) in its `init` handler. The
-    // rAF reader in createSharedClock() surfaces that reset; until then the last
-    // values persist harmlessly while the canvas is remounted via previewKey.
+    // sole writer of the transport clock. Instead detach the read-side so the UI
+    // stops surfacing the dead worker's stale (possibly playing) values. This also
+    // covers the throttled path, where no restarted worker will republish a reset.
+    // A restarted worker republishes its authoritative reset (writeClockFull) on
+    // init, and `ready` re-attaches the reader below.
+    clock.setActive(false);
     const message = event?.message ?? 'Worker terminated unexpectedly';
     setRecentErrorLog((prev) => addRecentError(prev, createRecentError({
       code: 'worker.crashed',

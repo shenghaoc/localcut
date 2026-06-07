@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, For, Show } from 'solid-js';
-import { computeSegmentWindow } from './transcript-window';
+import { TRANSCRIPT_WINDOW_RADIUS, computeSegmentWindow } from './transcript-window';
 import type {
   CaptionDiagnosticSnapshot,
   CaptionExportSettingsSnapshot,
@@ -99,9 +99,29 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
     }
     return byTime >= 0 ? byTime : 0;
   });
+  // Manual paging anchor: lets the user reach caption rows outside the
+  // active/playhead-centered window (B5 windowing would otherwise make distant
+  // rows unreachable in a long SRT/WebVTT import). Cleared whenever the selection
+  // or active track changes so selecting a segment recenters the view.
+  const [viewAnchor, setViewAnchor] = createSignal<number | null>(null);
+  createEffect(() => {
+    props.selectedSegmentIds[0];
+    activeTrack()?.id;
+    setViewAnchor(null);
+  });
+  const windowCenter = createMemo(() => viewAnchor() ?? activeSegmentIndex());
   const segmentWindow = createMemo(() =>
-    computeSegmentWindow(activeTrack()?.segments.length ?? 0, activeSegmentIndex()),
+    computeSegmentWindow(activeTrack()?.segments.length ?? 0, windowCenter()),
   );
+  function pageWindow(direction: -1 | 1): void {
+    const total = activeTrack()?.segments.length ?? 0;
+    const { start, end } = segmentWindow();
+    const next =
+      direction < 0
+        ? Math.max(0, start - TRANSCRIPT_WINDOW_RADIUS)
+        : Math.min(total - 1, end - 1 + TRANSCRIPT_WINDOW_RADIUS);
+    setViewAnchor(next);
+  }
   const visibleSegments = createMemo(() => {
     const track = activeTrack();
     if (!track) return [];
@@ -260,7 +280,9 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
 
               <div class="transcript-segment-list">
                 <Show when={segmentWindow().before > 0}>
-                  <p class="transcript-window-hint">{segmentWindow().before} earlier segment{segmentWindow().before === 1 ? '' : 's'} hidden</p>
+                  <button type="button" class="transcript-window-hint" onClick={() => pageWindow(-1)}>
+                    Show {segmentWindow().before} earlier segment{segmentWindow().before === 1 ? '' : 's'}
+                  </button>
                 </Show>
                 <For each={visibleSegments()}>
                   {(segment) => (
@@ -289,7 +311,9 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
                   )}
                 </For>
                 <Show when={segmentWindow().after > 0}>
-                  <p class="transcript-window-hint">{segmentWindow().after} later segment{segmentWindow().after === 1 ? '' : 's'} hidden</p>
+                  <button type="button" class="transcript-window-hint" onClick={() => pageWindow(1)}>
+                    Show {segmentWindow().after} later segment{segmentWindow().after === 1 ? '' : 's'}
+                  </button>
                 </Show>
               </div>
 
