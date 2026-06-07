@@ -29,7 +29,7 @@ import {
   type WaveformPeaks,
 } from '../protocol';
 import type { DiagnosticSnapshot, DiagnosticSourceInput } from '../diagnostics/types';
-import { createEmptyRecentErrorLog, addRecentError } from '../diagnostics/recent-errors';
+import { createEmptyRecentErrorLog, addRecentError, createRecentError } from '../diagnostics/recent-errors';
 import { createSharedClock } from './clock';
 import { createWorkerBridge } from './worker-bridge';
 import { PreviewCanvas } from './PreviewCanvas';
@@ -71,6 +71,7 @@ import {
   exportConstraintsForProbe,
   probeCapabilities as probeCapabilitiesV2,
 } from '../engine/capability-probe-v2';
+import { compatibilityReadiness } from '../engine/compatibility/compat-status';
 import { extractCompatibilityPreview } from '../compatibility/thumbnail';
 import {
   createJob,
@@ -784,25 +785,25 @@ export function App() {
     const crashState = recoveryMachine.recordCrash();
     setWorkerRecoveryState(crashState);
     setWorkerReady(false);
+    // The crashed worker no longer owns a WebGPU device; reflect that until the
+    // restarted worker re-publishes its `ready` (with the true webgpu flag).
+    setWebgpuAvailable(false);
     setExporting(false);
     setExportProgress(null);
     setImporting(false);
-    if (sab) {
-      const view = new Float64Array(sab);
-      view[0] = 0;
-      view[1] = 0;
-      view[2] = 0;
-    }
+    // Do NOT zero the transport-clock SAB from the main thread: the worker is the
+    // sole writer of the transport clock and the restarted worker republishes an
+    // authoritative reset (writeClockFull(0,0,false)) in its `init` handler. The
+    // rAF reader in createSharedClock() surfaces that reset; until then the last
+    // values persist harmlessly while the canvas is remounted via previewKey.
     const message = event?.message ?? 'Worker terminated unexpectedly';
-    setRecentErrorLog((prev) => addRecentError(prev, {
-      id: `worker-crash-${Date.now()}`,
+    setRecentErrorLog((prev) => addRecentError(prev, createRecentError({
       code: 'worker.crashed',
       subsystem: 'worker',
       severity: 'error',
-      occurredAt: new Date().toISOString(),
       message,
       recoveryActionIds: crashState === 'throttled' ? [] : ['restart-worker'],
-    }));
+    })));
     setStatusLine(
       crashState === 'throttled'
         ? 'Worker crashed · restart limit reached'
@@ -869,15 +870,13 @@ export function App() {
         const message = error instanceof Error ? error.message : String(error);
         setAudioWarning(`Audio disabled: ${message}`);
         setStatusLine('Audio disabled · starting video pipeline');
-        setRecentErrorLog((prev) => addRecentError(prev, {
-          id: `ui-audio-${Date.now()}`,
+        setRecentErrorLog((prev) => addRecentError(prev, createRecentError({
           code: 'audio.init_failed',
           subsystem: 'audio',
           severity: 'warning',
-          occurredAt: new Date().toISOString(),
           message: `Audio init failed: ${message}`,
           recoveryActionIds: ['retry-audio'],
-        }));
+        })));
       }
     }
     b.send({ type: 'init', canvas, sab, audioSab, probeResult: probe }, [canvas]);
@@ -2018,7 +2017,11 @@ export function App() {
             {(label) => (
               <span
                 class={`status-badge${capabilityProbeV2()?.tier === 'core-webgpu' ? '' : ' status-warn'}`}
-                title="CapabilityTierV2"
+                title={
+                  capabilityProbeV2()
+                    ? compatibilityReadiness(capabilityProbeV2()!.tier).note ?? 'CapabilityTierV2'
+                    : 'CapabilityTierV2'
+                }
               >
                 {label()}
               </span>

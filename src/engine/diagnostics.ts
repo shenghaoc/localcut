@@ -112,7 +112,26 @@ const ENCODER_PROBES = [
   { codec: 'av01.0.05M.08', label: 'av1', container: 'webm', avc: false },
 ] as const;
 
-async function probeDecoders(): Promise<CodecSupportSummary[]> {
+// Codec probing hits `isConfigSupported`, which can perform a hardware capability
+// query per call. Diagnostics can be opened/refreshed repeatedly, so the results
+// are cached for the session and reused; capability does not change at runtime, so
+// the cache is only cleared explicitly via `invalidateDiagnosticProbeCache()`.
+let cachedDecoderProbe: Promise<CodecSupportSummary[]> | null = null;
+let cachedEncoderProbe: Promise<CodecSupportSummary[]> | null = null;
+// The storage estimate is cheap-ish but still I/O; cache it for a short window so a
+// single open/refresh burst doesn't issue several `navigator.storage.estimate()`
+// calls in a row, while still reflecting changes on the next manual refresh.
+let cachedStorage: { at: number; value: StorageDiagnosticSummary } | null = null;
+const STORAGE_CACHE_TTL_MS = 2_000;
+
+/** Drop cached codec/storage probe results (call when capability may have changed). */
+export function invalidateDiagnosticProbeCache(): void {
+  cachedDecoderProbe = null;
+  cachedEncoderProbe = null;
+  cachedStorage = null;
+}
+
+async function probeDecodersUncached(): Promise<CodecSupportSummary[]> {
   if (typeof VideoDecoder === 'undefined') {
     return DECODER_PROBES.map((p) => ({
       codec: p.label, container: p.container, direction: 'decode' as const,
@@ -138,7 +157,19 @@ async function probeDecoders(): Promise<CodecSupportSummary[]> {
   );
 }
 
-async function probeEncoders(): Promise<CodecSupportSummary[]> {
+function probeDecoders(): Promise<CodecSupportSummary[]> {
+  if (!cachedDecoderProbe) {
+    // Cache the promise (not just the result) so concurrent snapshot builds share
+    // one in-flight probe; on rejection, clear it so a later call can retry.
+    cachedDecoderProbe = probeDecodersUncached().catch((error) => {
+      cachedDecoderProbe = null;
+      throw error;
+    });
+  }
+  return cachedDecoderProbe;
+}
+
+async function probeEncodersUncached(): Promise<CodecSupportSummary[]> {
   if (typeof VideoEncoder === 'undefined') {
     return ENCODER_PROBES.map((p) => ({
       codec: p.label, container: p.container, direction: 'encode' as const,
@@ -167,6 +198,16 @@ async function probeEncoders(): Promise<CodecSupportSummary[]> {
       }
     }),
   );
+}
+
+function probeEncoders(): Promise<CodecSupportSummary[]> {
+  if (!cachedEncoderProbe) {
+    cachedEncoderProbe = probeEncodersUncached().catch((error) => {
+      cachedEncoderProbe = null;
+      throw error;
+    });
+  }
+  return cachedEncoderProbe;
 }
 
 async function buildCapabilityReport(input: WorkerDiagnosticInput): Promise<CapabilityReport> {
@@ -244,6 +285,16 @@ async function buildCapabilityReport(input: WorkerDiagnosticInput): Promise<Capa
 }
 
 async function storageSummary(): Promise<StorageDiagnosticSummary> {
+  const now = Date.now();
+  if (cachedStorage && now - cachedStorage.at < STORAGE_CACHE_TTL_MS) {
+    return cachedStorage.value;
+  }
+  const value = await storageSummaryUncached();
+  cachedStorage = { at: now, value };
+  return value;
+}
+
+async function storageSummaryUncached(): Promise<StorageDiagnosticSummary> {
   const storage = typeof navigator !== 'undefined' ? navigator.storage : undefined;
   const estimate = storage?.estimate ? await storage.estimate().catch(() => null) : null;
   const persisted = storage?.persisted ? await storage.persisted().catch(() => null) : null;

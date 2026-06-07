@@ -24,6 +24,7 @@ import {
 import {
   OutputTransfer,
 } from './colour';
+import { SCOPES_FEATURE_ENABLED, resetScopeSlot, histogramSlotOffset } from './scopes';
 
 export interface DeviceLostInfo {
   readonly reason: GPUDeviceLostReason;
@@ -294,9 +295,18 @@ export class PreviewRenderer {
     }
   }
 
-  /** Phase 21: enable/disable scope computation during the preview loop. */
+  /**
+   * Phase 21: enable/disable scope computation during the preview loop. Gated by
+   * the `SCOPES_FEATURE_ENABLED` flag (B7) — while the scope pipeline is unfinished
+   * this is a no-op, so no scope pass can ever run by default.
+   */
   setScopesEnabled(enabled: boolean): void {
-    this.scopesEnabled = enabled;
+    this.scopesEnabled = enabled && SCOPES_FEATURE_ENABLED;
+  }
+
+  /** Whether scope dispatch will actually run on the next frame (test/diagnostics). */
+  get scopesActive(): boolean {
+    return this.scopesEnabled;
   }
 
   importLut(lut: ClipLut): void {
@@ -762,7 +772,12 @@ export class PreviewRenderer {
     _accView: GPUTextureView,
   ): void {
     if (!this.scopeSab) return;
+    // Reset the slot before (placeholder) accumulation so stale values from the
+    // previous frame never leak into the result, then advance the heartbeat
+    // sequence. This runs inside the single per-frame command encoder; no extra
+    // queue.submit and no CPU pixel readback are introduced.
     const seq = this.scopeSab[0] + 1;
+    resetScopeSlot(this.scopeSab, histogramSlotOffset(), 0);
     this.scopeSab[0] = seq;
   }
 

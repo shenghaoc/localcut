@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, For, Show } from 'solid-js';
+import { computeSegmentWindow } from './transcript-window';
 import type {
   CaptionDiagnosticSnapshot,
   CaptionExportSettingsSnapshot,
@@ -62,6 +63,37 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
     return track.segments.find((segment) => segment.id === props.selectedSegmentIds[0]) ?? track.segments[0] ?? null;
   });
   const [draftText, setDraftText] = createSignal('');
+
+  // Memoize the selection as a Set so per-row membership is O(1) instead of an
+  // O(segments × selection) `Array.includes` scan during render.
+  const selectedIdSet = createMemo(() => new Set(props.selectedSegmentIds));
+
+  // Window the rendered rows around the active/playhead segment so large caption
+  // files (thousands of segments) never materialize every row at once.
+  const activeSegmentIndex = createMemo(() => {
+    const track = activeTrack();
+    if (!track || track.segments.length === 0) return 0;
+    const selectedId = props.selectedSegmentIds[0];
+    if (selectedId) {
+      const byId = track.segments.findIndex((segment) => segment.id === selectedId);
+      if (byId >= 0) return byId;
+    }
+    // Fall back to the segment under the playhead.
+    const t = props.playheadTime;
+    const byTime = track.segments.findIndex(
+      (segment) => t >= segment.start && t < segment.start + segment.duration,
+    );
+    return byTime >= 0 ? byTime : 0;
+  });
+  const segmentWindow = createMemo(() =>
+    computeSegmentWindow(activeTrack()?.segments.length ?? 0, activeSegmentIndex()),
+  );
+  const visibleSegments = createMemo(() => {
+    const track = activeTrack();
+    if (!track) return [];
+    const { start, end } = segmentWindow();
+    return track.segments.slice(start, end);
+  });
 
   const exportStem = createMemo(() => {
     const track = activeTrack();
@@ -213,13 +245,16 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
               </div>
 
               <div class="transcript-segment-list">
-                <For each={track().segments}>
+                <Show when={segmentWindow().before > 0}>
+                  <p class="transcript-window-hint">{segmentWindow().before} earlier segment{segmentWindow().before === 1 ? '' : 's'} hidden</p>
+                </Show>
+                <For each={visibleSegments()}>
                   {(segment) => (
-                    <div class={`transcript-row${props.selectedSegmentIds.includes(segment.id) ? ' is-selected' : ''}`}>
+                    <div class={`transcript-row${selectedIdSet().has(segment.id) ? ' is-selected' : ''}`}>
                       <input
                         type="checkbox"
                         aria-label={`Select caption segment ${segment.id}`}
-                        checked={props.selectedSegmentIds.includes(segment.id)}
+                        checked={selectedIdSet().has(segment.id)}
                         onChange={(event) => toggleSegment(segment.id, event.currentTarget.checked)}
                       />
                       <button
@@ -239,6 +274,9 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
                     </div>
                   )}
                 </For>
+                <Show when={segmentWindow().after > 0}>
+                  <p class="transcript-window-hint">{segmentWindow().after} later segment{segmentWindow().after === 1 ? '' : 's'} hidden</p>
+                </Show>
               </div>
 
               <Show when={activeSegment()}>

@@ -84,6 +84,12 @@ export class AudioEngine {
     resetRingPointers(this.ring);
     Atomics.store(this.ring.header, RingHeader.STATE, RingState.PLAYING);
     this.worklet.port.postMessage({ type: 'seek', time: fromSeconds });
+    // Phase 5 audio master clock: the audio worklet (audio thread) is the
+    // authoritative AUDIO_CLOCK writer. We prime the anchor here so the worklet's
+    // generation-sync (which reads clock[AUDIO_CLOCK] as its anchor) wins the race
+    // if process() observes the bumped generation before the postMessage 'seek'
+    // arrives. This is the established audio-clock priming, distinct from the
+    // pipeline-worker transport clock the UI never writes.
     if (this.clockView) {
       this.clockView[ClockIndex.AUDIO_CLOCK] = fromSeconds;
       this.clockView[ClockIndex.CURRENT_TIME] = fromSeconds;

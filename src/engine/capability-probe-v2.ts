@@ -148,31 +148,64 @@ async function probeCodecs(): Promise<CodecProbeResult> {
   };
 }
 
+/**
+ * Usable video decode for *at least one* import codec. Derived from the real
+ * per-codec probes — not from the mere presence of the `VideoDecoder`
+ * constructor — so a browser that exposes the API but supports no import codec
+ * is not mistaken for a working decode path.
+ */
+export function anyVideoDecodeSupported(codecs: CodecProbeResult): boolean {
+  return (
+    codecs.h264Decode === 'supported' ||
+    codecs.vp9Decode === 'supported' ||
+    codecs.av1Decode === 'supported'
+  );
+}
+
+/** Usable video encode for at least one export codec (drives export, not tier). */
+export function anyVideoEncodeSupported(codecs: CodecProbeResult): boolean {
+  return (
+    codecs.h264Encode === 'supported' ||
+    codecs.vp9Encode === 'supported' ||
+    codecs.av1Encode === 'supported'
+  );
+}
+
+/** Usable audio decode for at least one import codec. */
+export function anyAudioDecodeSupported(codecs: CodecProbeResult): boolean {
+  return codecs.aacDecode === 'supported' || codecs.opusDecode === 'supported';
+}
+
+/** Usable audio encode for at least one export codec. */
+export function anyAudioEncodeSupported(codecs: CodecProbeResult): boolean {
+  return codecs.aacEncode === 'supported' || codecs.opusEncode === 'supported';
+}
+
 export function deriveCapabilityTierV2(
   probe: Omit<CapabilityProbeResult, 'tier'>,
 ): CapabilityTierV2 {
   const hasGpu = probe.webGPUCore === 'supported' || probe.webGPUCompat === 'supported';
-  const hasDecoder = probe.webCodecsDecode === 'supported';
-  const hasFullVideoEncodeSet =
-    probe.webCodecsEncode === 'supported' &&
-    probe.codecs.h264Encode === 'supported' &&
-    probe.codecs.vp9Encode === 'supported' &&
-    probe.codecs.av1Encode === 'supported';
+  // Tier depends on *usable* video decode (real codec probes), never on the bare
+  // VideoDecoder constructor and never on encode support — export-codec
+  // availability is represented separately by `exportConstraintsForProbe`.
+  const hasDecode = anyVideoDecodeSupported(probe.codecs);
   const hasSab = probe.sharedArrayBuffer === 'supported';
   const hasOffscreenCanvas = probe.offscreenCanvas === 'supported';
 
+  // core-webgpu = the accelerated preview/editing path is available. It does NOT
+  // require AV1 (or any specific) encode; an H.264-only Chromium session is core.
   if (
     probe.webGPUCore === 'supported' &&
-    hasDecoder &&
-    hasFullVideoEncodeSet &&
+    hasDecode &&
     hasSab &&
     hasOffscreenCanvas &&
     probe.crossOriginIsolated
   ) {
     return 'core-webgpu';
   }
-  if (hasGpu && hasDecoder && hasOffscreenCanvas) return 'compatibility-webgpu';
-  if (hasDecoder && hasOffscreenCanvas) return 'limited-webcodecs';
+  if (hasGpu && hasDecode && hasOffscreenCanvas) return 'compatibility-webgpu';
+  if (hasDecode && hasOffscreenCanvas) return 'limited-webcodecs';
+  // shell-only: no WebGPU path and no usable video-decode path (or no canvas).
   return 'shell-only';
 }
 

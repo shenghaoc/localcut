@@ -81,7 +81,12 @@ export interface RecentError {
   readonly code: string;
   readonly subsystem: DiagnosticSubsystem;
   readonly severity: DiagnosticSeverity;
+  /** Timestamp of the most recent occurrence (updated on merge). */
   readonly occurredAt: string;
+  /** Timestamp of the first occurrence in this run (preserved across merges). */
+  readonly firstOccurredAt: string;
+  /** How many times this subsystem+code has been logged (>= 1). */
+  readonly occurrenceCount: number;
   readonly message: string;
   readonly redactedDetail?: string;
   readonly affectedJobId?: string;
