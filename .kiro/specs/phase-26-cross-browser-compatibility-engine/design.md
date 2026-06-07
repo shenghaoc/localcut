@@ -202,9 +202,15 @@ Export constraints:
 ## Protocol additions
 
 ```typescript
-// New message type for probe delivery to worker
-interface WorkerInitV2 extends WorkerInit {
+// Init accepts an optional SAB for reduced tiers and requires a probe for V2 routing.
+interface WorkerInit {
+  type: 'init';
+  canvas: OffscreenCanvas;
   sab?: SharedArrayBuffer | null;
+  audioSab?: SharedArrayBuffer | null;
+}
+
+interface WorkerInitV2 extends WorkerInit {
   probeResult: CapabilityProbeResult;
 }
 

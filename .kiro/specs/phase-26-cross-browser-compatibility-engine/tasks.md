@@ -27,7 +27,7 @@
 - [ ] **T3.3** Limit the active effect set to `color-grade` and `transform`; skip LUT, custom compute kernels, and any pass requiring f16 or subgroups.
 - [x] **T3.4** Ensure `videoFrame.close()` is called immediately after `createImageBitmap(videoFrame)` completes, before the bitmap is passed to `copyExternalImageToTexture`.
 - [x] **T3.5** Preserve a single `queue.submit` per frame; add a unit test asserting the submission count stays at one across five simulated frames using a mock GPUDevice.
-- [ ] **T3.6** Wire the compat GPU pipeline into the worker's init branch: when `probeResult.compatibilityAdapter === true`, instantiate `compat-webgpu-preview.ts` instead of the standard preview pipeline.
+- [ ] **T3.6** Wire the compat GPU pipeline into the worker's init branch: when `probeResult.tier === 'compatibility-webgpu'`, instantiate the reduced `compat-webgpu-preview.ts` path instead of the standard preview pipeline, even when the standard adapter is present but SAB/COOP or encode support reduced the tier.
 
 ## T4 — Canvas2D compositor (`limited-webcodecs` tier)
 
