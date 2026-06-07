@@ -887,12 +887,8 @@ export function App() {
         ],
       });
       bridge?.send({ type: 'queue-job-output', jobId, handle });
-    } catch (e) {
-      if (e instanceof DOMException && e.name === 'AbortError') {
-        bridge?.send({ type: 'queue-job-skip', jobId });
-      } else {
-        bridge?.send({ type: 'queue-job-skip', jobId });
-      }
+    } catch {
+      bridge?.send({ type: 'queue-job-skip', jobId });
     }
   }
 

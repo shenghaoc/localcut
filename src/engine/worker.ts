@@ -3045,6 +3045,10 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
     post({ type: 'export-error', message: 'An export is already running.' });
     return;
   }
+  if (queueRunning) {
+    post({ type: 'export-error', message: 'Cannot start export while the render queue is running.' });
+    return;
+  }
   if (!renderer) {
     post({ type: 'export-error', message: 'Export requires WebGPU preview to be available.' });
     return;

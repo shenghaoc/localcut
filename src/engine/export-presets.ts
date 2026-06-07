@@ -104,7 +104,7 @@ export function deletePreset(
   presets: readonly ExportPresetDoc[],
   presetId: string,
 ): ExportPresetDoc[] {
-  return presets.filter((p) => p.id !== presetId && !p.builtIn);
+  return presets.filter((p) => p.builtIn || p.id !== presetId);
 }
 
 export function duplicatePreset(

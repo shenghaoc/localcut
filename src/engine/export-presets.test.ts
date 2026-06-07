@@ -105,7 +105,9 @@ describe('export-presets', () => {
     it('deletePreset does not remove built-ins', () => {
       const presets = [makePreset({ id: 'a', builtIn: true })];
       const after = deletePreset(presets, 'a');
-      expect(after.length).toBe(0);
+      expect(after.length).toBe(1);
+      expect(after[0]!.id).toBe('a');
+      expect(after[0]!.builtIn).toBe(true);
     });
 
     it('duplicatePreset creates a copy with unique name', () => {
