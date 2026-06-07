@@ -191,8 +191,15 @@ export function exportConstraintsForProbe(probe: CapabilityProbeResult): readonl
 }
 
 export async function probeCapabilities(): Promise<CapabilityProbeResult> {
-  const webGPUCore = await probeGpuAdapter(false);
-  const webGPUCompat = webGPUCore === 'supported' ? 'unsupported' : await probeGpuAdapter(true);
+  // Probe both adapters independently so the diagnostic panel reports each one's
+  // true availability. Short-circuiting webGPUCompat to 'unsupported' whenever the
+  // standard adapter succeeds would mislabel Chrome — which exposes both — as
+  // lacking the compatibility adapter. The compatibilityAdapter boolean below (not
+  // the raw support flag) is what drives the reduced-pipeline wiring decision.
+  const [webGPUCore, webGPUCompat] = await Promise.all([
+    probeGpuAdapter(false),
+    probeGpuAdapter(true),
+  ]);
   const codecs = await probeCodecs().catch(() => unknownCodecs);
   const probeWithoutTier: Omit<CapabilityProbeResult, 'tier'> = {
     crossOriginIsolated: globalThis.crossOriginIsolated === true,

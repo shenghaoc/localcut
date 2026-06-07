@@ -110,6 +110,40 @@ describe('compat WebGPU upload', () => {
     expect(submit).toHaveBeenCalledTimes(1);
     expect(bitmapClose).toHaveBeenCalledTimes(1);
   });
+
+  it('closes the VideoFrame and skips the GPU copy when bitmap creation rejects', async () => {
+    const frameClose = vi.fn();
+    const copyExternalImageToTexture = vi.fn();
+    const submit = vi.fn();
+    await expect(
+      uploadCompatFrame(
+        { queue: { copyExternalImageToTexture, submit } },
+        { close: frameClose },
+        {},
+        async () => { throw new Error('compat-decode-failed'); },
+      ),
+    ).rejects.toThrow('compat-decode-failed');
+    expect(frameClose).toHaveBeenCalledTimes(1);
+    expect(copyExternalImageToTexture).not.toHaveBeenCalled();
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it('closes the VideoFrame when bitmap creation throws synchronously', async () => {
+    const frameClose = vi.fn();
+    const copyExternalImageToTexture = vi.fn();
+    const submit = vi.fn();
+    await expect(
+      uploadCompatFrame(
+        { queue: { copyExternalImageToTexture, submit } },
+        { close: frameClose },
+        {},
+        () => { throw new Error('compat-sync-throw'); },
+      ),
+    ).rejects.toThrow('compat-sync-throw');
+    expect(frameClose).toHaveBeenCalledTimes(1);
+    expect(copyExternalImageToTexture).not.toHaveBeenCalled();
+    expect(submit).not.toHaveBeenCalled();
+  });
 });
 
 describe('compat export helpers', () => {

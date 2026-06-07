@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { deriveCapabilityTierV2, exportConstraintsForProbe } from './capability-probe-v2';
-import { probeResultFor } from './compatibility/capability-fixtures';
+import { compatAdapterProbeResult, probeResultFor } from './compatibility/capability-fixtures';
 
 describe('deriveCapabilityTierV2', () => {
   it('derives all fixture tiers', () => {
@@ -25,6 +25,14 @@ describe('deriveCapabilityTierV2', () => {
   it('requires OffscreenCanvas before selecting reduced preview tiers', () => {
     const probe = { ...probeResultFor('compatibility-webgpu'), offscreenCanvas: 'unsupported' as const };
     expect(deriveCapabilityTierV2(probe)).toBe('shell-only');
+  });
+
+  it('keeps a compat-adapter-only session in compatibility-webgpu', () => {
+    const probe = compatAdapterProbeResult();
+    expect(probe.webGPUCore).toBe('unsupported');
+    expect(probe.webGPUCompat).toBe('supported');
+    expect(probe.compatibilityAdapter).toBe(true);
+    expect(deriveCapabilityTierV2(probe)).toBe('compatibility-webgpu');
   });
 });
 

@@ -46,6 +46,22 @@ function setCodecs(value: FeatureSupport): CodecProbeResult {
   };
 }
 
+/**
+ * A `compatibility-webgpu` session where only the WebGPU compatibility adapter is
+ * available — the standard adapter probe failed. Distinct from `probeResultFor`'s
+ * Chrome-without-COOP fixture (which keeps the standard adapter and sets
+ * `compatibilityAdapter: false`); this one exercises the
+ * `compatibilityAdapter === true` wiring branch.
+ */
+export function compatAdapterProbeResult(): CapabilityProbeResult {
+  return {
+    ...probeResultFor('compatibility-webgpu'),
+    webGPUCore: 'unsupported',
+    webGPUCompat: 'supported',
+    compatibilityAdapter: true,
+  };
+}
+
 export function probeResultFor(tier: CapabilityTierV2): CapabilityProbeResult {
   const probe = baseProbe();
   switch (tier) {

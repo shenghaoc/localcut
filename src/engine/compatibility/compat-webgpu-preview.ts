@@ -44,6 +44,10 @@ export async function uploadCompatFrame<TFrame extends CompatVideoFrame>(
       destination,
       [bitmap.width, bitmap.height],
     );
+    // T3.1–T3.3 (deferred) will encode the compat render pass and pass a real
+    // GPUCommandBuffer here. This helper exists to lock the VideoFrame/ImageBitmap
+    // close-invariant and the single-submit-per-frame call site; the empty submit
+    // is a placeholder, not a meaningful render.
     device.queue.submit([{}]);
   } finally {
     bitmap.close();

@@ -52,7 +52,10 @@ function rowsForProbe(probe: CapabilityProbeResult): CapabilityRow[] {
       label: 'WebGPU compatibility adapter',
       support: probe.webGPUCompat,
       active: probe.compatibilityAdapter,
-      action: probe.webGPUCompat === 'supported' ? null : 'Use the standard adapter when available.',
+      action:
+        probe.webGPUCompat === 'supported' || probe.webGPUCore === 'supported'
+          ? null
+          : 'No WebGPU adapter detected; use a browser with WebGPU for GPU preview.',
     },
     {
       label: 'VideoDecoder',

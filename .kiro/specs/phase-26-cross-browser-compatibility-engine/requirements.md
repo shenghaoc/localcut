@@ -32,7 +32,7 @@
 
 ## R3 — WebGPU Compatibility Mode
 
-- **R3.1** When the standard `requestAdapter()` probe fails but `requestAdapter({ featureLevel: 'compatibility' })` succeeds, record `webGPUCompat: 'supported'` and set `compatibilityAdapter: true` in the probe result; classify the session as `compatibility-webgpu` if WebCodecs decode and OffscreenCanvas are also present.
+- **R3.1** Probe the standard and compatibility adapters independently and record each result in `webGPUCore`/`webGPUCompat`; do not short-circuit `webGPUCompat` based on the standard-adapter result, so the diagnostic panel reports each adapter's true availability. Set `compatibilityAdapter: true` only when the standard probe fails but `requestAdapter({ featureLevel: 'compatibility' })` succeeds; in that case classify the session as `compatibility-webgpu` if WebCodecs decode and OffscreenCanvas are also present.
 - **R3.1a** Standard-adapter sessions must also use the reduced compatibility preview path when the resolved tier is `compatibility-webgpu` because of missing SAB/COOP or reduced encode support.
 - **R3.2** The compatibility-mode pipeline must not call `importExternalTexture`; frame ingestion must use `copyExternalImageToTexture` via `createImageBitmap` instead.
 - **R3.3** Shaders compiled for the compatibility pipeline must not request `shader-f16`, `subgroups`, or `timestamp-query` unless each is independently re-probed on the compatibility adapter.

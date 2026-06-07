@@ -91,7 +91,7 @@ function disabledCodecReason(codec: ExportVideoCodec, probe: CapabilityProbeResu
         : 'VP9 encode is not available in this browser tier.';
     case 'av1':
       return probe.tier === 'core-webgpu'
-        ? 'AV1 encode is not available in this browser.'
+        ? 'AV1 encode is not supported by this hardware or driver.'
         : 'AV1 export is reserved for the core WebGPU tier.';
   }
 }
