@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 import {
   assertCrossOriginIsolated,
+  type CapabilityProbeResult,
   type CaptionTrackSnapshot,
   ClockIndex,
   TIMELINE_EPSILON,
@@ -1237,27 +1238,63 @@ function writeClockFull(currentTime: number, duration: number, playing: boolean)
 
 /** Playback's per-frame writer: owns currentTime and playState, leaves duration. */
 function writeTransport(currentTime: number, playing: boolean) {
-  if (!clockView) return;
-  if (!audioRing || !hasAudioTimeline()) clockView[ClockIndex.CURRENT_TIME] = currentTime;
-  clockView[ClockIndex.PLAY_STATE] = playing ? 1 : 0;
+  if (clockView) {
+    if (!audioRing || !hasAudioTimeline()) clockView[ClockIndex.CURRENT_TIME] = currentTime;
+    clockView[ClockIndex.PLAY_STATE] = playing ? 1 : 0;
+    return;
+  }
+  // No SAB (reduced tiers): mirror the shared-clock contract over postMessage.
+  // The worker is still the sole clock writer — this fires from the playback loop
+  // (per rendered frame while playing) and once on pause/seek/step, never from an
+  // untethered main-thread tick, so the playhead never advances while paused.
+  post({ type: 'clock-update', currentTime, duration: getTimelineDuration(timeline), playing });
 }
 
 async function handleInit(
   canvas: OffscreenCanvas,
-  sab: SharedArrayBuffer,
+  sab?: SharedArrayBuffer | null,
   audioSab?: SharedArrayBuffer | null,
   scopeSab?: SharedArrayBuffer | null,
+  probeResult?: CapabilityProbeResult,
 ) {
-  assertCrossOriginIsolated('Pipeline worker');
-  clockView = new Float64Array(sab);
-  writeClockFull(0, 0, false);
+  if (probeResult) {
+    post({ type: 'capability-probe-v2', result: probeResult });
+  }
+  if (sab) {
+    assertCrossOriginIsolated('Pipeline worker');
+    clockView = new Float64Array(sab);
+    writeClockFull(0, 0, false);
+  } else {
+    clockView = null;
+  }
   audioRing = audioSab ? mapAudioRing(audioSab) : null;
 
   // initGpu() resolves with an unavailableReason for expected failures, but shader
   // module / pipeline compilation can still throw; catch so the worker always posts
   // `ready` (the UI would otherwise hang in a loading state).
   try {
-    const gpu = await initGpu(canvas);
+    const gpu =
+      probeResult?.tier === 'limited-webcodecs' || probeResult?.tier === 'shell-only'
+        ? {
+            renderer: null,
+            features: [],
+            limits: {},
+            unavailableReason:
+              probeResult.tier === 'limited-webcodecs'
+                ? 'WebGPU unavailable; limited WebCodecs tier uses compatibility preview only.'
+                : 'Preview unavailable in shell-only tier.',
+            deviceLost: null,
+          }
+        : probeResult?.compatibilityAdapter
+          ? {
+              renderer: null,
+              features: [],
+              limits: {},
+              unavailableReason:
+                'WebGPU compatibility adapter only; compat GPU preview pipeline not yet wired.',
+              deviceLost: null,
+            }
+          : await initGpu(canvas);
     renderer = gpu.renderer;
     lastWebgpuFeatures = gpu.features;
     lastWebgpuLimits = gpu.limits;
@@ -3603,7 +3640,7 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
   const cmd = event.data;
   switch (cmd.type) {
     case 'init':
-      void handleInit(cmd.canvas, cmd.sab, cmd.audioSab, cmd.scopeSab);
+      void handleInit(cmd.canvas, cmd.sab, cmd.audioSab, cmd.scopeSab, 'probeResult' in cmd ? cmd.probeResult : undefined);
       break;
     case 'import':
       void handleImport(cmd.file, cmd.fileHandle);

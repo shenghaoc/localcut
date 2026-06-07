@@ -30,6 +30,54 @@ export type ExportPreset = 'quality' | 'fast';
 export type ExportVideoCodec = 'h264' | 'vp9' | 'av1';
 export type ExportContainer = 'mp4' | 'webm';
 export type ExportSourceMode = 'original' | 'proxy';
+export type FeatureSupport = 'supported' | 'unsupported' | 'unknown';
+
+export type CapabilityTierV2 =
+  | 'core-webgpu'
+  | 'compatibility-webgpu'
+  | 'limited-webcodecs'
+  | 'shell-only';
+
+export interface CodecProbeResult {
+  h264Decode: FeatureSupport;
+  vp9Decode: FeatureSupport;
+  av1Decode: FeatureSupport;
+  h264Encode: FeatureSupport;
+  vp9Encode: FeatureSupport;
+  av1Encode: FeatureSupport;
+  aacDecode: FeatureSupport;
+  opusDecode: FeatureSupport;
+  aacEncode: FeatureSupport;
+  opusEncode: FeatureSupport;
+}
+
+export interface CapabilityProbeResult {
+  crossOriginIsolated: boolean;
+  sharedArrayBuffer: FeatureSupport;
+  webGPUCore: FeatureSupport;
+  webGPUCompat: FeatureSupport;
+  compatibilityAdapter: boolean;
+  webCodecsDecode: FeatureSupport;
+  webCodecsEncode: FeatureSupport;
+  codecs: CodecProbeResult;
+  fileSystemAccess: FeatureSupport;
+  opfs: FeatureSupport;
+  audioWorklet: FeatureSupport;
+  offscreenCanvas: FeatureSupport;
+  tier: CapabilityTierV2;
+}
+
+export interface WorkerInit {
+  type: 'init';
+  canvas: OffscreenCanvas;
+  sab?: SharedArrayBuffer | null;
+  audioSab?: SharedArrayBuffer | null;
+  scopeSab?: SharedArrayBuffer | null;
+}
+
+export interface WorkerInitV2 extends WorkerInit {
+  probeResult: CapabilityProbeResult;
+}
 
 export interface ExportRange {
   startS: number;
@@ -964,7 +1012,8 @@ interface SetTrackEditTargetCommand {
 }
 
 export type WorkerCommand =
-  | { type: 'init'; canvas: OffscreenCanvas; sab: SharedArrayBuffer; audioSab?: SharedArrayBuffer | null; scopeSab?: SharedArrayBuffer | null }
+  | WorkerInit
+  | WorkerInitV2
   | { type: 'import'; file: File; fileHandle?: FileSystemFileHandle | null }
   | { type: 'play' }
   | { type: 'pause' }
@@ -1117,6 +1166,10 @@ export interface HDRWarningSnapshot {
 
 export type WorkerStateMessage =
   | { type: 'ready'; webgpu: boolean; features: string[]; gpuUnavailableReason: string | null }
+  | { type: 'capability-probe-v2'; result: CapabilityProbeResult }
+  // Reduced tiers without SharedArrayBuffer: the worker stays the sole clock
+  // source but reports transport over postMessage instead of shared memory.
+  | { type: 'clock-update'; currentTime: number; duration: number; playing: boolean }
   | { type: 'import-progress'; stage: 'reading' | 'metadata' }
   | { type: 'import-complete'; metadata: MediaMetadata }
   | { type: 'import-error'; message: string }

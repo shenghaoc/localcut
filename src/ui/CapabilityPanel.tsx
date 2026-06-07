@@ -1,7 +1,9 @@
 import { For, Show } from 'solid-js';
 import { CheckCircle2, CircleAlert, X } from 'lucide-solid';
 import type { CapabilityFeatureInfo, CapabilityTier } from './capabilities';
+import type { CapabilityProbeResult } from '../protocol';
 import { Button } from './components/button';
+import { CapabilityMatrixPanel } from './CapabilityMatrixPanel';
 
 interface CapabilityPanelProps {
   open: boolean;
@@ -9,6 +11,7 @@ interface CapabilityPanelProps {
   features: CapabilityFeatureInfo[];
   primaryIssue: string | null;
   compatibilityPreviewAvailable: boolean;
+  capabilityProbeV2: CapabilityProbeResult | null;
   onClose: () => void;
 }
 
@@ -80,6 +83,8 @@ export function CapabilityPanel(props: CapabilityPanelProps) {
             )}
           </For>
         </ul>
+
+        <CapabilityMatrixPanel probe={props.capabilityProbeV2} />
       </aside>
     </Show>
   );

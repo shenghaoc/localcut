@@ -3,6 +3,7 @@ import { useRegisterSW } from 'virtual:pwa-register/solid';
 import { Link2, RotateCcw, Plus } from 'lucide-solid';
 import {
   CLOCK_BUFFER_BYTES,
+  type CapabilityProbeResult,
   type CaptionDiagnosticSnapshot,
   type CaptionExportSettingsSnapshot,
   type CaptionTrackSnapshot,
@@ -66,6 +67,10 @@ import {
   type CapabilitySnapshot,
   type CapabilityTier,
 } from './capabilities';
+import {
+  exportConstraintsForProbe,
+  probeCapabilities as probeCapabilitiesV2,
+} from '../engine/capability-probe-v2';
 import { extractCompatibilityPreview } from '../compatibility/thumbnail';
 import {
   createJob,
@@ -168,8 +173,23 @@ function downloadTextFile(fileName: string, mimeType: string, content: string): 
   URL.revokeObjectURL(url);
 }
 
+function capabilityTierV2Label(probe: CapabilityProbeResult | null): string | null {
+  if (!probe) return null;
+  switch (probe.tier) {
+    case 'core-webgpu':
+      return 'Core WebGPU';
+    case 'compatibility-webgpu':
+      return probe.compatibilityAdapter ? 'GPU (compat)' : 'Compatibility GPU';
+    case 'limited-webcodecs':
+      return 'Limited WebCodecs';
+    case 'shell-only':
+      return 'Shell Only';
+  }
+}
+
 export function App() {
   const [capabilities, setCapabilities] = createSignal<CapabilitySnapshot>(probeCapabilities());
+  const [capabilityProbeV2, setCapabilityProbeV2] = createSignal<CapabilityProbeResult | null>(null);
   const [runtimeIssue, setRuntimeIssue] = createSignal<string | null>(null);
   const [isIsolated, setIsIsolated] = createSignal(
     typeof globalThis.crossOriginIsolated === 'boolean' ? globalThis.crossOriginIsolated : false,
@@ -250,6 +270,7 @@ export function App() {
   let bridge: ReturnType<typeof createWorkerBridge> | null = null;
   let worker: Worker | null = null;
   let initSent = false;
+  let pendingInitCanvas: OffscreenCanvas | null = null;
   let compatibilityImportGeneration = 0;
   let relinkInput: HTMLInputElement | undefined;
   let pendingRelinkSourceId: string | null = null;
@@ -378,6 +399,7 @@ export function App() {
   );
 
   const accelerated = () => pipelineMode() === 'accelerated';
+  const exportSurfaceAvailable = () => accelerated();
   const compatibilityImportEnabled = () =>
     pipelineMode() === 'limited' && canCompatibilityPreview(capabilities());
   const importBlocked = () =>
@@ -437,6 +459,14 @@ export function App() {
 
   function handleState(msg: WorkerStateMessage) {
     switch (msg.type) {
+      case 'capability-probe-v2':
+        setCapabilityProbeV2(msg.result);
+        setExportCodecs([...exportConstraintsForProbe(msg.result)]);
+        break;
+      case 'clock-update':
+        // Reduced tiers without SAB: the worker drives the clock over postMessage.
+        clock.applyUpdate(msg);
+        break;
       case 'ready':
         setWorkerReady(true);
         setWebgpuAvailable(msg.webgpu);
@@ -811,41 +841,46 @@ export function App() {
 
   async function sendInit(canvas: OffscreenCanvas) {
     if (initSent) return;
-    if (!isIsolated() || !sab) {
-      setRuntimeIssue(
-        'This browser or origin cannot expose SharedArrayBuffer. The app shell stays client-side, but accelerated import, playback, effects, and export need SAB plus COOP/COEP headers so the local CPU/GPU path can run safely.',
-      );
-      setStatusLine('Limited shell · COOP/COEP needed for accelerated client compute');
+    const probe = capabilityProbeV2();
+    if (!probe) {
+      pendingInitCanvas = canvas;
+      return;
+    }
+    if (probe.tier === 'shell-only') {
+      setRuntimeIssue('Preview unavailable: this browser exposes neither WebGPU nor WebCodecs decode support.');
+      setStatusLine('Shell-only · preview and export unavailable');
       return;
     }
     initSent = true;
     const { bridge: b } = ensureWorker();
     let audioSab: SharedArrayBuffer | null = null;
     let meterBuffer: SharedArrayBuffer | null = null;
-    if (!audioReady) {
+    if (sab && !audioReady) {
       audioReady = audioEngine.init(sab);
     }
-    try {
-      const audioInit = await audioReady;
-      audioSab = audioInit.audioSab;
-      meterBuffer = audioInit.meterSab;
-      setMeterSab(meterBuffer);
-      setAudioWarning(null);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setAudioWarning(`Audio disabled: ${message}`);
-      setStatusLine('Audio disabled · starting video pipeline');
-      setRecentErrorLog((prev) => addRecentError(prev, {
-        id: `ui-audio-${Date.now()}`,
-        code: 'audio.init_failed',
-        subsystem: 'audio',
-        severity: 'warning',
-        occurredAt: new Date().toISOString(),
-        message: `Audio init failed: ${message}`,
-        recoveryActionIds: ['retry-audio'],
-      }));
+    if (audioReady) {
+      try {
+        const audioInit = await audioReady;
+        audioSab = audioInit.audioSab;
+        meterBuffer = audioInit.meterSab;
+        setMeterSab(meterBuffer);
+        setAudioWarning(null);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setAudioWarning(`Audio disabled: ${message}`);
+        setStatusLine('Audio disabled · starting video pipeline');
+        setRecentErrorLog((prev) => addRecentError(prev, {
+          id: `ui-audio-${Date.now()}`,
+          code: 'audio.init_failed',
+          subsystem: 'audio',
+          severity: 'warning',
+          occurredAt: new Date().toISOString(),
+          message: `Audio init failed: ${message}`,
+          recoveryActionIds: ['retry-audio'],
+        }));
+      }
     }
-    b.send({ type: 'init', canvas, sab, audioSab }, [canvas]);
+    b.send({ type: 'init', canvas, sab, audioSab, probeResult: probe }, [canvas]);
   }
 
   async function importCompatibilityMedia(file: File) {
@@ -1422,20 +1457,48 @@ export function App() {
   }
 
   onMount(() => {
-    const isolated = globalThis.crossOriginIsolated === true;
-    setIsIsolated(isolated);
-    setCapabilities(probeCapabilities({ crossOriginIsolated: isolated, sharedArrayBuffer: sab != null }));
-    if (isolated && sab) {
-      ensureWorker();
-      setStatusLine('Starting pipeline worker…');
-    } else {
-      setRuntimeIssue(
-        !isolated
-          ? 'This page is missing COOP/COEP headers. LocalCut still runs as a client-side shell, but accelerated import, playback, effects, and export need those headers so the browser can expose SharedArrayBuffer for local CPU/GPU work.'
-          : 'This browser or origin cannot expose SharedArrayBuffer. The app shell stays client-side, but accelerated import, playback, effects, and export need SAB plus COOP/COEP headers so the local CPU/GPU path can run safely.',
-      );
-      setStatusLine('Limited shell · COOP/COEP needed for accelerated client compute');
-    }
+    void (async () => {
+      const probe = await probeCapabilitiesV2();
+      setCapabilityProbeV2(probe);
+      setExportCodecs([...exportConstraintsForProbe(probe)]);
+      if (pendingInitCanvas) {
+        const canvas = pendingInitCanvas;
+        pendingInitCanvas = null;
+        await sendInit(canvas);
+      }
+      setIsIsolated(probe.crossOriginIsolated);
+      setCapabilities(probeCapabilities({
+        crossOriginIsolated: probe.crossOriginIsolated,
+        sharedArrayBuffer: probe.sharedArrayBuffer === 'supported',
+        webgpu: probe.webGPUCore === 'supported' || probe.webGPUCompat === 'supported',
+        webCodecs: probe.webCodecsDecode === 'supported',
+        offscreenCanvas: probe.offscreenCanvas === 'supported',
+        fileSystemAccess: probe.fileSystemAccess === 'supported',
+        audioWorklet: probe.audioWorklet === 'supported',
+      }));
+      switch (probe.tier) {
+        case 'core-webgpu':
+          ensureWorker();
+          setStatusLine('Starting pipeline worker…');
+          break;
+        case 'compatibility-webgpu':
+          ensureWorker();
+          setRuntimeIssue(probe.sharedArrayBuffer === 'supported'
+            ? 'Compatibility GPU tier active. Preview remains client-side with reduced effects and export constraints.'
+            : 'Compatibility GPU tier active without SharedArrayBuffer. Clock updates use reduced rAF messages.');
+          setStatusLine('Compatibility GPU tier · reduced effects');
+          break;
+        case 'limited-webcodecs':
+          ensureWorker();
+          setRuntimeIssue('Limited WebCodecs tier active. Preview uses client-side compatibility rendering and export is codec constrained.');
+          setStatusLine('Limited WebCodecs tier · GPU effects unavailable');
+          break;
+        case 'shell-only':
+          setRuntimeIssue('Preview unavailable: this browser exposes neither WebGPU nor WebCodecs decode support.');
+          setStatusLine('Shell-only · preview and export unavailable');
+          break;
+      }
+    })();
 
     const unregisterKeyboard = registerKeyboardShortcuts({
       onUndo: () => bridge?.send({ type: 'undo' }),
@@ -1568,19 +1631,21 @@ export function App() {
             onCancelJob={cancelBundleJob}
           />
           <ExportDialog
-            hasMedia={(metadata() !== null || hasTimeline()) && accelerated()}
+            hasMedia={(metadata() !== null || hasTimeline()) && exportSurfaceAvailable()}
             exporting={exporting()}
             progress={exportProgress()}
             lastResult={exportResult()}
             error={exportError()}
             timelineDuration={clock.duration()}
             supportedCodecs={exportCodecs()}
+            capabilityProbeV2={capabilityProbeV2()}
             initialSettings={exportSettings()}
             presets={exportPresets()}
             markers={markers()}
             onProbe={probeExportCodecs}
             onStart={startExport}
             onCancel={() => bridge?.send({ type: 'export-cancel' })}
+            onWhyConstraints={() => setCapabilityPanelOpen(true)}
             onSavePreset={handleSavePreset}
             onDeletePreset={handleDeletePreset}
             onEnqueue={handleEnqueue}
@@ -1949,6 +2014,16 @@ export function App() {
               Audio Disabled
             </span>
           </Show>
+          <Show when={capabilityTierV2Label(capabilityProbeV2())}>
+            {(label) => (
+              <span
+                class={`status-badge${capabilityProbeV2()?.tier === 'core-webgpu' ? '' : ' status-warn'}`}
+                title="CapabilityTierV2"
+              >
+                {label()}
+              </span>
+            )}
+          </Show>
           <button type="button" class="status-badge" onClick={openDiagnostics} title="Open diagnostics">
             Diagnostics
           </button>
@@ -1963,6 +2038,7 @@ export function App() {
         features={listCapabilityFeatures(capabilities())}
         primaryIssue={limitedIssue()}
         compatibilityPreviewAvailable={canCompatibilityPreview(capabilities())}
+        capabilityProbeV2={capabilityProbeV2()}
         onClose={() => setCapabilityPanelOpen(false)}
       />
       <DiagnosticsPanel
