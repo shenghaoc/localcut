@@ -89,7 +89,34 @@ export function DiagnosticsPanel(props: DiagnosticsPanelProps) {
         aria-modal="true"
         aria-labelledby="diagnostics-panel-title"
         tabIndex={-1}
-        onKeyDown={(e) => { if (e.key === 'Escape') props.onClose(); }}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            props.onClose();
+            return;
+          }
+          if (e.key === 'Tab') {
+            const panel = panelRef;
+            if (!panel) return;
+            const focusable = panel.querySelectorAll<HTMLElement>(
+              'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+            );
+            if (focusable.length === 0) return;
+            const first = focusable[0]!;
+            const last = focusable[focusable.length - 1]!;
+            if (document.activeElement === panel) {
+              e.preventDefault();
+              (e.shiftKey ? last : first).focus();
+              return;
+            }
+            if (e.shiftKey && document.activeElement === first) {
+              e.preventDefault();
+              last.focus();
+            } else if (!e.shiftKey && document.activeElement === last) {
+              e.preventDefault();
+              first.focus();
+            }
+          }
+        }}
       >
         <header class="capability-panel-header">
           <div>

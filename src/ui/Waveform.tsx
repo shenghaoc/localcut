@@ -1,4 +1,4 @@
-import { createEffect, onCleanup, onMount } from 'solid-js';
+import { createEffect, onMount } from 'solid-js';
 import type { WaveformPeaks } from '../protocol';
 
 interface WaveformProps {
@@ -41,7 +41,6 @@ export function Waveform(props: WaveformProps) {
 
   onMount(paint);
   createEffect(paint);
-  onCleanup(() => {});
 
   return (
     <canvas

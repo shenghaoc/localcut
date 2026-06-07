@@ -24,18 +24,22 @@ export function createSharedClock(sab: SharedArrayBuffer | null) {
   // SAB path: poll shared memory each frame. Without SAB the rAF reader would only
   // ever observe zeros, so it is skipped entirely and the clock is driven by
   // `applyUpdate` from worker `clock-update` messages instead.
-  if (view) {
-    let rafId = 0;
-    const tick = () => {
-      if (active) {
-        setCurrentTime(view[0] ?? 0);
-        setDuration(view[1] ?? 0);
-        setPlaying((view[2] ?? 0) === 1);
+  let rafId = 0;
+  const tick = view
+    ? () => {
+        if (active) {
+          setCurrentTime(view[0] ?? 0);
+          setDuration(view[1] ?? 0);
+          setPlaying((view[2] ?? 0) === 1);
+        }
+        rafId = requestAnimationFrame(tick);
       }
-      rafId = requestAnimationFrame(tick);
-    };
+    : () => {};
+  if (view) {
     rafId = requestAnimationFrame(tick);
-    onCleanup(() => cancelAnimationFrame(rafId));
+    onCleanup(() => {
+      if (rafId) cancelAnimationFrame(rafId);
+    });
   }
 
   // The worker is the sole writer of the clock in both paths: with SAB it writes
@@ -48,11 +52,20 @@ export function createSharedClock(sab: SharedArrayBuffer | null) {
   }
 
   // Attach/detach the read-side from the SAB without ever writing it. Detaching
-  // forces a stopped display; the worker re-publishes the authoritative state and
-  // the UI re-attaches once a fresh worker reports ready.
+  // cancels the rAF loop so it doesn't spin at 60fps while the worker is down;
+  // re-attaching restarts it when a fresh worker reports ready.
   function setActive(next: boolean) {
+    if (next === active) return;
     active = next;
-    if (!next) setPlaying(false);
+    if (!next) {
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = 0;
+      }
+      setPlaying(false);
+    } else if (view) {
+      rafId = requestAnimationFrame(tick);
+    }
   }
 
   return { currentTime, duration, playing, applyUpdate, setActive };

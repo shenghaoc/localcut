@@ -1,4 +1,4 @@
-import { For, Show } from 'solid-js';
+import { For, Show, createEffect } from 'solid-js';
 import { CheckCircle2, CircleAlert, X } from 'lucide-solid';
 import type { CapabilityFeatureInfo, CapabilityTier } from './capabilities';
 import type { CapabilityProbeResult } from '../protocol';
@@ -19,16 +19,53 @@ interface CapabilityPanelProps {
 }
 
 export function CapabilityPanel(props: CapabilityPanelProps) {
+  let panelRef: HTMLElement | undefined;
+
+  createEffect(() => {
+    if (props.open) {
+      requestAnimationFrame(() => panelRef?.focus());
+    }
+  });
   return (
     <Show when={props.open}>
       <div class="capability-backdrop" onClick={props.onClose} aria-hidden="true" />
       <aside
+        ref={panelRef}
         class="capability-panel panel"
         role="dialog"
         aria-modal="true"
         aria-labelledby="capability-panel-title"
         tabIndex={-1}
-        onKeyDown={(e) => { if (e.key === 'Escape') props.onClose(); }}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            props.onClose();
+            return;
+          }
+          if (e.key === 'Tab') {
+            const panel = panelRef;
+            if (!panel) return;
+            const focusable = panel.querySelectorAll<HTMLElement>(
+              'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+            );
+            if (focusable.length === 0) return;
+            const first = focusable[0]!;
+            const last = focusable[focusable.length - 1]!;
+            // When the panel itself (tabIndex=-1) is the active element, Tab/Shift+Tab
+            // should move to the first/last focusable child respectively.
+            if (document.activeElement === panel) {
+              e.preventDefault();
+              (e.shiftKey ? last : first).focus();
+              return;
+            }
+            if (e.shiftKey && document.activeElement === first) {
+              e.preventDefault();
+              last.focus();
+            } else if (!e.shiftKey && document.activeElement === last) {
+              e.preventDefault();
+              first.focus();
+            }
+          }
+        }}
       >
         <header class="capability-panel-header">
           <div>

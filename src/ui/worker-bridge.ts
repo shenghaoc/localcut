@@ -3,9 +3,10 @@ import type { WorkerCommand, WorkerStateMessage } from '../protocol';
 export type StateHandler = (msg: WorkerStateMessage) => void;
 
 export function createWorkerBridge(worker: Worker, onState: StateHandler) {
-  worker.addEventListener('message', (event: MessageEvent<WorkerStateMessage>) => {
+  const handler = (event: MessageEvent<WorkerStateMessage>) => {
     onState(event.data);
-  });
+  };
+  worker.addEventListener('message', handler);
 
   return {
     send(command: WorkerCommand, transfer?: Transferable[]) {
@@ -14,6 +15,9 @@ export function createWorkerBridge(worker: Worker, onState: StateHandler) {
       } else {
         worker.postMessage(command);
       }
+    },
+    dispose() {
+      worker.removeEventListener('message', handler);
     },
   };
 }

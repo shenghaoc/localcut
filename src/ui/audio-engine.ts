@@ -28,7 +28,14 @@ export class AudioEngine {
     sampleRate = 48_000,
     channels = 2,
   ): Promise<{ audioSab: SharedArrayBuffer | null; meterSab: SharedArrayBuffer | null }> {
-    if (this.ready) return this.ready;
+    if (this.ready) {
+      try {
+        return await this.ready;
+      } catch {
+        // Previous attempt failed — discard the cached rejection and re-init.
+        this.ready = null;
+      }
+    }
     this.ready = this.setup(clockSab, sampleRate, channels);
     return this.ready;
   }
@@ -79,7 +86,14 @@ export class AudioEngine {
 
   async play(fromSeconds: number): Promise<void> {
     if (!this.context || !this.ring || !this.worklet) return;
-    if (this.context.state === 'suspended') await this.context.resume();
+    if (this.context.state === 'suspended') {
+      try {
+        await this.context.resume();
+      } catch (err) {
+        console.error('AudioContext resume failed', err);
+        return;
+      }
+    }
     bumpRingGeneration(this.ring);
     resetRingPointers(this.ring);
     Atomics.store(this.ring.header, RingHeader.STATE, RingState.PLAYING);
