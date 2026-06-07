@@ -3095,7 +3095,7 @@ button.status-badge:hover {
 	grid-template-columns: auto 1fr;
 	column-gap: 0.6rem;
 	row-gap: 0.18rem;
-	margin: 0 0 0;
+	margin: 0;
 }
 
 .media-info-label {
