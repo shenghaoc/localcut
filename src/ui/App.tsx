@@ -74,6 +74,7 @@ import {
   suggestedFileNameForJob,
 } from '../engine/render-queue';
 import { BUILT_IN_PRESETS } from '../engine/export-presets';
+import { createRecoveryMachine, type WorkerRecoveryState } from '../engine/recovery';
 import PipelineWorker from '../engine/worker.ts?worker';
 
 const VIDEO_ACCEPT =
@@ -257,6 +258,10 @@ export function App() {
     null;
   const [meterSab, setMeterSab] = createSignal<SharedArrayBuffer | null>(null);
 
+  const recoveryMachine = createRecoveryMachine();
+  const [workerRecoveryState, setWorkerRecoveryState] = createSignal<WorkerRecoveryState>('running');
+  const [previewKey, setPreviewKey] = createSignal(0);
+
   function findTimelineClip(ref: TimelineClipReference): TimelineClipSnapshot | null {
     const track = timeline().find((item) => item.id === ref.trackId);
     return track?.clips.find((clip) => clip.id === ref.clipId) ?? null;
@@ -434,6 +439,10 @@ export function App() {
       case 'ready':
         setWorkerReady(true);
         setWebgpuAvailable(msg.webgpu);
+        if (recoveryMachine.state !== 'running') {
+          recoveryMachine.recordRestartSuccess();
+          setWorkerRecoveryState('running');
+        }
         if (!msg.webgpu) {
           setRuntimeIssue(
             msg.gpuUnavailableReason ??
@@ -718,7 +727,67 @@ export function App() {
     if (worker && bridge) return { worker, bridge };
     worker = new PipelineWorker();
     bridge = createWorkerBridge(worker, handleState);
+    worker.addEventListener('error', handleWorkerCrash);
     return { worker, bridge };
+  }
+
+  function handleWorkerCrash(event?: ErrorEvent) {
+    if (event) event.preventDefault();
+    const crashState = recoveryMachine.recordCrash();
+    setWorkerRecoveryState(crashState);
+    setWorkerReady(false);
+    setExporting(false);
+    setExportProgress(null);
+    setImporting(false);
+    if (sab) {
+      const view = new Float64Array(sab);
+      view[0] = 0;
+      view[1] = 0;
+      view[2] = 0;
+    }
+    const message = event?.message ?? 'Worker terminated unexpectedly';
+    setRecentErrorLog((prev) => addRecentError(prev, {
+      id: `worker-crash-${Date.now()}`,
+      code: 'worker.crashed',
+      subsystem: 'worker',
+      severity: 'error',
+      occurredAt: new Date().toISOString(),
+      message,
+      recoveryActionIds: crashState === 'throttled' ? [] : ['restart-worker'],
+    }));
+    setStatusLine(
+      crashState === 'throttled'
+        ? 'Worker crashed · restart limit reached'
+        : 'Worker crashed · restart available',
+    );
+    if (crashState !== 'throttled') {
+      void restartWorker();
+    }
+  }
+
+  async function restartWorker() {
+    if (!recoveryMachine.canRestart()) return;
+
+    const oldWorker = worker;
+    const oldBridge = bridge;
+    worker = null;
+    bridge = null;
+    initSent = false;
+
+    if (oldWorker) {
+      oldWorker.removeEventListener('error', handleWorkerCrash);
+      if (oldBridge) {
+        try {
+          oldBridge.send({ type: 'dispose' });
+        } catch {
+          // Worker may already be dead
+        }
+      }
+      setTimeout(() => oldWorker.terminate(), 500);
+    }
+
+    setStatusLine('Restarting worker…');
+    setPreviewKey((k) => k + 1);
   }
 
   async function sendInit(canvas: OffscreenCanvas) {
@@ -1407,6 +1476,7 @@ export function App() {
       thumbnailStore.clear();
       if (worker && bridge) {
         const workerToDispose = worker;
+        workerToDispose.removeEventListener('error', handleWorkerCrash);
         let terminateFallback: ReturnType<typeof setTimeout>;
         const onDisposeComplete = (event: MessageEvent<WorkerStateMessage>) => {
           if (event.data.type !== 'dispose-complete') return;
@@ -1420,8 +1490,9 @@ export function App() {
           workerToDispose.terminate();
         }, 1500);
         bridge.send({ type: 'dispose' });
-      } else {
-        worker?.terminate();
+      } else if (worker) {
+        worker.removeEventListener('error', handleWorkerCrash);
+        worker.terminate();
       }
       audioEngine.dispose();
     });
@@ -1606,7 +1677,11 @@ export function App() {
           />
         </Show>
         <section class="preview panel">
-          <PreviewCanvas onOffscreenReady={sendInit} onCanvasEl={setPreviewCanvasEl} />
+          {(() => {
+            const _key = previewKey();
+            void _key;
+            return <PreviewCanvas onOffscreenReady={sendInit} onCanvasEl={setPreviewCanvasEl} />;
+          })()}
           <Show when={accelerated() && selectedClipTransform() && previewSize()}>
             <PreviewGizmo
               transform={selectedClipTransform()!.transform}
@@ -1847,6 +1922,11 @@ export function App() {
               Offline
             </span>
           </Show>
+          <Show when={workerRecoveryState() !== 'running'}>
+            <span class="status-badge status-warn" title={`Worker: ${workerRecoveryState()}`}>
+              {workerRecoveryState() === 'throttled' ? 'Worker Failed' : 'Worker Recovering'}
+            </span>
+          </Show>
           <Show when={audioWarning()}>
             <span class="status-badge status-warn" title={audioWarning()!}>
               Audio Disabled
@@ -1874,6 +1954,13 @@ export function App() {
         sources={diagnosticSources()}
         onRefresh={openDiagnostics}
         onClose={() => setDiagnosticsPanelOpen(false)}
+        onRecoveryAction={(actionId) => {
+          if (actionId === 'restart-worker') {
+            void restartWorker();
+          } else {
+            bridge?.send({ type: 'run-recovery-action', actionId });
+          }
+        }}
       />
     </div>
   );

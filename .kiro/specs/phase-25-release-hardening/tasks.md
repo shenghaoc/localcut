@@ -17,9 +17,9 @@
 
 - [x] **T2.1** Add a diagnostics collector that composes capability tier, `crossOriginIsolated`, SAB, WebGPU, optional WebGPU features, WebCodecs decoder/encoder support, Mediabunny, AudioWorklet, File System Access, OPFS, storage usage, proxy/cache status, active export settings, performance budgets, and recent errors.
   - Acceptance: opening diagnostics does not decode media, hash full sources, render frames, walk private file contents, or run sustained main-thread work.
-- [ ] **T2.2** Extend WebGPU capability probing with adapter/device status, optional features (`shader-f16`, `timestamp-query`, `subgroups`), relevant limits, and last device-lost summary.
+- [x] **T2.2** Extend WebGPU capability probing with adapter/device status, optional features (`shader-f16`, `timestamp-query`, `subgroups`), relevant limits, and last device-lost summary.
   - Acceptance: unavailable adapter, request failure, ready device, lost device, and recovery states produce distinct stable codes and actionable messages.
-- [ ] **T2.3** Extend WebCodecs probing for supported import/export codec/container combinations used by the app.
+- [x] **T2.3** Extend WebCodecs probing for supported import/export codec/container combinations used by the app.
   - Acceptance: unsupported decoder/encoder cases are visible in diagnostics and can be used as explicit fixture skip reasons.
 - [x] **T2.4** Add bounded recent-error recording.
   - Acceptance: the log caps entries, counts drops, deduplicates repeated subsystem failures where useful, preserves stable codes, and redacts detail before UI/copy use.
@@ -32,94 +32,94 @@
   - Acceptance: the panel shows capability tier, isolation, WebGPU/device state, optional features, WebCodecs support, File System Access, OPFS/storage, proxy/cache status, active export settings, performance budgets, and recent errors.
 - [x] **T3.2** Add copy report UI.
   - Acceptance: the user can inspect/copy the redacted report; copy success/failure is announced accessibly; clipboard writes only use the redacted report.
-- [ ] **T3.3** Add specific degraded-mode messages and recovery action buttons.
+- [x] **T3.3** Add specific degraded-mode messages and recovery action buttons.
   - Acceptance: missing isolation, WebGPU unavailable, device lost, audio init failure, quota pressure, permission loss, failed import, and failed export do not share a generic error message.
 - [x] **T3.4** Keep diagnostics panel lightweight and accessible.
   - Acceptance: keyboard focus enters/exits predictably, headings are ordered, icon-only buttons have labels, and passive status does not use disruptive alerts.
 
 ## Worker, GPU, and audio recovery
 
-- [ ] **T4.1** Add project recovery checkpoints emitted after committed project mutations.
+- [x] **T4.1** Add project recovery checkpoints emitted after committed project mutations.
   - Acceptance: checkpoints include serialized project state, source statuses, revision, and active export settings, but no media bytes or handles; they are mutation-frequency, not playback-frequency.
-- [ ] **T4.2** Implement worker crash/unresponsive restart flow.
+- [x] **T4.2** Implement worker crash/unresponsive restart flow.
   - Acceptance: simulated crash terminates/recreates the worker, remounts the preview canvas for a new OffscreenCanvas transfer, reinitializes SAB/protocol state, restores from latest checkpoint or autosave, and leaves the shell mounted.
-- [ ] **T4.3** Add a worker recovery state machine and tests.
+- [x] **T4.3** Add a worker recovery state machine and tests.
   - Acceptance: tests cover crash before command ack, crash after committed edit, init failure, restart failure, and repeated restart throttling; unacknowledged destructive commands are not replayed automatically.
-- [ ] **T4.4** Implement GPU device-lost handling.
+- [x] **T4.4** Implement GPU device-lost handling.
   - Acceptance: `device.lost` pauses preview/export safely, releases stale GPU resources, closes in-flight frames exactly once, records `gpu.device_lost`, retries device creation when bounded policy allows, and falls back to labeled limited mode when recovery fails.
-- [ ] **T4.5** Unit-test GPU unavailable/device-lost paths with mocked adapter/device.
+- [x] **T4.5** Unit-test GPU unavailable/device-lost paths with mocked adapter/device.
   - Acceptance: tests cover no adapter, `requestDevice` rejection, device lost during preview, device lost during export, retry success, retry failure, and export item failed/retryable without silent partial success.
-- [ ] **T4.6** Implement audio init failure and underrun diagnostics.
+- [x] **T4.6** Implement audio init failure and underrun diagnostics.
   - Acceptance: missing AudioWorklet, failed worklet module load, user-gesture-blocked AudioContext, ring setup failure, and runtime underruns produce distinct codes; timeline/edit shell remains usable; retry action is available when appropriate.
 
 ## Storage quota and cleanup recovery
 
-- [ ] **T5.1** Add storage diagnostics using `navigator.storage.estimate()`, OPFS/cache manifests, IndexedDB/autosave health, persistent storage state, and cleanup job state.
+- [x] **T5.1** Add storage diagnostics using `navigator.storage.estimate()`, OPFS/cache manifests, IndexedDB/autosave health, persistent storage state, and cleanup job state.
   - Acceptance: diagnostics separate project/autosave data from disposable generated media and show quota pressure with actionable status.
-- [ ] **T5.2** Add quota-exceeded handling in cache/proxy/export/import write paths.
+- [x] **T5.2** Add quota-exceeded handling in cache/proxy/export/import write paths.
   - Acceptance: quota errors pause disposable writes, preserve project state where possible, record `storage.quota_exceeded`, and never delete project documents or source metadata as automatic cleanup.
-- [ ] **T5.3** Add `StorageCleanupDialog.tsx`.
+- [x] **T5.3** Add `StorageCleanupDialog.tsx`.
   - Acceptance: actions include delete render cache, delete thumbnails/filmstrips, delete waveform peaks, delete unpinned proxies, delete all generated media, repair cache manifest, request persistent storage, and export project bundle when available.
-- [ ] **T5.4** Unit-test quota exceeded and cleanup idempotency.
+- [x] **T5.4** Unit-test quota exceeded and cleanup idempotency.
   - Acceptance: mocked OPFS/IndexedDB quota failures trigger cleanup actions; repeated cleanup is safe; usage drops below target in tests; project/source descriptors remain intact.
 
 ## Import/export/permission recovery
 
-- [ ] **T6.1** Add structured import failure diagnostics.
+- [x] **T6.1** Add structured import failure diagnostics.
   - Acceptance: corrupt media, unsupported container/codec, descriptor mismatch, permission denial, and user cancellation produce distinct codes; current project is not replaced unless import validation and user confirmation allow it.
-- [ ] **T6.2** Add structured export failure diagnostics and retry.
+- [x] **T6.2** Add structured export failure diagnostics and retry.
   - Acceptance: prepare/decode/render/encode/mux/write/device-lost/permission-lost failures preserve export settings and queue item state; retry uses the same settings unless the user changes them.
-- [ ] **T6.3** Add permission-loss recovery actions.
+- [x] **T6.3** Add permission-loss recovery actions.
   - Acceptance: lost source/output permissions mark affected items offline/needs-permission and offer re-pick/choose-new-output; new bindings still run descriptor/fingerprint checks.
-- [ ] **T6.4** Unit-test failed import/export/permission recovery.
+- [x] **T6.4** Unit-test failed import/export/permission recovery.
   - Acceptance: tests prove the shell stays mounted, project state is preserved where possible, and no export fidelity/source mode is changed silently.
 
 ## Performance budgets
 
 - [x] **T7.1** Add default `PerformanceBudget` definitions for main-thread blocking, worker decode queue frames/ms, GPU submissions per frame, dropped preview frame rate, export throughput, memory usage, cache usage, and audio underruns.
   - Acceptance: each metric has target/warning/breach thresholds, units, window, and status classification.
-- [ ] **T7.2** Add budget counters at subsystem boundaries.
+- [x] **T7.2** Add budget counters at subsystem boundaries.
   - Acceptance: GPU submissions count where `queue.submit` already happens; decode/encode counters live with queues; audio underruns aggregate before UI updates; no per-frame diagnostics `postMessage` is introduced.
 - [x] **T7.3** Unit-test budget math and status classification.
   - Acceptance: tests cover ok/warning/breach/not-measured states, threshold edges, dropped-frame percentages, throughput regression math, queue bounds, cache/memory budgets, and audio underrun rates.
-- [ ] **T7.4** Add accelerated-path regression assertions.
+- [x] **T7.4** Add accelerated-path regression assertions.
   - Acceptance: tests or debug counters prove one GPU submit per accelerated preview/export frame, bounded decode/encode queues, and no CPU pixel readback in accelerated diagnostics/performance paths.
-- [ ] **T7.5** Add reproducible performance benchmark docs.
+- [x] **T7.5** Add reproducible performance benchmark docs.
   - Acceptance: docs describe hardware/browser prerequisites, fixtures, commands, baseline recording, acceptable skip reasons, and where release evidence is recorded.
 
 ## Fixture matrix and integration tests
 
-- [ ] **T8.1** Document fixture matrix under the test fixture location.
+- [x] **T8.1** Document fixture matrix under the test fixture location.
   - Acceptance: docs list required CI fixtures, optional/manual fixtures, generation commands or provenance, expected capability skips, and validation criteria.
-- [ ] **T8.2** Add required tiny fixtures or deterministic generation scripts for MP4 H.264/AAC, still image/title/composite, audio-only, offline/relink, quota-exceeded mocked, worker-crash mocked, GPU-device-lost mocked, and export-failure mocked scenarios.
+- [x] **T8.2** Add required tiny fixtures or deterministic generation scripts for MP4 H.264/AAC, still image/title/composite, audio-only, offline/relink, quota-exceeded mocked, worker-crash mocked, GPU-device-lost mocked, and export-failure mocked scenarios.
   - Acceptance: fixtures stay local/client-side and do not require server media processing, accounts, external APIs, telemetry, or cloud storage.
 - [ ] **T8.3** Add import -> edit -> export integration coverage.
   - Acceptance: at least one video+audio path, one still/title/composite path, one offline/relink path, and one export failure/retry path are validated; output structure and timing are checked, not just job completion.
-- [ ] **T8.4** Add capability-aware skip reporting.
+- [x] **T8.4** Add capability-aware skip reporting.
   - Acceptance: unsupported WebGPU/WebCodecs/container/encoder cases report explicit skip reasons from diagnostics, not silent passes.
-- [ ] **T8.5** Add worker crash/restart, GPU loss, quota exceeded, failed import/export, and permission loss integration simulations.
+- [x] **T8.5** Add worker crash/restart, GPU loss, quota exceeded, failed import/export, and permission loss integration simulations.
   - Acceptance: simulations assert shell survival, recovery actions, recent error entries, and preserved project/export settings.
 
 ## Accessibility and keyboard audit
 
-- [ ] **T9.1** Add or update a shortcut registry with scopes, key chords, labels, `when` predicates, and browser-reserved flags.
+- [x] **T9.1** Add or update a shortcut registry with scopes, key chords, labels, `when` predicates, and browser-reserved flags.
   - Acceptance: duplicate key chords in overlapping scopes fail a test unless predicates are mutually exclusive.
-- [ ] **T9.2** Implement keyboard conflict policy.
+- [x] **T9.2** Implement keyboard conflict policy.
   - Acceptance: dialog scope wins while modal; text entry keeps text-editing keys; inspector numeric fields own arrows while focused; timeline shortcuts apply only with timeline focus; `Escape` has one active meaning at a time.
-- [ ] **T9.3** Audit timeline, dialogs, inspector, toolbar, diagnostics panel, capability panel, and export queue.
+- [x] **T9.3** Audit timeline, dialogs, inspector, toolbar, diagnostics panel, capability panel, and export queue.
   - Acceptance: issues preventing keyboard-only import/edit/export/diagnostics/recovery are filed as release blockers.
-- [ ] **T9.4** Fix blocking accessibility issues found by the audit.
+- [x] **T9.4** Fix blocking accessibility issues found by the audit.
   - Acceptance: focus trap/return, visible focus, semantic controls, labels, contrast, reduced motion, alert usage, and keyboard-only workflows pass manual audit.
-- [ ] **T9.5** Add manual accessibility audit checklist to release docs.
+- [x] **T9.5** Add manual accessibility audit checklist to release docs.
   - Acceptance: checklist covers import, timeline selection/editing, inspector edits, diagnostics copy, export queue retry/cancel, storage cleanup, recovery actions, and dialogs without a mouse.
 
 ## Release readiness gates
 
-- [ ] **T10.1** Add a release readiness document or checklist generated from this spec.
+- [x] **T10.1** Add a release readiness document or checklist generated from this spec.
   - Acceptance: every item maps to a command, test, manual procedure, diagnostic panel state, or documented capability skip.
-- [ ] **T10.2** Wire readiness evidence into PR/release review.
+- [x] **T10.2** Wire readiness evidence into PR/release review.
   - Acceptance: reviewers can see build/test status, fixture matrix status, diagnostics privacy proof, recovery simulations, performance budget status, accessibility audit result, COOP/COEP result, and manual smoke result.
-- [ ] **T10.3** Define blocker classification.
+- [x] **T10.3** Define blocker classification.
   - Acceptance: gates classify failures as blocks release, blocks accelerated tier, manual follow-up required, or known limited mode; P0/P1 hard-gate violations block release.
 - [ ] **T10.4** Add final diagnostics self-check.
   - Acceptance: accelerated, limited/non-isolated, and blocked/missing-capability snapshots are captured and reviewed before release.
