@@ -182,6 +182,15 @@ export function expandOutputTemplate(
   });
 }
 
+export function sanitizeOutputFileNameBase(name: string): string {
+  const sanitized = name
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[. ]+$/g, '');
+  return sanitized || 'export';
+}
+
 export function buildTemplateContext(
   projectName: string | undefined,
   presetName: string,

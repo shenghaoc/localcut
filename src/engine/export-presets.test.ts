@@ -10,6 +10,7 @@ import {
   findPresetByName,
   validateOutputTemplate,
   expandOutputTemplate,
+  sanitizeOutputFileNameBase,
   buildTemplateContext,
   clonePresetDoc,
   parseExportPresetDoc,
@@ -175,6 +176,11 @@ describe('export-presets', () => {
       const ctx = buildTemplateContext(undefined, 'Q', 'h264', undefined, undefined, 1);
       const result = expandOutputTemplate('{project}', ctx);
       expect(result).toBe('Untitled');
+    });
+
+    it('sanitizes file-system unsafe template output', () => {
+      expect(sanitizeOutputFileNameBase('Scene/01:VP9?final*.')).toBe('Scene_01_VP9_final_');
+      expect(sanitizeOutputFileNameBase('   ')).toBe('export');
     });
   });
 

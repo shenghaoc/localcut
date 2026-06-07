@@ -8,18 +8,21 @@ import {
   advanceQueue,
   markJobChoosingDestination,
   markJobRunning,
+  markJobFinalizing,
   markJobCompleted,
   markJobFailed,
   markJobCanceled,
   cancelAllPending,
   retryJob,
   setStopOnError,
+  shouldStopQueueAfterJob,
   resolveJobRange,
   createJobsFromMarkers,
   serializeQueueHistory,
   deserializeQueueHistory,
   queueSummary,
   jobRangeLabel,
+  suggestedFileNameForJob,
 } from './render-queue';
 import type { ExportSettings, JobRange, RenderQueueState } from '../protocol';
 
@@ -81,6 +84,15 @@ describe('render-queue', () => {
       let state = enqueueN(createEmptyQueueState(), 2);
       const id = state.jobs[0]!.id;
       state = markJobRunning(state, id);
+      state = removeJob(state, id);
+      expect(state.jobs.length).toBe(2);
+    });
+
+    it('does not remove finalizing jobs', () => {
+      let state = enqueueN(createEmptyQueueState(), 2);
+      const id = state.jobs[0]!.id;
+      state = markJobRunning(state, id);
+      state = markJobFinalizing(state, id);
       state = removeJob(state, id);
       expect(state.jobs.length).toBe(2);
     });
@@ -159,21 +171,31 @@ describe('render-queue', () => {
       expect(next!.id).toBe(state.jobs[1]!.id);
     });
 
-    it('with stopOnError=true, a failed job blocks advance', () => {
+    it('with stopOnError=true, old failed jobs do not block a new run', () => {
       let state = enqueueN(createEmptyQueueState(), 3);
       state = setStopOnError(state, true);
       state = markJobFailed(state, state.jobs[0]!.id, 'err');
-      expect(advanceQueue(state)).toBeNull();
+      expect(advanceQueue(state)!.id).toBe(state.jobs[1]!.id);
     });
 
-    it('after removing the failed job with stopOnError=true, queue can advance', () => {
+    it('with stopOnError=true, the job that just failed stops the run', () => {
       let state = enqueueN(createEmptyQueueState(), 3);
       state = setStopOnError(state, true);
       const failedId = state.jobs[0]!.id;
       state = markJobFailed(state, failedId, 'err');
-      state = removeJob(state, failedId);
+      expect(shouldStopQueueAfterJob(state, failedId)).toBe(true);
+      expect(shouldStopQueueAfterJob(state, state.jobs[1]!.id)).toBe(false);
+    });
+
+    it('retry can advance with stopOnError=true', () => {
+      let state = enqueueN(createEmptyQueueState(), 1);
+      state = setStopOnError(state, true);
+      const failedId = state.jobs[0]!.id;
+      state = markJobFailed(state, failedId, 'err');
+      state = retryJob(state, failedId);
       const next = advanceQueue(state);
       expect(next).not.toBeNull();
+      expect(next!.id).not.toBe(failedId);
     });
   });
 
@@ -291,6 +313,39 @@ describe('render-queue', () => {
 
       expect(persisted).toHaveLength(50);
       expect(persistedIds).toEqual(originalRelativeOrder);
+    });
+
+    it('preserves pending jobs even when they exceed the terminal history cap', () => {
+      const jobs = Array.from({ length: 60 }, (_, index) => ({
+        ...createJob(baseSettings, { mode: 'full' }, null, null),
+        id: `pending-${index}`,
+      }));
+      const state: RenderQueueState = { jobs, stopOnError: false, activeJobId: null };
+
+      const persisted = serializeQueueHistory(state);
+
+      expect(persisted).toHaveLength(60);
+      expect(persisted.every((job) => job.status === 'pending')).toBe(true);
+    });
+  });
+
+  describe('suggestedFileNameForJob', () => {
+    it('expands preset templates and sanitizes invalid filename characters', () => {
+      const job = createJob(
+        baseSettings,
+        { mode: 'range', startS: 0, endS: 5 },
+        'preset-1',
+        '{project}/{preset}:{range}:{index}',
+      );
+      const fileName = suggestedFileNameForJob(
+        job,
+        [{ id: 'preset-1', name: 'Review?Preset', builtIn: false, ...baseSettings }],
+        'Project:One',
+        2,
+      );
+
+      expect(fileName).toContain('Project_One_Review_Preset_00m00s-00m05s_2');
+      expect(fileName.endsWith('.mp4')).toBe(true);
     });
   });
 

@@ -8,8 +8,14 @@ import type {
   RenderQueueJob,
   RenderQueueState,
   TimelineMarkerSnapshot,
+  ExportPresetDoc,
 } from '../protocol';
 import type { TimelineMarker } from './timeline';
+import {
+  buildTemplateContext,
+  expandOutputTemplate,
+  sanitizeOutputFileNameBase,
+} from './export-presets';
 
 const MAX_QUEUE_HISTORY = 50;
 
@@ -53,7 +59,14 @@ export function enqueueJob(state: RenderQueueState, job: RenderQueueJob): Render
 
 export function removeJob(state: RenderQueueState, jobId: string): RenderQueueState {
   const job = state.jobs.find((j) => j.id === jobId);
-  if (!job || job.status === 'running' || job.status === 'choosing-destination') return state;
+  if (
+    !job ||
+    job.status === 'running' ||
+    job.status === 'choosing-destination' ||
+    job.status === 'finalizing'
+  ) {
+    return state;
+  }
   return { ...state, jobs: state.jobs.filter((j) => j.id !== jobId) };
 }
 
@@ -70,8 +83,11 @@ export function reorderJob(state: RenderQueueState, jobId: string, newIndex: num
 
 export function advanceQueue(state: RenderQueueState): RenderQueueJob | null {
   if (state.activeJobId) return null;
-  if (state.stopOnError && state.jobs.some((j) => j.status === 'failed')) return null;
   return state.jobs.find((j) => j.status === 'pending') ?? null;
+}
+
+export function shouldStopQueueAfterJob(state: RenderQueueState, jobId: string): boolean {
+  return state.stopOnError && state.jobs.some((j) => j.id === jobId && j.status === 'failed');
 }
 
 export function markJobChoosingDestination(state: RenderQueueState, jobId: string): RenderQueueState {
@@ -313,9 +329,38 @@ function enforceHistoryCap(jobs: PersistedQueueJob[]): PersistedQueueJob[] {
       result.splice(oldestCanceledIdx, 1);
       continue;
     }
-    result.shift();
+    break;
   }
   return result;
+}
+
+export function suggestedFileNameForJob(
+  job: RenderQueueJob,
+  presets: readonly ExportPresetDoc[],
+  projectName: string | undefined,
+  jobIndex: number,
+): string {
+  const extension = job.settings.container === 'webm' ? '.webm' : '.mp4';
+  let baseName = job.outputFileName;
+  if (!baseName && job.outputTemplate) {
+    const presetName = presets.find((p) => p.id === job.presetId)?.name ?? 'Custom';
+    const range = resolveJobRange(job.jobRange);
+    const context = buildTemplateContext(
+      projectName,
+      presetName,
+      job.settings.codec,
+      range?.startS,
+      range?.endS,
+      Math.max(1, jobIndex),
+    );
+    baseName = expandOutputTemplate(job.outputTemplate, context);
+  }
+
+  const rawBase = baseName || 'export';
+  const withoutExtension = rawBase.endsWith(extension)
+    ? rawBase.slice(0, -extension.length)
+    : rawBase;
+  return `${sanitizeOutputFileNameBase(withoutExtension)}${extension}`;
 }
 
 export function queueSummary(state: RenderQueueState): {

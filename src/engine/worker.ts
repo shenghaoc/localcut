@@ -156,7 +156,7 @@ import {
   normalizeExportSettings,
   probeExportCodecs,
 } from './export';
-import { BUILT_IN_PRESETS, buildTemplateContext, expandOutputTemplate, mergePresetsWithBuiltIns } from './export-presets';
+import { mergePresetsWithBuiltIns } from './export-presets';
 import {
   advanceQueue,
   cancelAllPending,
@@ -166,6 +166,7 @@ import {
   markJobChoosingDestination,
   markJobCompleted,
   markJobFailed,
+  markJobFinalizing,
   markJobRunning,
   removeJob,
   reorderJob,
@@ -174,6 +175,8 @@ import {
   serializeQueueHistory,
   deserializeQueueHistory,
   setStopOnError,
+  shouldStopQueueAfterJob,
+  suggestedFileNameForJob,
   updateJobProgress,
   queueSummary,
 } from './render-queue';
@@ -255,6 +258,8 @@ let queueState: RenderQueueState = createEmptyQueueState();
 let queueRunning = false;
 let queueJobAbort: AbortController | null = null;
 let queueJobOutputResolve: ((handle: FileSystemFileHandle | null) => void) | null = null;
+let queueJobOutputJobId: string | null = null;
+const queueJobOutputHandles = new Map<string, FileSystemFileHandle>();
 const FRAME_CACHE_BUDGET_BYTES = 64 * 1024 * 1024;
 let audioRing: AudioRingViews | null = null;
 let audioWriteAnchor = 0;
@@ -1270,6 +1275,8 @@ async function handleInit(
   syncTimelineLuts();
   ensurePreview();
   postHistoryState();
+  postPresetsState();
+  postQueueState();
   void checkRestoreAvailable();
 }
 
@@ -1375,6 +1382,7 @@ async function handleRestoreProject(): Promise<void> {
     return;
   }
 
+  abortQueueWork();
   teardownMedia();
   clearAutosaveTimer();
   sourceDescriptors.clear();
@@ -1435,13 +1443,13 @@ async function handleNewProject(): Promise<void> {
   restoreOfferGeneration += 1;
   await flushPendingAutosave();
   restoreDoc = null;
+  abortQueueWork();
   teardownMedia();
   sourceDescriptors.clear();
   history.clear();
   lastExportSettings = null;
   exportPresets = [];
   queueState = createEmptyQueueState();
-  queueRunning = false;
   projectId = makeProjectId();
   nextSourceId = 1;
   captionTracks = [];
@@ -3149,6 +3157,25 @@ function postQueueState() {
   post({ type: 'queue-state', queue: queueState });
 }
 
+function resolveWaitingQueueOutput(jobId: string, handle: FileSystemFileHandle | null): boolean {
+  if (!queueJobOutputResolve || queueJobOutputJobId !== jobId) return false;
+  const resolve = queueJobOutputResolve;
+  queueJobOutputResolve = null;
+  queueJobOutputJobId = null;
+  resolve(handle);
+  return true;
+}
+
+function abortQueueWork() {
+  queueRunning = false;
+  queueJobOutputHandles.clear();
+  if (queueJobAbort) {
+    queueJobAbort.abort();
+  } else if (queueJobOutputResolve && queueJobOutputJobId) {
+    resolveWaitingQueueOutput(queueJobOutputJobId, null);
+  }
+}
+
 function handlePresetSave(cmd: Extract<WorkerCommand, { type: 'preset-save' }>) {
   const preset = cmd.preset;
   const idx = exportPresets.findIndex((p) => p.id === preset.id);
@@ -3176,6 +3203,7 @@ function handleQueueEnqueue(cmd: Extract<WorkerCommand, { type: 'queue-enqueue' 
 }
 
 function handleQueueRemove(cmd: Extract<WorkerCommand, { type: 'queue-remove' }>) {
+  queueJobOutputHandles.delete(cmd.jobId);
   queueState = removeJob(queueState, cmd.jobId);
   postQueueState();
   scheduleAutosave();
@@ -3187,12 +3215,12 @@ function handleQueueReorder(cmd: Extract<WorkerCommand, { type: 'queue-reorder' 
 }
 
 function handleQueueCancelJob(cmd: Extract<WorkerCommand, { type: 'queue-cancel-job' }>) {
+  queueJobOutputHandles.delete(cmd.jobId);
   if (queueState.activeJobId === cmd.jobId) {
     if (queueJobAbort) {
       queueJobAbort.abort();
     } else if (queueJobOutputResolve) {
-      queueJobOutputResolve(null);
-      queueJobOutputResolve = null;
+      resolveWaitingQueueOutput(cmd.jobId, null);
     }
   } else {
     queueState = markJobCanceled(queueState, cmd.jobId);
@@ -3202,11 +3230,11 @@ function handleQueueCancelJob(cmd: Extract<WorkerCommand, { type: 'queue-cancel-
 }
 
 function handleQueueCancelAll() {
+  queueJobOutputHandles.clear();
   if (queueJobAbort) {
     queueJobAbort.abort();
-  } else if (queueJobOutputResolve) {
-    queueJobOutputResolve(null);
-    queueJobOutputResolve = null;
+  } else if (queueJobOutputResolve && queueJobOutputJobId) {
+    resolveWaitingQueueOutput(queueJobOutputJobId, null);
   }
   queueState = cancelAllPending(queueState);
   queueRunning = false;
@@ -3221,44 +3249,20 @@ function handleQueueRetry(cmd: Extract<WorkerCommand, { type: 'queue-retry' }>) 
 }
 
 function handleQueueJobOutput(cmd: Extract<WorkerCommand, { type: 'queue-job-output' }>) {
-  queueJobOutputResolve?.(cmd.handle);
-  queueJobOutputResolve = null;
+  if (resolveWaitingQueueOutput(cmd.jobId, cmd.handle)) return;
+  const job = queueState.jobs.find((item) => item.id === cmd.jobId);
+  if (job?.status === 'pending') {
+    queueJobOutputHandles.set(cmd.jobId, cmd.handle);
+  }
 }
 
-function handleQueueJobSkip(_cmd: Extract<WorkerCommand, { type: 'queue-job-skip' }>) {
-  queueJobOutputResolve?.(null);
-  queueJobOutputResolve = null;
+function handleQueueJobSkip(cmd: Extract<WorkerCommand, { type: 'queue-job-skip' }>) {
+  resolveWaitingQueueOutput(cmd.jobId, null);
 }
 
 function handleQueueSetStopOnError(cmd: Extract<WorkerCommand, { type: 'queue-set-stop-on-error' }>) {
   queueState = setStopOnError(queueState, cmd.stopOnError);
   postQueueState();
-}
-
-function exportFileNameForJob(job: RenderQueueJob): string {
-  const extension = job.settings.container === 'webm' ? '.webm' : '.mp4';
-  let baseName = job.outputFileName;
-  if (!baseName && job.outputTemplate) {
-    let presetName = 'Custom';
-    if (job.presetId) {
-      const preset = exportPresets.find((p) => p.id === job.presetId) ?? BUILT_IN_PRESETS.find((p) => p.id === job.presetId);
-      if (preset) presetName = preset.name;
-    }
-    const range = resolveJobRange(job.jobRange);
-    const jobIndex = queueState.jobs.findIndex((item) => item.id === job.id) + 1;
-    const context = buildTemplateContext(
-      projectDisplayName(),
-      presetName,
-      job.settings.codec,
-      range?.startS,
-      range?.endS,
-      jobIndex > 0 ? jobIndex : 1,
-    );
-    baseName = expandOutputTemplate(job.outputTemplate, context);
-  }
-  baseName ||= 'export';
-  if (baseName.endsWith(extension)) return baseName;
-  return `${baseName}${extension}`;
 }
 
 async function runQueueJob(job: RenderQueueJob): Promise<void> {
@@ -3268,25 +3272,39 @@ async function runQueueJob(job: RenderQueueJob): Promise<void> {
     return;
   }
 
-  queueState = markJobChoosingDestination(queueState, job.id);
-  postQueueState();
+  let handle = queueJobOutputHandles.get(job.id) ?? null;
+  queueJobOutputHandles.delete(job.id);
 
-  const suggestedName = exportFileNameForJob(job);
-  post({ type: 'queue-job-destination', jobId: job.id, suggestedName });
+  if (!handle) {
+    queueState = markJobChoosingDestination(queueState, job.id);
+    postQueueState();
+    scheduleAutosave();
 
-  const handle = await new Promise<FileSystemFileHandle | null>((resolve) => {
-    queueJobOutputResolve = resolve;
-  });
+    const suggestedName = suggestedFileNameForJob(
+      job,
+      mergePresetsWithBuiltIns(exportPresets),
+      projectDisplayName(),
+      queueState.jobs.findIndex((item) => item.id === job.id) + 1,
+    );
+    queueJobOutputJobId = job.id;
+    const outputHandlePromise = new Promise<FileSystemFileHandle | null>((resolve) => {
+      queueJobOutputResolve = resolve;
+    });
+    post({ type: 'queue-job-destination', jobId: job.id, suggestedName });
+    handle = await outputHandlePromise;
+  }
 
   if (!handle) {
     queueState = markJobCanceled(queueState, job.id);
     post({ type: 'queue-job-canceled', jobId: job.id });
     postQueueState();
+    scheduleAutosave();
     return;
   }
 
   queueState = markJobRunning(queueState, job.id);
   postQueueState();
+  scheduleAutosave();
 
   handlePause();
   const controller = new AbortController();
@@ -3294,6 +3312,7 @@ async function runQueueJob(job: RenderQueueJob): Promise<void> {
   const startTime = performance.now();
 
   let exportCaptionTextureIds: string[] = [];
+  let finalizingSaved = false;
   try {
     const exportTimelineSnapshot = cloneTimelineForExport();
     const exportCaptionTracksSnapshot = cloneCaptionTracksSnapshot(captionTracks);
@@ -3332,6 +3351,12 @@ async function runQueueJob(job: RenderQueueJob): Promise<void> {
       throughputProbe: currentProbe,
       signal: controller.signal,
       onProgress: (progress) => {
+        if (progress.phase === 'finalizing' && !finalizingSaved) {
+          queueState = markJobFinalizing(queueState, job.id);
+          finalizingSaved = true;
+          postQueueState();
+          scheduleAutosave();
+        }
         queueState = updateJobProgress(queueState, job.id, progress);
         post({ type: 'queue-job-progress', jobId: job.id, progress });
       },
@@ -3359,10 +3384,17 @@ async function runQueueJob(job: RenderQueueJob): Promise<void> {
     });
 
     const elapsedSeconds = (performance.now() - startTime) / 1000;
-    queueState = markJobCompleted(queueState, job.id, handle.name, elapsedSeconds, null);
-    post({ type: 'queue-job-complete', jobId: job.id, fileName: handle.name, elapsedSeconds, outputBytes: null });
+    let outputBytes: number | null = null;
+    try {
+      outputBytes = (await handle.getFile()).size;
+    } catch {
+      // Size metadata is best-effort; the export itself has already completed.
+      outputBytes = null;
+    }
+    queueState = markJobCompleted(queueState, job.id, handle.name, elapsedSeconds, outputBytes);
+    post({ type: 'queue-job-complete', jobId: job.id, fileName: handle.name, elapsedSeconds, outputBytes });
   } catch (error) {
-    if (error instanceof ExportCancelledError) {
+    if (error instanceof ExportCancelledError || controller.signal.aborted) {
       queueState = markJobCanceled(queueState, job.id);
       post({ type: 'queue-job-canceled', jobId: job.id });
     } else {
@@ -3374,6 +3406,7 @@ async function runQueueJob(job: RenderQueueJob): Promise<void> {
     releaseRetainedOverlayTextures(exportCaptionTextureIds);
     syncTitleRasters();
     queueJobAbort = null;
+    queueJobOutputJobId = null;
     pruneUnusedSources();
     ensurePreview();
   }
@@ -3394,6 +3427,7 @@ async function handleQueueStart() {
     const next = advanceQueue(queueState);
     if (!next) break;
     await runQueueJob(next);
+    if (shouldStopQueueAfterJob(queueState, next.id)) break;
   }
 
   queueRunning = false;
@@ -3412,6 +3446,7 @@ async function handleDispose(): Promise<void> {
   restoreOfferGeneration += 1;
   await flushPendingAutosave();
   stopAudioPump();
+  abortQueueWork();
   teardownMedia();
   titleCache?.destroy();
   titleCache = null;

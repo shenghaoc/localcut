@@ -142,7 +142,7 @@ export function RenderQueuePanel(props: RenderQueuePanelProps) {
                 </Show>
 
                 <div class="render-queue-job-actions">
-                  <Show when={job.status === 'pending'}>
+                  <Show when={job.status !== 'running' && job.status !== 'choosing-destination' && job.status !== 'finalizing'}>
                     <button
                       type="button"
                       class="render-queue-icon-btn"
