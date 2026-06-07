@@ -138,7 +138,7 @@ describe('caption editing and export', () => {
     });
   });
 
-  it('applies preset layout defaults and allows clearing language', () => {
+  it('applies preset layout defaults, preserves language on unrelated edits, and allows clearing language', () => {
     let tracks = [
       createCaptionTrack({
         id: 'captions-1',
@@ -148,13 +148,35 @@ describe('caption editing and export', () => {
     ];
 
     tracks = setCaptionTrackProps(tracks, 'captions-1', {
-      language: null,
       defaultStyle: { presetId: 'lower-third' },
     });
 
-    expect(tracks[0]!.language).toBeNull();
+    expect(tracks[0]!.language).toBe('en');
     expect(tracks[0]!.defaultStyle.anchor).toBe('bottom-left');
     expect(tracks[0]!.defaultStyle.maxWidthPercent).toBe(48);
     expect(tracks[0]!.defaultStyle.lineWrap).toBe('greedy');
+
+    tracks = setCaptionTrackProps(tracks, 'captions-1', {
+      language: null,
+    });
+
+    expect(tracks[0]!.language).toBeNull();
+  });
+
+  it('keeps segment color overrides inheriting later track preset layout changes', () => {
+    const id = makeCaptionSegmentId();
+    let tracks = [
+      createCaptionTrack({
+        id: 'captions-1',
+        defaultStyle: { presetId: 'subtitle' },
+        segments: [{ id, start: 0, duration: 2, text: 'Hello' }],
+      }),
+    ];
+
+    tracks = setCaptionSegmentStyle(tracks, 'captions-1', id, { overrides: { color: '#00ff00' } });
+    tracks = setCaptionTrackProps(tracks, 'captions-1', { defaultStyle: { presetId: 'lower-third' } });
+
+    expect(tracks[0]!.segments[0]!.style?.anchor).toBeUndefined();
+    expect(tracks[0]!.defaultStyle.anchor).toBe('bottom-left');
   });
 });
