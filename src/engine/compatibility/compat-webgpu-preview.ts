@@ -28,7 +28,15 @@ export async function uploadCompatFrame<TFrame extends CompatVideoFrame>(
   destination: unknown,
   createBitmap: (frame: TFrame) => Promise<CompatImageBitmap>,
 ): Promise<void> {
-  const bitmap = await createBitmap(frame).catch((e) => { frame.close(); throw e; });
+  // try/catch (not .catch) so a synchronous throw from createBitmap still closes
+  // the frame — the compat ingestion path must release every VideoFrame once.
+  let bitmap: CompatImageBitmap;
+  try {
+    bitmap = await createBitmap(frame);
+  } catch (e) {
+    frame.close();
+    throw e;
+  }
   frame.close();
   try {
     device.queue.copyExternalImageToTexture(

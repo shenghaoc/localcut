@@ -125,14 +125,16 @@ Individual codec probes use `VideoDecoder.isConfigSupported` and `VideoEncoder.i
 
 ## Clock degradation
 
+In every tier the **worker is the sole clock writer** and the main thread only reads — the `PlaybackController` advances time on its own internal real-time loop. The only thing the tier changes is the transport of that time to the main thread:
+
 | Tier | Clock source | Mechanism |
 |------|-------------|-----------|
-| `core-webgpu` | SAB `Float64Array[0]` | Worker writes; main reads via rAF (unchanged) |
-| `compatibility-webgpu` | SAB when available, otherwise `AudioContext.currentTime` | Worker writes SAB on isolated origins; main thread rAF posts `{ type: 'clock-tick', time }` only when SAB is unavailable |
-| `limited-webcodecs` | SAB when available, otherwise `AudioContext.currentTime` | Same SAB-first rule; OffscreenCanvas worker uses rAF-message ticks only when SAB is unavailable |
+| `core-webgpu` | SAB `Float64Array[0]` | Worker writes SAB; main reads via rAF (unchanged) |
+| `compatibility-webgpu` | SAB when available, otherwise `clock-update` message | Worker writes SAB on isolated origins; when SAB is absent the worker posts `{ type: 'clock-update', currentTime, duration, playing }` from its playback loop instead |
+| `limited-webcodecs` | SAB when available, otherwise `clock-update` message | Same SAB-first rule; the compositor worker posts `clock-update` only when SAB is absent |
 | `shell-only` | N/A | No playback worker started |
 
-The rAF-message clock is only activated when SAB is unavailable (`hasSAB === false`). The code path is explicit and never chosen when `crossOriginIsolated` is true and SAB is present.
+The main thread never pushes time into the worker (no `clock-tick`); doing so would fight the worker's own playback loop with per-frame `seek`s. The message path is only taken when SAB is unavailable (`clockView === null`), driven by the probe result, never when `crossOriginIsolated` is true and SAB is present. Because the worker only writes from its playback loop (and once on pause/seek/step), the playhead never advances while paused.
 
 ## WebGPU compatibility mode pipeline
 
@@ -170,8 +172,8 @@ Timeline resolveAllAt(t)
 ```
 
 Constraints enforced at the module boundary:
-- Decoded frame queue bounded to 3 frames per track (drop oldest if full).
-- Decode loop driven by incoming `clock-tick` messages; loop exits cleanly on `pause` or `seek` via `AbortController`.
+- Decoded frame queue bounded to 3 frames per track (drop oldest if full); the bound guards against a non-positive size spinning forever.
+- Decode loop driven by the worker's own playback transport (the worker owns the clock and posts `clock-update` to the main thread when SAB is absent); loop exits cleanly on `pause` or `seek` via `AbortController`.
 - Resolution cap: aspect-preserving `resizeWidth` and `resizeHeight` are computed so neither dimension exceeds 1280×720 before `createImageBitmap`.
 - The transferred display bitmap is owned by the main preview consumer, which closes it after drawing or before replacing it with a newer frame.
 - Effects unavailable notice is encoded in the worker's init response, not inferred at the UI layer.

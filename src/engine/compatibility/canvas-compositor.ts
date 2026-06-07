@@ -39,7 +39,9 @@ export class BoundedFrameQueue<T extends CloseableFrame> {
   constructor(private readonly maxFrames = 3) {}
 
   push(frame: T): void {
-    while (this.frames.length >= this.maxFrames) {
+    // `> 0` guards against a non-positive maxFrames turning this into an infinite
+    // loop (`0 >= 0` is true even when the queue is empty).
+    while (this.frames.length > 0 && this.frames.length >= this.maxFrames) {
       this.frames.shift()?.close();
     }
     this.frames.push(frame);
@@ -61,10 +63,15 @@ export async function bitmapFromFrame<TFrame extends CloseableFrame, TBitmap ext
   sourceHeight: number,
 ): Promise<TBitmap> {
   const size = fitWithin720p(sourceWidth, sourceHeight);
-  const bitmap = await createBitmap(frame, { resizeWidth: size.width, resizeHeight: size.height }).catch((e) => {
+  // try/catch (not .catch) so a synchronous throw from createBitmap still closes
+  // the frame — every VideoFrame must be released exactly once on every path.
+  let bitmap: TBitmap;
+  try {
+    bitmap = await createBitmap(frame, { resizeWidth: size.width, resizeHeight: size.height });
+  } catch (e) {
     frame.close();
     throw e;
-  });
+  }
   frame.close();
   return bitmap;
 }
@@ -75,14 +82,22 @@ export function drawLayers(
   width: number,
   height: number,
 ): void {
-  target.clearRect(0, 0, width, height);
-  for (const layer of layers) {
-    target.globalAlpha = Math.max(0, Math.min(1, layer.opacity));
-    try {
+  try {
+    target.clearRect(0, 0, width, height);
+    for (const layer of layers) {
+      target.globalAlpha = Math.max(0, Math.min(1, layer.opacity));
       target.drawImage(layer.bitmap, layer.x, layer.y, layer.width, layer.height);
-    } finally {
-      layer.bitmap.close();
     }
+  } finally {
+    // Close every layer's bitmap even if an earlier drawImage threw — otherwise a
+    // single failed layer would leak the remaining (already-decoded) bitmaps.
+    for (const layer of layers) {
+      try {
+        layer.bitmap.close();
+      } catch {
+        // ignore double-close / cleanup errors
+      }
+    }
+    target.globalAlpha = 1;
   }
-  target.globalAlpha = 1;
 }

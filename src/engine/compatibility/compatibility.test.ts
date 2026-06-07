@@ -19,6 +19,59 @@ describe('canvas compatibility compositor helpers', () => {
     expect(queue.size).toBe(3);
   });
 
+  it('does not loop forever when constructed with a non-positive bound', () => {
+    const closes = [vi.fn(), vi.fn()];
+    const queue = new BoundedFrameQueue<{ close: () => void }>(0);
+    // Without the `length > 0` guard, a `0 >= 0` bound spins forever on an empty
+    // queue. With it, each push evicts the prior frame and keeps at most one — and
+    // crucially the call returns instead of hanging the worker.
+    for (const close of closes) queue.push({ close });
+    expect(queue.size).toBe(1);
+    expect(closes[0]).toHaveBeenCalledTimes(1);
+    expect(closes[1]).not.toHaveBeenCalled();
+  });
+
+  it('closes the VideoFrame when bitmap creation rejects', async () => {
+    const frameClose = vi.fn();
+    await expect(
+      bitmapFromFrame({ close: frameClose }, async () => { throw new Error('decode-failed'); }, 100, 50),
+    ).rejects.toThrow('decode-failed');
+    expect(frameClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes the VideoFrame when bitmap creation throws synchronously', async () => {
+    const frameClose = vi.fn();
+    await expect(
+      bitmapFromFrame({ close: frameClose }, () => { throw new Error('sync-throw'); }, 100, 50),
+    ).rejects.toThrow('sync-throw');
+    expect(frameClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes every layer bitmap even when an earlier drawImage throws', () => {
+    const closes = [vi.fn(), vi.fn(), vi.fn()];
+    const layers = closes.map((close, i) => ({
+      bitmap: { width: 10, height: 10, close },
+      opacity: 1,
+      x: 0,
+      y: 0,
+      width: 10,
+      height: 10,
+      id: i,
+    }));
+    const target = {
+      globalAlpha: 1,
+      clearRect: vi.fn(),
+      drawImage: vi.fn((bitmap: { width: number }) => {
+        // Fail on the second layer; the first and third must still be closed.
+        if (target.drawImage.mock.calls.length === 2) throw new Error('draw-failed');
+        void bitmap;
+      }),
+    };
+    expect(() => drawLayers(target, layers, 10, 10)).toThrow('draw-failed');
+    for (const close of closes) expect(close).toHaveBeenCalledTimes(1);
+    expect(target.globalAlpha).toBe(1);
+  });
+
   it('closes frames after bitmap creation and layer bitmaps after draw', async () => {
     const frameClose = vi.fn();
     const bitmapClose = vi.fn();
@@ -87,5 +140,15 @@ describe('compat export helpers', () => {
     );
     expect(bitmapClose).toHaveBeenCalledTimes(1);
     expect(frame).toBeDefined();
+  });
+
+  it('closes the bitmap when VideoFrame construction throws', async () => {
+    const bitmapClose = vi.fn();
+    await expect(
+      makeVideoFrameFromBitmap({ width: 10, height: 10, close: bitmapClose }, () => {
+        throw new Error('frame-ctor-failed');
+      }),
+    ).rejects.toThrow('frame-ctor-failed');
+    expect(bitmapClose).toHaveBeenCalledTimes(1);
   });
 });

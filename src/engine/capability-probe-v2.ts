@@ -106,17 +106,45 @@ async function probeCodecs(): Promise<CodecProbeResult> {
   const videoBase = { width: 1280, height: 720, bitrate: 5_000_000 };
   const audioBase = { sampleRate: 48_000, numberOfChannels: 2, bitrate: 128_000 };
 
+  // The ten probes are independent; running them in parallel keeps startup from
+  // serializing across isConfigSupported round-trips (each can hit a hardware
+  // capability query). probeCodec already maps its own failures to a state, so
+  // Promise.all never rejects here.
+  const [
+    h264Decode,
+    vp9Decode,
+    av1Decode,
+    h264Encode,
+    vp9Encode,
+    av1Encode,
+    aacDecode,
+    opusDecode,
+    aacEncode,
+    opusEncode,
+  ] = await Promise.all([
+    probeCodec(videoDecoder, { ...videoBase, codec: videoCodecStrings.h264 }),
+    probeCodec(videoDecoder, { ...videoBase, codec: videoCodecStrings.vp9 }),
+    probeCodec(videoDecoder, { ...videoBase, codec: videoCodecStrings.av1 }),
+    probeCodec(videoEncoder, { ...videoBase, codec: videoCodecStrings.h264 }),
+    probeCodec(videoEncoder, { ...videoBase, codec: videoCodecStrings.vp9 }),
+    probeCodec(videoEncoder, { ...videoBase, codec: videoCodecStrings.av1 }),
+    probeCodec(audioDecoder, { ...audioBase, codec: audioCodecStrings.aac }),
+    probeCodec(audioDecoder, { ...audioBase, codec: audioCodecStrings.opus }),
+    probeCodec(audioEncoder, { ...audioBase, codec: audioCodecStrings.aac }),
+    probeCodec(audioEncoder, { ...audioBase, codec: audioCodecStrings.opus }),
+  ]);
+
   return {
-    h264Decode: await probeCodec(videoDecoder, { ...videoBase, codec: videoCodecStrings.h264 }),
-    vp9Decode: await probeCodec(videoDecoder, { ...videoBase, codec: videoCodecStrings.vp9 }),
-    av1Decode: await probeCodec(videoDecoder, { ...videoBase, codec: videoCodecStrings.av1 }),
-    h264Encode: await probeCodec(videoEncoder, { ...videoBase, codec: videoCodecStrings.h264 }),
-    vp9Encode: await probeCodec(videoEncoder, { ...videoBase, codec: videoCodecStrings.vp9 }),
-    av1Encode: await probeCodec(videoEncoder, { ...videoBase, codec: videoCodecStrings.av1 }),
-    aacDecode: await probeCodec(audioDecoder, { ...audioBase, codec: audioCodecStrings.aac }),
-    opusDecode: await probeCodec(audioDecoder, { ...audioBase, codec: audioCodecStrings.opus }),
-    aacEncode: await probeCodec(audioEncoder, { ...audioBase, codec: audioCodecStrings.aac }),
-    opusEncode: await probeCodec(audioEncoder, { ...audioBase, codec: audioCodecStrings.opus }),
+    h264Decode,
+    vp9Decode,
+    av1Decode,
+    h264Encode,
+    vp9Encode,
+    av1Encode,
+    aacDecode,
+    opusDecode,
+    aacEncode,
+    opusEncode,
   };
 }
 

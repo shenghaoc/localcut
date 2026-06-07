@@ -31,7 +31,7 @@
 
 ## T4 — Canvas2D compositor (`limited-webcodecs` tier)
 
-- [ ] **T4.1** Create `src/engine/compatibility/canvas-compositor.ts`: OffscreenCanvas 2D compositor worker module; accepts `clock-tick { time }` messages and composites the resolved timeline frame at that timestamp; each `transferToImageBitmap()` result is `postMessage`d to the main thread, which owns the bitmap and must call `.close()` on the previously received bitmap before drawing or replacing it to prevent per-frame leaks.
+- [ ] **T4.1** Create `src/engine/compatibility/canvas-compositor.ts`: OffscreenCanvas 2D compositor worker module; composites the resolved timeline frame at the worker-owned transport time (the worker posts `clock-update` to the main thread when SAB is absent); each `transferToImageBitmap()` result is `postMessage`d to the main thread, which owns the bitmap and must call `.close()` on the previously received bitmap before drawing or replacing it to prevent per-frame leaks.
 - [x] **T4.2** Implement per-layer decode via `VideoDecoder`; apply aspect-preserving `resizeWidth` / `resizeHeight` caps within 1280×720 at `createImageBitmap`; close each `VideoFrame` exactly once after `createImageBitmap` returns.
 - [x] **T4.3** Bound the decoded frame queue to 3 frames per track; drop the oldest decoded frame (closing it) when the queue is full before decoding a new one.
 - [x] **T4.4** Implement Z-order layer compositing using `globalAlpha = clip.opacity` and `drawImage`; call `bitmap.close()` on each bitmap after `drawImage`.
@@ -51,9 +51,9 @@
 
 ## T6 — Clock degradation path
 
-- [x] **T6.1** Add rAF-message clock support to the worker's message handler: on `clock-tick { time: number }`, update the worker's internal `currentTime` and trigger a preview frame at that timestamp; activate this path only when the probe result has `sharedArrayBuffer !== 'supported'`.
-- [x] **T6.2** In the main-thread app initialization, when `probe.sharedArrayBuffer !== 'supported'`, start an rAF loop that posts `{ type: 'clock-tick', time }` to the worker; stop the loop when the worker is destroyed.
-- [ ] **T6.3** Unit-test that the `clock-tick` path is activated only when `sharedArrayBuffer !== 'supported'` and never when SAB is available.
+- [x] **T6.1** Keep the worker as the sole clock writer: when `clockView === null` (no SAB), `writeTransport` posts `{ type: 'clock-update', currentTime, duration, playing }` from the playback loop instead of writing shared memory. The worker is never seeked per frame from the main thread, so the playhead cannot advance while paused.
+- [x] **T6.2** In the main thread, drive the clock signals from `clock-update` messages when SAB is absent (`createSharedClock` skips its rAF reader and exposes `applyUpdate`); no main-thread rAF tick loop is started.
+- [ ] **T6.3** Unit-test that the `clock-update` path is taken only when `sharedArrayBuffer !== 'supported'` and that the SAB path never posts `clock-update`.
 
 ## T7 — Diagnostic panel (`CapabilityMatrixPanel`)
 

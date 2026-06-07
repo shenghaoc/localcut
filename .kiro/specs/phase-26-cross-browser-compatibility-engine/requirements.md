@@ -43,11 +43,11 @@
 
 ## R4 — Reduced Preview
 
-- **R4.1** `compatibility-webgpu` preview: GPU-rendered via OffscreenCanvas; SAB clock when available, otherwise rAF-message clock (main thread rAF posts `clock-tick` to worker); reduced effect set (color-grade and transform only; no LUT, no f16, no subgroups); resolution proxy capped below the premium default.
-- **R4.2** `limited-webcodecs` preview: Canvas2D compositing of decoded `VideoFrame` bitmaps via `createImageBitmap` in an OffscreenCanvas worker; SAB clock when available, otherwise rAF-message clock; resolution capped at 1280×720; no GPU effects applied; decoded frame queue bounded to 3 frames ahead.
+- **R4.1** `compatibility-webgpu` preview: GPU-rendered via OffscreenCanvas; SAB clock when available, otherwise the worker reports transport over a `clock-update` message (the worker stays the sole clock writer; the main thread never posts ticks back); reduced effect set (color-grade and transform only; no LUT, no f16, no subgroups); resolution proxy capped below the premium default.
+- **R4.2** `limited-webcodecs` preview: Canvas2D compositing of decoded `VideoFrame` bitmaps via `createImageBitmap` in an OffscreenCanvas worker; SAB clock when available, otherwise the worker reports transport over a `clock-update` message; resolution capped at 1280×720; no GPU effects applied; decoded frame queue bounded to 3 frames ahead.
 - **R4.3** `shell-only` preview: the preview panel renders a persistent, plain-language "Preview unavailable" message; all playback transport controls are disabled.
 - **R4.4** Every reduced preview mode must display a persistent labeled badge stating the active tier and what is absent.
-- **R4.5** The rAF-message clock path must not be used when SAB is available; the choice must be driven by the probe result, not a flag.
+- **R4.5** The `clock-update` message path must not be used when SAB is available; the choice must be driven by the probe result (`clockView === null`), not a flag. The main thread must never seek the worker per frame; the worker's playback loop is the single time source.
 
 ## R5 — Reduced Export
 

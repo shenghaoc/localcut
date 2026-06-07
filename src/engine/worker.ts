@@ -216,7 +216,6 @@ import { buildWorkerDiagnosticSnapshot } from './diagnostics';
 import { createEmptyRecentErrorLog, logRecentError, type RecentErrorInput } from '../diagnostics/recent-errors';
 
 let clockView: Float64Array | null = null;
-let capabilityProbeV2: CapabilityProbeResult | null = null;
 let renderer: PreviewRenderer | null = null;
 /** Phase 14 title raster cache; created once the GPU device is ready. */
 let titleCache: TitleTextureCache | null = null;
@@ -1239,9 +1238,16 @@ function writeClockFull(currentTime: number, duration: number, playing: boolean)
 
 /** Playback's per-frame writer: owns currentTime and playState, leaves duration. */
 function writeTransport(currentTime: number, playing: boolean) {
-  if (!clockView) return;
-  if (!audioRing || !hasAudioTimeline()) clockView[ClockIndex.CURRENT_TIME] = currentTime;
-  clockView[ClockIndex.PLAY_STATE] = playing ? 1 : 0;
+  if (clockView) {
+    if (!audioRing || !hasAudioTimeline()) clockView[ClockIndex.CURRENT_TIME] = currentTime;
+    clockView[ClockIndex.PLAY_STATE] = playing ? 1 : 0;
+    return;
+  }
+  // No SAB (reduced tiers): mirror the shared-clock contract over postMessage.
+  // The worker is still the sole clock writer — this fires from the playback loop
+  // (per rendered frame while playing) and once on pause/seek/step, never from an
+  // untethered main-thread tick, so the playhead never advances while paused.
+  post({ type: 'clock-update', currentTime, duration: getTimelineDuration(timeline), playing });
 }
 
 async function handleInit(
@@ -1251,7 +1257,6 @@ async function handleInit(
   scopeSab?: SharedArrayBuffer | null,
   probeResult?: CapabilityProbeResult,
 ) {
-  capabilityProbeV2 = probeResult ?? null;
   if (probeResult) {
     post({ type: 'capability-probe-v2', result: probeResult });
   }
@@ -3603,17 +3608,7 @@ async function handleDispose(): Promise<void> {
   renderer = null;
   clockView = null;
   audioRing = null;
-  capabilityProbeV2 = null;
   post({ type: 'dispose-complete' });
-}
-
-function handleClockTick(time: number): void {
-  if (capabilityProbeV2?.sharedArrayBuffer === 'supported') return;
-  if (!Number.isFinite(time) || time < 0) return;
-  if (clockView) {
-    clockView[ClockIndex.CURRENT_TIME] = time;
-  }
-  if (playback?.isPlaying()) playback.seek(time);
 }
 
 async function handleDiagnosticSnapshot(requestId: string): Promise<void> {
@@ -3646,9 +3641,6 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
   switch (cmd.type) {
     case 'init':
       void handleInit(cmd.canvas, cmd.sab, cmd.audioSab, cmd.scopeSab, 'probeResult' in cmd ? cmd.probeResult : undefined);
-      break;
-    case 'clock-tick':
-      handleClockTick(cmd.time);
       break;
     case 'import':
       void handleImport(cmd.file, cmd.fileHandle);

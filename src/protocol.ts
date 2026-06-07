@@ -1018,7 +1018,6 @@ export type WorkerCommand =
   | { type: 'play' }
   | { type: 'pause' }
   | { type: 'seek'; time: number }
-  | { type: 'clock-tick'; time: number }
   | { type: 'step'; direction: 1 | -1 }
   | { type: 'export-probe' }
   | { type: 'export-start'; settings: ExportSettings; output: FileSystemFileHandle }
@@ -1168,6 +1167,9 @@ export interface HDRWarningSnapshot {
 export type WorkerStateMessage =
   | { type: 'ready'; webgpu: boolean; features: string[]; gpuUnavailableReason: string | null }
   | { type: 'capability-probe-v2'; result: CapabilityProbeResult }
+  // Reduced tiers without SharedArrayBuffer: the worker stays the sole clock
+  // source but reports transport over postMessage instead of shared memory.
+  | { type: 'clock-update'; currentTime: number; duration: number; playing: boolean }
   | { type: 'import-progress'; stage: 'reading' | 'metadata' }
   | { type: 'import-complete'; metadata: MediaMetadata }
   | { type: 'import-error'; message: string }

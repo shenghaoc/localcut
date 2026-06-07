@@ -271,8 +271,6 @@ export function App() {
   let worker: Worker | null = null;
   let initSent = false;
   let pendingInitCanvas: OffscreenCanvas | null = null;
-  let reducedClockRaf: number | null = null;
-  let reducedClockStart: number | null = null;
   let compatibilityImportGeneration = 0;
   let relinkInput: HTMLInputElement | undefined;
   let pendingRelinkSourceId: string | null = null;
@@ -464,6 +462,10 @@ export function App() {
       case 'capability-probe-v2':
         setCapabilityProbeV2(msg.result);
         setExportCodecs([...exportConstraintsForProbe(msg.result)]);
+        break;
+      case 'clock-update':
+        // Reduced tiers without SAB: the worker drives the clock over postMessage.
+        clock.applyUpdate(msg);
         break;
       case 'ready':
         setWorkerReady(true);
@@ -811,24 +813,6 @@ export function App() {
     }
   }
 
-  function stopReducedClock() {
-    if (reducedClockRaf !== null) {
-      cancelAnimationFrame(reducedClockRaf);
-      reducedClockRaf = null;
-    }
-    reducedClockStart = null;
-  }
-
-  function startReducedClock(b: ReturnType<typeof createWorkerBridge>) {
-    stopReducedClock();
-    const tick = (now: number) => {
-      if (reducedClockStart === null) reducedClockStart = now;
-      b.send({ type: 'clock-tick', time: (now - reducedClockStart) / 1000 });
-      reducedClockRaf = requestAnimationFrame(tick);
-    };
-    reducedClockRaf = requestAnimationFrame(tick);
-  }
-
   async function restartWorker() {
     if (!recoveryMachine.canRestart()) return;
 
@@ -897,7 +881,6 @@ export function App() {
       }
     }
     b.send({ type: 'init', canvas, sab, audioSab, probeResult: probe }, [canvas]);
-    if (probe.sharedArrayBuffer !== 'supported') startReducedClock(b);
   }
 
   async function importCompatibilityMedia(file: File) {
@@ -1573,7 +1556,6 @@ export function App() {
       pendingRelinkSourceId = null;
       clearCompatibilityPreview();
       thumbnailStore.clear();
-      stopReducedClock();
       if (worker && bridge) {
         const workerToDispose = worker;
         workerToDispose.removeEventListener('error', handleWorkerCrash);
