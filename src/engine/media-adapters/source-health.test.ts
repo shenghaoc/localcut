@@ -277,4 +277,96 @@ describe('source health warning generation', () => {
     expect(report.status).toBe('blocked');
     expect(report.warnings[0]?.code).toBe('corrupt-or-truncated-file');
   });
+
+  it('generates the full IMG_6213.mov warning set: VFR, rotation, negative audio start, secondary unsupported codec, AV offset', () => {
+    // Simulates a phone-recorded MOV: VFR 4K with 90° rotation, primary audio
+    // starting 44ms before video, and a secondary audio track using an
+    // unsupported codec (e.g. AC-3).
+    const source = inspection({
+      fileName: 'IMG_6213.mov',
+      durationS: 12,
+      tracks: [
+        {
+          kind: 'video',
+          trackId: 'video-1',
+          codec: 'avc1.640033',
+          canDecode: true,
+          startS: 0,
+          durationS: 12,
+          codedWidth: 2160,
+          codedHeight: 3840,
+          displayWidth: 3840,
+          displayHeight: 2160,
+          frameRate: 29.97,
+          frameRateMode: 'variable',
+          rotationDeg: 90,
+          color: { primaries: 'bt709', transfer: 'bt709', matrix: 'bt709', fullRange: false },
+        },
+        {
+          kind: 'audio',
+          trackId: 'audio-1',
+          codec: 'mp4a.40.2',
+          canDecode: true,
+          startS: -0.044,
+          durationS: 12.044,
+          sampleRate: 48_000,
+          channels: 2,
+        },
+        {
+          kind: 'audio',
+          trackId: 'audio-2',
+          codec: 'ac-3',
+          canDecode: false,
+          startS: 0,
+          durationS: 12,
+          sampleRate: 48_000,
+          channels: 6,
+        },
+      ],
+    });
+
+    const c = conformance({
+      kind: 'video',
+      primaryVideoTrackId: 'video-1',
+      primaryAudioTrackId: 'audio-1',
+      timing: {
+        normalizedStartS: 0,
+        durationS: 12,
+        video: { trackId: 'video-1', firstTimestampS: 0, lastTimestampS: 12, durationS: 12 },
+        audio: { trackId: 'audio-1', firstTimestampS: -0.044, lastTimestampS: 12, durationS: 12.044 },
+        avOffsetS: -0.044,
+        frameRateMode: 'variable',
+      },
+    });
+
+    const warnings = generateSourceHealthWarnings(source, c);
+    const codes = warnings.map((w) => w.code);
+
+    expect(codes).toEqual([
+      'variable-frame-rate',
+      'rotation-metadata',
+      'non-zero-track-start',
+      'unsupported-audio-codec',
+      'audio-video-offset',
+    ]);
+
+    expect(warnings.find((w) => w.code === 'variable-frame-rate')?.message).toBe(
+      'IMG_6213.mov appears to use variable frame rate video.',
+    );
+    expect(warnings.find((w) => w.code === 'rotation-metadata')?.message).toBe(
+      'IMG_6213.mov carries 90° rotation metadata.',
+    );
+    expect(warnings.find((w) => w.code === 'non-zero-track-start')?.message).toBe(
+      'audio track audio-1 starts at -0.044s.',
+    );
+    expect(warnings.find((w) => w.code === 'unsupported-audio-codec')?.message).toBe(
+      'audio track audio-2 uses an unsupported audio codec (ac-3).',
+    );
+    expect(warnings.find((w) => w.code === 'audio-video-offset')?.message).toBe(
+      'IMG_6213.mov audio and video start 0.044s apart.',
+    );
+
+    expect(warnings.every((w) => !w.blocking)).toBe(true);
+    expect(reportFromWarnings('source-1', 'IMG_6213.mov', warnings).status).toBe('warnings');
+  });
 });
