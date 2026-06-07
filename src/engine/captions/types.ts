@@ -36,7 +36,7 @@ export interface CaptionSegment {
   start: number;
   duration: number;
   text: string;
-  style?: CaptionStyle | null;
+  style?: Partial<CaptionStyle> | null;
 }
 
 export interface CaptionTrack {
@@ -201,7 +201,16 @@ export function normalizeCaptionSegment(segment: CaptionSegment): CaptionSegment
     start: Math.max(0, segment.start),
     duration: Math.max(0.05, segment.duration),
     text: segment.text,
-    style: segment.style ? normalizeCaptionStyle(segment.style) : undefined,
+    style: segment.style
+      ? {
+          ...(segment.style.presetId !== undefined ? { presetId: segment.style.presetId ?? null } : {}),
+          ...(segment.style.overrides ? { overrides: { ...segment.style.overrides } } : {}),
+          ...(segment.style.anchor !== undefined ? { anchor: segment.style.anchor } : {}),
+          ...(segment.style.insetPx ? { insetPx: { ...segment.style.insetPx } } : {}),
+          ...(segment.style.maxWidthPercent !== undefined ? { maxWidthPercent: segment.style.maxWidthPercent } : {}),
+          ...(segment.style.lineWrap !== undefined ? { lineWrap: segment.style.lineWrap } : {}),
+        }
+      : undefined,
   };
 }
 
@@ -211,7 +220,7 @@ export function cloneCaptionSegment(segment: CaptionSegment): CaptionSegment {
     start: segment.start,
     duration: segment.duration,
     text: segment.text,
-    style: segment.style ? cloneCaptionStyle(segment.style) : undefined,
+    style: segment.style ? normalizeCaptionSegment(segment).style : undefined,
   };
 }
 
@@ -272,18 +281,17 @@ export function captionSegmentEnd(segment: CaptionSegment): number {
 
 export function effectiveCaptionStyle(
   trackStyle: CaptionStyle,
-  segmentStyle?: CaptionStyle | null,
+  segmentStyle?: Partial<CaptionStyle> | null,
 ): CaptionStyle {
   const base = normalizeCaptionStyle(trackStyle);
   if (!segmentStyle) return base;
-  const next = normalizeCaptionStyle(segmentStyle);
   return normalizeCaptionStyle({
-    presetId: next.presetId ?? base.presetId,
-    overrides: { ...(base.overrides ?? {}), ...(next.overrides ?? {}) },
-    anchor: next.anchor ?? base.anchor,
-    insetPx: next.insetPx ?? base.insetPx,
-    maxWidthPercent: next.maxWidthPercent ?? base.maxWidthPercent,
-    lineWrap: next.lineWrap ?? base.lineWrap,
+    presetId: segmentStyle.presetId ?? base.presetId,
+    overrides: { ...(base.overrides ?? {}), ...(segmentStyle.overrides ?? {}) },
+    anchor: segmentStyle.anchor ?? base.anchor,
+    insetPx: segmentStyle.insetPx ?? base.insetPx,
+    maxWidthPercent: segmentStyle.maxWidthPercent ?? base.maxWidthPercent,
+    lineWrap: segmentStyle.lineWrap ?? base.lineWrap,
   });
 }
 

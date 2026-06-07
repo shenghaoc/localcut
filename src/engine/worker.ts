@@ -20,7 +20,6 @@ import {
 } from './captions/export';
 import {
   activeCaptionPayloadsAt,
-  captionTitlePayload,
   captionTextureId,
 } from './captions/render';
 import {
@@ -311,12 +310,12 @@ function postTimelineState() {
       text: segment.text,
       style: segment.style
         ? {
-            presetId: segment.style.presetId ?? null,
-            overrides: segment.style.overrides ? { ...segment.style.overrides } : {},
-            anchor: segment.style.anchor,
-            insetPx: segment.style.insetPx ? { ...segment.style.insetPx } : undefined,
-            maxWidthPercent: segment.style.maxWidthPercent,
-            lineWrap: segment.style.lineWrap,
+            ...(segment.style.presetId !== undefined ? { presetId: segment.style.presetId ?? null } : {}),
+            ...(segment.style.overrides ? { overrides: { ...segment.style.overrides } } : {}),
+            ...(segment.style.anchor !== undefined ? { anchor: segment.style.anchor } : {}),
+            ...(segment.style.insetPx ? { insetPx: { ...segment.style.insetPx } } : {}),
+            ...(segment.style.maxWidthPercent !== undefined ? { maxWidthPercent: segment.style.maxWidthPercent } : {}),
+            ...(segment.style.lineWrap !== undefined ? { lineWrap: segment.style.lineWrap } : {}),
           }
         : undefined,
     })),
@@ -1052,6 +1051,9 @@ function afterTimelineMutation(options: {
   // Refresh title rasters (no-op on unchanged content) before re-rendering so
   // the cached texture is current when playback refreshes the frame.
   syncTitleRasters();
+  if (!playback) {
+    setupPlayback();
+  }
   ensureClockAndTimeline();
   postHistoryState();
   scheduleAutosave();
@@ -1547,18 +1549,15 @@ function titleClips(): { trackId: string; clip: TimelineClip }[] {
 function syncTitleRasters(): void {
   if (!titleCache) return;
   const active = new Set<string>(retainedOverlayTextureIds);
+  const previewTime = clockView?.[ClockIndex.CURRENT_TIME] ?? 0;
   for (const { clip } of titleClips()) {
     active.add(clip.id);
     titleCache.rasterize(clip.id, clip.title!);
   }
-  for (const track of captionTracks) {
-    if (!track.visible || !track.burnedIn) continue;
-    for (const segment of track.segments) {
-      const payload = captionTitlePayload(track, segment.id, segment.text);
-      const clipId = captionTextureId(track.id, segment.id);
-      active.add(clipId);
-      titleCache.rasterize(clipId, payload.content);
-    }
+  for (const payload of activeCaptionPayloadsAt(captionTracks, previewTime)) {
+    const clipId = captionTextureId(payload.trackId, payload.segmentId);
+    active.add(clipId);
+    titleCache.rasterize(clipId, payload.content);
   }
   titleCache.retain(active);
 }
@@ -1568,15 +1567,9 @@ function exportCaptionTextureId(exportId: string, trackId: string, segmentId: st
 }
 
 function rasterizeExportCaptionTextures(exportId: string, tracks: readonly CaptionTrack[]): void {
-  if (!titleCache) return;
   for (const track of tracks) {
     if (!track.visible || !track.burnedIn) continue;
-    for (const segment of track.segments) {
-      const payload = captionTitlePayload(track, segment.id, segment.text);
-      const clipId = exportCaptionTextureId(exportId, track.id, segment.id);
-      retainedOverlayTextureIds.add(clipId);
-      titleCache.rasterize(clipId, payload.content);
-    }
+    for (const segment of track.segments) retainedOverlayTextureIds.add(exportCaptionTextureId(exportId, track.id, segment.id));
   }
 }
 
@@ -1597,7 +1590,7 @@ function activeCaptionLayersAt(
   const layers: Array<{ clipId: string; transform: TransformParams }> = [];
   for (const payload of activeCaptionPayloadsAt(tracks, timestamp)) {
     const clipId = textureIdFor(payload.trackId, payload.segmentId);
-    if (!titleCache.get(clipId)) continue;
+    if (!titleCache.get(clipId)) titleCache.ensure(clipId, payload.content);
     layers.push({ clipId, transform: payload.transform });
   }
   return layers;
@@ -2553,13 +2546,14 @@ function handleExportCaptions(cmd: Extract<WorkerCommand, { type: 'export-captio
 }
 
 function handleSetCaptionTrack(cmd: Extract<WorkerCommand, { type: 'set-caption-track' }>): void {
-  commitCaptionMutation(() => setCaptionTrackProps(captionTracks, cmd.trackId, {
-    name: cmd.name,
-    language: cmd.language,
-    burnedIn: cmd.burnedIn,
-    visible: cmd.visible,
-    defaultStyle: cmd.defaultStyle,
-  }), { refreshPlayback: 'refresh' });
+  const patch = {
+    ...(cmd.name !== undefined ? { name: cmd.name } : {}),
+    ...(cmd.language !== undefined ? { language: cmd.language } : {}),
+    ...(cmd.burnedIn !== undefined ? { burnedIn: cmd.burnedIn } : {}),
+    ...(cmd.visible !== undefined ? { visible: cmd.visible } : {}),
+    ...(cmd.defaultStyle !== undefined ? { defaultStyle: cmd.defaultStyle } : {}),
+  };
+  commitCaptionMutation(() => setCaptionTrackProps(captionTracks, cmd.trackId, patch), { refreshPlayback: 'refresh' });
 }
 
 function handleSetCaptionSegmentText(cmd: Extract<WorkerCommand, { type: 'set-caption-segment-text' }>): void {
@@ -2811,7 +2805,8 @@ function setupPlayback() {
   // (source-less title cards over black). Fall back to a default 1080p/30 canvas
   // so preview/playback work without footage (Phase 14 full support).
   const hasTitles = titleClips().length > 0;
-  if (!handle?.frameSource && !hasTitles) return;
+  const hasBurnedInCaptions = captionTracks.some((track) => track.burnedIn && track.visible && track.segments.length > 0);
+  if (!handle?.frameSource && !hasTitles && !hasBurnedInCaptions) return;
 
   const width = handle?.frameSource ? handle.displayWidth : TITLE_ONLY_CANVAS.width;
   const height = handle?.frameSource ? handle.displayHeight : TITLE_ONLY_CANVAS.height;

@@ -342,12 +342,6 @@ export function App() {
   );
 
   const accelerated = () => pipelineMode() === 'accelerated';
-  const captionToolsDisabledReason = () =>
-    accelerated()
-      ? null
-      : pipelineMode() === 'limited'
-        ? 'Caption import and editing require the accelerated pipeline.'
-        : 'Caption tools are unavailable until the worker is ready.';
   const compatibilityImportEnabled = () =>
     pipelineMode() === 'limited' && canCompatibilityPreview(capabilities());
   const importBlocked = () =>
@@ -843,6 +837,10 @@ export function App() {
 
   function probeExportCodecs() {
     bridge?.send({ type: 'export-probe' });
+  }
+
+  function captionBridge() {
+    return ensureWorker().bridge;
   }
 
   function makeBundleJobId(): string {
@@ -1480,34 +1478,33 @@ export function App() {
             captionTracks={captionTracks()}
             diagnostics={captionDiagnostics()}
             playheadTime={clock.currentTime()}
-            disabledReason={captionToolsDisabledReason()}
             selectedTrackId={selectedCaptionTrackId()}
             selectedSegmentIds={selectedCaptionSegmentIds()}
             onSelectTrack={setSelectedCaptionTrackId}
             onSelectSegmentIds={setSelectedCaptionSegmentIds}
-            onImport={(file, trackId) => bridge?.send(trackId ? { type: 'import-captions', file, trackId } : { type: 'import-captions', file })}
-            onExport={(settings: CaptionExportSettingsSnapshot) => bridge?.send({ type: 'export-captions', settings })}
-            onSetTrack={(trackId, patch) => bridge?.send({ type: 'set-caption-track', trackId, ...patch })}
+            onImport={(file, trackId) => captionBridge().send(trackId ? { type: 'import-captions', file, trackId } : { type: 'import-captions', file })}
+            onExport={(settings: CaptionExportSettingsSnapshot) => captionBridge().send({ type: 'export-captions', settings })}
+            onSetTrack={(trackId, patch) => captionBridge().send({ type: 'set-caption-track', trackId, ...patch })}
             onSetSegmentText={(trackId, segmentId, text) =>
-              bridge?.send({ type: 'set-caption-segment-text', trackId, segmentId, text })
+              captionBridge().send({ type: 'set-caption-segment-text', trackId, segmentId, text })
             }
             onSetSegmentTiming={(trackId, segmentId, start, end) =>
-              bridge?.send({ type: 'set-caption-segment-timing', trackId, segmentId, start, end })
+              captionBridge().send({ type: 'set-caption-segment-timing', trackId, segmentId, start, end })
             }
             onSetSegmentStyle={(trackId, segmentId, style) =>
-              bridge?.send({ type: 'set-caption-segment-style', trackId, segmentId, style })
+              captionBridge().send({ type: 'set-caption-segment-style', trackId, segmentId, style })
             }
             onSplit={(trackId, segmentId, time) =>
-              bridge?.send({ type: 'split-caption-segment', trackId, segmentId, time })
+              captionBridge().send({ type: 'split-caption-segment', trackId, segmentId, time })
             }
             onMerge={(trackId, segmentIds) =>
-              bridge?.send({ type: 'merge-caption-segments', trackId, segmentIds })
+              captionBridge().send({ type: 'merge-caption-segments', trackId, segmentIds })
             }
             onDelete={(trackId, segmentIds) =>
-              bridge?.send({ type: 'delete-caption-segments', trackId, segmentIds })
+              captionBridge().send({ type: 'delete-caption-segments', trackId, segmentIds })
             }
             onSnap={(trackId, segmentId, edge) =>
-              bridge?.send({ type: 'snap-caption-segment', trackId, segmentId, edge })
+              captionBridge().send({ type: 'snap-caption-segment', trackId, segmentId, edge })
             }
           />
         </div>

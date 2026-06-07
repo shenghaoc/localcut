@@ -8,7 +8,6 @@ import {
   DEFAULT_CAPTION_STYLE,
   effectiveCaptionStyle,
   normalizeCaptionSegment,
-  normalizeCaptionStyle,
   sortCaptionSegments,
   type CaptionSegment,
   type CaptionStyle,
@@ -146,16 +145,16 @@ export function setCaptionSegmentStyle(
   const segmentIndex = findSegmentIndex(next[trackIndex]!, segmentId);
   if (segmentIndex < 0) return tracks as CaptionTrack[];
   const segment = next[trackIndex]!.segments[segmentIndex]!;
-  const baseStyle = segment.style ?? next[trackIndex]!.defaultStyle;
+  const baseStyle = segment.style ?? {};
   next[trackIndex]!.segments[segmentIndex] = {
     ...segment,
-    style: normalizeCaptionStyle({
+    style: {
       ...baseStyle,
       ...style,
       overrides: style.overrides
         ? { ...(baseStyle.overrides ?? {}), ...style.overrides }
         : baseStyle.overrides,
-    }),
+    },
   };
   return next;
 }

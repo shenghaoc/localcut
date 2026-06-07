@@ -11,7 +11,6 @@ interface TranscriptPanelProps {
   captionTracks: CaptionTrackSnapshot[];
   diagnostics: readonly CaptionDiagnosticSnapshot[];
   playheadTime: number;
-  disabledReason?: string | null;
   selectedTrackId: string | null;
   selectedSegmentIds: readonly string[];
   onSelectTrack: (trackId: string | null) => void;
@@ -91,12 +90,7 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
           </p>
         </div>
         <div class="transcript-actions">
-          <button
-            type="button"
-            class="button secondary"
-            disabled={Boolean(props.disabledReason)}
-            onClick={() => importInput?.click()}
-          >
+          <button type="button" class="button secondary" onClick={() => importInput?.click()}>
             Import
           </button>
           <input
@@ -113,7 +107,7 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
           <button
             type="button"
             class="button secondary"
-            disabled={Boolean(props.disabledReason) || !activeTrack()}
+            disabled={!activeTrack()}
             onClick={() =>
               activeTrack() &&
               props.onExport({
@@ -131,7 +125,7 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
 
       <Show
         when={props.captionTracks.length > 0}
-        fallback={<p class="placeholder-text">{props.disabledReason ?? 'Import SRT or WebVTT to start a caption track.'}</p>}
+        fallback={<p class="placeholder-text">Import SRT or WebVTT to start a caption track.</p>}
       >
         <div class="transcript-track-list">
           <For each={props.captionTracks}>

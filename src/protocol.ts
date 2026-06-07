@@ -207,7 +207,7 @@ export interface CaptionSegmentSnapshot {
   start: number;
   duration: number;
   text: string;
-  style?: CaptionStyleSnapshot | null;
+  style?: Partial<CaptionStyleSnapshot> | null;
 }
 
 export interface CaptionTrackSnapshot {
