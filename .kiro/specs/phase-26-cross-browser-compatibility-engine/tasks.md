@@ -31,7 +31,7 @@
 
 ## T4 — Canvas2D compositor (`limited-webcodecs` tier)
 
-- [ ] **T4.1** Create `src/engine/compatibility/canvas-compositor.ts`: OffscreenCanvas 2D compositor worker module; accepts `clock-tick { time }` messages and composites the resolved timeline frame at that timestamp.
+- [ ] **T4.1** Create `src/engine/compatibility/canvas-compositor.ts`: OffscreenCanvas 2D compositor worker module; accepts `clock-tick { time }` messages and composites the resolved timeline frame at that timestamp; each `transferToImageBitmap()` result is `postMessage`d to the main thread, which owns the bitmap and must call `.close()` on the previously received bitmap before drawing or replacing it to prevent per-frame leaks.
 - [x] **T4.2** Implement per-layer decode via `VideoDecoder`; apply aspect-preserving `resizeWidth` / `resizeHeight` caps within 1280×720 at `createImageBitmap`; close each `VideoFrame` exactly once after `createImageBitmap` returns.
 - [x] **T4.3** Bound the decoded frame queue to 3 frames per track; drop the oldest decoded frame (closing it) when the queue is full before decoding a new one.
 - [x] **T4.4** Implement Z-order layer compositing using `globalAlpha = clip.opacity` and `drawImage`; call `bitmap.close()` on each bitmap after `drawImage`.
