@@ -53,6 +53,80 @@ export interface ExportCodecSupport {
   container: ExportContainer;
 }
 
+// ── Phase 24: Render Queue + Export Presets ──
+
+export interface ExportPresetDoc {
+  id: string;
+  name: string;
+  builtIn: boolean;
+  codec: ExportVideoCodec;
+  container: ExportContainer;
+  width: number;
+  height: number;
+  fps: number;
+  videoBitrate: number;
+  preset: ExportPreset;
+  outputTemplate?: string;
+}
+
+export type JobRangeMode = 'full' | 'range' | 'markers';
+
+export type JobRange =
+  | { mode: 'full' }
+  | { mode: 'range'; startS: number; endS: number }
+  | { mode: 'markers'; startMarkerId: string; endMarkerId: string; resolvedStartS: number; resolvedEndS: number };
+
+export type JobStatus = 'pending' | 'choosing-destination' | 'running' | 'finalizing' | 'completed' | 'failed' | 'canceled';
+
+export interface RenderQueueJob {
+  id: string;
+  presetId: string | null;
+  settings: ExportSettings;
+  jobRange: JobRange;
+  outputTemplate: string | null;
+  outputFileName: string | null;
+  status: JobStatus;
+  error: string | null;
+  progress: ExportProgress | null;
+  enqueuedAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  elapsedSeconds: number | null;
+  outputBytes: number | null;
+}
+
+export interface PersistedQueueJob {
+  id: string;
+  presetId: string | null;
+  settings: ExportSettings;
+  jobRange: JobRange;
+  outputTemplate: string | null;
+  outputFileName: string | null;
+  status: JobStatus;
+  error: string | null;
+  enqueuedAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  elapsedSeconds: number | null;
+  outputBytes: number | null;
+}
+
+export interface RenderQueueState {
+  jobs: RenderQueueJob[];
+  stopOnError: boolean;
+  activeJobId: string | null;
+}
+
+export interface OutputNameTemplateContext {
+  project: string;
+  preset: string;
+  codec: string;
+  date: string;
+  time: string;
+  range: string;
+  index: number;
+}
+
 export interface MediaMetadata {
   fileName: string;
   duration: number;
@@ -987,6 +1061,18 @@ export type WorkerCommand =
   | SetTrackEditTargetCommand
   | { type: 'toggle-scopes'; enabled: boolean }
   | { type: 'toggle-zebra'; enabled: boolean }
+  | { type: 'preset-save'; preset: ExportPresetDoc }
+  | { type: 'preset-delete'; presetId: string }
+  | { type: 'queue-enqueue'; job: RenderQueueJob }
+  | { type: 'queue-remove'; jobId: string }
+  | { type: 'queue-reorder'; jobId: string; newIndex: number }
+  | { type: 'queue-start' }
+  | { type: 'queue-cancel-job'; jobId: string }
+  | { type: 'queue-cancel-all' }
+  | { type: 'queue-retry'; jobId: string }
+  | { type: 'queue-job-output'; jobId: string; handle: FileSystemFileHandle }
+  | { type: 'queue-job-skip'; jobId: string }
+  | { type: 'queue-set-stop-on-error'; stopOnError: boolean }
   | { type: 'dispose' };
 
 /** A measured preview resolution tier (adaptive downscale of the decode path). */
@@ -1079,6 +1165,14 @@ export type WorkerStateMessage =
   | { type: 'bundle-integrity-report'; jobId: string; report: BundleIntegrityReportSnapshot }
   | { type: 'bundle-import-result'; jobId: string; ok: boolean; projectId?: string; reason?: string }
   | { type: 'hdr-warnings'; warnings: HDRWarningSnapshot[] }
+  | { type: 'presets-state'; presets: ExportPresetDoc[] }
+  | { type: 'queue-state'; queue: RenderQueueState }
+  | { type: 'queue-job-destination'; jobId: string; suggestedName: string }
+  | { type: 'queue-job-progress'; jobId: string; progress: ExportProgress }
+  | { type: 'queue-job-complete'; jobId: string; fileName: string; elapsedSeconds: number; outputBytes: number | null }
+  | { type: 'queue-job-failed'; jobId: string; error: string }
+  | { type: 'queue-job-canceled'; jobId: string }
+  | { type: 'queue-complete'; completedCount: number; failedCount: number; canceledCount: number }
   | { type: 'error'; message: string };
 
 export function assertCrossOriginIsolated(context: string): void {

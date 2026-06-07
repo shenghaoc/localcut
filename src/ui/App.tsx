@@ -8,8 +8,10 @@ import {
   type CaptionTrackSnapshot,
   type ClipKeyframeParamSnapshot,
   type ExportCodecSupport,
+  type ExportPresetDoc,
   type ExportProgress,
   type ExportSettings,
+  type RenderQueueState,
   type BundleIntegrityReportSnapshot,
   type BundleSourcePolicySnapshot,
   type MediaAssetSnapshot,
@@ -37,6 +39,7 @@ import { TranscriptPanel } from './TranscriptPanel';
 import { ThumbnailStore } from './thumbnail-store';
 import { AudioEngine } from './audio-engine';
 import { ExportDialog } from './ExportDialog';
+import { RenderQueuePanel } from './RenderQueuePanel';
 import { BundleDialog } from './BundleDialog';
 import { Button, buttonVariants } from './components/button';
 import { cn } from '../lib/utils';
@@ -60,6 +63,13 @@ import {
   type CapabilityTier,
 } from './capabilities';
 import { extractCompatibilityPreview } from '../compatibility/thumbnail';
+import {
+  createJob,
+  createJobsFromMarkers,
+  createEmptyQueueState,
+  suggestedFileNameForJob,
+} from '../engine/render-queue';
+import { BUILT_IN_PRESETS } from '../engine/export-presets';
 import PipelineWorker from '../engine/worker.ts?worker';
 
 const VIDEO_ACCEPT =
@@ -78,6 +88,15 @@ const VIDEO_PICKER_TYPES = [
 ];
 
 const MEDIA_FILE_PATTERN = /\.(mp4|mov|webm|png|jpe?g|webp|gif|bmp|avif|mp3|m4a|wav|ogg)$/i;
+
+type QueuePickerType = {
+  description?: string;
+  accept: Record<string, string[]>;
+};
+
+type DirectoryPickerWindow = Window & {
+  showDirectoryPicker?: (options?: { mode?: 'read' | 'readwrite' }) => Promise<FileSystemDirectoryHandle>;
+};
 
 function isImportableFile(file: File): boolean {
   return (
@@ -180,6 +199,10 @@ export function App() {
   const [exportError, setExportError] = createSignal<string | null>(null);
   const [exportCodecs, setExportCodecs] = createSignal<ExportCodecSupport[]>([]);
   const [exportSettings, setExportSettings] = createSignal<ExportSettings | null>(null);
+  const [exportPresets, setExportPresets] = createSignal<ExportPresetDoc[]>(
+    BUILT_IN_PRESETS.map((preset) => ({ ...preset })),
+  );
+  const [renderQueue, setRenderQueue] = createSignal<RenderQueueState>(createEmptyQueueState());
   const [isOffline, setIsOffline] = createSignal(!initialOnlineStatus());
   const [hasActiveSW, setHasActiveSW] = createSignal(false);
   const [audioWarning, setAudioWarning] = createSignal<string | null>(null);
@@ -560,6 +583,33 @@ export function App() {
         setExportError(msg.message);
         setStatusLine(`Export failed: ${msg.message}`);
         break;
+      case 'presets-state':
+        setExportPresets(msg.presets);
+        break;
+      case 'queue-state':
+        setRenderQueue(msg.queue);
+        break;
+      case 'queue-job-destination':
+        void handleQueueJobDestination(msg.jobId, msg.suggestedName);
+        break;
+      case 'queue-job-progress':
+        setRenderQueue((prev) => ({
+          ...prev,
+          jobs: prev.jobs.map((j) => j.id === msg.jobId ? { ...j, progress: msg.progress } : j),
+        }));
+        setStatusLine(`Queue: ${Math.round(msg.progress.percent * 100)}%`);
+        break;
+      case 'queue-job-complete':
+        setStatusLine(`Queue: ${msg.fileName} done (${Math.round(msg.elapsedSeconds)}s)`);
+        break;
+      case 'queue-job-failed':
+        setStatusLine(`Queue job failed: ${msg.error}`);
+        break;
+      case 'queue-job-canceled':
+        break;
+      case 'queue-complete':
+        setStatusLine(`Queue done: ${msg.completedCount} completed, ${msg.failedCount} failed, ${msg.canceledCount} canceled`);
+        break;
       case 'source-health': {
         setLatestHealthReport(msg.report.status === 'ok' ? null : msg.report);
         const first = msg.report.warnings[0];
@@ -837,6 +887,161 @@ export function App() {
 
   function probeExportCodecs() {
     bridge?.send({ type: 'export-probe' });
+  }
+
+  async function handleQueueJobDestination(jobId: string, suggestedName: string) {
+    if (typeof window.showSaveFilePicker !== 'function') {
+      bridge?.send({ type: 'queue-job-skip', jobId });
+      return;
+    }
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName,
+        types: [
+          suggestedName.endsWith('.webm')
+            ? { description: 'WebM video', accept: { 'video/webm': ['.webm'] } }
+            : { description: 'MP4 video', accept: { 'video/mp4': ['.mp4'] } },
+        ],
+      });
+      bridge?.send({ type: 'queue-job-output', jobId, handle });
+    } catch {
+      bridge?.send({ type: 'queue-job-skip', jobId });
+    }
+  }
+
+  function queuePickerTypes(suggestedName: string): QueuePickerType[] {
+    return [
+      suggestedName.endsWith('.webm')
+        ? { description: 'WebM video', accept: { 'video/webm': ['.webm'] } }
+        : { description: 'MP4 video', accept: { 'video/mp4': ['.mp4'] } },
+    ];
+  }
+
+  function queueProjectDisplayName(): string {
+    const sourceName = metadata()?.fileName.replace(/\.[^.]+$/, '');
+    return sourceName || 'Untitled project';
+  }
+
+  function uniqueSuggestedName(name: string, used: Set<string>): string {
+    if (!used.has(name)) {
+      used.add(name);
+      return name;
+    }
+    const match = /(\.[^.]+)$/.exec(name);
+    const extension = match?.[1] ?? '';
+    const base = extension ? name.slice(0, -extension.length) : name;
+    let counter = 2;
+    let candidate = `${base}-${counter}${extension}`;
+    while (used.has(candidate)) {
+      counter += 1;
+      candidate = `${base}-${counter}${extension}`;
+    }
+    used.add(candidate);
+    return candidate;
+  }
+
+  function pickerWasCanceled(error: unknown): boolean {
+    return error instanceof DOMException && error.name === 'AbortError';
+  }
+
+  async function preselectQueueOutputHandles(): Promise<boolean> {
+    const pendingJobs = renderQueue().jobs.filter((job) => job.status === 'pending');
+    if (pendingJobs.length === 0 || typeof window.showSaveFilePicker !== 'function') return true;
+
+    const allJobs = renderQueue().jobs;
+    const usedNames = new Set<string>();
+    if (pendingJobs.length > 1) {
+      const directoryPicker = (window as DirectoryPickerWindow).showDirectoryPicker;
+      if (typeof directoryPicker !== 'function') {
+        setStatusLine('Queue needs a directory picker to run multiple pending exports.');
+        return false;
+      }
+      try {
+        const directory = await directoryPicker({ mode: 'readwrite' });
+        for (const job of pendingJobs) {
+          const suggestedName = uniqueSuggestedName(
+            suggestedFileNameForJob(
+              job,
+              exportPresets(),
+              queueProjectDisplayName(),
+              allJobs.findIndex((item) => item.id === job.id) + 1,
+            ),
+            usedNames,
+          );
+          const handle = await directory.getFileHandle(suggestedName, { create: true });
+          bridge?.send({ type: 'queue-job-output', jobId: job.id, handle });
+        }
+        return true;
+      } catch (error) {
+        if (!pickerWasCanceled(error)) {
+          const message = error instanceof Error ? error.message : String(error);
+          setStatusLine(`Queue destination failed: ${message}`);
+        }
+        return false;
+      }
+    }
+
+    const job = pendingJobs[0]!;
+    const suggestedName = suggestedFileNameForJob(
+      job,
+      exportPresets(),
+      queueProjectDisplayName(),
+      allJobs.findIndex((item) => item.id === job.id) + 1,
+    );
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName,
+        types: queuePickerTypes(suggestedName),
+      });
+      bridge?.send({ type: 'queue-job-output', jobId: job.id, handle });
+      return true;
+    } catch (error) {
+      if (!pickerWasCanceled(error)) {
+        const message = error instanceof Error ? error.message : String(error);
+        setStatusLine(`Queue destination failed: ${message}`);
+      }
+      return false;
+    }
+  }
+
+  async function startRenderQueue() {
+    if (!(await preselectQueueOutputHandles())) return;
+    bridge?.send({ type: 'queue-start' });
+  }
+
+  function handleSavePreset(preset: ExportPresetDoc) {
+    bridge?.send({ type: 'preset-save', preset });
+  }
+
+  function handleDeletePreset(presetId: string) {
+    bridge?.send({ type: 'preset-delete', presetId });
+  }
+
+  function handleEnqueue(
+    settings: ExportSettings,
+    rangeMode: 'full' | 'range' | 'markers',
+    presetId: string | null,
+    outputTemplate: string | null,
+  ) {
+    if (rangeMode === 'markers') {
+      const jobs = createJobsFromMarkers(markers(), settings, presetId, outputTemplate);
+      for (const job of jobs) {
+        bridge?.send({ type: 'queue-enqueue', job });
+      }
+    } else {
+      if (rangeMode === 'range' && !settings.range) {
+        setStatusLine('Queue range must have Out greater than In.');
+        return;
+      }
+      const jobRange = rangeMode === 'full'
+        ? { mode: 'full' as const }
+        : settings.range
+          ? { mode: 'range' as const, startS: settings.range.startS, endS: settings.range.endS }
+          : null;
+      if (!jobRange) return;
+      const job = createJob(settings, jobRange, presetId, outputTemplate);
+      bridge?.send({ type: 'queue-enqueue', job });
+    }
   }
 
   function captionBridge() {
@@ -1219,9 +1424,14 @@ export function App() {
             timelineDuration={clock.duration()}
             supportedCodecs={exportCodecs()}
             initialSettings={exportSettings()}
+            presets={exportPresets()}
+            markers={markers()}
             onProbe={probeExportCodecs}
             onStart={startExport}
             onCancel={() => bridge?.send({ type: 'export-cancel' })}
+            onSavePreset={handleSavePreset}
+            onDeletePreset={handleDeletePreset}
+            onEnqueue={handleEnqueue}
           />
           </>
         }
@@ -1547,6 +1757,15 @@ export function App() {
         onRequestThumbnails={(sourceId, timestamps) =>
           bridge?.send({ type: 'request-thumbnails', sourceId, timestamps })
         }
+      />
+      <RenderQueuePanel
+        queue={renderQueue()}
+        onStart={startRenderQueue}
+        onCancelJob={(jobId) => bridge?.send({ type: 'queue-cancel-job', jobId })}
+        onCancelAll={() => bridge?.send({ type: 'queue-cancel-all' })}
+        onRetry={(jobId) => bridge?.send({ type: 'queue-retry', jobId })}
+        onRemove={(jobId) => bridge?.send({ type: 'queue-remove', jobId })}
+        onSetStopOnError={(stopOnError) => bridge?.send({ type: 'queue-set-stop-on-error', stopOnError })}
       />
       <footer class="status-bar">
         <span role="status" aria-live={exporting() ? 'off' : 'polite'} aria-atomic={exporting() ? 'false' : 'true'}>{statusLine()}</span>
