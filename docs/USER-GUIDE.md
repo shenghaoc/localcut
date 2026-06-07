@@ -46,6 +46,7 @@ The timeline is where you arrange and edit your clips. Each track holds clips of
 | Play | `L` | Start playback from the playhead |
 | Pause | `K` | Pause playback |
 | Step Back | `J` | Move one frame backward |
+| Step Forward | — | Move one frame forward (toolbar button) |
 
 ### Editing Operations
 
@@ -146,7 +147,8 @@ Add title cards to your project:
    - **Text**: The title content.
    - **Font Size**, **Color**, **Alignment**.
    - **Background**: Optional background with adjustable opacity.
-   - **Outline**: Adjustable outline width around the text.
+   - **Outline**: Adjustable outline width and color around the text.
+   - **Shadow**: Drop shadow with adjustable blur, X/Y offset, and color.
 
 Title clips are rasterized at 1920×1080 and composited like any video clip — they support transforms, effects, and keyframes.
 
@@ -168,9 +170,10 @@ Import, edit, and export caption tracks:
 
 - **Import Captions**: Click **Import** in the Transcript panel to load SRT or VTT files.
 - **Edit Text**: Click any caption segment to edit its text inline.
-- **Adjust Timing**: Drag segment edges or edit start/end times in the caption panel.
+- **Adjust Timing**: Edit start/end times in the caption panel. Use **Snap start**, **Snap end**, or **Snap both** to align a segment edge to the playhead.
 - **Split/Merge**: Split a segment at the playhead, or merge adjacent segments.
-- **Style**: Set preset, font size, color, background, burn-in, and visibility per track.
+- **Delete**: Remove selected caption segments.
+- **Style**: Set preset, font size, color, background, burn-in, and visibility per track. Individual segments can override color and background.
 - **Export**: Export captions as SRT or VTT files.
 
 ## Exporting
@@ -257,6 +260,10 @@ LocalCut Studio is a Progressive Web App. After the first visit:
 - The app works fully offline.
 - Imported media stays on your machine (not uploaded).
 - Export works without internet.
+
+## Help
+
+Click **Help** in the toolbar to open the in-app Help panel. It displays the full user guide so you can look up features without leaving the editor.
 
 ## Keyboard Shortcuts Reference
 
