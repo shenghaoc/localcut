@@ -4,7 +4,7 @@ LocalCut Studio is a browser-native non-linear video editor. It runs entirely on
 
 ## Browser Requirements
 
-LocalCut Studio uses your browser's hardware acceleration for real-time video processing. There are three capability tiers:
+LocalCut Studio uses your browser's hardware acceleration for real-time video processing. There are four capability tiers:
 
 | Tier | What You Get | Requirements |
 |------|-------------|-------------|
@@ -29,7 +29,7 @@ You can import video, audio, and image files:
 - **Click Import** in the toolbar and select files from your computer.
 - **Supported formats**: MP4, MOV, WebM (video), MP3, M4A, WAV, OGG (audio), PNG, JPG, WebP, GIF, AVIF (images).
 
-Imported media appears in the **Media Bin** on the left side of the workspace. From there you can drag clips onto the timeline.
+Imported media appears in the **Media Bin** on the left side of the workspace. When the timeline is empty, the first playable import is also placed on the timeline so you can press **Play** immediately. To add another source to the timeline, click the **+** button next to it in the Media Bin.
 
 ### Compatibility Imports
 
@@ -46,6 +46,7 @@ The timeline is where you arrange and edit your clips. Each track holds clips of
 | Play | `L` | Start playback from the playhead |
 | Pause | `K` | Pause playback |
 | Step Back | `J` | Move one frame backward |
+| Step Forward | — | Move one frame forward (toolbar button) |
 
 ### Editing Operations
 
@@ -63,16 +64,16 @@ The timeline is where you arrange and edit your clips. Each track holds clips of
 
 ### Timeline Navigation
 
-- **Zoom**: Scroll vertically over the timeline, or use the zoom controls.
-- **Scroll**: Drag horizontally to pan across the timeline.
+- **Zoom**: Use the **+** / **−** zoom buttons in the timeline toolbar, or press `Ctrl+=` / `Ctrl+-` (`Cmd` on Mac).
+- **Scroll**: The timeline scrolls horizontally with a scrollbar or trackpad swipe.
 - **Seek**: Click anywhere on the timeline ruler to jump the playhead.
 - **Snapping**: Clips snap to the playhead, other clip edges, and markers when moved.
 
 ### Track Management
 
 - **Add Track**: Click the **+** button in the timeline header to add a video or audio track.
-- **Remove Track**: Right-click a track header and select remove.
-- **Reorder**: Drag track headers to reorder them.
+- **Remove Track**: Click the remove control in the track header.
+- **Reorder**: Use the up/down controls in the track header.
 - **Lock**: Lock a track to prevent accidental edits.
 - **Visibility**: Toggle track visibility to hide it from preview/export.
 - **Sync Lock**: When enabled, edits on other tracks preserve this track's sync relationship.
@@ -86,8 +87,8 @@ The timeline is where you arrange and edit your clips. Each track holds clips of
 ### Markers
 
 Markers are reference points on the timeline:
-- **Add Marker**: Use the timeline context menu at the playhead position.
-- **Delete Marker**: Right-click a marker and select delete.
+- **Add Marker**: Click the marker add control at the playhead position.
+- **Delete Marker**: Click the delete control on the marker.
 - Markers appear on the timeline ruler and can be used as export range boundaries.
 
 ## Preview
@@ -104,8 +105,8 @@ When you select a clip on the timeline, the **Inspector** (right sidebar) shows 
 
 ### Video Clips
 - **Transform**: Position (X/Y), scale, rotation, and opacity.
-- **Fit Modes**: Fill, Fit, Crop, or None.
-- **Effects**: Brightness, contrast, saturation, temperature, tint, sharpen, blur, vignette.
+- **Fit Modes**: Fill, Fit, or Letterbox.
+- **Effects**: Brightness, contrast, saturation, temperature, temperature strength, and LUT strength.
 - **LUT**: Import a `.cube` color grading LUT and adjust its strength.
 
 ### Audio Clips
@@ -126,7 +127,7 @@ Effects are applied per-clip and processed in real-time on your GPU:
 
 1. Select a clip on the timeline.
 2. In the Inspector, adjust effect sliders under the **Effects** section.
-3. Effects include: **Brightness**, **Contrast**, **Saturation**, **Temperature**, **Tint**, **Sharpen**, **Blur**, **Vignette**.
+3. Effects include: **Brightness**, **Contrast**, **Saturation**, **Temperature**, **Temp Strength**, and **LUT Strength**.
 
 ### LUT Import
 
@@ -144,9 +145,10 @@ Add title cards to your project:
 2. A title clip is created at the playhead position.
 3. Select the title clip and use the Inspector to edit:
    - **Text**: The title content.
-   - **Font Family**: Choose from Inter or Lora.
-   - **Font Size**, **Weight**, **Color**, **Alignment**.
-   - **Background**: Optional solid or gradient background behind the text.
+   - **Font Size**, **Color**, **Alignment**.
+   - **Background**: Optional background with adjustable opacity.
+   - **Outline**: Adjustable outline width and color around the text.
+   - **Shadow**: Drop shadow with adjustable blur, X/Y offset, and color.
 
 Title clips are rasterized at 1920×1080 and composited like any video clip — they support transforms, effects, and keyframes.
 
@@ -168,9 +170,10 @@ Import, edit, and export caption tracks:
 
 - **Import Captions**: Click **Import** in the Transcript panel to load SRT or VTT files.
 - **Edit Text**: Click any caption segment to edit its text inline.
-- **Adjust Timing**: Drag segment edges or edit start/end times in the Inspector.
+- **Adjust Timing**: Edit start/end times in the caption panel. Use **Snap start**, **Snap end**, or **Snap both** to align a segment edge to the playhead.
 - **Split/Merge**: Split a segment at the playhead, or merge adjacent segments.
-- **Style**: Set font, size, color, background, and position per track.
+- **Delete**: Remove selected caption segments.
+- **Style**: Set preset, font size, color, background, burn-in, and visibility per track. Individual segments can override color and background.
 - **Export**: Export captions as SRT or VTT files.
 
 ## Exporting
@@ -183,7 +186,7 @@ Import, edit, and export caption tracks:
    - **Container**: MP4 or WebM.
    - **Resolution**, **Frame Rate**, **Bitrate**.
    - **Range**: Full timeline, marked range, or custom in/out points.
-3. Click **Start Export** and choose where to save the file.
+3. Click **Start** and choose where to save the file.
 4. The status bar shows progress. You can cancel at any time.
 
 ### Export Presets
@@ -198,10 +201,10 @@ Save your export settings as presets for reuse:
 
 Queue multiple export jobs to run sequentially:
 
-1. In the export dialog, configure settings and click **Add to Queue** instead of **Start Export**.
-2. Open the **Render Queue** panel from the toolbar.
+1. In the export dialog, configure settings and click **Add to Queue** instead of **Start**.
+2. The **Render Queue** panel appears below the timeline when jobs are queued.
 3. Choose output destinations for pending jobs.
-4. Click **Start Queue** to process all jobs in order.
+4. Click **Start** to process all jobs in order.
 5. You can add jobs with different settings (codec, range, markers).
 
 The queue supports per-job progress, retry on failure, and stop-on-error mode.
@@ -235,8 +238,10 @@ If source files are moved or renamed, they appear as "offline" with a re-link pr
 Click **Diagnostics** in the status bar to view:
 
 - **Capability Summary**: What your browser supports and what's missing.
+- **GPU + Codecs**: WebGPU device status, decode/encode support.
+- **Storage + Cache**: Disk usage, quota, OPFS and cache availability.
+- **Performance Budgets**: Runtime metrics like decode queue depth and frame drops.
 - **Recent Errors**: A log of recent issues with codes and recovery suggestions.
-- **Source Health**: Status of all imported media files.
 - **Actions**: Recovery actions like restarting the pipeline worker or retrying audio initialization.
 
 ### Crash Recovery
@@ -255,6 +260,10 @@ LocalCut Studio is a Progressive Web App. After the first visit:
 - The app works fully offline.
 - Imported media stays on your machine (not uploaded).
 - Export works without internet.
+
+## Help
+
+Click **Help** in the toolbar to open the in-app Help panel. It displays the full user guide so you can look up features without leaving the editor.
 
 ## Keyboard Shortcuts Reference
 

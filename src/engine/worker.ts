@@ -453,6 +453,10 @@ function trackEnd(tl: Timeline, trackId: string): number {
   return end;
 }
 
+function timelineHasClips(): boolean {
+  return timeline.some((track) => track.clips.length > 0);
+}
+
 /** Ensures a track of `type` exists, returning [timeline, trackId]. Prefers the
  *  named track, then the first of that type, then a freshly added one. */
 function ensureTrack(
@@ -1956,6 +1960,29 @@ async function handleImport(file: File, fileHandle?: FileSystemFileHandle | null
     if (handle.audioSource && audioRing) {
       Atomics.store(audioRing.header, RingHeader.SAMPLE_RATE, handle.audioSampleRate);
       Atomics.store(audioRing.header, RingHeader.CHANNELS, handle.audioChannels);
+    }
+
+    const hasVideoOnTimeline = timeline.some((track) => track.type === 'video' && track.clips.length > 0);
+    if (!hasVideoOnTimeline && handle.frameSource) {
+      const importedHandle = handle;
+      const hadPlayback = playback !== null;
+      const placed = commitTimelineMutation(
+        () => placeAsset(timeline, importedHandle, undefined, 0),
+        { prune: false },
+      );
+      if (placed) {
+        void computeWaveformsForSource(importedHandle);
+        if (hadPlayback) setupPlayback();
+      }
+    } else if (!timelineHasClips()) {
+      const importedHandle = handle;
+      const placed = commitTimelineMutation(
+        () => placeAsset(timeline, importedHandle, undefined, 0),
+        { prune: false },
+      );
+      if (placed) {
+        void computeWaveformsForSource(importedHandle);
+      }
     }
 
     ensureClockAndTimeline();

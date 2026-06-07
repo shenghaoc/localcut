@@ -3,6 +3,7 @@ import { Popover } from '@kobalte/core/popover';
 import { Download, ListPlus, Save } from 'lucide-solid';
 import { Button } from './components/button';
 import { validateOutputTemplate } from '../engine/export-presets';
+import { exportConstraintsForProbe } from '../engine/capability-probe-v2';
 import type {
   CapabilityProbeResult,
   ExportCodecSupport,
@@ -113,8 +114,19 @@ export function ExportDialog(props: ExportDialogProps) {
   const [rangeError, setRangeError] = createSignal<string | null>(null);
   const percent = createMemo(() => Math.round((props.progress?.percent ?? 0) * 100));
 
+  const effectiveSupportedCodecs = createMemo<readonly ExportCodecSupport[]>(() => {
+    if (props.supportedCodecs.length > 0) return props.supportedCodecs;
+    // If the geometry-specific probe already ran (initialSettings non-null) and
+    // returned empty, respect that — don't fall back to broader constraints.
+    if (props.initialSettings) return [];
+    // Fallback: derive from the capability probe before geometry-specific results arrive.
+    // In practice supportedCodecs and capabilityProbeV2 are set together, so this
+    // path is only reachable during the brief window before the first probe completes.
+    const probe = props.capabilityProbeV2;
+    return probe ? exportConstraintsForProbe(probe) : [];
+  });
   const supportedCodecSet = createMemo(
-    () => new Set(props.supportedCodecs.map((entry) => `${entry.codec}:${entry.container}`)),
+    () => new Set(effectiveSupportedCodecs().map((entry) => `${entry.codec}:${entry.container}`)),
   );
   const nonCoreProbe = createMemo(() => {
     const probe = props.capabilityProbeV2;
@@ -145,6 +157,22 @@ export function ExportDialog(props: ExportDialogProps) {
       setRangeStart(0);
       setRangeEnd(untrack(() => props.timelineDuration));
     }
+  });
+
+  createEffect(() => {
+    const supported = effectiveSupportedCodecs();
+    if (supported.length === 0) return;
+    const current = untrack(settings);
+    if (supported.some((entry) => entry.codec === current.codec && entry.container === current.container)) {
+      return;
+    }
+    const fallback = supported[0]!;
+    setSettings((existing) => ({
+      ...existing,
+      codec: fallback.codec,
+      container: fallback.container,
+    }));
+    setSelectedPresetId(null);
   });
 
   createEffect(() => {
@@ -593,13 +621,13 @@ export function ExportDialog(props: ExportDialogProps) {
           <div class="export-actions">
             <Button
               variant="default"
-              disabled={props.exporting || !props.hasMedia || props.supportedCodecs.length === 0 || rangeInvalid()}
+              disabled={props.exporting || !props.hasMedia || effectiveSupportedCodecs().length === 0 || rangeInvalid()}
               onClick={handleStart}
             >
               Start
             </Button>
             <Button
-              disabled={props.exporting || !props.hasMedia || props.supportedCodecs.length === 0 || rangeInvalid()}
+              disabled={props.exporting || !props.hasMedia || effectiveSupportedCodecs().length === 0 || rangeInvalid()}
               onClick={handleEnqueue}
             >
               <ListPlus size={14} aria-hidden="true" />

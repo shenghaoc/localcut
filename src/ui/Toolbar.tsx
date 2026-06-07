@@ -55,9 +55,11 @@ export function Toolbar(props: ToolbarProps) {
 	let importInput: HTMLInputElement | undefined;
 	const handleImportInput = (event: Event) => {
 		const input = event.currentTarget as HTMLInputElement;
-		const file = input.files?.[0] ?? null;
+		const files = Array.from(input.files ?? []);
 		input.value = '';
-		if (file) props.onImportFile(file);
+		for (const file of files) {
+			props.onImportFile(file);
+		}
 	};
 	const openImport = async () => {
 		if (props.importBlocked) return;
@@ -92,6 +94,7 @@ export function Toolbar(props: ToolbarProps) {
 						}}
 						type="file"
 						accept={props.importAccept}
+						multiple
 						onChange={handleImportInput}
 						disabled={props.importBlocked}
 						aria-label="Import media"
