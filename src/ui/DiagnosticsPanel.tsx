@@ -1,4 +1,4 @@
-import { createMemo, createSignal, For, Show } from 'solid-js';
+import { createEffect, createMemo, createSignal, For, Show } from 'solid-js';
 import { Clipboard, RefreshCw, X } from 'lucide-solid';
 import type { DiagnosticSnapshot, DiagnosticSourceInput, PerformanceBudget } from '../diagnostics/types';
 import {
@@ -48,7 +48,14 @@ function observedBudgetValue(budget: PerformanceBudget): string {
 }
 
 export function DiagnosticsPanel(props: DiagnosticsPanelProps) {
+  let panelRef: HTMLElement | undefined;
   const [copyStatus, setCopyStatus] = createSignal<string | null>(null);
+
+  createEffect(() => {
+    if (props.open) {
+      requestAnimationFrame(() => panelRef?.focus());
+    }
+  });
   const reportText = createMemo(() => {
     const snapshot = props.snapshot;
     if (!snapshot) return '';
@@ -75,6 +82,7 @@ export function DiagnosticsPanel(props: DiagnosticsPanelProps) {
     <Show when={props.open}>
       <div class="capability-backdrop" onClick={props.onClose} aria-hidden="true" />
       <aside
+        ref={panelRef}
         class="diagnostics-panel panel"
         role="dialog"
         aria-modal="true"

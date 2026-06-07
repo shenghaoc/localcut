@@ -97,7 +97,6 @@ function buildCapabilityReport(input: WorkerDiagnosticInput): CapabilityReport {
   const isolated = globalThis.crossOriginIsolated === true;
   const hasSab = typeof SharedArrayBuffer === 'function';
   const hasWebCodecs = typeof VideoDecoder !== 'undefined';
-  const hasAudioWorklet = 'AudioWorkletGlobalScope' in globalThis;
   const hasOpfs = typeof navigator !== 'undefined' && typeof navigator.storage?.getDirectory === 'function';
   const tier: DiagnosticCapabilityTier =
     isolated && hasSab && input.webgpuReady && hasWebCodecs ? 'accelerated' : 'limited';
@@ -156,12 +155,11 @@ function buildCapabilityReport(input: WorkerDiagnosticInput): CapabilityReport {
       ],
     },
     mediabunny: finding('capability.mediabunny', true, 'Mediabunny modules are bundled in the worker.'),
-    audioWorklet: finding(
-      'capability.audio_worklet',
-      hasAudioWorklet,
-      hasAudioWorklet ? 'AudioWorklet global scope is available.' : 'AudioWorklet global scope is not available here.',
-      hasAudioWorklet ? undefined : 'Retry audio from the main thread after a user gesture.',
-    ),
+    audioWorklet: {
+      code: 'capability.audio_worklet',
+      status: 'unknown',
+      message: 'AudioWorklet availability is not probed in the pipeline worker. See UI diagnostics for the main-thread report.',
+    },
     fileSystemAccess: finding(
       'capability.file_system_access',
       false,

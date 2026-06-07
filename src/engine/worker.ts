@@ -3627,7 +3627,6 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
           subsystem: 'import',
           severity: 'error',
           message,
-          affectedSourceAlias: cmd.sourceId,
           recoveryActionIds: ['relink-source'],
         });
         post({
