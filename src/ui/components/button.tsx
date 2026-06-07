@@ -45,7 +45,7 @@ type ButtonProps<T extends ValidComponent = 'button'> = ButtonRootProps<T> &
 export function Button<T extends ValidComponent = 'button'>(
 	props: PolymorphicProps<T, ButtonProps<T>>
 ) {
-	const [local, rest] = splitProps(props as ButtonProps, ['class', 'variant', 'size']);
+	const [local, rest] = splitProps(props as ButtonProps<T>, ['class', 'variant', 'size']);
 	return (
 		<ButtonPrimitive
 			class={cn(buttonVariants({ variant: local.variant, size: local.size }), local.class)}

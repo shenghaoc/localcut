@@ -218,7 +218,7 @@ export function Toolbar(props: ToolbarProps) {
 				<Show when={props.encodeFps !== null}>
 					<span class="pipeline-chip">
 						<Gauge size={13} aria-hidden="true" />
-						Encode {Math.round(props.encodeFps!)} fps
+						Encode {Math.round(props.encodeFps ?? 0)} fps
 					</span>
 				</Show>
 				<button
