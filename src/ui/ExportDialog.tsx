@@ -119,6 +119,9 @@ export function ExportDialog(props: ExportDialogProps) {
     // If the geometry-specific probe already ran (initialSettings non-null) and
     // returned empty, respect that — don't fall back to broader constraints.
     if (props.initialSettings) return [];
+    // Fallback: derive from the capability probe before geometry-specific results arrive.
+    // In practice supportedCodecs and capabilityProbeV2 are set together, so this
+    // path is only reachable during the brief window before the first probe completes.
     const probe = props.capabilityProbeV2;
     return probe ? exportConstraintsForProbe(probe) : [];
   });

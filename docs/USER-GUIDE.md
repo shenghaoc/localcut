@@ -29,7 +29,7 @@ You can import video, audio, and image files:
 - **Click Import** in the toolbar and select files from your computer.
 - **Supported formats**: MP4, MOV, WebM (video), MP3, M4A, WAV, OGG (audio), PNG, JPG, WebP, GIF, AVIF (images).
 
-Imported media appears in the **Media Bin** on the left side of the workspace. When the timeline is empty, the first playable import is also placed on the timeline so you can press **Play** immediately; additional sources can be added from the Media Bin.
+Imported media appears in the **Media Bin** on the left side of the workspace. When the timeline is empty, the first playable import is also placed on the timeline so you can press **Play** immediately. To add another source to the timeline, click the **+** button next to it in the Media Bin.
 
 ### Compatibility Imports
 
@@ -64,8 +64,8 @@ The timeline is where you arrange and edit your clips. Each track holds clips of
 
 ### Timeline Navigation
 
-- **Zoom**: Scroll vertically over the timeline, or use the zoom controls.
-- **Scroll**: Drag horizontally to pan across the timeline.
+- **Zoom**: Use the **+** / **−** zoom buttons in the timeline toolbar, or press `Ctrl+=` / `Ctrl+-` (`Cmd` on Mac).
+- **Scroll**: The timeline scrolls horizontally with a scrollbar or trackpad swipe.
 - **Seek**: Click anywhere on the timeline ruler to jump the playhead.
 - **Snapping**: Clips snap to the playhead, other clip edges, and markers when moved.
 
@@ -186,7 +186,7 @@ Import, edit, and export caption tracks:
    - **Container**: MP4 or WebM.
    - **Resolution**, **Frame Rate**, **Bitrate**.
    - **Range**: Full timeline, marked range, or custom in/out points.
-3. Click **Start Export** and choose where to save the file.
+3. Click **Start** and choose where to save the file.
 4. The status bar shows progress. You can cancel at any time.
 
 ### Export Presets
@@ -201,10 +201,10 @@ Save your export settings as presets for reuse:
 
 Queue multiple export jobs to run sequentially:
 
-1. In the export dialog, configure settings and click **Add to Queue** instead of **Start Export**.
+1. In the export dialog, configure settings and click **Add to Queue** instead of **Start**.
 2. The **Render Queue** panel appears below the timeline when jobs are queued.
 3. Choose output destinations for pending jobs.
-4. Click **Start Queue** to process all jobs in order.
+4. Click **Start** to process all jobs in order.
 5. You can add jobs with different settings (codec, range, markers).
 
 The queue supports per-job progress, retry on failure, and stop-on-error mode.
