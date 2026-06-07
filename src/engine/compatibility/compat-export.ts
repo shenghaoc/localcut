@@ -122,11 +122,11 @@ function throwIfCanceled(signal: AbortSignal): void {
 
 function reducedProgress(
   options: ReducedTimelineExportOptions,
+  plan: ReturnType<typeof buildExportPlan>,
   phase: ExportProgress['phase'],
   doneFrames: number,
   startedAt: number,
 ): ExportProgress {
-  const plan = buildExportPlan(options.timeline, options.sources, options.settings, options.throughputProbe);
   return {
     preset: plan.preset,
     codec: plan.codec,
@@ -274,12 +274,14 @@ async function encodeReducedVideo(
       exportFrame.close();
       throw error;
     }
+    // Mediabunny's VideoSample owns VideoFrame-backed data after construction;
+    // sample.close() releases exportFrame, while the catch path above owns it.
     await videoSource.add(sample, { keyFrame: frameIndex % keyFrameInterval === 0 }).finally(() => sample.close());
 
     const now = performance.now();
     if (now - lastReport > 250 || frameIndex === endFrame - 1) {
       lastReport = now;
-      options.onProgress(reducedProgress(options, 'video', frameIndex + 1, startedAt));
+      options.onProgress(reducedProgress(options, plan, 'video', frameIndex + 1, startedAt));
     }
   }
 }
@@ -319,7 +321,7 @@ async function encodeReducedAudio(
     if (now - lastReport > 500) {
       lastReport = now;
       const doneFrames = Math.min(plan.totalFrames, Math.ceil(((cursor + frames) / plan.audioSampleRate) * plan.frameRate));
-      options.onProgress(reducedProgress(options, 'audio', doneFrames, startedAt));
+      options.onProgress(reducedProgress(options, plan, 'audio', doneFrames, startedAt));
     }
   }
 }
@@ -368,7 +370,7 @@ export async function exportTimelineReduced(
     if (audioSource) output.addAudioTrack(audioSource);
 
     const startedAt = performance.now();
-    options.onProgress(reducedProgress(options, 'video', 0, startedAt));
+    options.onProgress(reducedProgress(options, plan, 'video', 0, startedAt));
     await output.start();
     await encodeReducedVideo(options, videoSource, startedAt);
     videoSource.close();
@@ -378,7 +380,7 @@ export async function exportTimelineReduced(
       audioSource.close();
       audioSource = null;
     }
-    options.onProgress(reducedProgress(options, 'finalizing', plan.totalFrames, startedAt));
+    options.onProgress(reducedProgress(options, plan, 'finalizing', plan.totalFrames, startedAt));
     const fallbackMime = plan.container === 'webm' ? 'video/webm' : 'video/mp4';
     const mimeType = await output.getMimeType().catch(() => fallbackMime);
     await output.finalize();

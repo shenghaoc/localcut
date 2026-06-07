@@ -249,6 +249,14 @@ export class CanvasCompatibilityRenderer {
   destroy(): void {
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.ctx.clearRect(0, 0, this.width, this.height);
+    this.titleCtx.setTransform(1, 0, 0, 1, 0, 0);
+    this.titleCtx.clearRect(0, 0, TITLE_RASTER_WIDTH, TITLE_RASTER_HEIGHT);
+    this.canvas.width = 0;
+    this.canvas.height = 0;
+    this.titleCanvas.width = TITLE_RASTER_WIDTH;
+    this.titleCanvas.height = TITLE_RASTER_HEIGHT;
+    this.width = 0;
+    this.height = 0;
   }
 
   private captureCanvasFrame(timestamp: number, duration: number): VideoFrame {

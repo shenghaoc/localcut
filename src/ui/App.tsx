@@ -1292,8 +1292,8 @@ export function App() {
     presetId: string | null,
     outputTemplate: string | null,
   ) {
-    if (!accelerated()) {
-      setStatusLine('Render queue requires the accelerated WebGPU export path. Use direct export in this browser tier.');
+    if (exportBackend() !== 'core-webgpu') {
+      setStatusLine('Render queue requires the Core WebGPU export tier. Use direct export in this browser tier.');
       return;
     }
     if (rangeMode === 'markers') {

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import compatExportSource from './compat-export.ts?raw';
 import { chooseLimitedExportCodec, makeVideoFrameFromBitmap, waitForEncodeQueue } from './compat-export';
 import { probeResultFor } from './capability-fixtures';
 import { bitmapFromFrame, BoundedFrameQueue, drawLayers, fitWithin720p } from './canvas-compositor';
@@ -158,7 +159,27 @@ describe('compat WebGPU upload', () => {
 describe('compat export helpers', () => {
   it('selects h264 before vp9 and null when no limited encoder is available', () => {
     expect(chooseLimitedExportCodec(probeResultFor('compatibility-webgpu'))).toBe('h264');
+    // Fixture intentionally covers the pessimistic limited tier where codec probing
+    // found WebCodecs APIs but no H.264/VP9 encoder support.
     expect(chooseLimitedExportCodec(probeResultFor('limited-webcodecs'))).toBeNull();
+  });
+
+  it('documents that VideoSample.close owns reduced export VideoFrame cleanup', () => {
+    expect(compatExportSource).toContain('sample.close() releases exportFrame');
+    expect(compatExportSource).toContain('exportFrame.close();');
+  });
+
+  it('reuses a single reduced export plan for progress reporting', () => {
+    expect(compatExportSource).toContain('function reducedProgress(\n  options: ReducedTimelineExportOptions,\n  plan: ReturnType<typeof buildExportPlan>,');
+    expect(compatExportSource).not.toContain('const plan = buildExportPlan(options.timeline, options.sources, options.settings, options.throughputProbe);\n  return {');
+  });
+
+  it('tears down the reduced renderer canvases on destroy', () => {
+    expect(canvasCompositorSource).toContain('this.canvas.width = 0;');
+    expect(canvasCompositorSource).toContain('this.canvas.height = 0;');
+    expect(canvasCompositorSource).toContain('this.titleCtx.clearRect(0, 0, TITLE_RASTER_WIDTH, TITLE_RASTER_HEIGHT);');
+    expect(canvasCompositorSource).toContain('this.titleCanvas.width = TITLE_RASTER_WIDTH;');
+    expect(canvasCompositorSource).toContain('this.titleCanvas.height = TITLE_RASTER_HEIGHT;');
   });
 
   it('waits while the encode queue is full', async () => {

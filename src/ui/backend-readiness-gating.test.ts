@@ -17,6 +17,12 @@ describe('backend readiness UI gating', () => {
     expect(appSource).toContain("b.send({ type: 'export-start', settings, output })");
   });
 
+  it('labels render queue as core WebGPU only when reduced direct export is available', () => {
+    expect(appSource).toContain("if (exportBackend() !== 'core-webgpu')");
+    expect(appSource).toContain('Render queue requires the Core WebGPU export tier. Use direct export in this browser tier.');
+    expect(appSource).not.toContain('Render queue requires the accelerated WebGPU export path.');
+  });
+
   it('shows the concrete backend label in the toolbar chip', () => {
     expect(appSource).toContain('pipelineLabel={pipelineLabel()}');
     expect(toolbarSource).toContain('pipelineLabel: string');
