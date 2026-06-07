@@ -264,7 +264,9 @@ let queueJobOutputJobId: string | null = null;
 const queueJobOutputHandles = new Map<string, FileSystemFileHandle>();
 let recentErrors = createEmptyRecentErrorLog();
 let lastWebgpuFeatures: string[] = [];
+let lastWebgpuLimits: Record<string, number> = {};
 let lastGpuUnavailableReason: string | null = null;
+let lastDeviceLost: import('../diagnostics/types').DeviceLostSummary | undefined;
 const FRAME_CACHE_BUDGET_BYTES = 64 * 1024 * 1024;
 let audioRing: AudioRingViews | null = null;
 let audioWriteAnchor = 0;
@@ -1251,6 +1253,7 @@ async function handleInit(
     const gpu = await initGpu(canvas);
     renderer = gpu.renderer;
     lastWebgpuFeatures = gpu.features;
+    lastWebgpuLimits = gpu.limits;
     lastGpuUnavailableReason = gpu.unavailableReason;
 
     // Phase 21: wire scope SAB to renderer if provided
@@ -1288,6 +1291,7 @@ async function handleInit(
   } catch (e) {
     const message = errorMessage(e);
     lastWebgpuFeatures = [];
+    lastWebgpuLimits = {};
     lastGpuUnavailableReason = `WebGPU initialization failed: ${message}`;
     recordRecentError({
       code: 'webgpu.init_failed',
@@ -3537,11 +3541,21 @@ async function handleDispose(): Promise<void> {
 
 async function handleDiagnosticSnapshot(requestId: string): Promise<void> {
   const sources = [...sourceDescriptors.values()].map(assetSnapshotFromDescriptor);
+  const webgpuReady = renderer !== null;
+  let webgpuStatus: import('../diagnostics/types').WebGpuCapability['status'];
+  if (webgpuReady) webgpuStatus = 'ready';
+  else if (lastDeviceLost) webgpuStatus = 'lost';
+  else if (lastGpuUnavailableReason) webgpuStatus = 'failed';
+  else webgpuStatus = 'unavailable';
+
   const snapshot = await buildWorkerDiagnosticSnapshot({
     appVersion: '0.1.0',
-    webgpuReady: renderer !== null,
+    webgpuReady,
+    webgpuStatus,
     webgpuFeatures: lastWebgpuFeatures,
+    webgpuLimits: lastWebgpuLimits,
     gpuUnavailableReason: lastGpuUnavailableReason,
+    lastDeviceLost,
     rendererSubmissionCount: renderer?.lastFrameSubmissionCount ?? null,
     activeExportSettings: lastExportSettings,
     recentErrors,

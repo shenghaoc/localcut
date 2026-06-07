@@ -13,6 +13,7 @@ interface DiagnosticsPanelProps {
   sources: readonly DiagnosticSourceInput[];
   onRefresh: () => void;
   onClose: () => void;
+  onRecoveryAction?: (actionId: string) => void;
 }
 
 function formatBytes(value: number | null): string {
@@ -139,8 +140,14 @@ export function DiagnosticsPanel(props: DiagnosticsPanelProps) {
                 <dl class="diagnostics-grid">
                   <div><dt>WebGPU</dt><dd>{snapshot().capability.webGpu.status}</dd></div>
                   <div><dt>Features</dt><dd>{snapshot().capability.webGpu.features.join(', ') || 'default'}</dd></div>
-                  <div><dt>Encoders</dt><dd>{snapshot().capability.webCodecs.encoders.filter((c) => c.supported).map((c) => c.codec).join(', ') || 'none'}</dd></div>
-                  <div><dt>Decoders</dt><dd>{snapshot().capability.webCodecs.decoders.filter((c) => c.supported).map((c) => c.codec).join(', ') || 'none'}</dd></div>
+                  <Show when={snapshot().capability.webGpu.lastDeviceLost}>
+                    {(lost) => <div><dt>Last device lost</dt><dd>{lost().reason}: {lost().message}</dd></div>}
+                  </Show>
+                  <Show when={snapshot().capability.webGpu.limits}>
+                    {(limits) => <div><dt>Limits</dt><dd>{Object.entries(limits()).map(([k, v]) => `${k}=${v}`).join(', ')}</dd></div>}
+                  </Show>
+                  <div><dt>Decode</dt><dd>{snapshot().capability.webCodecs.decoders.map((c) => `${c.codec}${c.supported ? '' : ' (unsupported)'}`).join(', ') || 'none'}</dd></div>
+                  <div><dt>Encode</dt><dd>{snapshot().capability.webCodecs.encoders.map((c) => `${c.codec}${c.supported ? '' : ' (unsupported)'}`).join(', ') || 'none'}</dd></div>
                 </dl>
               </section>
 
@@ -209,10 +216,22 @@ export function DiagnosticsPanel(props: DiagnosticsPanelProps) {
                   <ul class="diagnostics-list">
                     <For each={snapshot().recoveryActions}>
                       {(action) => (
-                        <li class={`diagnostics-row ${action.enabled ? 'is-ok' : 'is-muted'}`}>
+                        <li class={`diagnostics-row ${action.enabled ? 'is-warn' : 'is-muted'}`}>
                           <span>{action.label}</span>
-                          <strong>{action.enabled ? 'available' : 'disabled'}</strong>
-                          <p>{action.reasonDisabled ?? action.description}</p>
+                          <p>{action.description}</p>
+                          <Show when={action.enabled && props.onRecoveryAction} fallback={
+                            <Show when={action.reasonDisabled}>
+                              <p class="diagnostics-disabled-reason">{action.reasonDisabled}</p>
+                            </Show>
+                          }>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => props.onRecoveryAction?.(action.actionId)}
+                            >
+                              {action.label}
+                            </Button>
+                          </Show>
                         </li>
                       )}
                     </For>

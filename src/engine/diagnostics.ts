@@ -2,6 +2,8 @@ import type { ExportSettings } from '../protocol';
 import type {
   CapabilityFinding,
   CapabilityReport,
+  CodecSupportSummary,
+  DeviceLostSummary,
   DiagnosticSnapshot,
   DiagnosticCapabilityTier,
   ExportSettingsSummary,
@@ -24,8 +26,11 @@ interface DiagnosticSourceLike {
 export interface WorkerDiagnosticInput {
   readonly appVersion: string;
   readonly webgpuReady: boolean;
+  readonly webgpuStatus: WebGpuCapability['status'];
   readonly webgpuFeatures: readonly string[];
+  readonly webgpuLimits: Readonly<Record<string, number>>;
   readonly gpuUnavailableReason: string | null;
+  readonly lastDeviceLost: DeviceLostSummary | undefined;
   readonly rendererSubmissionCount: number | null;
   readonly activeExportSettings: ExportSettings | null;
   readonly recentErrors: RecentErrorLog;
@@ -83,17 +88,88 @@ function userAgentSummary(): DiagnosticSnapshot['browser'] {
 
 function webGpuCapability(input: WorkerDiagnosticInput): WebGpuCapability {
   return {
-    status: input.webgpuReady ? 'ready' : 'unavailable',
+    status: input.webgpuStatus,
     features: input.webgpuFeatures,
     optionalFeatures: {
       shaderF16: featureFinding('shader-f16', input.webgpuFeatures, 'shader-f16'),
       timestampQuery: featureFinding('timestamp-query', input.webgpuFeatures, 'timestamp-query'),
       subgroups: featureFinding('subgroups', input.webgpuFeatures, 'subgroups'),
     },
+    limits: Object.keys(input.webgpuLimits).length > 0 ? input.webgpuLimits : undefined,
+    lastDeviceLost: input.lastDeviceLost,
   };
 }
 
-function buildCapabilityReport(input: WorkerDiagnosticInput): CapabilityReport {
+const DECODER_PROBES = [
+  { codec: 'avc1.640028', label: 'h264', container: 'mp4' },
+  { codec: 'vp09.00.10.08', label: 'vp9', container: 'webm' },
+  { codec: 'av01.0.05M.08', label: 'av1', container: 'mp4/webm' },
+] as const;
+
+const ENCODER_PROBES = [
+  { codec: 'avc1.640028', label: 'h264', container: 'mp4', avc: true },
+  { codec: 'vp09.00.10.08', label: 'vp9', container: 'webm', avc: false },
+  { codec: 'av01.0.05M.08', label: 'av1', container: 'webm', avc: false },
+] as const;
+
+async function probeDecoders(): Promise<CodecSupportSummary[]> {
+  if (typeof VideoDecoder === 'undefined') {
+    return DECODER_PROBES.map((p) => ({
+      codec: p.label, container: p.container, direction: 'decode' as const,
+      supported: false, reason: 'VideoDecoder API unavailable',
+    }));
+  }
+  return Promise.all(
+    DECODER_PROBES.map(async (p) => {
+      try {
+        const result = await VideoDecoder.isConfigSupported({ codec: p.codec });
+        return {
+          codec: p.label, container: p.container, direction: 'decode' as const,
+          supported: result.supported === true,
+          reason: result.supported ? undefined : 'Not supported by this browser',
+        };
+      } catch {
+        return {
+          codec: p.label, container: p.container, direction: 'decode' as const,
+          supported: false, reason: 'Probe threw an error',
+        };
+      }
+    }),
+  );
+}
+
+async function probeEncoders(): Promise<CodecSupportSummary[]> {
+  if (typeof VideoEncoder === 'undefined') {
+    return ENCODER_PROBES.map((p) => ({
+      codec: p.label, container: p.container, direction: 'encode' as const,
+      supported: false, reason: 'VideoEncoder API unavailable',
+    }));
+  }
+  return Promise.all(
+    ENCODER_PROBES.map(async (p) => {
+      try {
+        const config: VideoEncoderConfig = {
+          codec: p.codec, width: 1280, height: 720,
+          bitrate: 5_000_000, framerate: 30,
+          ...(p.avc ? { avc: { format: 'avc' as const } } : {}),
+        };
+        const result = await VideoEncoder.isConfigSupported(config);
+        return {
+          codec: p.label, container: p.container, direction: 'encode' as const,
+          supported: result.supported === true,
+          reason: result.supported ? undefined : 'Not supported by this browser',
+        };
+      } catch {
+        return {
+          codec: p.label, container: p.container, direction: 'encode' as const,
+          supported: false, reason: 'Probe threw an error',
+        };
+      }
+    }),
+  );
+}
+
+async function buildCapabilityReport(input: WorkerDiagnosticInput): Promise<CapabilityReport> {
   const isolated = globalThis.crossOriginIsolated === true;
   const hasSab = typeof SharedArrayBuffer === 'function';
   const hasWebCodecs = typeof VideoDecoder !== 'undefined';
@@ -143,16 +219,8 @@ function buildCapabilityReport(input: WorkerDiagnosticInput): CapabilityReport {
     ),
     webGpu: webGpuCapability(input),
     webCodecs: {
-      decoders: [
-        { codec: 'h264', container: 'mp4', direction: 'decode', supported: hasWebCodecs },
-        { codec: 'vp9', container: 'webm', direction: 'decode', supported: hasWebCodecs },
-        { codec: 'av1', container: 'mp4/webm', direction: 'decode', supported: hasWebCodecs },
-      ],
-      encoders: [
-        { codec: 'h264', container: 'mp4', direction: 'encode', supported: typeof VideoEncoder !== 'undefined' },
-        { codec: 'vp9', container: 'webm', direction: 'encode', supported: typeof VideoEncoder !== 'undefined' },
-        { codec: 'av1', container: 'mp4/webm', direction: 'encode', supported: typeof VideoEncoder !== 'undefined' },
-      ],
+      decoders: await probeDecoders(),
+      encoders: await probeEncoders(),
     },
     mediabunny: finding('capability.mediabunny', true, 'Mediabunny modules are bundled in the worker.'),
     audioWorklet: {
@@ -236,23 +304,118 @@ function exportSettingsSummary(settings: ExportSettings | null): ExportSettingsS
   };
 }
 
-function recoveryActions(input: WorkerDiagnosticInput): RecoveryAction[] {
+function errorsForSubsystem(input: WorkerDiagnosticInput, subsystem: string): readonly string[] {
+  return input.recentErrors.entries
+    .filter((e) => e.subsystem === subsystem)
+    .map((e) => e.id);
+}
+
+function recoveryActions(input: WorkerDiagnosticInput, isolated: boolean): RecoveryAction[] {
   const actions: RecoveryAction[] = [];
-  if (!input.webgpuReady) {
+
+  if (!isolated) {
+    actions.push({
+      actionId: 'missing-isolation',
+      kind: 'reload-app',
+      label: 'Reload with isolation',
+      description: 'Cross-origin isolation (COOP/COEP) is missing. The accelerated SAB clock, SharedArrayBuffer, and full-performance preview require isolation headers. Serve the app from a correctly configured origin and reload.',
+      enabled: true,
+      destructive: false,
+      requiresUserGesture: true,
+      relatedErrorIds: errorsForSubsystem(input, 'capability'),
+    });
+  }
+
+  if (!input.webgpuReady && input.webgpuStatus !== 'lost') {
     actions.push({
       actionId: 'retry-gpu-device',
       kind: 'retry-gpu-device',
       label: 'Retry GPU',
-      description: 'Reinitialize the pipeline after checking browser or driver state.',
+      description: 'WebGPU is unavailable. The zero-copy preview pipeline and GPU-accelerated effects require a WebGPU adapter and device. Check that hardware acceleration is enabled, GPU drivers are up to date, and you are using a WebGPU-capable Chromium browser (Chrome/Edge 113+).',
       enabled: false,
       destructive: false,
       requiresUserGesture: false,
       reasonDisabled: 'Full GPU retry is not wired in this slice; reload remains the safe path.',
-      relatedErrorIds: input.recentErrors.entries
-        .filter((entry) => entry.subsystem === 'gpu')
-        .map((entry) => entry.id),
+      relatedErrorIds: errorsForSubsystem(input, 'gpu'),
     });
   }
+
+  if (input.lastDeviceLost) {
+    actions.push({
+      actionId: 'device-lost-recovery',
+      kind: 'retry-gpu-device',
+      label: 'Recover GPU device',
+      description: `GPU device was lost: ${input.lastDeviceLost.message || input.lastDeviceLost.reason}. Preview and export are paused. A device recovery attempt can reinitialize the pipeline without losing project state.`,
+      enabled: false,
+      destructive: false,
+      requiresUserGesture: false,
+      reasonDisabled: 'Device-lost recovery is not wired in this slice; reload to reinitialize.',
+      relatedErrorIds: errorsForSubsystem(input, 'gpu'),
+    });
+  }
+
+  const hasAudioErrors = input.recentErrors.entries.some((e) => e.subsystem === 'audio');
+  if (hasAudioErrors) {
+    actions.push({
+      actionId: 'retry-audio',
+      kind: 'retry-audio',
+      label: 'Retry audio',
+      description: 'Audio initialization failed. This can happen if AudioWorklet module loading failed, AudioContext was blocked before a user gesture, or the audio ring buffer could not be set up. Timeline editing and visual preview remain available.',
+      enabled: true,
+      destructive: false,
+      requiresUserGesture: true,
+      relatedErrorIds: errorsForSubsystem(input, 'audio'),
+    });
+  }
+
+  const hasImportErrors = input.recentErrors.entries.some(
+    (e) => e.subsystem === 'import' && e.severity === 'error',
+  );
+  if (hasImportErrors) {
+    actions.push({
+      actionId: 'retry-import',
+      kind: 'retry-import',
+      label: 'Retry import',
+      description: 'One or more media imports failed. This may be due to a corrupt file, unsupported container or codec, descriptor mismatch, or denied file permission. The current project is preserved.',
+      enabled: true,
+      destructive: false,
+      requiresUserGesture: true,
+      relatedErrorIds: errorsForSubsystem(input, 'import'),
+    });
+  }
+
+  const hasExportErrors = input.recentErrors.entries.some(
+    (e) => e.subsystem === 'export' && e.severity === 'error',
+  );
+  if (hasExportErrors) {
+    actions.push({
+      actionId: 'retry-export',
+      kind: 'retry-export',
+      label: 'Retry export',
+      description: 'Export failed during prepare, decode, render, encode, mux, or write. Export settings and queue state are preserved so you can retry with the same configuration.',
+      enabled: true,
+      destructive: false,
+      requiresUserGesture: true,
+      relatedErrorIds: errorsForSubsystem(input, 'export'),
+    });
+  }
+
+  const hasStoragePressure = input.recentErrors.entries.some(
+    (e) => e.subsystem === 'storage',
+  );
+  if (hasStoragePressure) {
+    actions.push({
+      actionId: 'open-storage-cleanup',
+      kind: 'open-storage-cleanup',
+      label: 'Clean up storage',
+      description: 'Storage quota is under pressure. You can free space by clearing render cache, thumbnails, waveform peaks, or unpinned proxies without affecting your project document or source metadata.',
+      enabled: true,
+      destructive: false,
+      requiresUserGesture: true,
+      relatedErrorIds: errorsForSubsystem(input, 'storage'),
+    });
+  }
+
   actions.push({
     actionId: 'export-project-bundle',
     kind: 'export-project-bundle',
@@ -261,9 +424,10 @@ function recoveryActions(input: WorkerDiagnosticInput): RecoveryAction[] {
     enabled: true,
     destructive: false,
     requiresUserGesture: true,
-    relatedErrorIds: input.recentErrors.entries
-      .filter((entry) => entry.subsystem === 'storage' || entry.subsystem === 'worker')
-      .map((entry) => entry.id),
+    relatedErrorIds: [
+      ...errorsForSubsystem(input, 'storage'),
+      ...errorsForSubsystem(input, 'worker'),
+    ],
   });
   actions.push({
     actionId: 'reload-app',
@@ -281,13 +445,14 @@ function recoveryActions(input: WorkerDiagnosticInput): RecoveryAction[] {
 export async function buildWorkerDiagnosticSnapshot(
   input: WorkerDiagnosticInput,
 ): Promise<DiagnosticSnapshot> {
+  const isolated = globalThis.crossOriginIsolated === true;
   return {
     schemaVersion: DIAGNOSTIC_SNAPSHOT_SCHEMA_VERSION,
     snapshotId: makeSnapshotId(),
     createdAt: new Date().toISOString(),
     appVersion: input.appVersion,
     browser: userAgentSummary(),
-    capability: buildCapabilityReport(input),
+    capability: await buildCapabilityReport(input),
     storage: await storageSummary(),
     proxyCache: proxyCacheSummary(input.sources),
     activeExportSettings: exportSettingsSummary(input.activeExportSettings),
@@ -298,6 +463,6 @@ export async function buildWorkerDiagnosticSnapshot(
       },
     }),
     recentErrors: input.recentErrors,
-    recoveryActions: recoveryActions(input),
+    recoveryActions: recoveryActions(input, isolated),
   };
 }

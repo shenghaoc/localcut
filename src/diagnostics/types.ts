@@ -32,6 +32,7 @@ export interface WebGpuCapability {
     readonly timestampQuery: CapabilityFinding;
     readonly subgroups: CapabilityFinding;
   };
+  readonly limits?: Readonly<Record<string, number>>;
   readonly lastDeviceLost?: DeviceLostSummary;
 }
 
