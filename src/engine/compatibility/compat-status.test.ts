@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   COMPAT_EXPORT_IMPLEMENTED,
-  COMPAT_NOT_READY_NOTE,
   COMPAT_PREVIEW_IMPLEMENTED,
   LIMITED_EXPORT_IMPLEMENTED,
   LIMITED_PREVIEW_IMPLEMENTED,
@@ -18,25 +17,23 @@ describe('compatibilityReadiness', () => {
     });
   });
 
-  it('labels unfinished compatibility tiers honestly but keeps the still-thumbnail import', () => {
-    // Guard: the full reduced pipelines stay foundation-only until wired...
-    expect(COMPAT_PREVIEW_IMPLEMENTED).toBe(false);
-    expect(COMPAT_EXPORT_IMPLEMENTED).toBe(false);
-    expect(LIMITED_PREVIEW_IMPLEMENTED).toBe(false);
-    expect(LIMITED_EXPORT_IMPLEMENTED).toBe(false);
+  it('reports reduced compatibility tiers as real preview/export paths', () => {
+    expect(COMPAT_PREVIEW_IMPLEMENTED).toBe(true);
+    expect(COMPAT_EXPORT_IMPLEMENTED).toBe(true);
+    expect(LIMITED_PREVIEW_IMPLEMENTED).toBe(true);
+    expect(LIMITED_EXPORT_IMPLEMENTED).toBe(true);
 
     const compat = compatibilityReadiness('compatibility-webgpu');
-    expect(compat.previewReady).toBe(false);
-    expect(compat.exportReady).toBe(false);
-    // ...while the labeled still-frame thumbnail import IS available (matches the UI).
+    expect(compat.previewReady).toBe(true);
+    expect(compat.exportReady).toBe(true);
     expect(compat.thumbnailImportAvailable).toBe(true);
-    expect(compat.note).toBe(COMPAT_NOT_READY_NOTE);
+    expect(compat.note).toBeNull();
 
     const limited = compatibilityReadiness('limited-webcodecs');
-    expect(limited.previewReady).toBe(false);
-    expect(limited.exportReady).toBe(false);
+    expect(limited.previewReady).toBe(true);
+    expect(limited.exportReady).toBe(true);
     expect(limited.thumbnailImportAvailable).toBe(true);
-    expect(limited.note).toBe(COMPAT_NOT_READY_NOTE);
+    expect(limited.note).toBeNull();
   });
 
   it('marks shell-only as no-media', () => {

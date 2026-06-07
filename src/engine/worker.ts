@@ -18,6 +18,8 @@ import {
   type TimelineTransitionSnapshot,
   type WorkerCommand,
   type WorkerStateMessage,
+  type ExportBackend,
+  type PreviewBackend,
 } from '../protocol';
 import {
   exportCaptionSidecars,
@@ -138,8 +140,9 @@ import {
 } from './media-adapters/source-timing';
 import { sourceHealthReportFromError } from './media-adapters/source-health';
 import { ThumbnailGenerator } from './thumbnails';
-import { initGpu, type CompositeLayer, type PreviewRenderer } from './gpu';
+import { initCompatibilityGpu, initGpu, type CompositeLayer, type PreviewRenderer } from './gpu';
 import { createCanvasTitleUploader, loadTitleFonts, TitleTextureCache } from './titles';
+import type { TitleContent } from './title';
 import {
   AdaptiveResolution,
   buildPreviewLadder,
@@ -157,6 +160,12 @@ import {
   normalizeExportSettings,
   probeExportCodecs,
 } from './export';
+import { exportTimelineReduced } from './compatibility/compat-export';
+import { exportConstraintsForProbe } from './capability-probe-v2';
+import {
+  CanvasCompatibilityRenderer,
+  type CanvasCompatibilityLayer,
+} from './compatibility/canvas-compositor';
 import { mergePresetsWithBuiltIns } from './export-presets';
 import {
   advanceQueue,
@@ -217,6 +226,9 @@ import { createEmptyRecentErrorLog, createRecentError, logRecentError, type Rece
 
 let clockView: Float64Array | null = null;
 let renderer: PreviewRenderer | null = null;
+let reducedRenderer: CanvasCompatibilityRenderer | null = null;
+let previewBackend: PreviewBackend = 'none';
+let exportBackend: ExportBackend = 'none';
 /** Phase 14 title raster cache; created once the GPU device is ready. */
 let titleCache: TitleTextureCache | null = null;
 /** Shared empty set for dropping every cached title texture via `retain`. */
@@ -253,6 +265,7 @@ let autosaveInFlight: Promise<void> | null = null;
 let restoreOfferGeneration = 0;
 let frameCache: FrameCache | null = null;
 let currentProbe: ThroughputProbe | null = null;
+let currentCapabilityProbe: CapabilityProbeResult | null = null;
 let layerBudgetWarned = false;
 let exportAbort: AbortController | null = null;
 let lastExportSettings: ExportSettings | null = null;
@@ -1268,6 +1281,7 @@ async function handleInit(
   scopeSab?: SharedArrayBuffer | null,
   probeResult?: CapabilityProbeResult,
 ) {
+  currentCapabilityProbe = probeResult ?? null;
   if (probeResult) {
     post({ type: 'capability-probe-v2', result: probeResult });
   }
@@ -1284,32 +1298,51 @@ async function handleInit(
   // module / pipeline compilation can still throw; catch so the worker always posts
   // `ready` (the UI would otherwise hang in a loading state).
   try {
+    reducedRenderer?.destroy();
+    reducedRenderer = null;
+    previewBackend = 'none';
+    exportBackend = 'none';
+
+    const useCompatibilityAdapter = probeResult?.compatibilityAdapter === true;
     const gpu =
-      probeResult?.tier === 'limited-webcodecs' || probeResult?.tier === 'shell-only'
+      probeResult?.tier === 'limited-webcodecs'
         ? {
             renderer: null,
             features: [],
             limits: {},
-            unavailableReason:
-              probeResult.tier === 'limited-webcodecs'
-                ? 'WebGPU unavailable; limited WebCodecs tier uses compatibility preview only.'
-                : 'Preview unavailable in shell-only tier.',
+            unavailableReason: null,
             deviceLost: null,
           }
-        : probeResult?.compatibilityAdapter
+        : probeResult?.tier === 'shell-only'
           ? {
               renderer: null,
               features: [],
               limits: {},
-              unavailableReason:
-                'WebGPU compatibility adapter only; compat GPU preview pipeline not yet wired.',
+              unavailableReason: 'Preview unavailable in shell-only tier.',
               deviceLost: null,
             }
-          : await initGpu(canvas);
+          : useCompatibilityAdapter
+            ? await initCompatibilityGpu(canvas)
+            : await initGpu(canvas);
+
+    if (probeResult?.tier === 'limited-webcodecs') {
+      reducedRenderer = new CanvasCompatibilityRenderer(canvas);
+      previewBackend = 'canvas2d';
+      exportBackend = 'canvas2d';
+      lastGpuUnavailableReason = 'Limited WebCodecs tier active; preview/export use a reduced Canvas2D worker backend.';
+    }
     renderer = gpu.renderer;
     lastWebgpuFeatures = gpu.features;
     lastWebgpuLimits = gpu.limits;
-    lastGpuUnavailableReason = gpu.unavailableReason;
+    if (renderer) {
+      previewBackend = useCompatibilityAdapter
+        ? 'compat-webgpu'
+        : 'core-webgpu';
+      exportBackend = previewBackend;
+      lastGpuUnavailableReason = gpu.unavailableReason;
+    } else if (probeResult?.tier !== 'limited-webcodecs') {
+      lastGpuUnavailableReason = gpu.unavailableReason;
+    }
 
     // Phase 21: wire scope SAB to renderer if provided
     if (scopeSab && renderer) {
@@ -1328,11 +1361,18 @@ async function handleInit(
         playback?.refresh();
       });
     }
+    if (reducedRenderer) {
+      void loadTitleFonts().then(() => playback?.refresh());
+    }
     post({
       type: 'ready',
       webgpu: renderer !== null,
       features: gpu.features,
       gpuUnavailableReason: gpu.unavailableReason,
+      previewBackend,
+      exportBackend,
+      previewReady: previewBackend !== 'none',
+      exportReady: exportBackend !== 'none',
     });
     if (!renderer && gpu.unavailableReason) {
       recordRecentError({
@@ -1357,6 +1397,8 @@ async function handleInit(
         playback?.pause();
         renderer?.destroy();
         renderer = null;
+        previewBackend = 'none';
+        exportBackend = 'none';
         recordRecentError({
           code: 'gpu.device_lost',
           subsystem: 'gpu',
@@ -1373,6 +1415,8 @@ async function handleInit(
     }
   } catch (e) {
     const message = errorMessage(e);
+    previewBackend = 'none';
+    exportBackend = 'none';
     lastWebgpuFeatures = [];
     lastWebgpuLimits = {};
     lastGpuUnavailableReason = `WebGPU initialization failed: ${message}`;
@@ -1388,6 +1432,10 @@ async function handleInit(
       webgpu: false,
       features: [],
       gpuUnavailableReason: lastGpuUnavailableReason,
+      previewBackend: 'none',
+      exportBackend: 'none',
+      previewReady: false,
+      exportReady: false,
     });
   }
 
@@ -1606,14 +1654,15 @@ async function handleNewProject(): Promise<void> {
  * are ready), so it reconciles whichever of GPU-init / import completes last.
  */
 function ensurePreview() {
-  if (!renderer || !adaptive) return;
+  const activeRenderer = renderer ?? reducedRenderer;
+  if (!activeRenderer || !adaptive) return;
   // Render when there's a decodable video source or any title clip (title-only
   // timelines composite source-less overlays over black).
   const source = getPlaybackSource();
   const hasBurnedInCaptions = captionTracks.some((track) => track.burnedIn && track.visible && track.segments.length > 0);
   if (!source?.frameSource && titleClips().length === 0 && !hasBurnedInCaptions) return;
   const tier = adaptive.current();
-  renderer.setPreviewSize(tier.width, tier.height);
+  activeRenderer.setPreviewSize(tier.width, tier.height);
   post({ type: 'preview-resolution', resolution: tier });
   playback?.refresh();
 }
@@ -1758,13 +1807,12 @@ function activeCaptionLayersAt(
   tracks: readonly CaptionTrack[],
   timestamp: number,
   textureIdFor: (trackId: string, segmentId: string) => string = captionTextureId,
-): Array<{ clipId: string; transform: TransformParams }> {
-  if (!titleCache) return [];
-  const layers: Array<{ clipId: string; transform: TransformParams }> = [];
+): Array<{ clipId: string; content: TitleContent; transform: TransformParams }> {
+  const layers: Array<{ clipId: string; content: TitleContent; transform: TransformParams }> = [];
   for (const payload of activeCaptionPayloadsAt(tracks, timestamp)) {
     const clipId = textureIdFor(payload.trackId, payload.segmentId);
-    if (!titleCache.get(clipId)) titleCache.ensure(clipId, payload.content);
-    layers.push({ clipId, transform: payload.transform });
+    if (titleCache && !titleCache.get(clipId)) titleCache.ensure(clipId, payload.content);
+    layers.push({ clipId, content: payload.content, transform: payload.transform });
   }
   return layers;
 }
@@ -1775,7 +1823,7 @@ function activeCaptionLayersAt(
  */
 type LayerMeta =
   | { kind: 'frame'; effects: ClipEffectParams; transform: TransformParams; lut?: ClipLut }
-  | { kind: 'title'; clipId: string; transform: TransformParams };
+  | { kind: 'title'; clipId: string; content: TitleContent; transform: TransformParams };
 
 /**
  * Decodes the budgeted video layer stack at `timestamp` (bottom → top) for the
@@ -1798,10 +1846,16 @@ function makeGetLayers() {
         // Title layers carry no decode and don't consume the decode budget; they
         // composite from the cached title texture, preserving z-order.
         if (isTitleClip(layer.clip)) {
+          if (!layer.clip.title) continue;
           const sampled = sampleClipParamsAt(layer.clip, timestamp);
           decodedLayers.push({
             decoded: null,
-            meta: { kind: 'title', clipId: layer.clip.id, transform: sampled.transform },
+            meta: {
+              kind: 'title',
+              clipId: layer.clip.id,
+              content: layer.clip.title,
+              transform: sampled.transform,
+            },
           });
           continue;
         }
@@ -1841,7 +1895,12 @@ function makeGetLayers() {
       for (const caption of activeCaptionLayersAt(captionTracks, timestamp)) {
         decodedLayers.push({
           decoded: null,
-          meta: { kind: 'title', clipId: caption.clipId, transform: caption.transform },
+          meta: {
+            kind: 'title',
+            clipId: caption.clipId,
+            content: caption.content,
+            transform: caption.transform,
+          },
         });
       }
     } catch (error) {
@@ -3016,31 +3075,53 @@ function setupPlayback() {
     getFrames,
     renderFrames: (layers) => {
       // The stack is already budgeted + offline-skipped + z-ordered by
-      // makeGetLayers. Title layers bind the cached texture (no decode, no
-      // upload here); frame layers carry the decoded VideoFrame.
-      const stack: CompositeLayer[] = [];
-      for (const layer of layers) {
-        if (layer.meta.kind === 'title') {
-          const texture = titleCache?.get(layer.meta.clipId);
-          if (!texture) continue;
-          stack.push({
-            kind: 'texture',
-            view: texture.view,
-            sourceWidth: texture.width,
-            sourceHeight: texture.height,
-            transform: layer.meta.transform,
-          });
-        } else if (layer.frame) {
-          stack.push({
-            kind: 'frame',
-            frame: layer.frame,
-            effects: layer.meta.effects,
-            transform: layer.meta.transform,
-            lut: layer.meta.lut,
-          });
+      // makeGetLayers. Core/compat GPU consume GPU title textures; Canvas2D
+      // reduced preview consumes title payloads and VideoFrames synchronously.
+      if (renderer) {
+        const stack: CompositeLayer[] = [];
+        for (const layer of layers) {
+          if (layer.meta.kind === 'title') {
+            const texture = titleCache?.get(layer.meta.clipId);
+            if (!texture) continue;
+            stack.push({
+              kind: 'texture',
+              view: texture.view,
+              sourceWidth: texture.width,
+              sourceHeight: texture.height,
+              transform: layer.meta.transform,
+            });
+          } else if (layer.frame) {
+            stack.push({
+              kind: 'frame',
+              frame: layer.frame,
+              effects: layer.meta.effects,
+              transform: layer.meta.transform,
+              lut: layer.meta.lut,
+            });
+          }
         }
+        renderer.present(stack);
+        return;
       }
-      renderer?.present(stack);
+      if (reducedRenderer) {
+        const stack: CanvasCompatibilityLayer[] = [];
+        for (const layer of layers) {
+          if (layer.meta.kind === 'title') {
+            stack.push({
+              kind: 'title',
+              content: layer.meta.content,
+              transform: layer.meta.transform,
+            });
+          } else if (layer.frame) {
+            stack.push({
+              kind: 'frame',
+              frame: layer.frame,
+              transform: layer.meta.transform,
+            });
+          }
+        }
+        reducedRenderer.present(stack);
+      }
     },
     writeClock: writeTransport,
     onFrameTime: handleFrameTime,
@@ -3071,10 +3152,11 @@ function setupPlayback() {
 
 /** Adaptive resolution: downgrade the preview when frames blow the budget. */
 function handleFrameTime(frameMs: number) {
-  if (!adaptive || !renderer) return;
+  const activeRenderer = renderer ?? reducedRenderer;
+  if (!adaptive || !activeRenderer) return;
   const next = adaptive.record(frameMs);
   if (next) {
-    renderer.setPreviewSize(next.width, next.height);
+    activeRenderer.setPreviewSize(next.width, next.height);
     post({ type: 'preview-resolution', resolution: next });
   }
 }
@@ -3154,12 +3236,20 @@ async function handleExportProbe() {
     return;
   }
 
-  const supported = await probeExportCodecs(
+  const probedSupported = await probeExportCodecs(
     settings.width,
     settings.height,
     settings.fps,
     settings.videoBitrate,
   );
+  const capabilityProbe = currentCapabilityProbe;
+  const supported = capabilityProbe
+    ? probedSupported.filter((entry) =>
+        exportConstraintsForProbe(capabilityProbe).some(
+          (allowed) => allowed.codec === entry.codec && allowed.container === entry.container,
+        ),
+      )
+    : probedSupported;
 
   if (supported.length === 0) {
     post({ type: 'export-codecs', supported: [], settings });
@@ -3208,15 +3298,27 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
     post({ type: 'export-error', message: 'Cannot start export while the render queue is running.' });
     return;
   }
-  if (!renderer) {
+  if (!renderer && !reducedRenderer) {
     recordRecentError({
       code: 'export.webgpu_unavailable',
       subsystem: 'export',
       severity: 'error',
-      message: 'Export requires WebGPU preview to be available.',
+      message: 'Export requires an active preview backend.',
       recoveryActionIds: ['retry-gpu-device'],
     });
-    post({ type: 'export-error', message: 'Export requires WebGPU preview to be available.' });
+    post({ type: 'export-error', message: 'Export requires an active preview backend.' });
+    return;
+  }
+  if (renderer && !cmd.output) {
+    const message = 'Accelerated export needs a file destination in this browser. Reduced blob export is only available on the Canvas2D backend.';
+    recordRecentError({
+      code: 'export.destination_unavailable',
+      subsystem: 'export',
+      severity: 'warning',
+      message,
+      recoveryActionIds: ['retry-export'],
+    });
+    post({ type: 'export-error', message });
     return;
   }
 
@@ -3251,40 +3353,76 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
     lastExportSettings = settings;
     scheduleAutosave();
 
-    const result = await exportTimeline({
-      timeline: exportTimelineSnapshot,
-      sources: sourceInputs,
-      renderer,
-      outputHandle: cmd.output,
-      settings,
-      throughputProbe: currentProbe,
-      signal: controller.signal,
-      onProgress: (progress) => post({ type: 'export-progress', progress }),
-      masterGain,
-      transitions: audioTransitions,
-      // Title layers composite from the cached raster; `ensure` (re)rasters once
-      // per title on the cold export path, never per frame.
-      titleTextureFor: (clip) =>
-        clip.title ? titleCache?.ensure(clip.id, clip.title) ?? null : null,
-      overlayTextureLayersAt: (timelineTime) =>
-        activeCaptionLayersAt(
-          exportCaptionTracksSnapshot,
-          timelineTime,
-          (trackId, segmentId) => exportCaptionTextureId(exportCaptionTextureGroupId, trackId, segmentId),
-        )
-          .map((layer) => {
-            const texture = titleCache?.get(layer.clipId);
-            if (!texture) return null;
-            return {
-              view: texture.view,
-              sourceWidth: texture.width,
-              sourceHeight: texture.height,
-              transform: layer.transform,
-            };
-          })
-          .filter((layer): layer is { view: GPUTextureView; sourceWidth: number; sourceHeight: number; transform: TransformParams } => layer !== null),
-    });
-    post({ type: 'export-complete', fileName: cmd.output.name, mimeType: result.mimeType });
+    if (renderer) {
+      const outputHandle = cmd.output;
+      if (!outputHandle) throw new Error('Accelerated export requires a file destination.');
+      const result = await exportTimeline({
+        timeline: exportTimelineSnapshot,
+        sources: sourceInputs,
+        renderer,
+        outputHandle,
+        settings,
+        throughputProbe: currentProbe,
+        signal: controller.signal,
+        onProgress: (progress) => post({ type: 'export-progress', progress }),
+        masterGain,
+        transitions: audioTransitions,
+        // Title layers composite from the cached raster; `ensure` (re)rasters once
+        // per title on the cold export path, never per frame.
+        titleTextureFor: (clip) =>
+          clip.title ? titleCache?.ensure(clip.id, clip.title) ?? null : null,
+        overlayTextureLayersAt: (timelineTime) =>
+          activeCaptionLayersAt(
+            exportCaptionTracksSnapshot,
+            timelineTime,
+            (trackId, segmentId) => exportCaptionTextureId(exportCaptionTextureGroupId, trackId, segmentId),
+          )
+            .map((layer) => {
+              const texture = titleCache?.get(layer.clipId);
+              if (!texture) return null;
+              return {
+                view: texture.view,
+                sourceWidth: texture.width,
+                sourceHeight: texture.height,
+                transform: layer.transform,
+              };
+            })
+            .filter((layer): layer is { view: GPUTextureView; sourceWidth: number; sourceHeight: number; transform: TransformParams } => layer !== null),
+      });
+      post({ type: 'export-complete', fileName: outputHandle.name, mimeType: result.mimeType });
+    } else if (reducedRenderer) {
+      const safeStem = projectDisplayName().replace(/[^a-z0-9._-]+/gi, '-').replace(/^-+|-+$/g, '') || 'localcut-reduced';
+      const result = await exportTimelineReduced({
+        timeline: exportTimelineSnapshot,
+        sources: sourceInputs,
+        renderer: reducedRenderer,
+        outputHandle: cmd.output ?? null,
+        settings,
+        throughputProbe: currentProbe,
+        signal: controller.signal,
+        onProgress: (progress) => post({ type: 'export-progress', progress }),
+        masterGain,
+        transitions: audioTransitions,
+        overlayTitleLayersAt: (timelineTime) =>
+          activeCaptionLayersAt(
+            exportCaptionTracksSnapshot,
+            timelineTime,
+            (trackId, segmentId) => exportCaptionTextureId(exportCaptionTextureGroupId, trackId, segmentId),
+          ).map((layer) => ({
+            content: layer.content,
+            transform: layer.transform,
+          })),
+        fallbackFileName: `${safeStem}.${settings.container === 'webm' ? 'webm' : 'mp4'}`,
+      });
+      for (const warning of result.warnings) {
+        post({ type: 'export-warning', message: warning });
+      }
+      if (result.blob) {
+        post({ type: 'export-download-ready', fileName: result.fileName, mimeType: result.mimeType, blob: result.blob });
+      } else {
+        post({ type: 'export-complete', fileName: result.fileName, mimeType: result.mimeType });
+      }
+    }
   } catch (error) {
     if (error instanceof ExportCancelledError) {
       post({ type: 'export-canceled' });
@@ -3617,6 +3755,11 @@ async function handleDispose(): Promise<void> {
   titleCache = null;
   renderer?.destroy();
   renderer = null;
+  reducedRenderer?.destroy();
+  reducedRenderer = null;
+  previewBackend = 'none';
+  exportBackend = 'none';
+  currentCapabilityProbe = null;
   clockView = null;
   audioRing = null;
   post({ type: 'dispose-complete' });

@@ -20,6 +20,7 @@ interface ExportDialogProps {
   progress: ExportProgress | null;
   lastResult: string | null;
   error: string | null;
+  warnings: readonly string[];
   timelineDuration: number;
   supportedCodecs: ExportCodecSupport[];
   capabilityProbeV2: CapabilityProbeResult | null;
@@ -121,7 +122,7 @@ export function ExportDialog(props: ExportDialogProps) {
   });
 
   createEffect(() => {
-    if (props.exporting || props.error || props.lastResult) setOpen(true);
+    if (props.exporting || props.error || props.lastResult || props.warnings.length > 0) setOpen(true);
   });
 
   createEffect(() => {
@@ -539,6 +540,13 @@ export function ExportDialog(props: ExportDialogProps) {
           </Show>
           <Show when={props.error}>
             <p class="export-error">{props.error}</p>
+          </Show>
+          <Show when={props.warnings.length > 0}>
+            <div class="export-warning-list" role="status" aria-live="polite">
+              <For each={props.warnings}>
+                {(warning) => <p class="export-note">{warning}</p>}
+              </For>
+            </div>
           </Show>
 
           {/* Save preset */}
