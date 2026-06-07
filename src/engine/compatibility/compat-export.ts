@@ -33,7 +33,9 @@ export async function makeVideoFrameFromBitmap<TBitmap extends CloseableBitmap, 
   bitmap: TBitmap,
   createFrame: (bitmap: TBitmap) => TFrame,
 ): Promise<TFrame> {
-  const frame = createFrame(bitmap);
-  bitmap.close();
-  return frame;
+  try {
+    return createFrame(bitmap);
+  } finally {
+    bitmap.close();
+  }
 }

@@ -61,7 +61,10 @@ export async function bitmapFromFrame<TFrame extends CloseableFrame, TBitmap ext
   sourceHeight: number,
 ): Promise<TBitmap> {
   const size = fitWithin720p(sourceWidth, sourceHeight);
-  const bitmap = await createBitmap(frame, { resizeWidth: size.width, resizeHeight: size.height });
+  const bitmap = await createBitmap(frame, { resizeWidth: size.width, resizeHeight: size.height }).catch((e) => {
+    frame.close();
+    throw e;
+  });
   frame.close();
   return bitmap;
 }

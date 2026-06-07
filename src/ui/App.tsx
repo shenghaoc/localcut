@@ -270,6 +270,7 @@ export function App() {
   let bridge: ReturnType<typeof createWorkerBridge> | null = null;
   let worker: Worker | null = null;
   let initSent = false;
+  let pendingInitCanvas: OffscreenCanvas | null = null;
   let reducedClockRaf: number | null = null;
   let reducedClockStart: number | null = null;
   let compatibilityImportGeneration = 0;
@@ -400,11 +401,7 @@ export function App() {
   );
 
   const accelerated = () => pipelineMode() === 'accelerated';
-  const exportSurfaceAvailable = () =>
-    accelerated() ||
-    (capabilityProbeV2()?.tier !== undefined &&
-      capabilityProbeV2()?.tier !== 'shell-only' &&
-      exportCodecs().length > 0);
+  const exportSurfaceAvailable = () => accelerated();
   const compatibilityImportEnabled = () =>
     pipelineMode() === 'limited' && canCompatibilityPreview(capabilities());
   const importBlocked = () =>
@@ -861,7 +858,11 @@ export function App() {
   async function sendInit(canvas: OffscreenCanvas) {
     if (initSent) return;
     const probe = capabilityProbeV2();
-    if (probe?.tier === 'shell-only') {
+    if (!probe) {
+      pendingInitCanvas = canvas;
+      return;
+    }
+    if (probe.tier === 'shell-only') {
       setRuntimeIssue('Preview unavailable: this browser exposes neither WebGPU nor WebCodecs decode support.');
       setStatusLine('Shell-only · preview and export unavailable');
       return;
@@ -895,12 +896,8 @@ export function App() {
         }));
       }
     }
-    if (probe) {
-      b.send({ type: 'init', canvas, sab, audioSab, probeResult: probe }, [canvas]);
-    } else {
-      b.send({ type: 'init', canvas, sab, audioSab }, [canvas]);
-    }
-    if (probe && probe.sharedArrayBuffer !== 'supported') startReducedClock(b);
+    b.send({ type: 'init', canvas, sab, audioSab, probeResult: probe }, [canvas]);
+    if (probe.sharedArrayBuffer !== 'supported') startReducedClock(b);
   }
 
   async function importCompatibilityMedia(file: File) {
@@ -1481,6 +1478,11 @@ export function App() {
       const probe = await probeCapabilitiesV2();
       setCapabilityProbeV2(probe);
       setExportCodecs([...exportConstraintsForProbe(probe)]);
+      if (pendingInitCanvas) {
+        const canvas = pendingInitCanvas;
+        pendingInitCanvas = null;
+        await sendInit(canvas);
+      }
       setIsIsolated(probe.crossOriginIsolated);
       setCapabilities(probeCapabilities({
         crossOriginIsolated: probe.crossOriginIsolated,

@@ -1268,18 +1268,28 @@ async function handleInit(
   // module / pipeline compilation can still throw; catch so the worker always posts
   // `ready` (the UI would otherwise hang in a loading state).
   try {
-    const gpu = probeResult?.tier === 'limited-webcodecs' || probeResult?.tier === 'shell-only'
-      ? {
-          renderer: null,
-          features: [],
-          limits: {},
-          unavailableReason:
-            probeResult.tier === 'limited-webcodecs'
-              ? 'WebGPU unavailable; limited WebCodecs tier uses compatibility preview only.'
-              : 'Preview unavailable in shell-only tier.',
-          deviceLost: null,
-        }
-      : await initGpu(canvas);
+    const gpu =
+      probeResult?.tier === 'limited-webcodecs' || probeResult?.tier === 'shell-only'
+        ? {
+            renderer: null,
+            features: [],
+            limits: {},
+            unavailableReason:
+              probeResult.tier === 'limited-webcodecs'
+                ? 'WebGPU unavailable; limited WebCodecs tier uses compatibility preview only.'
+                : 'Preview unavailable in shell-only tier.',
+            deviceLost: null,
+          }
+        : probeResult?.compatibilityAdapter
+          ? {
+              renderer: null,
+              features: [],
+              limits: {},
+              unavailableReason:
+                'WebGPU compatibility adapter only; compat GPU preview pipeline not yet wired.',
+              deviceLost: null,
+            }
+          : await initGpu(canvas);
     renderer = gpu.renderer;
     lastWebgpuFeatures = gpu.features;
     lastWebgpuLimits = gpu.limits;
@@ -3603,7 +3613,7 @@ function handleClockTick(time: number): void {
   if (clockView) {
     clockView[ClockIndex.CURRENT_TIME] = time;
   }
-  playback?.seek(time);
+  if (playback?.isPlaying()) playback.seek(time);
 }
 
 async function handleDiagnosticSnapshot(requestId: string): Promise<void> {
