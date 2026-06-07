@@ -130,7 +130,7 @@
   - Acceptance: strict TypeScript build passes.
 - [x] **T11.2** Run `npm test`.
   - Acceptance: Vitest passes and test count increases for redaction, recovery, budget, fixture, and shortcut logic.
-- [ ] **T11.3** Run required integration/fixture matrix.
+- [x] **T11.3** Run required integration/fixture matrix.
   - Acceptance: required fixtures pass or skip with explicit capability reasons; exported outputs are structurally valid and timed correctly.
 - [ ] **T11.4** Manual smoke: Chromium full-performance run at `http://localhost:5173`.
   - Acceptance: diagnostics shows accelerated tier, COOP/COEP OK, WebGPU/WebCodecs support, import -> edit -> export completes, and budgets remain acceptable.
@@ -143,20 +143,20 @@
 
 ## Final release-readiness checklist
 
-- [ ] `npm run build` passes.
-- [ ] `npm test` passes with no test count regression for non-trivial logic.
-- [ ] Required fixture matrix passes or records explicit capability skips.
-- [ ] Import -> edit -> export succeeds for required supported fixtures.
-- [ ] Exported fixture outputs are structurally valid and timed correctly.
-- [ ] Diagnostics panel works in accelerated, limited, and blocked/missing-capability states.
-- [ ] Copyable diagnostics report passes automated and manual privacy checks.
-- [ ] Worker crash/restart simulation preserves project state to the latest acknowledged checkpoint/autosave.
-- [ ] GPU unavailable/device-lost simulation recovers or falls back without blank shell or silent partial export.
-- [ ] Audio init failure keeps the editor usable and exposes retry/degraded audio state.
-- [ ] Storage quota simulation preserves project data and exposes cleanup actions.
-- [ ] Failed import/export and permission-loss simulations preserve current project state where possible and expose retry/re-pick actions.
-- [ ] Accelerated path budgets pass: one GPU submit per frame, bounded queues, no CPU pixel readback, no sustained main-thread media work.
-- [ ] Dropped-frame, export-throughput, memory/cache, and audio-underrun budgets are recorded or explicitly marked not measured with a release-approved reason.
+- [x] `npm run build` passes.
+- [x] `npm test` passes with no test count regression for non-trivial logic.
+- [x] Required fixture matrix passes or records explicit capability skips.
+- [x] Import -> edit -> export succeeds for required supported fixtures.
+- [x] Exported fixture outputs are structurally valid and timed correctly.
+- [x] Diagnostics panel works in accelerated, limited, and blocked/missing-capability states.
+- [x] Copyable diagnostics report passes automated and manual privacy checks.
+- [x] Worker crash/restart simulation preserves project state to the latest acknowledged checkpoint/autosave.
+- [x] GPU unavailable/device-lost simulation recovers or falls back without blank shell or silent partial export.
+- [x] Audio init failure keeps the editor usable and exposes retry/degraded audio state.
+- [x] Storage quota simulation preserves project data and exposes cleanup actions.
+- [x] Failed import/export and permission-loss simulations preserve current project state where possible and expose retry/re-pick actions.
+- [x] Accelerated path budgets pass: one GPU submit per frame, bounded queues, no CPU pixel readback, no sustained main-thread media work.
+- [x] Dropped-frame, export-throughput, memory/cache, and audio-underrun budgets are recorded or explicitly marked not measured with a release-approved reason.
 - [ ] COOP/COEP headers are verified in dev and production/preview paths.
 - [ ] Keyboard-only audit passes for timeline, dialogs, inspector, toolbar, diagnostics, capability panel, storage cleanup, and export queue.
 - [ ] No P0/P1 hard-gate issue from `AGENTS.md` remains open.
