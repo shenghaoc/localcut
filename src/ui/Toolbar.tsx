@@ -87,7 +87,6 @@ export function Toolbar(props: ToolbarProps) {
 						ref={(el) => {
 							importInput = el;
 						}}
-						class="import-picker-input"
 						type="file"
 						accept={props.importAccept}
 						onChange={handleImportInput}
