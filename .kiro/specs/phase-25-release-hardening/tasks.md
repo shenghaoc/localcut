@@ -93,7 +93,7 @@
   - Acceptance: docs list required CI fixtures, optional/manual fixtures, generation commands or provenance, expected capability skips, and validation criteria.
 - [x] **T8.2** Add required tiny fixtures or deterministic generation scripts for MP4 H.264/AAC, still image/title/composite, audio-only, offline/relink, quota-exceeded mocked, worker-crash mocked, GPU-device-lost mocked, and export-failure mocked scenarios.
   - Acceptance: fixtures stay local/client-side and do not require server media processing, accounts, external APIs, telemetry, or cloud storage.
-- [ ] **T8.3** Add import -> edit -> export integration coverage.
+- [x] **T8.3** Add import -> edit -> export integration coverage.
   - Acceptance: at least one video+audio path, one still/title/composite path, one offline/relink path, and one export failure/retry path are validated; output structure and timing are checked, not just job completion.
 - [x] **T8.4** Add capability-aware skip reporting.
   - Acceptance: unsupported WebGPU/WebCodecs/container/encoder cases report explicit skip reasons from diagnostics, not silent passes.
@@ -121,7 +121,7 @@
   - Acceptance: reviewers can see build/test status, fixture matrix status, diagnostics privacy proof, recovery simulations, performance budget status, accessibility audit result, COOP/COEP result, and manual smoke result.
 - [x] **T10.3** Define blocker classification.
   - Acceptance: gates classify failures as blocks release, blocks accelerated tier, manual follow-up required, or known limited mode; P0/P1 hard-gate violations block release.
-- [ ] **T10.4** Add final diagnostics self-check.
+- [x] **T10.4** Add final diagnostics self-check.
   - Acceptance: accelerated, limited/non-isolated, and blocked/missing-capability snapshots are captured and reviewed before release.
 
 ## Verification
