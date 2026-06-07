@@ -4,6 +4,7 @@ import {
 	Cpu,
 	FolderOpen,
 	Gauge,
+	CircleQuestionMark,
 	Info,
 	Pause,
 	Play,
@@ -41,6 +42,7 @@ interface ToolbarProps {
 	previewLabel: string | null;
 	encodeFps: number | null;
 	onOpenCapabilities?: () => void;
+	onOpenHelp?: () => void;
 	masterGain: number;
 	meterSab: SharedArrayBuffer | null;
 	onMasterGain: (gain: number) => void;
@@ -225,6 +227,15 @@ export function Toolbar(props: ToolbarProps) {
 				>
 					<Info size={13} aria-hidden="true" />
 					Capabilities
+				</button>
+				<button
+					type="button"
+					class="pipeline-chip pipeline-chip-button"
+					onClick={() => props.onOpenHelp?.()}
+					title="Open help and user guide"
+				>
+					<CircleQuestionMark size={13} aria-hidden="true" />
+					Help
 				</button>
 			</div>
 		</header>

@@ -51,6 +51,7 @@ import { BundleDialog } from './BundleDialog';
 import { Button, buttonVariants } from './components/button';
 import { cn } from '../lib/utils';
 import { CapabilityPanel } from './CapabilityPanel';
+import { HelpPanel } from './HelpPanel';
 import { LimitedPreview } from './LimitedPreview';
 import { registerKeyboardShortcuts } from './keyboard';
 import {
@@ -205,6 +206,7 @@ export function App() {
   const [previewReady, setPreviewReady] = createSignal(false);
   const [exportReady, setExportReady] = createSignal(false);
   const [capabilityPanelOpen, setCapabilityPanelOpen] = createSignal(false);
+  const [helpPanelOpen, setHelpPanelOpen] = createSignal(false);
   const [diagnosticsPanelOpen, setDiagnosticsPanelOpen] = createSignal(false);
   const [diagnosticSnapshot, setDiagnosticSnapshot] = createSignal<DiagnosticSnapshot | null>(null);
   const [recentErrorLog, setRecentErrorLog] = createSignal(createEmptyRecentErrorLog());
@@ -1632,19 +1634,19 @@ export function App() {
     const onDragEnter = (e: DragEvent) => {
       // Only count external file drags so internal drags (e.g. media-bin to track)
       // never increment the counter and cause it to desync from dragOver/drop.
-      if (e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files')) {
+      if (e.dataTransfer?.types && Array.from(e.dataTransfer.types).includes('Files')) {
         dragDepth++;
       }
     };
     const onDragOver = (e: DragEvent) => {
       // Ignore internal drags (e.g. a media-bin asset onto a track); only OS file
       // drops carry the "Files" type and should raise the import overlay.
-      if (!e.dataTransfer || !Array.from(e.dataTransfer.types).includes('Files')) return;
+      if (!e.dataTransfer?.types || !Array.from(e.dataTransfer.types).includes('Files')) return;
       e.preventDefault();
       setIsDraggingFile(true);
     };
     const onDragLeave = (e: DragEvent) => {
-      if (!e.dataTransfer || !Array.from(e.dataTransfer.types).includes('Files')) return;
+      if (!e.dataTransfer?.types || !Array.from(e.dataTransfer.types).includes('Files')) return;
       dragDepth--;
       if (dragDepth <= 0) {
         dragDepth = 0;
@@ -1734,6 +1736,7 @@ export function App() {
         previewLabel={previewLabel()}
         encodeFps={encodeFps()}
         onOpenCapabilities={() => setCapabilityPanelOpen(true)}
+        onOpenHelp={() => setHelpPanelOpen(true)}
         masterGain={masterGain()}
         meterSab={meterSab()}
         onMasterGain={(gain) => {
@@ -2166,6 +2169,10 @@ export function App() {
           </Show>
         </span>
       </footer>
+      <HelpPanel
+        open={helpPanelOpen()}
+        onClose={() => setHelpPanelOpen(false)}
+      />
       <CapabilityPanel
         open={capabilityPanelOpen()}
         tier={pipelineMode()}
