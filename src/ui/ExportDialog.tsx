@@ -1,13 +1,15 @@
 import { createEffect, createMemo, createSignal, For, Show, untrack } from 'solid-js';
 import { Popover } from '@kobalte/core/popover';
-import { Download } from 'lucide-solid';
+import { Download, ListPlus, Save } from 'lucide-solid';
 import { Button } from './components/button';
 import type {
   ExportCodecSupport,
   ExportPreset,
+  ExportPresetDoc,
   ExportProgress,
   ExportSettings,
   ExportVideoCodec,
+  TimelineMarkerSnapshot,
 } from '../protocol';
 
 interface ExportDialogProps {
@@ -19,9 +21,14 @@ interface ExportDialogProps {
   timelineDuration: number;
   supportedCodecs: ExportCodecSupport[];
   initialSettings: ExportSettings | null;
+  presets: ExportPresetDoc[];
+  markers: TimelineMarkerSnapshot[];
   onProbe: () => void;
   onStart: (settings: ExportSettings) => void;
   onCancel: () => void;
+  onSavePreset: (preset: ExportPresetDoc) => void;
+  onDeletePreset: (presetId: string) => void;
+  onEnqueue: (settings: ExportSettings, rangeMode: 'full' | 'range' | 'markers') => void;
 }
 
 function formatDuration(seconds: number | null): string {
@@ -56,13 +63,17 @@ function defaultSettings(preset: ExportPreset): ExportSettings {
   };
 }
 
-/** Export UI — Phase 6 shell, Phase 17 settings. */
+/** Export UI — Phase 6 shell, Phase 17 settings, Phase 24 presets + queue. */
 export function ExportDialog(props: ExportDialogProps) {
   const [open, setOpen] = createSignal(false);
   const [settings, setSettings] = createSignal<ExportSettings>(defaultSettings('quality'));
   const [useRange, setUseRange] = createSignal(false);
   const [rangeStart, setRangeStart] = createSignal(0);
   const [rangeEnd, setRangeEnd] = createSignal(0);
+  const [rangeMode, setRangeMode] = createSignal<'full' | 'range' | 'markers'>('full');
+  const [selectedPresetId, setSelectedPresetId] = createSignal<string | null>(null);
+  const [savingPreset, setSavingPreset] = createSignal(false);
+  const [presetName, setPresetName] = createSignal('');
   const percent = createMemo(() => Math.round((props.progress?.percent ?? 0) * 100));
 
   const supportedCodecSet = createMemo(
@@ -84,10 +95,12 @@ export function ExportDialog(props: ExportDialogProps) {
     setSettings(incoming);
     if (incoming.range) {
       setUseRange(true);
+      setRangeMode('range');
       setRangeStart(incoming.range.startS);
       setRangeEnd(incoming.range.endS);
     } else {
       setUseRange(false);
+      setRangeMode('full');
       setRangeStart(0);
       setRangeEnd(untrack(() => props.timelineDuration));
     }
@@ -113,16 +126,31 @@ export function ExportDialog(props: ExportDialogProps) {
     }));
   }
 
+  function applyExportPreset(presetDoc: ExportPresetDoc) {
+    setSelectedPresetId(presetDoc.id);
+    setSettings({
+      preset: presetDoc.preset,
+      codec: presetDoc.codec,
+      container: presetDoc.container,
+      width: presetDoc.width,
+      height: presetDoc.height,
+      fps: presetDoc.fps,
+      videoBitrate: presetDoc.videoBitrate,
+    });
+  }
+
   function setCodec(codec: ExportVideoCodec) {
     const container = codec === 'h264' ? 'mp4' : 'webm';
     if (!supportedCodecSet().has(`${codec}:${container}`)) return;
     setSettings((current) => ({ ...current, codec, container }));
+    setSelectedPresetId(null);
   }
 
   function buildSettings(): ExportSettings {
     const current = settings();
     const duration = Math.max(0, props.timelineDuration);
-    const range = useRange()
+    const mode = rangeMode();
+    const range = mode === 'range' && useRange()
       ? {
           startS: Math.max(0, Math.min(rangeStart(), duration)),
           endS: Math.max(0, Math.min(rangeEnd(), duration)),
@@ -138,6 +166,34 @@ export function ExportDialog(props: ExportDialogProps) {
     };
   }
 
+  function handleSavePreset() {
+    const name = presetName().trim();
+    if (!name) return;
+    const current = settings();
+    const preset: ExportPresetDoc = {
+      id: typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `preset-${Math.random().toString(36).slice(2)}`,
+      name,
+      builtIn: false,
+      codec: current.codec,
+      container: current.container,
+      width: current.width,
+      height: current.height,
+      fps: current.fps,
+      videoBitrate: current.videoBitrate,
+      preset: current.preset,
+    };
+    props.onSavePreset(preset);
+    setSavingPreset(false);
+    setPresetName('');
+    setSelectedPresetId(preset.id);
+  }
+
+  function handleEnqueue() {
+    props.onEnqueue(buildSettings(), rangeMode());
+  }
+
   return (
     <Popover open={open()} onOpenChange={handleOpenChange} placement="bottom-end" gutter={7}>
       <Popover.Trigger as={Button} disabled={!props.hasMedia}>
@@ -146,6 +202,47 @@ export function ExportDialog(props: ExportDialogProps) {
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content class="export-popover panel" aria-label="Export">
+          {/* Saved presets selector */}
+          <Show when={props.presets.length > 0}>
+            <p class="export-eyebrow">Saved preset</p>
+            <div class="export-preset-selector">
+              <select
+                class="export-select"
+                value={selectedPresetId() ?? ''}
+                disabled={props.exporting}
+                onChange={(e) => {
+                  const id = e.currentTarget.value;
+                  if (!id) { setSelectedPresetId(null); return; }
+                  const preset = props.presets.find((p) => p.id === id);
+                  if (preset) applyExportPreset(preset);
+                }}
+              >
+                <option value="">Custom</option>
+                <For each={props.presets}>
+                  {(preset) => (
+                    <option value={preset.id}>
+                      {preset.name}{preset.builtIn ? '' : ' *'}
+                    </option>
+                  )}
+                </For>
+              </select>
+              <Show when={selectedPresetId() && !props.presets.find((p) => p.id === selectedPresetId())?.builtIn}>
+                <button
+                  type="button"
+                  class="export-preset-delete"
+                  aria-label="Delete preset"
+                  disabled={props.exporting}
+                  onClick={() => {
+                    const id = selectedPresetId();
+                    if (id) { props.onDeletePreset(id); setSelectedPresetId(null); }
+                  }}
+                >
+                  ×
+                </button>
+              </Show>
+            </div>
+          </Show>
+
           <p class="export-eyebrow">Export preset</p>
           <div class="export-presets" role="group" aria-label="Export preset">
             <button
@@ -153,7 +250,7 @@ export function ExportDialog(props: ExportDialogProps) {
               class={`segmented-btn${settings().preset === 'quality' ? ' is-active' : ''}`}
               aria-pressed={settings().preset === 'quality'}
               disabled={props.exporting}
-              onClick={() => applyPreset('quality')}
+              onClick={() => { applyPreset('quality'); setSelectedPresetId(null); }}
             >
               Quality
             </button>
@@ -162,7 +259,7 @@ export function ExportDialog(props: ExportDialogProps) {
               class={`segmented-btn${settings().preset === 'fast' ? ' is-active' : ''}`}
               aria-pressed={settings().preset === 'fast'}
               disabled={props.exporting}
-              onClick={() => applyPreset('fast')}
+              onClick={() => { applyPreset('fast'); setSelectedPresetId(null); }}
             >
               Fast
             </button>
@@ -196,9 +293,10 @@ export function ExportDialog(props: ExportDialogProps) {
                 step="2"
                 value={settings().width}
                 disabled={props.exporting}
-                onInput={(event) =>
-                  setSettings((current) => ({ ...current, width: Number(event.currentTarget.value) }))
-                }
+                onInput={(event) => {
+                  setSettings((current) => ({ ...current, width: Number(event.currentTarget.value) }));
+                  setSelectedPresetId(null);
+                }}
               />
             </label>
             <label class="export-field">
@@ -209,9 +307,10 @@ export function ExportDialog(props: ExportDialogProps) {
                 step="2"
                 value={settings().height}
                 disabled={props.exporting}
-                onInput={(event) =>
-                  setSettings((current) => ({ ...current, height: Number(event.currentTarget.value) }))
-                }
+                onInput={(event) => {
+                  setSettings((current) => ({ ...current, height: Number(event.currentTarget.value) }));
+                  setSelectedPresetId(null);
+                }}
               />
             </label>
             <label class="export-field">
@@ -222,9 +321,10 @@ export function ExportDialog(props: ExportDialogProps) {
                 step="0.01"
                 value={settings().fps}
                 disabled={props.exporting}
-                onInput={(event) =>
-                  setSettings((current) => ({ ...current, fps: Number(event.currentTarget.value) }))
-                }
+                onInput={(event) => {
+                  setSettings((current) => ({ ...current, fps: Number(event.currentTarget.value) }));
+                  setSelectedPresetId(null);
+                }}
               />
             </label>
             <label class="export-field">
@@ -235,26 +335,52 @@ export function ExportDialog(props: ExportDialogProps) {
                 step="0.1"
                 value={(settings().videoBitrate / 1_000_000).toFixed(1)}
                 disabled={props.exporting}
-                onInput={(event) =>
+                onInput={(event) => {
                   setSettings((current) => ({
                     ...current,
                     videoBitrate: Number(event.currentTarget.value) * 1_000_000,
-                  }))
-                }
+                  }));
+                  setSelectedPresetId(null);
+                }}
               />
             </label>
           </div>
 
-          <label class="export-range-toggle">
-            <input
-              type="checkbox"
-              checked={useRange()}
+          {/* Range mode */}
+          <p class="export-eyebrow">Range</p>
+          <div class="export-presets" role="group" aria-label="Export range">
+            <button
+              type="button"
+              class={`segmented-btn${rangeMode() === 'full' ? ' is-active' : ''}`}
+              aria-pressed={rangeMode() === 'full'}
+              disabled={props.exporting}
+              onClick={() => { setRangeMode('full'); setUseRange(false); }}
+            >
+              Full
+            </button>
+            <button
+              type="button"
+              class={`segmented-btn${rangeMode() === 'range' ? ' is-active' : ''}`}
+              aria-pressed={rangeMode() === 'range'}
               disabled={props.exporting || props.timelineDuration <= 0}
-              onChange={(event) => setUseRange(event.currentTarget.checked)}
-            />
-            <span>Export range</span>
-          </label>
-          <Show when={useRange()}>
+              onClick={() => { setRangeMode('range'); setUseRange(true); }}
+            >
+              Range
+            </button>
+            <Show when={props.markers.length >= 2}>
+              <button
+                type="button"
+                class={`segmented-btn${rangeMode() === 'markers' ? ' is-active' : ''}`}
+                aria-pressed={rangeMode() === 'markers'}
+                disabled={props.exporting}
+                onClick={() => { setRangeMode('markers'); setUseRange(false); }}
+              >
+                Markers
+              </button>
+            </Show>
+          </div>
+
+          <Show when={rangeMode() === 'range'}>
             <div class="export-fields">
               <label class="export-field">
                 <span>In (s)</span>
@@ -283,6 +409,12 @@ export function ExportDialog(props: ExportDialogProps) {
             </div>
           </Show>
 
+          <Show when={rangeMode() === 'markers'}>
+            <p class="export-note">
+              {props.markers.length} markers — {props.markers.length - 1} range{props.markers.length - 1 !== 1 ? 's' : ''} will be queued
+            </p>
+          </Show>
+
           <Show when={props.progress}>
             {(progress) => (
               <div class="export-progress">
@@ -308,6 +440,32 @@ export function ExportDialog(props: ExportDialogProps) {
             <p class="export-error">{props.error}</p>
           </Show>
 
+          {/* Save preset */}
+          <Show when={savingPreset()}>
+            <div class="export-fields" style={{ "margin-top": "8px" }}>
+              <label class="export-field" style={{ flex: 1 }}>
+                <span>Preset name</span>
+                <input
+                  type="text"
+                  value={presetName()}
+                  onInput={(e) => setPresetName(e.currentTarget.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleSavePreset(); }}
+                  placeholder="My Preset"
+                />
+              </label>
+            </div>
+            <div class="export-actions" style={{ "margin-top": "4px" }}>
+              <Button
+                variant="default"
+                disabled={!presetName().trim()}
+                onClick={handleSavePreset}
+              >
+                Save
+              </Button>
+              <Button onClick={() => setSavingPreset(false)}>Cancel</Button>
+            </div>
+          </Show>
+
           <div class="export-actions">
             <Button
               variant="default"
@@ -316,8 +474,24 @@ export function ExportDialog(props: ExportDialogProps) {
             >
               Start
             </Button>
+            <Button
+              disabled={props.exporting || !props.hasMedia || props.supportedCodecs.length === 0}
+              onClick={handleEnqueue}
+            >
+              <ListPlus size={14} aria-hidden="true" />
+              Add to Queue
+            </Button>
             <Show when={props.exporting}>
               <Button onClick={() => props.onCancel()}>Cancel</Button>
+            </Show>
+            <Show when={!savingPreset()}>
+              <Button
+                disabled={props.exporting}
+                onClick={() => setSavingPreset(true)}
+              >
+                <Save size={14} aria-hidden="true" />
+                Save Preset
+              </Button>
             </Show>
             <Popover.CloseButton as={Button} disabled={props.exporting}>
               Close

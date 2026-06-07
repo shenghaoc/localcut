@@ -1,7 +1,9 @@
 import type {
   CaptionTrackSnapshot,
+  ExportPresetDoc,
   ExportSettings,
   NormalizedSourceTimingSnapshot,
+  PersistedQueueJob,
   SourceColorHintsSnapshot,
   SourceDescriptorSnapshot,
   SourceFrameRateModeSnapshot,
@@ -38,8 +40,9 @@ import {
 } from './timeline';
 import { cloneClipKeyframes, parseClipKeyframes } from './keyframes';
 import { cloneClipLut, parsePersistedClipLut } from './lut';
+import { parseExportPresetDoc } from './export-presets';
 
-export const PROJECT_SCHEMA_VERSION = 9;
+export const PROJECT_SCHEMA_VERSION = 10;
 const DURATION_MATCH_TOLERANCE_S = 0.25;
 const TIMING_MATCH_TOLERANCE_S = 0.05;
 
@@ -56,6 +59,8 @@ export interface ProjectDoc {
   sources: SourceDescriptor[];
   masterGain: number;
   exportSettings?: ExportSettings;
+  exportPresets?: ExportPresetDoc[];
+  renderQueueHistory?: PersistedQueueJob[];
 }
 
 export interface SerializeProjectOptions {
@@ -68,6 +73,8 @@ export interface SerializeProjectOptions {
   masterGain?: number;
   savedAt?: Date;
   exportSettings?: ExportSettings;
+  exportPresets?: readonly ExportPresetDoc[];
+  renderQueueHistory?: readonly PersistedQueueJob[];
 }
 
 export type DeserializeProjectResult =
@@ -332,6 +339,16 @@ export function serializeProject(options: SerializeProjectOptions): ProjectDoc {
   };
   if (options.exportSettings) {
     doc.exportSettings = cloneExportSettings(options.exportSettings);
+  }
+  if (options.exportPresets && options.exportPresets.length > 0) {
+    doc.exportPresets = options.exportPresets.map((p) => ({ ...p }));
+  }
+  if (options.renderQueueHistory && options.renderQueueHistory.length > 0) {
+    doc.renderQueueHistory = options.renderQueueHistory.map((j) => ({
+      ...j,
+      settings: cloneExportSettings(j.settings),
+      jobRange: { ...j.jobRange } as PersistedQueueJob['jobRange'],
+    }));
   }
   return doc;
 }
@@ -964,6 +981,111 @@ function deserializeV9(value: Record<string, unknown>): DeserializeProjectResult
   };
 }
 
+function parseExportPresets(value: unknown): ExportPresetDoc[] {
+  if (!Array.isArray(value)) return [];
+  const result: ExportPresetDoc[] = [];
+  for (const item of value) {
+    const parsed = parseExportPresetDoc(item);
+    if (parsed && !parsed.builtIn) result.push(parsed);
+  }
+  return result;
+}
+
+function parsePersistedQueueHistory(value: unknown): PersistedQueueJob[] {
+  if (!Array.isArray(value)) return [];
+  const result: PersistedQueueJob[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue;
+    const v = item as Record<string, unknown>;
+    const id = typeof v.id === 'string' ? v.id : null;
+    if (!id) continue;
+    const status = v.status as PersistedQueueJob['status'];
+    const validStatuses = ['pending', 'completed', 'failed', 'canceled'];
+    if (!validStatuses.includes(status)) continue;
+    const settings = parseExportSettingsForQueue(v.settings);
+    if (!settings) continue;
+    const jobRange = parseJobRange(v.jobRange);
+    if (!jobRange) continue;
+    result.push({
+      id,
+      presetId: typeof v.presetId === 'string' ? v.presetId : null,
+      settings,
+      jobRange,
+      outputTemplate: typeof v.outputTemplate === 'string' ? v.outputTemplate : null,
+      outputFileName: typeof v.outputFileName === 'string' ? v.outputFileName : null,
+      status,
+      error: typeof v.error === 'string' ? v.error : null,
+      enqueuedAt: typeof v.enqueuedAt === 'string' ? v.enqueuedAt : new Date().toISOString(),
+      startedAt: typeof v.startedAt === 'string' ? v.startedAt : null,
+      completedAt: typeof v.completedAt === 'string' ? v.completedAt : null,
+      elapsedSeconds: typeof v.elapsedSeconds === 'number' ? v.elapsedSeconds : null,
+      outputBytes: typeof v.outputBytes === 'number' ? v.outputBytes : null,
+    });
+  }
+  return result;
+}
+
+function parseJobRange(value: unknown): PersistedQueueJob['jobRange'] | null {
+  if (!value || typeof value !== 'object') return null;
+  const v = value as Record<string, unknown>;
+  if (v.mode === 'full') return { mode: 'full' };
+  if (v.mode === 'range') {
+    const startS = typeof v.startS === 'number' ? v.startS : null;
+    const endS = typeof v.endS === 'number' ? v.endS : null;
+    if (startS === null || endS === null || endS <= startS) return null;
+    return { mode: 'range', startS, endS };
+  }
+  if (v.mode === 'markers') {
+    const startMarkerId = typeof v.startMarkerId === 'string' ? v.startMarkerId : null;
+    const endMarkerId = typeof v.endMarkerId === 'string' ? v.endMarkerId : null;
+    const resolvedStartS = typeof v.resolvedStartS === 'number' ? v.resolvedStartS : null;
+    const resolvedEndS = typeof v.resolvedEndS === 'number' ? v.resolvedEndS : null;
+    if (!startMarkerId || !endMarkerId || resolvedStartS === null || resolvedEndS === null) return null;
+    return { mode: 'markers', startMarkerId, endMarkerId, resolvedStartS, resolvedEndS };
+  }
+  return null;
+}
+
+function parseExportSettingsForQueue(value: unknown): ExportSettings | null {
+  if (!value || typeof value !== 'object') return null;
+  const v = value as Record<string, unknown>;
+  const preset = v.preset;
+  if (preset !== 'quality' && preset !== 'fast') return null;
+  const codec = v.codec;
+  if (codec !== 'h264' && codec !== 'vp9' && codec !== 'av1') return null;
+  const container = v.container;
+  if (container !== 'mp4' && container !== 'webm') return null;
+  const width = typeof v.width === 'number' && Number.isFinite(v.width) ? v.width : null;
+  const height = typeof v.height === 'number' && Number.isFinite(v.height) ? v.height : null;
+  const fps = typeof v.fps === 'number' && Number.isFinite(v.fps) ? v.fps : null;
+  const videoBitrate = typeof v.videoBitrate === 'number' && Number.isFinite(v.videoBitrate) ? v.videoBitrate : null;
+  if (width === null || height === null || fps === null || videoBitrate === null) return null;
+  let range: ExportSettings['range'];
+  if (v.range && typeof v.range === 'object') {
+    const r = v.range as Record<string, unknown>;
+    const startS = typeof r.startS === 'number' ? r.startS : null;
+    const endS = typeof r.endS === 'number' ? r.endS : null;
+    if (startS !== null && endS !== null) range = { startS, endS };
+  }
+  return { preset, codec, container, width, height, fps, videoBitrate, range };
+}
+
+function deserializeV10(value: Record<string, unknown>): DeserializeProjectResult {
+  const result = deserializeV9(value);
+  if (!result.ok) return result;
+  const exportPresets = parseExportPresets(value.exportPresets);
+  const renderQueueHistory = parsePersistedQueueHistory(value.renderQueueHistory);
+  return {
+    ok: true,
+    doc: {
+      ...result.doc,
+      schemaVersion: PROJECT_SCHEMA_VERSION,
+      exportPresets: exportPresets.length > 0 ? exportPresets : undefined,
+      renderQueueHistory: renderQueueHistory.length > 0 ? renderQueueHistory : undefined,
+    },
+  };
+}
+
 export function deserializeProject(value: unknown): DeserializeProjectResult {
   if (!isRecord(value)) return { ok: false, reason: 'Project document is not an object.' };
   const schemaVersion = finiteNumber(value.schemaVersion);
@@ -989,6 +1111,8 @@ export function deserializeProject(value: unknown): DeserializeProjectResult {
       return deserializeV6(value);
     case 9:
       return deserializeV9(value);
+    case 10:
+      return deserializeV10(value);
     default:
       return { ok: false, reason: `Unsupported project schemaVersion ${schemaVersion}.` };
   }
