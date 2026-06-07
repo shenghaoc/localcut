@@ -46,7 +46,6 @@ The timeline is where you arrange and edit your clips. Each track holds clips of
 | Play | `L` | Start playback from the playhead |
 | Pause | `K` | Pause playback |
 | Step Back | `J` | Move one frame backward |
-| Step Forward | `L` | Move one frame forward |
 
 ### Editing Operations
 
@@ -264,7 +263,7 @@ LocalCut Studio is a Progressive Web App. After the first visit:
 |-----|--------|
 | `J` | Step backward one frame |
 | `K` | Pause |
-| `L` | Play / Step forward |
+| `L` | Play |
 
 ### Editing
 | Key | Action |
