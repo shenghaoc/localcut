@@ -1,4 +1,4 @@
-import { createEffect, createSignal, For, Show } from 'solid-js';
+import { createEffect, createMemo, createSignal, For, Show } from 'solid-js';
 import { BookOpen, X } from 'lucide-solid';
 import { Button } from './components/button';
 import { renderMarkdown } from './markdown';
@@ -35,8 +35,7 @@ interface HelpPanelProps {
 }
 
 export function HelpPanel(props: HelpPanelProps) {
-  const docs = loadDocs;
-  const entries = docs();
+  const entries = loadDocs();
   const [activeIndex, setActiveIndex] = createSignal(0);
   let panelRef: HTMLElement | undefined;
 
@@ -49,11 +48,11 @@ export function HelpPanel(props: HelpPanelProps) {
     }
   });
 
-  function renderedHtml() {
+  const renderedHtml = createMemo(() => {
     const doc = activeDoc();
     if (!doc) return '';
     return renderMarkdown(doc.content);
-  }
+  });
 
   return (
     <Show when={props.open}>
@@ -66,6 +65,7 @@ export function HelpPanel(props: HelpPanelProps) {
         aria-labelledby="help-panel-title"
         tabIndex={-1}
         onKeyDown={(e) => {
+          e.stopPropagation();
           if (e.key === 'Escape') {
             props.onClose();
             return;

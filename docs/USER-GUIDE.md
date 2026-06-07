@@ -43,8 +43,8 @@ The timeline is where you arrange and edit your clips. Each track holds clips of
 
 | Control | Shortcut | Action |
 |---------|----------|--------|
-| Play | `Space` | Start playback from the playhead |
-| Pause | `K` or `Space` (while playing) | Pause playback |
+| Play | `L` | Start playback from the playhead |
+| Pause | `K` | Pause playback |
 | Step Back | `J` | Move one frame backward |
 | Step Forward | `L` | Move one frame forward |
 
@@ -87,7 +87,7 @@ The timeline is where you arrange and edit your clips. Each track holds clips of
 ### Markers
 
 Markers are reference points on the timeline:
-- **Add Marker**: Press `M` at the playhead position.
+- **Add Marker**: Use the timeline context menu at the playhead position.
 - **Delete Marker**: Right-click a marker and select delete.
 - Markers appear on the timeline ruler and can be used as export range boundaries.
 
@@ -141,7 +141,7 @@ Import a `.cube` LUT file for professional color grading:
 
 Add title cards to your project:
 
-1. Click **Add Title** in the timeline toolbar (or press `T`).
+1. Click **Add Title** in the timeline toolbar.
 2. A title clip is created at the playhead position.
 3. Select the title clip and use the Inspector to edit:
    - **Text**: The title content.
@@ -262,10 +262,9 @@ LocalCut Studio is a Progressive Web App. After the first visit:
 ### Transport
 | Key | Action |
 |-----|--------|
-| `Space` | Play/Pause |
 | `J` | Step backward one frame |
 | `K` | Pause |
-| `L` | Step forward one frame |
+| `L` | Play / Step forward |
 
 ### Editing
 | Key | Action |
@@ -274,9 +273,10 @@ LocalCut Studio is a Progressive Web App. After the first visit:
 | `Delete` / `Backspace` | Delete selected clip(s) |
 | `Ctrl+Z` / `Cmd+Z` | Undo |
 | `Ctrl+Shift+Z` / `Cmd+Shift+Z` | Redo |
+| `Ctrl+Y` | Redo (alternative) |
 | `Ctrl+C` / `Cmd+C` | Copy selected clip(s) |
 | `Ctrl+V` / `Cmd+V` | Paste copied clip(s) |
 | `Ctrl+D` / `Cmd+D` | Duplicate selected clip(s) |
-| `M` | Add marker at playhead |
-| `T` | Add title clip at playhead |
-| `Escape` | Deselect all clips / close panels |
+| `Ctrl+=` / `Cmd+=` | Zoom timeline in |
+| `Ctrl+-` / `Cmd+-` | Zoom timeline out |
+| `Escape` | Close open dialog |

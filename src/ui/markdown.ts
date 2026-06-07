@@ -4,7 +4,8 @@
  * headings (h1-h3), paragraphs, bold, italic, inline code, fenced code blocks,
  * unordered/ordered lists, links, horizontal rules, and tables.
  *
- * Security: escapes raw HTML in source text before processing.
+ * Security: escapes raw HTML in source text before processing. Sanitizes
+ * link URLs to prevent javascript: and data: protocol injection.
  */
 export function renderMarkdown(source: string): string {
   const lines = source.split('\n');
@@ -28,28 +29,40 @@ export function renderMarkdown(source: string): string {
       continue;
     }
 
-    // Table
-    if (i + 1 < lines.length && /^\|.*\|$/.test(line) && /^\|[\s\-:]+\|$/.test(lines[i + 1]!)) {
-      const headerCells = line.split('|').filter(Boolean).map((c) => c.trim());
+    // Table — header row followed by a separator row
+    if (
+      i + 1 < lines.length &&
+      /^\|.+\|$/.test(line) &&
+      /^\|[-:\s|]+\|$/.test(lines[i + 1]!)
+    ) {
+      const headerCells = line.split('|').slice(1, -1).map((c) => c.trim());
       const alignments = lines[i + 1]!
         .split('|')
-        .filter(Boolean)
+        .slice(1, -1)
         .map((c) => {
-          if (c.trim().startsWith(':') && c.trim().endsWith(':')) return 'center';
-          if (c.trim().endsWith(':')) return 'right';
+          const trimmed = c.trim();
+          if (trimmed.startsWith(':') && trimmed.endsWith(':')) return 'center';
+          if (trimmed.endsWith(':')) return 'right';
           return 'left';
         });
       html.push('<table><thead><tr>');
       for (let ci = 0; ci < headerCells.length; ci++) {
-        html.push(`<th style="text-align:${alignments[ci] ?? 'left'}">${renderInline(headerCells[ci]!)}</th>`);
+        html.push(
+          `<th style="text-align:${alignments[ci] ?? 'left'}">${renderInline(headerCells[ci]!)}</th>`,
+        );
       }
       html.push('</tr></thead><tbody>');
       i += 2;
-      while (i < lines.length && /^\|.*\|$/.test(lines[i]!)) {
-        const cells = lines[i]!.split('|').filter(Boolean).map((c) => c.trim());
+      while (i < lines.length && /^\|.+\|$/.test(lines[i]!)) {
+        const cells = lines[i]!
+          .split('|')
+          .slice(1, -1)
+          .map((c) => c.trim());
         html.push('<tr>');
         for (let ci = 0; ci < cells.length; ci++) {
-          html.push(`<td style="text-align:${alignments[ci] ?? 'left'}">${renderInline(cells[ci]!)}</td>`);
+          html.push(
+            `<td style="text-align:${alignments[ci] ?? 'left'}">${renderInline(cells[ci]!)}</td>`,
+          );
         }
         html.push('</tr>');
         i++;
@@ -127,15 +140,20 @@ function isSpecialLine(line: string): boolean {
     /^[\-\*\+]\s+/.test(line) ||
     /^\d+\.\s+/.test(line) ||
     /^(---|\*\*\*|___)\s*$/.test(line) ||
-    /^\|.*\|$/.test(line)
+    /^\|.+\|$/.test(line)
   );
 }
 
 function renderInline(text: string): string {
   let out = escapeHtml(text);
 
-  // Inline code (backticks)
-  out = out.replace(/`([^`]+)`/g, '<code>$1</code>');
+  // Extract inline code spans into placeholders so their content
+  // is protected from bold/italic/link processing.
+  const codePlaceholders: string[] = [];
+  out = out.replace(/`([^`]+)`/g, (_full, code: string) => {
+    codePlaceholders.push(`<code>${code}</code>`);
+    return `\x00C${codePlaceholders.length - 1}\x00`;
+  });
 
   // Bold + Italic (***)
   out = out.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
@@ -143,13 +161,23 @@ function renderInline(text: string): string {
   // Bold (**)
   out = out.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
 
-  // Italic (*) — single asterisk, not part of **
+  // Italic (*) — single asterisk, not part of ** or ***
   out = out.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
 
-  // Links [text](url)
-  out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  // Links [text](url) — sanitize URL to prevent XSS
+  out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_full, linkText: string, url: string) => {
+    const safeUrl = isSafeUrl(url.trim()) ? url : '#';
+    return `<a href="${safeUrl}" target="_blank" rel="noopener">${linkText}</a>`;
+  });
+
+  // Restore code span placeholders
+  out = out.replace(/\x00C(\d+)\x00/g, (_full, idx: string) => codePlaceholders[Number(idx)] ?? '');
 
   return out;
+}
+
+function isSafeUrl(url: string): boolean {
+  return /^(https?:|mailto:|tel:|#|\/|\.\/|\.\.\/)/i.test(url);
 }
 
 function escapeHtml(text: string): string {
