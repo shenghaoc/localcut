@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import appSource from './App.tsx?raw';
 import clockSource from './clock.ts?raw';
+import audioEngineSource from './audio-engine.ts?raw';
 
 /**
- * Regression guard for B4: the UI shell must never write the transport-clock
- * SharedArrayBuffer. The worker is the sole transport-clock writer; `clock.ts`
- * owns the read-side view. The crash/recovery path used to zero the SAB directly
- * (`new Float64Array(sab); view[0]=0...`) — that must not come back.
+ * Regression guard for B4 + Codex P1-4: the UI shell must never write the
+ * transport-clock SharedArrayBuffer (currentTime/duration/playState). The worker
+ * is the sole transport-clock writer; `clock.ts` owns the read-side view. The
+ * audio engine may prime only the AUDIO_CLOCK anchor (index 3), never the
+ * transport field.
  */
 describe('transport-clock SAB ownership (UI)', () => {
   it('App.tsx does not construct a Float64Array over the clock SAB', () => {
@@ -17,5 +19,10 @@ describe('transport-clock SAB ownership (UI)', () => {
     // The read-side view lives here and is never assigned to (writes go through the worker).
     expect(clockSource).toMatch(/new Float64Array\(sab\)/);
     expect(clockSource).not.toMatch(/view\[\d+\]\s*=/);
+  });
+
+  it('audio-engine.ts primes only AUDIO_CLOCK, never the transport CURRENT_TIME', () => {
+    expect(audioEngineSource).toMatch(/ClockIndex\.AUDIO_CLOCK\]\s*=/);
+    expect(audioEngineSource).not.toMatch(/ClockIndex\.CURRENT_TIME\]\s*=/);
   });
 });
