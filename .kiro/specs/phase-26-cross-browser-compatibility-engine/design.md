@@ -11,8 +11,8 @@ Define and implement `CapabilityTierV2`: a four-level tier system that maps each
 | Tier | Minimum requirements | Preview | Export | Clock |
 |------|----------------------|---------|--------|-------|
 | `core-webgpu` | WebGPU standard adapter + WebCodecs encode+decode + SAB + OffscreenCanvas + `crossOriginIsolated` | Full GPU: effect chain, multi-layer, full resolution | H.264 / VP9 / AV1 (probed) | SAB `Float64Array` |
-| `compatibility-webgpu` | WebGPU (standard or compat adapter) + WebCodecs decode; SAB not required | GPU render via OffscreenCanvas; reduced effect set; proxy resolution | Encode where probed; blob download fallback | rAF-message |
-| `limited-webcodecs` | WebCodecs `VideoDecoder` present; no WebGPU | Canvas2D OffscreenCanvas compositing, ≤720p | WebCodecs H.264/VP9 encode where probed; blob download fallback | rAF-message |
+| `compatibility-webgpu` | WebGPU (standard or compat adapter) + WebCodecs decode; SAB not required | GPU render via OffscreenCanvas; reduced effect set; proxy resolution | Encode where probed; blob download fallback | SAB (if available) / rAF-message |
+| `limited-webcodecs` | WebCodecs `VideoDecoder` present; no WebGPU | Canvas2D OffscreenCanvas compositing, ≤720p | WebCodecs H.264/VP9 encode where probed; blob download fallback | SAB (if available) / rAF-message |
 | `shell-only` | Neither WebGPU nor WebCodecs | Static unavailability message | Controls hidden | N/A |
 
 ## Reference capability matrix
@@ -80,7 +80,8 @@ interface CapabilityProbeResult {
   webGPUCore:           FeatureSupport;
   webGPUCompat:         FeatureSupport;
   compatibilityAdapter: boolean;          // true when only compat adapter succeeded
-  webCodecs:            FeatureSupport;   // VideoDecoder/VideoEncoder presence
+  webCodecsDecode:      FeatureSupport;   // VideoDecoder presence
+  webCodecsEncode:      FeatureSupport;   // VideoEncoder presence
   codecs:               CodecProbeResult;
   fileSystemAccess:     FeatureSupport;
   opfs:                 FeatureSupport;
@@ -100,16 +101,17 @@ Tier derivation — pure function, evaluated in order:
 
 ```typescript
 function deriveCapabilityTierV2(p: Omit<CapabilityProbeResult, 'tier'>): CapabilityTierV2 {
-  const hasGPU    = p.webGPUCore === 'supported' || p.webGPUCompat === 'supported';
-  const hasCodecs = p.webCodecs  === 'supported';
-  const hasSAB    = p.sharedArrayBuffer === 'supported';
-  const hasOC     = p.offscreenCanvas   === 'supported';
+  const hasGPU     = p.webGPUCore === 'supported' || p.webGPUCompat === 'supported';
+  const hasDecoder = p.webCodecsDecode === 'supported';
+  const hasEncoder = p.webCodecsEncode === 'supported';
+  const hasSAB     = p.sharedArrayBuffer === 'supported';
+  const hasOC      = p.offscreenCanvas   === 'supported';
 
-  if (p.webGPUCore === 'supported' && hasCodecs && hasSAB && hasOC && p.crossOriginIsolated)
+  if (p.webGPUCore === 'supported' && hasDecoder && hasEncoder && hasSAB && hasOC && p.crossOriginIsolated)
     return 'core-webgpu';
-  if (hasGPU && hasCodecs)
+  if (hasGPU && hasDecoder)
     return 'compatibility-webgpu';
-  if (hasCodecs)
+  if (hasDecoder)
     return 'limited-webcodecs';
   return 'shell-only';
 }
@@ -122,8 +124,8 @@ Individual codec probes use `VideoDecoder.isConfigSupported` and `VideoEncoder.i
 | Tier | Clock source | Mechanism |
 |------|-------------|-----------|
 | `core-webgpu` | SAB `Float64Array[0]` | Worker writes; main reads via rAF (unchanged) |
-| `compatibility-webgpu` | `AudioContext.currentTime` | Main thread rAF posts `{ type: 'clock-tick', time }` to worker at ~60 fps |
-| `limited-webcodecs` | `AudioContext.currentTime` | Same rAF-message path; OffscreenCanvas worker decodes on demand |
+| `compatibility-webgpu` | SAB when available, otherwise `AudioContext.currentTime` | Worker writes SAB on isolated origins; main thread rAF posts `{ type: 'clock-tick', time }` only when SAB is unavailable |
+| `limited-webcodecs` | SAB when available, otherwise `AudioContext.currentTime` | Same SAB-first rule; OffscreenCanvas worker uses rAF-message ticks only when SAB is unavailable |
 | `shell-only` | N/A | No playback worker started |
 
 The rAF-message clock is only activated when SAB is unavailable (`hasSAB === false`). The code path is explicit and never chosen when `crossOriginIsolated` is true and SAB is present.
@@ -139,7 +141,7 @@ When the probe reports `compatibilityAdapter: true`, the worker initializes a mo
 | Shader features | f16, subgroups, timestamp-query (probed) | None assumed; re-probed per-adapter |
 | Effect set | Full (color-grade, LUT, transform, composite, custom) | `color-grade` and `transform` only |
 | `queue.submit` | Once per frame | Once per frame (unchanged) |
-| `videoFrame.close()` | After `importExternalTexture` | After `copyExternalImageToTexture` |
+| `videoFrame.close()` | After `importExternalTexture` | After `createImageBitmap` |
 
 The module must not import any symbol from `src/engine/worker.ts` or the effect pipeline. It may import the WGSL shader loader helper and the timeline resolver.
 

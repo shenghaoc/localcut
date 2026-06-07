@@ -11,7 +11,7 @@
 - [ ] **T1.5** Probe both `requestAdapter()` (standard) and `requestAdapter({ featureLevel: 'compatibility' })` in sequence; set `compatibilityAdapter: true` only when the standard probe fails but the compat probe succeeds.
 - [ ] **T1.6** Call `probeCapabilities()` in the app's initialization sequence before the `init` message is posted to the pipeline worker; attach the probe result to the `WorkerInitV2` payload.
 - [ ] **T1.7** Create `src/engine/compatibility/capability-fixtures.ts`: export `probeResultFor(tier: CapabilityTierV2): CapabilityProbeResult` returning a synthetic minimum-viable probe result for each tier; used by all compatibility tests.
-- [ ] **T1.8** Unit-test `deriveCapabilityTierV2`: verify all four tier outcomes; verify `compatibility-webgpu` triggers when SAB is absent but WebGPU is present; verify `core-webgpu` requires all five preconditions; verify `shell-only` when both WebGPU and WebCodecs probes are `'unsupported'`.
+- [ ] **T1.8** Unit-test `deriveCapabilityTierV2`: verify all four tier outcomes; verify `compatibility-webgpu` triggers when SAB is absent but WebGPU is present; verify `core-webgpu` requires all preconditions; verify `shell-only` when both WebGPU and WebCodecs decode probes are `'unsupported'`.
 - [ ] **T1.9** Unit-test codec probe mapping: verify that the derived export constraint set matches the codec probe results (e.g. `vp9Encode: 'unsupported'` removes VP9 from available export codecs).
 
 ## T2 — Protocol additions

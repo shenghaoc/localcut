@@ -14,7 +14,7 @@
 
 ## R1 — Capability Probing
 
-- **R1.1** Probe each of the following independently at session start, before the pipeline worker is initialized: `crossOriginIsolated`, `SharedArrayBuffer`, WebGPU standard adapter, WebGPU compatibility-mode adapter (`featureLevel: 'compatibility'`), WebCodecs `VideoDecoder` and `VideoEncoder` presence, per-codec decode support (H.264, VP9, AV1), per-codec encode support (H.264, VP9, AV1), WebCodecs audio decode (AAC, Opus), WebCodecs audio encode (AAC, Opus), File System Access API (`showOpenFilePicker`), OPFS (`navigator.storage.getDirectory`), `AudioWorklet`, `OffscreenCanvas`.
+- **R1.1** Probe each of the following independently at session start, before the pipeline worker is initialized: `crossOriginIsolated`, `SharedArrayBuffer`, WebGPU standard adapter, WebGPU compatibility-mode adapter (`featureLevel: 'compatibility'`), WebCodecs `VideoDecoder` presence (`webCodecsDecode`) and `VideoEncoder` presence (`webCodecsEncode`), per-codec decode support (H.264, VP9, AV1), per-codec encode support (H.264, VP9, AV1), WebCodecs audio decode (AAC, Opus), WebCodecs audio encode (AAC, Opus), File System Access API (`showOpenFilePicker`), OPFS (`navigator.storage.getDirectory`), `AudioWorklet`, `OffscreenCanvas`.
 - **R1.2** Each probed feature must report one of three states: `supported`, `unsupported`, or `unknown` (probe inconclusive or threw unexpectedly).
 - **R1.3** The full probe result must be resolved before the worker is spawned; the resolved `CapabilityTierV2` is immutable for the session lifetime.
 - **R1.4** A reference capability matrix for Chromium (Chrome/Edge), Safari, and Firefox must be maintained in `design.md` and updated whenever a browser ships a materially relevant API change.
@@ -23,8 +23,8 @@
 
 - **R2.1** Define four named tiers in ascending capability order:
   - `core-webgpu` — WebCodecs encode+decode + WebGPU standard adapter + SAB + OffscreenCanvas + `crossOriginIsolated`. Full premium experience with no restrictions.
-  - `compatibility-webgpu` — WebGPU (standard or compatibility adapter) present + WebCodecs decode present; SAB or COOP/COEP absent, or encode codec set is reduced. GPU-rendered preview with rAF clock; encode where probed; no SAB-dependent features.
-  - `limited-webcodecs` — WebCodecs decode present; no WebGPU. Canvas2D OffscreenCanvas compositing, rAF clock, no WGSL effects.
+  - `compatibility-webgpu` — WebGPU (standard or compatibility adapter) present + WebCodecs decode present; SAB or COOP/COEP absent, or encode codec set is reduced. GPU-rendered preview with SAB when available or rAF-message clock when SAB is absent; encode where probed; no required SAB-dependent features.
+  - `limited-webcodecs` — WebCodecs decode present; no WebGPU. Canvas2D OffscreenCanvas compositing, SAB when available or rAF-message clock when SAB is absent, no WGSL effects.
   - `shell-only` — Neither WebGPU nor WebCodecs available. Timeline editing and project management only; no preview or export.
 - **R2.2** Tier derivation must be a pure function of the probe result; identical probe inputs must always produce the same tier.
 - **R2.3** The active tier must be visible in the persistent status bar and in the diagnostic panel at all times.
@@ -41,8 +41,8 @@
 
 ## R4 — Reduced Preview
 
-- **R4.1** `compatibility-webgpu` preview: GPU-rendered via OffscreenCanvas; rAF-message clock (main thread rAF posts `clock-tick` to worker); reduced effect set (color-grade and transform only; no LUT, no f16, no subgroups); resolution proxy capped below the premium default.
-- **R4.2** `limited-webcodecs` preview: Canvas2D compositing of decoded `VideoFrame` bitmaps via `createImageBitmap` in an OffscreenCanvas worker; rAF-message clock; resolution capped at 1280×720; no GPU effects applied; decoded frame queue bounded to 3 frames ahead.
+- **R4.1** `compatibility-webgpu` preview: GPU-rendered via OffscreenCanvas; SAB clock when available, otherwise rAF-message clock (main thread rAF posts `clock-tick` to worker); reduced effect set (color-grade and transform only; no LUT, no f16, no subgroups); resolution proxy capped below the premium default.
+- **R4.2** `limited-webcodecs` preview: Canvas2D compositing of decoded `VideoFrame` bitmaps via `createImageBitmap` in an OffscreenCanvas worker; SAB clock when available, otherwise rAF-message clock; resolution capped at 1280×720; no GPU effects applied; decoded frame queue bounded to 3 frames ahead.
 - **R4.3** `shell-only` preview: the preview panel renders a persistent, plain-language "Preview unavailable" message; all playback transport controls are disabled.
 - **R4.4** Every reduced preview mode must display a persistent labeled badge stating the active tier and what is absent.
 - **R4.5** The rAF-message clock path must not be used when SAB is available; the choice must be driven by the probe result, not a flag.
@@ -50,7 +50,7 @@
 ## R5 — Reduced Export
 
 - **R5.1** The export dialog must display an encode support summary for the active tier before the user initiates export; supported codecs are selectable, unsupported ones are visibly flagged with a reason.
-- **R5.2** `compatibility-webgpu` export: WebCodecs encode where the per-codec encode probe reports `supported`; unavailable codecs are disabled in the picker but not hidden; falls back to a blob download if the chosen container cannot be muxed.
+- **R5.2** `compatibility-webgpu` export: WebCodecs encode where the per-codec encode probe reports `supported`; unavailable codecs are disabled in the picker but not hidden; falls back to a blob download if the File System Access API is unavailable.
 - **R5.3** `limited-webcodecs` export: Canvas2D raster path per frame → WebCodecs encode (H.264 or VP9 only, probed) → Mediabunny mux → download blob; GPU effects are not applied; output is labeled "Limited export — GPU effects not applied".
 - **R5.4** `shell-only`: export controls are not rendered; the export button shows an unavailability message explaining which feature is missing and what browser would enable it.
 - **R5.5** Export backpressure must be enforced in all tiers: check `encoder.encodeQueueSize` before each frame and await when the queue is full; no frame may be submitted to an unbounded encode queue.
