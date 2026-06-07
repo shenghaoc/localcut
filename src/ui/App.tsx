@@ -692,11 +692,13 @@ export function App() {
       case 'diagnostic-snapshot': {
         setRecentErrorLog((prev) => {
           const workerEntries = msg.snapshot.recentErrors.entries;
-          const uiCodes = new Set(prev.entries.map((e) => `${e.subsystem}:${e.code}`));
-          const merged = [
-            ...prev.entries,
-            ...workerEntries.filter((e) => !uiCodes.has(`${e.subsystem}:${e.code}`)),
-          ].slice(0, prev.capacity);
+          // Worker entries are authoritative for shared subsystem:code pairs — they
+          // carry the fresh occurrenceCount/timestamp. Keep only UI-originated
+          // entries the worker doesn't report; otherwise the panel would pin stale
+          // worker counts from an earlier snapshot.
+          const workerCodes = new Set(workerEntries.map((e) => `${e.subsystem}:${e.code}`));
+          const uiOnly = prev.entries.filter((e) => !workerCodes.has(`${e.subsystem}:${e.code}`));
+          const merged = [...workerEntries, ...uiOnly].slice(0, prev.capacity);
           return { ...prev, entries: merged };
         });
         void refreshDiagnostics(msg.snapshot);

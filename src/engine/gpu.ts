@@ -24,7 +24,13 @@ import {
 import {
   OutputTransfer,
 } from './colour';
-import { SCOPES_FEATURE_ENABLED, resetScopeSlot, histogramSlotOffset } from './scopes';
+import {
+  SCOPES_FEATURE_ENABLED,
+  resetScopeSlot,
+  histogramSlotOffset,
+  beginScopeWrite,
+  endScopeWrite,
+} from './scopes';
 
 export interface DeviceLostInfo {
   readonly reason: GPUDeviceLostReason;
@@ -772,13 +778,15 @@ export class PreviewRenderer {
     _accView: GPUTextureView,
   ): void {
     if (!this.scopeSab) return;
-    // Reset the slot before (placeholder) accumulation so stale values from the
-    // previous frame never leak into the result, then advance the heartbeat
-    // sequence. This runs inside the single per-frame command encoder; no extra
+    // Seqlock write: mark the slot "writing" (odd) before clearing the
+    // accumulation region, then "ready" (even) after — so a concurrent
+    // main-thread reader never observes an even sequence over half-cleared data.
+    // This runs inside the single per-frame command encoder; no extra
     // queue.submit and no CPU pixel readback are introduced.
-    const seq = this.scopeSab[0] + 1;
-    resetScopeSlot(this.scopeSab, histogramSlotOffset(), 0);
-    this.scopeSab[0] = seq;
+    const slot = histogramSlotOffset();
+    beginScopeWrite(this.scopeSab, slot);
+    resetScopeSlot(this.scopeSab, slot, 0);
+    endScopeWrite(this.scopeSab, slot);
   }
 
   destroy(): void {

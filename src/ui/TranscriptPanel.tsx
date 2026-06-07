@@ -78,11 +78,25 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
       const byId = track.segments.findIndex((segment) => segment.id === selectedId);
       if (byId >= 0) return byId;
     }
-    // Fall back to the segment under the playhead.
+    // Fall back to the segment under the playhead. Caption segments are sorted by
+    // start time, so binary search keeps this O(log N) — playheadTime updates ~60×
+    // per second during playback and would otherwise rescan the whole track.
     const t = props.playheadTime;
-    const byTime = track.segments.findIndex(
-      (segment) => t >= segment.start && t < segment.start + segment.duration,
-    );
+    let low = 0;
+    let high = track.segments.length - 1;
+    let byTime = -1;
+    while (low <= high) {
+      const mid = (low + high) >> 1;
+      const segment = track.segments[mid]!;
+      if (t >= segment.start && t < segment.start + segment.duration) {
+        byTime = mid;
+        break;
+      } else if (t < segment.start) {
+        high = mid - 1;
+      } else {
+        low = mid + 1;
+      }
+    }
     return byTime >= 0 ? byTime : 0;
   });
   const segmentWindow = createMemo(() =>

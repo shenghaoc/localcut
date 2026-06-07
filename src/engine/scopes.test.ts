@@ -152,7 +152,7 @@ describe('Scope SAB ring-buffer', () => {
     expect(buf[slotOffset + 7]).toBe(5);
   });
 
-  it('resetScopeSlot zeroes the header + data region before accumulation', () => {
+  it('resetScopeSlot clears header + data but preserves the seqlock sequence', () => {
     const buf = createTestBuffer();
     const slotOffset = histogramSlotOffset();
     const dataFloats = 5;
@@ -163,9 +163,12 @@ describe('Scope SAB ring-buffer', () => {
 
     const cleared = resetScopeSlot(buf, slotOffset, dataFloats);
     expect(cleared).toBe(3 + dataFloats);
-    for (let i = 0; i < cleared; i += 1) {
+    // Everything after the sequence guard is zeroed...
+    for (let i = 1; i < cleared; i += 1) {
       expect(buf[slotOffset + i]).toBe(0);
     }
+    // ...but the sequence number at slotOffset is preserved (race-safety).
+    expect(buf[slotOffset]).toBe(123);
   });
 });
 

@@ -168,9 +168,15 @@ export function resetScopeSlot(
   slotOffset: number,
   dataFloats: number,
 ): number {
-  const total = SLOT_HEADER_FLOATS + dataFloats;
-  buffer.fill(0, slotOffset, slotOffset + total);
-  return total;
+  // Preserve the sequence counter at `slotOffset` (the seqlock guard): zeroing it
+  // would briefly publish an even value over a half-cleared slot, letting a
+  // concurrent main-thread reader treat it as stable and read garbage. Only the
+  // timestamp/clipCount header fields and the data region are cleared; the writer
+  // owns the sequence via beginScopeWrite/endScopeWrite.
+  const start = slotOffset + 1;
+  const count = SLOT_HEADER_FLOATS - 1 + dataFloats;
+  buffer.fill(0, start, start + count);
+  return count + 1;
 }
 
 /** Begin writing a scope slot: set sequence to odd value (writer is active). */
