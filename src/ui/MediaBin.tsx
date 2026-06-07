@@ -1,5 +1,6 @@
 import { createEffect, For, Show } from 'solid-js';
-import { AlertTriangle, Film, Gauge, Image as ImageIcon, Music2, Plus, Trash2 } from 'lucide-solid';
+import { Popover } from '@kobalte/core/popover';
+import { AlertTriangle, Film, Gauge, Image as ImageIcon, Info, Music2, Plus, Trash2 } from 'lucide-solid';
 import type { MediaAssetSnapshot } from '../protocol';
 import type { ThumbnailEntry } from './thumbnail-store';
 
@@ -63,6 +64,84 @@ function proxyLabel(asset: MediaAssetSnapshot): string | null {
     return `Generating proxy${progress}`;
   }
   return `Proxy ${proxy.status}`;
+}
+
+function metaRows(asset: MediaAssetSnapshot): { label: string; value: string }[] {
+  const rows: { label: string; value: string }[] = [];
+  const v = asset.video;
+  const a = asset.audio;
+  if (v) {
+    rows.push({ label: 'Resolution', value: `${v.width}×${v.height}` });
+    if (v.frameRate) {
+      const fps = v.frameRate % 1 === 0 ? `${v.frameRate}` : v.frameRate.toFixed(2).replace(/0+$/, '');
+      const mode = v.frameRateMode === 'variable' ? ' (variable)' : '';
+      rows.push({ label: 'Frame rate', value: `${fps} fps${mode}` });
+    }
+    if (v.rotationDeg) rows.push({ label: 'Rotation', value: `${v.rotationDeg}°` });
+    if (v.codec) rows.push({ label: 'Video codec', value: v.codec });
+  }
+  if (a) {
+    const parts: string[] = [`${a.channels} ch`];
+    if (a.sampleRate) parts.push(`${(a.sampleRate / 1000).toFixed(1)} kHz`);
+    if (a.codec) parts.push(a.codec);
+    rows.push({ label: 'Audio', value: parts.join(' · ') });
+  }
+  rows.push({ label: 'Duration', value: formatDuration(asset.durationS) });
+  rows.push({ label: 'File size', value: formatSize(asset.byteSize) });
+  if (asset.mimeType) rows.push({ label: 'Type', value: asset.mimeType });
+  return rows;
+}
+
+function MetaInfoPopover(props: { asset: MediaAssetSnapshot }) {
+  const proxy = () => proxyLabel(props.asset);
+  return (
+    <Popover placement="right-start" gutter={8}>
+      <Popover.Trigger
+        as="button"
+        type="button"
+        class="media-bin-button"
+        aria-label={`File details for ${props.asset.fileName}`}
+        title="Show file details"
+      >
+        <Info size={13} aria-hidden="true" />
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content class="media-info-popover panel">
+          <p class="media-info-filename">{props.asset.fileName}</p>
+          <dl class="media-info-rows">
+            <For each={metaRows(props.asset)}>
+              {(row) => (
+                <>
+                  <dt class="media-info-label">{row.label}</dt>
+                  <dd class="media-info-value">{row.value}</dd>
+                </>
+              )}
+            </For>
+          </dl>
+          <Show when={(props.asset.health?.warnings.length ?? 0) > 0}>
+            <ul class="media-info-health">
+              <For each={props.asset.health!.warnings}>
+                {(w) => (
+                  <li class={`media-info-health-item is-${w.severity}`}>
+                    <AlertTriangle size={11} aria-hidden="true" />
+                    <span>{w.message}</span>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </Show>
+          <Show when={proxy()} keyed>
+            {(label) => (
+              <p class="media-info-proxy">
+                <Gauge size={11} aria-hidden="true" />
+                <span>{label}</span>
+              </p>
+            )}
+          </Show>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover>
+  );
 }
 
 /** Single bin thumbnail: requests one frame and draws the transferred bitmap. */
@@ -198,6 +277,7 @@ export function MediaBin(props: MediaBinProps) {
                     </Show>
                   </div>
                   <div class="media-bin-actions">
+                    <MetaInfoPopover asset={asset} />
                     <button
                       type="button"
                       class="media-bin-button"
