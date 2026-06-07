@@ -4,7 +4,7 @@ LocalCut Studio is a browser-native non-linear video editor. It runs entirely on
 
 ## Browser Requirements
 
-LocalCut Studio uses your browser's hardware acceleration for real-time video processing. There are three capability tiers:
+LocalCut Studio uses your browser's hardware acceleration for real-time video processing. There are four capability tiers:
 
 | Tier | What You Get | Requirements |
 |------|-------------|-------------|
@@ -29,7 +29,7 @@ You can import video, audio, and image files:
 - **Click Import** in the toolbar and select files from your computer.
 - **Supported formats**: MP4, MOV, WebM (video), MP3, M4A, WAV, OGG (audio), PNG, JPG, WebP, GIF, AVIF (images).
 
-Imported media appears in the **Media Bin** on the left side of the workspace. From there you can drag clips onto the timeline.
+Imported media appears in the **Media Bin** on the left side of the workspace. When the timeline is empty, the first playable import is also placed on the timeline so you can press **Play** immediately; additional sources can be added from the Media Bin.
 
 ### Compatibility Imports
 
@@ -71,8 +71,8 @@ The timeline is where you arrange and edit your clips. Each track holds clips of
 ### Track Management
 
 - **Add Track**: Click the **+** button in the timeline header to add a video or audio track.
-- **Remove Track**: Right-click a track header and select remove.
-- **Reorder**: Drag track headers to reorder them.
+- **Remove Track**: Click the remove control in the track header.
+- **Reorder**: Use the up/down controls in the track header.
 - **Lock**: Lock a track to prevent accidental edits.
 - **Visibility**: Toggle track visibility to hide it from preview/export.
 - **Sync Lock**: When enabled, edits on other tracks preserve this track's sync relationship.
@@ -86,8 +86,8 @@ The timeline is where you arrange and edit your clips. Each track holds clips of
 ### Markers
 
 Markers are reference points on the timeline:
-- **Add Marker**: Use the timeline context menu at the playhead position.
-- **Delete Marker**: Right-click a marker and select delete.
+- **Add Marker**: Click the marker add control at the playhead position.
+- **Delete Marker**: Click the delete control on the marker.
 - Markers appear on the timeline ruler and can be used as export range boundaries.
 
 ## Preview
@@ -104,8 +104,8 @@ When you select a clip on the timeline, the **Inspector** (right sidebar) shows 
 
 ### Video Clips
 - **Transform**: Position (X/Y), scale, rotation, and opacity.
-- **Fit Modes**: Fill, Fit, Crop, or None.
-- **Effects**: Brightness, contrast, saturation, temperature, tint, sharpen, blur, vignette.
+- **Fit Modes**: Fill, Fit, or Letterbox.
+- **Effects**: Brightness, contrast, saturation, temperature, temperature strength, and LUT strength.
 - **LUT**: Import a `.cube` color grading LUT and adjust its strength.
 
 ### Audio Clips
@@ -126,7 +126,7 @@ Effects are applied per-clip and processed in real-time on your GPU:
 
 1. Select a clip on the timeline.
 2. In the Inspector, adjust effect sliders under the **Effects** section.
-3. Effects include: **Brightness**, **Contrast**, **Saturation**, **Temperature**, **Tint**, **Sharpen**, **Blur**, **Vignette**.
+3. Effects include: **Brightness**, **Contrast**, **Saturation**, **Temperature**, **Temp Strength**, and **LUT Strength**.
 
 ### LUT Import
 
@@ -168,9 +168,9 @@ Import, edit, and export caption tracks:
 
 - **Import Captions**: Click **Import** in the Transcript panel to load SRT or VTT files.
 - **Edit Text**: Click any caption segment to edit its text inline.
-- **Adjust Timing**: Drag segment edges or edit start/end times in the Inspector.
+- **Adjust Timing**: Drag segment edges or edit start/end times in the caption panel.
 - **Split/Merge**: Split a segment at the playhead, or merge adjacent segments.
-- **Style**: Set font, size, color, background, and position per track.
+- **Style**: Set preset, font size, color, background, burn-in, and visibility per track.
 - **Export**: Export captions as SRT or VTT files.
 
 ## Exporting
@@ -199,7 +199,7 @@ Save your export settings as presets for reuse:
 Queue multiple export jobs to run sequentially:
 
 1. In the export dialog, configure settings and click **Add to Queue** instead of **Start Export**.
-2. Open the **Render Queue** panel from the toolbar.
+2. The **Render Queue** panel appears below the timeline when jobs are queued.
 3. Choose output destinations for pending jobs.
 4. Click **Start Queue** to process all jobs in order.
 5. You can add jobs with different settings (codec, range, markers).
