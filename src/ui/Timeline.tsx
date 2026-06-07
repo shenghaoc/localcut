@@ -635,6 +635,7 @@ export function Timeline(props: TimelineProps) {
                 onKeyDown={onScrubKeyDown}
                 tabIndex={0}
                 role="slider"
+                aria-roledescription="timeline seek control"
                 aria-label="Timeline"
                 aria-valuemin={0}
                 aria-valuemax={props.duration()}

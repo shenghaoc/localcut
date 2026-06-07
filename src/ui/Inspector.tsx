@@ -350,7 +350,10 @@ export function Inspector(props: InspectorProps) {
     if (!transform) return;
     transformTarget.trackId = transform.trackId;
     transformTarget.clipId = transform.clipId;
-    setTransformDraft((prev) => (prev ? { ...prev, [key]: value } : prev));
+    setTransformDraft((prev) => {
+      const base = prev ?? transform.transform;
+      return { ...base, [key]: value };
+    });
     transformPending.set(key, value);
     if (shouldEditKeyframe(key)) keyframeTimes.set(key, props.playheadTime);
     const existing = transformDebouncers.get(key);
@@ -377,7 +380,10 @@ export function Inspector(props: InspectorProps) {
   function setFitMode(fit: FitModeSnapshot) {
     const transform = props.selectedClipTransform;
     if (!transform) return;
-    setTransformDraft((prev) => (prev ? { ...prev, fit } : prev));
+    setTransformDraft((prev) => {
+      const base = prev ?? transform.transform;
+      return { ...base, fit };
+    });
     props.onTransform(transform.trackId, transform.clipId, { fit });
   }
 

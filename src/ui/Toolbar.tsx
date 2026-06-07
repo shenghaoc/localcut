@@ -139,6 +139,7 @@ export function Toolbar(props: ToolbarProps) {
 							class="transport-play"
 							onClick={() => props.onPlay()}
 							disabled={transportDisabled() || props.playing()}
+							aria-label="Play transport"
 						>
 							<Play size={14} aria-hidden="true" />
 							Play
@@ -146,6 +147,7 @@ export function Toolbar(props: ToolbarProps) {
 						<Button
 							onClick={() => props.onPause()}
 							disabled={transportDisabled() || !props.playing()}
+							aria-label="Pause transport"
 						>
 							<Pause size={14} aria-hidden="true" />
 							Pause
@@ -174,9 +176,9 @@ export function Toolbar(props: ToolbarProps) {
 								onInput={(e) =>
 									props.onMasterGain(Number((e.currentTarget as HTMLInputElement).value))
 								}
-								aria-valuetext={`${props.masterGain.toFixed(2)}`}
+								aria-valuetext={Number.isFinite(props.masterGain) ? props.masterGain.toFixed(2) : '0.00'}
 							/>
-							<span class="master-fader-value tabular-nums">{props.masterGain.toFixed(2)}</span>
+							<span class="master-fader-value tabular-nums">{Number.isFinite(props.masterGain) ? props.masterGain.toFixed(2) : '0.00'}</span>
 						</label>
 					</div>
 					{props.exportControl}

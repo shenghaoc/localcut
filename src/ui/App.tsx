@@ -83,6 +83,7 @@ import {
 } from '../engine/render-queue';
 import { BUILT_IN_PRESETS } from '../engine/export-presets';
 import { createRecoveryMachine, type WorkerRecoveryState } from '../engine/recovery';
+import { AppErrorBoundary } from './ErrorBoundary';
 import PipelineWorker from '../engine/worker.ts?worker';
 
 const VIDEO_ACCEPT =
@@ -271,10 +272,14 @@ export function App() {
     },
   });
 
-  const sab =
-    typeof SharedArrayBuffer === 'function'
-      ? new SharedArrayBuffer(CLOCK_BUFFER_BYTES)
-      : null;
+  const sab = (() => {
+    if (typeof SharedArrayBuffer !== 'function') return null;
+    try {
+      return new SharedArrayBuffer(CLOCK_BUFFER_BYTES);
+    } catch {
+      return null;
+    }
+  })();
   let bridge: ReturnType<typeof createWorkerBridge> | null = null;
   let worker: Worker | null = null;
   let initSent = false;
@@ -891,7 +896,7 @@ export function App() {
     })));
     setStatusLine(
       crashState === 'throttled'
-        ? 'Worker crashed · restart limit reached'
+        ? 'Worker crashed · restart limit reached. Reload the page to recover.'
         : 'Worker crashed · restart available',
     );
     if (crashState !== 'throttled') {
@@ -912,6 +917,7 @@ export function App() {
       oldWorker.removeEventListener('error', handleWorkerCrash);
       if (oldBridge) {
         try {
+          oldBridge.dispose();
           oldBridge.send({ type: 'dispose' });
         } catch {
           // Worker may already be dead
@@ -1622,6 +1628,14 @@ export function App() {
       setHasActiveSW(!!navigator.serviceWorker.controller);
     }
 
+    let dragDepth = 0;
+    const onDragEnter = (e: DragEvent) => {
+      // Only count external file drags so internal drags (e.g. media-bin to track)
+      // never increment the counter and cause it to desync from dragOver/drop.
+      if (e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files')) {
+        dragDepth++;
+      }
+    };
     const onDragOver = (e: DragEvent) => {
       // Ignore internal drags (e.g. a media-bin asset onto a track); only OS file
       // drops carry the "Files" type and should raise the import overlay.
@@ -1630,10 +1644,16 @@ export function App() {
       setIsDraggingFile(true);
     };
     const onDragLeave = (e: DragEvent) => {
-      if (e.relatedTarget === null) setIsDraggingFile(false);
+      if (!e.dataTransfer || !Array.from(e.dataTransfer.types).includes('Files')) return;
+      dragDepth--;
+      if (dragDepth <= 0) {
+        dragDepth = 0;
+        setIsDraggingFile(false);
+      }
     };
     const onDrop = (e: DragEvent) => {
       e.preventDefault();
+      dragDepth = 0;
       setIsDraggingFile(false);
       const files = e.dataTransfer?.files;
       if (files && files.length > 0) {
@@ -1642,6 +1662,7 @@ export function App() {
         }
       }
     };
+    window.addEventListener('dragenter', onDragEnter);
     window.addEventListener('dragover', onDragOver);
     window.addEventListener('dragleave', onDragLeave);
     window.addEventListener('drop', onDrop);
@@ -1649,6 +1670,7 @@ export function App() {
       unregisterKeyboard();
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('online', handleOnline);
+      window.removeEventListener('dragenter', onDragEnter);
       window.removeEventListener('dragover', onDragOver);
       window.removeEventListener('dragleave', onDragLeave);
       window.removeEventListener('drop', onDrop);
@@ -1671,6 +1693,7 @@ export function App() {
           workerToDispose.removeEventListener('message', onDisposeComplete);
           workerToDispose.terminate();
         }, 1500);
+        bridge.dispose();
         bridge.send({ type: 'dispose' });
       } else if (worker) {
         worker.removeEventListener('error', handleWorkerCrash);
@@ -1848,6 +1871,7 @@ export function App() {
           </section>
         )}
       </Show>
+      <AppErrorBoundary>
       <main class={`workspace${previewSurfaceAvailable() ? ' has-bin' : ''}`}>
         <Show when={previewSurfaceAvailable()}>
           <MediaBin
@@ -2185,6 +2209,7 @@ export function App() {
           }
         }}
       />
+      </AppErrorBoundary>
     </div>
   );
 }

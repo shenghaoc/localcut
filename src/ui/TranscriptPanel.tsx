@@ -287,25 +287,28 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
                 <For each={visibleSegments()}>
                   {(segment) => (
                     <div class={`transcript-row${selectedIdSet().has(segment.id) ? ' is-selected' : ''}`}>
-                      <input
-                        type="checkbox"
-                        aria-label={`Select caption segment ${segment.id}`}
-                        checked={selectedIdSet().has(segment.id)}
-                        onChange={(event) => toggleSegment(segment.id, event.currentTarget.checked)}
-                      />
+                      <label class="transcript-row-check-label">
+                        <input
+                          type="checkbox"
+                          checked={selectedIdSet().has(segment.id)}
+                          onChange={(event) => toggleSegment(segment.id, event.currentTarget.checked)}
+                        />
+                        <span class="transcript-time">
+                          {formatTime(segment.start)} - {formatTime(segment.start + segment.duration)}
+                        </span>
+                        <span class="transcript-text">{segment.text}</span>
+                      </label>
                       <button
                         type="button"
                         class="transcript-row-main"
-                        onClick={() => {
+                        onClick={(event) => {
+                          event.preventDefault();
                           props.onSelectTrack(track().id);
                           props.onSelectSegmentIds([segment.id]);
                           setDraftText(segment.text);
                         }}
                       >
-                        <span class="transcript-time">
-                          {formatTime(segment.start)} - {formatTime(segment.start + segment.duration)}
-                        </span>
-                        <span class="transcript-text">{segment.text}</span>
+                        Edit
                       </button>
                     </div>
                   )}
