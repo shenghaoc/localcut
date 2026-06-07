@@ -332,8 +332,8 @@ export function TimelineClip(props: TimelineClipProps) {
           )}
         </Show>
         {props.clip.duration > 0.2 ? <span class="timeline-clip-id">{props.clip.id}</span> : null}
-        <span class="timeline-clip-left-handle" />
-        <span class="timeline-clip-right-handle" />
+        <span class="timeline-clip-left-handle" role="separator" aria-label="Trim start" />
+        <span class="timeline-clip-right-handle" role="separator" aria-label="Trim end" />
         {props.clip.duration > 0.2 ? (
           <span
             class="timeline-clip-delete"

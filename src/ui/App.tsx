@@ -27,10 +27,14 @@ import {
   type WorkerStateMessage,
   type WaveformPeaks,
 } from '../protocol';
+import type { DiagnosticSnapshot, DiagnosticSourceInput } from '../diagnostics/types';
+import { createEmptyRecentErrorLog, addRecentError } from '../diagnostics/recent-errors';
 import { createSharedClock } from './clock';
 import { createWorkerBridge } from './worker-bridge';
 import { PreviewCanvas } from './PreviewCanvas';
 import { PreviewGizmo } from './PreviewGizmo';
+import { DiagnosticsPanel } from './DiagnosticsPanel';
+import { buildUiDiagnosticSnapshot } from './diagnostic-snapshot';
 import { Toolbar } from './Toolbar';
 import { Timeline } from './Timeline';
 import { Inspector, type SelectedClip } from './Inspector';
@@ -70,6 +74,7 @@ import {
   suggestedFileNameForJob,
 } from '../engine/render-queue';
 import { BUILT_IN_PRESETS } from '../engine/export-presets';
+import { createRecoveryMachine, type WorkerRecoveryState } from '../engine/recovery';
 import PipelineWorker from '../engine/worker.ts?worker';
 
 const VIDEO_ACCEPT =
@@ -172,6 +177,9 @@ export function App() {
   const [workerReady, setWorkerReady] = createSignal(false);
   const [webgpuAvailable, setWebgpuAvailable] = createSignal(false);
   const [capabilityPanelOpen, setCapabilityPanelOpen] = createSignal(false);
+  const [diagnosticsPanelOpen, setDiagnosticsPanelOpen] = createSignal(false);
+  const [diagnosticSnapshot, setDiagnosticSnapshot] = createSignal<DiagnosticSnapshot | null>(null);
+  const [recentErrorLog, setRecentErrorLog] = createSignal(createEmptyRecentErrorLog());
   const [compatibilityPreview, setCompatibilityPreview] =
     createSignal<CompatibilityPreviewState | null>(null);
   const [metadata, setMetadata] = createSignal<MediaMetadata | null>(null);
@@ -249,6 +257,11 @@ export function App() {
   let audioReady: Promise<{ audioSab: SharedArrayBuffer | null; meterSab: SharedArrayBuffer | null }> | null =
     null;
   const [meterSab, setMeterSab] = createSignal<SharedArrayBuffer | null>(null);
+
+  const recoveryMachine = createRecoveryMachine();
+  const [workerRecoveryState, setWorkerRecoveryState] = createSignal<WorkerRecoveryState>('running');
+  const [previewKey, setPreviewKey] = createSignal(0);
+  let awaitingRestartReady = false;
 
   function findTimelineClip(ref: TimelineClipReference): TimelineClipSnapshot | null {
     const track = timeline().find((item) => item.id === ref.trackId);
@@ -385,6 +398,36 @@ export function App() {
     webgpuReady: webgpuAvailable(),
     runtimeIssue: runtimeIssue(),
   });
+  const diagnosticSources = createMemo<DiagnosticSourceInput[]>(() => [
+    ...assets(),
+    ...unresolvedSources().map((source) => ({ ...source, offline: true })),
+  ]);
+
+  async function refreshDiagnostics(workerSnapshot?: DiagnosticSnapshot | null) {
+    const snapshot = await buildUiDiagnosticSnapshot({
+      capabilities: capabilities(),
+      tier: pipelineMode(),
+      runtimeIssue: runtimeIssue() ?? audioWarning(),
+      webgpuReady: webgpuAvailable(),
+      exportSettings: exportSettings(),
+      assets: assets(),
+      recentErrors: workerSnapshot?.recentErrors ?? recentErrorLog(),
+      workerSnapshot,
+    });
+    setDiagnosticSnapshot(snapshot);
+  }
+
+  function openDiagnostics() {
+    setDiagnosticsPanelOpen(true);
+    void refreshDiagnostics();
+    if (bridge) {
+      const requestId =
+        typeof crypto !== 'undefined' && 'randomUUID' in crypto
+          ? crypto.randomUUID()
+          : `diag-${Date.now()}`;
+      bridge.send({ type: 'request-diagnostic-snapshot', requestId });
+    }
+  }
 
   function clearCompatibilityPreview() {
     const preview = compatibilityPreview();
@@ -397,6 +440,11 @@ export function App() {
       case 'ready':
         setWorkerReady(true);
         setWebgpuAvailable(msg.webgpu);
+        if (recoveryMachine.state !== 'running') {
+          awaitingRestartReady = false;
+          recoveryMachine.recordRestartSuccess();
+          setWorkerRecoveryState('running');
+        }
         if (!msg.webgpu) {
           setRuntimeIssue(
             msg.gpuUnavailableReason ??
@@ -610,6 +658,34 @@ export function App() {
       case 'queue-complete':
         setStatusLine(`Queue done: ${msg.completedCount} completed, ${msg.failedCount} failed, ${msg.canceledCount} canceled`);
         break;
+      case 'diagnostic-snapshot': {
+        setRecentErrorLog((prev) => {
+          const workerEntries = msg.snapshot.recentErrors.entries;
+          const uiCodes = new Set(prev.entries.map((e) => `${e.subsystem}:${e.code}`));
+          const merged = [
+            ...prev.entries,
+            ...workerEntries.filter((e) => !uiCodes.has(`${e.subsystem}:${e.code}`)),
+          ].slice(0, prev.capacity);
+          return { ...prev, entries: merged };
+        });
+        void refreshDiagnostics(msg.snapshot);
+        break;
+      }
+      case 'recent-error':
+        setRecentErrorLog((prev) => addRecentError(prev, msg.error));
+        break;
+      case 'recovery-state':
+        if (msg.state === 'recovering') {
+          setWebgpuAvailable(false);
+          setStatusLine('GPU recovery in progress…');
+        } else if (msg.state === 'failed') {
+          setWebgpuAvailable(false);
+          setRuntimeIssue('GPU recovery failed. Accelerated features are unavailable.');
+          setStatusLine('GPU recovery failed · limited mode');
+        } else {
+          setStatusLine('Recovery state updated.');
+        }
+        break;
       case 'source-health': {
         setLatestHealthReport(msg.report.status === 'ok' ? null : msg.report);
         const first = msg.report.warnings[0];
@@ -665,7 +741,72 @@ export function App() {
     if (worker && bridge) return { worker, bridge };
     worker = new PipelineWorker();
     bridge = createWorkerBridge(worker, handleState);
+    worker.addEventListener('error', handleWorkerCrash);
     return { worker, bridge };
+  }
+
+  function handleWorkerCrash(event?: ErrorEvent) {
+    if (event) event.preventDefault();
+    if (awaitingRestartReady) {
+      recoveryMachine.recordRestartFailure();
+      awaitingRestartReady = false;
+    }
+    const crashState = recoveryMachine.recordCrash();
+    setWorkerRecoveryState(crashState);
+    setWorkerReady(false);
+    setExporting(false);
+    setExportProgress(null);
+    setImporting(false);
+    if (sab) {
+      const view = new Float64Array(sab);
+      view[0] = 0;
+      view[1] = 0;
+      view[2] = 0;
+    }
+    const message = event?.message ?? 'Worker terminated unexpectedly';
+    setRecentErrorLog((prev) => addRecentError(prev, {
+      id: `worker-crash-${Date.now()}`,
+      code: 'worker.crashed',
+      subsystem: 'worker',
+      severity: 'error',
+      occurredAt: new Date().toISOString(),
+      message,
+      recoveryActionIds: crashState === 'throttled' ? [] : ['restart-worker'],
+    }));
+    setStatusLine(
+      crashState === 'throttled'
+        ? 'Worker crashed · restart limit reached'
+        : 'Worker crashed · restart available',
+    );
+    if (crashState !== 'throttled') {
+      void restartWorker();
+    }
+  }
+
+  async function restartWorker() {
+    if (!recoveryMachine.canRestart()) return;
+
+    const oldWorker = worker;
+    const oldBridge = bridge;
+    worker = null;
+    bridge = null;
+    initSent = false;
+
+    if (oldWorker) {
+      oldWorker.removeEventListener('error', handleWorkerCrash);
+      if (oldBridge) {
+        try {
+          oldBridge.send({ type: 'dispose' });
+        } catch {
+          // Worker may already be dead
+        }
+      }
+      setTimeout(() => oldWorker.terminate(), 500);
+    }
+
+    awaitingRestartReady = true;
+    setStatusLine('Restarting worker…');
+    setPreviewKey((k) => k + 1);
   }
 
   async function sendInit(canvas: OffscreenCanvas) {
@@ -694,6 +835,15 @@ export function App() {
       const message = error instanceof Error ? error.message : String(error);
       setAudioWarning(`Audio disabled: ${message}`);
       setStatusLine('Audio disabled · starting video pipeline');
+      setRecentErrorLog((prev) => addRecentError(prev, {
+        id: `ui-audio-${Date.now()}`,
+        code: 'audio.init_failed',
+        subsystem: 'audio',
+        severity: 'warning',
+        occurredAt: new Date().toISOString(),
+        message: `Audio init failed: ${message}`,
+        recoveryActionIds: ['retry-audio'],
+      }));
     }
     b.send({ type: 'init', canvas, sab, audioSab }, [canvas]);
   }
@@ -1345,6 +1495,7 @@ export function App() {
       thumbnailStore.clear();
       if (worker && bridge) {
         const workerToDispose = worker;
+        workerToDispose.removeEventListener('error', handleWorkerCrash);
         let terminateFallback: ReturnType<typeof setTimeout>;
         const onDisposeComplete = (event: MessageEvent<WorkerStateMessage>) => {
           if (event.data.type !== 'dispose-complete') return;
@@ -1358,8 +1509,9 @@ export function App() {
           workerToDispose.terminate();
         }, 1500);
         bridge.send({ type: 'dispose' });
-      } else {
-        worker?.terminate();
+      } else if (worker) {
+        worker.removeEventListener('error', handleWorkerCrash);
+        worker.terminate();
       }
       audioEngine.dispose();
     });
@@ -1544,7 +1696,9 @@ export function App() {
           />
         </Show>
         <section class="preview panel">
-          <PreviewCanvas onOffscreenReady={sendInit} onCanvasEl={setPreviewCanvasEl} />
+          <Show when={previewKey() + 1} keyed>
+            {(_k) => <PreviewCanvas onOffscreenReady={sendInit} onCanvasEl={setPreviewCanvasEl} />}
+          </Show>
           <Show when={accelerated() && selectedClipTransform() && previewSize()}>
             <PreviewGizmo
               transform={selectedClipTransform()!.transform}
@@ -1785,11 +1939,19 @@ export function App() {
               Offline
             </span>
           </Show>
+          <Show when={workerRecoveryState() !== 'running'}>
+            <span class="status-badge status-warn" title={`Worker: ${workerRecoveryState()}`}>
+              {workerRecoveryState() === 'throttled' ? 'Worker Failed' : 'Worker Recovering'}
+            </span>
+          </Show>
           <Show when={audioWarning()}>
             <span class="status-badge status-warn" title={audioWarning()!}>
               Audio Disabled
             </span>
           </Show>
+          <button type="button" class="status-badge" onClick={openDiagnostics} title="Open diagnostics">
+            Diagnostics
+          </button>
           <Show when={isIsolated()}>
             <span class="status-ok">COOP/COEP OK</span>
           </Show>
@@ -1802,6 +1964,37 @@ export function App() {
         primaryIssue={limitedIssue()}
         compatibilityPreviewAvailable={canCompatibilityPreview(capabilities())}
         onClose={() => setCapabilityPanelOpen(false)}
+      />
+      <DiagnosticsPanel
+        open={diagnosticsPanelOpen()}
+        snapshot={diagnosticSnapshot()}
+        sources={diagnosticSources()}
+        onRefresh={openDiagnostics}
+        onClose={() => setDiagnosticsPanelOpen(false)}
+        onRecoveryAction={(actionId) => {
+          switch (actionId) {
+            case 'restart-worker':
+              void restartWorker();
+              break;
+            case 'reload-app':
+              window.location.reload();
+              break;
+            case 'retry-audio':
+              audioReady = null;
+              setAudioWarning(null);
+              if (sab) {
+                audioReady = audioEngine.init(sab);
+                audioReady.then(
+                  (result) => { setMeterSab(result.meterSab); setAudioWarning(null); },
+                  (err) => { setAudioWarning(`Audio disabled: ${err instanceof Error ? err.message : String(err)}`); },
+                );
+              }
+              break;
+            default:
+              bridge?.send({ type: 'run-recovery-action', actionId });
+              break;
+          }
+        }}
       />
     </div>
   );

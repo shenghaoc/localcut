@@ -25,12 +25,20 @@ import {
   OutputTransfer,
 } from './colour';
 
+export interface DeviceLostInfo {
+  readonly reason: GPUDeviceLostReason;
+  readonly message: string;
+}
+
 export interface GpuInit {
   /** Ready renderer, or null when WebGPU is unavailable. */
   renderer: PreviewRenderer | null;
   features: string[];
   /** Specific, actionable reason WebGPU is unavailable, or null when ready. */
   unavailableReason: string | null;
+  limits: Record<string, number>;
+  /** Resolves when device is lost. Only set when renderer is non-null. */
+  deviceLost: Promise<DeviceLostInfo> | null;
 }
 
 /**
@@ -64,8 +72,16 @@ export interface TextureCompositeLayer {
 
 export type CompositeLayer = FrameCompositeLayer | TextureCompositeLayer;
 
+const DIAGNOSTIC_LIMIT_KEYS = [
+  'maxTextureDimension2D',
+  'maxBufferSize',
+  'maxColorAttachments',
+  'maxComputeWorkgroupSizeX',
+  'maxComputeWorkgroupSizeY',
+] as const;
+
 function unavailable(reason: string): GpuInit {
-  return { renderer: null, features: [], unavailableReason: reason };
+  return { renderer: null, features: [], unavailableReason: reason, limits: {}, deviceLost: null };
 }
 
 /**
@@ -848,10 +864,23 @@ export async function initGpu(canvas: OffscreenCanvas): Promise<GpuInit> {
     alphaMode: 'premultiplied',
   });
 
+  const limits: Record<string, number> = {};
+  for (const key of DIAGNOSTIC_LIMIT_KEYS) {
+    const val = (device.limits as unknown as Record<string, unknown>)[key];
+    if (typeof val === 'number') limits[key] = val;
+  }
+
+  const deviceLost = device.lost.then((info) => ({
+    reason: info.reason,
+    message: info.message,
+  }));
+
   return {
     renderer: new PreviewRenderer(device, context, format, canvas, useF16),
     features: [...wantedFeatures],
     unavailableReason: null,
+    limits,
+    deviceLost,
   };
 }
 

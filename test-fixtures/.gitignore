@@ -1,0 +1,5 @@
+# Generated fixtures — recreate with ./generate-fixtures.sh
+*.mp4
+*.webm
+*.png
+*.wav
