@@ -3203,3 +3203,221 @@ button.status-badge:hover {
 	font-size: var(--text-sm);
 	line-height: 1.5;
 }
+
+/* ── Help Panel ─────────────────────────────────────────────── */
+
+.help-backdrop {
+	position: fixed;
+	inset: 0;
+	background: rgb(0 0 0 / 55%);
+	z-index: 50;
+}
+
+.help-panel {
+	position: fixed;
+	inset: 0;
+	z-index: 51;
+	margin: 2rem;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	border-radius: var(--radius-lg);
+	border: 1px solid var(--glass-border);
+	background: var(--card);
+	box-shadow: var(--shadow-lg);
+}
+
+.help-panel-header {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 0.75rem;
+	padding: 1rem 1.25rem;
+	border-bottom: 1px solid var(--border);
+	flex-shrink: 0;
+}
+
+.help-panel-header .panel-title {
+	margin: 0;
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.help-panel-body {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	overflow: hidden;
+}
+
+/* Left sidebar nav */
+.help-nav {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	width: 220px;
+	flex-shrink: 0;
+	padding: 0.75rem;
+	border-right: 1px solid var(--border);
+	overflow-y: auto;
+}
+
+.help-nav-item {
+	display: block;
+	width: 100%;
+	text-align: left;
+	padding: 0.5rem 0.65rem;
+	border: none;
+	border-radius: var(--radius-sm);
+	background: transparent;
+	color: var(--text-muted);
+	font-family: var(--font-ui);
+	font-size: var(--text-sm);
+	cursor: pointer;
+	transition:
+		background 120ms,
+		color 120ms;
+}
+
+.help-nav-item:hover {
+	background: var(--bg-control-hover);
+	color: var(--text);
+}
+
+.help-nav-item.is-active {
+	background: var(--primary-soft);
+	color: var(--primary);
+	font-weight: 600;
+}
+
+/* Main content area */
+.help-content {
+	flex: 1;
+	min-width: 0;
+	overflow-y: auto;
+	padding: 1.5rem 2rem 3rem;
+}
+
+.help-content h1 {
+	margin: 0 0 0.75rem;
+	font-family: var(--font-display);
+	font-size: var(--text-xl);
+	font-weight: 700;
+	letter-spacing: var(--tracking-display);
+	color: var(--text);
+	line-height: 1.2;
+}
+
+.help-content h2 {
+	margin: 2rem 0 0.75rem;
+	font-family: var(--font-display);
+	font-size: var(--text-lg);
+	font-weight: 600;
+	color: var(--text);
+	border-bottom: 1px solid var(--border);
+	padding-bottom: 0.5rem;
+}
+
+.help-content h3 {
+	margin: 1.5rem 0 0.5rem;
+	font-family: var(--font-display);
+	font-size: var(--text-md);
+	font-weight: 600;
+	color: var(--text);
+}
+
+.help-content p {
+	margin: 0 0 0.75rem;
+	color: var(--text-muted);
+	font-size: var(--text-sm);
+	line-height: 1.65;
+}
+
+.help-content ul,
+.help-content ol {
+	margin: 0 0 1rem;
+	padding-left: 1.25rem;
+	color: var(--text-muted);
+	font-size: var(--text-sm);
+	line-height: 1.65;
+}
+
+.help-content li {
+	margin-bottom: 0.35rem;
+}
+
+.help-content strong {
+	color: var(--text);
+	font-weight: 600;
+}
+
+.help-content a {
+	color: var(--primary);
+	text-decoration: none;
+}
+
+.help-content a:hover {
+	text-decoration: underline;
+}
+
+.help-content code {
+	font-family: var(--font-mono-stack);
+	font-size: 0.8em;
+	background: var(--bg-elevated);
+	padding: 0.15em 0.35em;
+	border-radius: var(--radius-xs);
+	border: 1px solid var(--border);
+	color: var(--accent);
+}
+
+.help-content pre {
+	margin: 0 0 1rem;
+	padding: 1rem 1.25rem;
+	background: var(--stage);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-md);
+	overflow-x: auto;
+}
+
+.help-content pre code {
+	background: none;
+	padding: 0;
+	border: none;
+	color: var(--text-muted);
+	font-size: var(--text-xs);
+	line-height: 1.6;
+}
+
+.help-content hr {
+	margin: 1.5rem 0;
+	border: none;
+	border-top: 1px solid var(--border);
+}
+
+.help-content table {
+	width: 100%;
+	margin: 0 0 1.25rem;
+	border-collapse: collapse;
+	font-size: var(--text-sm);
+}
+
+.help-content th {
+	padding: 0.5rem 0.75rem;
+	text-align: left;
+	font-weight: 600;
+	color: var(--text);
+	background: var(--bg-elevated);
+	border: 1px solid var(--border);
+}
+
+.help-content td {
+	padding: 0.45rem 0.75rem;
+	color: var(--text-muted);
+	border: 1px solid var(--border);
+	line-height: 1.5;
+}
+
+.help-content tr:nth-child(even) td {
+	background: rgb(255 255 255 / 2%);
+}

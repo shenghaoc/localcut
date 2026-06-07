@@ -51,6 +51,7 @@ import { BundleDialog } from './BundleDialog';
 import { Button, buttonVariants } from './components/button';
 import { cn } from '../lib/utils';
 import { CapabilityPanel } from './CapabilityPanel';
+import { HelpPanel } from './HelpPanel';
 import { LimitedPreview } from './LimitedPreview';
 import { registerKeyboardShortcuts } from './keyboard';
 import {
@@ -205,6 +206,7 @@ export function App() {
   const [previewReady, setPreviewReady] = createSignal(false);
   const [exportReady, setExportReady] = createSignal(false);
   const [capabilityPanelOpen, setCapabilityPanelOpen] = createSignal(false);
+  const [helpPanelOpen, setHelpPanelOpen] = createSignal(false);
   const [diagnosticsPanelOpen, setDiagnosticsPanelOpen] = createSignal(false);
   const [diagnosticSnapshot, setDiagnosticSnapshot] = createSignal<DiagnosticSnapshot | null>(null);
   const [recentErrorLog, setRecentErrorLog] = createSignal(createEmptyRecentErrorLog());
@@ -1734,6 +1736,7 @@ export function App() {
         previewLabel={previewLabel()}
         encodeFps={encodeFps()}
         onOpenCapabilities={() => setCapabilityPanelOpen(true)}
+        onOpenHelp={() => setHelpPanelOpen(true)}
         masterGain={masterGain()}
         meterSab={meterSab()}
         onMasterGain={(gain) => {
@@ -2166,6 +2169,10 @@ export function App() {
           </Show>
         </span>
       </footer>
+      <HelpPanel
+        open={helpPanelOpen()}
+        onClose={() => setHelpPanelOpen(false)}
+      />
       <CapabilityPanel
         open={capabilityPanelOpen()}
         tier={pipelineMode()}

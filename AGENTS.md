@@ -134,6 +134,7 @@ These guidelines drive **Codex** PR reviews (`@codex review`, or automatic revie
 - Silent failures: swallowed errors, empty catch blocks, missing handling on critical paths.
 - Missing tests for timeline model, seek logic, or protocol types on non-trivial changes; tests that mock away the invariant under test.
 - Inaccurate/outdated comments, weak types that fail to encode invariants, and dead code.
+- Missing or outdated user-facing documentation in `docs/` for user-visible changes. Docs live in the repo as the single source of truth and are rendered both on GitHub and in the in-app Help panel.
 
 Be thorough but not noisy: surface every P0/P1 you can substantiate, and skip pedantic nits, pre-existing issues the PR didn't touch, and anything a linter already catches.
 
