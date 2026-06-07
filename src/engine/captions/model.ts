@@ -1,9 +1,11 @@
 import type { TimelineMarker } from '../timeline';
 import type { TimelineTrack } from '../timeline';
 import {
+  CAPTION_PRESETS,
   captionSegmentEnd,
   cloneCaptionTrack,
   createCaptionTrack,
+  DEFAULT_CAPTION_STYLE,
   effectiveCaptionStyle,
   normalizeCaptionSegment,
   normalizeCaptionStyle,
@@ -48,6 +50,10 @@ function findSegmentIndex(track: CaptionTrack, segmentId: string): number {
   return track.segments.findIndex((segment) => segment.id === segmentId);
 }
 
+function hasOwn<T extends object, K extends PropertyKey>(value: T, key: K): value is T & Record<K, unknown> {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
 export function upsertCaptionTrack(
   tracks: readonly CaptionTrack[],
   track: CaptionTrack,
@@ -73,14 +79,38 @@ export function setCaptionTrackProps(
   const trackIndex = findTrackIndex(next, trackId);
   if (trackIndex < 0) return tracks as CaptionTrack[];
   const track = next[trackIndex]!;
+  let defaultStyle = track.defaultStyle;
+  if (patch.defaultStyle) {
+    const stylePatch = patch.defaultStyle;
+    const presetChanged = hasOwn(stylePatch, 'presetId') && stylePatch.presetId !== track.defaultStyle.presetId;
+    const nextPresetId =
+      stylePatch.presetId === 'subtitle' || stylePatch.presetId === 'lower-third' || stylePatch.presetId === 'note'
+        ? stylePatch.presetId
+        : (DEFAULT_CAPTION_STYLE.presetId ?? 'subtitle');
+    const presetDefaults = presetChanged ? CAPTION_PRESETS[nextPresetId] : null;
+    defaultStyle = {
+      ...track.defaultStyle,
+      ...(presetDefaults
+        ? {
+            anchor: presetDefaults.anchor,
+            maxWidthPercent: presetDefaults.maxWidthPercent,
+            lineWrap: presetDefaults.lineWrap,
+          }
+        : {}),
+      ...stylePatch,
+      overrides: stylePatch.overrides
+        ? { ...(track.defaultStyle.overrides ?? {}), ...stylePatch.overrides }
+        : track.defaultStyle.overrides,
+    };
+  }
   next[trackIndex] = createCaptionTrack({
     ...track,
     name: patch.name ?? track.name,
-    language: patch.language ?? track.language,
+    language: hasOwn(patch, 'language') ? (patch.language ?? null) : track.language,
     burnedIn: patch.burnedIn ?? track.burnedIn,
     visible: patch.visible ?? track.visible,
     segments: track.segments,
-    defaultStyle: patch.defaultStyle ? { ...track.defaultStyle, ...patch.defaultStyle } : track.defaultStyle,
+    defaultStyle,
   });
   return next;
 }
@@ -116,9 +146,16 @@ export function setCaptionSegmentStyle(
   const segmentIndex = findSegmentIndex(next[trackIndex]!, segmentId);
   if (segmentIndex < 0) return tracks as CaptionTrack[];
   const segment = next[trackIndex]!.segments[segmentIndex]!;
+  const baseStyle = segment.style ?? next[trackIndex]!.defaultStyle;
   next[trackIndex]!.segments[segmentIndex] = {
     ...segment,
-    style: normalizeCaptionStyle({ ...(segment.style ?? next[trackIndex]!.defaultStyle), ...style }),
+    style: normalizeCaptionStyle({
+      ...baseStyle,
+      ...style,
+      overrides: style.overrides
+        ? { ...(baseStyle.overrides ?? {}), ...style.overrides }
+        : baseStyle.overrides,
+    }),
   };
   return next;
 }

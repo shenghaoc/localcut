@@ -342,6 +342,12 @@ export function App() {
   );
 
   const accelerated = () => pipelineMode() === 'accelerated';
+  const captionToolsDisabledReason = () =>
+    accelerated()
+      ? null
+      : pipelineMode() === 'limited'
+        ? 'Caption import and editing require the accelerated pipeline.'
+        : 'Caption tools are unavailable until the worker is ready.';
   const compatibilityImportEnabled = () =>
     pipelineMode() === 'limited' && canCompatibilityPreview(capabilities());
   const importBlocked = () =>
@@ -1474,6 +1480,7 @@ export function App() {
             captionTracks={captionTracks()}
             diagnostics={captionDiagnostics()}
             playheadTime={clock.currentTime()}
+            disabledReason={captionToolsDisabledReason()}
             selectedTrackId={selectedCaptionTrackId()}
             selectedSegmentIds={selectedCaptionSegmentIds()}
             onSelectTrack={setSelectedCaptionTrackId}

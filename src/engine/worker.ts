@@ -20,6 +20,7 @@ import {
 } from './captions/export';
 import {
   activeCaptionPayloadsAt,
+  captionTitlePayload,
   captionTextureId,
 } from './captions/render';
 import {
@@ -193,6 +194,7 @@ let titleCache: TitleTextureCache | null = null;
 const EMPTY_CLIP_IDS: ReadonlySet<string> = new Set<string>();
 /** Default preview/export geometry for title-only timelines (no video source). */
 const TITLE_ONLY_CANVAS = { width: 1920, height: 1080, frameRate: 30 } as const;
+const retainedOverlayTextureIds = new Set<string>();
 let primaryHandle: MediaInputHandle | null = null;
 let playback: PlaybackController<LayerMeta> | null = null;
 let adaptive: AdaptiveResolution | null = null;
@@ -1456,6 +1458,7 @@ function teardownMedia() {
   binSourceIds.clear();
   clipboardLuts.clear();
   primaryHandle = null;
+  retainedOverlayTextureIds.clear();
   // Release cached title textures: clearing the timeline here (new project,
   // re-import, restore) would otherwise orphan them until worker disposal.
   titleCache?.retain(EMPTY_CLIP_IDS);
@@ -1543,20 +1546,58 @@ function titleClips(): { trackId: string; clip: TimelineClip }[] {
  */
 function syncTitleRasters(): void {
   if (!titleCache) return;
-  const active = new Set<string>();
+  const active = new Set<string>(retainedOverlayTextureIds);
   for (const { clip } of titleClips()) {
     active.add(clip.id);
     titleCache.rasterize(clip.id, clip.title!);
   }
+  for (const track of captionTracks) {
+    if (!track.visible || !track.burnedIn) continue;
+    for (const segment of track.segments) {
+      const payload = captionTitlePayload(track, segment.id, segment.text);
+      const clipId = captionTextureId(track.id, segment.id);
+      active.add(clipId);
+      titleCache.rasterize(clipId, payload.content);
+    }
+  }
   titleCache.retain(active);
 }
 
-function activeCaptionLayersAt(timestamp: number): Array<{ clipId: string; transform: TransformParams }> {
+function exportCaptionTextureId(exportId: string, trackId: string, segmentId: string): string {
+  return `export-caption:${exportId}:${trackId}:${segmentId}`;
+}
+
+function rasterizeExportCaptionTextures(exportId: string, tracks: readonly CaptionTrack[]): void {
+  if (!titleCache) return;
+  for (const track of tracks) {
+    if (!track.visible || !track.burnedIn) continue;
+    for (const segment of track.segments) {
+      const payload = captionTitlePayload(track, segment.id, segment.text);
+      const clipId = exportCaptionTextureId(exportId, track.id, segment.id);
+      retainedOverlayTextureIds.add(clipId);
+      titleCache.rasterize(clipId, payload.content);
+    }
+  }
+}
+
+function releaseRetainedOverlayTextures(textureIds: readonly string[]): void {
+  if (!titleCache) return;
+  for (const textureId of textureIds) {
+    retainedOverlayTextureIds.delete(textureId);
+    titleCache.remove(textureId);
+  }
+}
+
+function activeCaptionLayersAt(
+  tracks: readonly CaptionTrack[],
+  timestamp: number,
+  textureIdFor: (trackId: string, segmentId: string) => string = captionTextureId,
+): Array<{ clipId: string; transform: TransformParams }> {
   if (!titleCache) return [];
   const layers: Array<{ clipId: string; transform: TransformParams }> = [];
-  for (const payload of activeCaptionPayloadsAt(captionTracks, timestamp)) {
-    const clipId = captionTextureId(payload.trackId, payload.segmentId);
-    titleCache.ensure(clipId, payload.content);
+  for (const payload of activeCaptionPayloadsAt(tracks, timestamp)) {
+    const clipId = textureIdFor(payload.trackId, payload.segmentId);
+    if (!titleCache.get(clipId)) continue;
     layers.push({ clipId, transform: payload.transform });
   }
   return layers;
@@ -1631,7 +1672,7 @@ function makeGetLayers() {
           },
         });
       }
-      for (const caption of activeCaptionLayersAt(timestamp)) {
+      for (const caption of activeCaptionLayersAt(captionTracks, timestamp)) {
         decodedLayers.push({
           decoded: null,
           meta: { kind: 'title', clipId: caption.clipId, transform: caption.transform },
@@ -2649,6 +2690,7 @@ async function applyImportedDoc(doc: ProjectDoc): Promise<void> {
 
   projectId = doc.projectId;
   timeline = cloneTimelineSnapshot(doc.timeline);
+  captionTracks = cloneCaptionTracksSnapshot(doc.captionTracks);
   markers = cloneMarkersSnapshot(doc.markers);
   syncTimelineLuts();
   lastExportSettings = doc.exportSettings ?? null;
@@ -2683,6 +2725,7 @@ const bundleWorkerContext: BundleWorkerContext = {
   getDisplayName: projectDisplayName,
   getProjectState: () => ({
     timeline,
+    captionTracks,
     transitions,
     markers,
     masterGain,
@@ -2900,8 +2943,7 @@ function firstExportVideoHandle(): MediaInputHandle | null {
 function exportSettingsForProbe(): ExportSettings | null {
   const videoHandle = firstExportVideoHandle();
   // Title-only timelines export over the default canvas (no decodable video).
-  const hasBurnedInCaptions = captionTracks.some((track) => track.burnedIn && track.visible && track.segments.length > 0);
-  if (!videoHandle && titleClips().length === 0 && !hasBurnedInCaptions) return null;
+  if (!videoHandle && titleClips().length === 0) return null;
   const width = videoHandle?.displayWidth ?? TITLE_ONLY_CANVAS.width;
   const height = videoHandle?.displayHeight ?? TITLE_ONLY_CANVAS.height;
   const frameRate = videoHandle?.frameRate ?? TITLE_ONLY_CANVAS.frameRate;
@@ -2969,8 +3011,22 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
   const controller = new AbortController();
   exportAbort = controller;
 
+  let exportCaptionTextureIds: string[] = [];
   try {
     const exportTimelineSnapshot = cloneTimelineForExport();
+    const exportCaptionTracksSnapshot = cloneCaptionTracksSnapshot(captionTracks);
+    const exportCaptionTextureGroupId =
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    exportCaptionTextureIds = exportCaptionTracksSnapshot.flatMap((track) =>
+      track.visible && track.burnedIn
+        ? track.segments.map((segment) =>
+            exportCaptionTextureId(exportCaptionTextureGroupId, track.id, segment.id),
+          )
+        : [],
+    );
+    rasterizeExportCaptionTextures(exportCaptionTextureGroupId, exportCaptionTracksSnapshot);
     const videoHandle = firstExportVideoHandle();
     const settings = normalizeExportSettings(
       cmd.settings,
@@ -2998,7 +3054,11 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
       titleTextureFor: (clip) =>
         clip.title ? titleCache?.ensure(clip.id, clip.title) ?? null : null,
       overlayTextureLayersAt: (timelineTime) =>
-        activeCaptionLayersAt(timelineTime)
+        activeCaptionLayersAt(
+          exportCaptionTracksSnapshot,
+          timelineTime,
+          (trackId, segmentId) => exportCaptionTextureId(exportCaptionTextureGroupId, trackId, segmentId),
+        )
           .map((layer) => {
             const texture = titleCache?.get(layer.clipId);
             if (!texture) return null;
@@ -3020,6 +3080,8 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
       post({ type: 'export-error', message });
     }
   } finally {
+    releaseRetainedOverlayTextures(exportCaptionTextureIds);
+    syncTitleRasters();
     exportAbort = null;
     pruneUnusedSources();
     ensurePreview();

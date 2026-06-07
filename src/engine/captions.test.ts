@@ -4,7 +4,9 @@ import {
   buildCaptionSnapTargets,
   makeCaptionSegmentId,
   mergeCaptionSegments,
+  setCaptionSegmentStyle,
   setCaptionSegmentTiming,
+  setCaptionTrackProps,
   snapCaptionTime,
   splitCaptionSegment,
 } from './captions/model';
@@ -116,5 +118,43 @@ describe('caption editing and export', () => {
     const split = splitCaptionSegment(tracks, 'captions-1', id, 2);
     expect(split[0]!.segments[0]!.text).toBe('Hello');
     expect(split[0]!.segments[1]!.text).toBe('');
+  });
+
+  it('preserves existing segment overrides across separate style edits', () => {
+    const id = makeCaptionSegmentId();
+    let tracks = [
+      createCaptionTrack({
+        id: 'captions-1',
+        segments: [{ id, start: 0, duration: 2, text: 'Hello' }],
+      }),
+    ];
+
+    tracks = setCaptionSegmentStyle(tracks, 'captions-1', id, { overrides: { color: '#ff0000' } });
+    tracks = setCaptionSegmentStyle(tracks, 'captions-1', id, { overrides: { backgroundColor: '#000000' } });
+
+    expect(tracks[0]!.segments[0]!.style?.overrides).toMatchObject({
+      color: '#ff0000',
+      backgroundColor: '#000000',
+    });
+  });
+
+  it('applies preset layout defaults and allows clearing language', () => {
+    let tracks = [
+      createCaptionTrack({
+        id: 'captions-1',
+        language: 'en',
+        defaultStyle: { presetId: 'subtitle', anchor: 'custom', maxWidthPercent: 90, lineWrap: 'balanced' },
+      }),
+    ];
+
+    tracks = setCaptionTrackProps(tracks, 'captions-1', {
+      language: null,
+      defaultStyle: { presetId: 'lower-third' },
+    });
+
+    expect(tracks[0]!.language).toBeNull();
+    expect(tracks[0]!.defaultStyle.anchor).toBe('bottom-left');
+    expect(tracks[0]!.defaultStyle.maxWidthPercent).toBe(48);
+    expect(tracks[0]!.defaultStyle.lineWrap).toBe('greedy');
   });
 });
