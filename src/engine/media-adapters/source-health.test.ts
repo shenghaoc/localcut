@@ -243,6 +243,47 @@ describe('source health warning generation', () => {
     expect(warnings.find((warning) => warning.code === 'unsupported-audio-codec')).toMatchObject({ blocking: false });
   });
 
+  it('always includes codec string in unsupported-codec messages, falling back to "unknown codec"', () => {
+    const warnings = generateSourceHealthWarnings(
+      inspection({
+        tracks: [
+          {
+            kind: 'video',
+            trackId: 'video-1',
+            codec: null,
+            canDecode: false,
+            startS: 0,
+            durationS: 10,
+            codedWidth: 1920,
+            codedHeight: 1080,
+            displayWidth: 1920,
+            displayHeight: 1080,
+            frameRate: null,
+            frameRateMode: 'unknown',
+            rotationDeg: 0,
+            color: { primaries: null, transfer: null, matrix: null, fullRange: null },
+          },
+          {
+            kind: 'audio',
+            trackId: 'audio-1',
+            codec: null,
+            canDecode: false,
+            startS: 0,
+            durationS: 10,
+            sampleRate: 48_000,
+            channels: 2,
+          },
+        ],
+      }),
+      conformance({ health: 'blocked' }),
+    );
+
+    const videoWarn = warnings.find((w) => w.code === 'unsupported-video-codec');
+    const audioWarn = warnings.find((w) => w.code === 'unsupported-audio-codec');
+    expect(videoWarn?.message).toMatch(/\(unknown codec\)/);
+    expect(audioWarn?.message).toMatch(/\(unknown codec\)/);
+  });
+
   it('reports mixed sample rates and corrupt import failures with stable codes', () => {
     const warnings = generateSourceHealthWarnings(
       inspection({
