@@ -261,6 +261,7 @@ export function App() {
   const recoveryMachine = createRecoveryMachine();
   const [workerRecoveryState, setWorkerRecoveryState] = createSignal<WorkerRecoveryState>('running');
   const [previewKey, setPreviewKey] = createSignal(0);
+  let awaitingRestartReady = false;
 
   function findTimelineClip(ref: TimelineClipReference): TimelineClipSnapshot | null {
     const track = timeline().find((item) => item.id === ref.trackId);
@@ -440,6 +441,7 @@ export function App() {
         setWorkerReady(true);
         setWebgpuAvailable(msg.webgpu);
         if (recoveryMachine.state !== 'running') {
+          awaitingRestartReady = false;
           recoveryMachine.recordRestartSuccess();
           setWorkerRecoveryState('running');
         }
@@ -656,21 +658,33 @@ export function App() {
       case 'queue-complete':
         setStatusLine(`Queue done: ${msg.completedCount} completed, ${msg.failedCount} failed, ${msg.canceledCount} canceled`);
         break;
-      case 'diagnostic-snapshot':
-        setRecentErrorLog(msg.snapshot.recentErrors);
+      case 'diagnostic-snapshot': {
+        setRecentErrorLog((prev) => {
+          const workerEntries = msg.snapshot.recentErrors.entries;
+          const uiCodes = new Set(prev.entries.map((e) => `${e.subsystem}:${e.code}`));
+          const merged = [
+            ...prev.entries,
+            ...workerEntries.filter((e) => !uiCodes.has(`${e.subsystem}:${e.code}`)),
+          ].slice(0, prev.capacity);
+          return { ...prev, entries: merged };
+        });
         void refreshDiagnostics(msg.snapshot);
         break;
+      }
       case 'recent-error':
         setRecentErrorLog((prev) => addRecentError(prev, msg.error));
         break;
       case 'recovery-state':
-        setStatusLine(
-          msg.state === 'idle'
-            ? 'Recovery state updated.'
-            : msg.state === 'recovering'
-              ? 'Recovery in progress…'
-              : 'Recovery failed.',
-        );
+        if (msg.state === 'recovering') {
+          setWebgpuAvailable(false);
+          setStatusLine('GPU recovery in progress…');
+        } else if (msg.state === 'failed') {
+          setWebgpuAvailable(false);
+          setRuntimeIssue('GPU recovery failed. Accelerated features are unavailable.');
+          setStatusLine('GPU recovery failed · limited mode');
+        } else {
+          setStatusLine('Recovery state updated.');
+        }
         break;
       case 'source-health': {
         setLatestHealthReport(msg.report.status === 'ok' ? null : msg.report);
@@ -733,6 +747,10 @@ export function App() {
 
   function handleWorkerCrash(event?: ErrorEvent) {
     if (event) event.preventDefault();
+    if (awaitingRestartReady) {
+      recoveryMachine.recordRestartFailure();
+      awaitingRestartReady = false;
+    }
     const crashState = recoveryMachine.recordCrash();
     setWorkerRecoveryState(crashState);
     setWorkerReady(false);
@@ -786,6 +804,7 @@ export function App() {
       setTimeout(() => oldWorker.terminate(), 500);
     }
 
+    awaitingRestartReady = true;
     setStatusLine('Restarting worker…');
     setPreviewKey((k) => k + 1);
   }
@@ -1677,11 +1696,9 @@ export function App() {
           />
         </Show>
         <section class="preview panel">
-          {(() => {
-            const _key = previewKey();
-            void _key;
-            return <PreviewCanvas onOffscreenReady={sendInit} onCanvasEl={setPreviewCanvasEl} />;
-          })()}
+          <Show when={previewKey() + 1} keyed>
+            {(_k) => <PreviewCanvas onOffscreenReady={sendInit} onCanvasEl={setPreviewCanvasEl} />}
+          </Show>
           <Show when={accelerated() && selectedClipTransform() && previewSize()}>
             <PreviewGizmo
               transform={selectedClipTransform()!.transform}
@@ -1955,10 +1972,27 @@ export function App() {
         onRefresh={openDiagnostics}
         onClose={() => setDiagnosticsPanelOpen(false)}
         onRecoveryAction={(actionId) => {
-          if (actionId === 'restart-worker') {
-            void restartWorker();
-          } else {
-            bridge?.send({ type: 'run-recovery-action', actionId });
+          switch (actionId) {
+            case 'restart-worker':
+              void restartWorker();
+              break;
+            case 'reload-app':
+              window.location.reload();
+              break;
+            case 'retry-audio':
+              audioReady = null;
+              setAudioWarning(null);
+              if (sab) {
+                audioReady = audioEngine.init(sab);
+                audioReady.then(
+                  (result) => { setMeterSab(result.meterSab); setAudioWarning(null); },
+                  (err) => { setAudioWarning(`Audio disabled: ${err instanceof Error ? err.message : String(err)}`); },
+                );
+              }
+              break;
+            default:
+              bridge?.send({ type: 'run-recovery-action', actionId });
+              break;
           }
         }}
       />

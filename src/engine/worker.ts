@@ -1297,6 +1297,7 @@ async function handleInit(
     }
     if (gpu.deviceLost) {
       void gpu.deviceLost.then((info) => {
+        if (info.reason === 'destroyed') return;
         lastDeviceLost = {
           reason: String(info.reason),
           message: info.message,
