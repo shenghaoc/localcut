@@ -21,7 +21,7 @@ export default defineConfig({
           { src: '/icons/512.png', sizes: '512x512', type: 'image/png' },
         ],
       },
-      workbox: { globPatterns: ['**/*.{js,css,html,wasm,wgsl}'] },
+      workbox: { globPatterns: ['**/*.{js,css,html,wasm,wgsl,woff,woff2}'] },
     }),
   ],
   assetsInclude: ['**/*.wgsl'],

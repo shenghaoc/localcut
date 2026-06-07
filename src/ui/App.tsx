@@ -1775,7 +1775,7 @@ export function App() {
               >
                 Import
                 <input
-                  class="import-picker-input"
+                  class="import-picker-overlay-input"
                   type="file"
                   accept={VIDEO_ACCEPT}
                   multiple
