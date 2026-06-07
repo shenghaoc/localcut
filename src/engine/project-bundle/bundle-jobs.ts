@@ -13,6 +13,7 @@ export interface BundleWorkerContext {
   getDisplayName: () => string;
   getProjectState: () => {
     timeline: ProjectDoc['timeline'];
+    captionTracks: ProjectDoc['captionTracks'];
     transitions: ProjectDoc['transitions'];
     markers: ProjectDoc['markers'];
     masterGain: number;
@@ -96,6 +97,7 @@ export async function runExportProjectBundle(
   const doc = serializeProject({
     projectId: ctx.getProjectId(),
     timeline: state.timeline,
+    captionTracks: state.captionTracks,
     transitions: state.transitions,
     markers: state.markers,
     sources: state.sources,

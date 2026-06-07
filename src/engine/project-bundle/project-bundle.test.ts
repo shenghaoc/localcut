@@ -9,6 +9,7 @@ import { exportProjectBundle } from './export';
 import { serializeProjectDocForBundle } from './serialize-doc';
 import { importProjectBundle, validateProjectBundle } from './import';
 import { BUNDLE_SCHEMA_VERSION } from './types';
+import { createCaptionTrack } from '../captions/types';
 
 function sourceFixture(overrides: Partial<SourceDescriptor> = {}): SourceDescriptor {
   return {
@@ -136,6 +137,13 @@ describe('project bundle export/import', () => {
     const doc = serializeProject({
       projectId: 'project-roundtrip',
       timeline: timelineFixture(),
+      captionTracks: [
+        createCaptionTrack({
+          id: 'captions-1',
+          burnedIn: true,
+          segments: [{ id: 'seg-1', start: 0, duration: 1.5, text: 'Hello' }],
+        }),
+      ],
       sources: [descriptor],
     });
 
@@ -153,6 +161,8 @@ describe('project bundle export/import', () => {
     expect(imported.ok).toBe(true);
     expect(imported.doc?.projectId).toBe('project-roundtrip');
     expect(imported.boundSourceIds).toEqual(['source-1']);
+    expect(imported.doc?.captionTracks).toHaveLength(1);
+    expect(imported.doc?.captionTracks[0]?.segments[0]?.text).toBe('Hello');
   });
 
   it('reports missing media without blocking manifest parse', async () => {
@@ -333,4 +343,3 @@ describe('bundle export integrity summary', () => {
     expect(report.items.some((item) => item.code === 'ok' && item.sourceId)).toBe(true);
   });
 });
-

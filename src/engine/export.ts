@@ -124,6 +124,9 @@ export interface TimelineExportOptions {
   /** Resolves a title clip's cached raster texture (Phase 14); rasters on the
    *  cold path if needed, never per frame. Returns `null` for non-title clips. */
   titleTextureFor?: (clip: TimelineClip) => TitleTexture | null;
+  overlayTextureLayersAt?: (
+    timelineTime: number,
+  ) => Array<{ view: GPUTextureView; sourceWidth: number; sourceHeight: number; transform: import('./transform').TransformParams }>;
 }
 
 export interface TimelineExportResult {
@@ -796,7 +799,7 @@ async function encodeVideoRange(
   startFrame: number,
   endFrame: number,
 ): Promise<void> {
-  const { timeline, sources, renderer, signal, throughputProbe, onProgress, titleTextureFor } = options;
+  const { timeline, sources, renderer, signal, throughputProbe, onProgress, titleTextureFor, overlayTextureLayersAt } = options;
   renderer.setPreviewSize(plan.width, plan.height);
 
   const frameDuration = 1 / plan.frameRate;
@@ -870,6 +873,15 @@ async function encodeVideoRange(
           effects: sampled.effects,
           transform: sampled.transform,
           lut: layer.clip.lut,
+        });
+      }
+      for (const overlay of overlayTextureLayersAt?.(timelineTime) ?? []) {
+        layers.push({
+          kind: 'texture',
+          view: overlay.view,
+          sourceWidth: overlay.sourceWidth,
+          sourceHeight: overlay.sourceHeight,
+          transform: overlay.transform,
         });
       }
       exportFrame =

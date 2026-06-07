@@ -173,6 +173,78 @@ export interface TitleContentSnapshot {
   style: TitleStyleSnapshot;
 }
 
+export type CaptionFormatSnapshot = 'srt' | 'webvtt';
+export type CaptionAnchorSnapshot = 'bottom-center' | 'bottom-left' | 'bottom-right' | 'top-center' | 'custom';
+export type CaptionLineWrapSnapshot = 'balanced' | 'greedy';
+export type CaptionPresetIdSnapshot = 'subtitle' | 'lower-third' | 'note';
+
+export interface CaptionDiagnosticSnapshot {
+  code:
+    | 'invalid-index'
+    | 'invalid-timecode'
+    | 'negative-duration'
+    | 'overlap'
+    | 'unsupported-setting'
+    | 'empty-cue'
+    | 'missing-header';
+  severity: 'info' | 'warning' | 'error';
+  cueIndex?: number;
+  line?: number;
+  message: string;
+}
+
+export interface CaptionStyleSnapshot {
+  presetId?: CaptionPresetIdSnapshot | null;
+  overrides?: Partial<TitleStyleSnapshot>;
+  anchor: CaptionAnchorSnapshot;
+  insetPx?: { x: number; y: number };
+  maxWidthPercent: number;
+  lineWrap: CaptionLineWrapSnapshot;
+}
+
+export interface CaptionSegmentSnapshot {
+  id: string;
+  start: number;
+  duration: number;
+  text: string;
+  style?: Partial<CaptionStyleSnapshot> | null;
+}
+
+export interface CaptionTrackSnapshot {
+  id: string;
+  kind: 'caption';
+  name: string;
+  language?: string | null;
+  segments: CaptionSegmentSnapshot[];
+  defaultStyle: CaptionStyleSnapshot;
+  burnedIn: boolean;
+  visible: boolean;
+}
+
+export interface CaptionImportResultSnapshot {
+  track: CaptionTrackSnapshot;
+  diagnostics: readonly CaptionDiagnosticSnapshot[];
+  format: CaptionFormatSnapshot;
+  recovered: boolean;
+}
+
+export type CaptionExportRangeSnapshot =
+  | { mode: 'full-track' }
+  | { mode: 'timeline-range'; startS: number; endS: number };
+
+export interface CaptionExportSettingsSnapshot {
+  trackId: string;
+  formats: readonly CaptionFormatSnapshot[];
+  range: CaptionExportRangeSnapshot;
+  fileStem: string;
+}
+
+export interface CaptionSidecarFileSnapshot {
+  fileName: string;
+  mimeType: string;
+  content: string;
+}
+
 export type KeyframeEasingSnapshot = 'linear' | 'ease' | 'hold';
 
 export interface KeyframeSnapshot {
@@ -613,6 +685,75 @@ interface RequestThumbnailsCommand {
   timestamps: number[];
 }
 
+interface ImportCaptionsCommand {
+  type: 'import-captions';
+  file: File;
+  trackId?: string;
+}
+
+interface ExportCaptionsCommand {
+  type: 'export-captions';
+  settings: CaptionExportSettingsSnapshot;
+}
+
+interface SetCaptionTrackCommand {
+  type: 'set-caption-track';
+  trackId: string;
+  name?: string;
+  language?: string | null;
+  burnedIn?: boolean;
+  visible?: boolean;
+  defaultStyle?: Partial<CaptionStyleSnapshot>;
+}
+
+interface SetCaptionSegmentTextCommand {
+  type: 'set-caption-segment-text';
+  trackId: string;
+  segmentId: string;
+  text: string;
+}
+
+interface SetCaptionSegmentTimingCommand {
+  type: 'set-caption-segment-timing';
+  trackId: string;
+  segmentId: string;
+  start: number;
+  end: number;
+}
+
+interface SetCaptionSegmentStyleCommand {
+  type: 'set-caption-segment-style';
+  trackId: string;
+  segmentId: string;
+  style: Partial<CaptionStyleSnapshot>;
+}
+
+interface SplitCaptionSegmentCommand {
+  type: 'split-caption-segment';
+  trackId: string;
+  segmentId: string;
+  time: number;
+}
+
+interface MergeCaptionSegmentsCommand {
+  type: 'merge-caption-segments';
+  trackId: string;
+  segmentIds: readonly string[];
+}
+
+interface DeleteCaptionSegmentsCommand {
+  type: 'delete-caption-segments';
+  trackId: string;
+  segmentIds: readonly string[];
+}
+
+interface SnapCaptionSegmentCommand {
+  type: 'snap-caption-segment';
+  trackId: string;
+  segmentId: string;
+  edge: 'start' | 'end' | 'both';
+}
+
 
 export type BundleSourcePolicySnapshot =
   | { mode: 'embed-media' }
@@ -799,6 +940,16 @@ export type WorkerCommand =
   | ReorderTrackCommand
   | RemoveAssetCommand
   | RequestThumbnailsCommand
+  | ImportCaptionsCommand
+  | ExportCaptionsCommand
+  | SetCaptionTrackCommand
+  | SetCaptionSegmentTextCommand
+  | SetCaptionSegmentTimingCommand
+  | SetCaptionSegmentStyleCommand
+  | SplitCaptionSegmentCommand
+  | MergeCaptionSegmentsCommand
+  | DeleteCaptionSegmentsCommand
+  | SnapCaptionSegmentCommand
   | {
       type: 'export-project-bundle';
       jobId: string;
@@ -907,10 +1058,13 @@ export type WorkerStateMessage =
   | {
       type: 'timeline-state';
       timeline: TimelineTrackSnapshot[];
+      captionTracks: CaptionTrackSnapshot[];
       transitions: TimelineTransitionSnapshot[];
       markers: TimelineMarkerSnapshot[];
       masterGain: number;
     }
+  | { type: 'caption-import-result'; result: CaptionImportResultSnapshot }
+  | { type: 'caption-export-result'; files: readonly CaptionSidecarFileSnapshot[] }
   | { type: 'media-assets'; assets: MediaAssetSnapshot[] }
   | { type: 'thumbnail'; sourceId: string; timestamp: number; bitmap: ImageBitmap; width: number; height: number }
   | { type: 'waveform-peaks'; trackId: string; clipId: string; peaks: WaveformPeaks }
