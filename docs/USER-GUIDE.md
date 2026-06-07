@@ -31,6 +31,27 @@ You can import video, audio, and image files:
 
 Imported media appears in the **Media Bin** on the left side of the workspace. When the timeline is empty, the first playable import is also placed on the timeline so you can press **Play** immediately. To add another source to the timeline, click the **+** button next to it in the Media Bin.
 
+### Media Details
+
+Each bin entry has three action buttons:
+
+| Button | Action |
+|---|---|
+| **ⓘ** | Open the **Media Details** popover — full filename, resolution, frame rate (with a *variable* badge for VFR sources), rotation metadata, video/audio codecs, channel layout, sample rate, duration, file size, the proxy recommendation, and every source-health warning at full length. |
+| **+** | Place the clip on the timeline. |
+| **🗑** | Remove the entry from the bin. |
+
+The Media Details popover is the place to look when a clip shows a warning in the bin list — it has the full message text untruncated and identifies the exact codec, track, or timing issue.
+
+### Source Health Warnings
+
+When a file has unusual characteristics, the bin item shows them inline (truncated only by available width) and the Media Details popover shows them in full. Common warnings:
+
+- **Variable frame rate** — phone recordings often vary frame timing. Preview and export honour each frame's actual duration so playback stays synced; the warning is informational.
+- **Rotation metadata** — a portrait-mode phone clip carries a 90° or 270° rotation flag. The clip is placed on the timeline with that rotation already applied so it appears upright; you can override it from the Inspector if needed.
+- **Audio/video offset** — when the audio track starts a few milliseconds before or after the video. The engine compensates automatically (inserting silence ahead of the audio when needed).
+- **Unsupported audio/video codec** — the message names the codec (e.g. `(ac-3)` or `(unknown codec)` when the container does not advertise one). If the **primary** track uses an unsupported codec the clip cannot decode; secondary tracks are silently skipped.
+
 ### Compatibility Imports
 
 If your browser is in a limited tier, importing still works — it loads a reduced compatibility preview so you can inspect a clip. Timeline editing and export may be constrained.

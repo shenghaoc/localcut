@@ -119,6 +119,57 @@ describe('transform uniform packing', () => {
     expect(packed[11]).toBeCloseTo(0.5); // anchorY
   });
 
+  it('swaps source dimensions for 90°/270° rotations so the fit rect matches the rotated aspect', () => {
+    // A portrait 2160×3840 source (e.g. an unrotated phone frame from a 90°-rotated MOV)
+    // displayed in a 3840×2160 landscape output, rotated 90°: the rotated bounding
+    // box is 3840×2160, which matches the output exactly — fit:fill must produce
+    // rect (1, 1), not (1, ~3.16). Without the swap the layer would be scaled up
+    // 3.16× before rotation and then cropped to a narrow center strip.
+    const portraitToLandscape = packTransformUniform(
+      { ...DEFAULT_TRANSFORM, rotation: 90 },
+      3840,
+      2160,
+      2160,
+      3840,
+    );
+    expect(portraitToLandscape[8]).toBeCloseTo(1, 5); // rectW
+    expect(portraitToLandscape[9]).toBeCloseTo(1, 5); // rectH
+
+    // 270° should swap as well.
+    const at270 = packTransformUniform(
+      { ...DEFAULT_TRANSFORM, rotation: 270 },
+      3840,
+      2160,
+      2160,
+      3840,
+    );
+    expect(at270[8]).toBeCloseTo(1, 5);
+    expect(at270[9]).toBeCloseTo(1, 5);
+
+    // 180° must NOT swap (the aspect is preserved); leave behavior identical to 0°.
+    const at180 = packTransformUniform(
+      { ...DEFAULT_TRANSFORM, rotation: 180 },
+      1920,
+      1080,
+      1080,
+      1920,
+    );
+    const at0 = packTransformUniform(DEFAULT_TRANSFORM, 1920, 1080, 1080, 1920);
+    expect(at180[8]).toBeCloseTo(at0[8]!, 5);
+    expect(at180[9]).toBeCloseTo(at0[9]!, 5);
+
+    // Arbitrary rotations (not a multiple of 90°) must NOT swap.
+    const at45 = packTransformUniform(
+      { ...DEFAULT_TRANSFORM, rotation: 45 },
+      1920,
+      1080,
+      1080,
+      1920,
+    );
+    expect(at45[8]).toBeCloseTo(at0[8]!, 5);
+    expect(at45[9]).toBeCloseTo(at0[9]!, 5);
+  });
+
   it('bounds the letterbox card so k stays in [0,1] across the output at scale 1', () => {
     // A full-frame letterbox layer: every output texel maps inside the card, so
     // bars fill the whole frame (the base-layer letterbox case). With k derived

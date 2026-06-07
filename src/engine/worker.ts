@@ -492,10 +492,16 @@ function placeAsset(
 
   // Apply the source file's rotation metadata as the clip's initial transform so
   // portrait-mode phone videos (90°/270°) appear upright without manual correction.
-  const videoTrack = handle.inspection.tracks.find(
-    (t): t is SourceVideoTrackInspection => t.kind === 'video',
-  );
-  const sourceRotation = videoTrack?.rotationDeg ?? 0;
+  // Look up the inspection record matching the primary decoded video track, not
+  // just the first video track — Mediabunny may select a non-first track as primary
+  // (e.g. a MOV with an auxiliary preview track first).
+  const primaryVideoTrackId = handle.conformance.primaryVideoTrackId;
+  const primaryVideoInspection = primaryVideoTrackId
+    ? handle.inspection.tracks.find(
+        (t): t is SourceVideoTrackInspection => t.kind === 'video' && t.trackId === primaryVideoTrackId,
+      )
+    : undefined;
+  const sourceRotation = primaryVideoInspection?.rotationDeg ?? 0;
 
   if (handle.kind === 'audio') {
     const [withTrack, audioTrackId] = ensureTrack(tl, 'audio', trackId);

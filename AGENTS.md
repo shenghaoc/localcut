@@ -32,6 +32,8 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 
 **Active:**
 
+- [**Bugfix: IMG_6213.mov media handling**](.kiro/specs/bugfix-img-6213-media-issues/tasks.md) — apply rotation metadata on placement, rotation-aware fit rect, VFR-aware frame cadence, codec-named warnings, Media Bin details popover, user-guide updates.
+
 - [**Phase 26: Cross-browser compatibility engine**](.kiro/specs/phase-26-cross-browser-compatibility-engine/tasks.md) — CapabilityTierV2 probes, reduced-tier diagnostics, optional-SAB worker init, codec/export constraints, compatibility resource-lifetime helpers.
 
 - [**Phase 23: Project packaging + portability**](.kiro/specs/phase-23-project-packaging/tasks.md) — directory bundles, fingerprint dedup, integrity validation, collect media, import/export.
