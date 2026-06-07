@@ -304,8 +304,15 @@ function makeProjectId(): string {
   return `project-${Math.random().toString(36).slice(2)}`;
 }
 
+let checkpointRevision = 0;
+
 function post(msg: WorkerStateMessage) {
   self.postMessage(msg);
+}
+
+function postRecoveryCheckpoint(): void {
+  checkpointRevision++;
+  scheduleAutosave();
 }
 
 function recordRecentError(input: RecentErrorInput): void {
@@ -1109,7 +1116,7 @@ function afterTimelineMutation(options: {
   }
   ensureClockAndTimeline();
   postHistoryState();
-  scheduleAutosave();
+  postRecoveryCheckpoint();
   if (options.refreshPlayback === 'refresh') {
     playback?.refresh();
   } else if (options.refreshPlayback !== 'none') {
