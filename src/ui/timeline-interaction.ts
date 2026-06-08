@@ -100,6 +100,7 @@ export function resolveSnap(
         id: 'playhead',
         label: 'Playhead',
       };
+      bestDistance = distance;
     }
   }
 
