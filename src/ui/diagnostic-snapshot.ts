@@ -14,6 +14,7 @@ import { buildDefaultPerformanceBudgets } from '../diagnostics/performance-budge
 import type { CapabilitySnapshot, CapabilityTier } from './capabilities';
 
 const APP_VERSION = '0.1.0';
+const BUILD_ID = `${APP_VERSION}+${__BUILD_SHA__}`;
 
 function makeSnapshotId(): string {
 	if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -269,6 +270,7 @@ export async function buildUiDiagnosticSnapshot(
 		snapshotId: makeSnapshotId(),
 		createdAt: new Date().toISOString(),
 		appVersion: APP_VERSION,
+		buildId: BUILD_ID,
 		browser: browserSummary(),
 		capability:
 			worker?.capability ??

@@ -24,19 +24,15 @@ This repo uses Kiro steering, specs, and skills. Canonical project intelligence 
 
 Top-level Markdown: [`AGENTS.md`](AGENTS.md) is canonical; [`CLAUDE.md`](CLAUDE.md) and [`GEMINI.md`](GEMINI.md) redirect to it.
 
-## Status
+## Status — v0.1.0 Alpha
 
-**Phase 1 (done):** scaffolding, COOP/COEP, pipeline worker, SAB clock, Mediabunny metadata import.
+**Completed (phases 1–22):** scaffolding, COOP/COEP, pipeline worker, SAB clock, zero-copy WebGPU preview, timeline editing, GPU effect chain, audio mixing, pipelined export, PWA deployment, capability tiers, project persistence + undo/redo, timeline UX (zoom/scroll, snapping, multi-select, markers), media library (batch import, thumbnails, stills, audio-only, track management), multi-track compositing + transforms, titles/text, keyframes + LUT grading, audio mixing polish (master bus, pan, fades, meters), export expansion (H.264/VP9/AV1, resolution/fps/bitrate overrides, range export), media conformance, proxy/render cache, editing tools v2, colour management + scopes, captions/subtitles.
 
-**Phase 2 (done):** zero-copy decode → WebGPU preview, playback loop, adaptive resolution — see [`.kiro/specs/phase-2-zero-copy-preview/`](.kiro/specs/phase-2-zero-copy-preview/tasks.md) (manual GPU browser verify pending).
+**Active:** [project packaging](.kiro/specs/phase-23-project-packaging/tasks.md), [render queue + presets](.kiro/specs/phase-24-render-queue-presets/tasks.md), [cross-browser compatibility](.kiro/specs/phase-26-cross-browser-compatibility-engine/tasks.md), [alpha release hardening](.kiro/specs/alpha-0-1-release-hardening/tasks.md).
 
-**Phase 3 (done):** [timeline + editing](.kiro/specs/phase-3-timeline-editing/tasks.md).
+**Planned:** [transitions](.kiro/specs/phase-13-transitions/tasks.md).
 
-**Phases 4–6 (done):** [effect chain](.kiro/specs/phase-4-effect-chain/tasks.md), [audio](.kiro/specs/phase-5-audio/tasks.md), [export](.kiro/specs/phase-6-export/tasks.md).
-
-**Phase 7 (done):** [PWA + deployment](.kiro/specs/phase-7-pwa-deployment/tasks.md).
-
-**Phase 8 (active):** [capability tiers + compatibility planning](.kiro/specs/phase-8-capability-tiers/tasks.md).
+See [docs/ALPHA.md](docs/ALPHA.md) for the alpha support boundary — what is supported, what is experimental, and what is not available.
 
 ## Requirements
 

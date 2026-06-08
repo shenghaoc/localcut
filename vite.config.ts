@@ -1,9 +1,21 @@
 import { defineConfig } from 'vite';
+import { execSync } from 'node:child_process';
 import solid from 'vite-plugin-solid';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
+function gitSha(): string {
+	try {
+		return execSync('git rev-parse --short HEAD', { encoding: 'utf-8' }).trim();
+	} catch {
+		return 'dev';
+	}
+}
+
 export default defineConfig({
+	define: {
+		__BUILD_SHA__: JSON.stringify(gitSha())
+	},
 	plugins: [
 		tailwindcss(),
 		solid(),

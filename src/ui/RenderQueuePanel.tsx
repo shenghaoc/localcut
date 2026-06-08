@@ -87,7 +87,7 @@ export function RenderQueuePanel(props: RenderQueuePanelProps) {
 			<section class="render-queue-panel" aria-label="Render Queue">
 				<div class="render-queue-header">
 					<h3 class="render-queue-title">
-						Render Queue
+						Render Queue <span class="text-xs text-[#9898a4] font-normal">(Experimental)</span>
 						<span class="render-queue-count">
 							{completedCount()}/{totalJobs()}
 						</span>
