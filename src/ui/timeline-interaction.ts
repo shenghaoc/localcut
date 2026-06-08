@@ -37,17 +37,10 @@ function pushTarget(targets: SnapTarget[], target: SnapTarget): void {
 
 export function buildSnapTargets(
 	timeline: readonly TimelineTrackSnapshot[],
-	markers: readonly TimelineMarkerSnapshot[],
-	playheadTime: number
+	markers: readonly TimelineMarkerSnapshot[]
 ): SnapTarget[] {
 	const targets: SnapTarget[] = [];
 	pushTarget(targets, { kind: 'zero', time: 0, id: 'zero', label: 'Start' });
-	pushTarget(targets, {
-		kind: 'playhead',
-		time: playheadTime,
-		id: 'playhead',
-		label: 'Playhead'
-	});
 	for (const marker of markers) {
 		pushTarget(targets, {
 			kind: 'marker',
@@ -79,7 +72,8 @@ export function resolveSnap(
 	time: number,
 	pxPerSecond: number,
 	targets: readonly SnapTarget[],
-	thresholdPx = 8
+	thresholdPx = 8,
+	playheadTime?: number
 ): SnapResult {
 	if (!finite(time) || !finite(pxPerSecond) || pxPerSecond <= 0 || thresholdPx <= 0) {
 		return { time, snapped: false, target: null };
@@ -93,6 +87,20 @@ export function resolveSnap(
 		best = target;
 		bestDistance = distance;
 	}
+
+	if (playheadTime !== undefined && finite(playheadTime) && playheadTime >= 0) {
+		const distance = Math.abs(playheadTime - time);
+		if (distance <= thresholdSeconds && distance < bestDistance) {
+			best = {
+				kind: 'playhead',
+				time: playheadTime,
+				id: 'playhead',
+				label: 'Playhead'
+			};
+			bestDistance = distance;
+		}
+	}
+
 	return best
 		? { time: best.time, snapped: true, target: best }
 		: { time, snapped: false, target: null };

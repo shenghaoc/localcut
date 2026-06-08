@@ -159,9 +159,7 @@ export function Timeline(props: TimelineProps) {
 	);
 
 	const selectedKeys = createMemo(() => new Set(props.selectedClipRefs().map(selectionKey)));
-	const snapTargets = createMemo(() =>
-		buildSnapTargets(props.timeline(), props.markers(), boundedCurrentTime())
-	);
+	const snapTargets = createMemo(() => buildSnapTargets(props.timeline(), props.markers()));
 
 	const rulerInterval = createMemo(() => {
 		const pps = pxPerSecond();
@@ -606,6 +604,7 @@ export function Timeline(props: TimelineProps) {
 													pxPerSecond={pxPerSecond()}
 													snapEnabled={snapEnabled()}
 													snapTargets={snapTargets()}
+													playheadTime={boundedCurrentTime()}
 													selected={selectedKeys().has(
 														selectionKey({ trackId: track.id, clipId: clip.id })
 													)}

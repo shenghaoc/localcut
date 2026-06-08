@@ -1,0 +1,3 @@
+## 2024-05-20 - Timeline Playhead Memoization Bottleneck
+**Learning:** In SolidJS, a `createMemo` tracking the timeline playhead (`boundedCurrentTime()`) to build an array of snap targets forces an O(N) recalculation of all clips/markers on every animation frame during playback, even when no user interaction (dragging/trimming) is occurring.
+**Action:** Extract continuously updating values (like the playhead time) from static array computations. Pass the continuous value directly down as a non-tracked prop to interactive components (`TimelineClip`) and incorporate it only at the point of action (e.g., in `resolveSnap` during pointer events) to avoid continuous background re-allocation.
