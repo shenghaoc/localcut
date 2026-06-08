@@ -114,6 +114,7 @@ export function buildCopyableDiagnosticReport(
 		generatedAt,
 		snapshotId: snapshot.snapshotId,
 		appVersion: snapshot.appVersion,
+		buildId: snapshot.buildId,
 		browser: snapshot.browser,
 		capability: snapshot.capability,
 		storage: snapshot.storage,

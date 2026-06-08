@@ -212,6 +212,7 @@ export interface CopyableDiagnosticReport {
 	readonly generatedAt: string;
 	readonly snapshotId: string;
 	readonly appVersion: string;
+	readonly buildId?: string;
 	readonly browser: BrowserDiagnosticSummary;
 	readonly capability: CapabilityReport;
 	readonly storage: StorageDiagnosticSummary;
