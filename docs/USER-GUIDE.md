@@ -6,12 +6,12 @@ LocalCut Studio is a browser-native non-linear video editor. It runs entirely on
 
 LocalCut Studio uses your browser's hardware acceleration for real-time video processing. There are four capability tiers:
 
-| Tier | What You Get | Requirements |
-|------|-------------|-------------|
-| **Accelerated** | Full WebGPU preview, effects, and export | Chromium browser (Chrome/Edge/Brave) with WebGPU + COOP/COEP isolation |
-| **Compatibility GPU** | Reduced GPU preview and export | Chromium browser with compatibility WebGPU adapter |
-| **Limited WebCodecs** | Canvas2D preview, limited export | Browser with WebCodecs decode but no WebGPU |
-| **Shell Only** | App loads but preview/export unavailable | Any modern browser |
+| Tier                  | What You Get                             | Requirements                                                           |
+| --------------------- | ---------------------------------------- | ---------------------------------------------------------------------- |
+| **Accelerated**       | Full WebGPU preview, effects, and export | Chromium browser (Chrome/Edge/Brave) with WebGPU + COOP/COEP isolation |
+| **Compatibility GPU** | Reduced GPU preview and export           | Chromium browser with compatibility WebGPU adapter                     |
+| **Limited WebCodecs** | Canvas2D preview, limited export         | Browser with WebCodecs decode but no WebGPU                            |
+| **Shell Only**        | App loads but preview/export unavailable | Any modern browser                                                     |
 
 The status bar at the bottom shows your current tier. Click **Capabilities** in the toolbar for details about what your browser supports and what's missing.
 
@@ -35,11 +35,11 @@ Imported media appears in the **Media Bin** on the left side of the workspace. W
 
 Each bin entry has three action buttons:
 
-| Button | Action |
-|---|---|
-| **ⓘ** | Open the **Media Details** popover — full filename, resolution, frame rate (with a *variable* badge for VFR sources), rotation metadata, video/audio codecs, channel layout, sample rate, duration, file size, the proxy recommendation, and every source-health warning at full length. |
-| **+** | Place the clip on the timeline. |
-| **🗑** | Remove the entry from the bin. |
+| Button | Action                                                                                                                                                                                                                                                                                   |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **ⓘ**  | Open the **Media Details** popover — full filename, resolution, frame rate (with a _variable_ badge for VFR sources), rotation metadata, video/audio codecs, channel layout, sample rate, duration, file size, the proxy recommendation, and every source-health warning at full length. |
+| **+**  | Place the clip on the timeline.                                                                                                                                                                                                                                                          |
+| **🗑** | Remove the entry from the bin.                                                                                                                                                                                                                                                           |
 
 The Media Details popover is the place to look when a clip shows a warning in the bin list — it has the full message text untruncated and identifies the exact codec, track, or timing issue.
 
@@ -62,26 +62,26 @@ The timeline is where you arrange and edit your clips. Each track holds clips of
 
 ### Transport Controls
 
-| Control | Shortcut | Action |
-|---------|----------|--------|
-| Play | `L` | Start playback from the playhead |
-| Pause | `K` | Pause playback |
-| Step Back | `J` | Move one frame backward |
-| Step Forward | — | Move one frame forward (toolbar button) |
+| Control      | Shortcut | Action                                  |
+| ------------ | -------- | --------------------------------------- |
+| Play         | `L`      | Start playback from the playhead        |
+| Pause        | `K`      | Pause playback                          |
+| Step Back    | `J`      | Move one frame backward                 |
+| Step Forward | —        | Move one frame forward (toolbar button) |
 
 ### Editing Operations
 
-| Action | Shortcut | How It Works |
-|--------|----------|-------------|
-| **Split** | `S` | Cuts the selected clip at the playhead position |
-| **Delete** | `Delete` or `Backspace` | Removes selected clip(s) from the timeline |
-| **Trim** | Drag clip edges | Drag the left or right edge of a clip to trim it |
-| **Move** | Drag clip body | Drag a clip horizontally to move it on the timeline |
-| **Undo** | `Ctrl+Z` / `Cmd+Z` | Undo the last action |
-| **Redo** | `Ctrl+Shift+Z` / `Cmd+Shift+Z` | Redo the last undone action |
-| **Copy** | `Ctrl+C` / `Cmd+C` | Copy selected clip(s) |
-| **Paste** | `Ctrl+V` / `Cmd+V` | Paste copied clip(s) at the playhead |
-| **Duplicate** | `Ctrl+D` / `Cmd+D` | Duplicate selected clip(s) |
+| Action        | Shortcut                       | How It Works                                        |
+| ------------- | ------------------------------ | --------------------------------------------------- |
+| **Split**     | `S`                            | Cuts the selected clip at the playhead position     |
+| **Delete**    | `Delete` or `Backspace`        | Removes selected clip(s) from the timeline          |
+| **Trim**      | Drag clip edges                | Drag the left or right edge of a clip to trim it    |
+| **Move**      | Drag clip body                 | Drag a clip horizontally to move it on the timeline |
+| **Undo**      | `Ctrl+Z` / `Cmd+Z`             | Undo the last action                                |
+| **Redo**      | `Ctrl+Shift+Z` / `Cmd+Shift+Z` | Redo the last undone action                         |
+| **Copy**      | `Ctrl+C` / `Cmd+C`             | Copy selected clip(s)                               |
+| **Paste**     | `Ctrl+V` / `Cmd+V`             | Paste copied clip(s) at the playhead                |
+| **Duplicate** | `Ctrl+D` / `Cmd+D`             | Duplicate selected clip(s)                          |
 
 ### Timeline Navigation
 
@@ -108,6 +108,7 @@ The timeline is where you arrange and edit your clips. Each track holds clips of
 ### Markers
 
 Markers are reference points on the timeline:
+
 - **Add Marker**: Click the marker add control at the playhead position.
 - **Delete Marker**: Click the delete control on the marker.
 - Markers appear on the timeline ruler and can be used as export range boundaries.
@@ -125,12 +126,14 @@ The preview panel shows your video at the playhead position:
 When you select a clip on the timeline, the **Inspector** (right sidebar) shows its properties:
 
 ### Video Clips
+
 - **Transform**: Position (X/Y), scale, rotation, and opacity.
 - **Fit Modes**: Fill, Fit, or Letterbox.
 - **Effects**: Brightness, contrast, saturation, temperature, temperature strength, and LUT strength.
 - **LUT**: Import a `.cube` color grading LUT and adjust its strength.
 
 ### Audio Clips
+
 - **Track Mix**: Gain (volume), pan (left/right balance), mute, solo.
 - **Fades**: Set fade-in and fade-out durations for smooth audio transitions.
 
@@ -289,23 +292,25 @@ Click **Help** in the toolbar to open the in-app Help panel. It displays the ful
 ## Keyboard Shortcuts Reference
 
 ### Transport
-| Key | Action |
-|-----|--------|
+
+| Key | Action                  |
+| --- | ----------------------- |
 | `J` | Step backward one frame |
-| `K` | Pause |
-| `L` | Play |
+| `K` | Pause                   |
+| `L` | Play                    |
 
 ### Editing
-| Key | Action |
-|-----|--------|
-| `S` | Split selected clip at playhead |
-| `Delete` / `Backspace` | Delete selected clip(s) |
-| `Ctrl+Z` / `Cmd+Z` | Undo |
-| `Ctrl+Shift+Z` / `Cmd+Shift+Z` | Redo |
-| `Ctrl+Y` | Redo (alternative) |
-| `Ctrl+C` / `Cmd+C` | Copy selected clip(s) |
-| `Ctrl+V` / `Cmd+V` | Paste copied clip(s) |
-| `Ctrl+D` / `Cmd+D` | Duplicate selected clip(s) |
-| `Ctrl+=` / `Cmd+=` | Zoom timeline in |
-| `Ctrl+-` / `Cmd+-` | Zoom timeline out |
-| `Escape` | Close open dialog |
+
+| Key                            | Action                          |
+| ------------------------------ | ------------------------------- |
+| `S`                            | Split selected clip at playhead |
+| `Delete` / `Backspace`         | Delete selected clip(s)         |
+| `Ctrl+Z` / `Cmd+Z`             | Undo                            |
+| `Ctrl+Shift+Z` / `Cmd+Shift+Z` | Redo                            |
+| `Ctrl+Y`                       | Redo (alternative)              |
+| `Ctrl+C` / `Cmd+C`             | Copy selected clip(s)           |
+| `Ctrl+V` / `Cmd+V`             | Paste copied clip(s)            |
+| `Ctrl+D` / `Cmd+D`             | Duplicate selected clip(s)      |
+| `Ctrl+=` / `Cmd+=`             | Zoom timeline in                |
+| `Ctrl+-` / `Cmd+-`             | Zoom timeline out               |
+| `Escape`                       | Close open dialog               |

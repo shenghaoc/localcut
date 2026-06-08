@@ -5,6 +5,7 @@
 ## Checklist
 
 ### Documentation
+
 <!-- User-facing docs live in docs/ as the single source of truth. They render on GitHub AND in the in-app Help panel. -->
 
 - [ ] User-facing changes are documented in `docs/`

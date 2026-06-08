@@ -20,75 +20,77 @@ export const FIT_MODES: readonly FitMode[] = ['fill', 'fit', 'letterbox'];
  * transform (all defaults) is a no-op pass-through.
  */
 export interface TransformParams {
-  x: number;
-  y: number;
-  scale: number;
-  rotation: number;
-  opacity: number;
-  anchorX: number;
-  anchorY: number;
-  fit: FitMode;
+	x: number;
+	y: number;
+	scale: number;
+	rotation: number;
+	opacity: number;
+	anchorX: number;
+	anchorY: number;
+	fit: FitMode;
 }
 
 export const DEFAULT_TRANSFORM: TransformParams = {
-  x: 0,
-  y: 0,
-  scale: 1,
-  rotation: 0,
-  opacity: 1,
-  anchorX: 0.5,
-  anchorY: 0.5,
-  fit: 'fill',
+	x: 0,
+	y: 0,
+	scale: 1,
+	rotation: 0,
+	opacity: 1,
+	anchorX: 0.5,
+	anchorY: 0.5,
+	fit: 'fill'
 };
 
 function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
+	return Math.min(max, Math.max(min, value));
 }
 
 function finiteOr(value: unknown, fallback: number): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+	return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
 function normalizeFit(value: unknown): FitMode {
-  return value === 'fit' || value === 'letterbox' || value === 'fill' ? value : DEFAULT_TRANSFORM.fit;
+	return value === 'fit' || value === 'letterbox' || value === 'fill'
+		? value
+		: DEFAULT_TRANSFORM.fit;
 }
 
 export function normalizeTransform(partial: Partial<TransformParams> | undefined): TransformParams {
-  return {
-    x: finiteOr(partial?.x, DEFAULT_TRANSFORM.x),
-    y: finiteOr(partial?.y, DEFAULT_TRANSFORM.y),
-    // A zero or negative scale would collapse the layer; floor it just above 0.
-    scale: Math.max(1e-3, finiteOr(partial?.scale, DEFAULT_TRANSFORM.scale)),
-    rotation: finiteOr(partial?.rotation, DEFAULT_TRANSFORM.rotation),
-    opacity: clamp(finiteOr(partial?.opacity, DEFAULT_TRANSFORM.opacity), 0, 1),
-    anchorX: clamp(finiteOr(partial?.anchorX, DEFAULT_TRANSFORM.anchorX), 0, 1),
-    anchorY: clamp(finiteOr(partial?.anchorY, DEFAULT_TRANSFORM.anchorY), 0, 1),
-    fit: normalizeFit(partial?.fit),
-  };
+	return {
+		x: finiteOr(partial?.x, DEFAULT_TRANSFORM.x),
+		y: finiteOr(partial?.y, DEFAULT_TRANSFORM.y),
+		// A zero or negative scale would collapse the layer; floor it just above 0.
+		scale: Math.max(1e-3, finiteOr(partial?.scale, DEFAULT_TRANSFORM.scale)),
+		rotation: finiteOr(partial?.rotation, DEFAULT_TRANSFORM.rotation),
+		opacity: clamp(finiteOr(partial?.opacity, DEFAULT_TRANSFORM.opacity), 0, 1),
+		anchorX: clamp(finiteOr(partial?.anchorX, DEFAULT_TRANSFORM.anchorX), 0, 1),
+		anchorY: clamp(finiteOr(partial?.anchorY, DEFAULT_TRANSFORM.anchorY), 0, 1),
+		fit: normalizeFit(partial?.fit)
+	};
 }
 
 export function transformsEqual(a: TransformParams, b: TransformParams): boolean {
-  return (
-    a.x === b.x &&
-    a.y === b.y &&
-    a.scale === b.scale &&
-    a.rotation === b.rotation &&
-    a.opacity === b.opacity &&
-    a.anchorX === b.anchorX &&
-    a.anchorY === b.anchorY &&
-    a.fit === b.fit
-  );
+	return (
+		a.x === b.x &&
+		a.y === b.y &&
+		a.scale === b.scale &&
+		a.rotation === b.rotation &&
+		a.opacity === b.opacity &&
+		a.anchorX === b.anchorX &&
+		a.anchorY === b.anchorY &&
+		a.fit === b.fit
+	);
 }
 
 /** True when the transform leaves the layer untouched (identity, fully opaque, fill). */
 export function isIdentityTransform(t: TransformParams): boolean {
-  return transformsEqual(normalizeTransform(t), DEFAULT_TRANSFORM);
+	return transformsEqual(normalizeTransform(t), DEFAULT_TRANSFORM);
 }
 
 export interface FitRect {
-  /** Normalized layer width/height within the output (before the user scale). */
-  width: number;
-  height: number;
+	/** Normalized layer width/height within the output (before the user scale). */
+	width: number;
+	height: number;
 }
 
 /**
@@ -97,22 +99,22 @@ export interface FitRect {
  * `fit`/`letterbox` contain (≤1 on the limiting axis).
  */
 export function computeFitRect(
-  sourceWidth: number,
-  sourceHeight: number,
-  outputWidth: number,
-  outputHeight: number,
-  mode: FitMode,
+	sourceWidth: number,
+	sourceHeight: number,
+	outputWidth: number,
+	outputHeight: number,
+	mode: FitMode
 ): FitRect {
-  if (sourceWidth <= 0 || sourceHeight <= 0 || outputWidth <= 0 || outputHeight <= 0) {
-    return { width: 1, height: 1 };
-  }
-  // ratio > 1 ⇒ the source is "wider" than the output relative to their aspects.
-  const ratio = (sourceWidth / sourceHeight) / (outputWidth / outputHeight);
-  if (mode === 'fill') {
-    return ratio >= 1 ? { width: ratio, height: 1 } : { width: 1, height: 1 / ratio };
-  }
-  // contain (fit / letterbox)
-  return ratio >= 1 ? { width: 1, height: 1 / ratio } : { width: ratio, height: 1 };
+	if (sourceWidth <= 0 || sourceHeight <= 0 || outputWidth <= 0 || outputHeight <= 0) {
+		return { width: 1, height: 1 };
+	}
+	// ratio > 1 ⇒ the source is "wider" than the output relative to their aspects.
+	const ratio = sourceWidth / sourceHeight / (outputWidth / outputHeight);
+	if (mode === 'fill') {
+		return ratio >= 1 ? { width: ratio, height: 1 } : { width: 1, height: 1 / ratio };
+	}
+	// contain (fit / letterbox)
+	return ratio >= 1 ? { width: 1, height: 1 / ratio } : { width: ratio, height: 1 };
 }
 
 /** Floats per transform uniform: mat2 columns + translation + opacity + fit flag,
@@ -138,55 +140,62 @@ export const TRANSFORM_UNIFORM_BYTES = TRANSFORM_UNIFORM_FLOATS * 4;
  * transformed layer (`k ∈ [0,1]²`), leaving everything beyond it transparent.
  */
 export function packTransformUniform(
-  t: TransformParams,
-  outputWidth: number,
-  outputHeight: number,
-  sourceWidth: number,
-  sourceHeight: number,
+	t: TransformParams,
+	outputWidth: number,
+	outputHeight: number,
+	sourceWidth: number,
+	sourceHeight: number
 ): Float32Array {
-  // For 90°/270° rotations (the values that real-world rotation metadata produces)
-  // the layer's bounding box is the source rectangle transposed. Computing the fit
-  // rect on the un-swapped dimensions makes a portrait source displayed as landscape
-  // (e.g. a 2160×3840 phone frame in a 3840×2160 output) scale up massively before
-  // rotation and then get cropped. Swap the source dims when the rotation is an
-  // odd quarter-turn so the fit rect matches the rotated layer's aspect.
-  const quarterTurns = t.rotation / 90;
-  const nearestQuarter = Math.round(quarterTurns);
-  const isQuarterTurn = Math.abs(quarterTurns - nearestQuarter) < 1e-3;
-  const swap = isQuarterTurn && ((nearestQuarter % 2) + 2) % 2 === 1;
-  const fitSourceWidth = swap ? sourceHeight : sourceWidth;
-  const fitSourceHeight = swap ? sourceWidth : sourceHeight;
-  // `fitRect` is the rotated layer's extent in OUTPUT axes. The scale (sx, sy)
-  // and the trailing packed rect are consumed in LAYER-LOCAL (pre-rotation) axes,
-  // so for 90°/270° rotations we need to transpose back: layer-x corresponds to
-  // what becomes output-y after rotation, and vice versa.
-  const fitRect = computeFitRect(fitSourceWidth, fitSourceHeight, outputWidth, outputHeight, t.fit);
-  const rect = swap
-    ? { width: fitRect.height, height: fitRect.width }
-    : fitRect;
-  const sx = Math.max(1e-6, rect.width * t.scale);
-  const sy = Math.max(1e-6, rect.height * t.scale);
-  const theta = (t.rotation * Math.PI) / 180;
-  const cos = Math.cos(theta);
-  const sin = Math.sin(theta);
+	// For 90°/270° rotations (the values that real-world rotation metadata produces)
+	// the layer's bounding box is the source rectangle transposed. Computing the fit
+	// rect on the un-swapped dimensions makes a portrait source displayed as landscape
+	// (e.g. a 2160×3840 phone frame in a 3840×2160 output) scale up massively before
+	// rotation and then get cropped. Swap the source dims when the rotation is an
+	// odd quarter-turn so the fit rect matches the rotated layer's aspect.
+	const quarterTurns = t.rotation / 90;
+	const nearestQuarter = Math.round(quarterTurns);
+	const isQuarterTurn = Math.abs(quarterTurns - nearestQuarter) < 1e-3;
+	const swap = isQuarterTurn && ((nearestQuarter % 2) + 2) % 2 === 1;
+	const fitSourceWidth = swap ? sourceHeight : sourceWidth;
+	const fitSourceHeight = swap ? sourceWidth : sourceHeight;
+	// `fitRect` is the rotated layer's extent in OUTPUT axes. The scale (sx, sy)
+	// and the trailing packed rect are consumed in LAYER-LOCAL (pre-rotation) axes,
+	// so for 90°/270° rotations we need to transpose back: layer-x corresponds to
+	// what becomes output-y after rotation, and vice versa.
+	const fitRect = computeFitRect(fitSourceWidth, fitSourceHeight, outputWidth, outputHeight, t.fit);
+	const rect = swap ? { width: fitRect.height, height: fitRect.width } : fitRect;
+	const sx = Math.max(1e-6, rect.width * t.scale);
+	const sy = Math.max(1e-6, rect.height * t.scale);
+	const theta = (t.rotation * Math.PI) / 180;
+	const cos = Math.cos(theta);
+	const sin = Math.sin(theta);
 
-  // M = diag(1/sx, 1/sy) · R(−θ), with R(−θ) = [[cos, sin], [−sin, cos]].
-  const m00 = cos / sx;
-  const m01 = sin / sx;
-  const m10 = -sin / sy;
-  const m11 = cos / sy;
+	// M = diag(1/sx, 1/sy) · R(−θ), with R(−θ) = [[cos, sin], [−sin, cos]].
+	const m00 = cos / sx;
+	const m01 = sin / sx;
+	const m10 = -sin / sy;
+	const m11 = cos / sy;
 
-  const cx = 0.5 + t.x;
-  const cy = 0.5 + t.y;
-  // t = anchor − M·center.
-  const t0 = t.anchorX - (m00 * cx + m01 * cy);
-  const t1 = t.anchorY - (m10 * cx + m11 * cy);
+	const cx = 0.5 + t.x;
+	const cy = 0.5 + t.y;
+	// t = anchor − M·center.
+	const t0 = t.anchorX - (m00 * cx + m01 * cy);
+	const t1 = t.anchorY - (m10 * cx + m11 * cy);
 
-  const fitFlag = t.fit === 'letterbox' ? 1 : 0;
+	const fitFlag = t.fit === 'letterbox' ? 1 : 0;
 
-  return new Float32Array([
-    m00, m01, m10, m11,
-    t0, t1, clamp(t.opacity, 0, 1), fitFlag,
-    rect.width, rect.height, t.anchorX, t.anchorY,
-  ]);
+	return new Float32Array([
+		m00,
+		m01,
+		m10,
+		m11,
+		t0,
+		t1,
+		clamp(t.opacity, 0, 1),
+		fitFlag,
+		rect.width,
+		rect.height,
+		t.anchorX,
+		t.anchorY
+	]);
 }

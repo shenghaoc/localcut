@@ -50,7 +50,6 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 
 - [**Phase 14: Titles + text**](.kiro/specs/phase-14-titles-text/tasks.md) — source-less title clips; edit-time OffscreenCanvas raster cached as a GPU texture keyed by content hash; bundled offline fonts (Inter/Lora OFL); transform-driven layout; toggleable safe-area guides.
 
-
 - [**Phase 12: Multi-track compositing + transforms**](.kiro/specs/phase-12-compositing-transform/tasks.md) — layered resolve; N-layer single-submission composite; per-clip position/scale/rotation/opacity; preview gizmo; fit/letterbox.
 
 - [**Phase 11: Media library + stills + tracks**](.kiro/specs/phase-11-media-library/tasks.md) — batch import; media bin with budgeted worker thumbnails; image-still + audio-only sources; explicit track management; filmstrips.

@@ -181,9 +181,13 @@ export function Toolbar(props: ToolbarProps) {
 								onInput={(e) =>
 									props.onMasterGain(Number((e.currentTarget as HTMLInputElement).value))
 								}
-								aria-valuetext={Number.isFinite(props.masterGain) ? props.masterGain.toFixed(2) : '0.00'}
+								aria-valuetext={
+									Number.isFinite(props.masterGain) ? props.masterGain.toFixed(2) : '0.00'
+								}
 							/>
-							<span class="master-fader-value tabular-nums">{Number.isFinite(props.masterGain) ? props.masterGain.toFixed(2) : '0.00'}</span>
+							<span class="master-fader-value tabular-nums">
+								{Number.isFinite(props.masterGain) ? props.masterGain.toFixed(2) : '0.00'}
+							</span>
 						</label>
 					</div>
 					{props.exportControl}

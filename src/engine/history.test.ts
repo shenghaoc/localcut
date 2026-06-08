@@ -1,135 +1,135 @@
 import { describe, expect, it } from 'vitest';
 import {
-  DEFAULT_CLIP_AUDIO_FADES,
-  DEFAULT_TRACK_MIX,
-  defaultClipEffects,
-  defaultClipTransform,
-  type Timeline,
-  type TimelineMarker,
+	DEFAULT_CLIP_AUDIO_FADES,
+	DEFAULT_TRACK_MIX,
+	defaultClipEffects,
+	defaultClipTransform,
+	type Timeline,
+	type TimelineMarker
 } from './timeline';
 import { createTimelineHistory } from './history';
 
 function makeTimeline(label: string): Timeline {
-  return [
-    {
-      id: 'track-video-source-1',
-      type: 'video',
-      ...DEFAULT_TRACK_MIX,
-      clips: [
-        {
-          id: label,
-          sourceId: 'source-1',
-          start: 0,
-          duration: 5,
-          inPoint: 0,
-          effects: defaultClipEffects(),
-          transform: defaultClipTransform(),
-          ...DEFAULT_CLIP_AUDIO_FADES,
-        },
-      ],
-    },
-  ];
+	return [
+		{
+			id: 'track-video-source-1',
+			type: 'video',
+			...DEFAULT_TRACK_MIX,
+			clips: [
+				{
+					id: label,
+					sourceId: 'source-1',
+					start: 0,
+					duration: 5,
+					inPoint: 0,
+					effects: defaultClipEffects(),
+					transform: defaultClipTransform(),
+					...DEFAULT_CLIP_AUDIO_FADES
+				}
+			]
+		}
+	];
 }
 
 function makeSnapshot(label: string, markers: TimelineMarker[] = []) {
-  return {
-    timeline: makeTimeline(label),
-    transitions: [],
-    markers,
-  };
+	return {
+		timeline: makeTimeline(label),
+		transitions: [],
+		markers
+	};
 }
 
 describe('timeline history', () => {
-  it('pushes snapshots and walks undo/redo without mutating stored entries', () => {
-    let now = 0;
-    const history = createTimelineHistory({ now: () => now });
-    const base = makeSnapshot('base', [{ id: 'marker-a', time: 1, label: 'A' }]);
-    const edited = makeSnapshot('edited', [{ id: 'marker-b', time: 2, label: 'B' }]);
-    const final = makeSnapshot('final', [{ id: 'marker-c', time: 3, label: 'C' }]);
+	it('pushes snapshots and walks undo/redo without mutating stored entries', () => {
+		let now = 0;
+		const history = createTimelineHistory({ now: () => now });
+		const base = makeSnapshot('base', [{ id: 'marker-a', time: 1, label: 'A' }]);
+		const edited = makeSnapshot('edited', [{ id: 'marker-b', time: 2, label: 'B' }]);
+		const final = makeSnapshot('final', [{ id: 'marker-c', time: 3, label: 'C' }]);
 
-    history.push(base);
-    now += 100;
-    history.push(edited);
+		history.push(base);
+		now += 100;
+		history.push(edited);
 
-    expect(history.state()).toEqual({ canUndo: true, canRedo: false });
-    expect(history.undo(final)).toEqual(edited);
-    expect(history.undo(edited)).toEqual(base);
-    expect(history.state()).toEqual({ canUndo: false, canRedo: true });
-    expect(history.redo(base)).toEqual(edited);
-  });
+		expect(history.state()).toEqual({ canUndo: true, canRedo: false });
+		expect(history.undo(final)).toEqual(edited);
+		expect(history.undo(edited)).toEqual(base);
+		expect(history.state()).toEqual({ canUndo: false, canRedo: true });
+		expect(history.redo(base)).toEqual(edited);
+	});
 
-  it('caps the undo stack', () => {
-    const history = createTimelineHistory({ limit: 2 });
-    history.push(makeSnapshot('one'));
-    history.push(makeSnapshot('two'));
-    history.push(makeSnapshot('three'));
+	it('caps the undo stack', () => {
+		const history = createTimelineHistory({ limit: 2 });
+		history.push(makeSnapshot('one'));
+		history.push(makeSnapshot('two'));
+		history.push(makeSnapshot('three'));
 
-    expect(history.size()).toEqual({ past: 2, future: 0 });
-    expect(history.undo(makeSnapshot('current'))!.timeline[0]!.clips[0]!.id).toBe('three');
-    expect(history.undo(makeSnapshot('three'))!.timeline[0]!.clips[0]!.id).toBe('two');
-    expect(history.undo(makeSnapshot('two'))).toBeNull();
-  });
+		expect(history.size()).toEqual({ past: 2, future: 0 });
+		expect(history.undo(makeSnapshot('current'))!.timeline[0]!.clips[0]!.id).toBe('three');
+		expect(history.undo(makeSnapshot('three'))!.timeline[0]!.clips[0]!.id).toBe('two');
+		expect(history.undo(makeSnapshot('two'))).toBeNull();
+	});
 
-  it('coalesces rapid effect edits with the same clip/key', () => {
-    let now = 0;
-    const history = createTimelineHistory({ coalesceWindowMs: 80, now: () => now });
+	it('coalesces rapid effect edits with the same clip/key', () => {
+		let now = 0;
+		const history = createTimelineHistory({ coalesceWindowMs: 80, now: () => now });
 
-    history.push(makeSnapshot('before-drag'), {
-      coalesceKey: { clipId: 'clip-source-1', key: 'saturation' },
-    });
-    now += 40;
-    history.push(makeSnapshot('mid-drag'), {
-      coalesceKey: { clipId: 'clip-source-1', key: 'saturation' },
-    });
-    now += 40;
-    history.push(makeSnapshot('late-drag'), {
-      coalesceKey: { clipId: 'clip-source-1', key: 'saturation' },
-    });
+		history.push(makeSnapshot('before-drag'), {
+			coalesceKey: { clipId: 'clip-source-1', key: 'saturation' }
+		});
+		now += 40;
+		history.push(makeSnapshot('mid-drag'), {
+			coalesceKey: { clipId: 'clip-source-1', key: 'saturation' }
+		});
+		now += 40;
+		history.push(makeSnapshot('late-drag'), {
+			coalesceKey: { clipId: 'clip-source-1', key: 'saturation' }
+		});
 
-    expect(history.size()).toEqual({ past: 1, future: 0 });
-    expect(history.undo(makeSnapshot('after-drag'))!.timeline[0]!.clips[0]!.id).toBe('before-drag');
-  });
+		expect(history.size()).toEqual({ past: 1, future: 0 });
+		expect(history.undo(makeSnapshot('after-drag'))!.timeline[0]!.clips[0]!.id).toBe('before-drag');
+	});
 
-  it('shares immutable LUT sample tables across stored snapshots', () => {
-    const values = new Float32Array(24).fill(0.5);
-    const history = createTimelineHistory();
-    const snapshot = makeSnapshot('lut');
-    snapshot.timeline[0]!.clips[0]!.lut = {
-      key: 'lut-a',
-      fileName: 'grade.cube',
-      title: 'Grade',
-      size: 2,
-      domainMin: [0, 0, 0],
-      domainMax: [1, 1, 1],
-      values,
-    };
+	it('shares immutable LUT sample tables across stored snapshots', () => {
+		const values = new Float32Array(24).fill(0.5);
+		const history = createTimelineHistory();
+		const snapshot = makeSnapshot('lut');
+		snapshot.timeline[0]!.clips[0]!.lut = {
+			key: 'lut-a',
+			fileName: 'grade.cube',
+			title: 'Grade',
+			size: 2,
+			domainMin: [0, 0, 0],
+			domainMax: [1, 1, 1],
+			values
+		};
 
-    history.push(snapshot);
-    const restored = history.undo(makeSnapshot('current'));
+		history.push(snapshot);
+		const restored = history.undo(makeSnapshot('current'));
 
-    expect(restored?.timeline[0]!.clips[0]!.lut?.values).toBe(values);
-    expect(restored?.timeline[0]!.clips[0]!.lut?.domainMin).toEqual([0, 0, 0]);
-    expect(restored?.timeline[0]!.clips[0]!.lut?.domainMin).not.toBe(
-      snapshot.timeline[0]!.clips[0]!.lut?.domainMin,
-    );
-  });
+		expect(restored?.timeline[0]!.clips[0]!.lut?.values).toBe(values);
+		expect(restored?.timeline[0]!.clips[0]!.lut?.domainMin).toEqual([0, 0, 0]);
+		expect(restored?.timeline[0]!.clips[0]!.lut?.domainMin).not.toBe(
+			snapshot.timeline[0]!.clips[0]!.lut?.domainMin
+		);
+	});
 
-  it('starts a new entry for a different effect key or idle gap', () => {
-    let now = 0;
-    const history = createTimelineHistory({ coalesceWindowMs: 80, now: () => now });
+	it('starts a new entry for a different effect key or idle gap', () => {
+		let now = 0;
+		const history = createTimelineHistory({ coalesceWindowMs: 80, now: () => now });
 
-    history.push(makeSnapshot('one'), {
-      coalesceKey: { clipId: 'clip-source-1', key: 'saturation' },
-    });
-    now += 10;
-    history.push(makeSnapshot('two'), {
-      coalesceKey: { clipId: 'clip-source-1', key: 'brightness' },
-    });
-    now += 100;
-    history.push(makeSnapshot('three'), {
-      coalesceKey: { clipId: 'clip-source-1', key: 'brightness' },
-    });
+		history.push(makeSnapshot('one'), {
+			coalesceKey: { clipId: 'clip-source-1', key: 'saturation' }
+		});
+		now += 10;
+		history.push(makeSnapshot('two'), {
+			coalesceKey: { clipId: 'clip-source-1', key: 'brightness' }
+		});
+		now += 100;
+		history.push(makeSnapshot('three'), {
+			coalesceKey: { clipId: 'clip-source-1', key: 'brightness' }
+		});
 
-    expect(history.size()).toEqual({ past: 3, future: 0 });
-  });
+		expect(history.size()).toEqual({ past: 3, future: 0 });
+	});
 });
