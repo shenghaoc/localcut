@@ -38,32 +38,29 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 
 - [**Phase 23: Project packaging + portability**](.kiro/specs/phase-23-project-packaging/tasks.md) — directory bundles, fingerprint dedup, integrity validation, collect media, import/export.
 
-- [**Phase 13: Transitions**](.kiro/specs/phase-13-transitions/tasks.md) — cut-point transition model; dual-stream readahead; 2-input mix pass in the single submission; export parity.
-
 **Planned:**
 
-- [**Phase 24: Render Queue + Export Presets**](.kiro/specs/phase-24-render-queue-presets/tasks.md) — saved export presets; multi-job render queue with sequential execution; full/range/marker-bounded jobs; output filename templates; queue persistence.
-- [**Phase 20: Editing Tools V2**](.kiro/specs/phase-20-editing-tools-v2/tasks.md) — linked A/V clips; insert/overwrite edits; ripple delete/trim; roll/slip/slide; lift/extract; track lock/visibility/sync lock/edit targeting.
-- [**Phase 15: Keyframes + advanced colour**](.kiro/specs/phase-15-keyframes-colour/tasks.md) — keyframe tracks with shared preview/export interpolation; Inspector keyframe UI; `.cube` LUT import as a 3D-texture pass.
+- [**Phase 13: Transitions**](.kiro/specs/phase-13-transitions/tasks.md) — cut-point transition model; dual-stream readahead; 2-input mix pass in the single submission; export parity.
 
 **Completed:**
 
-- [**Phase 14: Titles + text**](.kiro/specs/phase-14-titles-text/tasks.md) — source-less title clips; edit-time OffscreenCanvas raster cached as a GPU texture keyed by content hash; bundled offline fonts (Inter/Lora OFL); transform-driven layout; toggleable safe-area guides.
-
-- [**Phase 12: Multi-track compositing + transforms**](.kiro/specs/phase-12-compositing-transform/tasks.md) — layered resolve; N-layer single-submission composite; per-clip position/scale/rotation/opacity; preview gizmo; fit/letterbox.
-
-- [**Phase 11: Media library + stills + tracks**](.kiro/specs/phase-11-media-library/tasks.md) — batch import; media bin with budgeted worker thumbnails; image-still + audio-only sources; explicit track management; filmstrips.
-
+- [**Alpha 0.1 Release Hardening**](.kiro/specs/alpha-0-1-release-hardening/tasks.md) — documentation truth sync, alpha support boundary, deployment verification checklist, media fixture checklist, release gates, UI honesty labels, build metadata in diagnostics.
+- [**Phase 25: Release hardening**](.kiro/specs/phase-25-release-hardening/tasks.md) — diagnostics, recovery, performance budgets, fixture matrix, accessibility, release gates.
+- [**Phase 24: Render Queue + Export Presets**](.kiro/specs/phase-24-render-queue-presets/tasks.md) — saved export presets; multi-job render queue with sequential execution; full/range/marker-bounded jobs; output filename templates; queue persistence.
+- [**Phase 22: Captions + subtitles**](.kiro/specs/phase-22-captions-subtitles/tasks.md) — SRT/VTT import, inline editing, timing, split/merge, style presets, burn-in, export.
+- [**Phase 21: Colour management + scopes**](.kiro/specs/phase-21-colour-management-scopes/tasks.md) — waveform, vectorscope, histogram; BT.601/BT.709/Rec.2020/Display P3 conversions.
+- [**Phase 20: Editing Tools V2**](.kiro/specs/phase-20-editing-tools-v2/tasks.md) — linked A/V clips; insert/overwrite edits; ripple delete/trim; roll/slip/slide; lift/extract; track lock/visibility/sync lock/edit targeting.
+- [**Phase 19: Proxy/render cache**](.kiro/specs/phase-19-proxy-render-cache/tasks.md) — LRU frame cache, proxy generation, cache budgets, OPFS storage.
+- [**Phase 18: Media conformance**](.kiro/specs/phase-18-media-conformance/tasks.md) — source health warnings, VFR detection, rotation metadata, codec validation.
 - [**Phase 17: Export expansion**](.kiro/specs/phase-17-export-expansion/tasks.md) — probed codec/container choice (H.264/VP9/AV1); resolution/fps/bitrate overrides; in/out range export; persisted settings.
-
 - [**Phase 16: Audio mixing polish**](.kiro/specs/phase-16-audio-mixing/tasks.md) — shared mix stage; master bus; per-track pan; clip fades + transition crossfades; AudioWorklet meters over SAB.
-
+- [**Phase 15: Keyframes + advanced colour**](.kiro/specs/phase-15-keyframes-colour/tasks.md) — keyframe tracks with shared preview/export interpolation; Inspector keyframe UI; `.cube` LUT import as a 3D-texture pass.
+- [**Phase 14: Titles + text**](.kiro/specs/phase-14-titles-text/tasks.md) — source-less title clips; edit-time OffscreenCanvas raster cached as a GPU texture keyed by content hash; bundled offline fonts (Inter/Lora OFL); transform-driven layout; toggleable safe-area guides.
+- [**Phase 12: Multi-track compositing + transforms**](.kiro/specs/phase-12-compositing-transform/tasks.md) — layered resolve; N-layer single-submission composite; per-clip position/scale/rotation/opacity; preview gizmo; fit/letterbox.
+- [**Phase 11: Media library + stills + tracks**](.kiro/specs/phase-11-media-library/tasks.md) — batch import; media bin with budgeted worker thumbnails; image-still + audio-only sources; explicit track management; filmstrips.
 - [**Phase 10: Timeline UX + gap model**](.kiro/specs/phase-10-timeline-ux/tasks.md) — px-per-second zoom/scroll; gap-tolerant time-based moves; snapping; multi-select; copy/paste/duplicate; markers; keyboard map.
-
 - [**Phase 9: Project persistence + undo/redo**](.kiro/specs/phase-9-persistence-undo/tasks.md) — versioned timeline serialization; worker-owned snapshot undo/redo; IndexedDB autosave + restore-on-launch; layered media re-linking.
-
 - [**Phase 8: Capability-tier UX + compatibility engine**](.kiro/specs/phase-8-capability-tiers/tasks.md) — preserve the accelerated path while making missing browser capabilities understandable and recoverable.
-
 - [**Phase 7: PWA + deployment**](.kiro/specs/phase-7-pwa-deployment/tasks.md) — installable offline PWA; Cloudflare Pages; production `crossOriginIsolated`.
 - [**Phase 6: Export**](.kiro/specs/phase-6-export/tasks.md) — pipelined decode → effects → encode → mux; backpressure; quality/speed presets; ETA.
 - [**Phase 5: Audio**](.kiro/specs/phase-5-audio/tasks.md) — AudioWorklet graph; audio as master clock; per-track gain/mute/solo; waveforms.

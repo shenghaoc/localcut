@@ -318,7 +318,10 @@ export function ExportDialog(props: ExportDialogProps) {
 				<Popover.Content class="export-popover panel" aria-label="Export">
 					{/* Saved presets selector */}
 					<Show when={props.presets.length > 0}>
-						<p class="export-eyebrow">Saved preset</p>
+						<p class="export-eyebrow">
+							Saved preset{' '}
+							<span class="text-xs text-muted-foreground font-normal">(Experimental)</span>
+						</p>
 						<div class="export-preset-selector">
 							<select
 								class="export-select"
@@ -723,7 +726,8 @@ export function ExportDialog(props: ExportDialogProps) {
 							onClick={handleEnqueue}
 						>
 							<ListPlus size={14} aria-hidden="true" />
-							Add to Queue
+							Add to Queue{' '}
+							<span class="text-xs text-muted-foreground font-normal">(Experimental)</span>
 						</Button>
 						<Show when={props.exporting}>
 							<Button onClick={() => props.onCancel()}>Cancel</Button>
@@ -739,7 +743,8 @@ export function ExportDialog(props: ExportDialogProps) {
 								}}
 							>
 								<Save size={14} aria-hidden="true" />
-								Save Preset
+								Save Preset{' '}
+								<span class="text-xs text-muted-foreground font-normal">(Experimental)</span>
 							</Button>
 						</Show>
 						<Popover.CloseButton as={Button} disabled={props.exporting}>

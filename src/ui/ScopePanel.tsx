@@ -37,7 +37,8 @@ export default function ScopePanel(props: ScopePanelProps) {
 					onClick={() => props.setCollapsed(!props.collapsed())}
 					aria-expanded={!props.collapsed()}
 				>
-					Scopes {props.collapsed() ? '▸' : '▾'}
+					Scopes <span class="text-xs text-muted-foreground font-normal">(Experimental)</span>{' '}
+					{props.collapsed() ? '▸' : '▾'}
 				</button>
 				{/* Clipping badge placeholder — wired when scope SAB is available */}
 			</header>
