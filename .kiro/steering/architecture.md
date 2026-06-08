@@ -92,14 +92,22 @@ Build capability tracks in an order that protects the premium path while making 
 | 7 | PWA polish, Cloudflare Pages deploy | Done |
 | 8 | Capability-tier UX and compatibility engine planning | Done |
 | 9 | Project persistence (versioned doc, IndexedDB autosave), snapshot undo/redo, media re-linking | Done |
-| 10 | Timeline UX: px-per-second zoom/scroll, gap-tolerant moves, snapping, multi-select, markers | Planned |
-| 11 | Media library: batch import, budgeted thumbnails, image-still/audio-only sources, track management | Planned |
-| 12 | Multi-track compositing: layered resolve, single-submission N-layer composite, per-clip transforms | Planned |
+| 10 | Timeline UX: px-per-second zoom/scroll, gap-tolerant moves, snapping, multi-select, markers | Done |
+| 11 | Media library: batch import, budgeted thumbnails, image-still/audio-only sources, track management | Done |
+| 12 | Multi-track compositing: layered resolve, single-submission N-layer composite, per-clip transforms | Done |
 | 13 | Transitions: cut-point model, dual-stream readahead, 2-input mix in the single submission | Planned |
-| 14 | Titles/text: edit-time raster cached as a GPU texture, composited via the transform path | Planned |
-| 15 | Keyframed parameters with shared preview/export sampling; `.cube` LUT grading | Planned |
-| 16 | Audio mixing: shared mix stage, master bus, pan, fades/crossfades, SAB level meters | Active |
-| 17 | Export expansion: probed codecs (H.264/VP9/AV1), size/fps/bitrate overrides, range export | Planned |
+| 14 | Titles/text: edit-time raster cached as a GPU texture, composited via the transform path | Done |
+| 15 | Keyframes + advanced colour: keyframe tracks with shared preview/export interpolation; `.cube` LUT import | Done |
+| 16 | Audio mixing: shared mix stage, master bus, pan, fades/crossfades, SAB level meters | Done |
+| 17 | Export expansion: probed codecs (H.264/VP9/AV1), size/fps/bitrate overrides, range export | Done |
+| 18 | Media conformance: source health warnings, VFR detection, rotation metadata, codec validation | Done |
+| 19 | Proxy/render cache: LRU frame cache, proxy generation, cache budgets, OPFS storage | Done |
+| 20 | Editing tools v2: linked A/V clips, insert/overwrite, ripple delete/trim, roll/slip/slide, track lock/sync lock | Done |
+| 21 | Colour management + scopes: waveform, vectorscope, histogram; colour space conversions | Done |
+| 22 | Captions/subtitles: SRT/VTT import, inline editing, timing, split/merge, style presets, burn-in, export | Done |
+| 23 | Project packaging: directory bundles, fingerprint dedup, integrity validation, collect media, import/export | Active |
+| 24 | Render queue + export presets: saved presets, multi-job queue, sequential execution, range jobs | Active |
+| 25 | Release hardening: diagnostics, recovery, performance budgets, fixture matrix, accessibility, release gates | Done |
 | 26 | Cross-browser compatibility engine: CapabilityTierV2 probes, optional-SAB init, diagnostics, export constraints, reduced-tier helpers | Active |
 
 ## Critical Implementation Details
