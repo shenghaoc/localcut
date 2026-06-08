@@ -26,9 +26,9 @@ Top-level Markdown: [`AGENTS.md`](AGENTS.md) is canonical; [`CLAUDE.md`](CLAUDE.
 
 ## Status — v0.1.0 Alpha
 
-**Completed (phases 1–22):** scaffolding, COOP/COEP, pipeline worker, SAB clock, zero-copy WebGPU preview, timeline editing, GPU effect chain, audio mixing, pipelined export, PWA deployment, capability tiers, project persistence + undo/redo, timeline UX (zoom/scroll, snapping, multi-select, markers), media library (batch import, thumbnails, stills, audio-only, track management), multi-track compositing + transforms, titles/text, keyframes + LUT grading, audio mixing polish (master bus, pan, fades, meters), export expansion (H.264/VP9/AV1, resolution/fps/bitrate overrides, range export), media conformance, proxy/render cache, editing tools v2, colour management + scopes, captions/subtitles.
+**Completed (phases 1–22, 24–25):** scaffolding, COOP/COEP, pipeline worker, SAB clock, zero-copy WebGPU preview, timeline editing, GPU effect chain, audio mixing, pipelined export, PWA deployment, capability tiers, project persistence + undo/redo, timeline UX (zoom/scroll, snapping, multi-select, markers), media library (batch import, thumbnails, stills, audio-only, track management), multi-track compositing + transforms, titles/text, keyframes + LUT grading, audio mixing polish (master bus, pan, fades, meters), export expansion (H.264/VP9/AV1, resolution/fps/bitrate overrides, range export), media conformance, proxy/render cache, editing tools v2, colour management + scopes, captions/subtitles, render queue + export presets, release hardening (diagnostics, recovery, performance budgets, accessibility, release gates).
 
-**Active:** [project packaging](.kiro/specs/phase-23-project-packaging/tasks.md), [render queue + presets](.kiro/specs/phase-24-render-queue-presets/tasks.md), [cross-browser compatibility](.kiro/specs/phase-26-cross-browser-compatibility-engine/tasks.md), [alpha release hardening](.kiro/specs/alpha-0-1-release-hardening/tasks.md).
+**Active:** [project packaging](.kiro/specs/phase-23-project-packaging/tasks.md), [cross-browser compatibility](.kiro/specs/phase-26-cross-browser-compatibility-engine/tasks.md), [alpha release hardening](.kiro/specs/alpha-0-1-release-hardening/tasks.md).
 
 **Planned:** [transitions](.kiro/specs/phase-13-transitions/tasks.md).
 

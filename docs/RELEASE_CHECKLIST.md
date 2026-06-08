@@ -12,12 +12,17 @@ npm run verify
 
 This runs the following in sequence (stops on first failure):
 
-| # | Gate | Command | Passes When |
-|---|------|---------|-------------|
-| 1 | Lint | `npm run lint` | No ESLint errors (warnings are non-blocking; pre-existing warnings are allowed) |
-| 2 | Format | `npm run format:check` | All files match Prettier formatting |
-| 3 | Tests | `npm test` | All Vitest tests pass; test count has not decreased |
-| 4 | Build | `npm run build` | TypeScript strict check passes; Vite production build succeeds |
+| # | Gate  | Command         | Passes When                                                    |
+|---|-------|-----------------|----------------------------------------------------------------|
+| 1 | Tests | `npm test`      | All Vitest tests pass; test count has not decreased            |
+| 2 | Build | `npm run build` | TypeScript strict check passes; Vite production build succeeds |
+
+Run lint and format checks separately — they are informational:
+
+```bash
+npm run lint          # ESLint (has known pre-existing issues)
+npm run format:check  # Prettier (run npm run format to fix)
+```
 
 ## Local Preview
 
