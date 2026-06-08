@@ -106,7 +106,7 @@ Build capability tracks in an order that protects the premium path while making 
 | 21 | Colour management + scopes: waveform, vectorscope, histogram; colour space conversions | Done |
 | 22 | Captions/subtitles: SRT/VTT import, inline editing, timing, split/merge, style presets, burn-in, export | Done |
 | 23 | Project packaging: directory bundles, fingerprint dedup, integrity validation, collect media, import/export | Active |
-| 24 | Render queue + export presets: saved presets, multi-job queue, sequential execution, range jobs | Active |
+| 24 | Render queue + export presets: saved presets, multi-job queue, sequential execution, range jobs | Done |
 | 25 | Release hardening: diagnostics, recovery, performance budgets, fixture matrix, accessibility, release gates | Done |
 | 26 | Cross-browser compatibility engine: CapabilityTierV2 probes, optional-SAB init, diagnostics, export constraints, reduced-tier helpers | Active |
 

@@ -6,7 +6,10 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 function gitSha(): string {
 	try {
-		return execSync('git rev-parse --short HEAD', { encoding: 'utf-8' }).trim();
+		return execSync('git rev-parse --short HEAD', {
+			stdio: ['ignore', 'pipe', 'ignore'],
+			encoding: 'utf-8'
+		}).trim();
 	} catch {
 		return 'dev';
 	}
