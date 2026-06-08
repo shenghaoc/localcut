@@ -14,6 +14,7 @@ interface TimelineClipProps {
   pxPerSecond: number;
   snapEnabled: boolean;
   snapTargets: readonly SnapTarget[];
+  playheadTime?: number;
   onMove?: (trackId: string, clipId: string, toStart: number, fromStart: number) => void;
   onSplit?: (trackId: string, clipId: string, time: number) => void;
   onDelete?: (trackId: string, clipId: string) => void;
@@ -59,11 +60,12 @@ function trackTimeAt(
   pxPerSecond: number,
   snapEnabled: boolean,
   snapTargets: readonly SnapTarget[],
+  playheadTime?: number,
 ): number | null {
   const time = timelineTimeAtClientX(clientX, trackRect.left, pxPerSecond);
   if (time === null) return null;
   return snapEnabled
-    ? resolveSnap(time, pxPerSecond, snapTargets, SNAP_THRESHOLD_PX).time
+    ? resolveSnap(time, pxPerSecond, snapTargets, SNAP_THRESHOLD_PX, playheadTime).time
     : time;
 }
 
@@ -158,6 +160,7 @@ export function TimelineClip(props: TimelineClipProps) {
       props.pxPerSecond,
       props.snapEnabled,
       props.snapTargets,
+      props.playheadTime,
     );
     if (time === null) return;
     pendingTrimTime = time;
@@ -263,7 +266,7 @@ export function TimelineClip(props: TimelineClipProps) {
       const delta = (move.clientX - originX) / props.pxPerSecond;
       const candidate = Math.max(0, originStart + delta);
       finalStart = props.snapEnabled
-        ? resolveSnap(candidate, props.pxPerSecond, props.snapTargets, SNAP_THRESHOLD_PX).time
+        ? resolveSnap(candidate, props.pxPerSecond, props.snapTargets, SNAP_THRESHOLD_PX, props.playheadTime).time
         : candidate;
       moved ||= Math.abs(finalStart - originStart) > 0.001;
       setDragPreviewStart(finalStart);

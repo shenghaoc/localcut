@@ -81,16 +81,14 @@ function timelineFixture(): TimelineTrackSnapshot[] {
 }
 
 describe('timeline interaction helpers', () => {
-  it('builds snap targets from clips, markers, playhead, and zero', () => {
+  it('builds snap targets from clips, markers, and zero', () => {
     const targets = buildSnapTargets(
       timelineFixture(),
       [{ id: 'marker-1', time: 6, label: 'Beat' }],
-      4,
     );
 
     expect(targets.map((target) => [target.kind, target.time])).toEqual([
       ['zero', 0],
-      ['playhead', 4],
       ['marker', 6],
       ['clip-start', 2],
       ['clip-end', 5],
@@ -100,14 +98,14 @@ describe('timeline interaction helpers', () => {
   });
 
   it('snaps to the nearest model target within the pixel threshold', () => {
-    const targets = buildSnapTargets(timelineFixture(), [], 4);
+    const targets = buildSnapTargets(timelineFixture(), []);
 
-    expect(resolveSnap(4.08, 100, targets, 10)).toMatchObject({
+    expect(resolveSnap(4.08, 100, targets, 10, 4)).toMatchObject({
       time: 4,
       snapped: true,
       target: { kind: 'playhead' },
     });
-    expect(resolveSnap(4.2, 100, targets, 10)).toMatchObject({
+    expect(resolveSnap(4.2, 100, targets, 10, 4)).toMatchObject({
       time: 4.2,
       snapped: false,
       target: null,
