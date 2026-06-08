@@ -5,7 +5,9 @@ import toolbarSource from './Toolbar.tsx?raw';
 describe('backend readiness UI gating', () => {
 	it('gates transport and timeline media on preview readiness instead of acceleration', () => {
 		expect(appSource).toContain('transportDisabled={!previewSurfaceAvailable()}');
-		expect(appSource).toContain('&& previewSurfaceAvailable()}');
+		expect(appSource).toContain(
+			'assets().length > 0) &&\n\t\t\t\t\t\tpreviewSurfaceAvailable()\n\t\t\t\t\t}'
+		);
 		expect(appSource).not.toContain('transportDisabled={!accelerated()}');
 	});
 

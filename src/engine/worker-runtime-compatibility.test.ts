@@ -7,10 +7,10 @@ describe('worker runtime compatibility routing', () => {
 			'const useCompatibilityAdapter = probeResult?.compatibilityAdapter === true;'
 		);
 		expect(workerSource).toContain(
-			'useCompatibilityAdapter\n            ? await initCompatibilityGpu(canvas)\n            : await initGpu(canvas)'
+			'useCompatibilityAdapter\n\t\t\t\t\t\t? await initCompatibilityGpu(canvas)\n\t\t\t\t\t\t: await initGpu(canvas)'
 		);
 		expect(workerSource).not.toContain(
-			"probeResult?.tier === 'compatibility-webgpu' || probeResult?.compatibilityAdapter\n            ? await initCompatibilityGpu(canvas)"
+			"probeResult?.tier === 'compatibility-webgpu' || probeResult?.compatibilityAdapter\n\t\t\t\t\t\t? await initCompatibilityGpu(canvas)"
 		);
 	});
 

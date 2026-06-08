@@ -127,11 +127,7 @@ describe('canvas compatibility compositor helpers', () => {
 			canvasCompositorSource.indexOf(
 				'this.titleCtx.clearRect(0, 0, TITLE_RASTER_WIDTH, TITLE_RASTER_HEIGHT);'
 			)
-		).toBeLessThan(
-			canvasCompositorSource.indexOf(
-				'rasterizeTitleToCanvas(this.titleCtx, TITLE_RASTER_WIDTH, TITLE_RASTER_HEIGHT, layer.content);'
-			)
-		);
+		).toBeLessThan(canvasCompositorSource.indexOf('rasterizeTitleToCanvas('));
 	});
 
 	it('fills the whole transformed card for Canvas2D letterbox bars', () => {
@@ -278,10 +274,10 @@ describe('compat export helpers', () => {
 
 	it('reuses a single reduced export plan for progress reporting', () => {
 		expect(compatExportSource).toContain(
-			'function reducedProgress(\n  options: ReducedTimelineExportOptions,\n  plan: ReturnType<typeof buildExportPlan>,'
+			'function reducedProgress(\n\toptions: ReducedTimelineExportOptions,\n\tplan: ReturnType<typeof buildExportPlan>,'
 		);
 		expect(compatExportSource).not.toContain(
-			'const plan = buildExportPlan(options.timeline, options.sources, options.settings, options.throughputProbe);\n  return {'
+			'const plan = buildExportPlan(options.timeline, options.sources, options.settings, options.throughputProbe);\n\treturn {'
 		);
 	});
 
