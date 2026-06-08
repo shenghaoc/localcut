@@ -14,7 +14,8 @@
 		"deploy": "npm run build && wrangler deploy",
 		"lint": "eslint .",
 		"format": "prettier --write .",
-		"format:check": "prettier --check ."
+		"format:check": "prettier --check .",
+		"verify": "npm test && npm run build"
 	},
 	"dependencies": {
 		"@fontsource/dm-sans": "^5.2.8",

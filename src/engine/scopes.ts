@@ -19,20 +19,20 @@ export const SCOPES_FEATURE_ENABLED = false;
 export type ScopeType = 'histogram' | 'waveform-luma' | 'parade-rgb' | 'vectorscope';
 
 export interface ScopeFeatures {
-  subgroups: boolean;
-  timestampQuery: boolean;
-  useF16: boolean;
+	subgroups: boolean;
+	timestampQuery: boolean;
+	useF16: boolean;
 }
 
 export interface ScopeFrameInput {
-  /** Composited frame texture (linear working space, before output-conversion). */
-  texture: GPUTexture;
-  width: number;
-  height: number;
-  /** Reduced resolution for scope computation. */
-  scopeResX: number;
-  scopeResY: number;  // width and height params for scopes
-  features: ScopeFeatures;
+	/** Composited frame texture (linear working space, before output-conversion). */
+	texture: GPUTexture;
+	width: number;
+	height: number;
+	/** Reduced resolution for scope computation. */
+	scopeResX: number;
+	scopeResY: number; // width and height params for scopes
+	features: ScopeFeatures;
 }
 
 // ─── SAB ring-buffer layout ────────────────────────────────────────────
@@ -73,86 +73,89 @@ export const SCOPE_HISTOGRAM_SLOT_FLOATS = SLOT_HEADER_FLOATS + SCOPE_HISTOGRAM_
 export const SCOPE_VECTORSCOPE_SIZE = 128;
 
 export function scopeWaveformDataFloats(scopeResX: number): number {
-  return 2 * scopeResX; // min/max per column
+	return 2 * scopeResX; // min/max per column
 }
 
 export function scopeParadeDataFloats(scopeResX: number): number {
-  return 6 * scopeResX; // Rmin/Rmax, Gmin/Gmax, Bmin/Bmax per column
+	return 6 * scopeResX; // Rmin/Rmax, Gmin/Gmax, Bmin/Bmax per column
 }
 
 export function scopeVectorscopeDataFloats(): number {
-  return SCOPE_VECTORSCOPE_SIZE * SCOPE_VECTORSCOPE_SIZE;
+	return SCOPE_VECTORSCOPE_SIZE * SCOPE_VECTORSCOPE_SIZE;
 }
 
 export function scopeTotalBufferFloats(scopeResX: number): number {
-  return (
-    SCOPE_HISTOGRAM_SLOT_FLOATS +
-    SLOT_HEADER_FLOATS + scopeWaveformDataFloats(scopeResX) +
-    SLOT_HEADER_FLOATS + scopeParadeDataFloats(scopeResX) +
-    SLOT_HEADER_FLOATS + scopeVectorscopeDataFloats()
-  );
+	return (
+		SCOPE_HISTOGRAM_SLOT_FLOATS +
+		SLOT_HEADER_FLOATS +
+		scopeWaveformDataFloats(scopeResX) +
+		SLOT_HEADER_FLOATS +
+		scopeParadeDataFloats(scopeResX) +
+		SLOT_HEADER_FLOATS +
+		scopeVectorscopeDataFloats()
+	);
 }
 
 export function scopeTotalBufferBytes(scopeResX: number): number {
-  return scopeTotalBufferFloats(scopeResX) * Float32Array.BYTES_PER_ELEMENT;
+	return scopeTotalBufferFloats(scopeResX) * Float32Array.BYTES_PER_ELEMENT;
 }
 
 // ─── Slot offsets ──────────────────────────────────────────────────────
 
 export function histogramSlotOffset(): number {
-  return 0;
+	return 0;
 }
 
 export function waveformSlotOffset(_scopeResX: number): number {
-  return SCOPE_HISTOGRAM_SLOT_FLOATS;
+	return SCOPE_HISTOGRAM_SLOT_FLOATS;
 }
 
 export function paradeSlotOffset(scopeResX: number): number {
-  return waveformSlotOffset(scopeResX) + SLOT_HEADER_FLOATS + scopeWaveformDataFloats(scopeResX);
+	return waveformSlotOffset(scopeResX) + SLOT_HEADER_FLOATS + scopeWaveformDataFloats(scopeResX);
 }
 
 export function vectorscopeSlotOffset(scopeResX: number): number {
-  return paradeSlotOffset(scopeResX) + SLOT_HEADER_FLOATS + scopeParadeDataFloats(scopeResX);
+	return paradeSlotOffset(scopeResX) + SLOT_HEADER_FLOATS + scopeParadeDataFloats(scopeResX);
 }
 
 // ─── Scope result types ────────────────────────────────────────────────
 
 export interface ScopeResult {
-  type: ScopeType;
-  timestamp: number;
-  clipCount: number; // pixels clipped in working space (0–1 range exceeded)
-  data: Float32Array;
+	type: ScopeType;
+	timestamp: number;
+	clipCount: number; // pixels clipped in working space (0–1 range exceeded)
+	data: Float32Array;
 }
 
 // ─── Ring-buffer read (main thread) ────────────────────────────────────
 
 export function readScopeResult(
-  buffer: Float32Array,
-  slotOffset: number,
-  dataFloats: number,
+	buffer: Float32Array,
+	slotOffset: number,
+	dataFloats: number
 ): ScopeResult | null {
-  // Read sequence — odd means writer is active
-  const s1 = buffer[slotOffset];
-  if (Math.round(s1) % 2 !== 0) return null;
+	// Read sequence — odd means writer is active
+	const s1 = buffer[slotOffset];
+	if (Math.round(s1) % 2 !== 0) return null;
 
-  // Read timestamp and clipCount
-  const timestamp = buffer[slotOffset + 1];
-  const clipCount = buffer[slotOffset + 2];
+	// Read timestamp and clipCount
+	const timestamp = buffer[slotOffset + 1];
+	const clipCount = buffer[slotOffset + 2];
 
-  // Read data
-  const dataStart = slotOffset + SLOT_HEADER_FLOATS;
-  const data = buffer.slice(dataStart, dataStart + dataFloats);
+	// Read data
+	const dataStart = slotOffset + SLOT_HEADER_FLOATS;
+	const data = buffer.slice(dataStart, dataStart + dataFloats);
 
-  // Re-read sequence — if changed, torn write
-  const s2 = buffer[slotOffset];
-  if (s1 !== s2) return null;
+	// Re-read sequence — if changed, torn write
+	const s2 = buffer[slotOffset];
+	if (s1 !== s2) return null;
 
-  return {
-    type: 'histogram', // caller overrides
-    timestamp,
-    clipCount: Math.round(clipCount),
-    data: data as Float32Array,
-  };
+	return {
+		type: 'histogram', // caller overrides
+		timestamp,
+		clipCount: Math.round(clipCount),
+		data: data as Float32Array
+	};
 }
 
 // ─── Ring-buffer write helpers (worker thread) ─────────────────────────
@@ -164,50 +167,46 @@ export function readScopeResult(
  * into the new result. Returns the number of floats cleared.
  */
 export function resetScopeSlot(
-  buffer: Float32Array,
-  slotOffset: number,
-  dataFloats: number,
+	buffer: Float32Array,
+	slotOffset: number,
+	dataFloats: number
 ): number {
-  // Preserve the sequence counter at `slotOffset` (the seqlock guard): zeroing it
-  // would briefly publish an even value over a half-cleared slot, letting a
-  // concurrent main-thread reader treat it as stable and read garbage. Only the
-  // timestamp/clipCount header fields and the data region are cleared; the writer
-  // owns the sequence via beginScopeWrite/endScopeWrite.
-  const start = slotOffset + 1;
-  const count = SLOT_HEADER_FLOATS - 1 + dataFloats;
-  buffer.fill(0, start, start + count);
-  return count + 1;
+	// Preserve the sequence counter at `slotOffset` (the seqlock guard): zeroing it
+	// would briefly publish an even value over a half-cleared slot, letting a
+	// concurrent main-thread reader treat it as stable and read garbage. Only the
+	// timestamp/clipCount header fields and the data region are cleared; the writer
+	// owns the sequence via beginScopeWrite/endScopeWrite.
+	const start = slotOffset + 1;
+	const count = SLOT_HEADER_FLOATS - 1 + dataFloats;
+	buffer.fill(0, start, start + count);
+	return count + 1;
 }
 
 /** Begin writing a scope slot: set sequence to odd value (writer is active). */
 export function beginScopeWrite(buffer: Float32Array, slotOffset: number): number {
-  _scopeWriteSeq += 1; // odd number
-  buffer[slotOffset] = _scopeWriteSeq;
-  return _scopeWriteSeq;
+	_scopeWriteSeq += 1; // odd number
+	buffer[slotOffset] = _scopeWriteSeq;
+	return _scopeWriteSeq;
 }
 
 /** Complete a scope write: set sequence to the next even value (data ready). */
 export function endScopeWrite(buffer: Float32Array, slotOffset: number): void {
-  _scopeWriteSeq += 1; // even number
-  buffer[slotOffset] = _scopeWriteSeq;
+	_scopeWriteSeq += 1; // even number
+	buffer[slotOffset] = _scopeWriteSeq;
 }
 
 /** Write header fields (timestamp, clipCount) to the slot. */
 export function writeScopeHeader(
-  buffer: Float32Array,
-  slotOffset: number,
-  timestamp: number,
-  clipCount: number,
+	buffer: Float32Array,
+	slotOffset: number,
+	timestamp: number,
+	clipCount: number
 ): void {
-  buffer[slotOffset + 1] = timestamp;
-  buffer[slotOffset + 2] = clipCount;
+	buffer[slotOffset + 1] = timestamp;
+	buffer[slotOffset + 2] = clipCount;
 }
 
 /** Write scope data at the data offset within the slot. */
-export function writeScopeData(
-  buffer: Float32Array,
-  slotOffset: number,
-  data: Float32Array,
-): void {
-  buffer.set(data, slotOffset + SLOT_HEADER_FLOATS);
+export function writeScopeData(buffer: Float32Array, slotOffset: number, data: Float32Array): void {
+	buffer.set(data, slotOffset + SLOT_HEADER_FLOATS);
 }

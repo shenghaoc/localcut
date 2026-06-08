@@ -65,7 +65,7 @@ This project is configured as an installable Progressive Web App (PWA) and is de
    ```bash
    npm run deploy
    ```
-   *This uses Wrangler to deploy the `dist/` folder to Cloudflare Workers based on `wrangler.jsonc`.*
+   _This uses Wrangler to deploy the `dist/` folder to Cloudflare Workers based on `wrangler.jsonc`._
 
 ## License
 
