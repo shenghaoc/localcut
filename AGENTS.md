@@ -32,8 +32,6 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 
 **Active:**
 
-- [**Alpha 0.1 Release Hardening**](.kiro/specs/alpha-0-1-release-hardening/tasks.md) — documentation truth sync, alpha support boundary, deployment verification checklist, media fixture checklist, release gates, UI honesty labels, build metadata in diagnostics.
-
 - [**Bugfix: IMG_6213.mov media handling**](.kiro/specs/bugfix-img-6213-media-issues/tasks.md) — apply rotation metadata on placement, rotation-aware fit rect, VFR-aware frame cadence, codec-named warnings, Media Bin details popover, user-guide updates.
 
 - [**Phase 26: Cross-browser compatibility engine**](.kiro/specs/phase-26-cross-browser-compatibility-engine/tasks.md) — CapabilityTierV2 probes, reduced-tier diagnostics, optional-SAB worker init, codec/export constraints, compatibility resource-lifetime helpers.
@@ -46,6 +44,7 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 
 **Completed:**
 
+- [**Alpha 0.1 Release Hardening**](.kiro/specs/alpha-0-1-release-hardening/tasks.md) — documentation truth sync, alpha support boundary, deployment verification checklist, media fixture checklist, release gates, UI honesty labels, build metadata in diagnostics.
 - [**Phase 25: Release hardening**](.kiro/specs/phase-25-release-hardening/tasks.md) — diagnostics, recovery, performance budgets, fixture matrix, accessibility, release gates.
 - [**Phase 24: Render Queue + Export Presets**](.kiro/specs/phase-24-render-queue-presets/tasks.md) — saved export presets; multi-job render queue with sequential execution; full/range/marker-bounded jobs; output filename templates; queue persistence.
 - [**Phase 22: Captions + subtitles**](.kiro/specs/phase-22-captions-subtitles/tasks.md) — SRT/VTT import, inline editing, timing, split/merge, style presets, burn-in, export.
