@@ -148,6 +148,33 @@ describe('source timestamp normalization', () => {
     ).toBe(16);
   });
 
+  it('handles audio that starts before video (negative firstTimestampS)', () => {
+    // Phone MOV: audio-1 starts at -0.044s, video at 0. Normalized start stays
+    // at 0 (no negative rebasing). The avOffsetS is -0.044 and audio is
+    // available at normalized time 0 (adapter timestamp 0 >= -0.044).
+    const timing = buildNormalizedSourceTiming({
+      durationS: 12,
+      video: { ...videoTrack, startS: 0, durationS: 12 },
+      audio: { ...audioTrack, startS: -0.044, durationS: 12.044 },
+      frameRateMode: 'variable',
+    });
+
+    expect(timing.normalizedStartS).toBe(0);
+    expect(timing.durationS).toBeCloseTo(12);
+    expect(timing.avOffsetS).toBeCloseTo(-0.044);
+
+    expect(resolveNormalizedSourceTimestamp(timing, 'audio', 0)).toMatchObject({
+      adapterTimestampS: 0,
+      available: true,
+      fill: 'none',
+    });
+    expect(resolveNormalizedSourceTimestamp(timing, 'video', 0)).toMatchObject({
+      adapterTimestampS: 0,
+      available: true,
+      fill: 'none',
+    });
+  });
+
   it('limits available audio windows to the next track end', () => {
     const timing = buildNormalizedSourceTiming({
       durationS: 1,

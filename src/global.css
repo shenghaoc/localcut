@@ -3032,11 +3032,17 @@ button.status-badge:hover {
 
 .media-bin-health-item {
 	display: flex;
-	align-items: center;
+	align-items: flex-start;
 	gap: 0.25rem;
 	min-width: 0;
 	color: var(--text-muted);
 	font-size: var(--text-2xs);
+	line-height: 1.4;
+}
+
+.media-bin-health-item svg {
+	flex-shrink: 0;
+	margin-top: 2px;
 }
 
 .media-bin-health-item.is-warning {
@@ -3049,9 +3055,6 @@ button.status-badge:hover {
 
 .media-bin-health-item span {
 	min-width: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
 }
 
 .media-bin-proxy {
@@ -3073,6 +3076,100 @@ button.status-badge:hover {
 .media-bin-actions {
 	display: flex;
 	gap: 0.2rem;
+}
+
+/* ── Media info popover ───────────────────────────────────────────────── */
+
+.media-info-popover {
+	z-index: 5;
+	width: min(280px, calc(100vw - 2rem));
+	padding: 0.75rem;
+	box-shadow: var(--shadow-lg);
+}
+
+.media-info-filename {
+	margin: 0 0 0.55rem;
+	font-size: var(--text-xs);
+	font-weight: 600;
+	color: var(--text);
+	word-break: break-all;
+	line-height: 1.4;
+}
+
+.media-info-rows {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	column-gap: 0.6rem;
+	row-gap: 0.18rem;
+	margin: 0;
+}
+
+.media-info-label {
+	font-size: var(--text-2xs);
+	color: var(--text-muted);
+	white-space: nowrap;
+	padding-top: 0.05rem;
+}
+
+.media-info-value {
+	font-family: var(--font-mono);
+	font-size: var(--text-2xs);
+	color: var(--text);
+	word-break: break-all;
+	margin: 0;
+}
+
+.media-info-health {
+	list-style: none;
+	margin: 0.5rem 0 0;
+	padding: 0.4rem 0 0;
+	border-top: 1px solid var(--glass-border);
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+}
+
+.media-info-health-item {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.3rem;
+	font-size: var(--text-2xs);
+	color: var(--text-muted);
+	line-height: 1.4;
+}
+
+.media-info-health-item svg {
+	flex-shrink: 0;
+	margin-top: 1px;
+}
+
+.media-info-health-item.is-info {
+	color: var(--text-muted);
+}
+
+.media-info-health-item.is-warning {
+	color: var(--warn);
+}
+
+.media-info-health-item.is-error {
+	color: var(--danger);
+}
+
+.media-info-proxy {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.3rem;
+	margin: 0.4rem 0 0;
+	padding-top: 0.4rem;
+	border-top: 1px solid var(--glass-border);
+	font-size: var(--text-2xs);
+	color: var(--accent);
+	line-height: 1.4;
+}
+
+.media-info-proxy svg {
+	flex-shrink: 0;
+	margin-top: 1px;
 }
 
 .media-bin-button {

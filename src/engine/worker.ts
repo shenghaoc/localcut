@@ -103,6 +103,7 @@ import {
   expandLinkedGroup,
   DEFAULT_MASTER_GAIN,
   DEFAULT_TITLE_DURATION_S,
+  normalizeTransform,
   type Timeline,
   type TimelineClip,
   type TimelineMarker,
@@ -112,6 +113,7 @@ import {
   type MoveClipTarget,
   type TransformParams,
 } from './timeline';
+import type { SourceVideoTrackInspection } from './media-adapters/types';
 import { sampleClipParamsAt } from './keyframes';
 import { clipLutFromCubeFile, cloneClipLut, lutSnapshot, type ClipLut } from './lut';
 import {
@@ -487,6 +489,20 @@ function placeAsset(
 ): Timeline {
   // A video/still with no decodable frames would render black and can't export.
   if (handle.kind !== 'audio' && !handle.frameSource) return tl;
+
+  // Apply the source file's rotation metadata as the clip's initial transform so
+  // portrait-mode phone videos (90°/270°) appear upright without manual correction.
+  // Look up the inspection record matching the primary decoded video track, not
+  // just the first video track — Mediabunny may select a non-first track as primary
+  // (e.g. a MOV with an auxiliary preview track first).
+  const primaryVideoTrackId = handle.conformance.primaryVideoTrackId;
+  const primaryVideoInspection = primaryVideoTrackId
+    ? handle.inspection.tracks.find(
+        (t): t is SourceVideoTrackInspection => t.kind === 'video' && t.trackId === primaryVideoTrackId,
+      )
+    : undefined;
+  const sourceRotation = primaryVideoInspection?.rotationDeg ?? 0;
+
   if (handle.kind === 'audio') {
     const [withTrack, audioTrackId] = ensureTrack(tl, 'audio', trackId);
     const clipStart = start ?? trackEnd(withTrack, audioTrackId);
@@ -516,6 +532,7 @@ function placeAsset(
       start: clipStart,
       duration: clipDuration,
       inPoint: 0,
+      transform: normalizeTransform({ rotation: sourceRotation }),
     }),
   );
   if (next === withVideoTrack) return tl; // overlap rejected
@@ -774,17 +791,30 @@ function sourceDescriptorFromHandle(
   file: File,
   handle: MediaInputHandle,
 ): SourceDescriptor {
-  const videoInspection = handle.inspection.tracks.find((track) => track.kind === 'video');
+  // Prefer the inspection record for the primary decoded video track so the bin
+  // metadata (rotation, codec, colour) reflects the same track placeAsset uses.
+  // Mediabunny may pick a non-first track as primary on multi-track files.
+  const primaryVideoTrackId = handle.conformance.primaryVideoTrackId;
+  const videoInspection = (
+    primaryVideoTrackId
+      ? handle.inspection.tracks.find(
+          (t): t is SourceVideoTrackInspection =>
+            t.kind === 'video' && t.trackId === primaryVideoTrackId,
+        )
+      : undefined
+  ) ?? handle.inspection.tracks.find(
+    (t): t is SourceVideoTrackInspection => t.kind === 'video',
+  );
   const video = handle.metadata.video
     ? {
         width: handle.metadata.video.width,
         height: handle.metadata.video.height,
-        codedWidth: videoInspection?.kind === 'video' ? videoInspection.codedWidth : undefined,
-        codedHeight: videoInspection?.kind === 'video' ? videoInspection.codedHeight : undefined,
+        codedWidth: videoInspection?.codedWidth,
+        codedHeight: videoInspection?.codedHeight,
         frameRate: handle.metadata.video.frameRate,
         frameRateMode: handle.timing.frameRateMode,
-        rotationDeg: videoInspection?.kind === 'video' ? videoInspection.rotationDeg : undefined,
-        color: videoInspection?.kind === 'video' ? videoInspection.color : undefined,
+        rotationDeg: videoInspection?.rotationDeg,
+        color: videoInspection?.color,
         trackStartS: handle.timing.video?.firstTimestampS,
         trackDurationS: handle.timing.video?.durationS,
         codec: handle.metadata.video.codec,

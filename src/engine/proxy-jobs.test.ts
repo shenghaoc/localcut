@@ -157,6 +157,37 @@ describe('proxyStatusForAsset', () => {
     });
   });
 
+  it('recommends proxy for IMG_6213.mov: large resolution + VFR combination', () => {
+    const asset: MediaAssetSnapshot = {
+      sourceId: 'img-6213',
+      fileName: 'IMG_6213.mov',
+      kind: 'video',
+      durationS: 12,
+      byteSize: 30_000_000,
+      mimeType: 'video/quicktime',
+      video: {
+        width: 3840,
+        height: 2160,
+        frameRate: 29.97,
+        frameRateMode: 'variable',
+        codec: 'avc1.640033',
+        canDecode: true,
+      },
+      audio: {
+        channels: 2,
+        sampleRate: 44_100,
+        codec: 'mp4a.40.2',
+        canDecode: true,
+      },
+    };
+
+    expect(proxyStatusForAsset(asset, null)).toMatchObject({
+      status: 'recommended',
+      mode: 'original',
+      reason: 'Recommended for large resolution, variable frame rate.',
+    });
+  });
+
   it('preserves heavy-codec recommendations in media-bin snapshots', () => {
     const asset: MediaAssetSnapshot = {
       sourceId: 'source-heavy',

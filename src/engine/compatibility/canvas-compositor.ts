@@ -125,7 +125,7 @@ function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 
-function drawTransformedImage(
+export function drawTransformedImage(
   ctx: OffscreenCanvasRenderingContext2D,
   image: CanvasImageSource,
   sourceWidth: number,
@@ -134,11 +134,24 @@ function drawTransformedImage(
   outputHeight: number,
   transform: TransformParams,
 ): void {
-  const rect = computeFitRect(sourceWidth, sourceHeight, outputWidth, outputHeight, transform.fit);
-  const drawWidth = outputWidth * rect.width * transform.scale;
-  const drawHeight = outputHeight * rect.height * transform.scale;
-  const cardWidth = outputWidth * transform.scale;
-  const cardHeight = outputHeight * transform.scale;
+  // Mirror packTransformUniform: for odd quarter-turn rotations (90°/270°) the
+  // layer's bounding box in output axes is the source rectangle transposed, so
+  // the fit rect must be computed on the rotated aspect. The drawn extents
+  // (drawWidth, drawHeight) are in the layer's local (pre-rotation) coordinate
+  // frame, which canvas's rotate() maps to output axes — so for a quarter-turn,
+  // the layer-x extent must be sized against the output's *height* and the
+  // layer-y extent against the output's *width*.
+  const quarterTurns = transform.rotation / 90;
+  const nearestQuarter = Math.round(quarterTurns);
+  const isQuarterTurn = Math.abs(quarterTurns - nearestQuarter) < 1e-3;
+  const swap = isQuarterTurn && ((nearestQuarter % 2) + 2) % 2 === 1;
+  const fitSourceWidth = swap ? sourceHeight : sourceWidth;
+  const fitSourceHeight = swap ? sourceWidth : sourceHeight;
+  const rect = computeFitRect(fitSourceWidth, fitSourceHeight, outputWidth, outputHeight, transform.fit);
+  const drawWidth = (swap ? outputHeight * rect.height : outputWidth * rect.width) * transform.scale;
+  const drawHeight = (swap ? outputWidth * rect.width : outputHeight * rect.height) * transform.scale;
+  const cardWidth = (swap ? outputHeight : outputWidth) * transform.scale;
+  const cardHeight = (swap ? outputWidth : outputHeight) * transform.scale;
   const centerX = outputWidth * (0.5 + transform.x);
   const centerY = outputHeight * (0.5 + transform.y);
 
