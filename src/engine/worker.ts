@@ -791,17 +791,30 @@ function sourceDescriptorFromHandle(
   file: File,
   handle: MediaInputHandle,
 ): SourceDescriptor {
-  const videoInspection = handle.inspection.tracks.find((track) => track.kind === 'video');
+  // Prefer the inspection record for the primary decoded video track so the bin
+  // metadata (rotation, codec, colour) reflects the same track placeAsset uses.
+  // Mediabunny may pick a non-first track as primary on multi-track files.
+  const primaryVideoTrackId = handle.conformance.primaryVideoTrackId;
+  const videoInspection = (
+    primaryVideoTrackId
+      ? handle.inspection.tracks.find(
+          (t): t is SourceVideoTrackInspection =>
+            t.kind === 'video' && t.trackId === primaryVideoTrackId,
+        )
+      : undefined
+  ) ?? handle.inspection.tracks.find(
+    (t): t is SourceVideoTrackInspection => t.kind === 'video',
+  );
   const video = handle.metadata.video
     ? {
         width: handle.metadata.video.width,
         height: handle.metadata.video.height,
-        codedWidth: videoInspection?.kind === 'video' ? videoInspection.codedWidth : undefined,
-        codedHeight: videoInspection?.kind === 'video' ? videoInspection.codedHeight : undefined,
+        codedWidth: videoInspection?.codedWidth,
+        codedHeight: videoInspection?.codedHeight,
         frameRate: handle.metadata.video.frameRate,
         frameRateMode: handle.timing.frameRateMode,
-        rotationDeg: videoInspection?.kind === 'video' ? videoInspection.rotationDeg : undefined,
-        color: videoInspection?.kind === 'video' ? videoInspection.color : undefined,
+        rotationDeg: videoInspection?.rotationDeg,
+        color: videoInspection?.color,
         trackStartS: handle.timing.video?.firstTimestampS,
         trackDurationS: handle.timing.video?.durationS,
         codec: handle.metadata.video.codec,

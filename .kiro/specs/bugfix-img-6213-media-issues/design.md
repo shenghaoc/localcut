@@ -54,6 +54,15 @@ produce bit-identical output to before.
 
 The matrix/translation/anchor packing below the fit rect is unchanged.
 
+`src/engine/compatibility/canvas-compositor.ts`
+
+`drawTransformedImage` (the Canvas2D fallback used by `limited-webcodecs`)
+applies the same `swap` logic. The fit rect is computed on the rotated source
+aspect; `drawWidth`/`drawHeight` then size against `(outputHeight, outputWidth)`
+instead of `(outputWidth, outputHeight)` for odd quarter-turns so the layer
+fills the output exactly after `ctx.rotate`. The letterbox card is swapped in
+the same way to stay clipped to the rotated layer bounds.
+
 ## D3 — VFR frame cadence (B3)
 
 `src/engine/media-adapters/mediabunny-adapter.ts`
@@ -92,6 +101,14 @@ the container reports null:
 The `details.codec` payload is unchanged (still the raw `string | null`).
 
 ## D5 — Media Bin details popover (B5)
+
+`src/engine/worker.ts` — `sourceDescriptorFromHandle` reads the inspection
+record for the **primary** decoded video track (matching
+`handle.conformance.primaryVideoTrackId`, with a first-video fallback) so the
+bin's rotation/codec/colour metadata always reflects the same track
+`placeAsset` applies on the timeline. Without this, a multi-video MOV where
+Mediabunny picks a non-first track as primary would surface contradictory
+rotation in the popover vs. the placed clip.
 
 `src/ui/MediaBin.tsx`
 
@@ -132,5 +149,8 @@ engine does about each.
   interval at `1/fps`.
 - `src/engine/transform.test.ts` — `packTransformUniform` swaps source dims at
   90°/270°, leaves 0°/180°/45° unchanged.
+- `src/engine/compatibility/compatibility.test.ts` — Canvas2D `drawTransformedImage`
+  fills a landscape output exactly with a 90°-rotated portrait source, and
+  leaves 0°/180°/45° at the un-swapped `drawWidth`.
 
 No tests are removed.

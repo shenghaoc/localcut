@@ -2,7 +2,14 @@ import { describe, expect, it, vi } from 'vitest';
 import compatExportSource from './compat-export.ts?raw';
 import { chooseLimitedExportCodec, makeVideoFrameFromBitmap, waitForEncodeQueue } from './compat-export';
 import { probeResultFor } from './capability-fixtures';
-import { bitmapFromFrame, BoundedFrameQueue, drawLayers, fitWithin720p } from './canvas-compositor';
+import {
+  bitmapFromFrame,
+  BoundedFrameQueue,
+  drawLayers,
+  drawTransformedImage,
+  fitWithin720p,
+} from './canvas-compositor';
+import { DEFAULT_TRANSFORM } from '../transform';
 import canvasCompositorSource from './canvas-compositor.ts?raw';
 import { uploadCompatFrame } from './compat-webgpu-preview';
 
@@ -103,9 +110,76 @@ describe('canvas compatibility compositor helpers', () => {
   });
 
   it('fills the whole transformed card for Canvas2D letterbox bars', () => {
-    expect(canvasCompositorSource).toContain('const cardWidth = outputWidth * transform.scale;');
     expect(canvasCompositorSource).toContain('drawWidth * transform.anchorX - cardWidth / 2');
     expect(canvasCompositorSource).toContain('drawHeight * transform.anchorY - cardHeight / 2');
+  });
+
+  it('sizes a 90°-rotated portrait source to fill the landscape output without crop', () => {
+    // 1080×1920 phone frame, 90° rotation metadata, drawn into a 1920×1080
+    // output with fit:fill. Before the swap fix, computeFitRect returned
+    // {1, ~3.16} from the unrotated portrait aspect, producing drawHeight ≈ 3416
+    // — a massively over-scaled layer cropped to a narrow band after rotation.
+    // After the fix the rotated aspect (1920×1080) matches the output, so
+    // rect = {1, 1} and the layer covers the canvas exactly.
+    const calls: { name: string; args: number[] }[] = [];
+    const ctx = {
+      globalAlpha: 1,
+      save: () => calls.push({ name: 'save', args: [] }),
+      restore: () => calls.push({ name: 'restore', args: [] }),
+      translate: (x: number, y: number) => calls.push({ name: 'translate', args: [x, y] }),
+      rotate: (a: number) => calls.push({ name: 'rotate', args: [a] }),
+      drawImage: (_: unknown, x: number, y: number, w: number, h: number) =>
+        calls.push({ name: 'drawImage', args: [x, y, w, h] }),
+      fillRect: () => calls.push({ name: 'fillRect', args: [] }),
+      set fillStyle(_: string) {},
+    } as unknown as OffscreenCanvasRenderingContext2D;
+    drawTransformedImage(
+      ctx,
+      {} as CanvasImageSource,
+      1080,
+      1920,
+      1920,
+      1080,
+      { ...DEFAULT_TRANSFORM, rotation: 90 },
+    );
+    const draw = calls.find((c) => c.name === 'drawImage');
+    // Layer-local extents (canvas-x → output-y after rotate, canvas-y → output-x).
+    // For the rotated layer in a landscape output, the layer-x extent must size
+    // against output-y (1080) and layer-y against output-x (1920).
+    expect(draw?.args[2]).toBeCloseTo(1080, 5);
+    expect(draw?.args[3]).toBeCloseTo(1920, 5);
+  });
+
+  it('leaves 0°/180°/arbitrary-angle rotations using the un-swapped fit math', () => {
+    function drawWidthFor(rotation: number): number {
+      let drawnW = 0;
+      const ctx = {
+        globalAlpha: 1,
+        save: () => {},
+        restore: () => {},
+        translate: () => {},
+        rotate: () => {},
+        drawImage: (_: unknown, _x: number, _y: number, w: number) => {
+          drawnW = w;
+        },
+        fillRect: () => {},
+        set fillStyle(_: string) {},
+      } as unknown as OffscreenCanvasRenderingContext2D;
+      drawTransformedImage(
+        ctx,
+        {} as CanvasImageSource,
+        1920,
+        1080,
+        1920,
+        1080,
+        { ...DEFAULT_TRANSFORM, rotation },
+      );
+      return drawnW;
+    }
+    // Aspect-matched source: drawWidth = output width across non-quarter-turn angles.
+    expect(drawWidthFor(0)).toBeCloseTo(1920, 5);
+    expect(drawWidthFor(180)).toBeCloseTo(1920, 5);
+    expect(drawWidthFor(45)).toBeCloseTo(1920, 5);
   });
 });
 

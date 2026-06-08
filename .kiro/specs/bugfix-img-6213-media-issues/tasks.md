@@ -19,6 +19,12 @@
   quarter-turn (within `1e-3` of ±90° / ±270°).
 - [x] **T2.2** Add `transform.test.ts` cases covering 90°/270° swap, 180°
   non-swap (matches 0°), and 45° non-swap (matches 0°).
+- [x] **T2.3** In `compatibility/canvas-compositor.ts:drawTransformedImage`,
+  apply the same `swap` logic — compute the fit rect on the rotated source
+  aspect, then size `drawWidth`/`drawHeight` (and the letterbox card) against
+  the swapped output dims so the rotated layer fills the canvas exactly.
+- [x] **T2.4** Add `compatibility.test.ts` cases covering the rotated portrait
+  → landscape draw and the 0°/180°/45° non-swap regression.
 
 ## T3 — VFR frame cadence (B3)
 
@@ -40,6 +46,10 @@
 
 ## T5 — Media Bin details popover (B5)
 
+- [x] **T5.0** In `worker.ts:sourceDescriptorFromHandle`, look up the inspection
+  record matching `handle.conformance.primaryVideoTrackId` (with a first-video
+  fallback) so the metadata snapshot's `rotationDeg`, `codec`, and `color` come
+  from the same track that `placeAsset` rotates.
 - [x] **T5.1** Add a `MetaInfoPopover` component in `MediaBin.tsx` using the
   existing `@kobalte/core/popover` primitive; trigger is an ⓘ button placed
   before the existing `+` and `🗑` actions.
@@ -63,8 +73,9 @@
 - [x] **T6.4** Null-codec fallback test in `source-health.test.ts`.
 - [x] **T6.5** VFR/CFR `minFrameDuration` tests in `frame-source.test.ts`.
 - [x] **T6.6** Rotation-aware fit rect test in `transform.test.ts`.
-- [x] **T6.7** `npm run build` green; `npm test` green; test count grows
-  (638 → 645 on this branch).
+- [x] **T6.7** Canvas2D rotated-fit tests in `compatibility.test.ts`.
+- [x] **T6.8** `npm run build` green; `npm test` green; test count grows
+  (638 → 648 on this branch).
 
 ## T7 — Manual verification
 
