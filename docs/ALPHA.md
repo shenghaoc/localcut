@@ -6,7 +6,7 @@ This document defines what is supported, experimental, and not available in the 
 
 These features are the core editing loop and are expected to work reliably on a Chromium desktop browser (Chrome 120+, Edge 120+) with WebGPU, WebCodecs, and COOP/COEP isolation:
 
-- **Import**: MP4 (H.264/AAC), MOV (H.264/AAC), WebM (VP9/Opus) via drag-and-drop or file picker.
+- **Import**: MP4 (H.264/AAC), MOV (H.264/AAC), WebM (VP9/Opus), audio-only (WAV/MP3/M4A/OGG), and still images (PNG/JPG/WebP) via drag-and-drop or file picker.
 - **Media Bin**: browse imported sources, view details (resolution, frame rate, codec, rotation, health warnings), add to timeline, remove.
 - **Timeline editing**: split, trim (edge drag), move, delete, copy/paste/duplicate, multi-select, undo/redo.
 - **Multi-track**: video and audio tracks, track add/remove/reorder/lock/visibility.
