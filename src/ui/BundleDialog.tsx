@@ -89,7 +89,8 @@ export function BundleDialog(props: BundleDialogProps) {
 				<Popover.Content class="export-popover bundle-popover">
 					<div class="export-popover-header">
 						<h2 class="export-popover-title">
-							Project bundle <span class="text-xs text-[#9898a4] font-normal">(Experimental)</span>
+							Project bundle{' '}
+							<span class="text-xs text-muted-foreground font-normal">(Experimental)</span>
 						</h2>
 						<p class="export-popover-subtitle">
 							Move projects between browsers with a portable folder bundle.

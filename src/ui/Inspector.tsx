@@ -1101,7 +1101,10 @@ export function Inspector(props: InspectorProps) {
 									<div class="lut-controls">
 										<div class="lut-header">
 											<span class="effect-slider-label">
-												LUT <span class="text-xs text-[#9898a4] font-normal">(Experimental)</span>
+												LUT{' '}
+												<span class="text-xs text-muted-foreground font-normal">
+													(Experimental)
+												</span>
 											</span>
 											<button
 												type="button"
