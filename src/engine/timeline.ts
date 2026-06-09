@@ -295,8 +295,14 @@ export function resolveAllAt(
 
 			// Find and mark the existing layer (if any) for this track.
 			const layerIdx = layers.findIndex((l) => l.trackId === transition.trackId);
-			const outgoingSourceTime = fromClip.inPoint + (time - fromClip.start);
-			const incomingSourceTime = toClip.inPoint + (time - toClip.start);
+			const outgoingSourceTime = Math.min(
+				fromClip.inPoint + (time - fromClip.start),
+				fromClip.inPoint + fromClip.duration
+			);
+			const incomingSourceTime = Math.max(
+				toClip.inPoint,
+				toClip.inPoint + (time - toClip.start)
+			);
 
 			const outgoingLayer: ResolveResult = {
 				clip: fromClip,

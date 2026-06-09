@@ -557,22 +557,45 @@ export class PreviewRenderer {
 					new Float32Array([transition.mixT, kindMap[transition.kind] ?? 0, direction])
 				);
 
+				// Phase 13: blend the two transform outputs into a scratch texture
+				// first, then composite that result over the accumulator so layers
+				// below the transition track are preserved.
+				const blendDst = storage.a; // scratch, no longer in use after both processLayer calls
 				const transitionBindGroup = this.device.createBindGroup({
 					layout: this.transitionGroupLayout,
 					entries: [
 						{ binding: 0, resource: { buffer: transBuffer } },
-						{ binding: 1, resource: this.transformViewB! },
-						{ binding: 2, resource: this.transformView! },
+						{ binding: 1, resource: this.transformViewB! },  // outgoing
+						{ binding: 2, resource: this.transformView! },   // incoming
 						{ binding: 3, resource: this.sampler },
 						{ binding: 4, resource: this.sampler },
-						{ binding: 5, resource: accView[over] }
+						{ binding: 5, resource: blendDst }
 					]
 				});
-				const transPass = encoder.beginComputePass();
-				transPass.setPipeline(this.transitionMixPipeline);
-				transPass.setBindGroup(0, transitionBindGroup);
-				transPass.dispatchWorkgroups(wgX, wgY);
-				transPass.end();
+				{
+					const transPass = encoder.beginComputePass();
+					transPass.setPipeline(this.transitionMixPipeline);
+					transPass.setBindGroup(0, transitionBindGroup);
+					transPass.dispatchWorkgroups(wgX, wgY);
+					transPass.end();
+				}
+
+				// Composite the blended pair over the accumulator.
+				{
+					const compBindGroup = this.device.createBindGroup({
+						layout: this.compositePipeline.getBindGroupLayout(0),
+						entries: [
+							{ binding: 0, resource: accView[under] },
+							{ binding: 1, resource: blendDst },
+							{ binding: 2, resource: accView[over] }
+						]
+					});
+					const compPass = encoder.beginComputePass();
+					compPass.setPipeline(this.compositePipeline);
+					compPass.setBindGroup(0, compBindGroup);
+					compPass.dispatchWorkgroups(wgX, wgY);
+					compPass.end();
+				}
 
 				acc = over;
 				i += 1;
