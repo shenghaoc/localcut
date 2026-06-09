@@ -47,22 +47,27 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
             }
         }
         case 2u: {
-            // wipe
-            let edge = uniforms.direction == 0u ? f16(uv.x) : f16(uv.y);
-            let visible = select(0.0h, 1.0h, edge < t);
+            // wipe: 0=left, 1=right, 2=up, 3=down
+            let isHorizontal = uniforms.direction <= 1u;
+            let edge = isHorizontal ? f16(uv.x) : f16(uv.y);
+            let flip = uniforms.direction == 1u || uniforms.direction == 3u;
+            let flipped = select(t, 1.0h - t, flip);
+            let visible = select(0.0h, 1.0h, edge < flipped);
             result = mix(outColor, inColor, visible);
         }
         case 3u: {
-            // slide
+            // slide: 0=left, 1=right, 2=up, 3=down
+            let isHorizontal = uniforms.direction <= 1u;
             let slideT = 1.0h - t;
             var slideInUV = uv;
             var slideOutUV = uv;
-            if uniforms.direction == 0u {
-                slideInUV.x = uv.x - f32(slideT);
-                slideOutUV.x = uv.x + f32(t);
+            let signVal: f32 = (uniforms.direction == 1u || uniforms.direction == 3u) ? -1.0 : 1.0;
+            if isHorizontal {
+                slideInUV.x = uv.x + signVal * f32(slideT);
+                slideOutUV.x = uv.x + signVal * f32(t) * -1.0;
             } else {
-                slideInUV.y = uv.y - f32(slideT);
-                slideOutUV.y = uv.y + f32(t);
+                slideInUV.y = uv.y + signVal * f32(slideT);
+                slideOutUV.y = uv.y + signVal * f32(t) * -1.0;
             }
             let inSlide = vec4<f16>(textureSampleLevel(incomingTexture, inSampler, slideInUV, 0.0));
             let outSlide = vec4<f16>(textureSampleLevel(outgoingTexture, outSampler, slideOutUV, 0.0));

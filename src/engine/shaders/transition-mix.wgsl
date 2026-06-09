@@ -6,7 +6,7 @@
 struct TransitionUniforms {
     mixT: f32,
     kind: u32,  // 0 = cross-dissolve, 1 = dip-to-black, 2 = wipe, 3 = slide
-    // direction: 0 = left/right, 1 = up/down (for wipe + slide)
+    // direction: 0 = left, 1 = right, 2 = up, 3 = down (for wipe + slide)
     direction: u32,
 }
 
@@ -48,21 +48,28 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
         }
         case 2u: {
             // wipe: hard edge sweeping across the frame
-            let edge = uniforms.direction == 0u ? uv.x : uv.y;
-            let visible = select(0.0, 1.0, edge < t);
+            // 0=left, 1=right, 2=up, 3=down
+            let isHorizontal = uniforms.direction <= 1u;
+            let edge = isHorizontal ? uv.x : uv.y;
+            let flip = uniforms.direction == 1u || uniforms.direction == 3u;
+            let flipped = select(t, 1.0 - t, flip);
+            let visible = select(0.0, 1.0, edge < flipped);
             result = mix(outColor, inColor, visible);
         }
         case 3u: {
             // slide: incoming slides in while outgoing slides out
+            // 0=left (incoming from left), 1=right, 2=up, 3=down
+            let isHorizontal = uniforms.direction <= 1u;
             let slideT = 1.0 - t;
             var slideInUV = uv;
             var slideOutUV = uv;
-            if uniforms.direction == 0u {
-                slideInUV.x = uv.x - slideT;
-                slideOutUV.x = uv.x + t;
+            let signVal = (uniforms.direction == 1u || uniforms.direction == 3u) ? -1.0 : 1.0;
+            if isHorizontal {
+                slideInUV.x = uv.x + signVal * slideT;
+                slideOutUV.x = uv.x + signVal * t * -1.0;
             } else {
-                slideInUV.y = uv.y - slideT;
-                slideOutUV.y = uv.y + t;
+                slideInUV.y = uv.y + signVal * slideT;
+                slideOutUV.y = uv.y + signVal * t * -1.0;
             }
             let inSlide = textureSampleLevel(incomingTexture, inSampler, slideInUV, 0.0);
             let outSlide = textureSampleLevel(outgoingTexture, outSampler, slideOutUV, 0.0);

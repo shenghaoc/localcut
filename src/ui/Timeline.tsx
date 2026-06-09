@@ -288,6 +288,42 @@ export function Timeline(props: TimelineProps) {
 		};
 	}
 
+	let cleanupTransitionListeners: (() => void) | null = null;
+	let transitionDragRef: { transitionId: string; startX: number; startDurationS: number; pxPerSec: number } | null = null;
+
+	function onTransitionPointerDown(event: PointerEvent, transitionId: string, durationS: number) {
+		if (!props.onTransitionDuration) return;
+		event.preventDefault();
+		event.stopPropagation();
+		transitionDragRef = {
+			transitionId,
+			startX: event.clientX,
+			startDurationS: durationS,
+			pxPerSec: pxPerSecond()
+		};
+		const onMove = (move: PointerEvent) => {
+			if (!transitionDragRef) return;
+			const dx = move.clientX - transitionDragRef.startX;
+			const deltaS = dx / transitionDragRef.pxPerSec;
+			const newDuration = Math.max(0.05, transitionDragRef.startDurationS + deltaS * 2);
+			props.onTransitionDuration?.(transitionDragRef.transitionId, newDuration);
+		};
+		const onUp = () => {
+			transitionDragRef = null;
+			cleanupTransitionListeners?.();
+			cleanupTransitionListeners = null;
+		};
+		cleanupTransitionListeners?.();
+		window.addEventListener('pointermove', onMove);
+		window.addEventListener('pointerup', onUp);
+		window.addEventListener('pointercancel', onUp);
+		cleanupTransitionListeners = () => {
+			window.removeEventListener('pointermove', onMove);
+			window.removeEventListener('pointerup', onUp);
+			window.removeEventListener('pointercancel', onUp);
+		};
+	}
+
 	function handleMoveClip(trackId: string, clipId: string, toStart: number, fromStart: number) {
 		const currentRef = { trackId, clipId };
 		const selection = selectedKeys().has(selectionKey(currentRef))
@@ -437,6 +473,7 @@ export function Timeline(props: TimelineProps) {
 			if (zoomRaf !== null) cancelAnimationFrame(zoomRaf);
 			cleanupScrubListeners?.();
 			cleanupMarqueeListeners?.();
+			cleanupTransitionListeners?.();
 		});
 	});
 
@@ -653,6 +690,7 @@ export function Timeline(props: TimelineProps) {
 																transition.trackId
 															);
 														}}
+														onPointerDown={(e) => onTransitionPointerDown(e, transition.id, transition.durationS)}
 														aria-label={`${transition.kind} transition between ${transition.fromClipId} and ${transition.toClipId}`}
 													>
 														<Diamond size={12} aria-hidden="true" />

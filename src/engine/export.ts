@@ -863,7 +863,8 @@ async function encodeVideoRange(
 						view: texture.view,
 						sourceWidth: texture.width,
 						sourceHeight: texture.height,
-						transform: sampled.transform
+						transform: sampled.transform,
+						transition: layer.transition
 					});
 					continue;
 				}
@@ -895,7 +896,8 @@ async function encodeVideoRange(
 					frame: videoFrame,
 					effects: sampled.effects,
 					transform: sampled.transform,
-					lut: layer.clip.lut
+					lut: layer.clip.lut,
+					transition: layer.transition
 				});
 			}
 			for (const overlay of overlayTextureLayersAt?.(timelineTime) ?? []) {

@@ -548,8 +548,8 @@ export class PreviewRenderer {
 					this.transitionUniformBuffers[transitionCount] = transBuffer;
 				}
 				transitionCount++;
-				const direction =
-					transition.params.direction === 'up' || transition.params.direction === 'down' ? 1 : 0;
+				const dirMap: Record<string, number> = { left: 0, right: 1, up: 2, down: 3 };
+				const direction = dirMap[transition.params?.direction ?? 'left'] ?? 0;
 				const kindMap: Record<string, number> = {
 					'cross-dissolve': 0, 'dip-to-black': 1, wipe: 2, slide: 3
 				};
