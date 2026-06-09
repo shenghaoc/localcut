@@ -30,7 +30,7 @@ export class SequentialAudioSource {
 	private iterator: AsyncGenerator<AudioSampleLike, void, unknown> | null = null;
 	private current: AudioSampleLike | null = null;
 	private anchor = Number.NEGATIVE_INFINITY;
-	private resampler: AudioResampler | null = null;
+	private resampler: AudioResampler | WasmAudioResampler | null = null;
 	private resamplerSourceRate = 0;
 	private resamplerSourceChannels = 0;
 	private resamplerTargetRate = 0;
@@ -157,7 +157,7 @@ export class SequentialAudioSource {
 		sourceRate: number,
 		sourceChannels: number,
 		targetRate: number
-	): AudioResampler {
+	): AudioResampler | WasmAudioResampler {
 		if (
 			this.resampler &&
 			this.resamplerSourceRate === sourceRate &&
@@ -166,11 +166,17 @@ export class SequentialAudioSource {
 		) {
 			return this.resampler;
 		}
-		this.resampler = new AudioResampler({
-			inputRate: sourceRate,
-			outputRate: targetRate,
-			channels: sourceChannels
-		});
+		this.resampler = WasmAudioResampler.isAvailable
+			? new WasmAudioResampler({
+					inputRate: sourceRate,
+					outputRate: targetRate,
+					channels: sourceChannels,
+			  })
+			: new AudioResampler({
+					inputRate: sourceRate,
+					outputRate: targetRate,
+					channels: sourceChannels,
+			  });
 		this.resamplerSourceRate = sourceRate;
 		this.resamplerSourceChannels = sourceChannels;
 		this.resamplerTargetRate = targetRate;

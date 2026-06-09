@@ -144,6 +144,7 @@ export class WasmAudioResampler {
 	}
 
 	// Instance state
+	private config: ResamplerConfig;
 	private jsFallback: AudioResampler;
 	private ratio: number;
 	private channels: number;
@@ -173,6 +174,7 @@ export class WasmAudioResampler {
 			throw new Error('Channel count must be positive.');
 		}
 
+		this.config = config;
 		this.ratio = config.inputRate / config.outputRate;
 		this.channels = config.channels;
 		this.filterSize = config.filterSize ?? DEFAULT_FILTER_SIZE;
@@ -244,6 +246,11 @@ export class WasmAudioResampler {
 
 	process(input: Float32Array, inputFrames: number): Float32Array {
 		if (!this.instance || !this.memory) {
+			// Lazy-init guard: handle race where WASM init completes
+			// between construction and first process() call.
+			if (wasmAvailable) {
+				this.initWasm(this.config);
+			}
 			return this.jsFallback.process(input, inputFrames);
 		}
 		if (this.ratio === 1) {
@@ -315,6 +322,11 @@ export class WasmAudioResampler {
 
 	flush(): Float32Array {
 		if (!this.instance || !this.memory) {
+			// Lazy-init guard: handle race where WASM init completes
+			// between construction and first flush() call.
+			if (wasmAvailable) {
+				this.initWasm(this.config);
+			}
 			return this.jsFallback.flush();
 		}
 		if (this.ratio === 1) return new Float32Array(0);
