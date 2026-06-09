@@ -553,10 +553,13 @@ export class PreviewRenderer {
 				const kindMap: Record<string, number> = {
 					'cross-dissolve': 0, 'dip-to-black': 1, wipe: 2, slide: 3
 				};
-				this.device.queue.writeBuffer(
-					transBuffer, 0,
-					new Float32Array([transition.mixT, kindMap[transition.kind] ?? 0, direction])
-				);
+				const arrayBuffer = new ArrayBuffer(16);
+				const floatView = new Float32Array(arrayBuffer);
+				const uintView = new Uint32Array(arrayBuffer);
+				floatView[0] = transition.mixT;
+				uintView[1] = kindMap[transition.kind] ?? 0;
+				uintView[2] = direction;
+				this.device.queue.writeBuffer(transBuffer, 0, arrayBuffer);
 
 				// Phase 13: blend the two transform outputs into a scratch texture
 				// first, then composite that result over the accumulator so layers

@@ -51,8 +51,11 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
             let isHorizontal = uniforms.direction <= 1u;
             let edge = isHorizontal ? f16(uv.x) : f16(uv.y);
             let flip = uniforms.direction == 1u || uniforms.direction == 3u;
-            let flipped = select(t, 1.0h - t, flip);
-            let visible = select(0.0h, 1.0h, edge < flipped);
+            let visible = select(
+                select(0.0h, 1.0h, edge < t),
+                select(0.0h, 1.0h, edge > 1.0h - t),
+                flip
+            );
             result = mix(outColor, inColor, visible);
         }
         case 3u: {
