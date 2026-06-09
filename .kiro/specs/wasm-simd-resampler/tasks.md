@@ -8,17 +8,26 @@
 - [ ] **T1.1** Implement the 16-tap polyphase FIR inner loop in C/Rust with
   `wasm-simd128` intrinsics.
 - [ ] **T1.2** Port the streaming state (history buffer, fractional position,
-  filter table) to match the JS `AudioResampler.process()` contract.
-- [ ] **T1.3** Verify output parity: < 1e-6 per-sample error vs. JS on a
-  reference signal.
+  filter table) to match the JS `AudioResampler.process()` contract. Use `f32`
+  precision throughout (filter table, accumulator, history) to match the SIMD
+  `f32x4` lane width.
+- [ ] **T1.3** Verify output parity: < 1e-5 per-sample error vs. the JS
+  `Float64Array` implementation on a reference signal (tolerance accounts for
+  `f64` → `f32` precision reduction).
 
-## T2 — Build + integration (R2, R3)
+## T2 — Build + integration (R2, R3, R4)
 
 - [ ] **T2.1** Build pipeline (Emscripten/wasm-pack) producing `.wasm` output.
-- [ ] **T2.2** Wrapper class implementing `AudioResampler` interface, lazy-
-  loading the WASM module on first use.
-- [ ] **T2.3** SIMD feature detection via `WebAssembly.validate`; transparent
-  fallback to JS `AudioResampler`.
+- [ ] **T2.2** Wrapper class implementing `AudioResampler` interface with an
+  async `init()` that compiles and instantiates the WASM module. `process()` is
+  synchronous and uses the pre-compiled instance; if `init()` was not called or
+  failed, the wrapper delegates to the JS `AudioResampler` transparently.
+- [ ] **T2.3** SIMD feature detection: guard with
+  `typeof WebAssembly !== 'undefined'` + `try-catch` around
+  `WebAssembly.validate(simdTestBytes)`; fall back to JS on any failure
+  (missing global, validate rejection, instantiation error).
+- [ ] **T2.4** Call `init()` during worker startup or audio source setup so the
+  module is ready before the first synchronous `process()` call.
 
 ## T3 — Performance (R4)
 
@@ -27,5 +36,6 @@
 
 ## T4 — Tests (R5)
 
-- [ ] **T4.1** Run existing `audio-resampler.test.ts` against WASM impl.
+- [ ] **T4.1** Run existing `audio-resampler.test.ts` against WASM impl
+  (tolerance adjusted for `f32` precision).
 - [ ] **T4.2** `npm run build` green; `npm test` green.
