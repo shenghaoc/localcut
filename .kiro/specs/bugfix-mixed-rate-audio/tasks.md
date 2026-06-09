@@ -31,14 +31,17 @@
   resampler state in `reset()`.
 - [x] **T2.5** Resample the playback chunk in `pcmAt` before channel mapping.
 
-## T3 — Canonical ring rate on playback (B3)
+## T3 — Canonical ring rate + channels on playback (B3)
 
 - [x] **T3.1** In `worker.ts`, remove the per-handle
-  `Atomics.store(header, SAMPLE_RATE, …)` writes (source registration + re-link);
-  leave the `CHANNELS` store. Add a comment explaining the worklet plays 1:1 at the
-  canonical `AudioContext` rate.
+  `Atomics.store(header, SAMPLE_RATE, …)` writes (source registration + re-link).
+  Add a comment explaining the worklet plays 1:1 at the canonical `AudioContext` rate.
 - [x] **T3.2** Pass the ring's `sampleRate` (now canonical) as the target to
   `pcmAt` in the playback writer.
+- [x] **T3.3** Remove the per-handle `Atomics.store(header, CHANNELS, …)` writes
+  (source registration + re-link). The worklet reads `RING_CHANNELS` once at
+  construction and never re-reads; overwriting it per-handle caused stride mismatch
+  for mono sources. `pcmAt` already upmixes to the requested channel count.
 
 ## T4 — Export mixer target rate (B2)
 

@@ -1044,10 +1044,10 @@ async function attachSourceFile(
 		primaryHandle = mediaHandle;
 	}
 	if (mediaHandle.audioSource && audioRing) {
-		// Keep the ring at its canonical (AudioContext) sample rate: the worklet
-		// plays ring frames 1:1 at that rate, and pcmAt resamples each source to it,
-		// so mixed-rate sources stay at the right pitch and the clock stays accurate.
-		Atomics.store(audioRing.header, RingHeader.CHANNELS, mediaHandle.audioChannels);
+		// Ring stays at its canonical stereo channel count (set at init). The worklet
+		// reads CHANNELS once at construction and never re-reads, so overwriting it
+		// per-handle would cause stride mismatch for mono sources. pcmAt upmixes
+		// each source to the ring's channel count, same pattern as sample-rate.
 	}
 	void computeWaveformsForSource(mediaHandle);
 
@@ -2016,9 +2016,8 @@ async function handleImport(file: File, fileHandle?: FileSystemFileHandle | null
 		}
 
 		if (handle.audioSource && audioRing) {
-			// Keep the ring at its canonical (AudioContext) sample rate; pcmAt
-			// resamples each source to it so playback pitch and clock stay correct.
-			Atomics.store(audioRing.header, RingHeader.CHANNELS, handle.audioChannels);
+			// Ring stays at canonical stereo init; pcmAt upmixes each source to
+			// the ring's channel count (worklet reads CHANNELS once, never re-reads).
 		}
 
 		const hasVideoOnTimeline = timeline.some(

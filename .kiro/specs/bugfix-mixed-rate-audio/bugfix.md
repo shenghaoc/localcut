@@ -128,9 +128,10 @@ a different target).
 - No AI of any kind.
 - No change to the accelerated `VideoFrame → importExternalTexture → compute chain
   → queue.submit` pipeline.
-- Not fixing the pre-existing AudioWorklet **channel** mismatch (the worklet
-  captures `RING_CHANNELS` once at construction while the worker overwrites it per
-  handle) — orthogonal to sample rate and out of scope here.
+- ~~Not fixing the pre-existing AudioWorklet **channel** mismatch~~ — **fixed** in
+  the same PR (T3.3): the per-handle `CHANNELS` overwrite is removed, matching
+  the `SAMPLE_RATE` fix. `pcmAt` upmixes each source to the ring's canonical
+  stereo channel count.
 - Not a high-order/anti-imaging-optimal resampler; a 16-tap windowed sinc is
   sufficient for the documented 44.1 kHz ↔ 48 kHz range and bounded downsampling.
 
