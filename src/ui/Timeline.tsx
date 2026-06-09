@@ -674,12 +674,12 @@ export function Timeline(props: TimelineProps) {
 												const toClip = track.clips.find((c) => c.id === transition.toClipId);
 												if (!fromClip || !toClip) return null;
 												const cutPoint = fromClip.start + fromClip.duration;
-												const px = cutPoint * pxPerSecond();
+												const px = () => cutPoint * pxPerSecond();
 												return (
 													<button
 														type="button"
 														class={`timeline-transition${props.selectedTransition?.()?.transitionId === transition.id ? ' is-selected' : ''}`}
-														style={{ left: `${px}px` }}
+														style={{ left: `${px()}px` }}
 														title={`${transition.kind} (${transition.durationS.toFixed(2)}s)`}
 														onClick={(e) => {
 															e.stopPropagation();

@@ -32,6 +32,11 @@ import {
 	endScopeWrite
 } from './scopes';
 
+const TRANSITION_KIND_MAP: Record<string, number> = {
+	'cross-dissolve': 0, 'dip-to-black': 1, wipe: 2, slide: 3
+};
+const TRANSITION_DIR_MAP: Record<string, number> = { left: 0, right: 1, up: 2, down: 3 };
+
 export interface DeviceLostInfo {
 	readonly reason: GPUDeviceLostReason;
 	readonly message: string;
@@ -542,22 +547,18 @@ export class PreviewRenderer {
 				let transBuffer = this.transitionUniformBuffers[transitionCount];
 				if (!transBuffer) {
 					transBuffer = this.device.createBuffer({
-						size: 12,
+						size: 16,
 						usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
 					});
 					this.transitionUniformBuffers[transitionCount] = transBuffer;
 				}
 				transitionCount++;
-				const dirMap: Record<string, number> = { left: 0, right: 1, up: 2, down: 3 };
-				const direction = dirMap[transition.params?.direction ?? 'left'] ?? 0;
-				const kindMap: Record<string, number> = {
-					'cross-dissolve': 0, 'dip-to-black': 1, wipe: 2, slide: 3
-				};
+				const direction = TRANSITION_DIR_MAP[transition.params?.direction ?? 'left'] ?? 0;
 				const arrayBuffer = new ArrayBuffer(16);
 				const floatView = new Float32Array(arrayBuffer);
 				const uintView = new Uint32Array(arrayBuffer);
 				floatView[0] = transition.mixT;
-				uintView[1] = kindMap[transition.kind] ?? 0;
+				uintView[1] = TRANSITION_KIND_MAP[transition.kind] ?? 0;
 				uintView[2] = direction;
 				this.device.queue.writeBuffer(transBuffer, 0, arrayBuffer);
 
