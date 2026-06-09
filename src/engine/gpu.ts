@@ -565,7 +565,12 @@ export class PreviewRenderer {
 				// Phase 13: blend the two transform outputs into a scratch texture
 				// first, then composite that result over the accumulator so layers
 				// below the transition track are preserved.
-				const blendDst = storage.a; // scratch, no longer in use after both processLayer calls
+				// blendDst intentionally aliases storage.a.  This is safe only because the
+				// transition-mix dispatch is recorded immediately after both processLayer calls
+				// and before any subsequent layer's colour-chain pass could write storage.a.
+				// Any future change to processLayer that writes storage.a after its transform
+				// pass would silently corrupt the transition blend — update this invariant if so.
+				const blendDst = storage.a;
 				const transitionBindGroup = this.device.createBindGroup({
 					layout: this.transitionGroupLayout,
 					entries: [

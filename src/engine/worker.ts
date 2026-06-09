@@ -103,6 +103,7 @@ import {
 	DEFAULT_MASTER_GAIN,
 	DEFAULT_TITLE_DURATION_S,
 	normalizeTransform,
+	maxTransitionDurationS,
 	type Timeline,
 	type TimelineClip,
 	type TimelineMarker,
@@ -412,7 +413,13 @@ function postTimelineState() {
 		burnedIn: track.burnedIn,
 		visible: track.visible
 	}));
-	const transitionSnapshot: TimelineTransitionSnapshot[] = cloneTransitionsSnapshot(transitions);
+	const sourceDurs = transitionSourceDurations();
+	const transitionSnapshot: TimelineTransitionSnapshot[] = cloneTransitionsSnapshot(transitions).map(
+		(t) => ({
+			...t,
+			maxDurationS: maxTransitionDurationS(timeline, sourceDurs, t.trackId, t.fromClipId, t.toClipId)
+		})
+	);
 	post({
 		type: 'timeline-state',
 		timeline: snapshot,
@@ -3609,6 +3616,7 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
 				onProgress: (progress) => post({ type: 'export-progress', progress }),
 				masterGain,
 				transitions: audioTransitions,
+				hasVideoTransitions: transitions.length > 0,
 				overlayTitleLayersAt: (timelineTime) =>
 					activeCaptionLayersAt(exportCaptionTracksSnapshot, timelineTime, (trackId, segmentId) =>
 						exportCaptionTextureId(exportCaptionTextureGroupId, trackId, segmentId)

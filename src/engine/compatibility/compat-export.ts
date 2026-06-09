@@ -113,6 +113,9 @@ export interface ReducedTimelineExportOptions {
 	onProgress: (progress: ExportProgress) => void;
 	masterGain?: number;
 	transitions?: readonly AudioTransitionCut[];
+	/** When true, the project contains at least one video transition that cannot be
+	 *  rendered on the reduced-compatibility path; a warning is surfaced to the user. */
+	hasVideoTransitions?: boolean;
 	overlayTitleLayersAt?: (
 		timelineTime: number
 	) => Array<{ content: TitleContent; transform: TransformParams }>;
@@ -375,6 +378,12 @@ export async function exportTimelineReduced(
 
 	const candidate = REDUCED_CODECS[plan.codec];
 	const warnings: string[] = [];
+	if (options.hasVideoTransitions) {
+		warnings.push(
+			'Video transitions are not rendered on the reduced-compatibility export path. ' +
+				'Use the full-performance (WebGPU) path to include transitions in your export.'
+		);
+	}
 	const includeAudio =
 		plan.hasAudio &&
 		(await reducedAudioSupported(

@@ -61,6 +61,8 @@ export interface SelectedTransition {
 	fromClipId: string;
 	toClipId: string;
 	durationS: number;
+	/** Maximum achievable duration in seconds based on source clip headroom. */
+	maxDurationS?: number;
 	kind: import('../protocol').TransitionKindSnapshot;
 }
 
@@ -1282,7 +1284,7 @@ export function Inspector(props: InspectorProps) {
 									<input
 										type="range"
 										min={0.1}
-										max={5}
+										max={transition.maxDurationS ?? 5}
 										step={0.1}
 										value={transition.durationS}
 										onInput={(e) =>

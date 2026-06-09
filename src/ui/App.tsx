@@ -1,4 +1,4 @@
-import { createMemo, createSignal, For, Show, onMount, onCleanup } from 'solid-js';
+import { createEffect, createMemo, createSignal, For, Show, onMount, onCleanup } from 'solid-js';
 import { useRegisterSW } from 'virtual:pwa-register/solid';
 import { Link2, RotateCcw, Plus } from 'lucide-solid';
 import {
@@ -234,6 +234,17 @@ export function App() {
 	const [transitions, setTransitions] = createSignal<TimelineTransitionSnapshot[]>([]);
 	/** Phase 13: currently selected transition for the Inspector panel. */
 	const [selectedTransition, setSelectedTransition] = createSignal<SelectedTransition | null>(null);
+	// Keep selectedTransition in sync with the latest snapshot so that durationS
+	// and maxDurationS reflect worker-side clamping after every timeline-state update.
+	createEffect(() => {
+		const all = transitions();
+		setSelectedTransition((prev) => {
+			if (!prev) return null;
+			const live = all.find((t) => t.id === prev.transitionId);
+			if (!live) return null;
+			return { ...prev, durationS: live.durationS, maxDurationS: live.maxDurationS };
+		});
+	});
 	const [masterGain, setMasterGain] = createSignal(1);
 	const [selectedClipRefs, setSelectedClipRefs] = createSignal<TimelineClipReference[]>([]);
 	const [selectedCaptionTrackId, setSelectedCaptionTrackId] = createSignal<string | null>(null);
@@ -2200,6 +2211,7 @@ export function App() {
 								fromClipId,
 								toClipId,
 								durationS: transition.durationS,
+								maxDurationS: transition.maxDurationS,
 								kind: transition.kind
 							});
 						}
