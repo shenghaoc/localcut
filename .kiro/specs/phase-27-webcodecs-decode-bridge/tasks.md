@@ -1,6 +1,6 @@
 # Tasks: Phase 27 — WebCodecs decode bridge + codec support matrix
 
-> Status: **Foundation implemented; integration pending.** Decoders and the codec
+> Status: **Worker integration in progress.** Decoders and the codec
 > matrix are built and probe-tested on `claude/beautiful-johnson-1kjhvv` (PR #54).
 > Worker wiring, Phase 13 dual-stream consumption, and the diagnostics surface
 > remain open (T4, T5.2, T6.2).
