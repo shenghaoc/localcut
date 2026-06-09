@@ -60,7 +60,7 @@ export class AudioResampler {
 	private readonly channels: number;
 	private readonly tablePoints: number;
 	private readonly filterTable: Float64Array;
-	private readonly history: Float64Array;
+	private history: Float64Array;
 	private historyFilled = 0;
 	private inputFraction = 0;
 
@@ -76,18 +76,13 @@ export class AudioResampler {
 		this.filterSize = config.filterSize ?? DEFAULT_FILTER_SIZE;
 		this.tablePoints = 512;
 		this.filterTable = buildFilterTable(this.filterSize, this.tablePoints, KAISER_BETA);
-		this.history = new Float64Array(this.filterSize * this.channels);
+		this.history = new Float64Array(this.filterSize * 2 * this.channels);
 	}
 
 	reset(): void {
 		this.history.fill(0);
 		this.historyFilled = 0;
 		this.inputFraction = 0;
-	}
-
-	outputFrameCount(inputFrames: number): number {
-		const totalInput = inputFrames + this.inputFraction;
-		return Math.floor(totalInput / this.ratio);
 	}
 
 	process(input: Float32Array, inputFrames: number): Float32Array {
@@ -97,20 +92,23 @@ export class AudioResampler {
 		const ch = this.channels;
 		const fs = this.filterSize;
 		const halfFilter = (fs - 1) * 0.5;
-		const outFrames = this.outputFrameCount(inputFrames);
-		const output = new Float32Array(outFrames * ch);
-		if (outFrames <= 0) return output;
+		const halfFilterInt = Math.floor(halfFilter);
 
-		const combined = new Float64Array((this.historyFilled + inputFrames) * ch);
+		const totalInputFrames = this.historyFilled + inputFrames;
+		const combined = new Float64Array(totalInputFrames * ch);
 		combined.set(this.history.subarray(0, this.historyFilled * ch));
 		for (let i = 0; i < inputFrames * ch; i++) {
 			combined[this.historyFilled * ch + i] = input[i] ?? 0;
 		}
-		const totalInputFrames = this.historyFilled + inputFrames;
 
+		const outputs: number[] = [];
 		let srcPos = this.inputFraction;
-		for (let outIdx = 0; outIdx < outFrames; outIdx++) {
+
+		while (true) {
 			const center = srcPos + halfFilter;
+			const rightEdge = Math.floor(center) + halfFilterInt;
+			if (rightEdge >= totalInputFrames) break;
+
 			const intCenter = Math.floor(center);
 			const frac = center - intCenter;
 			const phaseIdx = Math.min(
@@ -122,12 +120,10 @@ export class AudioResampler {
 			for (let c = 0; c < ch; c++) {
 				let sum = 0;
 				for (let tap = 0; tap < fs; tap++) {
-					const sampleIdx = intCenter - Math.floor(halfFilter) + tap;
-					if (sampleIdx >= 0 && sampleIdx < totalInputFrames) {
-						sum += combined[sampleIdx * ch + c]! * this.filterTable[filterOffset + tap]!;
-					}
+					const sampleIdx = intCenter - halfFilterInt + tap;
+					sum += combined[sampleIdx * ch + c]! * this.filterTable[filterOffset + tap]!;
 				}
-				output[outIdx * ch + c] = sum;
+				outputs.push(sum);
 			}
 			srcPos += this.ratio;
 		}
@@ -135,18 +131,20 @@ export class AudioResampler {
 		const consumed = Math.floor(srcPos);
 		this.inputFraction = srcPos - consumed;
 
-		const keepStart = consumed;
-		const keepFrames = Math.max(0, totalInputFrames - keepStart);
-		const historyKeep = Math.min(keepFrames, fs);
-		if (historyKeep > 0) {
-			const srcOffset = (totalInputFrames - historyKeep) * ch;
-			for (let i = 0; i < historyKeep * ch; i++) {
+		const keepFrames = Math.max(0, totalInputFrames - consumed);
+		if (keepFrames > 0) {
+			const needed = keepFrames * ch;
+			if (this.history.length < needed) {
+				this.history = new Float64Array(needed);
+			}
+			const srcOffset = (totalInputFrames - keepFrames) * ch;
+			for (let i = 0; i < needed; i++) {
 				this.history[i] = combined[srcOffset + i]!;
 			}
 		}
-		this.historyFilled = historyKeep;
+		this.historyFilled = keepFrames;
 
-		return output;
+		return new Float32Array(outputs);
 	}
 
 	flush(): Float32Array {

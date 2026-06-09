@@ -84,6 +84,7 @@ export class WebCodecsVideoDecoder implements SequentialVideoSource {
 
 		try {
 			let packetsExhausted = false;
+			let flushed = false;
 
 			const feedDecoder = async (): Promise<void> => {
 				if (packetsExhausted || decoderError) return;
@@ -120,12 +121,14 @@ export class WebCodecsVideoDecoder implements SequentialVideoSource {
 				await feedDecoder();
 				if (decoderError) throw decoderError;
 
-				if (pendingFrames.length === 0 && packetsExhausted) {
+				if (pendingFrames.length === 0 && packetsExhausted && !flushed) {
 					await decoder.flush();
+					flushed = true;
 					if (pendingFrames.length === 0) break;
 				}
 
 				if (pendingFrames.length === 0) {
+					if (flushed) break;
 					await waitForFrame();
 					if (decoderError) throw decoderError;
 					if (pendingFrames.length === 0) break;
@@ -226,6 +229,7 @@ export class WebCodecsAudioDecoder {
 
 		try {
 			let packetsExhausted = false;
+			let flushed = false;
 
 			const feedDecoder = async (): Promise<void> => {
 				if (packetsExhausted || decoderError) return;
@@ -262,12 +266,14 @@ export class WebCodecsAudioDecoder {
 				await feedDecoder();
 				if (decoderError) throw decoderError;
 
-				if (pending.length === 0 && packetsExhausted) {
+				if (pending.length === 0 && packetsExhausted && !flushed) {
 					await decoder.flush();
+					flushed = true;
 					if (pending.length === 0) break;
 				}
 
 				if (pending.length === 0) {
+					if (flushed) break;
 					await waitForData();
 					if (decoderError) throw decoderError;
 					if (pending.length === 0) break;

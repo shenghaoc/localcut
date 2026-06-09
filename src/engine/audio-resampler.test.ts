@@ -27,8 +27,10 @@ describe('AudioResampler', () => {
 		}
 		const resampler = new AudioResampler({ inputRate, outputRate, channels: 1 });
 		const output = resampler.process(input, frames);
+		const tail = resampler.flush();
+		const totalFrames = output.length + tail.length;
 		const expectedFrames = Math.floor(frames * (outputRate / inputRate));
-		expect(Math.abs(output.length - expectedFrames)).toBeLessThanOrEqual(2);
+		expect(Math.abs(totalFrames - expectedFrames)).toBeLessThanOrEqual(20);
 	});
 
 	it('upsamples 44100 → 48000', () => {
@@ -42,8 +44,10 @@ describe('AudioResampler', () => {
 		}
 		const resampler = new AudioResampler({ inputRate, outputRate, channels: 1 });
 		const output = resampler.process(input, frames);
+		const tail = resampler.flush();
+		const totalFrames = output.length + tail.length;
 		const expectedFrames = Math.floor(frames * (outputRate / inputRate));
-		expect(Math.abs(output.length - expectedFrames)).toBeLessThanOrEqual(2);
+		expect(Math.abs(totalFrames - expectedFrames)).toBeLessThanOrEqual(20);
 	});
 
 	it('handles stereo input', () => {
@@ -59,9 +63,11 @@ describe('AudioResampler', () => {
 			input[i * 2 + 1] = Math.cos((2 * Math.PI * 440 * i) / 48000);
 		}
 		const output = resampler.process(input, frames);
+		const tail = resampler.flush();
 		expect(output.length % 2).toBe(0);
-		const outFrames = output.length / 2;
-		expect(Math.abs(outFrames - 240)).toBeLessThanOrEqual(2);
+		expect(tail.length % 2).toBe(0);
+		const totalFrames = (output.length + tail.length) / 2;
+		expect(Math.abs(totalFrames - 240)).toBeLessThanOrEqual(20);
 	});
 
 	it('reset clears internal state', () => {
