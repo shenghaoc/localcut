@@ -245,11 +245,9 @@ describe('WasmAudioResampler SIMD feature detection', () => {
 		}
 	});
 
-	it('falls back to JS path when WASM is not initialized', async () => {
-		// Reset the init state for this test by ensuring init was called
-		await WasmAudioResampler.init();
-
-		// Create a resampler - it should work regardless of WASM availability
+	it('falls back to JS path when WASM is not initialized', () => {
+		// Do NOT call WasmAudioResampler.init() — this test verifies
+		// the resampler works regardless of WASM availability.
 		const resampler = new WasmAudioResampler({
 			inputRate: 48000,
 			outputRate: 24000,

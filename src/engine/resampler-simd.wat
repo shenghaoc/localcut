@@ -80,12 +80,14 @@
         (local.set $filterRow (i32.mul (local.get $phaseIdx) (local.get $fs)))
         (local.set $sampleBase (i32.mul (i32.sub (local.get $intCenter) (local.get $hfi)) (local.get $ch)))
 
+        ;; $simdIters/$remTaps depend only on filterSize (constant) — compute once before channel loop
+        (local.set $simdIters (i32.div_u (local.get $fs) (i32.const 4)))
+        (local.set $remTaps (i32.rem_u (local.get $fs) (i32.const 4)))
+
         (local.set $c (i32.const 0))
         (block $chanDone
           (loop $chanLoop
             (br_if $chanDone (i32.ge_u (local.get $c) (local.get $ch)))
-            (local.set $simdIters (i32.div_u (local.get $fs) (i32.const 4)))
-            (local.set $remTaps (i32.rem_u (local.get $fs) (i32.const 4)))
             (local.set $simdAcc (v128.const i32x4 0 0 0 0))
             (local.set $tap (i32.const 0))
 

@@ -362,11 +362,9 @@ export class WasmAudioResampler {
 			}
 
 			const memF32 = new Float32Array(this.memory!.buffer);
-			// Copy history
+			// Copy history — WASM flush zeros the padding via memory.fill,
+			// so no JS-side zeroing is needed.
 			memF32.set(this.history.subarray(0, this.historyFilled * ch), this.workingOffset / 4);
-			// Zero the padding (flush in WASM does this via memory.fill, but we also zero here)
-			const zeroStart = (this.workingOffset / 4) + this.historyFilled * ch;
-			memF32.fill(0, zeroStart, zeroStart + this.filterSize * ch);
 
 			// Call WASM flush
 			const outputFrames = (this.instance.exports['flush'] as Function)(
