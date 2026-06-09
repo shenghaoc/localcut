@@ -78,6 +78,8 @@ export class AudioResampler {
 	private history: Float64Array;
 	private historyFilled = 0;
 	private inputFraction = 0;
+	/** Reused scratch buffer for history + input each process() call (avoids per-call GC). */
+	private combined: Float64Array | null = null;
 
 	constructor(config: ResamplerConfig) {
 		if (config.inputRate <= 0 || config.outputRate <= 0) {
@@ -111,10 +113,19 @@ export class AudioResampler {
 		const halfFilterInt = Math.floor(halfFilter);
 
 		const totalInputFrames = this.historyFilled + inputFrames;
-		const combined = new Float64Array(totalInputFrames * ch);
+		const combinedLen = totalInputFrames * ch;
+		if (!this.combined || this.combined.length < combinedLen) {
+			this.combined = new Float64Array(combinedLen);
+		}
+		const combined = this.combined;
 		combined.set(this.history.subarray(0, this.historyFilled * ch));
 		const copyLen = Math.min(input.length, inputFrames * ch);
 		combined.set(input.subarray(0, copyLen), this.historyFilled * ch);
+		// Zero any tail not covered by a short input so a reused buffer leaks no
+		// stale samples (all current callers pass a full frame, so this rarely runs).
+		if (this.historyFilled * ch + copyLen < combinedLen) {
+			combined.fill(0, this.historyFilled * ch + copyLen, combinedLen);
+		}
 
 		const maxOutputFrames = Math.ceil(totalInputFrames / this.ratio) + 2;
 		const outputs = new Float32Array(maxOutputFrames * ch);

@@ -48,6 +48,9 @@ export class WebCodecsVideoDecoder implements SequentialVideoSource {
 			decoderConfig.hardwareAcceleration = this.hardwareAcceleration;
 		}
 
+		if (typeof VideoDecoder === 'undefined') {
+			throw new Error('WebCodecs VideoDecoder is not supported in this environment.');
+		}
 		const support = await VideoDecoder.isConfigSupported(decoderConfig);
 		if (!support.supported) {
 			throw new Error(`WebCodecs VideoDecoder does not support codec "${decoderConfig.codec}".`);
@@ -188,6 +191,9 @@ export class WebCodecsAudioDecoder {
 		const decoderConfig = await this.track.getDecoderConfig();
 		if (!decoderConfig) throw new Error('No decoder config available for audio track.');
 
+		if (typeof AudioDecoder === 'undefined') {
+			throw new Error('WebCodecs AudioDecoder is not supported in this environment.');
+		}
 		const support = await AudioDecoder.isConfigSupported(decoderConfig);
 		if (!support.supported) {
 			throw new Error(`WebCodecs AudioDecoder does not support codec "${decoderConfig.codec}".`);

@@ -103,7 +103,7 @@ export class SequentialAudioSource {
 		const targetRate = targetSampleRate ?? this.sampleRate;
 		const sourceRate = this.current.sampleRate || targetRate;
 		if (sourceRate !== targetRate) {
-			const sourceChannels = Math.round(floats.length / this.current.numberOfFrames);
+			const sourceChannels = Math.max(1, Math.round(floats.length / (this.current.numberOfFrames || 1)));
 			const resampler = this.getResampler(sourceRate, sourceChannels, targetRate);
 			const resampled = resampler.process(floats, this.current.numberOfFrames);
 			const resampledFrames = Math.floor(resampled.length / sourceChannels);
