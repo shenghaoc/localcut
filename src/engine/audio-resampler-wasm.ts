@@ -251,7 +251,10 @@ export class WasmAudioResampler {
 			if (wasmAvailable) {
 				this.initWasm(this.config);
 			}
-			return this.jsFallback.process(input, inputFrames);
+			if (!this.instance || !this.memory) {
+				return this.jsFallback.process(input, inputFrames);
+			}
+			// initWasm succeeded — fall through to WASM path below
 		}
 		if (this.ratio === 1) {
 			return input.slice(0, inputFrames * this.channels);
@@ -327,7 +330,10 @@ export class WasmAudioResampler {
 			if (wasmAvailable) {
 				this.initWasm(this.config);
 			}
-			return this.jsFallback.flush();
+			if (!this.instance || !this.memory) {
+				return this.jsFallback.flush();
+			}
+			// initWasm succeeded — fall through to WASM path below
 		}
 		if (this.ratio === 1) return new Float32Array(0);
 

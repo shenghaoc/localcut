@@ -180,7 +180,7 @@ describe('WasmAudioResampler', () => {
 		}
 
 		// < 1e-5 per-sample error tolerance (f64 → f32 precision reduction)
-		expect(maxError).toBeLessThan(1e-4);
+		expect(maxError).toBeLessThan(1e-5);
 	});
 
 	it('stereo output is within f32 tolerance of JS', () => {
@@ -207,7 +207,7 @@ describe('WasmAudioResampler', () => {
 			const err = Math.abs(jsOutput[i]! - wasmOutput[i]!);
 			if (err > maxError) maxError = err;
 		}
-		expect(maxError).toBeLessThan(1e-4);
+		expect(maxError).toBeLessThan(1e-5);
 	});
 });
 
