@@ -189,42 +189,48 @@ export class WasmAudioResampler {
 	private initWasm(config: ResamplerConfig): void {
 		if (!wasmModule) return;
 
-		const instance = new WebAssembly.Instance(wasmModule, {});
-		this.instance = instance;
-		this.memory = instance.exports['memory'] as WebAssembly.Memory;
+		try {
+			const instance = new WebAssembly.Instance(wasmModule, {});
+			this.instance = instance;
+			this.memory = instance.exports['memory'] as WebAssembly.Memory;
 
-		const filterSize = config.filterSize ?? DEFAULT_FILTER_SIZE;
-		const tablePoints = TABLE_POINTS;
-		const cutoff = Math.min(1, config.outputRate / config.inputRate);
-		const filterTable = buildFilterTableF32(filterSize, tablePoints, KAISER_BETA, cutoff);
+			const filterSize = config.filterSize ?? DEFAULT_FILTER_SIZE;
+			const tablePoints = TABLE_POINTS;
+			const cutoff = Math.min(1, config.outputRate / config.inputRate);
+			const filterTable = buildFilterTableF32(filterSize, tablePoints, KAISER_BETA, cutoff);
 
-		// Ensure enough memory: filter table + working buffers
-		const filterTableBytes = filterTable.length * 4;
-		const workingBytes = (filterSize * 2 + 4096) * config.channels * 4 * 2;
-		const totalNeeded = filterTableBytes + workingBytes;
-		const pagesNeeded = Math.ceil(totalNeeded / WASM_PAGE_SIZE);
-		if (this.memory!.buffer.byteLength < pagesNeeded * WASM_PAGE_SIZE) {
-			this.memory!.grow(pagesNeeded - Math.floor(this.memory!.buffer.byteLength / WASM_PAGE_SIZE));
+			// Ensure enough memory: filter table + working buffers
+			const filterTableBytes = filterTable.length * 4;
+			const workingBytes = (filterSize * 2 + 4096) * config.channels * 4 * 2;
+			const totalNeeded = filterTableBytes + workingBytes;
+			const pagesNeeded = Math.ceil(totalNeeded / WASM_PAGE_SIZE);
+			if (this.memory!.buffer.byteLength < pagesNeeded * WASM_PAGE_SIZE) {
+				this.memory!.grow(pagesNeeded - Math.floor(this.memory!.buffer.byteLength / WASM_PAGE_SIZE));
+			}
+
+			// Copy filter table to WASM memory at offset 0
+			const memView = new Float32Array(this.memory!.buffer);
+			memView.set(filterTable, 0);
+			this.filterTableOffset = 0;
+
+			// Working area starts after filter table
+			this.workingOffset = filterTableBytes;
+			this.outputOffset = this.workingOffset + workingBytes / 2;
+
+			// Call WASM init
+			(instance.exports['init'] as Function)(
+				this.filterTableOffset,
+				filterSize,
+				tablePoints,
+				config.inputRate,
+				config.outputRate,
+				config.channels,
+			);
+		} catch (e) {
+			console.warn('Failed to initialize WASM resampler, falling back to JS:', e);
+			this.instance = null;
+			this.memory = null;
 		}
-
-		// Copy filter table to WASM memory at offset 0
-		const memView = new Float32Array(this.memory!.buffer);
-		memView.set(filterTable, 0);
-		this.filterTableOffset = 0;
-
-		// Working area starts after filter table
-		this.workingOffset = filterTableBytes;
-		this.outputOffset = this.workingOffset + workingBytes / 2;
-
-		// Call WASM init
-		(instance.exports['init'] as Function)(
-			this.filterTableOffset,
-			filterSize,
-			tablePoints,
-			config.inputRate,
-			config.outputRate,
-			config.channels,
-		);
 	}
 
 	reset(): void {
@@ -260,8 +266,10 @@ export class WasmAudioResampler {
 			combined.fill(0, this.historyFilled * ch + copyLen, combinedLen);
 		}
 
-		// Grow WASM memory if needed
-		const neededBytes = this.workingOffset + combinedLen * 4 + (totalInputFrames * ch * 8);
+		// Grow WASM memory if needed. Place output after input (16-byte aligned).
+		this.outputOffset = this.workingOffset + ((combinedLen * 4 + 15) & ~15);
+		const maxOutputFrames = Math.ceil(totalInputFrames / this.ratio) + 2;
+		const neededBytes = this.outputOffset + maxOutputFrames * ch * 4;
 		const currentBytes = this.memory!.buffer.byteLength;
 		if (neededBytes > currentBytes) {
 			const extraPages = Math.ceil((neededBytes - currentBytes) / WASM_PAGE_SIZE);
@@ -289,15 +297,16 @@ export class WasmAudioResampler {
 		// Read updated state from WASM globals
 		this.historyFilled = (exports['historyFilled'] as WebAssembly.Global).value as number;
 
-		// Copy leftover history from the combined buffer
-		const totalFrames = this.historyFilled + inputFrames;
+		// Copy leftover history from the combined buffer.
+		// totalInputFrames was calculated before historyFilled was overwritten
+		// by the WASM call, so it still represents the correct combined size.
 		const keepFrames = this.historyFilled;
 		if (keepFrames > 0) {
 			const needed = keepFrames * ch;
 			if (this.history.length < needed) {
 				this.history = new Float32Array(needed);
 			}
-			const srcOffset = (totalFrames - keepFrames) * ch;
+			const srcOffset = (totalInputFrames - keepFrames) * ch;
 			this.history.set(combined.subarray(srcOffset, srcOffset + needed));
 		}
 
@@ -313,10 +322,13 @@ export class WasmAudioResampler {
 		const ch = this.channels;
 		if (this.historyFilled === 0) return new Float32Array(0);
 
-		// Build a combined buffer with just history + zero padding
+		// Build a combined buffer with just history + zero padding.
+		// Dynamically position output after input to avoid overlap.
 		const totalFrames = this.historyFilled + this.filterSize;
 		const combinedLen = totalFrames * ch;
-		const neededBytes = this.workingOffset + combinedLen * 4 + this.filterSize * ch * 16;
+		this.outputOffset = this.workingOffset + ((combinedLen * 4 + 15) & ~15);
+		const maxOutputFrames = Math.ceil(totalFrames / this.ratio) + 2;
+		const neededBytes = this.outputOffset + maxOutputFrames * ch * 4;
 		const currentBytes = this.memory!.buffer.byteLength;
 		if (neededBytes > currentBytes) {
 			const extraPages = Math.ceil((neededBytes - currentBytes) / WASM_PAGE_SIZE);

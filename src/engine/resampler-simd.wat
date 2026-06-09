@@ -40,7 +40,7 @@
     (global.set $historyFilled (i32.const 0))
     (global.set $inputFraction (f64.const 0.0)))
 
-  (func (export "process")
+  (func $process (export "process")
     (param $inputPtr i32) (param $inputFrames i32) (param $outputPtr i32)
     (result i32)
     (local $fs i32) (local $ch i32) (local $tp i32)
@@ -206,5 +206,5 @@
         (i32.shl (i32.mul (local.get $hFilled) (local.get $ch)) (i32.const 2))))
     (local.set $zeroLen (i32.shl (local.get $padElements) (i32.const 2)))
     (memory.fill (local.get $zeroStart) (i32.const 0) (local.get $zeroLen))
-    (call 3 (local.get $combinedPtr) (local.get $padFrames) (local.get $outputPtr)))
+    (call $process (local.get $combinedPtr) (local.get $padFrames) (local.get $outputPtr)))
 )
