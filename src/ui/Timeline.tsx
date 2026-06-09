@@ -684,7 +684,9 @@ export function Timeline(props: TimelineProps) {
 							</div>
 							<div
 								class="scrubhead"
-								style={{ left: `${boundedCurrentTime() * pxPerSecond()}px` }}
+								// Bolt ⚡: Use hardware-accelerated transform instead of left to avoid
+								// layout thrashing and main-thread reflows 60x a second during playback.
+								style={{ transform: `translateX(${boundedCurrentTime() * pxPerSecond()}px)` }}
 							/>
 							<Show when={marquee()}>
 								{(box) => (
