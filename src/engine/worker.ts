@@ -1878,10 +1878,11 @@ function activeCaptionLayersAt(
 /**
  * Colour/transform metadata carried per decoded layer (no shared mutable state).
  * Title layers carry no decode — they composite from the cached title texture.
+ * Phase 13: `transition` metadata flows from resolveAllAt through to CompositeLayer.
  */
 type LayerMeta =
-	| { kind: 'frame'; effects: ClipEffectParams; transform: TransformParams; lut?: ClipLut }
-	| { kind: 'title'; clipId: string; content: TitleContent; transform: TransformParams };
+	| { kind: 'frame'; effects: ClipEffectParams; transform: TransformParams; lut?: ClipLut; transition?: import('./timeline').TransitionResolveMeta }
+	| { kind: 'title'; clipId: string; content: TitleContent; transform: TransformParams; transition?: import('./timeline').TransitionResolveMeta };
 
 /**
  * Decodes the budgeted video layer stack at `timestamp` (bottom → top) for the
@@ -1894,7 +1895,7 @@ type LayerMeta =
  */
 function makeGetLayers() {
 	return async (timestamp: number): Promise<DecodedLayer<LayerMeta>[] | null> => {
-		const layers = resolveAllAt(timeline, timestamp);
+		const layers = resolveAllAt(timeline, timestamp, transitions);
 		const budget = layerBudgetFromProbe(currentProbe);
 		const decodedLayers: DecodedLayer<LayerMeta>[] = [];
 		let decodedCount = 0;
@@ -1912,7 +1913,8 @@ function makeGetLayers() {
 							kind: 'title',
 							clipId: layer.clip.id,
 							content: layer.clip.title,
-							transform: sampled.transform
+							transform: sampled.transform,
+							transition: layer.transition
 						}
 					});
 					continue;
@@ -1946,7 +1948,8 @@ function makeGetLayers() {
 						kind: 'frame',
 						effects: sampled.effects,
 						transform: sampled.transform,
-						lut: layer.clip.lut
+						lut: layer.clip.lut,
+						transition: layer.transition
 					}
 				});
 			}
@@ -3269,7 +3272,8 @@ function setupPlayback() {
 							view: texture.view,
 							sourceWidth: texture.width,
 							sourceHeight: texture.height,
-							transform: layer.meta.transform
+							transform: layer.meta.transform,
+							transition: layer.meta.transition
 						});
 					} else if (layer.frame) {
 						stack.push({
@@ -3277,7 +3281,8 @@ function setupPlayback() {
 							frame: layer.frame,
 							effects: layer.meta.effects,
 							transform: layer.meta.transform,
-							lut: layer.meta.lut
+							lut: layer.meta.lut,
+							transition: layer.meta.transition
 						});
 					}
 				}
@@ -3557,6 +3562,7 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
 				onProgress: (progress) => post({ type: 'export-progress', progress }),
 				masterGain,
 				transitions: audioTransitions,
+				videoTransitions: transitions,
 				// Title layers composite from the cached raster; `ensure` (re)rasters once
 				// per title on the cold export path, never per frame.
 				titleTextureFor: (clip) =>
@@ -3862,6 +3868,7 @@ async function runQueueJob(job: RenderQueueJob): Promise<void> {
 			settings,
 			throughputProbe: currentProbe,
 			signal: controller.signal,
+			videoTransitions: transitions,
 			onProgress: (progress) => {
 				if (progress.phase === 'finalizing' && !finalizingSaved) {
 					queueState = markJobFinalizing(queueState, job.id);

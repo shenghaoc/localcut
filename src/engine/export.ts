@@ -121,6 +121,8 @@ export interface TimelineExportOptions {
 	onProgress: (progress: ExportProgress) => void;
 	masterGain?: number;
 	transitions?: readonly AudioTransitionCut[];
+	/** Phase 13 video transitions — passed through to resolveAllAt for window blending. */
+	videoTransitions?: readonly import('./timeline').TimelineTransition[];
 	/** Resolves a title clip's cached raster texture (Phase 14); rasters on the
 	 *  cold path if needed, never per frame. Returns `null` for non-title clips. */
 	titleTextureFor?: (clip: TimelineClip) => TitleTexture | null;
@@ -837,7 +839,8 @@ async function encodeVideoRange(
 		// extras) so export degrades identically to preview's makeGetLayers.
 		const resolvedLayers = resolveAllAt(
 			timeline,
-			Math.min(timelineTime, plan.rangeStartS + plan.exportDuration - 1e-6)
+			Math.min(timelineTime, plan.rangeStartS + plan.exportDuration - 1e-6),
+			options.videoTransitions
 		);
 
 		// Decode each layer's source frame, build the composite stack, and render

@@ -44,7 +44,7 @@ import { DiagnosticsPanel } from './DiagnosticsPanel';
 import { buildUiDiagnosticSnapshot } from './diagnostic-snapshot';
 import { Toolbar } from './Toolbar';
 import { Timeline } from './Timeline';
-import { Inspector, type SelectedClip } from './Inspector';
+import { Inspector, type SelectedClip, type SelectedTransition } from './Inspector';
 import { MediaBin } from './MediaBin';
 import { TranscriptPanel } from './TranscriptPanel';
 import { ThumbnailStore } from './thumbnail-store';
@@ -232,6 +232,8 @@ export function App() {
 	const [captionDiagnostics, setCaptionDiagnostics] = createSignal<CaptionDiagnosticSnapshot[]>([]);
 	const [markers, setMarkers] = createSignal<TimelineMarkerSnapshot[]>([]);
 	const [transitions, setTransitions] = createSignal<TimelineTransitionSnapshot[]>([]);
+	/** Phase 13: currently selected transition for the Inspector panel. */
+	const [selectedTransition, setSelectedTransition] = createSignal<SelectedTransition | null>(null);
 	const [masterGain, setMasterGain] = createSignal(1);
 	const [selectedClipRefs, setSelectedClipRefs] = createSignal<TimelineClipReference[]>([]);
 	const [selectedCaptionTrackId, setSelectedCaptionTrackId] = createSignal<string | null>(null);
@@ -2065,6 +2067,7 @@ export function App() {
 							selectedClipFades={selectedClipFades()}
 							selectedClipTransform={selectedClipTransform()}
 							selectedTitle={selectedTitle()}
+							selectedTransition={selectedTransition()}
 							onSetTitle={(trackId, clipId, patch) =>
 								bridge?.send({ type: 'set-title', trackId, clipId, ...patch })
 							}
@@ -2102,6 +2105,16 @@ export function App() {
 							}}
 							onClipFade={(trackId, clipId, edge, durationS) => {
 								bridge?.send({ type: 'set-clip-fade', trackId, clipId, edge, durationS });
+							}}
+							onTransitionKind={(transitionId, kind) => {
+								bridge?.send({ type: 'set-transition', transitionId, kind });
+							}}
+							onTransitionDuration={(transitionId, durationS) => {
+								bridge?.send({ type: 'set-transition', transitionId, durationS });
+							}}
+							onRemoveTransition={(transitionId) => {
+								bridge?.send({ type: 'remove-transition', transitionId });
+								setSelectedTransition(null);
 							}}
 						/>
 						<TranscriptPanel
@@ -2176,6 +2189,23 @@ export function App() {
 					markers={markers}
 					selectedClipRefs={selectedClipRefs}
 					waveformPeaks={() => waveformPeaks()}
+					transitions={transitions}
+					onSelectTransition={(transitionId, fromClipId, toClipId, trackId) => {
+						const transition = transitions().find((t) => t.id === transitionId);
+						if (transition) {
+							setSelectedTransition({
+								transitionId,
+								trackId,
+								fromClipId,
+								toClipId,
+								durationS: transition.durationS,
+								kind: transition.kind
+							});
+						}
+					}}
+					onTransitionDuration={(transitionId, durationS) => {
+						bridge?.send({ type: 'set-transition', transitionId, durationS });
+					}}
 					onSeek={(t) => {
 						if (audioSabReady()) void audioEngine.seek(t);
 						bridge?.send({ type: 'seek', time: t });

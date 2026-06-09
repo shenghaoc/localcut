@@ -10,7 +10,8 @@ import {
 	Type,
 	X,
 	ZoomIn,
-	ZoomOut
+	ZoomOut,
+	Diamond
 } from 'lucide-solid';
 import { TimelineClip } from './TimelineClip';
 import { TimelineTrack } from './TimelineTrack';
@@ -23,6 +24,7 @@ import {
 	type TimelineClipSnapshot as ProtocolTimelineClip,
 	type TimelineMarkerSnapshot,
 	type TimelineTrackSnapshot as ProtocolTimelineTrack,
+	type TimelineTransitionSnapshot,
 	type WaveformPeaks
 } from '../protocol';
 import {
@@ -69,6 +71,10 @@ interface TimelineProps {
 	getThumbnail: (sourceId: string, timestamp: number) => ThumbnailEntry | null;
 	thumbnailVersion: () => number;
 	onRequestThumbnails: (sourceId: string, timestamps: number[]) => void;
+	/** Phase 13: cut-point transitions rendered on the timeline. */
+	transitions: () => TimelineTransitionSnapshot[];
+	onSelectTransition?: (transitionId: string, fromClipId: string, toClipId: string, trackId: string) => void;
+	onTransitionDuration?: (transitionId: string, durationS: number) => void;
 }
 
 interface MarqueeBox {
@@ -622,6 +628,36 @@ export function Timeline(props: TimelineProps) {
 													}
 												/>
 											)}
+										</For>
+										{/* Phase 13: transition affordances at cut boundaries */}
+										<For each={props.transitions().filter((t) => t.trackId === track.id)}>
+											{(transition) => {
+												const fromClip = track.clips.find((c) => c.id === transition.fromClipId);
+												const toClip = track.clips.find((c) => c.id === transition.toClipId);
+												if (!fromClip || !toClip) return null;
+												const cutPoint = fromClip.start + fromClip.duration;
+												const px = cutPoint * pxPerSecond();
+												return (
+													<button
+														type="button"
+														class="timeline-transition"
+														style={{ left: `${px}px` }}
+														title={`${transition.kind} (${transition.durationS.toFixed(2)}s)`}
+														onClick={(e) => {
+															e.stopPropagation();
+															props.onSelectTransition?.(
+																transition.id,
+																transition.fromClipId,
+																transition.toClipId,
+																transition.trackId
+															);
+														}}
+														aria-label={`${transition.kind} transition between ${transition.fromClipId} and ${transition.toClipId}`}
+													>
+														<Diamond size={12} aria-hidden="true" />
+													</button>
+												);
+											}}
 										</For>
 									</div>
 								)}

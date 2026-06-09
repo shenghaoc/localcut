@@ -134,10 +134,24 @@ export interface TransitionSourceDurations {
 	durationForSource: (sourceId: string) => number | undefined;
 }
 
+/** Phase 13: per-layer metadata describing its role in a transition blend. */
+export interface TransitionResolveMeta {
+	/** 0→1 progression through the transition (0 = outgoing fully visible, 1 = incoming fully visible). */
+	mixT: number;
+	kind: TransitionKind;
+	params: TransitionParams;
+	/** Which side of the cut this layer represents. */
+	role: 'outgoing' | 'incoming';
+	transitionId: string;
+	durationS: number;
+}
+
 export interface ResolveResult {
 	clip: TimelineClip;
 	sourceTime: number;
 	trackId: string;
+	/** Set when this layer participates in an active transition window (Phase 13). */
+	transition?: TransitionResolveMeta;
 }
 
 function cloneTimeline(timeline: Timeline): Timeline {
@@ -229,10 +243,18 @@ export function resolveAt(timeline: Timeline, time: number): ResolveResult | nul
  * Every video clip overlapping `time`, ordered bottom-to-top by track array
  * position (the last track is topmost / drawn last). Phase 12 compositing
  * consumes this so preview and export render the full layer stack rather than
- * just the first hit. At most one clip per track can overlap (tracks forbid
- * overlaps), so this yields one entry per video track with a clip at `time`.
+ * just the first hit.
+ *
+ * When `transitions` is provided, cut-point transitions may emit **two** layers
+ * for a single track (outgoing + incoming) with per-layer {@link ResolveResult.transition}
+ * metadata. The compositor detects the pair and substitutes the transition
+ * shader for the regular over-blend on that pair.
  */
-export function resolveAllAt(timeline: Timeline, time: number): ResolveResult[] {
+export function resolveAllAt(
+	timeline: Timeline,
+	time: number,
+	transitions?: readonly TimelineTransition[]
+): ResolveResult[] {
 	const layers: ResolveResult[] = [];
 	if (!finite(time) || time < 0) return layers;
 	for (const track of timeline) {
@@ -245,9 +267,76 @@ export function resolveAllAt(timeline: Timeline, time: number): ResolveResult[] 
 				trackId: track.id,
 				sourceTime: clip.inPoint + (time - clip.start)
 			});
-			break; // one clip per track at any timestamp
+			break; // one clip per track at any timestamp (unless transition)
 		}
 	}
+
+	// Phase 13: inject transition layers when time falls inside a transition window.
+	if (transitions && transitions.length > 0) {
+		for (const transition of transitions) {
+			const track = timeline.find((t) => t.id === transition.trackId);
+			if (!track || track.type !== 'video') continue;
+
+			const sorted = [...track.clips].sort((a, b) => a.start - b.start);
+			const fromIdx = sorted.findIndex((c) => c.id === transition.fromClipId);
+			if (fromIdx < 0 || fromIdx + 1 >= sorted.length) continue;
+			const toIdx = fromIdx + 1;
+			const fromClip = sorted[fromIdx]!;
+			const toClip = sorted[toIdx]!;
+			if (toClip.id !== transition.toClipId) continue;
+
+			const cutPoint = clipEnd(fromClip);
+			const half = transition.durationS / 2;
+			const windowStart = cutPoint - half;
+			const windowEnd = cutPoint + half;
+			if (time < windowStart || time >= windowEnd) continue;
+
+			const mixT = Math.max(0, Math.min(1, (time - windowStart) / transition.durationS));
+
+			// Find and mark the existing layer (if any) for this track.
+			const layerIdx = layers.findIndex((l) => l.trackId === transition.trackId);
+			const outgoingSourceTime = fromClip.inPoint + (time - fromClip.start);
+			const incomingSourceTime = toClip.inPoint + (time - toClip.start);
+
+			const outgoingLayer: ResolveResult = {
+				clip: fromClip,
+				trackId: transition.trackId,
+				sourceTime: outgoingSourceTime,
+				transition: {
+					mixT,
+					kind: transition.kind,
+					params: transition.params,
+					role: 'outgoing',
+					transitionId: transition.id,
+					durationS: transition.durationS
+				}
+			};
+			const incomingLayer: ResolveResult = {
+				clip: toClip,
+				trackId: transition.trackId,
+				sourceTime: incomingSourceTime,
+				transition: {
+					mixT,
+					kind: transition.kind,
+					params: transition.params,
+					role: 'incoming',
+					transitionId: transition.id,
+					durationS: transition.durationS
+				}
+			};
+
+			if (layerIdx >= 0) {
+				// Replace the existing layer with two transition layers.
+				layers.splice(layerIdx, 1, outgoingLayer, incomingLayer);
+			} else {
+				// This track had no visible clip at this time, but transition window
+				// still covers it. Insert both layers (maintaining z-order).
+				layers.push(outgoingLayer);
+				layers.push(incomingLayer);
+			}
+		}
+	}
+
 	return layers;
 }
 

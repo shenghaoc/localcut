@@ -229,7 +229,8 @@ async function encodeReducedVideo(
 		const duration = Math.max(1e-6, Math.min(frameDuration, plan.exportDuration - outputTimestamp));
 		const resolvedLayers = resolveAllAt(
 			options.timeline,
-			Math.min(timelineTime, plan.rangeStartS + plan.exportDuration - 1e-6)
+			Math.min(timelineTime, plan.rangeStartS + plan.exportDuration - 1e-6),
+			undefined // Phase 13 transitions not supported on reduced path
 		);
 		const decodedFrames: VideoFrame[] = [];
 		const renderLayers: CanvasCompatibilityLayer[] = [];
