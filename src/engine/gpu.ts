@@ -487,6 +487,7 @@ export class PreviewRenderer {
 
 		const storage = { a: this.storageAView!, b: this.storageBView!, c: this.storageCView! };
 		let acc = 0;
+		let transitionCount = 0;
 
 		const processLayer = (
 			layer: CompositeLayer,
@@ -538,14 +539,15 @@ export class PreviewRenderer {
 				const under = acc;
 				const over = under === 0 ? 1 : 0;
 
-				let transBuffer = this.transitionUniformBuffers[0];
+				let transBuffer = this.transitionUniformBuffers[transitionCount];
 				if (!transBuffer) {
 					transBuffer = this.device.createBuffer({
 						size: 12,
 						usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
 					});
-					this.transitionUniformBuffers[0] = transBuffer;
+					this.transitionUniformBuffers[transitionCount] = transBuffer;
 				}
+				transitionCount++;
 				const direction =
 					transition.params.direction === 'up' || transition.params.direction === 'down' ? 1 : 0;
 				const kindMap: Record<string, number> = {

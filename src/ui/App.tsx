@@ -2190,6 +2190,7 @@ export function App() {
 					selectedClipRefs={selectedClipRefs}
 					waveformPeaks={() => waveformPeaks()}
 					transitions={transitions}
+					selectedTransition={selectedTransition}
 					onSelectTransition={(transitionId, fromClipId, toClipId, trackId) => {
 						const transition = transitions().find((t) => t.id === transitionId);
 						if (transition) {

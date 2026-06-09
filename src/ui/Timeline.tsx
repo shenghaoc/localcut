@@ -75,6 +75,7 @@ interface TimelineProps {
 	transitions: () => TimelineTransitionSnapshot[];
 	onSelectTransition?: (transitionId: string, fromClipId: string, toClipId: string, trackId: string) => void;
 	onTransitionDuration?: (transitionId: string, durationS: number) => void;
+	selectedTransition?: () => { transitionId: string } | null;
 }
 
 interface MarqueeBox {
@@ -640,7 +641,7 @@ export function Timeline(props: TimelineProps) {
 												return (
 													<button
 														type="button"
-														class="timeline-transition"
+														class={`timeline-transition${props.selectedTransition?.()?.transitionId === transition.id ? ' is-selected' : ''}`}
 														style={{ left: `${px}px` }}
 														title={`${transition.kind} (${transition.durationS.toFixed(2)}s)`}
 														onClick={(e) => {

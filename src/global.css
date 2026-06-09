@@ -2150,7 +2150,8 @@ body {
 	justify-content: center;
 	transition: background 0.15s, transform 0.15s;
 }
-.timeline-transition:hover {
+.timeline-transition:hover,
+.timeline-transition.is-selected {
 	background: var(--accent, #60a5fa);
 	color: #fff;
 	transform: translate(-50%, -50%) scale(1.3);
