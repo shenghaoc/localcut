@@ -153,6 +153,7 @@ export class WasmAudioResampler {
 	// WASM instance (null if using JS fallback)
 	private instance: WebAssembly.Instance | null = null;
 	private memory: WebAssembly.Memory | null = null;
+	private wasmInitAttempted = false;
 
 	// JS-side history buffer (samples are stored here, copied to WASM per call)
 	private history: Float32Array;
@@ -189,6 +190,7 @@ export class WasmAudioResampler {
 	}
 
 	private initWasm(config: ResamplerConfig): void {
+		this.wasmInitAttempted = true;
 		if (!wasmModule) return;
 
 		try {
@@ -248,7 +250,7 @@ export class WasmAudioResampler {
 		if (!this.instance || !this.memory) {
 			// Lazy-init guard: handle race where WASM init completes
 			// between construction and first process() call.
-			if (wasmAvailable) {
+			if (wasmAvailable && !this.wasmInitAttempted) {
 				this.initWasm(this.config);
 			}
 			if (!this.instance || !this.memory) {
@@ -334,7 +336,7 @@ export class WasmAudioResampler {
 		if (!this.instance || !this.memory) {
 			// Lazy-init guard: handle race where WASM init completes
 			// between construction and first flush() call.
-			if (wasmAvailable) {
+			if (wasmAvailable && !this.wasmInitAttempted) {
 				this.initWasm(this.config);
 			}
 			if (!this.instance || !this.memory) {

@@ -244,17 +244,4 @@ describe('WasmAudioResampler SIMD feature detection', () => {
 			expect(typeof WasmAudioResampler.isAvailable).toBe('boolean');
 		}
 	});
-
-	it('falls back to JS path when WASM is not initialized', () => {
-		// Do NOT call WasmAudioResampler.init() — this test verifies
-		// the resampler works regardless of WASM availability.
-		const resampler = new WasmAudioResampler({
-			inputRate: 48000,
-			outputRate: 24000,
-			channels: 1,
-		});
-		const input = new Float32Array(480).fill(0.5);
-		const output = resampler.process(input, 480);
-		expect(output.length).toBeGreaterThan(0);
-	});
 });

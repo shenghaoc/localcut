@@ -39,11 +39,11 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
             result = mix(outColor, inColor, t);
         }
         case 1u: {
-            // dip-to-black
+            // dip-to-black: lerp to opaque black first, then from opaque black to incoming
             if (t < 0.5h) {
-                result = mix(outColor, vec4<f16>(0.0h), t * 2.0h);
+                result = mix(outColor, vec4<f16>(0.0h, 0.0h, 0.0h, 1.0h), t * 2.0h);
             } else {
-                result = mix(vec4<f16>(0.0h), inColor, (t - 0.5h) * 2.0h);
+                result = mix(vec4<f16>(0.0h, 0.0h, 0.0h, 1.0h), inColor, (t - 0.5h) * 2.0h);
             }
         }
         case 2u: {
@@ -51,10 +51,14 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
             let isHorizontal = uniforms.direction <= 1u;
             let edge = isHorizontal ? f16(uv.x) : f16(uv.y);
             let flip = uniforms.direction == 1u || uniforms.direction == 3u;
-            // smoothstep in f32 for precision, then narrow to f16 for the mix
+            // smoothstep in f32 for precision, then narrow to f16 for the mix.
+            // Remap t so the feather window stays entirely inside [0,1], preventing a
+            // partial blend at the boundaries that would cause a visible pop/flash.
+            let feather = 0.005;
+            let adjustedT = f32(t) * (1.0 + 2.0 * feather) - feather;
             let visible = select(
-                f16(1.0 - smoothstep(f32(t) - 0.005, f32(t) + 0.005, f32(edge))),
-                f16(smoothstep(1.0 - f32(t) - 0.005, 1.0 - f32(t) + 0.005, f32(edge))),
+                f16(1.0 - smoothstep(adjustedT - feather, adjustedT + feather, f32(edge))),
+                f16(smoothstep(1.0 - adjustedT - feather, 1.0 - adjustedT + feather, f32(edge))),
                 flip
             );
             result = mix(outColor, inColor, visible);

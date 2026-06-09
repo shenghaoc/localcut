@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, Show, onMount, onCleanup } from 'solid-js';
+import { createMemo, createSignal, For, Show, onMount, onCleanup } from 'solid-js';
 import { useRegisterSW } from 'virtual:pwa-register/solid';
 import { Link2, RotateCcw, Plus } from 'lucide-solid';
 import {
@@ -232,18 +232,30 @@ export function App() {
 	const [captionDiagnostics, setCaptionDiagnostics] = createSignal<CaptionDiagnosticSnapshot[]>([]);
 	const [markers, setMarkers] = createSignal<TimelineMarkerSnapshot[]>([]);
 	const [transitions, setTransitions] = createSignal<TimelineTransitionSnapshot[]>([]);
-	/** Phase 13: currently selected transition for the Inspector panel. */
-	const [selectedTransition, setSelectedTransition] = createSignal<SelectedTransition | null>(null);
-	// Keep selectedTransition in sync with the latest snapshot so that durationS
-	// and maxDurationS reflect worker-side clamping after every timeline-state update.
-	createEffect(() => {
+	// Phase 13: currently selected transition for the Inspector panel.
+	const transitionMeta = new Map<string, { trackId: string; fromClipId: string; toClipId: string }>();
+	const [selectedTransitionId, setSelectedTransitionId] = createSignal<string | null>(null);
+	const selectedTransition = createMemo<SelectedTransition | null>(() => {
+		const id = selectedTransitionId();
+		if (!id) return null;
 		const all = transitions();
-		setSelectedTransition((prev) => {
-			if (!prev) return null;
-			const live = all.find((t) => t.id === prev.transitionId);
-			if (!live) return null;
-			return { ...prev, durationS: live.durationS, maxDurationS: live.maxDurationS };
-		});
+		const live = all.find((t) => t.id === id);
+		if (!live) return null;
+		// Derive SelectedTransition from the live snapshot so durationS and
+		// maxDurationS always reflect worker-side clamping.
+		// trackId/fromClipId/toClipId/kind are captured when the user selects
+		// a transition (onSelectTransition) and stored in a companion map.
+		const meta = transitionMeta.get(id);
+		if (!meta) return null;
+		return {
+			transitionId: id,
+			trackId: meta.trackId,
+			fromClipId: meta.fromClipId,
+			toClipId: meta.toClipId,
+			durationS: live.durationS,
+			maxDurationS: live.maxDurationS,
+			kind: live.kind
+		};
 	});
 	const [masterGain, setMasterGain] = createSignal(1);
 	const [selectedClipRefs, setSelectedClipRefs] = createSignal<TimelineClipReference[]>([]);
@@ -2125,7 +2137,7 @@ export function App() {
 							}}
 							onRemoveTransition={(transitionId) => {
 								bridge?.send({ type: 'remove-transition', transitionId });
-								setSelectedTransition(null);
+							setSelectedTransitionId(null);
 							}}
 						/>
 						<TranscriptPanel
@@ -2205,15 +2217,8 @@ export function App() {
 					onSelectTransition={(transitionId, fromClipId, toClipId, trackId) => {
 						const transition = transitions().find((t) => t.id === transitionId);
 						if (transition) {
-							setSelectedTransition({
-								transitionId,
-								trackId,
-								fromClipId,
-								toClipId,
-								durationS: transition.durationS,
-								maxDurationS: transition.maxDurationS,
-								kind: transition.kind
-							});
+							transitionMeta.set(transitionId, { trackId, fromClipId, toClipId });
+							setSelectedTransitionId(transitionId);
 						}
 					}}
 					onTransitionDuration={(transitionId, durationS) => {
