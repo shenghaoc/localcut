@@ -396,19 +396,6 @@ export function buildExportPlan(
 	const estimatedFps = estimatedEncodeFps(probe, normalized.preset, normalized.codec);
 	const audioSampleRate = audioHandle?.audioSampleRate ?? 48_000;
 
-	if (audioHandle) {
-		for (const track of timeline) {
-			if (track.type !== 'audio' || !trackIsAudible(track, timeline)) continue;
-			for (const clip of track.clips) {
-				if (!clipOverlapsRange(clip, rangeStartS, rangeEndS)) continue;
-				const handle = sources.get(clip.sourceId);
-				if (handle?.audioSource && handle.audioSampleRate !== audioSampleRate) {
-					// Mixed sample rates are now handled by the resampler in SequentialAudioSource.
-				}
-			}
-		}
-	}
-
 	return {
 		settings: normalized,
 		preset: normalized.preset,

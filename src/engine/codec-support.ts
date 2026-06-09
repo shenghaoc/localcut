@@ -14,7 +14,7 @@ export type DecodeStrategy =
 export interface CodecCapability {
 	readonly codec: string;
 	readonly strategy: DecodeStrategy;
-	readonly hardwareAccelerated: boolean;
+	readonly hardwarePreferred: boolean;
 	readonly notes: string | null;
 }
 
@@ -61,9 +61,9 @@ async function probeVideoCodec(
 	codecString: string,
 	width: number,
 	height: number
-): Promise<{ supported: boolean; hardwareAccelerated: boolean }> {
+): Promise<{ supported: boolean; hardwarePreferred: boolean }> {
 	if (typeof VideoDecoder === 'undefined') {
-		return { supported: false, hardwareAccelerated: false };
+		return { supported: false, hardwarePreferred: false };
 	}
 	try {
 		const hwResult = await VideoDecoder.isConfigSupported({
@@ -73,7 +73,7 @@ async function probeVideoCodec(
 			hardwareAcceleration: 'prefer-hardware'
 		});
 		if (hwResult.supported) {
-			return { supported: true, hardwareAccelerated: true };
+			return { supported: true, hardwarePreferred: true };
 		}
 		const swResult = await VideoDecoder.isConfigSupported({
 			codec: codecString,
@@ -81,9 +81,9 @@ async function probeVideoCodec(
 			codedHeight: height,
 			hardwareAcceleration: 'prefer-software'
 		});
-		return { supported: swResult.supported === true, hardwareAccelerated: false };
+		return { supported: swResult.supported === true, hardwarePreferred: false };
 	} catch {
-		return { supported: false, hardwareAccelerated: false };
+		return { supported: false, hardwarePreferred: false };
 	}
 }
 
@@ -115,11 +115,11 @@ export async function probeAllCodecs(): Promise<{
 			const capability: CodecCapability = {
 				codec: `${probe.name} (${probe.codecString})`,
 				strategy: result.supported
-					? result.hardwareAccelerated
+					? result.hardwarePreferred
 						? 'webcodecs-native'
 						: 'webcodecs-software'
 					: 'unsupported',
-				hardwareAccelerated: result.hardwareAccelerated,
+				hardwarePreferred: result.hardwarePreferred,
 				notes: result.supported ? null : 'Browser does not support this codec via WebCodecs.'
 			};
 			return capability;
@@ -136,7 +136,7 @@ export async function probeAllCodecs(): Promise<{
 			const capability: CodecCapability = {
 				codec: `${probe.name} (${probe.codecString})`,
 				strategy: supported ? 'webcodecs-native' : 'unsupported',
-				hardwareAccelerated: false,
+				hardwarePreferred: false,
 				notes: supported ? null : 'Browser does not support this audio codec.'
 			};
 			return capability;
@@ -153,7 +153,7 @@ export function canDemuxContainer(extension: string): boolean {
 export interface FormatCompatibilitySummary {
 	readonly totalVideoCodecs: number;
 	readonly supportedVideoCodecs: number;
-	readonly hwAcceleratedVideoCodecs: number;
+	readonly hwPreferredVideoCodecs: number;
 	readonly totalAudioCodecs: number;
 	readonly supportedAudioCodecs: number;
 	readonly demuxableContainers: readonly string[];
@@ -164,7 +164,7 @@ export async function getFormatCompatibility(): Promise<FormatCompatibilitySumma
 	return {
 		totalVideoCodecs: video.length,
 		supportedVideoCodecs: video.filter((c) => c.strategy !== 'unsupported').length,
-		hwAcceleratedVideoCodecs: video.filter((c) => c.hardwareAccelerated).length,
+		hwPreferredVideoCodecs: video.filter((c) => c.hardwarePreferred).length,
 		totalAudioCodecs: audio.length,
 		supportedAudioCodecs: audio.filter((c) => c.strategy !== 'unsupported').length,
 		demuxableContainers: [...MEDIABUNNY_CONTAINERS]

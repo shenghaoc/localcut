@@ -27,6 +27,7 @@ export class SequentialAudioSource {
 	private anchor = Number.NEGATIVE_INFINITY;
 	private resampler: AudioResampler | null = null;
 	private resamplerSourceRate = 0;
+	private resamplerSourceChannels = 0;
 	private resampleBuffer: Float32Array | null = null;
 	private resampleBufferOffset = 0;
 	private resampleBufferChannels = 0;
@@ -50,6 +51,7 @@ export class SequentialAudioSource {
 		this.anchor = Number.NEGATIVE_INFINITY;
 		this.resampler = null;
 		this.resamplerSourceRate = 0;
+		this.resamplerSourceChannels = 0;
 		this.resampleBuffer = null;
 		this.resampleBufferOffset = 0;
 		this.resampleBufferChannels = 0;
@@ -115,7 +117,11 @@ export class SequentialAudioSource {
 	}
 
 	private getResampler(sourceRate: number, sourceChannels: number): AudioResampler {
-		if (this.resampler && this.resamplerSourceRate === sourceRate) {
+		if (
+			this.resampler &&
+			this.resamplerSourceRate === sourceRate &&
+			this.resamplerSourceChannels === sourceChannels
+		) {
 			return this.resampler;
 		}
 		this.resampler = new AudioResampler({
@@ -124,6 +130,7 @@ export class SequentialAudioSource {
 			channels: sourceChannels
 		});
 		this.resamplerSourceRate = sourceRate;
+		this.resamplerSourceChannels = sourceChannels;
 		this.resampleBuffer = null;
 		this.resampleBufferOffset = 0;
 		return this.resampler;
@@ -245,6 +252,7 @@ export class SequentialAudioSource {
 
 				this.current.close();
 				this.current = null;
+				this.resampler?.reset();
 			} else {
 				const take = Math.min(frameCount - written, available);
 				for (let frame = 0; frame < take; frame += 1) {

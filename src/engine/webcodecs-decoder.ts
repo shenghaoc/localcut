@@ -11,6 +11,7 @@
 
 import { EncodedPacketSink, type InputVideoTrack, type InputAudioTrack } from 'mediabunny';
 import type { VideoSampleLike, SequentialVideoSource } from './frame-source';
+import type { AudioSampleLike } from './audio-source';
 
 const DEFAULT_MAX_QUEUE_DEPTH = 8;
 
@@ -46,14 +47,14 @@ export class WebCodecsVideoDecoder implements SequentialVideoSource {
 
 		const codedWidth = await this.track.getCodedWidth();
 		const codedHeight = await this.track.getCodedHeight();
-		const colorSpace = await this.track.getColorSpace().catch(() => ({}));
+		const colorSpace = await this.track.getColorSpace().catch(() => undefined);
 
 		const decoderConfig: VideoDecoderConfig = {
 			codec,
 			codedWidth,
 			codedHeight,
 			hardwareAcceleration: this.hardwareAcceleration,
-			colorSpace
+			...(colorSpace ? { colorSpace } : {})
 		};
 
 		const support = await VideoDecoder.isConfigSupported(decoderConfig);
@@ -189,7 +190,7 @@ export class WebCodecsAudioDecoder {
 	async *samples(
 		_startTimestamp?: number,
 		_endTimestamp?: number
-	): AsyncGenerator<AudioData, void, unknown> {
+	): AsyncGenerator<AudioSampleLike, void, unknown> {
 		const codec = await this.track.getCodecParameterString();
 		if (!codec) throw new Error('No codec parameter string available for audio track.');
 
@@ -284,7 +285,7 @@ export class WebCodecsAudioDecoder {
 					data.close();
 					break;
 				}
-				yield data;
+				yield new WebCodecsAudioSample(data);
 			}
 		} finally {
 			for (const d of pending) d.close();
@@ -292,6 +293,37 @@ export class WebCodecsAudioDecoder {
 			decoder.close();
 			await packets.return(undefined);
 		}
+	}
+}
+
+class WebCodecsAudioSample implements AudioSampleLike {
+	private data: AudioData | null;
+	readonly timestamp: number;
+	readonly duration: number;
+	readonly numberOfFrames: number;
+	readonly sampleRate: number;
+
+	constructor(data: AudioData) {
+		this.data = data;
+		this.timestamp = data.timestamp / 1e6;
+		this.duration = (data.duration ?? 0) / 1e6;
+		this.numberOfFrames = data.numberOfFrames;
+		this.sampleRate = data.sampleRate;
+	}
+
+	allocationSize(options: { format: 'f32'; planeIndex: number }): number {
+		if (!this.data) throw new Error('Sample already closed.');
+		return this.data.allocationSize({ format: options.format, planeIndex: options.planeIndex });
+	}
+
+	copyTo(destination: Float32Array, options: { format: 'f32'; planeIndex: number }): void {
+		if (!this.data) throw new Error('Sample already closed.');
+		this.data.copyTo(destination, { format: options.format, planeIndex: options.planeIndex });
+	}
+
+	close(): void {
+		this.data?.close();
+		this.data = null;
 	}
 }
 
