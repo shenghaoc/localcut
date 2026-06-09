@@ -1284,7 +1284,7 @@ export function Inspector(props: InspectorProps) {
 									<input
 										type="range"
 										min={0.1}
-										max={transition.maxDurationS ?? 5}
+										max={Math.max(0.1, transition.maxDurationS ?? 5)}
 										step={0.1}
 										value={transition.durationS}
 										onInput={(e) =>
