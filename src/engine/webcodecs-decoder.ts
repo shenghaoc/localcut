@@ -42,24 +42,15 @@ export class WebCodecsVideoDecoder implements SequentialVideoSource {
 		_startTimestamp?: number,
 		_endTimestamp?: number
 	): AsyncGenerator<VideoSampleLike, void, unknown> {
-		const codec = await this.track.getCodecParameterString();
-		if (!codec) throw new Error('No codec parameter string available for video track.');
-
-		const codedWidth = await this.track.getCodedWidth();
-		const codedHeight = await this.track.getCodedHeight();
-		const colorSpace = await this.track.getColorSpace().catch(() => undefined);
-
-		const decoderConfig: VideoDecoderConfig = {
-			codec,
-			codedWidth,
-			codedHeight,
-			hardwareAcceleration: this.hardwareAcceleration,
-			...(colorSpace ? { colorSpace } : {})
-		};
+		const decoderConfig = await this.track.getDecoderConfig();
+		if (!decoderConfig) throw new Error('No decoder config available for video track.');
+		if (this.hardwareAcceleration !== 'no-preference') {
+			decoderConfig.hardwareAcceleration = this.hardwareAcceleration;
+		}
 
 		const support = await VideoDecoder.isConfigSupported(decoderConfig);
 		if (!support.supported) {
-			throw new Error(`WebCodecs VideoDecoder does not support codec "${codec}".`);
+			throw new Error(`WebCodecs VideoDecoder does not support codec "${decoderConfig.codec}".`);
 		}
 
 		const pendingFrames: PendingFrame[] = [];
@@ -81,7 +72,10 @@ export class WebCodecsVideoDecoder implements SequentialVideoSource {
 		decoder.configure(decoderConfig);
 
 		const sink = new EncodedPacketSink(this.track);
-		const packets = sink.packets(undefined, undefined, { skipLiveWait: true });
+		const startPacket = _startTimestamp !== undefined
+			? await sink.getKeyPacket(_startTimestamp, { skipLiveWait: true })
+			: null;
+		const packets = sink.packets(startPacket ?? undefined, undefined, { skipLiveWait: true });
 
 		try {
 			let packetsExhausted = false;
@@ -96,13 +90,7 @@ export class WebCodecsVideoDecoder implements SequentialVideoSource {
 						return;
 					}
 					const packet = next.value;
-					const chunk = new EncodedVideoChunk({
-						type: packet.type,
-						timestamp: Math.round(packet.timestamp * 1e6),
-						duration: packet.duration ? Math.round(packet.duration * 1e6) : undefined,
-						data: packet.data
-					});
-					decoder.decode(chunk);
+					decoder.decode(packet.toEncodedVideoChunk());
 				}
 			};
 
@@ -191,21 +179,12 @@ export class WebCodecsAudioDecoder {
 		_startTimestamp?: number,
 		_endTimestamp?: number
 	): AsyncGenerator<AudioSampleLike, void, unknown> {
-		const codec = await this.track.getCodecParameterString();
-		if (!codec) throw new Error('No codec parameter string available for audio track.');
-
-		const sampleRate = await this.track.getSampleRate();
-		const channels = await this.track.getNumberOfChannels();
-
-		const decoderConfig: AudioDecoderConfig = {
-			codec,
-			sampleRate,
-			numberOfChannels: channels
-		};
+		const decoderConfig = await this.track.getDecoderConfig();
+		if (!decoderConfig) throw new Error('No decoder config available for audio track.');
 
 		const support = await AudioDecoder.isConfigSupported(decoderConfig);
 		if (!support.supported) {
-			throw new Error(`WebCodecs AudioDecoder does not support codec "${codec}".`);
+			throw new Error(`WebCodecs AudioDecoder does not support codec "${decoderConfig.codec}".`);
 		}
 
 		const pending: AudioData[] = [];
@@ -226,7 +205,10 @@ export class WebCodecsAudioDecoder {
 		decoder.configure(decoderConfig);
 
 		const sink = new EncodedPacketSink(this.track);
-		const packets = sink.packets(undefined, undefined, { skipLiveWait: true });
+		const startPacket = _startTimestamp !== undefined
+			? await sink.getKeyPacket(_startTimestamp, { skipLiveWait: true })
+			: null;
+		const packets = sink.packets(startPacket ?? undefined, undefined, { skipLiveWait: true });
 
 		try {
 			let packetsExhausted = false;
@@ -241,13 +223,7 @@ export class WebCodecsAudioDecoder {
 						return;
 					}
 					const packet = next.value;
-					const chunk = new EncodedAudioChunk({
-						type: packet.type,
-						timestamp: Math.round(packet.timestamp * 1e6),
-						duration: packet.duration ? Math.round(packet.duration * 1e6) : undefined,
-						data: packet.data
-					});
-					decoder.decode(chunk);
+					decoder.decode(packet.toEncodedAudioChunk());
 				}
 			};
 
