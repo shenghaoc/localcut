@@ -38,25 +38,25 @@ async function detectAndCompile(): Promise<void> {
 		return;
 	}
 
-	// SIMD feature detection via try-catch around WebAssembly.validate
-	let simdOk = false;
 	try {
-		simdOk = WebAssembly.validate(SIMD_TEST_BYTES);
-	} catch {
-		simdOk = false;
-	}
-	if (!simdOk) {
-		return;
-	}
+		// SIMD feature detection via WebAssembly.validate
+		let simdOk = false;
+		try {
+			simdOk = WebAssembly.validate(SIMD_TEST_BYTES);
+		} catch {
+			simdOk = false;
+		}
+		if (!simdOk) {
+			return;
+		}
 
-	// Decode base64 WASM binary
-	const binaryString = atob(WASM_SIMD_RESAMPLER_B64);
-	const bytes = new Uint8Array(binaryString.length);
-	for (let i = 0; i < binaryString.length; i++) {
-		bytes[i] = binaryString.charCodeAt(i);
-	}
+		// Decode base64 WASM binary
+		const binaryString = atob(WASM_SIMD_RESAMPLER_B64);
+		const bytes = new Uint8Array(binaryString.length);
+		for (let i = 0; i < binaryString.length; i++) {
+			bytes[i] = binaryString.charCodeAt(i);
+		}
 
-	try {
 		wasmModule = await WebAssembly.compile(bytes);
 		wasmAvailable = true;
 	} catch {
@@ -276,51 +276,58 @@ export class WasmAudioResampler {
 			combined.fill(0, this.historyFilled * ch + copyLen, combinedLen);
 		}
 
-		// Grow WASM memory if needed. Place output after input (16-byte aligned).
-		this.outputOffset = this.workingOffset + ((combinedLen * 4 + 15) & ~15);
-		const maxOutputFrames = Math.ceil(totalInputFrames / this.ratio) + 2;
-		const neededBytes = this.outputOffset + maxOutputFrames * ch * 4;
-		const currentBytes = this.memory!.buffer.byteLength;
-		if (neededBytes > currentBytes) {
-			const extraPages = Math.ceil((neededBytes - currentBytes) / WASM_PAGE_SIZE);
-			this.memory!.grow(extraPages);
-		}
-
-		// Copy combined buffer to WASM memory
-		const memF32 = new Float32Array(this.memory!.buffer);
-		memF32.set(combined, this.workingOffset / 4);
-
-		// Call WASM process
-		const exports = this.instance.exports;
-		const outputFrames = (exports['process'] as Function)(
-			this.workingOffset,
-			inputFrames,
-			this.outputOffset,
-		) as number;
-
-		// Read output from WASM memory
-		const outputSamples = outputFrames * ch;
-		const output = new Float32Array(outputSamples);
-		const outputStart = this.outputOffset / 4;
-		output.set(memF32.subarray(outputStart, outputStart + outputSamples));
-
-		// Read updated state from WASM globals
-		this.historyFilled = (exports['historyFilled'] as WebAssembly.Global).value as number;
-
-		// Copy leftover history from the combined buffer.
-		// totalInputFrames was calculated before historyFilled was overwritten
-		// by the WASM call, so it still represents the correct combined size.
-		const keepFrames = this.historyFilled;
-		if (keepFrames > 0) {
-			const needed = keepFrames * ch;
-			if (this.history.length < needed) {
-				this.history = new Float32Array(needed);
+		try {
+			// Grow WASM memory if needed. Place output after input (16-byte aligned).
+			this.outputOffset = this.workingOffset + ((combinedLen * 4 + 15) & ~15);
+			const maxOutputFrames = Math.ceil(totalInputFrames / this.ratio) + 2;
+			const neededBytes = this.outputOffset + maxOutputFrames * ch * 4;
+			const currentBytes = this.memory!.buffer.byteLength;
+			if (neededBytes > currentBytes) {
+				const extraPages = Math.ceil((neededBytes - currentBytes) / WASM_PAGE_SIZE);
+				this.memory!.grow(extraPages);
 			}
-			const srcOffset = (totalInputFrames - keepFrames) * ch;
-			this.history.set(combined.subarray(srcOffset, srcOffset + needed));
-		}
 
-		return output;
+			// Copy combined buffer to WASM memory
+			const memF32 = new Float32Array(this.memory!.buffer);
+			memF32.set(combined, this.workingOffset / 4);
+
+			// Call WASM process
+			const exports = this.instance.exports;
+			const outputFrames = (exports['process'] as Function)(
+				this.workingOffset,
+				inputFrames,
+				this.outputOffset,
+			) as number;
+
+			// Read output from WASM memory
+			const outputSamples = outputFrames * ch;
+			const output = new Float32Array(outputSamples);
+			const outputStart = this.outputOffset / 4;
+			output.set(memF32.subarray(outputStart, outputStart + outputSamples));
+
+			// Read updated state from WASM globals
+			this.historyFilled = (exports['historyFilled'] as WebAssembly.Global).value as number;
+
+			// Copy leftover history from the combined buffer.
+			// totalInputFrames was calculated before historyFilled was overwritten
+			// by the WASM call, so it still represents the correct combined size.
+			const keepFrames = this.historyFilled;
+			if (keepFrames > 0) {
+				const needed = keepFrames * ch;
+				if (this.history.length < needed) {
+					this.history = new Float32Array(needed);
+				}
+				const srcOffset = (totalInputFrames - keepFrames) * ch;
+				this.history.set(combined.subarray(srcOffset, srcOffset + needed));
+			}
+
+			return output;
+		} catch (e) {
+			console.warn('WASM process failed, falling back to JS:', e);
+			this.instance = null;
+			this.memory = null;
+			return this.jsFallback.process(input, inputFrames);
+		}
 	}
 
 	flush(): Float32Array {
@@ -340,42 +347,60 @@ export class WasmAudioResampler {
 		const ch = this.channels;
 		if (this.historyFilled === 0) return new Float32Array(0);
 
-		// Build a combined buffer with just history + zero padding.
-		// Dynamically position output after input to avoid overlap.
-		const totalFrames = this.historyFilled + this.filterSize;
-		const combinedLen = totalFrames * ch;
-		this.outputOffset = this.workingOffset + ((combinedLen * 4 + 15) & ~15);
-		const maxOutputFrames = Math.ceil(totalFrames / this.ratio) + 2;
-		const neededBytes = this.outputOffset + maxOutputFrames * ch * 4;
-		const currentBytes = this.memory!.buffer.byteLength;
-		if (neededBytes > currentBytes) {
-			const extraPages = Math.ceil((neededBytes - currentBytes) / WASM_PAGE_SIZE);
-			this.memory!.grow(extraPages);
+		try {
+			// Build a combined buffer with just history + zero padding.
+			// Dynamically position output after input to avoid overlap.
+			const totalFrames = this.historyFilled + this.filterSize;
+			const combinedLen = totalFrames * ch;
+			this.outputOffset = this.workingOffset + ((combinedLen * 4 + 15) & ~15);
+			const maxOutputFrames = Math.ceil(totalFrames / this.ratio) + 2;
+			const neededBytes = this.outputOffset + maxOutputFrames * ch * 4;
+			const currentBytes = this.memory!.buffer.byteLength;
+			if (neededBytes > currentBytes) {
+				const extraPages = Math.ceil((neededBytes - currentBytes) / WASM_PAGE_SIZE);
+				this.memory!.grow(extraPages);
+			}
+
+			const memF32 = new Float32Array(this.memory!.buffer);
+			// Copy history
+			memF32.set(this.history.subarray(0, this.historyFilled * ch), this.workingOffset / 4);
+			// Zero the padding (flush in WASM does this via memory.fill, but we also zero here)
+			const zeroStart = (this.workingOffset / 4) + this.historyFilled * ch;
+			memF32.fill(0, zeroStart, zeroStart + this.filterSize * ch);
+
+			// Call WASM flush
+			const outputFrames = (this.instance.exports['flush'] as Function)(
+				this.workingOffset,
+				this.outputOffset,
+			) as number;
+
+			// Read output
+			const outputSamples = outputFrames * ch;
+			const output = new Float32Array(outputSamples);
+			const outputStart = this.outputOffset / 4;
+			output.set(memF32.subarray(outputStart, outputStart + outputSamples));
+
+			// Read updated state from WASM globals
+			const keepFrames = (this.instance.exports['historyFilled'] as WebAssembly.Global).value as number;
+			this.historyFilled = keepFrames;
+
+			// Copy leftover history from WASM memory back to JS history
+			if (keepFrames > 0) {
+				const needed = keepFrames * ch;
+				if (this.history.length < needed) {
+					this.history = new Float32Array(needed);
+				}
+				const srcOffset = (this.workingOffset / 4) + (totalFrames - keepFrames) * ch;
+				this.history.set(memF32.subarray(srcOffset, srcOffset + needed));
+			}
+
+			return output;
+		} catch (e) {
+			console.warn('WASM flush failed, falling back to JS:', e);
+			this.instance = null;
+			this.memory = null;
+			return this.jsFallback.flush();
 		}
-
-		const memF32 = new Float32Array(this.memory!.buffer);
-		// Copy history
-		memF32.set(this.history.subarray(0, this.historyFilled * ch), this.workingOffset / 4);
-		// Zero the padding (flush in WASM does this via memory.fill, but we also zero here)
-		const zeroStart = (this.workingOffset / 4) + this.historyFilled * ch;
-		memF32.fill(0, zeroStart, zeroStart + this.filterSize * ch);
-
-		// Call WASM flush
-		const outputFrames = (this.instance.exports['flush'] as Function)(
-			this.workingOffset,
-			this.outputOffset,
-		) as number;
-
-		// Read output
-		const outputSamples = outputFrames * ch;
-		const output = new Float32Array(outputSamples);
-		const outputStart = this.outputOffset / 4;
-		output.set(memF32.subarray(outputStart, outputStart + outputSamples));
-
-		// Update state
-		this.historyFilled = (this.instance.exports['historyFilled'] as WebAssembly.Global).value as number;
-
-		return output;
 	}
 }
 
