@@ -1,6 +1,6 @@
 # Tasks: Phase 13 — Transitions
 
-> Status: **Planned**. Model + validation first; decode readahead and the mix pass build on Phase 12's encoder.
+> Status: **In progress — model complete, readahead + mix pass + UI pending**. Model + validation first; decode readahead and the mix pass build on Phase 12's encoder.
 
 ## Model
 
