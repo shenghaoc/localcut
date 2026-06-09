@@ -418,7 +418,7 @@ describe('mixAudioWindow', () => {
 
 		expect([...mixed]).toEqual([0.5, 0.5, 0.5, 0.5]);
 		expect(a.pcmWindowAt).not.toHaveBeenCalled();
-		expect(b.pcmWindowAt).toHaveBeenCalledWith(0, 4, 1);
+		expect(b.pcmWindowAt).toHaveBeenCalledWith(0, 4, 1, 4);
 	});
 
 	it('skips muted tracks', async () => {
@@ -502,7 +502,7 @@ describe('mixAudioWindow', () => {
 		const mixed = await mixAudioWindow(edit, sources, 0, 4, 4, 1);
 
 		expect([...mixed]).toEqual([0, 0, 0.5, 0.5]);
-		expect(source.pcmWindowAt).toHaveBeenCalledWith(0, 2, 1);
+		expect(source.pcmWindowAt).toHaveBeenCalledWith(0, 2, 1, 4);
 	});
 
 	it('leaves audio silent until a non-zero source track start becomes available', async () => {
@@ -535,7 +535,7 @@ describe('mixAudioWindow', () => {
 		const mixed = await mixAudioWindow(edit, sources, 0, 4, 4, 1);
 
 		expect([...mixed]).toEqual([0, 0, 0.5, 0.5]);
-		expect(source.pcmWindowAt).toHaveBeenCalledWith(0.5, 2, 1);
+		expect(source.pcmWindowAt).toHaveBeenCalledWith(0.5, 2, 1, 4);
 	});
 
 	it('splits transition audio when an incoming track becomes available mid-window', async () => {
@@ -583,7 +583,7 @@ describe('mixAudioWindow', () => {
 		expect(mixed[1]!).toBeGreaterThan(0);
 		expect(mixed[2]!).toBeGreaterThan(mixed[1]!);
 		expect(mixed[3]!).toBeGreaterThan(mixed[2]!);
-		expect(incoming.pcmWindowAt).toHaveBeenCalledWith(0.25, 3, 1);
+		expect(incoming.pcmWindowAt).toHaveBeenCalledWith(0.25, 3, 1, 4);
 	});
 
 	it('clamps mixed audio to the valid sample range', async () => {

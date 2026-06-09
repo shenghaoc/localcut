@@ -83,7 +83,13 @@ export class WebCodecsVideoDecoder implements SequentialVideoSource {
 
 			const feedDecoder = async (): Promise<void> => {
 				if (packetsExhausted || decoderError) return;
-				while (decoder.decodeQueueSize < this.maxQueueDepth) {
+				// Bound total in-flight frames: stop feeding when either the decode
+				// queue or the decoded-but-unyielded backlog reaches the depth limit,
+				// so pendingFrames cannot grow without bound and exhaust video memory.
+				while (
+					decoder.decodeQueueSize < this.maxQueueDepth &&
+					pendingFrames.length < this.maxQueueDepth
+				) {
 					const next = await packets.next();
 					if (next.done) {
 						packetsExhausted = true;
@@ -216,7 +222,12 @@ export class WebCodecsAudioDecoder {
 
 			const feedDecoder = async (): Promise<void> => {
 				if (packetsExhausted || decoderError) return;
-				while (decoder.decodeQueueSize < DEFAULT_MAX_QUEUE_DEPTH) {
+				// Bound total in-flight data: stop feeding when either the decode queue
+				// or the decoded-but-unyielded backlog reaches the depth limit.
+				while (
+					decoder.decodeQueueSize < DEFAULT_MAX_QUEUE_DEPTH &&
+					pending.length < DEFAULT_MAX_QUEUE_DEPTH
+				) {
 					const next = await packets.next();
 					if (next.done) {
 						packetsExhausted = true;

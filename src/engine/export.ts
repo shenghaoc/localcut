@@ -570,7 +570,8 @@ export async function mixAudioWindow(
 								? await outHandle!.audioSource!.pcmWindowAt(
 										outSourceTime.adapterTimestampS,
 										runFrames,
-										channels
+										channels,
+										sampleRate
 									)
 								: null;
 						const inPcm =
@@ -578,7 +579,8 @@ export async function mixAudioWindow(
 								? await inHandle!.audioSource!.pcmWindowAt(
 										inSourceTime.adapterTimestampS,
 										runFrames,
-										channels
+										channels,
+										sampleRate
 									)
 								: null;
 						if (!outPcm && !inPcm) {
@@ -698,7 +700,8 @@ export async function mixAudioWindow(
 			const pcm = await handle.audioSource.pcmWindowAt(
 				sourceTime.adapterTimestampS,
 				availableRunFrames,
-				channels
+				channels,
+				sampleRate
 			);
 			const mixed = applyMixStage(pcm, channels, {
 				gain: track.gain,

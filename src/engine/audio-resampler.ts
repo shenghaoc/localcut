@@ -32,16 +32,32 @@ function kaiserWindow(n: number, size: number, beta: number): number {
 function buildFilterTable(
 	filterSize: number,
 	tablePoints: number,
-	beta: number
+	beta: number,
+	cutoff: number
 ): Float64Array {
 	const table = new Float64Array(filterSize * tablePoints);
 	for (let phase = 0; phase < tablePoints; phase++) {
 		const frac = phase / tablePoints;
+		const rowStart = phase * filterSize;
+		let rowSum = 0;
 		for (let tap = 0; tap < filterSize; tap++) {
 			const x = tap - (filterSize - 1) * 0.5 + frac;
-			const sinc = Math.abs(x) < 1e-9 ? 1.0 : Math.sin(Math.PI * x) / (Math.PI * x);
+			// Scale the sinc cutoff to the destination Nyquist when downsampling so
+			// content above the output Nyquist is attenuated instead of aliasing.
+			const scaled = cutoff * x;
+			const sinc =
+				Math.abs(scaled) < 1e-9 ? cutoff : (cutoff * Math.sin(Math.PI * scaled)) / (Math.PI * scaled);
 			const win = kaiserWindow(tap, filterSize, beta);
-			table[phase * filterSize + tap] = sinc * win;
+			const value = sinc * win;
+			table[rowStart + tap] = value;
+			rowSum += value;
+		}
+		// Normalize each phase to unity DC gain so the resampled signal keeps its
+		// level regardless of cutoff or interpolation phase.
+		if (rowSum !== 0) {
+			for (let tap = 0; tap < filterSize; tap++) {
+				table[rowStart + tap] /= rowSum;
+			}
 		}
 	}
 	return table;
@@ -75,7 +91,8 @@ export class AudioResampler {
 		this.channels = config.channels;
 		this.filterSize = config.filterSize ?? DEFAULT_FILTER_SIZE;
 		this.tablePoints = 512;
-		this.filterTable = buildFilterTable(this.filterSize, this.tablePoints, KAISER_BETA);
+		const cutoff = Math.min(1, config.outputRate / config.inputRate);
+		this.filterTable = buildFilterTable(this.filterSize, this.tablePoints, KAISER_BETA, cutoff);
 		this.history = new Float64Array(this.filterSize * 2 * this.channels);
 	}
 

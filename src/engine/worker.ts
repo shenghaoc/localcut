@@ -703,7 +703,7 @@ async function pumpAudioOnce(): Promise<void> {
 			audioWriteFrames += written;
 			return;
 		}
-		pcm = await handle.audioSource.pcmAt(sourceTimestamp.adapterTimestampS, channels);
+		pcm = await handle.audioSource.pcmAt(sourceTimestamp.adapterTimestampS, channels, sampleRate);
 		if (!pcm) {
 			const silenceFrames = Math.min(freeFrames, 1024);
 			const written = writeRingPcm(audioRing, new Float32Array(silenceFrames * channels));
@@ -1044,7 +1044,9 @@ async function attachSourceFile(
 		primaryHandle = mediaHandle;
 	}
 	if (mediaHandle.audioSource && audioRing) {
-		Atomics.store(audioRing.header, RingHeader.SAMPLE_RATE, mediaHandle.audioSampleRate);
+		// Keep the ring at its canonical (AudioContext) sample rate: the worklet
+		// plays ring frames 1:1 at that rate, and pcmAt resamples each source to it,
+		// so mixed-rate sources stay at the right pitch and the clock stays accurate.
 		Atomics.store(audioRing.header, RingHeader.CHANNELS, mediaHandle.audioChannels);
 	}
 	void computeWaveformsForSource(mediaHandle);
@@ -2014,7 +2016,8 @@ async function handleImport(file: File, fileHandle?: FileSystemFileHandle | null
 		}
 
 		if (handle.audioSource && audioRing) {
-			Atomics.store(audioRing.header, RingHeader.SAMPLE_RATE, handle.audioSampleRate);
+			// Keep the ring at its canonical (AudioContext) sample rate; pcmAt
+			// resamples each source to it so playback pitch and clock stay correct.
 			Atomics.store(audioRing.header, RingHeader.CHANNELS, handle.audioChannels);
 		}
 

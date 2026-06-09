@@ -28,6 +28,7 @@ export class SequentialAudioSource {
 	private resampler: AudioResampler | null = null;
 	private resamplerSourceRate = 0;
 	private resamplerSourceChannels = 0;
+	private resamplerTargetRate = 0;
 	private resampleBuffer: Float32Array | null = null;
 	private resampleBufferOffset = 0;
 	private resampleBufferChannels = 0;
@@ -53,6 +54,7 @@ export class SequentialAudioSource {
 		this.resampler = null;
 		this.resamplerSourceRate = 0;
 		this.resamplerSourceChannels = 0;
+		this.resamplerTargetRate = 0;
 		this.resampleBuffer = null;
 		this.resampleBufferOffset = 0;
 		this.resampleBufferChannels = 0;
@@ -63,7 +65,11 @@ export class SequentialAudioSource {
 	 * Returns interleaved f32 PCM for samples overlapping `time`, or null past EOF.
 	 * The caller owns the returned buffer.
 	 */
-	async pcmAt(time: number, channels: number): Promise<Float32Array | null> {
+	async pcmAt(
+		time: number,
+		channels: number,
+		targetSampleRate?: number
+	): Promise<Float32Array | null> {
 		if (this.needsResync(time)) {
 			this.reset();
 			this.iterator = this.source.samples(time);
@@ -94,10 +100,11 @@ export class SequentialAudioSource {
 		const bytes = this.current.allocationSize({ format: 'f32', planeIndex: 0 });
 		const floats = new Float32Array(bytes / 4);
 		this.current.copyTo(floats, { format: 'f32', planeIndex: 0 });
-		const sourceRate = this.current.sampleRate || this.sampleRate;
-		if (sourceRate !== this.sampleRate) {
+		const targetRate = targetSampleRate ?? this.sampleRate;
+		const sourceRate = this.current.sampleRate || targetRate;
+		if (sourceRate !== targetRate) {
 			const sourceChannels = Math.round(floats.length / this.current.numberOfFrames);
-			const resampler = this.getResampler(sourceRate, sourceChannels);
+			const resampler = this.getResampler(sourceRate, sourceChannels, targetRate);
 			const resampled = resampler.process(floats, this.current.numberOfFrames);
 			const resampledFrames = Math.floor(resampled.length / sourceChannels);
 			if (channels <= 1) {
@@ -141,21 +148,27 @@ export class SequentialAudioSource {
 		return out;
 	}
 
-	private getResampler(sourceRate: number, sourceChannels: number): AudioResampler {
+	private getResampler(
+		sourceRate: number,
+		sourceChannels: number,
+		targetRate: number
+	): AudioResampler {
 		if (
 			this.resampler &&
 			this.resamplerSourceRate === sourceRate &&
-			this.resamplerSourceChannels === sourceChannels
+			this.resamplerSourceChannels === sourceChannels &&
+			this.resamplerTargetRate === targetRate
 		) {
 			return this.resampler;
 		}
 		this.resampler = new AudioResampler({
 			inputRate: sourceRate,
-			outputRate: this.sampleRate,
+			outputRate: targetRate,
 			channels: sourceChannels
 		});
 		this.resamplerSourceRate = sourceRate;
 		this.resamplerSourceChannels = sourceChannels;
+		this.resamplerTargetRate = targetRate;
 		this.resampleBuffer = null;
 		this.resampleBufferOffset = 0;
 		return this.resampler;
@@ -194,9 +207,15 @@ export class SequentialAudioSource {
 	 * filled with silence; available decoded samples are sliced to the requested
 	 * frame boundaries so export timestamps stay aligned.
 	 */
-	async pcmWindowAt(time: number, frameCount: number, channels: number): Promise<Float32Array> {
+	async pcmWindowAt(
+		time: number,
+		frameCount: number,
+		channels: number,
+		targetSampleRate?: number
+	): Promise<Float32Array> {
 		const out = new Float32Array(Math.max(0, frameCount) * channels);
 		if (frameCount <= 0 || channels <= 0) return out;
+		const targetRate = targetSampleRate ?? this.sampleRate;
 
 		if (this.needsResync(time)) {
 			this.reset();
@@ -217,7 +236,7 @@ export class SequentialAudioSource {
 					out, written, frameCount, channels, this.resampleBufferChannels
 				);
 				written += drained;
-				cursor += drained / this.sampleRate;
+				cursor += drained / targetRate;
 				this.resampleBufferCursor = cursor;
 			}
 		}
@@ -233,10 +252,10 @@ export class SequentialAudioSource {
 			if (cursor + epsilon < currentStart) {
 				const silentFrames = Math.min(
 					frameCount - written,
-					Math.max(1, Math.floor((currentStart - cursor) * this.sampleRate))
+					Math.max(1, Math.floor((currentStart - cursor) * targetRate))
 				);
 				written += silentFrames;
-				cursor += silentFrames / this.sampleRate;
+				cursor += silentFrames / targetRate;
 				continue;
 			}
 
@@ -253,8 +272,8 @@ export class SequentialAudioSource {
 			const sourceOffset = Math.max(0, Math.floor((cursor - currentStart) * rate + epsilon));
 			const available = Math.max(0, this.current.numberOfFrames - sourceOffset);
 
-			if (rate !== this.sampleRate) {
-				const resampler = this.getResampler(rate, sourceChannels);
+			if (rate !== targetRate) {
+				const resampler = this.getResampler(rate, sourceChannels, targetRate);
 				const srcSlice = new Float32Array(available * sourceChannels);
 				for (let frame = 0; frame < available; frame++) {
 					for (let ch = 0; ch < sourceChannels; ch++) {
@@ -273,7 +292,7 @@ export class SequentialAudioSource {
 					}
 				}
 				written += take;
-				cursor += take / this.sampleRate;
+				cursor += take / targetRate;
 
 				if (take < resampledFrames) {
 					this.resampleBuffer = resampled;
