@@ -388,7 +388,6 @@ export class PreviewRenderer {
 		this.storageBView = this.storageB.createView();
 		this.storageCView = this.storageC.createView();
 		this.transformView = this.transformTex.createView();
-		this.transformViewB = this.transformTexB!.createView();
 		this.outConvView = this.outConvTex!.createView();
 		this.opacityView = this.opacityTex!.createView();
 		this.accView = [this.accTex[0].createView(), this.accTex[1].createView()];

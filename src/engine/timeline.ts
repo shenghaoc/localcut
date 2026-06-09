@@ -335,10 +335,15 @@ export function resolveAllAt(
 				// Replace the existing layer with two transition layers.
 				layers.splice(layerIdx, 1, outgoingLayer, incomingLayer);
 			} else {
-				// This track had no visible clip at this time, but transition window
-				// still covers it. Insert both layers (maintaining z-order).
-				layers.push(outgoingLayer);
-				layers.push(incomingLayer);
+				// This track had no visible clip at this time, but the transition
+				// window still covers it. Insert both layers at the correct z-order
+				// so the transition does not render on top of later tracks.
+				const transitionTrackIdx = timeline.findIndex((t) => t.id === transition.trackId);
+				const insertIdx = layers.findIndex(
+					(l) => timeline.findIndex((t) => t.id === l.trackId) > transitionTrackIdx
+				);
+				const insertionIndex = insertIdx === -1 ? layers.length : insertIdx;
+				layers.splice(insertionIndex, 0, outgoingLayer, incomingLayer);
 			}
 		}
 	}
