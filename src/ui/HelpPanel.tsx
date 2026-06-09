@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, For, Show } from 'solid-js';
 import { BookOpen, X } from 'lucide-solid';
+import DOMPurify from 'dompurify';
 import { Button } from './components/button';
 import { renderMarkdown } from './markdown';
 
@@ -125,7 +126,8 @@ export function HelpPanel(props: HelpPanelProps) {
 							)}
 						</For>
 					</nav>
-					<div class="help-content" innerHTML={renderedHtml()} />
+					{/* eslint-disable-next-line solid/no-innerhtml */}
+					<div class="help-content" innerHTML={DOMPurify.sanitize(renderedHtml())} />
 				</div>
 			</aside>
 		</Show>
