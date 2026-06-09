@@ -50,6 +50,7 @@ When a file has unusual characteristics, the bin item shows them inline (truncat
 - **Variable frame rate** — phone recordings often vary frame timing. Preview and export honour each frame's actual duration so playback stays synced; the warning is informational.
 - **Rotation metadata** — a portrait-mode phone clip carries a 90° or 270° rotation flag. The clip is placed on the timeline with that rotation already applied so it appears upright; you can override it from the Inspector if needed.
 - **Audio/video offset** — when the audio track starts a few milliseconds before or after the video. The engine compensates automatically (inserting silence ahead of the audio when needed).
+- **Mixed audio sample rates** — when audio tracks in the timeline use different sample rates (e.g. 44.1 kHz and 48 kHz). The engine resamples every source to a common output rate automatically — the playback engine rate during preview, and the export's chosen rate when rendering — so mixed-rate timelines stay in tune. No action is required.
 - **Unsupported audio/video codec** — the message names the codec (e.g. `(ac-3)` or `(unknown codec)` when the container does not advertise one). If the **primary** track uses an unsupported codec the clip cannot decode; secondary tracks are silently skipped.
 
 ### Compatibility Imports
@@ -187,6 +188,10 @@ LocalCut Studio includes a multi-track audio mixer:
 - **Waveforms**: Audio tracks display waveform visualizations for precise editing.
 
 Audio runs through an AudioWorklet graph and is the master clock for A/V sync — video frames are dropped if they lag behind audio, never the reverse.
+
+### Sample Rate Handling
+
+When clips on the timeline use different audio sample rates (e.g. a 44.1 kHz MP3 alongside a 48 kHz video), the engine resamples all audio to the target output rate using a polyphase sinc filter. This happens transparently during both playback and export — no user action is needed. The source health panel shows a **Mixed audio sample rates** note as an informational reminder.
 
 ## Captions & Subtitles
 

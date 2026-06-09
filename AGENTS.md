@@ -34,7 +34,11 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 
 - [**Bugfix: IMG_6213.mov media handling**](.kiro/specs/bugfix-img-6213-media-issues/tasks.md) — apply rotation metadata on placement, rotation-aware fit rect, VFR-aware frame cadence, codec-named warnings, Media Bin details popover, user-guide updates.
 
+- [**Bugfix: Mixed-rate audio resampling**](.kiro/specs/bugfix-mixed-rate-audio/tasks.md) — streaming polyphase sinc resampler complementing Mediabunny; per-call target-rate `pcmWindowAt`/`pcmAt`; canonical playback ring rate; anti-aliased downsample; source-health + docs.
+
 - [**Phase 26: Cross-browser compatibility engine**](.kiro/specs/phase-26-cross-browser-compatibility-engine/tasks.md) — CapabilityTierV2 probes, reduced-tier diagnostics, optional-SAB worker init, codec/export constraints, compatibility resource-lifetime helpers.
+
+- [**Phase 27: WebCodecs decode bridge**](.kiro/specs/phase-27-webcodecs-decode-bridge/tasks.md) — direct `VideoDecoder`/`AudioDecoder` over Mediabunny demux; bounded backpressure; key-packet seek; `getDecoderConfig` extradata; codec support matrix. Foundation built; worker integration + Phase 13 dual-stream pending.
 
 - [**Phase 23: Project packaging + portability**](.kiro/specs/phase-23-project-packaging/tasks.md) — directory bundles, fingerprint dedup, integrity validation, collect media, import/export.
 

@@ -268,7 +268,7 @@ describe('export planning', () => {
 		expect(estimateEtaSeconds(100, 20, null, 'quality', 'h264')).toBeNull();
 	});
 
-	it('rejects mixed audible audio sample rates before encoding starts', () => {
+	it('allows mixed audible audio sample rates (resampler handles conversion)', () => {
 		const sources = new Map<string, MediaInputHandle>([
 			[
 				'video',
@@ -303,9 +303,7 @@ describe('export planning', () => {
 			})
 		];
 
-		expect(() => buildExportPlan(edit, sources, qualitySettings(), null)).toThrow(
-			'Audio source "b" has sample rate 44100 Hz but export target is 48000 Hz. Resampling is not supported.'
-		);
+		expect(() => buildExportPlan(edit, sources, qualitySettings(), null)).not.toThrow();
 	});
 
 	it('ignores out-of-range audio when validating sample rates for a sub-range export', () => {
@@ -420,7 +418,7 @@ describe('mixAudioWindow', () => {
 
 		expect([...mixed]).toEqual([0.5, 0.5, 0.5, 0.5]);
 		expect(a.pcmWindowAt).not.toHaveBeenCalled();
-		expect(b.pcmWindowAt).toHaveBeenCalledWith(0, 4, 1);
+		expect(b.pcmWindowAt).toHaveBeenCalledWith(0, 4, 1, 4);
 	});
 
 	it('skips muted tracks', async () => {
@@ -504,7 +502,7 @@ describe('mixAudioWindow', () => {
 		const mixed = await mixAudioWindow(edit, sources, 0, 4, 4, 1);
 
 		expect([...mixed]).toEqual([0, 0, 0.5, 0.5]);
-		expect(source.pcmWindowAt).toHaveBeenCalledWith(0, 2, 1);
+		expect(source.pcmWindowAt).toHaveBeenCalledWith(0, 2, 1, 4);
 	});
 
 	it('leaves audio silent until a non-zero source track start becomes available', async () => {
@@ -537,7 +535,7 @@ describe('mixAudioWindow', () => {
 		const mixed = await mixAudioWindow(edit, sources, 0, 4, 4, 1);
 
 		expect([...mixed]).toEqual([0, 0, 0.5, 0.5]);
-		expect(source.pcmWindowAt).toHaveBeenCalledWith(0.5, 2, 1);
+		expect(source.pcmWindowAt).toHaveBeenCalledWith(0.5, 2, 1, 4);
 	});
 
 	it('splits transition audio when an incoming track becomes available mid-window', async () => {
@@ -585,7 +583,7 @@ describe('mixAudioWindow', () => {
 		expect(mixed[1]!).toBeGreaterThan(0);
 		expect(mixed[2]!).toBeGreaterThan(mixed[1]!);
 		expect(mixed[3]!).toBeGreaterThan(mixed[2]!);
-		expect(incoming.pcmWindowAt).toHaveBeenCalledWith(0.25, 3, 1);
+		expect(incoming.pcmWindowAt).toHaveBeenCalledWith(0.25, 3, 1, 4);
 	});
 
 	it('clamps mixed audio to the valid sample range', async () => {

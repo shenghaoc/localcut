@@ -396,22 +396,6 @@ export function buildExportPlan(
 	const estimatedFps = estimatedEncodeFps(probe, normalized.preset, normalized.codec);
 	const audioSampleRate = audioHandle?.audioSampleRate ?? 48_000;
 
-	if (audioHandle) {
-		for (const track of timeline) {
-			if (track.type !== 'audio' || !trackIsAudible(track, timeline)) continue;
-			for (const clip of track.clips) {
-				if (!clipOverlapsRange(clip, rangeStartS, rangeEndS)) continue;
-				const handle = sources.get(clip.sourceId);
-				if (handle?.audioSource && handle.audioSampleRate !== audioSampleRate) {
-					throw new Error(
-						`Audio source "${clip.sourceId}" has sample rate ${handle.audioSampleRate} Hz ` +
-							`but export target is ${audioSampleRate} Hz. Resampling is not supported.`
-					);
-				}
-			}
-		}
-	}
-
 	return {
 		settings: normalized,
 		preset: normalized.preset,
@@ -586,7 +570,8 @@ export async function mixAudioWindow(
 								? await outHandle!.audioSource!.pcmWindowAt(
 										outSourceTime.adapterTimestampS,
 										runFrames,
-										channels
+										channels,
+										sampleRate
 									)
 								: null;
 						const inPcm =
@@ -594,7 +579,8 @@ export async function mixAudioWindow(
 								? await inHandle!.audioSource!.pcmWindowAt(
 										inSourceTime.adapterTimestampS,
 										runFrames,
-										channels
+										channels,
+										sampleRate
 									)
 								: null;
 						if (!outPcm && !inPcm) {
@@ -714,7 +700,8 @@ export async function mixAudioWindow(
 			const pcm = await handle.audioSource.pcmWindowAt(
 				sourceTime.adapterTimestampS,
 				availableRunFrames,
-				channels
+				channels,
+				sampleRate
 			);
 			const mixed = applyMixStage(pcm, channels, {
 				gain: track.gain,

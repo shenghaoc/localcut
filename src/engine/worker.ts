@@ -703,7 +703,7 @@ async function pumpAudioOnce(): Promise<void> {
 			audioWriteFrames += written;
 			return;
 		}
-		pcm = await handle.audioSource.pcmAt(sourceTimestamp.adapterTimestampS, channels);
+		pcm = await handle.audioSource.pcmAt(sourceTimestamp.adapterTimestampS, channels, sampleRate);
 		if (!pcm) {
 			const silenceFrames = Math.min(freeFrames, 1024);
 			const written = writeRingPcm(audioRing, new Float32Array(silenceFrames * channels));
@@ -1043,10 +1043,8 @@ async function attachSourceFile(
 	) {
 		primaryHandle = mediaHandle;
 	}
-	if (mediaHandle.audioSource && audioRing) {
-		Atomics.store(audioRing.header, RingHeader.SAMPLE_RATE, mediaHandle.audioSampleRate);
-		Atomics.store(audioRing.header, RingHeader.CHANNELS, mediaHandle.audioChannels);
-	}
+	// Ring stays at its canonical stereo rate and channel count (set at init);
+	// pcmAt resamples and upmixes each source to the ring's format.
 	void computeWaveformsForSource(mediaHandle);
 
 	if (persist) {
@@ -2013,10 +2011,8 @@ async function handleImport(file: File, fileHandle?: FileSystemFileHandle | null
 			primaryHandle = handle;
 		}
 
-		if (handle.audioSource && audioRing) {
-			Atomics.store(audioRing.header, RingHeader.SAMPLE_RATE, handle.audioSampleRate);
-			Atomics.store(audioRing.header, RingHeader.CHANNELS, handle.audioChannels);
-		}
+		// Ring stays at canonical stereo init; pcmAt resamples and upmixes each
+		// source to the ring's format (worklet reads rate/channels once at init).
 
 		const hasVideoOnTimeline = timeline.some(
 			(track) => track.type === 'video' && track.clips.length > 0

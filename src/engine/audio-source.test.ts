@@ -63,7 +63,7 @@ describe('SequentialAudioSource', () => {
 		expect([...window]).toEqual([0, 0, 4, 5]);
 	});
 
-	it('throws instead of silently corrupting mismatched sample rates', async () => {
+	it('resamples mismatched sample rates instead of throwing', async () => {
 		const source = new SequentialAudioSource(
 			{
 				async *samples() {
@@ -73,8 +73,36 @@ describe('SequentialAudioSource', () => {
 			4
 		);
 
-		await expect(source.pcmWindowAt(0, 2, 1)).rejects.toThrow(
-			'Sample rate mismatch: source has 8 Hz but export expects 4 Hz. Resampling is not supported.'
-		);
+		const result = await source.pcmWindowAt(0, 2, 1);
+		expect(result.length).toBe(2);
+	});
+
+	it('resamples to the caller target rate, not the construction rate', async () => {
+		// The Mediabunny adapter constructs SequentialAudioSource with the source's
+		// OWN native rate, so resampling must key off the per-call target rate the
+		// export/playback pipeline passes — not the constructor rate.
+		const frames = 64;
+		const data = new Float32Array(frames);
+		for (let i = 0; i < frames; i += 1) data[i] = Math.sin((2 * Math.PI * i) / 16);
+		const makeSource = () =>
+			new SequentialAudioSource(
+				{
+					async *samples() {
+						yield new MockAudioSample(0, 8, data);
+					}
+				},
+				8 // constructed with the source's native rate, like the adapter
+			);
+
+		// Target == source rate → passthrough, exact source frames.
+		const same = await makeSource().pcmWindowAt(0, 8, 1, 8);
+		expect([...same].slice(0, 4)).toEqual([...data.slice(0, 4)]);
+
+		// Target != source rate → must resample even though it matches the ctor rate.
+		const down = await makeSource().pcmWindowAt(0, 16, 1, 4);
+		expect(down.length).toBe(16);
+		expect(down.every((v) => Number.isFinite(v))).toBe(true);
+		// A passthrough (the bug) would return data[0..15] verbatim; resampling differs.
+		expect([...down]).not.toEqual([...data.slice(0, 16)]);
 	});
 });
