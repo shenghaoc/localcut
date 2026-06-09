@@ -268,7 +268,7 @@ export class SequentialAudioSource {
 			const bytes = this.current.allocationSize({ format: 'f32', planeIndex: 0 });
 			const floats = new Float32Array(bytes / 4);
 			this.current.copyTo(floats, { format: 'f32', planeIndex: 0 });
-			const sourceChannels = Math.max(1, Math.round(floats.length / this.current.numberOfFrames));
+			const sourceChannels = Math.max(1, Math.round(floats.length / (this.current.numberOfFrames || 1)));
 			const sourceOffset = Math.max(0, Math.floor((cursor - currentStart) * rate + epsilon));
 			const available = Math.max(0, this.current.numberOfFrames - sourceOffset);
 

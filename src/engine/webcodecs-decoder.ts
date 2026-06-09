@@ -11,7 +11,7 @@
 
 import { EncodedPacketSink, type InputVideoTrack, type InputAudioTrack } from 'mediabunny';
 import type { VideoSampleLike, SequentialVideoSource } from './frame-source';
-import type { AudioSampleLike } from './audio-source';
+import type { AudioSampleLike, AudioSampleStream } from './audio-source';
 
 const DEFAULT_MAX_QUEUE_DEPTH = 8;
 
@@ -42,8 +42,9 @@ export class WebCodecsVideoDecoder implements SequentialVideoSource {
 		_startTimestamp?: number,
 		_endTimestamp?: number
 	): AsyncGenerator<VideoSampleLike, void, unknown> {
-		const decoderConfig = await this.track.getDecoderConfig();
-		if (!decoderConfig) throw new Error('No decoder config available for video track.');
+		const trackConfig = await this.track.getDecoderConfig();
+		if (!trackConfig) throw new Error('No decoder config available for video track.');
+		const decoderConfig = { ...trackConfig };
 		if (this.hardwareAcceleration !== 'no-preference') {
 			decoderConfig.hardwareAcceleration = this.hardwareAcceleration;
 		}
@@ -177,7 +178,7 @@ class WebCodecsVideoSample implements VideoSampleLike {
 	}
 }
 
-export class WebCodecsAudioDecoder {
+export class WebCodecsAudioDecoder implements AudioSampleStream {
 	private readonly track: InputAudioTrack;
 
 	constructor(track: InputAudioTrack) {
