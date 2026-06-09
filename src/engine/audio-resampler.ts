@@ -36,24 +36,23 @@ function buildFilterTable(
 	cutoff: number
 ): Float64Array {
 	const table = new Float64Array(filterSize * tablePoints);
+	const winTable = new Float64Array(filterSize);
+	for (let tap = 0; tap < filterSize; tap++) {
+		winTable[tap] = kaiserWindow(tap, filterSize, beta);
+	}
 	for (let phase = 0; phase < tablePoints; phase++) {
 		const frac = phase / tablePoints;
 		const rowStart = phase * filterSize;
 		let rowSum = 0;
 		for (let tap = 0; tap < filterSize; tap++) {
 			const x = tap - (filterSize - 1) * 0.5 + frac;
-			// Scale the sinc cutoff to the destination Nyquist when downsampling so
-			// content above the output Nyquist is attenuated instead of aliasing.
 			const scaled = cutoff * x;
 			const sinc =
 				Math.abs(scaled) < 1e-9 ? cutoff : (cutoff * Math.sin(Math.PI * scaled)) / (Math.PI * scaled);
-			const win = kaiserWindow(tap, filterSize, beta);
-			const value = sinc * win;
+			const value = sinc * winTable[tap]!;
 			table[rowStart + tap] = value;
 			rowSum += value;
 		}
-		// Normalize each phase to unity DC gain so the resampled signal keeps its
-		// level regardless of cutoff or interpolation phase.
 		if (rowSum !== 0) {
 			for (let tap = 0; tap < filterSize; tap++) {
 				table[rowStart + tap] /= rowSum;
@@ -114,11 +113,12 @@ export class AudioResampler {
 		const totalInputFrames = this.historyFilled + inputFrames;
 		const combined = new Float64Array(totalInputFrames * ch);
 		combined.set(this.history.subarray(0, this.historyFilled * ch));
-		for (let i = 0; i < inputFrames * ch; i++) {
-			combined[this.historyFilled * ch + i] = input[i] ?? 0;
-		}
+		const copyLen = Math.min(input.length, inputFrames * ch);
+		combined.set(input.subarray(0, copyLen), this.historyFilled * ch);
 
-		const outputs: number[] = [];
+		const maxOutputFrames = Math.ceil(totalInputFrames / this.ratio) + 2;
+		const outputs = new Float32Array(maxOutputFrames * ch);
+		let writeIdx = 0;
 		let srcPos = this.inputFraction;
 
 		while (true) {
@@ -138,7 +138,7 @@ export class AudioResampler {
 					const sampleIdx = intCenter - halfFilterInt + tap;
 					sum += combined[sampleIdx * ch + c]! * this.filterTable[filterOffset + tap]!;
 				}
-				outputs.push(sum);
+				outputs[writeIdx++] = sum;
 			}
 			srcPos += this.ratio;
 		}
@@ -153,13 +153,11 @@ export class AudioResampler {
 				this.history = new Float64Array(needed);
 			}
 			const srcOffset = (totalInputFrames - keepFrames) * ch;
-			for (let i = 0; i < needed; i++) {
-				this.history[i] = combined[srcOffset + i]!;
-			}
+			this.history.set(combined.subarray(srcOffset, srcOffset + needed));
 		}
 		this.historyFilled = keepFrames;
 
-		return new Float32Array(outputs);
+		return outputs.subarray(0, writeIdx);
 	}
 
 	flush(): Float32Array {

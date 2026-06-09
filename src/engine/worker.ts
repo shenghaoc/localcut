@@ -1043,12 +1043,8 @@ async function attachSourceFile(
 	) {
 		primaryHandle = mediaHandle;
 	}
-	if (mediaHandle.audioSource && audioRing) {
-		// Ring stays at its canonical stereo channel count (set at init). The worklet
-		// reads CHANNELS once at construction and never re-reads, so overwriting it
-		// per-handle would cause stride mismatch for mono sources. pcmAt upmixes
-		// each source to the ring's channel count, same pattern as sample-rate.
-	}
+	// Ring stays at its canonical stereo rate and channel count (set at init);
+	// pcmAt resamples and upmixes each source to the ring's format.
 	void computeWaveformsForSource(mediaHandle);
 
 	if (persist) {
@@ -2015,10 +2011,8 @@ async function handleImport(file: File, fileHandle?: FileSystemFileHandle | null
 			primaryHandle = handle;
 		}
 
-		if (handle.audioSource && audioRing) {
-			// Ring stays at canonical stereo init; pcmAt upmixes each source to
-			// the ring's channel count (worklet reads CHANNELS once, never re-reads).
-		}
+		// Ring stays at canonical stereo init; pcmAt resamples and upmixes each
+		// source to the ring's format (worklet reads rate/channels once at init).
 
 		const hasVideoOnTimeline = timeline.some(
 			(track) => track.type === 'video' && track.clips.length > 0
