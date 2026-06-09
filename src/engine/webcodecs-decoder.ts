@@ -1,0 +1,318 @@
+/**
+ * WebCodecs direct decode bridge — uses Mediabunny's EncodedPacketSink for
+ * demuxing and WebCodecs VideoDecoder/AudioDecoder directly for decode.
+ *
+ * Advantages over Mediabunny's built-in VideoSampleSink/AudioSampleSink:
+ * - Explicit backpressure control via decode queue depth
+ * - Multiple simultaneous decoders (for transition dual-stream readahead)
+ * - Better error recovery with decoder state tracking
+ * - Configurable hardware acceleration preference
+ */
+
+import { EncodedPacketSink, type InputVideoTrack, type InputAudioTrack } from 'mediabunny';
+import type { VideoSampleLike, SequentialVideoSource } from './frame-source';
+
+const DEFAULT_MAX_QUEUE_DEPTH = 8;
+
+export interface WebCodecsDecoderConfig {
+	maxQueueDepth?: number;
+	hardwareAcceleration?: HardwarePreference;
+}
+
+type HardwarePreference = 'no-preference' | 'prefer-hardware' | 'prefer-software';
+
+interface PendingFrame {
+	frame: VideoFrame;
+	timestamp: number;
+}
+
+export class WebCodecsVideoDecoder implements SequentialVideoSource {
+	private readonly track: InputVideoTrack;
+	private readonly maxQueueDepth: number;
+	private readonly hardwareAcceleration: HardwarePreference;
+
+	constructor(track: InputVideoTrack, config?: WebCodecsDecoderConfig) {
+		this.track = track;
+		this.maxQueueDepth = config?.maxQueueDepth ?? DEFAULT_MAX_QUEUE_DEPTH;
+		this.hardwareAcceleration = config?.hardwareAcceleration ?? 'prefer-hardware';
+	}
+
+	async *samples(
+		_startTimestamp?: number,
+		_endTimestamp?: number
+	): AsyncGenerator<VideoSampleLike, void, unknown> {
+		const codec = await this.track.getCodecParameterString();
+		if (!codec) throw new Error('No codec parameter string available for video track.');
+
+		const codedWidth = await this.track.getCodedWidth();
+		const codedHeight = await this.track.getCodedHeight();
+		const colorSpace = await this.track.getColorSpace().catch(() => ({}));
+
+		const decoderConfig: VideoDecoderConfig = {
+			codec,
+			codedWidth,
+			codedHeight,
+			hardwareAcceleration: this.hardwareAcceleration,
+			colorSpace
+		};
+
+		const support = await VideoDecoder.isConfigSupported(decoderConfig);
+		if (!support.supported) {
+			throw new Error(`WebCodecs VideoDecoder does not support codec "${codec}".`);
+		}
+
+		const pendingFrames: PendingFrame[] = [];
+		let resolveFrame: (() => void) | null = null;
+		let decoderError: Error | null = null;
+
+		const decoder = new VideoDecoder({
+			output(frame: VideoFrame) {
+				pendingFrames.push({ frame, timestamp: frame.timestamp / 1e6 });
+				pendingFrames.sort((a, b) => a.timestamp - b.timestamp);
+				resolveFrame?.();
+			},
+			error(err: DOMException) {
+				decoderError = new Error(`VideoDecoder error: ${err.message}`);
+				resolveFrame?.();
+			}
+		});
+
+		decoder.configure(decoderConfig);
+
+		const sink = new EncodedPacketSink(this.track);
+		const packets = sink.packets(undefined, undefined, { skipLiveWait: true });
+
+		try {
+			let packetsExhausted = false;
+
+			const feedDecoder = async (): Promise<void> => {
+				if (packetsExhausted || decoderError) return;
+				while (decoder.decodeQueueSize < this.maxQueueDepth) {
+					const next = await packets.next();
+					if (next.done) {
+						packetsExhausted = true;
+						return;
+					}
+					const packet = next.value;
+					const chunk = new EncodedVideoChunk({
+						type: packet.type,
+						timestamp: Math.round(packet.timestamp * 1e6),
+						duration: packet.duration ? Math.round(packet.duration * 1e6) : undefined,
+						data: packet.data
+					});
+					decoder.decode(chunk);
+				}
+			};
+
+			const waitForFrame = (): Promise<void> =>
+				new Promise<void>((resolve) => {
+					if (pendingFrames.length > 0 || decoderError || packetsExhausted) {
+						resolve();
+						return;
+					}
+					resolveFrame = () => {
+						resolveFrame = null;
+						resolve();
+					};
+				});
+
+			while (true) {
+				await feedDecoder();
+				if (decoderError) throw decoderError;
+
+				if (pendingFrames.length === 0 && packetsExhausted) {
+					await decoder.flush();
+					if (pendingFrames.length === 0) break;
+				}
+
+				if (pendingFrames.length === 0) {
+					await waitForFrame();
+					if (decoderError) throw decoderError;
+					if (pendingFrames.length === 0) break;
+				}
+
+				const entry = pendingFrames.shift()!;
+				if (_endTimestamp !== undefined && entry.timestamp > _endTimestamp) {
+					entry.frame.close();
+					break;
+				}
+
+				const sample = new WebCodecsVideoSample(entry.frame);
+				yield sample;
+			}
+		} finally {
+			for (const entry of pendingFrames) entry.frame.close();
+			pendingFrames.length = 0;
+			decoder.close();
+			await packets.return(undefined);
+		}
+	}
+}
+
+class WebCodecsVideoSample implements VideoSampleLike {
+	private frame: VideoFrame | null;
+	readonly timestamp: number;
+	readonly duration: number;
+
+	constructor(frame: VideoFrame) {
+		this.frame = frame;
+		this.timestamp = frame.timestamp / 1e6;
+		this.duration = (frame.duration ?? 0) / 1e6;
+	}
+
+	clone(): VideoSampleLike {
+		if (!this.frame) throw new Error('Sample already closed.');
+		return new WebCodecsVideoSample(this.frame.clone());
+	}
+
+	toVideoFrame(): VideoFrame {
+		if (!this.frame) throw new Error('Sample already closed.');
+		return this.frame.clone();
+	}
+
+	close(): void {
+		this.frame?.close();
+		this.frame = null;
+	}
+}
+
+export class WebCodecsAudioDecoder {
+	private readonly track: InputAudioTrack;
+
+	constructor(track: InputAudioTrack) {
+		this.track = track;
+	}
+
+	async *samples(
+		_startTimestamp?: number,
+		_endTimestamp?: number
+	): AsyncGenerator<AudioData, void, unknown> {
+		const codec = await this.track.getCodecParameterString();
+		if (!codec) throw new Error('No codec parameter string available for audio track.');
+
+		const sampleRate = await this.track.getSampleRate();
+		const channels = await this.track.getNumberOfChannels();
+
+		const decoderConfig: AudioDecoderConfig = {
+			codec,
+			sampleRate,
+			numberOfChannels: channels
+		};
+
+		const support = await AudioDecoder.isConfigSupported(decoderConfig);
+		if (!support.supported) {
+			throw new Error(`WebCodecs AudioDecoder does not support codec "${codec}".`);
+		}
+
+		const pending: AudioData[] = [];
+		let resolveData: (() => void) | null = null;
+		let decoderError: Error | null = null;
+
+		const decoder = new AudioDecoder({
+			output(data: AudioData) {
+				pending.push(data);
+				resolveData?.();
+			},
+			error(err: DOMException) {
+				decoderError = new Error(`AudioDecoder error: ${err.message}`);
+				resolveData?.();
+			}
+		});
+
+		decoder.configure(decoderConfig);
+
+		const sink = new EncodedPacketSink(this.track);
+		const packets = sink.packets(undefined, undefined, { skipLiveWait: true });
+
+		try {
+			let packetsExhausted = false;
+
+			const feedDecoder = async (): Promise<void> => {
+				if (packetsExhausted || decoderError) return;
+				while (decoder.decodeQueueSize < DEFAULT_MAX_QUEUE_DEPTH) {
+					const next = await packets.next();
+					if (next.done) {
+						packetsExhausted = true;
+						return;
+					}
+					const packet = next.value;
+					const chunk = new EncodedAudioChunk({
+						type: packet.type,
+						timestamp: Math.round(packet.timestamp * 1e6),
+						duration: packet.duration ? Math.round(packet.duration * 1e6) : undefined,
+						data: packet.data
+					});
+					decoder.decode(chunk);
+				}
+			};
+
+			const waitForData = (): Promise<void> =>
+				new Promise<void>((resolve) => {
+					if (pending.length > 0 || decoderError || packetsExhausted) {
+						resolve();
+						return;
+					}
+					resolveData = () => {
+						resolveData = null;
+						resolve();
+					};
+				});
+
+			while (true) {
+				await feedDecoder();
+				if (decoderError) throw decoderError;
+
+				if (pending.length === 0 && packetsExhausted) {
+					await decoder.flush();
+					if (pending.length === 0) break;
+				}
+
+				if (pending.length === 0) {
+					await waitForData();
+					if (decoderError) throw decoderError;
+					if (pending.length === 0) break;
+				}
+
+				const data = pending.shift()!;
+				if (_endTimestamp !== undefined && data.timestamp / 1e6 > _endTimestamp) {
+					data.close();
+					break;
+				}
+				yield data;
+			}
+		} finally {
+			for (const d of pending) d.close();
+			pending.length = 0;
+			decoder.close();
+			await packets.return(undefined);
+		}
+	}
+}
+
+export async function probeWebCodecsDecodeSupport(codec: string): Promise<boolean> {
+	if (typeof VideoDecoder === 'undefined') return false;
+	try {
+		const support = await VideoDecoder.isConfigSupported({
+			codec,
+			codedWidth: 640,
+			codedHeight: 480
+		});
+		return support.supported === true;
+	} catch {
+		return false;
+	}
+}
+
+export async function probeWebCodecsAudioDecodeSupport(codec: string): Promise<boolean> {
+	if (typeof AudioDecoder === 'undefined') return false;
+	try {
+		const support = await AudioDecoder.isConfigSupported({
+			codec,
+			sampleRate: 48000,
+			numberOfChannels: 2
+		});
+		return support.supported === true;
+	} catch {
+		return false;
+	}
+}

@@ -1,5 +1,7 @@
 /** Sequential decoded-audio source for real-time PCM pumping (Phase 5). */
 
+import { resampleBlock } from './audio-resampler';
+
 export interface AudioSampleLike {
 	readonly timestamp: number;
 	readonly duration: number;
@@ -126,11 +128,6 @@ export class SequentialAudioSource {
 			if (!this.current) break;
 
 			const rate = this.current.sampleRate || this.sampleRate;
-			if (rate !== this.sampleRate) {
-				throw new Error(
-					`Sample rate mismatch: source has ${rate} Hz but export expects ${this.sampleRate} Hz. Resampling is not supported.`
-				);
-			}
 			const currentStart = this.current.timestamp;
 			const currentEnd = currentStart + this.current.numberOfFrames / rate;
 
@@ -156,21 +153,45 @@ export class SequentialAudioSource {
 			const sourceChannels = Math.max(1, Math.round(floats.length / this.current.numberOfFrames));
 			const sourceOffset = Math.max(0, Math.floor((cursor - currentStart) * rate + epsilon));
 			const available = Math.max(0, this.current.numberOfFrames - sourceOffset);
-			const take = Math.min(frameCount - written, available);
 
-			for (let frame = 0; frame < take; frame += 1) {
-				for (let channel = 0; channel < channels; channel += 1) {
-					const srcChannel = Math.min(channel, sourceChannels - 1);
-					out[(written + frame) * channels + channel] =
-						floats[(sourceOffset + frame) * sourceChannels + srcChannel] ?? 0;
+			if (rate !== this.sampleRate) {
+				const srcSlice = new Float32Array(available * sourceChannels);
+				for (let frame = 0; frame < available; frame++) {
+					for (let ch = 0; ch < sourceChannels; ch++) {
+						srcSlice[frame * sourceChannels + ch] =
+							floats[(sourceOffset + frame) * sourceChannels + ch] ?? 0;
+					}
 				}
-			}
-
-			written += take;
-			cursor += take / rate;
-			if (take >= available) {
+				const resampled = resampleBlock(srcSlice, available, rate, this.sampleRate, sourceChannels);
+				const resampledFrames = Math.floor(resampled.length / sourceChannels);
+				const take = Math.min(frameCount - written, resampledFrames);
+				for (let frame = 0; frame < take; frame++) {
+					for (let channel = 0; channel < channels; channel++) {
+						const srcChannel = Math.min(channel, sourceChannels - 1);
+						out[(written + frame) * channels + channel] =
+							resampled[frame * sourceChannels + srcChannel] ?? 0;
+					}
+				}
+				written += take;
+				cursor += (take / this.sampleRate) * (this.sampleRate / this.sampleRate);
 				this.current.close();
 				this.current = null;
+			} else {
+				const take = Math.min(frameCount - written, available);
+				for (let frame = 0; frame < take; frame += 1) {
+					for (let channel = 0; channel < channels; channel += 1) {
+						const srcChannel = Math.min(channel, sourceChannels - 1);
+						out[(written + frame) * channels + channel] =
+							floats[(sourceOffset + frame) * sourceChannels + srcChannel] ?? 0;
+					}
+				}
+
+				written += take;
+				cursor += take / rate;
+				if (take >= available) {
+					this.current.close();
+					this.current = null;
+				}
 			}
 		}
 

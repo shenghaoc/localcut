@@ -403,10 +403,7 @@ export function buildExportPlan(
 				if (!clipOverlapsRange(clip, rangeStartS, rangeEndS)) continue;
 				const handle = sources.get(clip.sourceId);
 				if (handle?.audioSource && handle.audioSampleRate !== audioSampleRate) {
-					throw new Error(
-						`Audio source "${clip.sourceId}" has sample rate ${handle.audioSampleRate} Hz ` +
-							`but export target is ${audioSampleRate} Hz. Resampling is not supported.`
-					);
+					// Mixed sample rates are now handled by the resampler in SequentialAudioSource.
 				}
 			}
 		}

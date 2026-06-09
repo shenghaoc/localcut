@@ -268,7 +268,7 @@ describe('export planning', () => {
 		expect(estimateEtaSeconds(100, 20, null, 'quality', 'h264')).toBeNull();
 	});
 
-	it('rejects mixed audible audio sample rates before encoding starts', () => {
+	it('allows mixed audible audio sample rates (resampler handles conversion)', () => {
 		const sources = new Map<string, MediaInputHandle>([
 			[
 				'video',
@@ -303,9 +303,7 @@ describe('export planning', () => {
 			})
 		];
 
-		expect(() => buildExportPlan(edit, sources, qualitySettings(), null)).toThrow(
-			'Audio source "b" has sample rate 44100 Hz but export target is 48000 Hz. Resampling is not supported.'
-		);
+		expect(() => buildExportPlan(edit, sources, qualitySettings(), null)).not.toThrow();
 	});
 
 	it('ignores out-of-range audio when validating sample rates for a sub-range export', () => {

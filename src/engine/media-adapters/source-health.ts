@@ -188,10 +188,10 @@ export function generateSourceHealthWarnings(
 		warnings.push(
 			warning(
 				'mixed-audio-sample-rates',
-				'warning',
+				'info',
 				false,
 				inspection.sourceId,
-				`${inspection.fileName} contains audio tracks with mixed sample rates.`,
+				`${inspection.fileName} contains audio tracks with mixed sample rates (will be resampled on export).`,
 				{ sampleRates: [...audioSampleRates].join(', ') }
 			)
 		);

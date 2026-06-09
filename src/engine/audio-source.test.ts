@@ -63,7 +63,7 @@ describe('SequentialAudioSource', () => {
 		expect([...window]).toEqual([0, 0, 4, 5]);
 	});
 
-	it('throws instead of silently corrupting mismatched sample rates', async () => {
+	it('resamples mismatched sample rates instead of throwing', async () => {
 		const source = new SequentialAudioSource(
 			{
 				async *samples() {
@@ -73,8 +73,7 @@ describe('SequentialAudioSource', () => {
 			4
 		);
 
-		await expect(source.pcmWindowAt(0, 2, 1)).rejects.toThrow(
-			'Sample rate mismatch: source has 8 Hz but export expects 4 Hz. Resampling is not supported.'
-		);
+		const result = await source.pcmWindowAt(0, 2, 1);
+		expect(result.length).toBe(2);
 	});
 });
