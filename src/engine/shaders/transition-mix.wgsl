@@ -47,14 +47,15 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
             }
         }
         case 2u: {
-            // wipe: hard edge sweeping across the frame
+            // wipe: feathered edge sweeping across the frame
             // 0=left, 1=right, 2=up, 3=down
             let isHorizontal = uniforms.direction <= 1u;
             let edge = isHorizontal ? uv.x : uv.y;
             let flip = uniforms.direction == 1u || uniforms.direction == 3u;
+            // smoothstep for sub-pixel feathered wipe edge (avoids aliased hard step)
             let visible = select(
-                select(0.0, 1.0, edge < t),
-                select(0.0, 1.0, edge > 1.0 - t),
+                1.0 - smoothstep(t - 0.005, t + 0.005, edge),
+                smoothstep(1.0 - t - 0.005, 1.0 - t + 0.005, edge),
                 flip
             );
             result = mix(outColor, inColor, visible);

@@ -51,9 +51,10 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
             let isHorizontal = uniforms.direction <= 1u;
             let edge = isHorizontal ? f16(uv.x) : f16(uv.y);
             let flip = uniforms.direction == 1u || uniforms.direction == 3u;
+            // smoothstep in f32 for precision, then narrow to f16 for the mix
             let visible = select(
-                select(0.0h, 1.0h, edge < t),
-                select(0.0h, 1.0h, edge > 1.0h - t),
+                f16(1.0 - smoothstep(f32(t) - 0.005, f32(t) + 0.005, f32(edge))),
+                f16(smoothstep(1.0 - f32(t) - 0.005, 1.0 - f32(t) + 0.005, f32(edge))),
                 flip
             );
             result = mix(outColor, inColor, visible);
