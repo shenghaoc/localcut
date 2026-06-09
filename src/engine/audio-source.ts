@@ -218,6 +218,7 @@ export class SequentialAudioSource {
 				);
 				written += drained;
 				cursor += drained / this.sampleRate;
+				this.resampleBufferCursor = cursor;
 			}
 		}
 

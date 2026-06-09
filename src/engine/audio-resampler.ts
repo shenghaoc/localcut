@@ -106,10 +106,8 @@ export class AudioResampler {
 
 		while (true) {
 			const center = srcPos + halfFilter;
-			const rightEdge = Math.floor(center) + halfFilterInt;
-			if (rightEdge >= totalInputFrames) break;
-
 			const intCenter = Math.floor(center);
+			if (intCenter - halfFilterInt + fs > totalInputFrames) break;
 			const frac = center - intCenter;
 			const phaseIdx = Math.min(
 				Math.floor(frac * this.tablePoints),
