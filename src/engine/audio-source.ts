@@ -1,6 +1,11 @@
 /** Sequential decoded-audio source for real-time PCM pumping (Phase 5). */
 
 import { AudioResampler } from './audio-resampler';
+import { WasmAudioResampler } from './audio-resampler-wasm';
+
+// Kick off WASM compilation early so the module is ready before the first
+// synchronous process() call. Failure is non-fatal.
+WasmAudioResampler.init();
 
 export interface AudioSampleLike {
 	readonly timestamp: number;
