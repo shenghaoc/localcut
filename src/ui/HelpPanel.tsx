@@ -56,7 +56,7 @@ export function HelpPanel(props: HelpPanelProps) {
 	const renderedHtml = createMemo(() => {
 		const doc = activeDoc();
 		if (!doc) return '';
-		return renderMarkdown(doc.content);
+		return DOMPurify.sanitize(renderMarkdown(doc.content));
 	});
 
 	return (
@@ -127,7 +127,7 @@ export function HelpPanel(props: HelpPanelProps) {
 						</For>
 					</nav>
 					{/* eslint-disable-next-line solid/no-innerhtml */}
-					<div class="help-content" innerHTML={DOMPurify.sanitize(renderedHtml())} />
+					<div class="help-content" innerHTML={renderedHtml()} />
 				</div>
 			</aside>
 		</Show>
