@@ -195,7 +195,10 @@ export function anyAudioEncodeSupported(codecs: CodecProbeResult): boolean {
 export async function probeLivePublish(): Promise<LivePublishProbeResult> {
 	const globals = globalThis as unknown as Record<string, unknown>;
 	const rtcPeerConnection = supportFromBoolean(typeof globals.RTCPeerConnection === 'function');
-	const trackGenerator = supportFromBoolean(
+	// Main-side constructor presence is the proxy for worker availability —
+	// Chromium exposes the generator in both scopes; the worker re-confirms at
+	// tap start and falls back to the main-frames mode.
+	const trackGeneratorWorker = supportFromBoolean(
 		typeof globals.MediaStreamTrackGenerator === 'function'
 	);
 
@@ -203,7 +206,7 @@ export async function probeLivePublish(): Promise<LivePublishProbeResult> {
 	// transfer. The generator track is created solely to be detached; a
 	// DataCloneError means tracks are not transferable in this browser.
 	let trackTransfer: FeatureSupport = 'unsupported';
-	if (trackGenerator === 'supported' && typeof MessageChannel === 'function') {
+	if (trackGeneratorWorker === 'supported' && typeof MessageChannel === 'function') {
 		try {
 			const generatorCtor = globals.MediaStreamTrackGenerator as new (init: {
 				kind: 'video';
@@ -219,8 +222,9 @@ export async function probeLivePublish(): Promise<LivePublishProbeResult> {
 		}
 	}
 
-	const rtpScriptTransform = supportFromBoolean(
-		typeof globals.RTCRtpScriptTransform === 'function'
+	const senderCtor = globals.RTCRtpSender as { prototype?: Record<string, unknown> } | undefined;
+	const generateKeyFrame = supportFromBoolean(
+		typeof senderCtor?.prototype?.generateKeyFrame === 'function'
 	);
 	const hardwareH264Encode = await probeCodec(getCodecConstructor('VideoEncoder'), {
 		codec: 'avc1.42e029',
@@ -230,12 +234,18 @@ export async function probeLivePublish(): Promise<LivePublishProbeResult> {
 		hardwareAcceleration: 'prefer-hardware'
 	});
 
-	return { rtcPeerConnection, trackGenerator, trackTransfer, rtpScriptTransform, hardwareH264Encode };
+	return {
+		rtcPeerConnection,
+		trackGeneratorWorker,
+		trackTransfer,
+		generateKeyFrame,
+		hardwareH264Encode
+	};
 }
 
 /** R3.1: the publish feature exists only when the strictly required pieces do. */
 export function livePublishAvailable(probe: LivePublishProbeResult): boolean {
-	return probe.rtcPeerConnection === 'supported' && probe.trackGenerator === 'supported';
+	return probe.rtcPeerConnection === 'supported' && probe.trackGeneratorWorker === 'supported';
 }
 
 export function deriveCapabilityTierV2(
@@ -299,9 +309,9 @@ export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 	const livePublish = await probeLivePublish().catch(
 		(): LivePublishProbeResult => ({
 			rtcPeerConnection: 'unknown',
-			trackGenerator: 'unknown',
+			trackGeneratorWorker: 'unknown',
 			trackTransfer: 'unknown',
-			rtpScriptTransform: 'unknown',
+			generateKeyFrame: 'unknown',
 			hardwareH264Encode: 'unknown'
 		})
 	);

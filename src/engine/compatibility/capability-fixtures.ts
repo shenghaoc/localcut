@@ -22,9 +22,9 @@ const supportedCodecs: CodecProbeResult = {
 function livePublishProbe(value: FeatureSupport): LivePublishProbeResult {
 	return {
 		rtcPeerConnection: value,
-		trackGenerator: value,
+		trackGeneratorWorker: value,
 		trackTransfer: value,
-		rtpScriptTransform: value,
+		generateKeyFrame: value,
 		hardwareH264Encode: value
 	};
 }

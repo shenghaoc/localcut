@@ -46,14 +46,6 @@ export interface WhipClient {
 	teardown(resourceUrl: string): Promise<void>;
 }
 
-/**
- * Bounded redirect chain on the initial POST (R1.5). Real browser fetch follows
- * 307s natively (`redirect: 'follow'`), so this loop is exercised only by
- * environments that surface the 307 — including the unit tests — and by
- * same-origin servers; it never fights the platform behaviour.
- */
-const MAX_REDIRECTS = 3;
-
 function mapHttpFailure(status: number): WhipRequestError {
 	if (status === 400) {
 		return new WhipRequestError(
@@ -128,44 +120,32 @@ export function createWhipClient(config: WhipClientConfig): WhipClient {
 	}
 
 	async function publish(offerSdp: string): Promise<WhipPublishResource> {
-		let url = config.endpointUrl;
-		for (let redirects = 0; ; redirects++) {
-			const response = await request(url, {
-				method: 'POST',
-				headers: authHeaders({ 'Content-Type': 'application/sdp' }),
-				body: offerSdp,
-				redirect: 'follow'
-			});
+		// Redirects (R1.5): the browser follows them (`redirect: 'follow'`) —
+		// manual redirect counting is not feasible client-side because cross-origin
+		// manual mode yields opaque redirects with no readable Location. The
+		// session resource resolves against the *final* response URL.
+		const response = await request(config.endpointUrl, {
+			method: 'POST',
+			headers: authHeaders({ 'Content-Type': 'application/sdp' }),
+			body: offerSdp,
+			redirect: 'follow'
+		});
 
-			if (response.status === 307) {
-				const location = response.headers.get('location');
-				if (!location || redirects >= MAX_REDIRECTS) {
-					throw new WhipRequestError(
-						'not-found',
-						307,
-						'The endpoint redirected more times than the WHIP client allows.'
-					);
-				}
-				url = new URL(location, responseUrl(response, url)).toString();
-				continue;
-			}
+		if (response.status !== 201) throw mapHttpFailure(response.status);
 
-			if (response.status !== 201) throw mapHttpFailure(response.status);
-
-			const location = response.headers.get('location');
-			if (!location) {
-				throw new WhipRequestError(
-					'retryable',
-					201,
-					'The endpoint accepted the offer but sent no Location header.'
-				);
-			}
-			return {
-				resourceUrl: new URL(location, responseUrl(response, url)).toString(),
-				iceServers: parseIceServerLinks(response.headers.get('link')),
-				answerSdp: await response.text()
-			};
+		const location = response.headers.get('location');
+		if (!location) {
+			throw new WhipRequestError(
+				'retryable',
+				201,
+				'The endpoint accepted the offer but sent no Location header.'
+			);
 		}
+		return {
+			resourceUrl: new URL(location, responseUrl(response, config.endpointUrl)).toString(),
+			iceServers: parseIceServerLinks(response.headers.get('link')),
+			answerSdp: await response.text()
+		};
 	}
 
 	async function patchIceRestart(

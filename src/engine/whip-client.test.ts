@@ -85,48 +85,20 @@ describe('publish', () => {
 		expect(resource.resourceUrl).toBe('https://node-7.example.net/sessions/abc');
 	});
 
-	it('follows a chain of 307 redirects re-POSTing the offer each hop', async () => {
-		const fetchFn = vi
-			.fn()
-			.mockResolvedValueOnce(
-				response(307, { headers: { location: 'https://edge-1.example.net/whip' }, url: ENDPOINT })
-			)
-			.mockResolvedValueOnce(
-				response(307, {
-					headers: { location: '/ingest/whip' },
-					url: 'https://edge-1.example.net/whip'
-				})
-			)
-			.mockResolvedValueOnce(
-				response(201, {
-					headers: { location: '/ingest/whip/s1' },
-					url: 'https://edge-1.example.net/ingest/whip'
-				})
-			);
+	it('lets the browser follow redirects and resolves against the final response URL', async () => {
+		// `redirect: 'follow'` means fetch lands on the redirected node; the 201's
+		// `response.url` is that final URL and Location resolves against it.
+		const fetchFn = vi.fn(async () =>
+			response(201, {
+				headers: { location: '/ingest/whip/s1' },
+				url: 'https://edge-1.example.net/ingest/whip'
+			})
+		);
 		const resource = await client(fetchFn as typeof fetch).publish(OFFER);
 
-		expect(fetchFn).toHaveBeenCalledTimes(3);
-		expect(fetchFn.mock.calls[1][0]).toBe('https://edge-1.example.net/whip');
-		expect(fetchFn.mock.calls[2][0]).toBe('https://edge-1.example.net/ingest/whip');
-		// Every hop re-POSTs the same offer with the bearer header.
-		for (const call of fetchFn.mock.calls as unknown as [string, RequestInit][]) {
-			expect(call[1].method).toBe('POST');
-			expect(call[1].body).toBe(OFFER);
-			expect((call[1].headers as Record<string, string>).Authorization).toBe(
-				'Bearer secret-token'
-			);
-		}
+		const init = (fetchFn.mock.calls[0] as unknown as [string, RequestInit])[1];
+		expect(init.redirect).toBe('follow');
 		expect(resource.resourceUrl).toBe('https://edge-1.example.net/ingest/whip/s1');
-	});
-
-	it('fails fast after exceeding the bounded redirect chain', async () => {
-		const fetchFn = vi.fn(async (url: string) =>
-			response(307, { headers: { location: `${url}/again` }, url })
-		);
-		const error = await failureKind(client(fetchFn as unknown as typeof fetch).publish(OFFER));
-		expect(error.kind).toBe('not-found');
-		// Initial request + MAX_REDIRECTS follows.
-		expect(fetchFn).toHaveBeenCalledTimes(4);
 	});
 
 	it.each([

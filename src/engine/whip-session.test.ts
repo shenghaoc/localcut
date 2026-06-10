@@ -31,6 +31,7 @@ const ANSWER_SDP = [
 
 class FakeSender {
 	parameters: { encodings: Record<string, unknown>[] } = { encodings: [{}] };
+	generateKeyFrame = vi.fn(() => Promise.resolve());
 	getParameters() {
 		return this.parameters;
 	}
@@ -165,6 +166,19 @@ describe('happy path', () => {
 		connections[0].fireIce('connected');
 		expect(session.state.phase).toBe('live');
 		expect(states.map((state) => state.phase)).toEqual(['connecting', 'live']);
+	});
+
+	it('drives RTCRtpSender.generateKeyFrame() on the configured interval while live', async () => {
+		const { session, connections } = makeHarness();
+		await session.start(settingsFixture(), fakeTracks()); // keyframeIntervalS: 2
+		connections[0].fireIce('connected');
+
+		await vi.advanceTimersByTimeAsync(6_000);
+		expect(connections[0].sender.generateKeyFrame).toHaveBeenCalledTimes(3);
+
+		await session.stop();
+		await vi.advanceTimersByTimeAsync(10_000);
+		expect(connections[0].sender.generateKeyFrame).toHaveBeenCalledTimes(3);
 	});
 
 	it('applies bitrate and resolution caps to the sender encoding', async () => {

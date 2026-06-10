@@ -57,12 +57,12 @@ export interface CodecProbeResult {
 /** Phase 47: features the WHIP publish path needs, probed on the main thread. */
 export interface LivePublishProbeResult {
 	rtcPeerConnection: FeatureSupport;
-	/** Insertable-streams `MediaStreamTrackGenerator` (Chromium). */
-	trackGenerator: FeatureSupport;
+	/** Insertable-streams `MediaStreamTrackGenerator` for the worker-side tap. */
+	trackGeneratorWorker: FeatureSupport;
 	/** Transferable `MediaStreamTrack` (worker-side generator mode). */
 	trackTransfer: FeatureSupport;
-	/** `RTCRtpScriptTransform` — enables keyframe-interval enforcement. */
-	rtpScriptTransform: FeatureSupport;
+	/** `RTCRtpSender.prototype.generateKeyFrame` — keyframe-interval timer. */
+	generateKeyFrame: FeatureSupport;
 	/** H.264 encode with `hardwareAcceleration: 'prefer-hardware'` honoured. */
 	hardwareH264Encode: FeatureSupport;
 }

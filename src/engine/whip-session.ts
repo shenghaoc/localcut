@@ -39,12 +39,6 @@ export interface WhipSessionDeps {
 	createClient?: (config: WhipClientConfig) => WhipClient;
 	fetchFn?: typeof fetch;
 	schedule?: ReconnectSchedule;
-	/**
-	 * Optional keyframe-interval enforcement (R2.4). The UI layer injects the
-	 * `RTCRtpScriptTransform` wiring where the browser supports it; without it
-	 * the platform encoder's default GOP applies.
-	 */
-	attachKeyframeControl?: (sender: RTCRtpSender, intervalS: number) => void;
 	statsIntervalMs?: number;
 	gatherTimeoutMs?: number;
 	/** How long an ICE-restart attempt may take before it counts as failed. */
@@ -172,6 +166,8 @@ export function createWhipSession(deps: WhipSessionDeps): WhipSession {
 	let remoteSdp: string | null = null;
 	let statsTimer: unknown = null;
 	let attemptTimer: unknown = null;
+	let keyframeTimer: unknown = null;
+	let videoSender: RTCRtpSender | null = null;
 	let lastSample: OutboundSample | null = null;
 	let framesDropped = 0;
 
@@ -192,6 +188,40 @@ export function createWhipSession(deps: WhipSessionDeps): WhipSession {
 			schedule.clear(attemptTimer);
 			attemptTimer = null;
 		}
+	}
+
+	function clearKeyframeTimer() {
+		if (keyframeTimer !== null) {
+			schedule.clear(keyframeTimer);
+			keyframeTimer = null;
+		}
+	}
+
+	/**
+	 * Keyframe-interval enforcement (R2.4): a timer calling
+	 * `RTCRtpSender.generateKeyFrame()` directly where the browser supports it.
+	 * Without the method the platform encoder's default GOP applies — the UI
+	 * labels that state instead of faking the control.
+	 */
+	function armKeyframeTimer() {
+		clearKeyframeTimer();
+		if (!settings || !videoSender) return;
+		const sender = videoSender as RTCRtpSender & {
+			generateKeyFrame?: (rids?: string[]) => Promise<void>;
+		};
+		if (typeof sender.generateKeyFrame !== 'function') return;
+		const intervalMs = settings.keyframeIntervalS * 1_000;
+		const tick = () => {
+			keyframeTimer = schedule.set(() => {
+				keyframeTimer = null;
+				if (state.phase !== 'live' || videoSender !== sender) return;
+				// Rejections (e.g. sender momentarily inactive) are non-fatal; the
+				// next tick tries again.
+				void sender.generateKeyFrame?.()?.catch(() => undefined);
+				tick();
+			}, intervalMs);
+		};
+		tick();
 	}
 
 	function pollStats() {
@@ -223,12 +253,14 @@ export function createWhipSession(deps: WhipSessionDeps): WhipSession {
 		});
 		clearStatsTimer();
 		pollStats();
+		armKeyframeTimer();
 	}
 
 	function fail(reason: PublishFailureReason) {
 		controller?.stop();
 		clearStatsTimer();
 		clearAttemptTimer();
+		clearKeyframeTimer();
 		// Clean teardown on fatal local errors too (R1.4): DELETE before close.
 		if (client && resourceUrl) void client.teardown(resourceUrl);
 		pc?.close();
@@ -278,7 +310,7 @@ export function createWhipSession(deps: WhipSessionDeps): WhipSession {
 			encoding.scaleResolutionDownBy = trackHeight / settings.maxHeight;
 		}
 		void sender.setParameters(parameters);
-		deps.attachKeyframeControl?.(sender, settings.keyframeIntervalS);
+		videoSender = sender;
 
 		connection.addEventListener('iceconnectionstatechange', () => {
 			if (pc !== connection) return;
@@ -358,6 +390,7 @@ export function createWhipSession(deps: WhipSessionDeps): WhipSession {
 		controller?.stop();
 		clearStatsTimer();
 		clearAttemptTimer();
+		clearKeyframeTimer();
 		// DELETE first, then close the peer connection (R1.4).
 		if (client && resourceUrl) await client.teardown(resourceUrl);
 		pc?.close();
