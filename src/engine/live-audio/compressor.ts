@@ -5,7 +5,9 @@ export interface CompressorState {
 }
 
 export function createCompressorState(): CompressorState {
-	return { envelope: 0 };
+	// The envelope is a smoothed linear *gain*, so it starts at unity; starting
+	// at 0 would mute the first release-time worth of audio.
+	return { envelope: 1 };
 }
 
 export function processCompressor(

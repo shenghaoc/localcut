@@ -1,6 +1,6 @@
 # Design: Phase 46 — Replay Buffer and Live Audio Chain
 
-> Status: **Planned** — live capture, GOP-aligned ring buffer with OPFS spill, instant replay clip drop, and live audio insert chain in the monitor path.
+> Status: **Implemented (v1)** — live capture, GOP-aligned ring buffer with OPFS spill, instant replay clip drop, and the live audio insert chain on the recording path (print-to-recording). The monitor-path AudioWorklet (hearing the processed chain live) is a tracked follow-up; see tasks T6.2–T6.7.
 
 ## Goal
 
@@ -43,7 +43,7 @@ Add an always-on replay buffer that continuously encodes a browser capture sessi
 │                                                     │                │
 │                                          ┌──────────┴──────────┐     │
 │                                          │  In-memory chunk store│     │
-│                                          │  (RAM budget 64 MiB) │     │
+│                                          │  (RAM budget 256 MiB) │     │
 │                                          │  OPFS spill (excess) │     │
 │                                          └─────────────────────┘     │
 │                                                     │                │
@@ -94,13 +94,17 @@ const videoEncoder = new VideoEncoder({
   error: (err) => reportCaptureError('video-encoder', err),
 });
 videoEncoder.configure({
-  codec: 'avc1.42001f', // H.264 Baseline, or probed preference
+  // H.264 High 4.2 first, probed via isConfigSupported with constrained-
+  // baseline fallbacks (see CAPTURE_VIDEO_CODEC_FALLBACKS in capture.ts).
+  codec: 'avc1.64002a',
   width: trackSettings.width,
   height: trackSettings.height,
   framerate: trackSettings.frameRate ?? 30,
-  bitrate: 5_000_000,
+  bitrate: 8_000_000,
   latencyMode: 'realtime',
-  avc: { format: 'annexb' },
+  // 'avc' (length-prefixed + decoderConfig.description) — required by the
+  // mp4 muxer; annexb would not carry an avcC box.
+  avc: { format: 'avc' },
 });
 
 // Audio encoder
@@ -130,7 +134,7 @@ async function captureLoop(videoStream: ReadableStream<VideoFrame>, audioStream:
 
 ### Capability Gating
 
-`MediaStreamTrackProcessor` availability is probed at editor startup alongside existing probes; the replay buffer feature is disabled when unsupported. `crossOriginIsolated` is required only for the Live Audio Chain (SAB-based parameters, meters, and print-to-recording path); when absent, the replay buffer works normally and the live audio chain is disabled with a message.
+`MediaStreamTrackProcessor` availability is probed at editor startup alongside existing probes; the replay buffer feature is disabled when unsupported. `crossOriginIsolated` is required only for the Live Audio Chain; when absent, the replay buffer works normally and the live audio chain is disabled with a message. (The v1 print-to-recording path runs in the pipeline worker and does not itself need SABs; the chain stays isolation-gated for forward compatibility with the monitor-path worklet's SAB params/meters.)
 
 ## GOP-Aligned Ring Buffer
 
@@ -139,19 +143,24 @@ async function captureLoop(videoStream: ReadableStream<VideoFrame>, audioStream:
 ```typescript
 interface RingBufferEntry {
   type: 'video' | 'audio';
-  chunk: EncodedVideoChunk | EncodedAudioChunk; // reference held in memory
-  timestamp: number;    // wall-clock time in seconds from capture start
+  data: Uint8Array;     // encoded chunk bytes, copied out of the WebCodecs chunk
+  timestamp: number;    // capture-clock time in seconds
   duration: number;     // seconds
-  byteSize: number;
+  byteSize: number;     // data.byteLength
   isKeyframe: boolean;  // always false for audio entries
 }
+```
+
+Entries hold copied bytes rather than live `EncodedVideoChunk`/`EncodedAudioChunk` references: copies survive OPFS spill round-trips unchanged, need no explicit release tracking, and feed Mediabunny `EncodedPacket`s directly at save time.
+
+```typescript
 
 interface RingBufferState {
   entries: RingBufferEntry[];          // in-memory portion (hot tail)
   spilledRanges: SpillRange[];         // OPFS-backed cold segments
   config: {
     maxDurationS: number;              // configured limit (default 30)
-    maxMemoryBytes: number;            // RAM budget (default 64 MiB)
+    maxMemoryBytes: number;            // RAM budget (default 256 MiB)
   };
   stats: {
     totalDurationS: number;
@@ -310,7 +319,7 @@ SAB layout (Float32Array):
   [32]       Limiter: attack (µs)
   [33]       Limiter: release (ms)
   [34]       Denoiser: bypass flag (0/1) — reserved, always 1 until Phase 36
-  [35..N]    Reserved for Phase 36 denoiser parameters
+  [35..47]   Reserved for Phase 36 denoiser parameters (13 slots pre-sized so the SAB never resizes)
 ```
 
 ### Latency Measurement
@@ -331,26 +340,31 @@ A reserved insert slot between the gate and compressor in the chain topology. In
 
 ### Printing Chain to Recording
 
-An optional toggle `printLiveChainToRecording` (default `false`): when enabled, the `AudioData` frames entering the audio encoder are the chain-processed output (post-limiter) instead of the raw capture audio. Implementation: the pipeline worker copies the chain output from a shared ring buffer (separate from the main audio ring) into the encoder input. This is a separate SAB ring written by the AudioWorklet and read by the worker's audio capture loop.
+An optional toggle `printToRecording` (default `false`): when enabled, the `AudioData` frames entering the audio encoder are the chain-processed output (post-limiter) instead of the raw capture audio.
 
-> **AudioContext suspension risk:** The AudioWorklet runs on the browser's audio rendering thread, driven by the active `AudioContext`. If the `AudioContext` is suspended (autoplay policy, background tab throttling, or the user muting the monitor), the worklet stops and the SAB chain-output ring is not written, starving the encoder. **Mitigation:** When `printLiveChainToRecording` is enabled, the `AudioContext` is kept alive by connecting a silent gain node (gain = 0) to `destination`; this ensures the rendering thread runs even when monitoring is muted. As a fallback, if the ring is detected as stalled (no writes for > 200 ms), the encoder reverts to raw capture audio and posts a `live-chain-ring-stalled` diagnostic warning.
+**Implementation (v1): the chain runs in the pipeline worker, on the recording path.** The worker's audio pump copies each capture `AudioData` to planar PCM, runs gate → compressor → limiter per channel using the same pure DSP functions, and re-wraps the result before encoding. The monitor `AudioContext` is not involved at all.
+
+> **Why not the AudioWorklet ring design?** The AudioWorklet runs on the browser's audio rendering thread, driven by the active `AudioContext`. If the `AudioContext` is suspended (autoplay policy, background tab throttling, or the user muting the monitor), a worklet-fed SAB ring would stop being written and starve the encoder — silent recordings or A/V desync. Running the DSP in the worker's capture loop removes that failure mode structurally: recordings are processed deterministically whether or not monitoring is audible. The trade-offs are an extra PCM copy per audio frame (cheap relative to encoding) and that the *monitor* output stays unprocessed until the monitor-path worklet ships (T6.2/T6.5). The limiter's 5 ms lookahead delays recorded audio content by 5 ms relative to video — below perceptibility thresholds, and only while the limiter is engaged.
+
+If chain processing fails (e.g. `AudioData.copyTo` format conversion unsupported), the worker falls back to encoding raw capture audio and posts a single `live-chain-error` message rather than failing the capture.
 
 ## Modules
 
 | Module | Description |
 |--------|-------------|
-| `src/engine/replay-buffer/capture.ts` | `MediaStreamTrackProcessor` setup, stream transfer, encoder lifecycle, capture loop |
-| `src/engine/replay-buffer/ring-buffer.ts` | GOP-aligned ring buffer data structure: push, evict, snapshot, stats |
-| `src/engine/replay-buffer/spill.ts` | OPFS spill serialization/deserialization, file lifecycle, cleanup |
-| `src/engine/replay-buffer/replay-save.ts` | Save-last-N: range calculation, chunk assembly, Mediabunny mux, asset registration, timeline insert |
-| `src/engine/live-audio/live-chain.ts` | Audio insert parameter types, SAB layout indices, parameter validation |
+| `src/engine/replay-buffer/capture.ts` | Capture session/config helpers and codec fallback list (encoder lifecycle + pump loops live in `worker.ts`) |
+| `src/engine/replay-buffer/ring-buffer.ts` | GOP-aligned ring buffer data structure: push (with chunk bytes), evict, snapshot, spill splicing, stats |
+| `src/engine/replay-buffer/spill.ts` | OPFS spill binary codec (pure encode/decode) + file lifecycle, cleanup, saved-clip file helpers |
+| `src/engine/replay-buffer/replay-save.ts` | Save-last-N: range calculation, snapshot reuse, combined spill+RAM entry assembly (mux + asset registration + timeline insert run in `worker.ts`) |
+| `src/engine/live-audio/live-chain.ts` | SAB layout writer, chain latency helper, and the per-channel recording-path chain processor |
 | `src/engine/live-audio/gate.ts` | Noise gate DSP function (pure, unit-testable without AudioWorklet) |
-| `src/engine/live-audio/compressor.ts` | Feed-forward RMS compressor DSP function (pure, unit-testable) |
-| `src/engine/live-audio/limiter.ts` | Brickwall peak limiter DSP function (pure, unit-testable) |
-| `src/engine/live-audio/live-chain-worklet.ts` | AudioWorkletProcessor: reads SAB params, runs insert chain, writes SAB meters |
+| `src/engine/live-audio/compressor.ts` | Feed-forward peak compressor DSP function (pure, unit-testable) |
+| `src/engine/live-audio/limiter.ts` | Brickwall lookahead peak limiter DSP function (pure, unit-testable) |
+| `src/engine/live-audio/live-chain-worklet.ts` | (Follow-up, T6.2) AudioWorkletProcessor for the monitor path: reads SAB params, runs insert chain, writes SAB meters |
+| `src/ui/capture-bridge.ts` | `getDisplayMedia` + `MediaStreamTrackProcessor` setup on the main thread; stream transfer to the worker |
 | `src/ui/ReplayBufferPanel.tsx` | Capture start/stop, ring-buffer indicator, save-last-N button, elapsed time |
 | `src/ui/LiveAudioChainPanel.tsx` | Per-insert bypass + params, aggregate latency display, denoiser reserved slot |
-| `src/protocol.ts` | `ReplayBufferState`, `CaptureSessionState`, `LiveChainState`, `AudioInsertParams` types; new `WorkerCommand` / `WorkerStateMessage` variants |
+| `src/protocol.ts` | `RingBufferState`, `CaptureSessionState`, `LiveAudioChainConfig`, `AudioInsertParams` types; new `WorkerCommand` / `WorkerStateMessage` variants |
 | `src/engine/project.ts` | Schema bump with `replayBufferConfig` and `liveAudioChainConfig` fields |
 
 ## Validation

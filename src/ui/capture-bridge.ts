@@ -15,6 +15,12 @@ export function probeMediaStreamTrackProcessor(): boolean {
 }
 
 export async function startCapture(source: CaptureSource): Promise<CaptureStreams> {
+	if (!probeMediaStreamTrackProcessor()) {
+		throw new Error('MediaStreamTrackProcessor is not supported in this browser.');
+	}
+	if (typeof navigator === 'undefined' || !navigator.mediaDevices) {
+		throw new Error('Media capture requires a secure (HTTPS) browsing context.');
+	}
 	let mediaStream: MediaStream;
 
 	if (source === 'display') {

@@ -1,5 +1,4 @@
 import type { CaptureConfig, CaptureSessionState, CaptureSource } from '../../protocol';
-import type { RingBuffer } from './ring-buffer';
 
 export interface CaptureSession {
 	state: CaptureSessionState;
@@ -27,11 +26,14 @@ export function createCaptureSession(
 	};
 }
 
+// H.264 High 4.2 covers 1080p60; the worker probes this and the fallbacks in
+// CAPTURE_VIDEO_CODEC_FALLBACKS with VideoEncoder.isConfigSupported at the
+// captured resolution before configuring.
 export function getDefaultCaptureConfig(): CaptureConfig {
 	return {
-		videoCodec: 'avc1.42001f',
+		videoCodec: 'avc1.64002a',
 		audioCodec: 'mp4a.40.2',
-		videoBitrate: 5_000_000,
+		videoBitrate: 8_000_000,
 		audioBitrate: 128_000,
 		width: 1920,
 		height: 1080,
@@ -41,12 +43,5 @@ export function getDefaultCaptureConfig(): CaptureConfig {
 	};
 }
 
-export interface CaptureState {
-	session: CaptureSession | null;
-	ringBuffer: RingBuffer;
-	captureStartTime: number;
-}
-
-export function captureProbeMediaStreamTrackProcessor(): boolean {
-	return typeof MediaStreamTrackProcessor !== 'undefined';
-}
+/** Tried in order when the preferred codec string is unsupported. */
+export const CAPTURE_VIDEO_CODEC_FALLBACKS = ['avc1.64002a', 'avc1.42e02a', 'avc1.42002a'] as const;

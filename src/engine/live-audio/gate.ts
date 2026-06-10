@@ -2,10 +2,13 @@ import type { GateParams } from '../../protocol';
 
 export interface GateState {
 	envelope: number;
+	// Samples spent in the hold phase. Lives in state (not a process-local)
+	// so holds longer than one 128-sample block survive block boundaries.
+	holdCounter: number;
 }
 
 export function createGateState(): GateState {
-	return { envelope: 0 };
+	return { envelope: 0, holdCounter: 0 };
 }
 
 export function processGate(
@@ -26,8 +29,6 @@ export function processGate(
 	const rangeLinear = Math.pow(10, params.rangeDb / 20);
 	const thresholdLinear = Math.pow(10, params.thresholdDb / 20);
 
-	let holdCounter = 0;
-
 	for (let i = 0; i < input.length; i++) {
 		const abs = Math.abs(input[i]);
 		const target = abs > thresholdLinear ? 1 : rangeLinear;
@@ -35,10 +36,10 @@ export function processGate(
 		if (target > state.envelope) {
 			// Attack
 			state.envelope = attackCoef * state.envelope + (1 - attackCoef) * target;
-			holdCounter = 0;
-		} else if (holdCounter < holdSamples) {
+			state.holdCounter = 0;
+		} else if (state.holdCounter < holdSamples) {
 			// Hold
-			holdCounter++;
+			state.holdCounter++;
 		} else {
 			// Release
 			state.envelope = releaseCoef * state.envelope + (1 - releaseCoef) * target;

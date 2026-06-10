@@ -1,5 +1,6 @@
 import { createSignal, Show } from 'solid-js';
 import { Circle, Save, Video, VideoOff, Clock } from 'lucide-solid';
+import { Button } from './components/button';
 import type { CaptureSessionState, RingBufferState } from '../protocol';
 
 export interface ReplayBufferPanelProps {
@@ -32,20 +33,34 @@ export function ReplayBufferPanel(props: ReplayBufferPanelProps) {
 		return Math.min(100, (state.stats.totalDurationS / state.config.maxDurationS) * 100);
 	};
 
+	const saveSeconds = () => Math.round(props.ringBufferState?.config.saveDurationS ?? 30);
+
 	return (
-		<div class="replay-buffer-panel">
-			<div class="panel-header" onClick={() => setExpanded(!expanded())} role="button" aria-expanded={expanded()} tabIndex={0}>
+		<div class="replay-buffer-panel panel">
+			<div
+				class="collapse-header"
+				onClick={() => setExpanded(!expanded())}
+				onKeyDown={(e) => {
+					if (e.key === 'Enter' || e.key === ' ') {
+						e.preventDefault();
+						setExpanded(!expanded());
+					}
+				}}
+				role="button"
+				aria-expanded={expanded()}
+				tabIndex={0}
+			>
 				<span class="panel-title">Replay Buffer</span>
 				<Show when={isCapturing()}>
 					<span class="recording-indicator" aria-label="Recording">
-						<Circle size={10} fill="var(--color-error)" color="var(--color-error)" />
+						<Circle size={10} fill="var(--destructive)" color="var(--destructive)" />
 						<span>Recording</span>
 					</span>
 				</Show>
 			</div>
 
 			<Show when={expanded()}>
-				<div class="panel-body">
+				<div class="collapse-body">
 					<Show when={!props.isSupported}>
 						<div class="capability-warning" role="alert">
 							{props.supportedReason ?? 'Replay Buffer is not available in this browser.'}
@@ -55,22 +70,14 @@ export function ReplayBufferPanel(props: ReplayBufferPanelProps) {
 					<Show when={props.isSupported}>
 						<div class="capture-controls">
 							<Show when={!isCapturing()}>
-								<button
-									class="btn btn-primary"
-									onClick={() => props.onStartCapture('display')}
-									aria-label="Start Capture"
-								>
+								<Button variant="default" onClick={() => props.onStartCapture('display')}>
 									<Video size={16} /> Start Capture
-								</button>
+								</Button>
 							</Show>
 							<Show when={isCapturing()}>
-								<button
-									class="btn btn-danger"
-									onClick={() => props.onStopCapture()}
-									aria-label="Stop Capture"
-								>
+								<Button variant="destructive" onClick={() => props.onStopCapture()}>
 									<VideoOff size={16} /> Stop Capture
-								</button>
+								</Button>
 							</Show>
 						</div>
 
@@ -89,15 +96,15 @@ export function ReplayBufferPanel(props: ReplayBufferPanelProps) {
 							</div>
 
 							<div class="save-controls">
-								<button
-									class="btn btn-secondary"
+								<Button
+									variant="secondary"
 									onClick={() => props.onSaveLastN()}
 									disabled={props.saveInProgress || bufferPercent() === 0}
-									aria-label="Save Last 30 Seconds"
+									aria-label={`Save last ${saveSeconds()} seconds`}
 								>
 									<Save size={16} />
-									{props.saveInProgress ? 'Saving...' : 'Save Last 30s'}
-								</button>
+									{props.saveInProgress ? 'Saving…' : `Save Last ${saveSeconds()}s`}
+								</Button>
 							</div>
 						</Show>
 

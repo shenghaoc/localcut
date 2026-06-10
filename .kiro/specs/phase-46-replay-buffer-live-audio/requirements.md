@@ -29,7 +29,7 @@
 - **R2.2** The buffer has a configurable duration limit (seconds, default 30, max 300, configurable via a setting persisted with the project). The combined wall-clock span of stored chunks must not exceed the configured duration plus one max GOP interval.
 - **R2.3** Eviction is GOP-aligned: when the buffer exceeds its duration limit, chunks are dropped from the head (oldest) up to and including the next video sync sample (keyframe) boundary. Audio chunks within the evicted time range are also dropped. The invariant: the buffer always starts on a video keyframe.
 - **R2.4** The ring buffer maintains at most one active GOP-worth of un-keyframed video chunks at the tail (the open GOP being written by the live encoder). These tail chunks are held until the next keyframe arrives, at which point the GOP boundary is marked.
-- **R2.5** In-memory chunk storage is capped at a RAM budget (default 64 MiB). When the in-memory budget is exceeded, the oldest chunks are spilled to OPFS files keyed by timestamp range and chunk index. Spilled chunks retain their keyframe metadata. The in-memory portion is always the most recent tail.
+- **R2.5** In-memory chunk storage is capped at a RAM budget (default 256 MiB). When the in-memory budget is exceeded, the oldest chunks are spilled to OPFS files keyed by timestamp range and chunk index. Spilled chunks retain their keyframe metadata. The in-memory portion is always the most recent tail.
 - **R2.6** OPFS spill files are deleted promptly when their chunks are evicted from the ring (duration-based eviction). Stale spill files from crashed sessions are cleaned up on next capture start.
 - **R2.7** The ring buffer reports its current state — total duration, in-memory byte count, spilled byte count, oldest/newest timestamps, and keyframe count — over typed messages for diagnostics and UI display.
 
@@ -49,7 +49,7 @@
 - **R4.1** A live audio processing chain is inserted in the AudioWorklet monitor path between the capture audio source and the monitor output. The chain is in the monitor path only — it does not affect the audio being recorded into the ring buffer unless the user explicitly chooses to print it.
 - **R4.2** The chain includes three inserts, each independently bypassable:
   - **Gate** — noise gate with configurable threshold (dBFS), attack (ms), hold (ms), and release (ms). Signal below threshold is attenuated by the configured range (dB).
-  - **Compressor** — feed-forward RMS compressor with configurable threshold (dBFS), ratio, attack (ms), release (ms), knee (dB), and makeup gain (dB).
+  - **Compressor** — feed-forward peak compressor with configurable threshold (dBFS), ratio, attack (ms), release (ms), knee (dB), and makeup gain (dB).
   - **Limiter** — brickwall peak limiter with configurable ceiling (dBFS), attack (µs), and release (ms). Precedes the final output; cannot be placed before gate/compressor.
 - **R4.3** The chain processes the mixed monitor signal (capture audio + timeline audio) before output to speakers. Each insert's input and output levels are sampled and reported over the existing Phase 16 SAB meter layout (extended with insert-level slots).
 - **R4.4** Each insert's parameters are adjustable via the UI and persisted with the project. Parameter changes are applied at the next processing block boundary (no audible zipper noise).

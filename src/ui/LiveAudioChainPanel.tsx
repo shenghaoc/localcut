@@ -1,5 +1,6 @@
-import { createSignal, Show } from 'solid-js';
+import { createSignal, Show, type JSX } from 'solid-js';
 import { Power, PowerOff } from 'lucide-solid';
+import { Button } from './components/button';
 import type { LiveAudioChainConfig } from '../protocol';
 
 export interface LiveAudioChainPanelProps {
@@ -14,23 +15,39 @@ function InsertRow(props: {
 	label: string;
 	bypass: boolean;
 	onToggleBypass: () => void;
-	children?: any;
+	children?: JSX.Element;
 }) {
 	const [expanded, setExpanded] = createSignal(false);
 
 	return (
 		<div class="insert-row">
-			<div class="insert-header" onClick={() => setExpanded(!expanded())} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded(!expanded()); } }} role="button" aria-expanded={expanded()} tabIndex={0}>
-				<button
-					class="btn btn-icon"
-					onClick={(e) => { e.stopPropagation(); props.onToggleBypass(); }}
+			<div
+				class="insert-header"
+				onClick={() => setExpanded(!expanded())}
+				onKeyDown={(e) => {
+					if (e.key === 'Enter' || e.key === ' ') {
+						e.preventDefault();
+						setExpanded(!expanded());
+					}
+				}}
+				role="button"
+				aria-expanded={expanded()}
+				tabIndex={0}
+			>
+				<Button
+					variant="ghost"
+					size="icon"
+					onClick={(e: MouseEvent) => {
+						e.stopPropagation();
+						props.onToggleBypass();
+					}}
 					aria-label={props.bypass ? `Enable ${props.label}` : `Bypass ${props.label}`}
 					aria-pressed={!props.bypass}
 				>
 					<Show when={props.bypass} fallback={<Power size={14} />}>
 						<PowerOff size={14} />
 					</Show>
-				</button>
+				</Button>
 				<span class="insert-name">{props.label}</span>
 				<span class={`insert-status ${props.bypass ? 'bypassed' : 'active'}`}>
 					{props.bypass ? 'Bypassed' : 'Active'}
@@ -65,7 +82,6 @@ function SliderControl(props: {
 					step={props.step}
 					value={props.value}
 					onInput={(e) => props.onChange(parseFloat(e.currentTarget.value))}
-					role="slider"
 					aria-valuemin={props.min}
 					aria-valuemax={props.max}
 					aria-valuenow={props.value}
@@ -84,8 +100,20 @@ export function LiveAudioChainPanel(props: LiveAudioChainPanelProps) {
 	const cfg = () => props.config;
 
 	return (
-		<div class="live-audio-chain-panel">
-			<div class="panel-header" onClick={() => setExpanded(!expanded())} role="button" aria-expanded={expanded()} tabIndex={0}>
+		<div class="live-audio-chain-panel panel">
+			<div
+				class="collapse-header"
+				onClick={() => setExpanded(!expanded())}
+				onKeyDown={(e) => {
+					if (e.key === 'Enter' || e.key === ' ') {
+						e.preventDefault();
+						setExpanded(!expanded());
+					}
+				}}
+				role="button"
+				aria-expanded={expanded()}
+				tabIndex={0}
+			>
 				<span class="panel-title">Live Audio Chain</span>
 				<span class="latency-display" aria-live="polite">
 					Latency: {props.latencyMs.toFixed(1)} ms
@@ -93,7 +121,7 @@ export function LiveAudioChainPanel(props: LiveAudioChainPanelProps) {
 			</div>
 
 			<Show when={expanded()}>
-				<div class="panel-body">
+				<div class="collapse-body">
 					<Show when={!props.crossOriginIsolated}>
 						<div class="capability-warning" role="alert">
 							Live Audio Chain requires cross-origin isolation.
@@ -124,9 +152,9 @@ export function LiveAudioChainPanel(props: LiveAudioChainPanelProps) {
 						{/* Denoiser (reserved) */}
 						<div class="insert-row disabled">
 							<div class="insert-header">
-								<button class="btn btn-icon" disabled aria-label="Denoiser unavailable">
+								<Button variant="ghost" size="icon" disabled aria-label="Denoiser unavailable">
 									<PowerOff size={14} />
-								</button>
+								</Button>
 								<span class="insert-name">Noise Suppression</span>
 								<span class="insert-status bypassed">Available in a future update</span>
 							</div>
@@ -181,6 +209,10 @@ export function LiveAudioChainPanel(props: LiveAudioChainPanelProps) {
 									/>
 									Print chain to recording
 								</label>
+								<p class="print-toggle-hint">
+									Applies the chain to recorded audio in the pipeline worker. Monitor output is
+									unprocessed in this version.
+								</p>
 							</div>
 						</Show>
 					</Show>

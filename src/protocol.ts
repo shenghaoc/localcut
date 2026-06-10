@@ -1160,16 +1160,12 @@ export type WorkerCommand =
 	| { type: 'request-diagnostic-snapshot'; requestId: string }
 	| { type: 'run-recovery-action'; actionId: string }
 	// Phase 46: Replay Buffer + Live Audio Chain
-	| {
-		type: 'capture-start';
-		source: CaptureSource;
-		config?: Partial<CaptureConfig>;
-	}
 	| { type: 'capture-stop' }
 	| {
 		type: 'capture-transfer-streams';
 		videoStream: ReadableStream<VideoFrame>;
 		audioStream?: ReadableStream<AudioData>;
+		settings?: CaptureStreamSettings;
 	}
 	| { type: 'replay-save-last-n'; nSeconds?: number }
 	| { type: 'replay-save-cancel' }
@@ -1349,9 +1345,9 @@ export type WorkerStateMessage =
 	| { type: 'replay-save-complete'; sourceId: string; fileName: string }
 	| { type: 'replay-save-error'; message: string }
 	| { type: 'replay-save-canceled' }
+	| { type: 'live-chain-config'; config: LiveAudioChainConfig }
 	| { type: 'live-chain-latency'; latencyMs: number }
-	| { type: 'live-chain-error'; message: string }
-	| { type: 'live-chain-ring-stalled' };
+	| { type: 'live-chain-error'; message: string };
 
 // ── Phase 46: Replay Buffer + Live Audio Chain ──
 
@@ -1369,6 +1365,15 @@ export interface CaptureConfig {
 
 export type CaptureSource = 'display' | 'camera';
 
+/** Track metadata captured on the main thread alongside the transferred streams. */
+export interface CaptureStreamSettings {
+	source: CaptureSource;
+	sourceLabel: string;
+	width?: number;
+	height?: number;
+	frameRate?: number;
+}
+
 export interface CaptureSessionState {
 	active: boolean;
 	sourceLabel: string;
@@ -1385,6 +1390,12 @@ export interface RingBufferConfig {
 	maxMemoryBytes: number;
 	saveDurationS: number;
 }
+
+export const DEFAULT_RING_BUFFER_CONFIG: RingBufferConfig = {
+	maxDurationS: 30,
+	maxMemoryBytes: 256 * 1024 * 1024,
+	saveDurationS: 30
+};
 
 export interface RingBufferStats {
 	totalDurationS: number;
@@ -1480,9 +1491,12 @@ export const DEFAULT_LIVE_AUDIO_CHAIN_CONFIG: LiveAudioChainConfig = {
 };
 
 // Extended SAB layout for live audio chain (appended to Phase 16 meter SAB).
-// Total meters + chain params: 36 + N (reserved for Phase 36 denoiser).
+// Used by the future monitor-path AudioWorklet; the v1 print-to-recording
+// path runs the chain in the pipeline worker and does not touch this SAB.
 export const LIVE_CHAIN_METER_OFFSET = 4; // After Phase 16 meters [0..3]
-export const LIVE_CHAIN_METER_FIELD_COUNT = 32; // Indices 4..35 (meters + params for gate/comp/limiter)
+// Indices 4..34 are assigned below; 35..47 (13 slots) are reserved for the
+// Phase 36 denoiser parameters so adding them won't resize existing SABs.
+export const LIVE_CHAIN_METER_FIELD_COUNT = 44; // Indices 4..47
 export const LIVE_CHAIN_TOTAL_FIELDS = METER_FIELD_COUNT + LIVE_CHAIN_METER_FIELD_COUNT;
 
 export const LiveChainMeterIndex = {
@@ -1521,12 +1535,9 @@ export const LiveChainMeterIndex = {
 	LIMITER_CEILING: 31,
 	LIMITER_ATTACK: 32,
 	LIMITER_RELEASE: 33,
-	// Reserved denoiser (34)
+	// Reserved denoiser (34); params 35..47 reserved for Phase 36
 	DENOISER_BYPASS: 34,
-	// 35..N reserved for Phase 36 denoiser
 } as const;
-
-export const LIVE_CHAIN_RING_FRAME_COUNT = 4096; // 128-sample blocks × 32 = ~85ms at 48kHz
 
 export function assertCrossOriginIsolated(context: string): void {
 	if (!globalThis.crossOriginIsolated) {

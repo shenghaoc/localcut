@@ -591,3 +591,78 @@ describe('source descriptor matching', () => {
 		).toContain('audio channel count');
 	});
 });
+
+describe('Phase 46 config persistence (schema v11)', () => {
+	const ringConfig = { maxDurationS: 60, maxMemoryBytes: 128 * 1024 * 1024, saveDurationS: 20 };
+	const chainConfig = {
+		gate: { bypass: false, thresholdDb: -42, rangeDb: -70, attackMs: 0.5, holdMs: 25, releaseMs: 80 },
+		compressor: {
+			bypass: true,
+			thresholdDb: -18,
+			ratio: 3,
+			attackMs: 4,
+			releaseMs: 120,
+			kneeDb: 9,
+			makeupGainDb: 1.5
+		},
+		limiter: { bypass: false, ceilingDb: -0.5, attackUs: 80, releaseMs: 60 },
+		denoiserBypass: true,
+		printToRecording: true
+	};
+
+	it('round-trips replayBufferConfig and liveAudioChainConfig', () => {
+		const doc = serializeProject({
+			projectId: 'project-1',
+			timeline: timelineFixture(),
+			sources: [sourceFixture()],
+			replayBufferConfig: ringConfig,
+			liveAudioChainConfig: chainConfig
+		});
+		expect(doc.replayBufferConfig).toEqual(ringConfig);
+		expect(doc.liveAudioChainConfig).toEqual(chainConfig);
+
+		// Pass the doc object directly (matching the persistence path, which
+		// structured-clones): the timeline fixture's LUT holds a Float32Array
+		// that JSON.stringify would mangle.
+		const result = deserializeProject(doc);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.doc.replayBufferConfig).toEqual(ringConfig);
+		expect(result.doc.liveAudioChainConfig).toEqual(chainConfig);
+	});
+
+	it('omits the configs when not provided and parses v10 docs without them', () => {
+		const doc = serializeProject({
+			projectId: 'project-1',
+			timeline: timelineFixture(),
+			sources: [sourceFixture()]
+		});
+		expect(doc.replayBufferConfig).toBeUndefined();
+		expect(doc.liveAudioChainConfig).toBeUndefined();
+
+		const result = deserializeProject({ ...doc, schemaVersion: 10 });
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.doc.replayBufferConfig).toBeUndefined();
+		expect(result.doc.liveAudioChainConfig).toBeUndefined();
+	});
+
+	it('rejects malformed configs back to factory defaults (undefined)', () => {
+		const doc = serializeProject({
+			projectId: 'project-1',
+			timeline: timelineFixture(),
+			sources: [sourceFixture()],
+			replayBufferConfig: ringConfig,
+			liveAudioChainConfig: chainConfig
+		});
+		const result = deserializeProject({
+			...doc,
+			replayBufferConfig: { maxDurationS: -5, maxMemoryBytes: 1, saveDurationS: 1 },
+			liveAudioChainConfig: { gate: { bypass: 'yes' } }
+		});
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.doc.replayBufferConfig).toBeUndefined();
+		expect(result.doc.liveAudioChainConfig).toBeUndefined();
+	});
+});
