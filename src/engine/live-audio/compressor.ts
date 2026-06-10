@@ -22,7 +22,6 @@ export function processCompressor(
 
 	const attackCoef = Math.exp(-1 / ((params.attackMs / 1000) * sampleRate));
 	const releaseCoef = Math.exp(-1 / ((params.releaseMs / 1000) * sampleRate));
-	const thresholdLinear = Math.pow(10, params.thresholdDb / 20);
 	const kneeHalf = params.kneeDb / 2;
 	const makeupGainLinear = Math.pow(10, params.makeupGainDb / 20);
 
@@ -31,13 +30,11 @@ export function processCompressor(
 		const db = abs > 0 ? 20 * Math.log10(abs) : -120;
 
 		let gainReductionDb = 0;
-		if (db > thresholdLinear + kneeHalf) {
-			// Above knee — full compression
-			gainReductionDb = (thresholdLinear - db) * (1 - 1 / params.ratio);
-		} else if (db > thresholdLinear - kneeHalf) {
-			// In knee — soft transition
-			const above = db - (thresholdLinear - kneeHalf);
-			gainReductionDb = ((above * above) / (2 * params.kneeDb)) * (1 - 1 / params.ratio);
+		if (db > params.thresholdDb + kneeHalf) {
+			gainReductionDb = (params.thresholdDb - db) * (1 - 1 / params.ratio);
+		} else if (db > params.thresholdDb - kneeHalf) {
+			const above = db - (params.thresholdDb - kneeHalf);
+			gainReductionDb = -((above * above) / (2 * params.kneeDb)) * (1 - 1 / params.ratio);
 		}
 
 		const targetGain = Math.pow(10, gainReductionDb / 20);

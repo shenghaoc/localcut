@@ -58,7 +58,7 @@ export function createRingBuffer(config: RingBufferConfig): RingBuffer {
 			}
 		}
 		if (cutoffIdx === -1) {
-			for (let i = 0; i < entries.length; i++) {
+			for (let i = 1; i < entries.length; i++) {
 				if (entries[i].type === 'video' && entries[i].isKeyframe) {
 					cutoffIdx = i; droppedFrameCount++; break;
 				}
@@ -83,6 +83,9 @@ export function createRingBuffer(config: RingBufferConfig): RingBuffer {
 		},
 
 		getSnapshot(startTimestamp: number, endTimestamp: number): RingBufferSnapshot {
+			if (entries.length === 0) {
+				return { entries: [], startTimestamp, endTimestamp };
+			}
 			let startIdx = 0;
 			for (let i = 0; i < entries.length; i++) {
 				if (entries[i].type === 'video' && entries[i].isKeyframe && entries[i].timestamp <= startTimestamp) {

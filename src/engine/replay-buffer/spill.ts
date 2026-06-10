@@ -4,6 +4,9 @@ import type { RingBufferEntry } from './ring-buffer';
 const SPILL_DIR = 'replay-buffer';
 
 function getDir(): Promise<FileSystemDirectoryHandle> {
+	if (typeof navigator === 'undefined' || !navigator.storage) {
+		return Promise.reject(new Error('OPFS is not supported in this environment.'));
+	}
 	return navigator.storage.getDirectory().then((root) =>
 		root.getDirectoryHandle(SPILL_DIR, { create: true }),
 	);

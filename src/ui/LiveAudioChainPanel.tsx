@@ -20,7 +20,7 @@ function InsertRow(props: {
 
 	return (
 		<div class="insert-row">
-			<div class="insert-header" onClick={() => setExpanded(!expanded())} role="button" aria-expanded={expanded()} tabIndex={0}>
+			<div class="insert-header" onClick={() => setExpanded(!expanded())} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded(!expanded()); } }} role="button" aria-expanded={expanded()} tabIndex={0}>
 				<button
 					class="btn btn-icon"
 					onClick={(e) => { e.stopPropagation(); props.onToggleBypass(); }}
