@@ -1432,7 +1432,7 @@ export type WorkerCommand =
 	| { type: 'publish-tap-stop' }
 	| { type: 'capture-add-source'; source: CaptureSourceDescriptor; track: MediaStreamTrack }
 	| { type: 'capture-remove-source'; sourceId: string }
-	| { type: 'capture-start'; settings: CaptureSettingsSnapshot }
+	| { type: 'capture-start'; settings: CaptureSettingsSnapshot; writerPort?: MessagePort }
 	| { type: 'capture-stop' }
 	| { type: 'capture-recovery-import'; sessionId: string }
 	| { type: 'capture-recovery-discard'; sessionId: string }
