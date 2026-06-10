@@ -13,7 +13,10 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 const STREAM_PATH = 'live';
 const WHIP_URL = `http://127.0.0.1:8889/${STREAM_PATH}/whip`;
 const API_PATHS = 'http://127.0.0.1:9997/v3/paths/list';
-const MEDIAMTX_CONTAINER = process.env.MEDIAMTX_CONTAINER ?? 'whip-mediamtx';
+/** How to bounce the ingest server mid-stream (overridable for non-docker runs). */
+const MEDIAMTX_RESTART_CMD =
+	process.env.MEDIAMTX_RESTART_CMD ??
+	`docker restart ${process.env.MEDIAMTX_CONTAINER ?? 'whip-mediamtx'}`;
 
 interface MediaMtxPath {
 	name: string;
@@ -86,7 +89,7 @@ test('a mid-stream server drop walks the documented reconnect policy back to liv
 		.poll(async () => (await ingestPath(request))?.ready ?? false, { timeout: 30_000 })
 		.toBe(true);
 
-	execSync(`docker restart ${MEDIAMTX_CONTAINER}`, { stdio: 'inherit' });
+	execSync(MEDIAMTX_RESTART_CMD, { stdio: 'inherit' });
 
 	// R5.2: grace period → ICE restart (PATCH 404s on the restarted server) →
 	// full re-POST → live again. ICE failure detection dominates the wait.

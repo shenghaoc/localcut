@@ -19,7 +19,15 @@ export default defineConfig({
 	use: {
 		baseURL: 'http://127.0.0.1:5173',
 		...devices['Desktop Chrome'],
-		trace: 'retain-on-failure'
+		trace: 'retain-on-failure',
+		// Sandboxed environments without access to the Playwright CDN can point
+		// WHIP_CHROME at any Chrome/Chromium binary instead.
+		...(process.env.WHIP_CHROME
+			? {
+					launchOptions: { executablePath: process.env.WHIP_CHROME },
+					chromiumSandbox: false
+				}
+			: {})
 	},
 	webServer: {
 		command: 'npm run dev -- --host 127.0.0.1 --port 5173 --strictPort',
