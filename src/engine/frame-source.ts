@@ -109,3 +109,51 @@ export class SequentialFrameSource implements VideoFrameProvider {
 		this.anchor = Number.NEGATIVE_INFINITY;
 	}
 }
+
+/** Structural slice of MediaInputHandle the pool needs (avoids an import cycle). */
+export interface SecondarySinkHandle {
+	readonly sourceId: string;
+	readonly frameSource: VideoFrameProvider | null;
+	readonly createSecondaryFrameSource?: () => VideoFrameProvider | null;
+}
+
+/**
+ * Lazily opens at most one secondary decode sink per source (Phase 13 T2.2).
+ *
+ * When a transition straddles two clips cut from the *same* source, the outgoing
+ * and incoming layers decode at timestamps far apart on every frame of the
+ * window; a single {@link SequentialFrameSource} would keyframe-re-seek each
+ * call. Routing the incoming layer through a dedicated secondary sink keeps both
+ * iterators sequential. Sources that cannot open one (stills, handles without
+ * the factory) fall back to the primary provider, which stays correct — just
+ * slower.
+ */
+export class SecondaryFrameSourcePool {
+	private readonly providers = new Map<string, VideoFrameProvider>();
+
+	/** Returns the source's secondary provider, creating it on first use. */
+	acquire(handle: SecondarySinkHandle): VideoFrameProvider | null {
+		const existing = this.providers.get(handle.sourceId);
+		if (existing) return existing;
+		const created = handle.createSecondaryFrameSource?.() ?? null;
+		if (created) {
+			this.providers.set(handle.sourceId, created);
+			return created;
+		}
+		return handle.frameSource;
+	}
+
+	/** Drops the secondary for one source (when its handle is disposed/removed). */
+	release(sourceId: string): void {
+		const provider = this.providers.get(sourceId);
+		if (!provider) return;
+		provider.reset();
+		this.providers.delete(sourceId);
+	}
+
+	/** Resets and forgets every secondary sink (teardown, end of export). */
+	disposeAll(): void {
+		for (const provider of this.providers.values()) provider.reset();
+		this.providers.clear();
+	}
+}

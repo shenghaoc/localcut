@@ -61,6 +61,7 @@ import {
 	reorderTrack,
 	revalidateTransitions,
 	resolveAllAt,
+	sharedSourceIncomingLayers,
 	resolveAudioAt,
 	setClipDuration,
 	setTransition,
@@ -147,6 +148,7 @@ import {
 } from './playback';
 import { probeEncodeThroughput } from './hardware-probe';
 import { FrameCache, makeFrameCacheKey } from './frame-cache';
+import { SecondaryFrameSourcePool, type VideoFrameProvider } from './frame-source';
 import {
 	ExportCancelledError,
 	defaultExportSettings,
@@ -264,6 +266,8 @@ let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
 let autosaveInFlight: Promise<void> | null = null;
 let restoreOfferGeneration = 0;
 let frameCache: FrameCache | null = null;
+/** Secondary decode sinks for same-source transition pairs (Phase 13 T2.2). */
+const secondaryFrameSources = new SecondaryFrameSourcePool();
 let currentProbe: ThroughputProbe | null = null;
 let currentCapabilityProbe: CapabilityProbeResult | null = null;
 let layerBudgetWarned = false;
@@ -414,12 +418,12 @@ function postTimelineState() {
 		visible: track.visible
 	}));
 	const sourceDurs = transitionSourceDurations();
-	const transitionSnapshot: TimelineTransitionSnapshot[] = cloneTransitionsSnapshot(transitions).map(
-		(t) => ({
-			...t,
-			maxDurationS: maxTransitionDurationS(timeline, sourceDurs, t.trackId, t.fromClipId, t.toClipId)
-		})
-	);
+	const transitionSnapshot: TimelineTransitionSnapshot[] = cloneTransitionsSnapshot(
+		transitions
+	).map((t) => ({
+		...t,
+		maxDurationS: maxTransitionDurationS(timeline, sourceDurs, t.trackId, t.fromClipId, t.toClipId)
+	}));
 	post({
 		type: 'timeline-state',
 		timeline: snapshot,
@@ -1736,6 +1740,7 @@ function teardownMedia() {
 	adaptive = null;
 	frameCache?.clear();
 	frameCache = null;
+	secondaryFrameSources.disposeAll();
 	for (const handle of sourceInputs.values()) {
 		handle.dispose();
 	}
@@ -1755,16 +1760,17 @@ function teardownMedia() {
 
 function wrapDecodedFrameForPlayback(
 	frameSource: MediaInputHandle,
-	sourceTimestamp: number
+	sourceTimestamp: number,
+	provider: VideoFrameProvider | null = frameSource.frameSource
 ): Promise<DecodedFrame | null> {
-	if (!frameSource.frameSource) {
+	if (!provider) {
 		return Promise.resolve(null);
 	}
 	// Capture the controller that requested this decode. If playback is disposed or
 	// rebuilt (re-import, teardown) before the decode resolves, the old controller
 	// will never receive or close this frame — drop it here so it can't leak.
 	const activePlayback = playback;
-	return frameSource.frameSource.frameAt(sourceTimestamp).then((decoded) => {
+	return provider.frameAt(sourceTimestamp).then((decoded) => {
 		if (!decoded) return null;
 		// Close the decoded sample even if toVideoFrame() throws on a corrupt
 		// sample — otherwise the underlying decoder resource leaks. The thrown
@@ -1796,10 +1802,11 @@ function wrapDecodedFrameForPlayback(
 function decodeFrameForLayer(
 	sourceHandle: MediaInputHandle,
 	sourceId: string,
-	sourceTime: number
+	sourceTime: number,
+	provider: VideoFrameProvider | null = sourceHandle.frameSource
 ): Promise<DecodedFrame | null> {
 	if (!frameCache) {
-		return wrapDecodedFrameForPlayback(sourceHandle, sourceTime);
+		return wrapDecodedFrameForPlayback(sourceHandle, sourceTime, provider);
 	}
 	const key = makeFrameCacheKey(sourceId, sourceTime);
 	// FrameCache.get() returns a caller-owned clone. The wrapper owns it (closed via
@@ -1812,7 +1819,7 @@ function decodeFrameForLayer(
 			close: () => cached.close()
 		});
 	}
-	return wrapDecodedFrameForPlayback(sourceHandle, sourceTime);
+	return wrapDecodedFrameForPlayback(sourceHandle, sourceTime, provider);
 }
 
 /** Every title clip on the timeline, paired with its owning track id. */
@@ -1888,8 +1895,20 @@ function activeCaptionLayersAt(
  * Phase 13: `transition` metadata flows from resolveAllAt through to CompositeLayer.
  */
 type LayerMeta =
-	| { kind: 'frame'; effects: ClipEffectParams; transform: TransformParams; lut?: ClipLut; transition?: import('./timeline').TransitionResolveMeta }
-	| { kind: 'title'; clipId: string; content: TitleContent; transform: TransformParams; transition?: import('./timeline').TransitionResolveMeta };
+	| {
+			kind: 'frame';
+			effects: ClipEffectParams;
+			transform: TransformParams;
+			lut?: ClipLut;
+			transition?: import('./timeline').TransitionResolveMeta;
+	  }
+	| {
+			kind: 'title';
+			clipId: string;
+			content: TitleContent;
+			transform: TransformParams;
+			transition?: import('./timeline').TransitionResolveMeta;
+	  };
 
 /**
  * Decodes the budgeted video layer stack at `timestamp` (bottom → top) for the
@@ -1903,6 +1922,9 @@ type LayerMeta =
 function makeGetLayers() {
 	return async (timestamp: number): Promise<DecodedLayer<LayerMeta>[] | null> => {
 		const layers = resolveAllAt(timeline, timestamp, transitions);
+		// Same-source transition pairs route the incoming side through a secondary
+		// sink so the two cut sides don't keyframe-re-seek each other (T2.2).
+		const secondarySinkLayers = sharedSourceIncomingLayers(layers);
 		const budget = layerBudgetFromProbe(currentProbe);
 		const decodedLayers: DecodedLayer<LayerMeta>[] = [];
 		let decodedCount = 0;
@@ -1944,7 +1966,10 @@ function makeGetLayers() {
 				const decoded = await decodeFrameForLayer(
 					handle,
 					layer.clip.sourceId,
-					sourceTimestamp.adapterTimestampS
+					sourceTimestamp.adapterTimestampS,
+					secondarySinkLayers.has(layer)
+						? secondaryFrameSources.acquire(handle)
+						: handle.frameSource
 				);
 				if (!decoded) continue;
 				const sampled = sampleClipParamsAt(layer.clip, timestamp);
@@ -2098,6 +2123,7 @@ function pruneUnusedSources(): void {
 	if (exportAbort) return;
 	for (const [id, handle] of [...sourceInputs.entries()]) {
 		if (binSourceIds.has(id)) continue;
+		secondaryFrameSources.release(id);
 		handle.dispose();
 		sourceInputs.delete(id);
 		thumbnailGen?.cancelSource(id);
@@ -2588,6 +2614,7 @@ function handleRemoveAsset(cmd: Extract<WorkerCommand, { type: 'remove-asset' }>
 	}
 	const handle = sourceInputs.get(cmd.sourceId);
 	if (handle) {
+		secondaryFrameSources.release(cmd.sourceId);
 		handle.dispose();
 		sourceInputs.delete(cmd.sourceId);
 		if (primaryHandle === handle) primaryHandle = null;
@@ -3126,6 +3153,7 @@ async function applyImportedDoc(doc: ProjectDoc): Promise<void> {
 	for (const id of [...binSourceIds]) {
 		if (keepIds.has(id)) continue;
 		binSourceIds.delete(id);
+		secondaryFrameSources.release(id);
 		sourceInputs.get(id)?.dispose();
 		sourceInputs.delete(id);
 		sourceDescriptors.delete(id);

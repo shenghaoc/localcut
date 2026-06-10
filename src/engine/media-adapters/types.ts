@@ -112,6 +112,14 @@ export interface MediaInputHandle {
 	readonly warnings: readonly SourceHealthWarning[];
 	/** Decoded-frame provider for the primary video track / still; null if none. */
 	readonly frameSource: VideoFrameProvider | null;
+	/**
+	 * Opens an additional sequential decode sink over the same video track, so a
+	 * transition between two clips of one source can read both sides of the cut
+	 * without thrashing the primary sink's iterator (Phase 13 T2.2). Returns null
+	 * when the source has no decodable video. Created sinks are owned by the
+	 * handle and released by {@link dispose}.
+	 */
+	readonly createSecondaryFrameSource?: () => VideoFrameProvider | null;
 	/** Sequential decoded-audio source; null if none/undecodable. */
 	readonly audioSource: SequentialAudioSource | null;
 	readonly audioChannels: number;

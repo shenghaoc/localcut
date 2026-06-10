@@ -345,6 +345,31 @@ export function resolveAllAt(
 	return layers;
 }
 
+/**
+ * Incoming-role transition layers whose outgoing partner reads the *same*
+ * source (Phase 13 T2.2). These must decode through a secondary sink: the two
+ * sides of the cut sit far apart in the file, so sharing one sequential sink
+ * would force a keyframe re-seek on every frame of the window.
+ */
+export function sharedSourceIncomingLayers(
+	layers: readonly ResolveResult[]
+): ReadonlySet<ResolveResult> {
+	const shared = new Set<ResolveResult>();
+	const outgoingSourceByTransition = new Map<string, string>();
+	for (const layer of layers) {
+		if (layer.transition?.role === 'outgoing') {
+			outgoingSourceByTransition.set(layer.transition.transitionId, layer.clip.sourceId);
+		}
+	}
+	for (const layer of layers) {
+		if (layer.transition?.role !== 'incoming') continue;
+		if (outgoingSourceByTransition.get(layer.transition.transitionId) === layer.clip.sourceId) {
+			shared.add(layer);
+		}
+	}
+	return shared;
+}
+
 /** Finds the owning audio clip at a timeline timestamp. */
 export function resolveAudioAt(timeline: Timeline, time: number): ResolveResult | null {
 	return resolveOnTrackType(timeline, time, 'audio');

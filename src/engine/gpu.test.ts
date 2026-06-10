@@ -62,13 +62,30 @@ function fakeCanvas(): OffscreenCanvas {
 	return { width: 0, height: 0 } as unknown as OffscreenCanvas;
 }
 
-function layer(width: number, height: number): CompositeLayer {
+function layer(
+	width: number,
+	height: number,
+	transition?: CompositeLayer['transition']
+): CompositeLayer {
 	return {
 		kind: 'frame',
 		frame: { displayWidth: width, displayHeight: height } as unknown as VideoFrame,
 		effects: { ...DEFAULT_CLIP_EFFECTS },
-		transform: { ...DEFAULT_TRANSFORM }
+		transform: { ...DEFAULT_TRANSFORM },
+		transition
 	};
+}
+
+function transitionPair(
+	transitionId: string,
+	kind: 'cross-dissolve' | 'dip-to-black' | 'wipe' | 'slide',
+	mixT: number
+): CompositeLayer[] {
+	const shared = { mixT, kind, params: {}, transitionId, durationS: 1 } as const;
+	return [
+		layer(1920, 1080, { ...shared, role: 'outgoing' }),
+		layer(1920, 1080, { ...shared, role: 'incoming' })
+	];
 }
 
 describe('PreviewRenderer single submission', () => {
@@ -82,6 +99,26 @@ describe('PreviewRenderer single submission', () => {
 			const layers = Array.from({ length: count }, () => layer(1920, 1080));
 			renderer.present(layers);
 			expect(submit, `${count} layers`).toHaveBeenCalledTimes(1);
+			expect(renderer.lastFrameSubmissionCount).toBe(1);
+		}
+	});
+
+	it('keeps one submit per frame through transition windows (T3.2)', () => {
+		const { device, submit } = fakeDevice();
+		const renderer = new PreviewRenderer(device, fakeContext(), 'rgba8unorm', fakeCanvas(), false);
+		renderer.setPreviewSize(64, 64);
+
+		// A lone pair, a pair under extra layers, and two simultaneous pairs (each
+		// gets its own uniform buffer) — always exactly one queue.submit.
+		const stacks: CompositeLayer[][] = [
+			transitionPair('tr-1', 'cross-dissolve', 0.5),
+			[layer(1280, 720), ...transitionPair('tr-1', 'wipe', 0.25), layer(1280, 720)],
+			[...transitionPair('tr-1', 'dip-to-black', 0.1), ...transitionPair('tr-2', 'slide', 0.9)]
+		];
+		for (const stack of stacks) {
+			submit.mockClear();
+			renderer.present(stack);
+			expect(submit).toHaveBeenCalledTimes(1);
 			expect(renderer.lastFrameSubmissionCount).toBe(1);
 		}
 	});
