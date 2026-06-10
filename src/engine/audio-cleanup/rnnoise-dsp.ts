@@ -43,8 +43,6 @@ interface BluesteinTables {
 	chirpIm: Float64Array;
 	kernelRe: Float64Array; // FFT of the wrapped conjugate chirp
 	kernelIm: Float64Array;
-	scratchRe: Float64Array;
-	scratchIm: Float64Array;
 }
 
 function fftRadix2(re: Float64Array, im: Float64Array, inverse: boolean): void {
@@ -122,79 +120,83 @@ function buildBluesteinTables(): BluesteinTables {
 		chirpRe,
 		chirpIm,
 		kernelRe,
-		kernelIm,
-		scratchRe: new Float64Array(m),
-		scratchIm: new Float64Array(m)
+		kernelIm
 	};
 }
 
+/** Lazily built, immutable (read-only after construction), safe to share. */
 let bluestein: BluesteinTables | null = null;
 
-/** Unscaled 960-point complex DFT: X(k) = Σ x(n)·e^{-2πikn/N}. */
-function dft960(
-	re: Float64Array,
-	im: Float64Array,
-	outRe: Float64Array,
-	outIm: Float64Array
-): void {
-	const tables = (bluestein ??= buildBluesteinTables());
-	const n = BLUESTEIN_N;
-	const m = BLUESTEIN_M;
-	const { chirpRe, chirpIm, kernelRe, kernelIm, scratchRe, scratchIm } = tables;
-	scratchRe.fill(0);
-	scratchIm.fill(0);
-	for (let i = 0; i < n; i++) {
-		const xr = re[i]!;
-		const xi = im[i]!;
-		scratchRe[i] = xr * chirpRe[i]! - xi * chirpIm[i]!;
-		scratchIm[i] = xr * chirpIm[i]! + xi * chirpRe[i]!;
-	}
-	fftRadix2(scratchRe, scratchIm, false);
-	for (let i = 0; i < m; i++) {
-		const ar = scratchRe[i]!;
-		const ai = scratchIm[i]!;
-		scratchRe[i] = ar * kernelRe[i]! - ai * kernelIm[i]!;
-		scratchIm[i] = ar * kernelIm[i]! + ai * kernelRe[i]!;
-	}
-	fftRadix2(scratchRe, scratchIm, true);
-	for (let i = 0; i < n; i++) {
-		const cr = scratchRe[i]!;
-		const ci = scratchIm[i]!;
-		outRe[i] = cr * chirpRe[i]! - ci * chirpIm[i]!;
-		outIm[i] = cr * chirpIm[i]! + ci * chirpRe[i]!;
-	}
-}
+/**
+ * 960-point DFT via Bluestein with per-instance scratch buffers so multiple
+ * `RnnoiseDsp` instances stay independent — only the immutable chirp/kernel
+ * tables are shared across instances.
+ */
+class Dft960 {
+	private readonly scratchRe = new Float64Array(BLUESTEIN_M);
+	private readonly scratchIm = new Float64Array(BLUESTEIN_M);
+	private readonly inRe = new Float64Array(WINDOW_SIZE);
+	private readonly inIm = new Float64Array(WINDOW_SIZE);
+	private readonly outRe = new Float64Array(WINDOW_SIZE);
+	private readonly outIm = new Float64Array(WINDOW_SIZE);
 
-const dftInRe = new Float64Array(WINDOW_SIZE);
-const dftInIm = new Float64Array(WINDOW_SIZE);
-const dftOutRe = new Float64Array(WINDOW_SIZE);
-const dftOutIm = new Float64Array(WINDOW_SIZE);
+	/** Unscaled 960-point complex DFT: X(k) = Σ x(n)·e^{-2πikn/N}. */
+	private dft(re: Float64Array, im: Float64Array, outRe: Float64Array, outIm: Float64Array): void {
+		const tables = (bluestein ??= buildBluesteinTables());
+		const n = BLUESTEIN_N;
+		const m = BLUESTEIN_M;
+		const { chirpRe, chirpIm, kernelRe, kernelIm } = tables;
+		const { scratchRe, scratchIm } = this;
+		scratchRe.fill(0);
+		scratchIm.fill(0);
+		for (let i = 0; i < n; i++) {
+			const xr = re[i]!;
+			const xi = im[i]!;
+			scratchRe[i] = xr * chirpRe[i]! - xi * chirpIm[i]!;
+			scratchIm[i] = xr * chirpIm[i]! + xi * chirpRe[i]!;
+		}
+		fftRadix2(scratchRe, scratchIm, false);
+		for (let i = 0; i < m; i++) {
+			const ar = scratchRe[i]!;
+			const ai = scratchIm[i]!;
+			scratchRe[i] = ar * kernelRe[i]! - ai * kernelIm[i]!;
+			scratchIm[i] = ar * kernelIm[i]! + ai * kernelRe[i]!;
+		}
+		fftRadix2(scratchRe, scratchIm, true);
+		for (let i = 0; i < n; i++) {
+			const cr = scratchRe[i]!;
+			const ci = scratchIm[i]!;
+			outRe[i] = cr * chirpRe[i]! - ci * chirpIm[i]!;
+			outIm[i] = cr * chirpIm[i]! + ci * chirpRe[i]!;
+		}
+	}
 
-/** kiss_fft-compatible forward transform: spectrum[0..480] = DFT(x)/960. */
-function forwardTransform(x: Float64Array, outRe: Float64Array, outIm: Float64Array): void {
-	dftInRe.set(x);
-	dftInIm.fill(0);
-	dft960(dftInRe, dftInIm, dftOutRe, dftOutIm);
-	for (let i = 0; i < FREQ_SIZE; i++) {
-		outRe[i] = dftOutRe[i]! / WINDOW_SIZE;
-		outIm[i] = dftOutIm[i]! / WINDOW_SIZE;
+	/** kiss_fft-compatible forward transform: spectrum[0..480] = DFT(x)/960. */
+	forward(x: Float64Array, outRe: Float64Array, outIm: Float64Array): void {
+		this.inRe.set(x);
+		this.inIm.fill(0);
+		this.dft(this.inRe, this.inIm, this.outRe, this.outIm);
+		for (let i = 0; i < FREQ_SIZE; i++) {
+			outRe[i] = this.outRe[i]! / WINDOW_SIZE;
+			outIm[i] = this.outIm[i]! / WINDOW_SIZE;
+		}
 	}
-}
 
-/** Inverse of `forwardTransform` (real output), matching the C index-reversal trick. */
-function inverseTransform(re: Float64Array, im: Float64Array, out: Float64Array): void {
-	for (let i = 0; i < FREQ_SIZE; i++) {
-		dftInRe[i] = re[i]!;
-		dftInIm[i] = im[i]!;
-	}
-	for (let i = FREQ_SIZE; i < WINDOW_SIZE; i++) {
-		dftInRe[i] = re[WINDOW_SIZE - i]!;
-		dftInIm[i] = -im[WINDOW_SIZE - i]!;
-	}
-	dft960(dftInRe, dftInIm, dftOutRe, dftOutIm);
-	out[0] = dftOutRe[0]!;
-	for (let i = 1; i < WINDOW_SIZE; i++) {
-		out[i] = dftOutRe[WINDOW_SIZE - i]!;
+	/** Inverse of `forward` (real output), matching the C index-reversal trick. */
+	inverse(re: Float64Array, im: Float64Array, out: Float64Array): void {
+		for (let i = 0; i < FREQ_SIZE; i++) {
+			this.inRe[i] = re[i]!;
+			this.inIm[i] = im[i]!;
+		}
+		for (let i = FREQ_SIZE; i < WINDOW_SIZE; i++) {
+			this.inRe[i] = re[WINDOW_SIZE - i]!;
+			this.inIm[i] = -im[WINDOW_SIZE - i]!;
+		}
+		this.dft(this.inRe, this.inIm, this.outRe, this.outIm);
+		out[0] = this.outRe[0]!;
+		for (let i = 1; i < WINDOW_SIZE; i++) {
+			out[i] = this.outRe[WINDOW_SIZE - i]!;
+		}
 	}
 }
 
@@ -630,6 +632,7 @@ export class RnnoiseDsp {
 	private readonly bandBuf = new Float64Array(NB_BANDS);
 	private readonly freqBuf = new Float64Array(FREQ_SIZE);
 	private readonly ly = new Float64Array(NB_BANDS);
+	private readonly dft = new Dft960();
 
 	reset(): void {
 		this.analysisMem.fill(0);
@@ -669,7 +672,7 @@ export class RnnoiseDsp {
 		for (let i = 0; i < FRAME_SIZE; i++) x[FRAME_SIZE + i] = input[i]!;
 		this.analysisMem.set(input.subarray(0, FRAME_SIZE));
 		applyWindow(x);
-		forwardTransform(x, spectra.xRe, spectra.xIm);
+		this.dft.forward(x, spectra.xRe, spectra.xIm);
 		computeBandEnergy(spectra.ex, spectra.xRe, spectra.xIm);
 	}
 
@@ -715,7 +718,7 @@ export class RnnoiseDsp {
 			p[i] = this.pitchBuf[PITCH_BUF_SIZE - WINDOW_SIZE - pitchIndex + i]!;
 		}
 		applyWindow(p);
-		forwardTransform(p, spectra.pRe, spectra.pIm);
+		this.dft.forward(p, spectra.pRe, spectra.pIm);
 		computeBandEnergy(spectra.ep, spectra.pRe, spectra.pIm);
 		computeBandCorr(spectra.exp, spectra.xRe, spectra.xIm, spectra.pRe, spectra.pIm);
 		for (let i = 0; i < NB_BANDS; i++) {
@@ -832,7 +835,7 @@ export class RnnoiseDsp {
 			spectra.xIm[i]! *= gf[i]!;
 		}
 		const x = this.synthBuf;
-		inverseTransform(spectra.xRe, spectra.xIm, x);
+		this.dft.inverse(spectra.xRe, spectra.xIm, x);
 		applyWindow(x);
 		for (let i = 0; i < FRAME_SIZE; i++) {
 			const sample = x[i]! + this.synthesisMem[i]!;

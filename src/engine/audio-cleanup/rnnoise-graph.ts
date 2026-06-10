@@ -81,10 +81,18 @@ export class RnnoiseModel {
 		}
 		let lastError: unknown = null;
 		for (const deviceType of deviceTypes) {
+			let context: MLContext | null = null;
 			try {
-				const context = await ml.createContext({ deviceType });
+				context = await ml.createContext({ deviceType });
 				return await RnnoiseModel.buildOnContext(context, weights, frames, deviceType);
 			} catch (error) {
+				// A context that compiled no graph still holds hardware resources;
+				// release it before falling back to the next backend.
+				try {
+					context?.destroy?.();
+				} catch {
+					// Cleanup failures don't change the fallback outcome.
+				}
 				lastError = error;
 			}
 		}
