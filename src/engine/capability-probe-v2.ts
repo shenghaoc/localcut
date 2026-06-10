@@ -314,15 +314,22 @@ function probeMediaStreamTrackProcessor(): FeatureSupport {
 
 function probeTransferableMediaStreamTrack(): FeatureSupport {
 	try {
-		// Test structuredClone with transfer list using a transferable ArrayBuffer.
-		// structuredClone({ transfer }) support is the same mechanism used for
-		// transferable MediaStreamTrack; an actual track requires user permission.
-		const buffer = new ArrayBuffer(16);
-		const cloned = structuredClone({ buffer }, { transfer: [buffer] }) as { buffer: ArrayBuffer };
-		if (buffer.byteLength === 0 && cloned.buffer.byteLength === 16) {
-			return 'supported';
+		// Transferable MediaStreamTrack requires structuredClone with transfer of
+		// a real track. ArrayBuffer transfer succeeds on Safari where track transfer
+		// does not — cannot confirm without a real track, which needs user permission.
+		if (typeof MediaStreamTrack === 'undefined' || typeof structuredClone !== 'function') {
+			return 'unsupported';
 		}
-		return 'unsupported';
+		// Verify structuredClone's transfer mechanism exists at all (smoke test).
+		// A real track transfer test requires getUserMedia permission, so we return
+		// 'unknown' — the platform has the API but we can't confirm track transfer.
+		const buffer = new ArrayBuffer(16);
+		try {
+			structuredClone({ buffer }, { transfer: [buffer] });
+			return 'unknown'; // API exists but track transfer unconfirmed without gesture
+		} catch {
+			return 'unsupported';
+		}
 	} catch {
 		return 'unknown';
 	}
@@ -447,7 +454,7 @@ export function recordingAvailable(probe: CapabilityProbeResult): boolean {
 	return (
 		probe.tier === 'core-webgpu' &&
 		cap.mediaStreamTrackProcessor === 'supported' &&
-		cap.transferableMediaStreamTrack === 'supported' &&
+		cap.transferableMediaStreamTrack !== 'unsupported' &&
 		cap.displayCapture === 'supported' &&
 		cap.videoEncodeRealtime === 'supported' &&
 		cap.audioEncodeOpus === 'supported' &&

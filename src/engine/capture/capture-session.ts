@@ -42,10 +42,12 @@ export class CaptureSession {
 	private totalBytesWritten = 0;
 	private abort = new AbortController();
 	private callbacks: CaptureSessionCallbacks;
+	private readonly writerPort: MessagePort | null;
 
-	constructor(sessionId: string, callbacks: CaptureSessionCallbacks) {
+	constructor(sessionId: string, callbacks: CaptureSessionCallbacks, writerPort?: MessagePort) {
 		this.sessionId = sessionId;
 		this.callbacks = callbacks;
+		this.writerPort = writerPort ?? null;
 	}
 
 	addSource(
@@ -58,10 +60,7 @@ export class CaptureSession {
 	): void {
 		const pipelineCallbacks: TrackPipelineCallbacks = {
 			onEncodedChunk: (srcId, packet, fromUs, toUs, keyFrame, preEncodeDrops) => {
-				void packet;
-				void toUs;
-				void keyFrame;
-				this.handleEncodedChunk(srcId, packet, fromUs, toUs, keyFrame, preEncodeDrops);
+				this.routeChunk(srcId, packet, fromUs, toUs, keyFrame, preEncodeDrops);
 			},
 			onEncodeError: (srcId, error) => {
 				this.handleSourceError(srcId, error);
@@ -129,22 +128,47 @@ export class CaptureSession {
 		this.emitStatus();
 	}
 
-	private handleEncodedChunk(
+	private routeChunk(
 		sourceId: string,
-		_packet: EncodedPacket,
+		packet: EncodedPacket,
 		fromUs: number,
-		_toUs: number,
-		_keyFrame: boolean,
+		toUs: number,
+		keyFrame: boolean,
 		preEncodeDrops: number
 	): void {
 		const entry = this.sources.get(sourceId);
 		if (!entry) return;
 
 		entry.preEncodeDrops += preEncodeDrops;
+		entry.bytesWritten += packet.byteLength;
+		this.totalBytesWritten += packet.byteLength;
 
 		if (entry.firstSampleUs === null) {
 			entry.firstSampleUs = fromUs;
 			this.updateEpoch();
+		}
+
+		if (this.writerPort) {
+			const record = {
+				kind: 'chunk' as const,
+				sourceId,
+				file: `${entry.kind === 'screen' || entry.kind === 'webcam' ? 'video' : 'audio'}-${sourceId}.mp4`,
+				byteOffset: 0,
+				byteLength: packet.byteLength,
+				fromUs,
+				toUs,
+				keyFrame,
+				preEncodeDrops
+			};
+			this.writerPort.postMessage({
+				type: 'write-chunk',
+				sessionId: this.sessionId,
+				sourceId,
+				file: record.file,
+				data: packet.data.buffer,
+				byteOffset: 0,
+				record
+			}, [packet.data.buffer]);
 		}
 
 		this.emitStatus();

@@ -4872,7 +4872,8 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 					onLanded(sessionId, trackIds) {
 						post({ type: 'capture-landed', sessionId, trackIds });
 					}
-				}
+				},
+				cmd.writerPort
 			);
 			const settings = cmd.settings;
 			for (const [, src] of pendingCaptureSources) {

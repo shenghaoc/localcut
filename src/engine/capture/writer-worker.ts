@@ -150,15 +150,20 @@ class CaptureWriter {
 		}
 	}
 
-	private async handleWriteHeader(sessionId: string, sources: Array<{ sourceId: string; kind: string }>, chunkTargetS: number): Promise<void> {
+	private async getOrCreateCaptureDir(): Promise<FileSystemDirectoryHandle> {
 		const root = await navigator.storage.getDirectory();
-		const sessionDir = `capture/${sessionId}`;
-		let dirHandle: FileSystemDirectoryHandle;
-		try {
-			dirHandle = await root.getDirectoryHandle(sessionDir);
-		} catch {
-			dirHandle = await root.getDirectoryHandle(sessionDir, { create: true });
-		}
+		try { return await root.getDirectoryHandle('capture'); } catch {}
+		return await root.getDirectoryHandle('capture', { create: true });
+	}
+
+	private async getOrCreateSessionDir(sessionId: string): Promise<FileSystemDirectoryHandle> {
+		const captureDir = await this.getOrCreateCaptureDir();
+		try { return await captureDir.getDirectoryHandle(sessionId); } catch {}
+		return await captureDir.getDirectoryHandle(sessionId, { create: true });
+	}
+
+	private async handleWriteHeader(sessionId: string, sources: Array<{ sourceId: string; kind: string }>, chunkTargetS: number): Promise<void> {
+		const dirHandle = await this.getOrCreateSessionDir(sessionId);
 
 		const fileMap = new Map<string, OpenFile>();
 		for (const src of sources) {
@@ -243,10 +248,9 @@ class CaptureWriter {
 
 	private async handleScanSessions(): Promise<void> {
 		try {
-			const root = await navigator.storage.getDirectory();
 			let captureDir: FileSystemDirectoryHandle;
 			try {
-				captureDir = await root.getDirectoryHandle('capture');
+				captureDir = await this.getOrCreateCaptureDir();
 			} catch {
 				this.post({ type: 'recovery-list', sessions: [] });
 				return;
@@ -305,8 +309,8 @@ class CaptureWriter {
 
 	private async handleDiscard(sessionId: string): Promise<void> {
 		try {
-			const root = await navigator.storage.getDirectory();
-			await root.removeEntry(`capture/${sessionId}`, { recursive: true });
+			const captureDir = await this.getOrCreateCaptureDir();
+			await captureDir.removeEntry(sessionId, { recursive: true });
 		} catch {}
 	}
 

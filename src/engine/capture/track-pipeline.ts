@@ -44,6 +44,8 @@ export class TrackPipeline {
 	private running = false;
 	private ended = false;
 	private frameCount = 0;
+	/** True after a pre-encode drop — next frame must be a keyframe for recoverability. */
+	private needKeyFrame = false;
 
 	constructor(private readonly options: TrackPipelineOptions) {
 		this.sourceId = options.sourceId;
@@ -120,15 +122,15 @@ export class TrackPipeline {
 				const frame = result.value as VideoFrame;
 
 				if (encoder.encodeQueueSize > VIDEO_QUEUE_BOUND) {
-					if ((frame as unknown as { type: string }).type !== 'key') {
-						frame.close();
-						this.preEncodeDrops++;
-						continue;
-					}
+					frame.close();
+					this.preEncodeDrops++;
+					this.needKeyFrame = true;
+					continue;
 				}
 
-				const keyFrame = this.frameCount % KEYFRAME_INTERVAL === 0;
+				const keyFrame = this.needKeyFrame || this.frameCount % KEYFRAME_INTERVAL === 0;
 				this.frameCount++;
+				this.needKeyFrame = false;
 				try {
 					encoder.encode(frame, { keyFrame });
 				} catch {
