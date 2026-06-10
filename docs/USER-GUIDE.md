@@ -296,7 +296,7 @@ Send your cut to another editor with the **Interchange** toolbar menu. It works 
 - **Export Timeline (.otio)**: An [OpenTimelineIO](https://opentimeline.io/) file with your tracks, clips, gaps, markers, and transitions, frame-snapped at the project rate. Kdenlive 25.04+ and DaVinci Resolve (File → Import → Timeline) open it directly. Media is referenced by file name — or by bundle-relative path inside an exported project bundle — never embedded.
 - **Export EDL (.edl)**: A cuts-only CMX3600 edit decision list for one video track (pick the track when you have several). Transitions become straight cuts, audio and other tracks are omitted, and fractional frame rates are rounded to the nearest whole rate with a note in the file. Record timecode starts at `01:00:00:00`.
 
-What other applications see is the *cut*: clip placement, timing, markers, and dissolves. LocalCut-specific data — effects, looks/LUTs, keyframes, transforms, caption styling, track mix state — travels inside a `metadata.localcut` namespace that foreign tools ignore; it is preserved for a future re-import into LocalCut, not translated into other applications' effects.
+What other applications see is the _cut_: clip placement, timing, markers, and dissolves. LocalCut-specific data — effects, looks/LUTs, keyframes, transforms, caption styling, track mix state — travels inside a `metadata.localcut` namespace that foreign tools ignore; it is preserved for a future re-import into LocalCut, not translated into other applications' effects.
 
 Export warnings (for example, clips shorter than one frame at the sequence rate, or EDL omissions) are listed in the Interchange menu after each export; they never block the save.
 
