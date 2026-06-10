@@ -28,6 +28,8 @@ export interface TrackPipelineOptions {
 const VIDEO_QUEUE_BOUND = 8;
 const AUDIO_QUEUE_BOUND = 16;
 const AUDIO_OVERRUN_CONSECUTIVE = 4;
+/** Request a key frame every N frames to start a new fragment. */
+const KEYFRAME_INTERVAL = 60;
 
 export class TrackPipeline {
 	readonly sourceId: string;
@@ -36,9 +38,12 @@ export class TrackPipeline {
 	private readonly callbacks: TrackPipelineCallbacks;
 	private readonly abort: AbortController;
 	private encoder: VideoEncoder | AudioEncoder | null = null;
+	private reader: ReadableStreamDefaultReader<VideoFrame> | ReadableStreamDefaultReader<AudioData> | null = null;
 	private preEncodeDrops = 0;
 	private audioOverrunCount = 0;
 	private running = false;
+	private ended = false;
+	private frameCount = 0;
 
 	constructor(private readonly options: TrackPipelineOptions) {
 		this.sourceId = options.sourceId;
@@ -50,6 +55,7 @@ export class TrackPipeline {
 
 	start(): void {
 		this.running = true;
+		this.ended = false;
 		if (this.kind === 'screen' || this.kind === 'webcam') {
 			if (this.options.videoEncodeConfig) {
 				this.runVideoPipeline(this.options.videoEncodeConfig).catch((err) => {
@@ -66,6 +72,13 @@ export class TrackPipeline {
 					}
 				});
 			}
+		}
+	}
+
+	private emitEnded(): void {
+		if (!this.ended) {
+			this.ended = true;
+			this.callbacks.onPipelineEnded(this.sourceId);
 		}
 	}
 
@@ -90,7 +103,7 @@ export class TrackPipeline {
 			},
 			error: (err: DOMException) => {
 				this.callbacks.onEncodeError(this.sourceId, `VideoEncoder error: ${err.message}`);
-				this.stop().catch(() => {});
+				this.running = false;
 			}
 		};
 
@@ -99,29 +112,39 @@ export class TrackPipeline {
 		encoder.configure(config);
 
 		const reader = processor.readable.getReader();
+		this.reader = reader as ReadableStreamDefaultReader<AudioData>;
 		try {
 			while (this.running && !this.abort.signal.aborted) {
 				const result = await reader.read();
 				if (result.done) break;
-				const frame = result.value;
+				const frame = result.value as VideoFrame;
 
 				if (encoder.encodeQueueSize > VIDEO_QUEUE_BOUND) {
-					if (frame.type !== 'key') {
+					if ((frame as unknown as { type: string }).type !== 'key') {
 						frame.close();
 						this.preEncodeDrops++;
 						continue;
 					}
 				}
 
-				encoder.encode(frame, { keyFrame: true });
+				const keyFrame = this.frameCount % KEYFRAME_INTERVAL === 0;
+				this.frameCount++;
+				try {
+					encoder.encode(frame, { keyFrame });
+				} catch {
+					// Encode failed — close frame and continue
+				}
 				frame.close();
 			}
 		} finally {
+			try { reader.cancel(); } catch {}
 			try { reader.releaseLock(); } catch {}
+			this.reader = null;
 			try { await encoder.flush(); } catch {}
 			try { encoder.close(); } catch {}
+			this.encoder = null;
 			this.running = false;
-			this.callbacks.onPipelineEnded(this.sourceId);
+			this.emitEnded();
 		}
 	}
 
@@ -144,7 +167,7 @@ export class TrackPipeline {
 			},
 			error: (err: DOMException) => {
 				this.callbacks.onEncodeError(this.sourceId, `AudioEncoder error: ${err.message}`);
-				this.stop().catch(() => {});
+				this.running = false;
 			}
 		};
 
@@ -153,11 +176,12 @@ export class TrackPipeline {
 		encoder.configure(config);
 
 		const reader = processor.readable.getReader();
+		this.reader = reader as ReadableStreamDefaultReader<VideoFrame>;
 		try {
 			while (this.running && !this.abort.signal.aborted) {
 				const result = await reader.read();
 				if (result.done) break;
-				const data = result.value;
+				const data = result.value as AudioData;
 
 				if (encoder.encodeQueueSize > AUDIO_QUEUE_BOUND) {
 					this.audioOverrunCount++;
@@ -165,39 +189,45 @@ export class TrackPipeline {
 						data.close();
 						this.callbacks.onAudioOverrun(this.sourceId);
 						this.running = false;
-						this.callbacks.onPipelineEnded(this.sourceId);
+						this.emitEnded();
 						return;
 					}
 				} else {
 					this.audioOverrunCount = 0;
 				}
 
-				encoder.encode(data);
+				try {
+					encoder.encode(data);
+				} catch {
+					// Encode failed — close data and continue
+				}
 				data.close();
 			}
 		} finally {
+			try { reader.cancel(); } catch {}
 			try { reader.releaseLock(); } catch {}
+			this.reader = null;
 			try { await encoder.flush(); } catch {}
 			try { encoder.close(); } catch {}
+			this.encoder = null;
 			this.running = false;
-			this.callbacks.onPipelineEnded(this.sourceId);
+			this.emitEnded();
 		}
 	}
 
 	async stop(): Promise<void> {
 		this.running = false;
-		try {
-			if (this.encoder) {
-				try { await this.encoder.flush(); } catch {}
-				try { this.encoder.close(); } catch {}
-				this.encoder = null;
-			}
-		} catch {}
+		if (this.reader) {
+			try { await this.reader.cancel(); } catch {}
+		}
 	}
 
 	dispose(): void {
 		this.running = false;
 		this.track.stop();
+		if (this.reader) {
+			try { this.reader.cancel(); } catch {}
+		}
 		if (this.encoder) {
 			try { this.encoder.close(); } catch {}
 			this.encoder = null;

@@ -7,10 +7,17 @@ export interface QuotaCheckResult {
 	shortfallBytes: number;
 }
 
+function isStorageAvailable(): boolean {
+	return typeof navigator !== 'undefined' && typeof navigator.storage?.estimate === 'function';
+}
+
 export async function quotaPreflight(
 	configuredBitrateBps: number,
 	minDurationS = 60
 ): Promise<QuotaCheckResult> {
+	if (!isStorageAvailable()) {
+		return { ok: false, headroomBytes: 0, requiredBytes: 0, shortfallBytes: 0 };
+	}
 	const estimate = await navigator.storage.estimate();
 	const headroom = (estimate.quota ?? 0) - (estimate.usage ?? 0);
 	const requiredBytes = Math.ceil((configuredBitrateBps / 8) * minDurationS * 1.1); // +10% overhead
@@ -25,6 +32,9 @@ export async function quotaPreflight(
 }
 
 export async function checkQuotaMidRecord(perFlushCeilingBytes: number): Promise<QuotaCheckResult> {
+	if (!isStorageAvailable()) {
+		return { ok: false, headroomBytes: 0, requiredBytes: 0, shortfallBytes: 0 };
+	}
 	const estimate = await navigator.storage.estimate();
 	const headroom = (estimate.quota ?? 0) - (estimate.usage ?? 0);
 	const floor = Math.max(2 * perFlushCeilingBytes, GRACEFUL_STOP_FLOOR);
