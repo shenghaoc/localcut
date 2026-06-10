@@ -206,6 +206,31 @@ describe('stop', () => {
 });
 
 describe('failure mapping', () => {
+	it('a late async failure after the user stopped never overwrites ended', async () => {
+		let rejectPublish: (error: unknown) => void = () => undefined;
+		const publish = vi.fn(
+			() =>
+				new Promise((_resolve, reject) => {
+					rejectPublish = reject;
+				})
+		);
+		const { session } = makeHarness({ publish: publish as unknown as WhipClient['publish'] });
+
+		const startPromise = session.start(settingsFixture(), fakeTracks());
+		expect(session.state.phase).toBe('connecting');
+		// Let the connect chain reach the (now pending) POST before stopping.
+		for (let i = 0; i < 20 && publish.mock.calls.length === 0; i++) await Promise.resolve();
+		expect(publish).toHaveBeenCalledTimes(1);
+		await session.stop();
+		expect(session.state.phase).toBe('ended');
+
+		// The pending POST now fails with a non-retryable error; the dead session
+		// must stay ended instead of flipping to failed.
+		rejectPublish(new WhipRequestError('auth', 401, 'rejected'));
+		await startPromise;
+		expect(session.state.phase).toBe('ended');
+	});
+
 	it('auth failures end the session without retries', async () => {
 		const { session, client } = makeHarness({
 			publish: vi.fn(async () => {

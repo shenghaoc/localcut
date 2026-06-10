@@ -57,8 +57,15 @@ export class AudioEngine {
 	createStreamTap(): MediaStreamTrack | null {
 		if (!this.context || !this.worklet) return null;
 		if (!this.streamTap) {
-			this.streamTap = this.context.createMediaStreamDestination();
-			this.worklet.connect(this.streamTap);
+			// A closed/suspended context or detached device can make these throw;
+			// the publish path treats a missing audio tap as audio-less, not fatal.
+			try {
+				this.streamTap = this.context.createMediaStreamDestination();
+				this.worklet.connect(this.streamTap);
+			} catch {
+				this.streamTap = null;
+				return null;
+			}
 		}
 		return this.streamTap.stream.getAudioTracks()[0] ?? null;
 	}

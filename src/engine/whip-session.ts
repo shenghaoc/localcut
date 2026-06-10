@@ -264,6 +264,9 @@ export function createWhipSession(deps: WhipSessionDeps): WhipSession {
 	}
 
 	function fail(reason: PublishFailureReason) {
+		// A user stop can race a pending attempt's failure: once the session is
+		// ended (or never started), a late async error must not flip the state.
+		if (state.phase === 'ended' || state.phase === 'idle') return;
 		controller?.stop();
 		clearStatsTimer();
 		clearAttemptTimer();
@@ -292,7 +295,7 @@ export function createWhipSession(deps: WhipSessionDeps): WhipSession {
 		});
 	}
 
-	function buildPeerConnection(): RTCPeerConnection {
+	async function buildPeerConnection(): Promise<RTCPeerConnection> {
 		if (!settings || !tracks) throw new Error('Session not configured.');
 		const connection = deps.createPeerConnection({});
 		const videoTransceiver = connection.addTransceiver(tracks.video, { direction: 'sendonly' });
@@ -316,7 +319,9 @@ export function createWhipSession(deps: WhipSessionDeps): WhipSession {
 		if (settings.maxHeight !== null && trackHeight && trackHeight > settings.maxHeight) {
 			encoding.scaleResolutionDownBy = trackHeight / settings.maxHeight;
 		}
-		void sender.setParameters(parameters);
+		// Awaited so a rejected setParameters surfaces through connect()'s error
+		// handling instead of becoming an unhandled rejection.
+		await sender.setParameters(parameters);
 		videoSender = sender;
 
 		connection.addEventListener('iceconnectionstatechange', () => {
@@ -334,7 +339,7 @@ export function createWhipSession(deps: WhipSessionDeps): WhipSession {
 	async function connect(): Promise<void> {
 		if (!client) throw new Error('Session not configured.');
 		pc?.close();
-		pc = buildPeerConnection();
+		pc = await buildPeerConnection();
 		const connection = pc;
 		const offer = await connection.createOffer();
 		await connection.setLocalDescription(offer);
