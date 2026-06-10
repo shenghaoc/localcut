@@ -225,6 +225,10 @@ async function encodeReducedVideo(
 	const layerBudget = layerBudgetFromProbe(options.throughputProbe);
 	let lastReport = 0;
 
+	if (options.hasVideoTransitions) {
+		console.warn('Video transitions are not rendered on the reduced-compatibility export path.');
+	}
+
 	for (let frameIndex = startFrame; frameIndex < endFrame; frameIndex += 1) {
 		throwIfCanceled(options.signal);
 		const outputTimestamp = rebaseOutputTimestamp(frameIndex, plan.frameRate);

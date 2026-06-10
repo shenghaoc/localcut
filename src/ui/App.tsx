@@ -2137,7 +2137,8 @@ export function App() {
 							}}
 							onRemoveTransition={(transitionId) => {
 								bridge?.send({ type: 'remove-transition', transitionId });
-							setSelectedTransitionId(null);
+								transitionMeta.delete(transitionId);
+								setSelectedTransitionId(null);
 							}}
 						/>
 						<TranscriptPanel
