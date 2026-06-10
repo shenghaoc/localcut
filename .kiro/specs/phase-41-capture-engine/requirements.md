@@ -26,15 +26,15 @@
 - **R2.2** Camera and microphone selection uses `enumerateDevices` only after a successful `getUserMedia` permission grant; device labels are never requested pre-permission.
 - **R2.3** Acquired `MediaStreamTrack`s are cloned for the local self-monitor (`<video srcObject>`, audio monitor muted in v1) and the original track is transferred to the worker. Ending capture stops both the transferred track and the monitor clone.
 - **R2.4** Permission denial, picker cancellation, and device-in-use errors each produce a distinct user-facing message and leave the Record panel in a recoverable state (no stuck "starting" state).
-- **R2.5** The user ending capture from browser UI (e.g. the "Stop sharing" bar firing `track.onended`) must trigger the same graceful stop as the in-app Stop button for that source; if it was the last video source, the session stops gracefully.
+- **R2.5** The user ending capture from browser UI (e.g. the "Stop sharing" bar) fires `ended` on all tracks including clones; listen on the **monitor clone's** `onended` on main (transferred originals are detached on main, so their `onended` never fires there). This triggers the same graceful stop as the in-app Stop button for that source; if it was the last video source, the session stops gracefully.
 
 ## R3 — Worker Ingestion
 
 - **R3.1** Each captured track gets its own ingestion pipeline in the pipeline worker: `MediaStreamTrackProcessor.readable` → reader loop → `VideoEncoder` / `AudioEncoder`. Pipelines are independent; one source erroring must not tear down the others until policy says so (R6.6).
 - **R3.2** MSTP timestamps are preserved exactly: the `timestamp` of every `VideoFrame`/`AudioData` is passed through to the encoder and container unmodified (no re-stamping to a nominal frame-rate grid).
-- **R3.3** Screen content is treated as inherently VFR (PR #49 lessons): per-sample durations are derived from successive capture timestamps, never from a nominal fps; landed metadata marks screen tracks `frameRateMode: 'variable'` so `SequentialFrameSource` uses per-frame durations.
-- **R3.4** Video backpressure: when `encoder.encodeQueueSize` exceeds the configured bound, non-key frames are dropped (and closed); every drop increments a per-track counter, is recorded as a gap in the chunk manifest, and surfaces a live warning in the Record panel.
-- **R3.5** Audio is never silently dropped. If an audio encoder queue exceeds its bound, the session performs a graceful stop with an explicit `audio-overrun` reason.
+- **R3.3** Screen content is treated as inherently VFR (PR #49 lessons): per-sample durations are derived from successive capture timestamps, never from a nominal fps. The last frame's duration on session stop is `stopTime − lastFrameTimestamp` (not the previous delta), so landed duration matches the actual recorded span. Landed metadata marks screen tracks `frameRateMode: 'variable'` so `SequentialFrameSource` uses per-frame durations.
+- **R3.4** Video backpressure: when `encoder.encodeQueueSize` exceeds the configured bound, non-key `VideoFrame` objects are dropped pre-encode (closed immediately without encoding). Each pre-encode drop increments a per-track `preEncodeDrops` counter, is recorded as a `pre-encode-gap` in the chunk manifest, and surfaces a live warning in the Record panel. This is distinct from already-encoded chunk drops — only raw frames are dropped; encoded chunks are never silently discarded.
+- **R3.5** Audio is never silently dropped. Audio uses a higher encoder queue bound (16 vs 8 for video) and requires sustained overrun (≥ 4 consecutive `AudioData` above threshold) before triggering a graceful stop with reason `audio-overrun`. This prevents premature shutdown from brief encode bursts while guaranteeing audio loss is always surfaced.
 - **R3.6** Reader loops exit cleanly on stop/abort via `AbortController`; on exit they cancel the reader, flush the encoder, and close any frame still held.
 
 ## R4 — Encode While Recording
@@ -51,7 +51,8 @@
 - **R5.2** Output is append-only: the muxer must never backpatch earlier bytes. Chunks are written incrementally to OPFS through `FileSystemSyncAccessHandle` in a dedicated writer worker; `flush()` is called after every chunk.
 - **R5.3** A per-session chunk manifest is maintained as an append-only NDJSON log with its own sync handle: a header record (session id, epoch, sources, encoder configs), one record per flushed chunk (file, byte offset, byte length, time range, key-frame flag, drop-gap info), and a final `finalize` record on clean stop. Write order per chunk: data write → data flush → manifest append → manifest flush.
 - **R5.4** Target chunk (fragment) duration defaults to 2 s, configurable within 1–4 s. The bound on data loss from a hard kill is at most one in-flight chunk per track plus a possibly torn final manifest line.
-- **R5.5** The writer worker's buffer high-water mark is bounded by one fragment plus fixed slack per track; exceeding it is a bug surfaced as a session error, not silent growth.
+- **R5.5** The writer worker sends a `chunk-ack` per source after each chunk + manifest flush completes. The pipeline worker limits in-flight chunks per track (max 2) and does not send the next chunk until the in-flight count drops below the bound. This prevents unbounded message-queue growth when OPFS writes stall.
+- **R5.6** The writer worker's buffer high-water mark is bounded by one fragment plus fixed slack per track; exceeding it is a bug surfaced as a session error, not silent growth.
 
 ## R6 — Crash Safety + Recovery
 

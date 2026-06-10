@@ -22,13 +22,13 @@
 - [ ] **T3.2** Implement camera/mic acquisition: `getUserMedia` first, `enumerateDevices` for labeled pickers only after a grant.
 - [ ] **T3.3** Clone each track for the muted `<video srcObject>` monitor tile; transfer the original to the worker via `capture-add-source`; stop both on source removal and session stop.
 - [ ] **T3.4** Map permission denial, picker cancel, and `NotReadableError` to distinct recoverable UI states; no stuck "starting" state.
-- [ ] **T3.5** Wire `track.onended` (browser "Stop sharing") into the same per-source stop path as the in-app control; last-video-source end triggers graceful session stop.
+- [ ] **T3.5** Wire `monitorTrack.onended` (the clone staying on main; transferred originals are detached) into the same per-source stop path as the in-app control; last-video-source end triggers graceful session stop.
 
 ## T4 — Worker ingestion (per-track pipelines)
 
 - [ ] **T4.1** Create `src/engine/capture/track-pipeline.ts`: MSTP reader loop per track driven by `AbortController`; preserves MSTP timestamps unmodified; closes every `VideoFrame`/`AudioData` exactly once on happy, drop, error, and abort paths.
-- [ ] **T4.2** Video backpressure: when `encodeQueueSize > 8`, drop-and-close non-key frames; count drops per track; emit gap info for the chunk manifest; surface a live warning via `capture-status`.
-- [ ] **T4.3** Audio overrun policy: audio is never silently dropped; queue overflow triggers graceful stop with reason `audio-overrun`.
+- [ ] **T4.2** Video backpressure: when `encodeQueueSize > 8`, perform pre-encode drop-and-close of non-key `VideoFrame` objects (never drop already-encoded chunks). Track `preEncodeDrops` per source; emit gap info for the chunk manifest; surface a live warning via `capture-status`.
+- [ ] **T4.3** Audio overrun policy: audio is never silently dropped. Use higher encode queue bound (16 vs 8) with sustained-overrun guard (≥ 4 consecutive frames above threshold) before triggering graceful stop with reason `audio-overrun`; prevents premature shutdown from brief audio encode bursts.
 - [ ] **T4.4** Per-source error policy: encoder/reader failure finalizes that source's file; session continues when another source remains; emit `capture-error` naming the source and code.
 - [ ] **T4.5** Unit-test close-exactly-once and backpressure with `capture-fixtures.ts` mock readers and spy encoders, including VFR timestamp sequences and abort mid-frame.
 
@@ -43,7 +43,7 @@
 
 - [ ] **T6.1** Create `src/engine/capture/fragmented-writer.ts`: per-track Mediabunny `Output` with `Mp4OutputFormat({ fastStart: 'fragmented' })` + `StreamTarget`, fed by encoded-packet sources; assert append-only chunk positions (no backpatching) at runtime.
 - [ ] **T6.2** Create `src/engine/capture/writer-worker.ts`: dedicated worker owning one `SyncAccessHandle` per track file plus one for `manifest.ndjson`; receives transferred `ArrayBuffer` chunks.
-- [ ] **T6.3** Enforce per-chunk write ordering: data write → data flush → manifest append → manifest flush; one NDJSON record per flushed chunk with byte offset/length, time range, key-frame flag, and drop-gap info.
+- [ ] **T6.3** Enforce per-chunk write ordering: data write → data flush → manifest append → manifest flush → send `chunk-ack` to pipeline worker; one NDJSON record per flushed chunk with byte offset/length, time range, key-frame flag, and drop-gap info. Pipeline worker limits in-flight chunks per track (max 2) and waits for ACK before sending the next chunk.
 - [ ] **T6.4** Bound the writer buffer to one fragment + fixed slack per track; surface overflow as a session error.
 - [ ] **T6.5** Write `header` at start, `epoch` once the minimum first-sample timestamp is known, `source-ended` per source, `finalize` on clean/graceful stop.
 - [ ] **T6.6** Build the in-memory fault-injecting `SyncAccessHandle` mock in `capture-fixtures.ts` (kill-after-N-writes, torn final write); unit-test write ordering and bounded buffering against it.
@@ -68,7 +68,7 @@
 
 - [ ] **T9.1** Compute `epochUs` = min first-sample timestamp across tracks; per-track placement offset = `firstSampleTs − epochUs`; never force-zero offsets.
 - [ ] **T9.2** Land each track file through the existing import/inspection path as a P11 media asset with a P23 fingerprint; create one dedicated timeline track per source with one clip at its offset; emit `capture-landed`.
-- [ ] **T9.3** Mark screen tracks `frameRateMode: 'variable'` with observed effective fps so `SequentialFrameSource` uses per-frame durations (PR #49 / B3 guard).
+- [ ] **T9.3** Mark screen tracks `frameRateMode: 'variable'` with observed effective fps so `SequentialFrameSource` uses per-frame durations. Last frame duration = `stopTime − lastFrameTimestamp` on session stop (not previous delta) so landed duration matches the actual recorded span (PR #49 / B3 guard).
 - [ ] **T9.4** Make the landing one undoable operation via the existing P9 command path.
 - [ ] **T9.5** Runtime cross-clock sanity check: warn (without re-aligning) when `performance.now()`-anchored first-sample skew across tracks exceeds threshold.
 - [ ] **T9.6** Unit-test alignment with synthetic capture clocks: landed offsets mutually consistent within one audio quantum (128 frames at context rate); 44 ms-style audio lead preserved.

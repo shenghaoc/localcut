@@ -4837,6 +4837,24 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 		case 'publish-tap-stop':
 			void handlePublishTapStop();
 			break;
+		case 'capture-add-source':
+			// TODO: Phase 41 — T4 worker ingestion
+			break;
+		case 'capture-remove-source':
+			// TODO: Phase 41 — T4 worker ingestion
+			break;
+		case 'capture-start':
+			// TODO: Phase 41 — T4 worker ingestion
+			break;
+		case 'capture-stop':
+			// TODO: Phase 41 — T4 worker ingestion
+			break;
+		case 'capture-recovery-import':
+			// TODO: Phase 41 — T7 crash recovery
+			break;
+		case 'capture-recovery-discard':
+			// TODO: Phase 41 — T7 crash recovery
+			break;
 		case 'dispose':
 			void handleDispose();
 			break;

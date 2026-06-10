@@ -63,8 +63,9 @@ Safari/Firefox therefore capture nothing in v1 (panel disabled with per-row reas
 [Mic]         → getUserMedia({ audio: { deviceId } })
                   ↓ per acquired track
 monitor = track.clone()         → <video srcObject> tile (browser-composited; muted)
-worker  ← postMessage('capture-add-source', { track }, [track])   // transferred
-track.onended (browser "Stop sharing") → same path as in-app stop for that source
+worker  ← postMessage('capture-add-source', { track }, [track])   // transferred original
+monitor.onended (browser "Stop sharing") → same path as in-app stop for that source
+// NB: transferred tracks are detached on main; only the clone's onended fires there
 ```
 
 No silent enumeration of display surfaces exists on the platform and none is attempted; camera/mic enumeration happens only after a permission grant. Denial, cancellation, and `NotReadableError` each map to distinct recoverable UI states.
@@ -81,16 +82,23 @@ MediaStreamTrackProcessor.readable
       VideoFrame ts preserved ──→ VideoEncoder ──→ EncodedVideoChunk
       frame.close()  // exactly once                       │
       backpressure: encodeQueueSize > 8 ⇒                  ▼
-        drop non-key frame (close it),            Mediabunny Output
-        count + manifest gap record                 (Mp4OutputFormat fragmented,
+        pre-encode drop of non-key VideoFrame,     Mediabunny Output
+        increment drop counter + append             (Mp4OutputFormat fragmented,
+        pre-encode-gap manifest record
                                                      EncodedVideoPacketSource /
 AudioData ts preserved ──→ AudioEncoder              EncodedAudioPacketSource)
   audioData.close() // exactly once                        │ StreamTarget chunks
-  queue overrun ⇒ graceful stop ('audio-overrun')          ▼ postMessage(ArrayBuffer, transfer)
-                                                   SyncAccessHandle.write(chunk)
-                                                   SyncAccessHandle.flush()
-                                                   manifest.append(record); manifest.flush()
+  encodeQueueSize > 16 sustained for ≥ 4 frames            ▼ postMessage(ArrayBuffer, transfer)
+    ⇒ graceful stop ('audio-overrun')
+                                                    SyncAccessHandle.write(chunk)
+                                                    SyncAccessHandle.flush()
+                                                    manifest.append(record); manifest.flush()
+                                                          ▼ postMessage({ type: 'chunk-ack', sourceId })
 ```
+
+Writer→pipeline backpressure: the pipeline worker limits in-flight chunks per track (max 2 in-flight per track). Each chunk is sent with a transfer; the writer worker sends a short `chunk-ack` after chunk + manifest flush completes. The pipeline worker does not send the next chunk until the in-flight count drops below the bound. This prevents unbounded message-queue growth when `SyncAccessHandle` writes/flushes stall under I/O pressure. The writer worker also sends a `chunk-error` message on write failure, triggering the per-source error policy (R6.6).
+
+Audio overrun rationale: audio frames are small and frequent (~10 ms per `AudioData` at 48 kHz). The audio encode queue uses a higher bound (16, vs 8 for video) and requires sustained overrun (≥ 4 consecutive frames above threshold) before triggering a graceful stop. This prevents premature shutdown from brief encode bursts without allowing silent audio loss — audio is never dropped; overrun always leads to a surfaced stop with reason `audio-overrun`.
 
 Frame lifetime invariants:
 
@@ -136,7 +144,7 @@ type CaptureManifestRecord =
   | { kind: 'chunk'; sourceId: string; file: string;
       byteOffset: number; byteLength: number;
       fromUs: number; toUs: number; keyFrame: boolean;
-      droppedFrames: number }                       // gap info for backpressure drops
+      preEncodeDrops: number }                      // VideoFrames dropped before encode (backpressure gaps)
   | { kind: 'source-ended'; sourceId: string; reason: CaptureSourceEndReason }
   | { kind: 'finalize'; endedAtIso: string; reason: CaptureStopReason };
 ```
@@ -151,7 +159,7 @@ Import path: parse manifest tolerating a torn tail line → per track, truncate 
 
 ## Timestamps, VFR, and alignment (PR #49 lessons from day one)
 
-- **Preserve, never synthesize.** MSTP `timestamp`s pass through to encoder and container unmodified. Screen capture is inherently VFR (long static holds, bursts on motion): per-sample duration = delta to the next capture timestamp, last sample reuses the previous delta. No nominal-fps grid anywhere (the B3 lesson).
+- **Preserve, never synthesize.** MSTP `timestamp`s pass through to encoder and container unmodified. Screen capture is inherently VFR (long static holds, bursts on motion): per-sample duration = delta to the next capture timestamp. On session stop, the last VFR frame's duration is extended to `stopTime − lastFrameTimestamp` (not blindly reusing the previous delta), so the final frame covers the gap to the stop command and landed duration matches the actual recorded span. No nominal-fps grid anywhere (the B3 lesson).
 - **Landed metadata is honest.** Screen tracks land with `frameRateMode: 'variable'` and observed (not nominal) effective fps, so `SequentialFrameSource` uses per-frame durations.
 - **Offsets are data, not noise.** Session `epochUs` = min first-sample timestamp across tracks; each clip lands at `firstSampleTs − epochUs`. Tracks are never force-zeroed to "line up" (the 44 ms audio-lead lesson).
 - **Cross-clock sanity.** Chromium capture timestamps share a monotonic clock domain; the pipeline still anchors each track's first sample against `performance.now()` and warns (without re-aligning) if inter-track anchor skew exceeds threshold. Target: landed tracks mutually aligned within one audio quantum (128 frames at context rate; ≈ 2.67 ms at 48 kHz), unit-tested with synthetic clocks.
@@ -221,7 +229,7 @@ No new third-party libraries. Muxing, demuxing, and import inspection are Mediab
 | Screen capture of a static window | VFR durations honoured: long frame deltas preserved, no frame-skip cadence on playback (B3 regression guard) |
 | Mic starts 44 ms after screen | Clips land offset by 44 ms; nothing force-zeroed; skew ≤ one audio quantum with synthetic clocks |
 | Quota near-full at start / mid-record | Start blocked with shortfall / graceful stop with `quota` reason; manifest finalized; tracks landed |
-| "Stop sharing" browser bar | Source ends via `track.onended`; same finalize path; session continues or stops per remaining sources |
+| "Stop sharing" browser bar | Source ends via `monitor.onended` (clone's event fires on main after transfer); same finalize path; session continues or stops per remaining sources |
 | System-audio toggle on unsupported OS | Toggle visible but disabled with reason before recording |
 | Safari/Firefox | Record panel disabled with per-probe reasons; no crash; rest of app unaffected |
 | `npm run build` / `npm test` | Green; test count grows |
