@@ -76,4 +76,28 @@ describe('diagnostics probe caching', () => {
 		await buildWorkerDiagnosticSnapshot(workerInput());
 		expect(estimate.mock.calls.length).toBe(1);
 	});
+
+	it('includes live-publish capability findings when the probe is provided', async () => {
+		const snapshot = await buildWorkerDiagnosticSnapshot({
+			...workerInput(),
+			livePublish: {
+				rtcPeerConnection: 'supported',
+				trackGeneratorWorker: 'supported',
+				trackTransfer: 'unsupported',
+				generateKeyFrame: 'unknown',
+				hardwareH264Encode: 'supported'
+			}
+		});
+		const byCode = new Map(snapshot.capability.findings.map((f) => [f.code, f]));
+		expect(byCode.get('publish.rtc')?.status).toBe('supported');
+		expect(byCode.get('publish.track-generator')?.status).toBe('supported');
+		expect(byCode.get('publish.track-transfer')?.status).toBe('unsupported');
+		expect(byCode.get('publish.generateKeyFrame')?.status).toBe('unknown');
+		expect(byCode.get('publish.hw-encode')?.status).toBe('supported');
+	});
+
+	it('omits live-publish findings when no probe reached the worker', async () => {
+		const snapshot = await buildWorkerDiagnosticSnapshot(workerInput());
+		expect(snapshot.capability.findings.some((f) => f.code.startsWith('publish.'))).toBe(false);
+	});
 });

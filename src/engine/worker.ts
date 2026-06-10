@@ -161,6 +161,7 @@ import {
 } from './export';
 import { exportTimelineReduced } from './compatibility/compat-export';
 import { exportConstraintsForProbe } from './capability-probe-v2';
+import { createPublishFrameTap, type PublishFrameTap } from './publish-frame-tap';
 import {
 	CanvasCompatibilityRenderer,
 	type CanvasCompatibilityLayer
@@ -332,6 +333,113 @@ let checkpointRevision = 0;
 
 function post(msg: WorkerStateMessage) {
 	self.postMessage(msg);
+}
+
+function postWithTransfer(msg: WorkerStateMessage, transfer: Transferable[]) {
+	(self as unknown as DedicatedWorkerGlobalScope).postMessage(msg, transfer);
+}
+
+// ── Phase 47: program-feed tap for WHIP publish (T5) ──
+// The tap clones the composited program frame off the preview canvas and feeds
+// the publish track. Bounded (latest-frame-wins) and close-exactly-once live in
+// publish-frame-tap.ts; this block only owns the wiring and the canvas capture.
+
+let publishTap: PublishFrameTap<VideoFrame> | null = null;
+let publishTapStatsTimer: ReturnType<typeof setInterval> | null = null;
+let previewCanvas: OffscreenCanvas | null = null;
+
+type TrackGeneratorLike = MediaStreamTrack & { writable: WritableStream<VideoFrame> };
+
+function postPublishTapStats(tap: PublishFrameTap<VideoFrame>) {
+	const stats = tap.stats();
+	post({
+		type: 'publish-tap-stats',
+		framesDelivered: stats.framesDelivered,
+		framesDropped: stats.framesDropped
+	});
+}
+
+function handlePublishTapStart(mode: 'worker-track' | 'main-frames') {
+	if (publishTap) return;
+	const fail = (message: string) => post({ type: 'publish-tap-error', message });
+
+	if (mode === 'worker-track') {
+		const generatorCtor = (globalThis as unknown as Record<string, unknown>)
+			.MediaStreamTrackGenerator as
+			| (new (init: { kind: 'video' }) => TrackGeneratorLike)
+			| undefined;
+		if (typeof generatorCtor !== 'function') {
+			fail('MediaStreamTrackGenerator is unavailable in the pipeline worker.');
+			return;
+		}
+		let generator: TrackGeneratorLike;
+		try {
+			generator = new generatorCtor({ kind: 'video' });
+		} catch (error) {
+			fail(`Could not create the publish track: ${errorMessage(error)}`);
+			return;
+		}
+		publishTap = createPublishFrameTap<VideoFrame>(generator.writable.getWriter(), (error) =>
+			fail(`Publish frame tap failed: ${errorMessage(error)}`)
+		);
+		postWithTransfer({ type: 'publish-tap-track', track: generator }, [
+			generator as unknown as Transferable
+		]);
+	} else {
+		// Probed fallback (R4.5): the generator lives on main; the worker transfers
+		// one VideoFrame per program frame. This is publish data-plane only — the
+		// SAB playback clock is untouched.
+		publishTap = createPublishFrameTap<VideoFrame>(
+			{
+				write(frame) {
+					postWithTransfer({ type: 'publish-tap-frame', frame }, [
+						frame as unknown as Transferable
+					]);
+					return Promise.resolve();
+				},
+				close: () => Promise.resolve()
+			},
+			(error) => fail(`Publish frame tap failed: ${errorMessage(error)}`)
+		);
+	}
+	publishTapStatsTimer = setInterval(() => {
+		if (publishTap) postPublishTapStats(publishTap);
+	}, 2_000);
+}
+
+async function handlePublishTapStop(): Promise<void> {
+	if (publishTapStatsTimer !== null) {
+		clearInterval(publishTapStatsTimer);
+		publishTapStatsTimer = null;
+	}
+	const tap = publishTap;
+	publishTap = null;
+	if (tap) {
+		await tap.stop();
+		postPublishTapStats(tap);
+	}
+}
+
+/** Captures the just-presented program frame for the publish tap (zero CPU readback). */
+function tapProgramFrame(timestampS: number) {
+	if (!publishTap || !previewCanvas || previewCanvas.width === 0 || previewCanvas.height === 0) {
+		return;
+	}
+	let frame: VideoFrame;
+	try {
+		frame = new VideoFrame(previewCanvas, {
+			timestamp: Math.round(timestampS * 1_000_000)
+		});
+	} catch {
+		// Canvas not yet presentable (e.g. context loss mid-recovery); skip the tick.
+		return;
+	}
+	try {
+		publishTap.push(frame);
+	} finally {
+		// The tap works on clones; this capture is closed here, exactly once.
+		frame.close();
+	}
 }
 
 function postRecoveryCheckpoint(): void {
@@ -1349,6 +1457,7 @@ async function handleInit(
 	probeResult?: CapabilityProbeResult
 ) {
 	currentCapabilityProbe = probeResult ?? null;
+	previewCanvas = canvas;
 	if (probeResult) {
 		post({ type: 'capability-probe-v2', result: probeResult });
 	}
@@ -3510,7 +3619,7 @@ function setupPlayback() {
 		duration: getTimelineDuration(timeline),
 		frameRate,
 		getFrames,
-		renderFrames: (layers) => {
+		renderFrames: (layers, timestamp) => {
 			// The stack is already budgeted + offline-skipped + z-ordered by
 			// makeGetLayers. Core/compat GPU consume GPU title textures; Canvas2D
 			// reduced preview consumes title payloads and VideoFrames synchronously.
@@ -3540,6 +3649,7 @@ function setupPlayback() {
 					}
 				}
 				renderer.present(stack);
+				tapProgramFrame(timestamp);
 				return;
 			}
 			if (reducedRenderer) {
@@ -3560,6 +3670,7 @@ function setupPlayback() {
 					}
 				}
 				reducedRenderer.present(stack);
+				tapProgramFrame(timestamp);
 			}
 		},
 		writeClock: writeTransport,
@@ -4234,6 +4345,7 @@ async function handleDispose(): Promise<void> {
 	stopAudioPump();
 	abortQueueWork();
 	teardownMedia();
+	await handlePublishTapStop();
 	titleCache?.destroy();
 	titleCache = null;
 	renderer?.destroy();
@@ -4268,7 +4380,8 @@ async function handleDiagnosticSnapshot(requestId: string): Promise<void> {
 		rendererSubmissionCount: renderer?.lastFrameSubmissionCount ?? null,
 		activeExportSettings: lastExportSettings,
 		recentErrors,
-		sources
+		sources,
+		livePublish: currentCapabilityProbe?.livePublish ?? null
 	});
 	post({ type: 'diagnostic-snapshot', requestId, snapshot });
 }
@@ -4717,6 +4830,12 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 					}
 				]
 			});
+			break;
+		case 'publish-tap-start':
+			handlePublishTapStart(cmd.mode);
+			break;
+		case 'publish-tap-stop':
+			void handlePublishTapStop();
 			break;
 		case 'dispose':
 			void handleDispose();

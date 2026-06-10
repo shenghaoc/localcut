@@ -36,6 +36,8 @@ function loadDocs(): DocEntry[] {
 
 interface HelpPanelProps {
 	open: boolean;
+	/** Doc file name (e.g. "LIVE-STREAMING.md") to open on; defaults to the first doc. */
+	initialDocFileName?: string | null;
 	onClose: () => void;
 }
 
@@ -46,9 +48,17 @@ export function HelpPanel(props: HelpPanelProps) {
 
 	const activeDoc = () => entries[activeIndex()];
 
+	function initialIndex(): number {
+		const fileName = props.initialDocFileName;
+		if (!fileName) return 0;
+		const wanted = fileName.replace(/\.md$/, '').replace(/[-_]/g, ' ').toLowerCase();
+		const index = entries.findIndex((entry) => entry.name.toLowerCase() === wanted);
+		return index === -1 ? 0 : index;
+	}
+
 	createEffect(() => {
 		if (props.open) {
-			setActiveIndex(0);
+			setActiveIndex(initialIndex());
 			requestAnimationFrame(() => panelRef?.focus());
 		}
 	});

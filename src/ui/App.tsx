@@ -27,6 +27,7 @@ import {
 	type TimelineMarkerSnapshot,
 	type TimelineTrackSnapshot,
 	type TimelineTransitionSnapshot,
+	type PublishState,
 	type WorkerStateMessage,
 	type WaveformPeaks
 } from '../protocol';
@@ -57,6 +58,8 @@ import { Button, buttonVariants } from './components/button';
 import { cn } from '../lib/utils';
 import { CapabilityPanel } from './CapabilityPanel';
 import { HelpPanel } from './HelpPanel';
+import { PublishPanel } from './PublishPanel';
+import { createPublishController, type PublishTapStats } from './publish-controller';
 import { LimitedPreview } from './LimitedPreview';
 import { registerKeyboardShortcuts } from './keyboard';
 import { clipLocalTime, hasKeyframeTrack, sampleEffectsAt, sampleTransformAt } from './keyframes';
@@ -243,6 +246,11 @@ export function App() {
 	const [exportReady, setExportReady] = createSignal(false);
 	const [capabilityPanelOpen, setCapabilityPanelOpen] = createSignal(false);
 	const [helpPanelOpen, setHelpPanelOpen] = createSignal(false);
+	const [helpInitialDoc, setHelpInitialDoc] = createSignal<string | null>(null);
+	const [publishPanelOpen, setPublishPanelOpen] = createSignal(false);
+	const [publishState, setPublishState] = createSignal<PublishState>({ phase: 'idle' });
+	const [publishTapStats, setPublishTapStats] = createSignal<PublishTapStats | null>(null);
+	const [publishErrorDetail, setPublishErrorDetail] = createSignal<string | null>(null);
 	const [diagnosticsPanelOpen, setDiagnosticsPanelOpen] = createSignal(false);
 	const [audioCleanupOpen, setAudioCleanupOpen] = createSignal(false);
 	const [diagnosticSnapshot, setDiagnosticSnapshot] = createSignal<DiagnosticSnapshot | null>(null);
@@ -368,6 +376,25 @@ export function App() {
 	}> | null = null;
 	const [meterSab, setMeterSab] = createSignal<SharedArrayBuffer | null>(null);
 	const [audioSabReady, setAudioSabReady] = createSignal(false);
+
+	// Phase 47: WHIP publish. The controller owns the WhipSession, the encoder
+	// lease, and the worker tap wiring; the component only mirrors its state into
+	// signals. No media objects live in component state.
+	const publishController = createPublishController({
+		sendCommand: (command) => ensureWorker().bridge.send(command),
+		getProbe: () => capabilityProbeV2(),
+		getAudioTrack: () => audioEngine.createStreamTap(),
+		releaseAudioTrack: () => audioEngine.removeStreamTap()
+	});
+	const publishBusy = createMemo(() => {
+		const phase = publishState().phase;
+		return phase === 'connecting' || phase === 'live' || phase === 'reconnecting';
+	});
+	// Re-evaluated on publish transitions: the lease count changes at go-live/stop.
+	const recordWhileStreaming = createMemo(() => {
+		publishState();
+		return publishController.canRecordWhileStreaming();
+	});
 
 	const recoveryMachine = createRecoveryMachine();
 	const [workerRecoveryState, setWorkerRecoveryState] =
@@ -658,6 +685,8 @@ export function App() {
 	}
 
 	function handleState(msg: WorkerStateMessage) {
+		// Publish tap messages route to the controller (it owns the track/frames).
+		if (publishController.handleWorkerMessage(msg)) return;
 		switch (msg.type) {
 			case 'capability-probe-v2':
 				setCapabilityProbeV2(msg.result);
@@ -1863,6 +1892,11 @@ export function App() {
 			onPaste: pasteClipboardClips,
 			onDuplicate: duplicateSelectedClips
 		});
+		const unsubscribePublish = publishController.onUpdate(() => {
+			setPublishState(publishController.state);
+			setPublishTapStats(publishController.tapStats);
+			setPublishErrorDetail(publishController.lastError);
+		});
 		const handleOffline = () => setIsOffline(true);
 		const handleOnline = () => setIsOffline(false);
 		window.addEventListener('offline', handleOffline);
@@ -1912,6 +1946,8 @@ export function App() {
 		window.addEventListener('drop', onDrop);
 		onCleanup(() => {
 			unregisterKeyboard();
+			unsubscribePublish();
+			publishController.dispose();
 			window.removeEventListener('offline', handleOffline);
 			window.removeEventListener('online', handleOnline);
 			window.removeEventListener('dragenter', onDragEnter);
@@ -1979,8 +2015,13 @@ export function App() {
 				previewLabel={previewLabel()}
 				encodeFps={encodeFps()}
 				onOpenCapabilities={() => setCapabilityPanelOpen(true)}
-				onOpenHelp={() => setHelpPanelOpen(true)}
+				onOpenHelp={() => {
+					setHelpInitialDoc(null);
+					setHelpPanelOpen(true);
+				}}
 				onOpenAudioCleanup={() => setAudioCleanupOpen(true)}
+				onOpenPublish={() => setPublishPanelOpen(true)}
+				publishLive={publishBusy()}
 				masterGain={masterGain()}
 				meterSab={meterSab()}
 				onMasterGain={(gain) => {
@@ -2524,7 +2565,11 @@ export function App() {
 						</Show>
 					</span>
 				</footer>
-				<HelpPanel open={helpPanelOpen()} onClose={() => setHelpPanelOpen(false)} />
+				<HelpPanel
+					open={helpPanelOpen()}
+					initialDocFileName={helpInitialDoc()}
+					onClose={() => setHelpPanelOpen(false)}
+				/>
 				<AudioCleanupPanel
 					open={audioCleanupOpen()}
 					state={cleanupState()}
@@ -2554,6 +2599,22 @@ export function App() {
 						});
 					}}
 					onClose={() => setAudioCleanupOpen(false)}
+				/>
+				<PublishPanel
+					open={publishPanelOpen()}
+					probe={capabilityProbeV2()}
+					state={publishState()}
+					tapStats={publishTapStats()}
+					errorDetail={publishErrorDetail()}
+					recordWhileStreamingAvailable={recordWhileStreaming()}
+					onGoLive={(settings) => void publishController.goLive(settings)}
+					onStop={() => void publishController.stop()}
+					onClose={() => setPublishPanelOpen(false)}
+					onOpenGuide={() => {
+						setPublishPanelOpen(false);
+						setHelpInitialDoc('LIVE-STREAMING.md');
+						setHelpPanelOpen(true);
+					}}
 				/>
 				<CapabilityPanel
 					open={capabilityPanelOpen()}
