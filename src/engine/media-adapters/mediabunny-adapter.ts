@@ -18,6 +18,7 @@ import type { MediaKind, MediaMetadata } from '../../protocol';
 import { SequentialAudioSource } from '../audio-source';
 import { SequentialFrameSource } from '../frame-source';
 import { StillFrameSource } from '../still-source';
+import { WebCodecsVideoDecoder, WebCodecsAudioDecoder } from '../webcodecs-decoder';
 import { buildNormalizedSourceTiming, resolveNormalizedSourceTimestamp } from './source-timing';
 import { generateSourceHealthWarnings, reportFromWarnings } from './source-health';
 import type {
@@ -381,6 +382,42 @@ async function openImageFile(file: File, sourceId: string): Promise<PrimaryMedia
 	return { handle, inspection, conformance, warnings };
 }
 
+const WEBCODECS_PREFERRED_WHEN_SUPPORTED = true;
+
+async function tryCreateWebCodecsVideoSource(
+	primaryVideo: InputVideoTrack,
+	minFrameDuration: number
+): Promise<SequentialFrameSource | null> {
+	if (typeof VideoDecoder === 'undefined') return null;
+	try {
+		const config = await primaryVideo.getDecoderConfig();
+		if (!config) return null;
+		const support = await VideoDecoder.isConfigSupported(config);
+		if (!support.supported) return null;
+		const decoder = new WebCodecsVideoDecoder(primaryVideo);
+		return new SequentialFrameSource(decoder, minFrameDuration);
+	} catch {
+		return null;
+	}
+}
+
+async function tryCreateWebCodecsAudioSource(
+	primaryAudio: InputAudioTrack,
+	sampleRate: number
+): Promise<SequentialAudioSource | null> {
+	if (typeof AudioDecoder === 'undefined') return null;
+	try {
+		const config = await primaryAudio.getDecoderConfig();
+		if (!config) return null;
+		const support = await AudioDecoder.isConfigSupported(config);
+		if (!support.supported) return null;
+		const decoder = new WebCodecsAudioDecoder(primaryAudio);
+		return new SequentialAudioSource(decoder, sampleRate);
+	} catch {
+		return null;
+	}
+}
+
 async function inspectMediabunnyInput(
 	input: Input,
 	file: File,
@@ -507,8 +544,6 @@ export const mediabunnyAdapter: MediaAdapter = {
 
 			let frameSource: SequentialFrameSource | null = null;
 			let thumbnailSink: VideoSampleSink | null = null;
-			let videoMinFrameDuration = 0;
-			const secondaryFrameSources: SequentialFrameSource[] = [];
 			const displayWidth = primaryVideoInspection?.displayWidth ?? 0;
 			const displayHeight = primaryVideoInspection?.displayHeight ?? 0;
 			const frameRate =
@@ -517,7 +552,6 @@ export const mediabunnyAdapter: MediaAdapter = {
 					: DEFAULT_FRAME_RATE;
 
 			if (primaryVideo && primaryVideoInspection?.canDecode) {
-				const sink = new VideoSampleSink(primaryVideo);
 				// VFR: use a tiny floor (guards zero-duration frames only) so each frame
 				// advances at its actual Mediabunny-reported duration rather than being
 				// held for a full nominal-rate interval.
@@ -527,16 +561,38 @@ export const mediabunnyAdapter: MediaAdapter = {
 						: frameRate > 0
 							? 1 / frameRate
 							: 0;
-				frameSource = new SequentialFrameSource(sink, minFrameDuration);
-				videoMinFrameDuration = minFrameDuration;
+
+				// Always create a Mediabunny sink for thumbnails (sparse access).
 				thumbnailSink = new VideoSampleSink(primaryVideo);
+
+				if (WEBCODECS_PREFERRED_WHEN_SUPPORTED) {
+					frameSource = await tryCreateWebCodecsVideoSource(
+						primaryVideo,
+						minFrameDuration
+					);
+				}
+				if (!frameSource) {
+					const sink = new VideoSampleSink(primaryVideo);
+					frameSource = new SequentialFrameSource(sink, minFrameDuration);
+				}
 			}
 
 			let audioSource: SequentialAudioSource | null = null;
 			const audioChannels = primaryAudioInspection?.channels ?? 2;
 			const audioSampleRate = primaryAudioInspection?.sampleRate ?? 48_000;
 			if (primaryAudio && primaryAudioInspection?.canDecode) {
-				audioSource = new SequentialAudioSource(new AudioSampleSink(primaryAudio), audioSampleRate);
+				if (WEBCODECS_PREFERRED_WHEN_SUPPORTED) {
+					audioSource = await tryCreateWebCodecsAudioSource(
+						primaryAudio,
+						audioSampleRate
+					);
+				}
+				if (!audioSource) {
+					audioSource = new SequentialAudioSource(
+						new AudioSampleSink(primaryAudio),
+						audioSampleRate
+					);
+				}
 			}
 
 			const kind: MediaKind = frameSource
@@ -569,15 +625,6 @@ export const mediabunnyAdapter: MediaAdapter = {
 				timing,
 				warnings,
 				frameSource,
-				createSecondaryFrameSource: () => {
-					if (!frameSource || !primaryVideo) return null;
-					const secondary = new SequentialFrameSource(
-						new VideoSampleSink(primaryVideo),
-						videoMinFrameDuration
-					);
-					secondaryFrameSources.push(secondary);
-					return secondary;
-				},
 				audioSource,
 				audioChannels,
 				audioSampleRate,
@@ -588,8 +635,6 @@ export const mediabunnyAdapter: MediaAdapter = {
 				thumbnailAt,
 				dispose: () => {
 					frameSource?.reset();
-					for (const secondary of secondaryFrameSources) secondary.reset();
-					secondaryFrameSources.length = 0;
 					audioSource?.dispose();
 					mediaInput.dispose();
 				}

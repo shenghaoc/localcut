@@ -39,6 +39,7 @@ function baseSnapshot(): DiagnosticSnapshot {
 				}
 			},
 			webCodecs: { decoders: [], encoders: [] },
+			formatCompatibility: null,
 			mediabunny: { code: 'mediabunny', status: 'supported', message: 'bundled' },
 			audioWorklet: { code: 'audio', status: 'supported', message: 'ok' },
 			fileSystemAccess: { code: 'fsa', status: 'supported', message: 'ok' },

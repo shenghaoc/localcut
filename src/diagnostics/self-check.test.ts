@@ -102,6 +102,7 @@ function acceleratedCapability(): CapabilityReport {
 			decoders: [{ codec: 'avc1.640028', direction: 'decode', supported: true }],
 			encoders: [{ codec: 'avc1.640028', direction: 'encode', supported: true }]
 		},
+		formatCompatibility: null,
 		mediabunny: { code: 'mediabunny', status: 'supported', message: 'Available' },
 		audioWorklet: {
 			code: 'audio-worklet',

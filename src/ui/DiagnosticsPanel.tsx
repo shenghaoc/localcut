@@ -241,6 +241,35 @@ export function DiagnosticsPanel(props: DiagnosticsPanelProps) {
 												.join(', ') || 'none'}
 										</dd>
 									</div>
+									<Show when={snapshot().capability.formatCompatibility}>
+										{(compat) => (
+											<>
+												<div>
+													<dt>Video codecs</dt>
+													<dd>
+														{compat().supportedVideoCodecs}/{compat().totalVideoCodecs} supported (
+														{compat().hwPreferredVideoCodecs} hardware) ·{' '}
+														{compat()
+															.videoCodecs.map((c) => `${c.codec}: ${c.strategy}`)
+															.join(', ') || 'none'}
+													</dd>
+												</div>
+												<div>
+													<dt>Audio codecs</dt>
+													<dd>
+														{compat().supportedAudioCodecs}/{compat().totalAudioCodecs} supported ·{' '}
+														{compat()
+															.audioCodecs.map((c) => `${c.codec}: ${c.strategy}`)
+															.join(', ') || 'none'}
+													</dd>
+												</div>
+												<div>
+													<dt>Containers</dt>
+													<dd>{compat().demuxableContainers.join(', ') || 'none'}</dd>
+												</div>
+											</>
+										)}
+									</Show>
 								</dl>
 							</section>
 
