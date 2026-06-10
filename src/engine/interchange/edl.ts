@@ -1,6 +1,6 @@
 import type { ProjectDoc, SourceDescriptor } from '../project';
 import type { TimelineClip, TimelineTrack } from '../timeline';
-import { formatTimecode, interchangeRate, snapToFrames } from './time';
+import { compareStrings, formatTimecode, interchangeRate, snapToFrames } from './time';
 import type { InterchangeOutput } from './otio';
 
 /**
@@ -45,7 +45,7 @@ class ReelNames {
 		let candidate = base.slice(0, REEL_MAX_LENGTH);
 		for (let suffix = 2; this.used.has(candidate); suffix += 1) {
 			const digits = String(suffix);
-			candidate = base.slice(0, REEL_MAX_LENGTH - digits.length) + digits;
+			candidate = base.slice(0, Math.max(0, REEL_MAX_LENGTH - digits.length)) + digits;
 		}
 		this.used.add(candidate);
 		this.bySourceId.set(sourceId, candidate);
@@ -80,7 +80,9 @@ export function serializeTimelineToEdl(
 ): InterchangeOutput {
 	const warnings: string[] = [];
 	const sequenceRate = interchangeRate(doc);
-	const fps = Math.round(sequenceRate);
+	// Clamp so sub-1 fps sequence rates (slideshows) still yield a legal
+	// integer timecode rate; the rounding comment below records the change.
+	const fps = Math.max(1, Math.round(sequenceRate));
 	const sourceById = new Map(doc.sources.map((source) => [source.sourceId, source]));
 	const track = pickTrack(doc, options, warnings);
 
@@ -104,7 +106,7 @@ export function serializeTimelineToEdl(
 
 		const reels = new ReelNames();
 		const recordOffset = RECORD_START_HOURS * 3600 * fps;
-		const sorted = [...track.clips].sort((a, b) => a.start - b.start || (a.id < b.id ? -1 : 1));
+		const sorted = [...track.clips].sort((a, b) => a.start - b.start || compareStrings(a.id, b.id));
 		let eventNumber = 0;
 		for (const clip of sorted) {
 			const recIn = snapToFrames(clip.start, fps);

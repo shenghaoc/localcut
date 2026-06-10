@@ -79,4 +79,9 @@ describe('formatTimecode', () => {
 	it('rejects non-integer frame rates', () => {
 		expect(() => formatTimecode(0, 29.97)).toThrow(/integer frame rate/);
 	});
+
+	it('rejects non-finite frame counts instead of emitting NaN timecodes', () => {
+		expect(() => formatTimecode(Number.NaN, 30)).toThrow(/finite frame count/);
+		expect(() => formatTimecode(Number.POSITIVE_INFINITY, 30)).toThrow(/finite frame count/);
+	});
 });

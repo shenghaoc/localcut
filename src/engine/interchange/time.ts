@@ -42,10 +42,25 @@ export function snappedDurationFrames(startS: number, endS: number, rate: number
 	return Math.max(0, snapToFrames(endS, rate) - snapToFrames(startS, rate));
 }
 
+/**
+ * Locale-independent code-unit string comparison. Interchange ordering must
+ * be byte-stable across environments (golden fixtures compare exact bytes),
+ * so `localeCompare` — whose result depends on the host ICU locale — is
+ * deliberately not used.
+ */
+export function compareStrings(a: string, b: string): number {
+	return a < b ? -1 : a > b ? 1 : 0;
+}
+
 /** Non-drop HH:MM:SS:FF at an integer frame rate. */
 export function formatTimecode(frames: number, fps: number): string {
 	if (!Number.isInteger(fps) || fps <= 0) {
 		throw new Error(`Timecode requires a positive integer frame rate, got ${fps}.`);
+	}
+	// A non-finite count means an upstream bug; failing loudly beats silently
+	// emitting a wrong-but-plausible timecode into a broadcast EDL.
+	if (!Number.isFinite(frames)) {
+		throw new Error(`Timecode requires a finite frame count, got ${frames}.`);
 	}
 	const total = Math.max(0, Math.trunc(frames));
 	const ff = total % fps;

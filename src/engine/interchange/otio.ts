@@ -1,6 +1,6 @@
 import type { ProjectDoc, SourceDescriptor } from '../project';
 import type { TimelineClip, TimelineTrack, TimelineTransition } from '../timeline';
-import { interchangeRate, snapToFrames } from './time';
+import { compareStrings, interchangeRate, snapToFrames } from './time';
 
 /**
  * OpenTimelineIO serialized-JSON emitter (Phase 48).
@@ -258,7 +258,7 @@ function buildTrackChildren(
 	const children: OtioTrackChild[] = [];
 	const placed = new Map<string, PlacedClip>();
 	const dropped = new Set<string>();
-	const sorted = [...track.clips].sort((a, b) => a.start - b.start || (a.id < b.id ? -1 : 1));
+	const sorted = [...track.clips].sort((a, b) => a.start - b.start || compareStrings(a.id, b.id));
 	let cursor = 0;
 	for (const clip of sorted) {
 		const startFrames = snapToFrames(clip.start, rate);
@@ -330,7 +330,7 @@ function insertTransitions(
 ): void {
 	const onTrack = transitions
 		.filter((transition) => transition.trackId === track.id)
-		.sort((a, b) => (a.id < b.id ? -1 : 1));
+		.sort((a, b) => compareStrings(a.id, b.id));
 	for (const transition of onTrack) {
 		if (dropped.has(transition.fromClipId) || dropped.has(transition.toClipId)) {
 			warnings.push(`Transition ${transition.id} touches a dropped clip and was omitted.`);

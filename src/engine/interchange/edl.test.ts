@@ -61,6 +61,22 @@ describe('serializeTimelineToEdl', () => {
 		expect(validateCmx3600Document(text, 30)).toEqual([]);
 	});
 
+	it('clamps sub-1 fps sequence rates to a legal 1 fps timecode rate', () => {
+		const doc = buildMultiTrackFixtureDoc();
+		doc.exportSettings = {
+			preset: 'quality',
+			codec: 'h264',
+			container: 'mp4',
+			width: 1920,
+			height: 1080,
+			fps: 0.25,
+			videoBitrate: 8_000_000
+		};
+		const { text } = serializeTimelineToEdl(doc, OPTIONS);
+		expect(text).toContain('* LOCALCUT: RATE 0.25 ROUNDED TO 1 NDF');
+		expect(validateCmx3600Document(text, 1)).toEqual([]);
+	});
+
 	it('skips zero-frame clips with a warning', () => {
 		const { text, warnings } = serializeTimelineToEdl(buildMissingSourceFixtureDoc(), OPTIONS);
 		expect(validateCmx3600Document(text, 30)).toEqual([]);
