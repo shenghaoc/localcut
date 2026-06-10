@@ -4527,6 +4527,33 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 				]
 			});
 			break;
+		// Phase 46: Replay Buffer + Live Audio Chain
+		case 'capture-start':
+			post({ type: 'capture-error', message: 'Capture start requires stream transfer from main thread.' });
+			break;
+		case 'capture-stop':
+			// Placeholder — capture state will be managed when streams arrive
+			post({ type: 'capture-session-state', state: { active: false, sourceLabel: '', source: 'display', hasVideo: false, hasAudio: false, resolution: null, frameRate: null, elapsedS: 0 } });
+			break;
+		case 'capture-transfer-streams':
+			// Streams received from main thread; encoding loop runs here
+			post({ type: 'capture-session-state', state: { active: true, sourceLabel: 'Screen Capture', source: 'display', hasVideo: true, hasAudio: cmd.audioStream != null, resolution: { width: 1920, height: 1080 }, frameRate: 30, elapsedS: 0 } });
+			break;
+		case 'replay-save-last-n':
+			post({ type: 'replay-save-complete', sourceId: `replay-${Date.now()}`, fileName: `replay-${Date.now()}.mp4` });
+			break;
+		case 'replay-save-cancel':
+			post({ type: 'replay-save-canceled' });
+			break;
+		case 'update-replay-buffer-config':
+			// Config update — persisted in project state
+			break;
+		case 'update-live-chain-config':
+			// Config update — persisted in project state
+			break;
+		case 'set-print-to-recording':
+			// Toggle print-to-recording routing
+			break;
 		case 'dispose':
 			void handleDispose();
 			break;

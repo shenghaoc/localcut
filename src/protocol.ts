@@ -1159,6 +1159,23 @@ export type WorkerCommand =
 	| { type: 'queue-set-stop-on-error'; stopOnError: boolean }
 	| { type: 'request-diagnostic-snapshot'; requestId: string }
 	| { type: 'run-recovery-action'; actionId: string }
+	// Phase 46: Replay Buffer + Live Audio Chain
+	| {
+		type: 'capture-start';
+		source: CaptureSource;
+		config?: Partial<CaptureConfig>;
+	}
+	| { type: 'capture-stop' }
+	| {
+		type: 'capture-transfer-streams';
+		videoStream: ReadableStream<VideoFrame>;
+		audioStream?: ReadableStream<AudioData>;
+	}
+	| { type: 'replay-save-last-n'; nSeconds?: number }
+	| { type: 'replay-save-cancel' }
+	| { type: 'update-replay-buffer-config'; config: Partial<RingBufferConfig> }
+	| { type: 'update-live-chain-config'; config: Partial<LiveAudioChainConfig> }
+	| { type: 'set-print-to-recording'; enabled: boolean }
 	| { type: 'dispose' };
 
 /** A measured preview resolution tier (adaptive downscale of the decode path). */
@@ -1323,7 +1340,193 @@ export type WorkerStateMessage =
 			state: 'idle' | 'recovering' | 'failed';
 			actions: readonly RecoveryAction[];
 	  }
-	| { type: 'error'; message: string };
+	| { type: 'error'; message: string }
+	// Phase 46: Replay Buffer + Live Audio Chain
+	| { type: 'capture-session-state'; state: CaptureSessionState }
+	| { type: 'capture-error'; message: string }
+	| { type: 'replay-buffer-state'; state: RingBufferState }
+	| { type: 'replay-save-progress'; chunksWritten: number; totalChunks: number }
+	| { type: 'replay-save-complete'; sourceId: string; fileName: string }
+	| { type: 'replay-save-error'; message: string }
+	| { type: 'replay-save-canceled' }
+	| { type: 'live-chain-latency'; latencyMs: number }
+	| { type: 'live-chain-error'; message: string }
+	| { type: 'live-chain-ring-stalled' };
+
+// ── Phase 46: Replay Buffer + Live Audio Chain ──
+
+export interface CaptureConfig {
+	videoCodec: string;
+	audioCodec: string;
+	videoBitrate: number;
+	audioBitrate: number;
+	width: number;
+	height: number;
+	framerate: number;
+	sampleRate: number;
+	numberOfChannels: number;
+}
+
+export type CaptureSource = 'display' | 'camera';
+
+export interface CaptureSessionState {
+	active: boolean;
+	sourceLabel: string;
+	source: CaptureSource;
+	hasVideo: boolean;
+	hasAudio: boolean;
+	resolution: { width: number; height: number } | null;
+	frameRate: number | null;
+	elapsedS: number;
+}
+
+export interface RingBufferConfig {
+	maxDurationS: number;
+	maxMemoryBytes: number;
+	saveDurationS: number;
+}
+
+export interface RingBufferStats {
+	totalDurationS: number;
+	memoryBytes: number;
+	spilledBytes: number;
+	oldestTimestamp: number | null;
+	newestTimestamp: number | null;
+	keyframeCount: number;
+	droppedFrameCount: number;
+}
+
+export interface SpillRange {
+	startTimestamp: number;
+	endTimestamp: number;
+	opfsFileName: string;
+	byteCount: number;
+	entryCount: number;
+	hasKeyframe: boolean;
+}
+
+export interface RingBufferState {
+	config: RingBufferConfig;
+	stats: RingBufferStats;
+}
+
+export interface AudioInsertParams {
+	bypass: boolean;
+}
+
+export interface GateParams extends AudioInsertParams {
+	thresholdDb: number;
+	rangeDb: number;
+	attackMs: number;
+	holdMs: number;
+	releaseMs: number;
+}
+
+export interface CompressorParams extends AudioInsertParams {
+	thresholdDb: number;
+	ratio: number;
+	attackMs: number;
+	releaseMs: number;
+	kneeDb: number;
+	makeupGainDb: number;
+}
+
+export interface LimiterParams extends AudioInsertParams {
+	ceilingDb: number;
+	attackUs: number;
+	releaseMs: number;
+}
+
+export interface LiveAudioChainConfig {
+	gate: GateParams;
+	compressor: CompressorParams;
+	limiter: LimiterParams;
+	denoiserBypass: boolean;
+	printToRecording: boolean;
+}
+
+export const DEFAULT_GATE_PARAMS: GateParams = {
+	bypass: true,
+	thresholdDb: -40,
+	rangeDb: -80,
+	attackMs: 0.1,
+	holdMs: 20,
+	releaseMs: 50,
+};
+
+export const DEFAULT_COMPRESSOR_PARAMS: CompressorParams = {
+	bypass: true,
+	thresholdDb: -24,
+	ratio: 4,
+	attackMs: 5,
+	releaseMs: 100,
+	kneeDb: 6,
+	makeupGainDb: 0,
+};
+
+export const DEFAULT_LIMITER_PARAMS: LimiterParams = {
+	bypass: true,
+	ceilingDb: -1,
+	attackUs: 100,
+	releaseMs: 50,
+};
+
+export const DEFAULT_LIVE_AUDIO_CHAIN_CONFIG: LiveAudioChainConfig = {
+	gate: DEFAULT_GATE_PARAMS,
+	compressor: DEFAULT_COMPRESSOR_PARAMS,
+	limiter: DEFAULT_LIMITER_PARAMS,
+	denoiserBypass: true,
+	printToRecording: false,
+};
+
+// Extended SAB layout for live audio chain (appended to Phase 16 meter SAB).
+// Total meters + chain params: 36 + N (reserved for Phase 36 denoiser).
+export const LIVE_CHAIN_METER_OFFSET = 4; // After Phase 16 meters [0..3]
+export const LIVE_CHAIN_METER_FIELD_COUNT = 32; // Indices 4..35 (meters + params for gate/comp/limiter)
+export const LIVE_CHAIN_TOTAL_FIELDS = METER_FIELD_COUNT + LIVE_CHAIN_METER_FIELD_COUNT;
+
+export const LiveChainMeterIndex = {
+	// Insert-level meters (indices 4–15)
+	GATE_INPUT_PEAK_L: 4,
+	GATE_INPUT_PEAK_R: 5,
+	GATE_OUTPUT_PEAK_L: 6,
+	GATE_OUTPUT_PEAK_R: 7,
+	COMP_INPUT_PEAK_L: 8,
+	COMP_INPUT_PEAK_R: 9,
+	COMP_OUTPUT_PEAK_L: 10,
+	COMP_OUTPUT_PEAK_R: 11,
+	LIMITER_INPUT_PEAK_L: 12,
+	LIMITER_INPUT_PEAK_R: 13,
+	LIMITER_OUTPUT_PEAK_L: 14,
+	LIMITER_OUTPUT_PEAK_R: 15,
+	// Aggregate latency
+	CHAIN_LATENCY_SAMPLES: 16,
+	// Gate params (17–22)
+	GATE_BYPASS: 17,
+	GATE_THRESHOLD: 18,
+	GATE_RANGE: 19,
+	GATE_ATTACK: 20,
+	GATE_HOLD: 21,
+	GATE_RELEASE: 22,
+	// Compressor params (23–29)
+	COMP_BYPASS: 23,
+	COMP_THRESHOLD: 24,
+	COMP_RATIO: 25,
+	COMP_ATTACK: 26,
+	COMP_RELEASE: 27,
+	COMP_KNEE: 28,
+	COMP_MAKEUP: 29,
+	// Limiter params (30–33)
+	LIMITER_BYPASS: 30,
+	LIMITER_CEILING: 31,
+	LIMITER_ATTACK: 32,
+	LIMITER_RELEASE: 33,
+	// Reserved denoiser (34)
+	DENOISER_BYPASS: 34,
+	// 35..N reserved for Phase 36 denoiser
+} as const;
+
+export const LIVE_CHAIN_RING_FRAME_COUNT = 4096; // 128-sample blocks × 32 = ~85ms at 48kHz
 
 export function assertCrossOriginIsolated(context: string): void {
 	if (!globalThis.crossOriginIsolated) {

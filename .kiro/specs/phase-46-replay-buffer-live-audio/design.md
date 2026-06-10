@@ -130,7 +130,7 @@ async function captureLoop(videoStream: ReadableStream<VideoFrame>, audioStream:
 
 ### Capability Gating
 
-`MediaStreamTrackProcessor` availability is probed at editor startup alongside existing probes; the feature is disabled when unsupported. `crossOriginIsolated` is required for the SAB-based audio chain parameters and timing; absent → feature disabled with a message.
+`MediaStreamTrackProcessor` availability is probed at editor startup alongside existing probes; the replay buffer feature is disabled when unsupported. `crossOriginIsolated` is required only for the Live Audio Chain (SAB-based parameters, meters, and print-to-recording path); when absent, the replay buffer works normally and the live audio chain is disabled with a message.
 
 ## GOP-Aligned Ring Buffer
 
@@ -333,6 +333,8 @@ A reserved insert slot between the gate and compressor in the chain topology. In
 
 An optional toggle `printLiveChainToRecording` (default `false`): when enabled, the `AudioData` frames entering the audio encoder are the chain-processed output (post-limiter) instead of the raw capture audio. Implementation: the pipeline worker copies the chain output from a shared ring buffer (separate from the main audio ring) into the encoder input. This is a separate SAB ring written by the AudioWorklet and read by the worker's audio capture loop.
 
+> **AudioContext suspension risk:** The AudioWorklet runs on the browser's audio rendering thread, driven by the active `AudioContext`. If the `AudioContext` is suspended (autoplay policy, background tab throttling, or the user muting the monitor), the worklet stops and the SAB chain-output ring is not written, starving the encoder. **Mitigation:** When `printLiveChainToRecording` is enabled, the `AudioContext` is kept alive by connecting a silent gain node (gain = 0) to `destination`; this ensures the rendering thread runs even when monitoring is muted. As a fallback, if the ring is detected as stalled (no writes for > 200 ms), the encoder reverts to raw capture audio and posts a `live-chain-ring-stalled` diagnostic warning.
+
 ## Modules
 
 | Module | Description |
@@ -365,8 +367,8 @@ An optional toggle `printLiveChainToRecording` (default `false`): when enabled, 
 | Live chain: bypass all → audio clean | Output is sample-exact match to input (zero latency, unity gain) |
 | Live chain: AudioWorklet crash | Chain bypasses; capture continues; ring buffer unaffected; error surfaced in UI |
 | Print chain to recording enabled | Saved replay clip's audio track has chain processing baked in |
-| `crossOriginIsolated` absent | Feature disabled in both panels; editor fully functional |
-| `MediaStreamTrackProcessor` unsupported | Feature disabled; friendly message shown |
+| `crossOriginIsolated` absent | Replay buffer functional; live audio chain disabled with message; editor fully functional |
+| `MediaStreamTrackProcessor` unsupported | Replay buffer disabled; friendly message shown |
 
 ## Interaction with Existing Systems
 

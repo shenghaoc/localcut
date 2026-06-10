@@ -11,7 +11,7 @@
 - **R0.5** Ring-buffer memory is bounded by a user-configurable limit (default 30 s, max 300 s). The buffer must never grow unboundedly; eviction must be prompt and verifiable.
 - **R0.6** `EncodedVideoChunk` and `EncodedAudioChunk` references must be released exactly once; no leaked chunks in eviction or save paths.
 - **R0.7** OPFS is the only persistent storage for spilled chunks and saved clips. No IndexedDB storage of encoded media data.
-- **R0.8** `crossOriginIsolated` is required for the accelerated save path (SAB timing); the feature is disabled with a clear message when isolation is absent.
+- **R0.8** The Replay Buffer (capture, ring buffer, OPFS spill, save-to-timeline) works without `crossOriginIsolated`. The Live Audio Chain (SAB-based parameters, meters, and print-to-recording path) requires `crossOriginIsolated`; when isolation is absent, the replay buffer remains fully functional and only the live audio chain is disabled with a clear message.
 
 ## R1 — Live Media Capture
 
@@ -105,4 +105,4 @@
 - **A4** Live audio chain inserts produce audible, measurable processing when enabled; bypass is a clean identity path.
 - **A5** Capture, ring buffer, save, and live chain all work without degrading existing import/play/edit/export functionality.
 - **A6** Capture prerequisites unmet → feature disabled with a clear message; editor fully functional otherwise.
-- **A7** `crossOriginIsolated` absent → feature disabled; editor shell remains alive with a clear capability message.
+- **A7** `crossOriginIsolated` absent → replay buffer remains fully functional; live audio chain disabled with a clear capability message; editor shell remains alive.

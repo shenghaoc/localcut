@@ -46,7 +46,7 @@
 
 - [ ] **T5.1** Create `src/engine/live-audio/gate.ts`: pure function `processGate(input: Float32Array, params: GateParams, state: GateState): Float32Array`. Implements: RMS or peak detection, hysteresis with attack/hold/release envelope, soft knee around threshold. Returns processed buffer and updated state.
 - [ ] **T5.2** Create `src/engine/live-audio/compressor.ts`: pure function `processCompressor(input: Float32Array, params: CompressorParams, state: CompressorState): Float32Array`. Feed-forward RMS compressor with configurable ratio, attack/release smoothing, soft knee, makeup gain.
-- [ ] **T5.3** Create `src/engine/live-audio/limiter.ts`: pure function `processLimiter(input: Float32Array, params: LimiterParams, state: LimiterState): Float32Array`. Brickwall peak limiter with sub-sample lookahead (1–5 ms), attack in microseconds, smooth release.
+- [ ] **T5.3** Create `src/engine/live-audio/limiter.ts`: pure function `processLimiter(input: Float32Array, params: LimiterParams, state: LimiterState): Float32Array`. Brickwall peak limiter with short lookahead (1–5 ms), attack in microseconds, smooth release.
 - [ ] **T5.4** Each DSP function is pure and unit-testable: no Web Audio API dependencies, no AudioWorklet. State is a plain object passed in/out.
 - [ ] **T5.5** Unit-test gate: assert gate opens above threshold, closes below threshold with specified range, attack/hold/release timing correct, no discontinuities (R8.6).
 - [ ] **T5.6** Unit-test compressor: assert gain reduction matches ratio, attack/release envelope correct, knee smoothing functional, makeup gain applied (R8.6).
@@ -55,7 +55,7 @@
 
 ## T6 — AudioWorklet Live Chain Processor
 
-- [ ] **T6.1** Extend the Phase 16 SAB meter layout with insert-level meters (indices 4–15), aggregate latency (index 16), and per-insert parameter slots (indices 17–35). Update `src/protocol.ts` with the new `MeterIndex` / `LiveChainIndex` constants.
+- [ ] **T6.1** Extend the Phase 16 SAB meter layout with insert-level meters (indices 4–15), aggregate latency (index 16), and per-insert parameter slots (indices 17–N). Update `src/protocol.ts` with the new `MeterIndex` / `LiveChainIndex` constants.
 - [ ] **T6.2** Create `src/engine/live-audio/live-chain-worklet.ts`: AudioWorkletProcessor that reads SAB parameters at the start of each `process()` block, runs the insert chain (gate → compressor → limiter) on the input, writes output to the destination, updates insert-level meters and aggregate latency in the SAB.
 - [ ] **T6.3** Implement crossfade on bypass toggle: maintain both active and bypassed output buffers, crossfade over 5 ms (linear) when bypass state changes.
 - [ ] **T6.4** Reserve the denoiser slot: a no-op insert between gate and compressor. SAB parameter slots reserved; bypass permanently set to 1 (bypassed). Zero latency reported for this slot.
@@ -76,7 +76,7 @@
 - [ ] **T8.3** The Denoiser slot renders as disabled (greyed out, all controls inactive) with text "Noise suppression — available in a future update".
 - [ ] **T8.4** Add the "Print live audio chain to recording" toggle to the live chain panel, visible only during an active capture session.
 - [ ] **T8.5** Keyboard shortcuts: default binding for "Save Last N Seconds" (suggest `Ctrl+Shift+R` or `Cmd+Shift+R`), integrated with the existing keyboard map (Phase 10). Shortcut is active only when a capture session is running.
-- [ ] **T8.6** Capability-unavailable state: when `crossOriginIsolated` is false or `MediaStreamTrackProcessor` is unsupported, both panels show only the unavailability message with all controls disabled.
+- [ ] **T8.6** Capability-unavailable state: when `MediaStreamTrackProcessor` is unsupported, both panels show only the unavailability message with all controls disabled. When `crossOriginIsolated` is false, the ReplayBufferPanel works normally and the LiveAudioChainPanel shows the unavailability message with all controls disabled.
 - [ ] **T8.7** Follow ARIA and keyboard standards (Phase 25 accessibility): toggle buttons use `aria-pressed`, sliders use `role="slider"` with `aria-valuemin`/`aria-valuemax`/`aria-valuenow`, latency display uses `aria-live="polite"` for real-time updates.
 
 ## T9 — Project State and Configuration Persistence

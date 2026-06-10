@@ -2,8 +2,10 @@ import type {
 	CaptionTrackSnapshot,
 	ExportPresetDoc,
 	ExportSettings,
+	LiveAudioChainConfig,
 	NormalizedSourceTimingSnapshot,
 	PersistedQueueJob,
+	RingBufferConfig,
 	SourceColorHintsSnapshot,
 	SourceDescriptorSnapshot,
 	SourceFrameRateModeSnapshot,
@@ -42,7 +44,7 @@ import { cloneClipKeyframes, parseClipKeyframes } from './keyframes';
 import { cloneClipLut, parsePersistedClipLut } from './lut';
 import { parseExportPresetDoc } from './export-presets';
 
-export const PROJECT_SCHEMA_VERSION = 10;
+export const PROJECT_SCHEMA_VERSION = 11;
 const DURATION_MATCH_TOLERANCE_S = 0.25;
 const TIMING_MATCH_TOLERANCE_S = 0.05;
 
@@ -61,6 +63,8 @@ export interface ProjectDoc {
 	exportSettings?: ExportSettings;
 	exportPresets?: ExportPresetDoc[];
 	renderQueueHistory?: PersistedQueueJob[];
+	replayBufferConfig?: RingBufferConfig;
+	liveAudioChainConfig?: LiveAudioChainConfig;
 }
 
 export interface SerializeProjectOptions {
@@ -75,6 +79,8 @@ export interface SerializeProjectOptions {
 	exportSettings?: ExportSettings;
 	exportPresets?: readonly ExportPresetDoc[];
 	renderQueueHistory?: readonly PersistedQueueJob[];
+	replayBufferConfig?: RingBufferConfig;
+	liveAudioChainConfig?: LiveAudioChainConfig;
 }
 
 export type DeserializeProjectResult =
@@ -1190,6 +1196,9 @@ export function deserializeProject(value: unknown): DeserializeProjectResult {
 		case 9:
 			return deserializeV9(value);
 		case 10:
+		case 11:
+			// v11 adds replayBufferConfig + liveAudioChainConfig (Phase 46).
+			// Both fields are optional with factory defaults; v10 docs deserialize fine.
 			return deserializeV10(value);
 		default:
 			return { ok: false, reason: `Unsupported project schemaVersion ${schemaVersion}.` };
