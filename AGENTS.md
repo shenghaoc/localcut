@@ -42,6 +42,10 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 
 - [**Phase 23: Project packaging + portability**](.kiro/specs/phase-23-project-packaging/tasks.md) — directory bundles, fingerprint dedup, integrity validation, collect media, import/export.
 
+**Planned:**
+
+- [**Phase 27: Local Audio Cleanup with WebNN RNNoise**](.kiro/specs/phase-27-webnn-audio-cleanup/tasks.md) — optional/experimental on-device noise suppression; WebNN probe + diagnostics; lazy, cancellable Audio Cleanup worker separate from the pipeline worker; manifest-validated RNNoise weights loaded only on explicit user action; undoable cleaned-audio assets; no cloud AI, no startup model load.
+
 **Completed:**
 
 - [**Phase 27: WebCodecs decode bridge**](.kiro/specs/phase-27-webcodecs-decode-bridge/tasks.md) — direct `VideoDecoder`/`AudioDecoder` over Mediabunny demux; bounded backpressure; key-packet seek; `getDecoderConfig` extradata; codec support matrix; worker integration; DualStreamFrameSource; diagnostics surface.
