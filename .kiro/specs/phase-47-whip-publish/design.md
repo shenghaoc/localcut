@@ -1,9 +1,9 @@
 # Design: Phase 47 — WHIP Publish
 
-> Status: **Planned**. WHIP (RFC 9725) live publish of the program output over
-> `RTCPeerConnection`, coexisting with ISO recording under an explicit
-> encoder-session budget. Zero relay infrastructure; zero new runtime
-> dependencies.
+> Status: **Implemented** (manual smoke T11.2 pending). WHIP (RFC 9725) live
+> publish of the program output over `RTCPeerConnection`, coexisting with ISO
+> recording under an explicit encoder-session budget. Zero relay
+> infrastructure; zero new runtime dependencies.
 
 ## Goal
 

@@ -503,6 +503,145 @@ body {
 	border-top: 1px solid var(--border);
 }
 
+/* ── Publish (Go Live) panel ── */
+
+.publish-panel {
+	position: fixed;
+	top: 0;
+	right: 0;
+	z-index: 41;
+	width: min(420px, 100vw);
+	height: 100vh;
+	overflow: auto;
+	border-left: 1px solid var(--border);
+	border-radius: 0;
+	padding: 1rem;
+}
+
+.publish-panel-header {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 0.75rem;
+	margin-bottom: 0.85rem;
+}
+
+.publish-panel-sub {
+	margin: 0.2rem 0 0;
+	color: var(--text-muted);
+	font-size: var(--text-sm);
+}
+
+.publish-status {
+	margin-bottom: 0.85rem;
+	padding: 0.7rem 0.75rem;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-md);
+	background: var(--bg-elevated);
+}
+
+.publish-status.is-live {
+	border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.publish-status.is-reconnecting,
+.publish-status.is-connecting {
+	border-color: color-mix(in srgb, var(--warn) 45%, var(--border));
+}
+
+.publish-status.is-failed {
+	border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+
+.publish-status-label {
+	margin: 0;
+	font-weight: 600;
+}
+
+.publish-status.is-live .publish-status-label {
+	color: var(--accent);
+}
+
+.publish-status.is-failed .publish-status-label {
+	color: var(--danger);
+}
+
+.publish-status-detail {
+	margin: 0.3rem 0 0;
+	color: var(--text-muted);
+	font-size: var(--text-sm);
+	line-height: 1.45;
+}
+
+.publish-error-detail {
+	color: var(--danger);
+}
+
+.publish-stats {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 0.45rem 0.75rem;
+	margin: 0.55rem 0 0;
+}
+
+.publish-stats dt {
+	color: var(--text-muted);
+	font-size: var(--text-2xs);
+	letter-spacing: var(--tracking-eyebrow);
+	text-transform: uppercase;
+}
+
+.publish-stats dd {
+	margin: 0.1rem 0 0;
+	font-size: var(--text-sm);
+}
+
+.publish-field-wide {
+	margin-bottom: 0.55rem;
+}
+
+.publish-checkbox {
+	display: flex;
+	align-items: center;
+	gap: 0.45rem;
+	margin: 0.15rem 0 0.35rem;
+	font-size: var(--text-sm);
+	color: var(--text-muted);
+}
+
+.publish-token-note {
+	margin-bottom: 0.85rem;
+}
+
+.publish-static-value {
+	margin: 0;
+	padding: 0.35rem 0.45rem;
+	border: 1px dashed var(--border);
+	border-radius: var(--radius-sm);
+	color: var(--text-muted);
+	line-height: 1.35;
+}
+
+.publish-actions {
+	display: flex;
+	gap: 0.5rem;
+	margin: 0.35rem 0 0.85rem;
+}
+
+.publish-missing-list {
+	margin: 0 0 0.75rem;
+	padding-left: 1.1rem;
+	color: var(--text-muted);
+	font-size: var(--text-sm);
+	line-height: 1.5;
+}
+
+.publish-rtmp-note {
+	margin-top: 0.85rem;
+	padding-top: 0.85rem;
+	border-top: 1px solid var(--border);
+}
+
 .capability-v2-badge {
 	display: flex;
 	align-items: center;
@@ -2148,7 +2287,9 @@ body {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	transition: background 0.15s, transform 0.15s;
+	transition:
+		background 0.15s,
+		transform 0.15s;
 }
 .timeline-transition:hover,
 .timeline-transition.is-selected {

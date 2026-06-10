@@ -4380,7 +4380,8 @@ async function handleDiagnosticSnapshot(requestId: string): Promise<void> {
 		rendererSubmissionCount: renderer?.lastFrameSubmissionCount ?? null,
 		activeExportSettings: lastExportSettings,
 		recentErrors,
-		sources
+		sources,
+		livePublish: currentCapabilityProbe?.livePublish ?? null
 	});
 	post({ type: 'diagnostic-snapshot', requestId, snapshot });
 }

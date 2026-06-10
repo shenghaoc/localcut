@@ -16,6 +16,7 @@ const WORKLET_URL = `${import.meta.env.BASE_URL}audio-playback.worklet.js`;
 export class AudioEngine {
 	private context: AudioContext | null = null;
 	private worklet: AudioWorkletNode | null = null;
+	private streamTap: MediaStreamAudioDestinationNode | null = null;
 	private masterGainValue = 1;
 	private ringSab: SharedArrayBuffer | null = null;
 	private meterSab: SharedArrayBuffer | null = null;
@@ -45,6 +46,32 @@ export class AudioEngine {
 
 	getMeterSab(): SharedArrayBuffer | null {
 		return this.meterSab;
+	}
+
+	/**
+	 * Phase 47 (R4.4): master-bus tap for WHIP publish. The worklet applies the
+	 * master gain internally, so its output IS the program-monitor mix; fanning
+	 * it out to a `MediaStreamAudioDestinationNode` leaves the speaker path
+	 * (worklet → destination) untouched. Returns null until the graph exists.
+	 */
+	createStreamTap(): MediaStreamTrack | null {
+		if (!this.context || !this.worklet) return null;
+		if (!this.streamTap) {
+			this.streamTap = this.context.createMediaStreamDestination();
+			this.worklet.connect(this.streamTap);
+		}
+		return this.streamTap.stream.getAudioTracks()[0] ?? null;
+	}
+
+	removeStreamTap(): void {
+		if (!this.streamTap) return;
+		try {
+			this.worklet?.disconnect(this.streamTap);
+		} catch {
+			// The worklet may already be disconnected/disposed.
+		}
+		for (const track of this.streamTap.stream.getTracks()) track.stop();
+		this.streamTap = null;
 	}
 
 	setMasterGain(gain: number): void {
@@ -134,6 +161,7 @@ export class AudioEngine {
 
 	dispose(): void {
 		if (this.ring) Atomics.store(this.ring.header, RingHeader.STATE, RingState.IDLE);
+		this.removeStreamTap();
 		this.worklet?.disconnect();
 		void this.context?.close();
 		this.context = null;
