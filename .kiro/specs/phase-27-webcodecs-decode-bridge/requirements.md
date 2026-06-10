@@ -40,18 +40,22 @@
 - **R4.3** All probes degrade gracefully (return `unsupported`) when the WebCodecs
   APIs are absent or throw.
 
-## R5 — Integration (pending)
+## R5 — Worker integration
 
-- **R5.1** Wire `WebCodecsVideoDecoder` into the worker decode path behind a
-  capability/feature decision without regressing the Mediabunny default.
-- **R5.2** Provide two concurrent decoders for the Phase 13 transition readahead
-  (two clips, possibly one source).
-- **R5.3** Surface the codec matrix in the capability/diagnostics UI.
+- **R5.1** Wire `WebCodecsVideoDecoder` / `WebCodecsAudioDecoder` into the
+  Mediabunny adapter behind `typeof` guards + `isConfigSupported` checks;
+  `WEBCODECS_PREFERRED_WHEN_SUPPORTED` names the intent explicitly.
+- **R5.2** `DualStreamFrameSource` provides two independent decode streams for
+  the Phase 13 transition readahead with `dispose()` for teardown.
+- **R5.3** Surface the codec matrix in the diagnostics panel with a
+  `<Show when={...}>` guard so it only renders when probe data is available.
 
 ## R6 — Tests
 
 - **R6.1** Capability probes covered for supported / unsupported / throwing /
   absent WebCodecs globals.
-- **R6.2** (Pending) decode-loop tests: frame ordering, backpressure bound,
-  key-packet seek, and close-exactly-once with spy frames.
+- **R6.2** Decode-loop integration tests with mocked `VideoDecoder` /
+  `AudioDecoder` globals + stubbed Mediabunny `EncodedPacketSink`: frame
+  ordering, early-break finally-cleanup, endTimestamp range, key-packet seek,
+  close-exactly-once with spy frames.
 - **R6.3** `npm run build` and `npm test` green; test count grows.

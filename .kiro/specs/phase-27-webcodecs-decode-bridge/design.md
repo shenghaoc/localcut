@@ -1,10 +1,9 @@
 # Design: Phase 27 — WebCodecs decode bridge + codec support matrix
 
-> Status: **Foundation implemented; worker integration pending.** The direct
-> WebCodecs decoders and the codec probe matrix are built and unit-probed on
-> `claude/beautiful-johnson-1kjhvv` (PR #54). Wiring them into the worker decode
-> path (and the Phase 13 dual-stream readahead) is the open build-out — no
-> integration checkbox below is ticked yet.
+> Status: **Complete.** Foundation shipped in PR #54 (decoders + codec matrix).
+> Worker integration, DualStreamFrameSource, diagnostics surface, and
+> decode-loop integration tests shipped in PR #58. Manual verification (T6)
+> pending.
 
 ## Goal
 
@@ -105,7 +104,8 @@ it.
 
 - Unit-probe the capability functions with mocked `VideoDecoder` / `AudioDecoder`
   globals (supported / unsupported / throwing / absent).
-- Integration (pending): decode-loop frame ordering, backpressure bound, key-packet
-  seek, and `VideoFrame.close()`-exactly-once with spy frames.
+- Integration: `webcodecs-decoder-loop.test.ts` — mocked globals + stubbed
+  `EncodedPacketSink`; frame ordering, early-break cleanup, endTimestamp range,
+  key-packet seek (video + audio), close-exactly-once with spy frames.
 - A single `queue.submit` per frame is unaffected — this phase is decode only and
   feeds the existing accelerated chain.

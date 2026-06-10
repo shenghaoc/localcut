@@ -38,15 +38,13 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 
 - [**Phase 26: Cross-browser compatibility engine**](.kiro/specs/phase-26-cross-browser-compatibility-engine/tasks.md) — CapabilityTierV2 probes, reduced-tier diagnostics, optional-SAB worker init, codec/export constraints, compatibility resource-lifetime helpers.
 
-- [**Phase 27: WebCodecs decode bridge**](.kiro/specs/phase-27-webcodecs-decode-bridge/tasks.md) — direct `VideoDecoder`/`AudioDecoder` over Mediabunny demux; bounded backpressure; key-packet seek; `getDecoderConfig` extradata; codec support matrix. Foundation built; worker integration + Phase 13 dual-stream pending.
-
 - [**Phase 23: Project packaging + portability**](.kiro/specs/phase-23-project-packaging/tasks.md) — directory bundles, fingerprint dedup, integrity validation, collect media, import/export.
 
-**Planned:**
-
-- [**Phase 13: Transitions**](.kiro/specs/phase-13-transitions/tasks.md) — cut-point transition model; dual-stream readahead; 2-input mix pass in the single submission; export parity.
-
 **Completed:**
+
+- [**Phase 27: WebCodecs decode bridge**](.kiro/specs/phase-27-webcodecs-decode-bridge/tasks.md) — direct `VideoDecoder`/`AudioDecoder` over Mediabunny demux; bounded backpressure; key-packet seek; `getDecoderConfig` extradata; codec support matrix; worker integration; DualStreamFrameSource; diagnostics surface.
+- [**Phase 13: Transitions**](.kiro/specs/phase-13-transitions/tasks.md) — cut-point transition model; dual-stream readahead; 2-input mix pass in the single submission; export parity.
+- [**WASM SIMD Audio Resampler**](.kiro/specs/wasm-simd-resampler/tasks.md) — hand-written WAT with wasm-simd128; Kaiser-windowed polyphase sinc; transparent JS fallback; build:wasm script; ≥2x throughput.
 
 - [**Alpha 0.1 Release Hardening**](.kiro/specs/alpha-0-1-release-hardening/tasks.md) — documentation truth sync, alpha support boundary, deployment verification checklist, media fixture checklist, release gates, UI honesty labels, build metadata in diagnostics.
 - [**Phase 25: Release hardening**](.kiro/specs/phase-25-release-hardening/tasks.md) — diagnostics, recovery, performance budgets, fixture matrix, accessibility, release gates.
