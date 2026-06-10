@@ -54,6 +54,19 @@ export interface CodecProbeResult {
 	opusEncode: FeatureSupport;
 }
 
+/** Phase 47: features the WHIP publish path needs, probed on the main thread. */
+export interface LivePublishProbeResult {
+	rtcPeerConnection: FeatureSupport;
+	/** Insertable-streams `MediaStreamTrackGenerator` (Chromium). */
+	trackGenerator: FeatureSupport;
+	/** Transferable `MediaStreamTrack` (worker-side generator mode). */
+	trackTransfer: FeatureSupport;
+	/** `RTCRtpScriptTransform` — enables keyframe-interval enforcement. */
+	rtpScriptTransform: FeatureSupport;
+	/** H.264 encode with `hardwareAcceleration: 'prefer-hardware'` honoured. */
+	hardwareH264Encode: FeatureSupport;
+}
+
 export interface CapabilityProbeResult {
 	crossOriginIsolated: boolean;
 	sharedArrayBuffer: FeatureSupport;
@@ -67,6 +80,7 @@ export interface CapabilityProbeResult {
 	opfs: FeatureSupport;
 	audioWorklet: FeatureSupport;
 	offscreenCanvas: FeatureSupport;
+	livePublish: LivePublishProbeResult;
 	tier: CapabilityTierV2;
 	/** Phase 27 (WebNN audio cleanup): display/feature-gate only — never
 	 *  consulted by tier derivation or any pipeline code path. */
@@ -196,6 +210,61 @@ export interface ExportCodecSupport {
 	codec: ExportVideoCodec;
 	container: ExportContainer;
 }
+
+// ── Phase 47: WHIP Publish ──
+
+export type PublishEndpointType = 'twitch-whip' | 'cloudflare-whip' | 'mediamtx' | 'custom';
+export type PublishVideoCodec = 'h264' | 'av1';
+
+/**
+ * Device-scoped publish settings. Deliberately NOT part of `ProjectDoc`:
+ * destinations (and especially bearer tokens) must never travel inside Phase 23
+ * project bundles or autosaves.
+ */
+export interface PublishSettingsDoc {
+	endpointType: PublishEndpointType;
+	endpointUrl: string;
+	codec: PublishVideoCodec;
+	videoBitrateKbps: number;
+	keyframeIntervalS: number;
+	/** Stream-side cap; null streams at program resolution/rate. */
+	maxHeight: number | null;
+	maxFps: number | null;
+	/** Token is persisted only with this explicit opt-in (R7.2). */
+	rememberToken: boolean;
+	bearerToken?: string;
+}
+
+export interface PublishStats {
+	bitrateKbps: number;
+	rttMs: number | null;
+	framesSent: number;
+	framesDropped: number;
+}
+
+export type PublishFailureReason =
+	/** `400` — the server rejected the SDP offer (codec/format mismatch). */
+	| 'rejected-offer'
+	/** `401`/`403` — bearer token missing or wrong. */
+	| 'auth'
+	/** `404` — endpoint URL does not exist. */
+	| 'not-found'
+	/** Reconnect policy exhausted its attempts. */
+	| 'gave-up'
+	/** Encoder-session budget had no free lease (R3.4). */
+	| 'budget-exhausted'
+	/** Required browser feature missing (R3.1). */
+	| 'unsupported'
+	/** Local error before/while connecting. */
+	| 'local-error';
+
+export type PublishState =
+	| { phase: 'idle' }
+	| { phase: 'connecting' }
+	| { phase: 'live'; stats: PublishStats }
+	| { phase: 'reconnecting'; attempt: number; nextRetryMs: number }
+	| { phase: 'ended' }
+	| { phase: 'failed'; reason: PublishFailureReason };
 
 // ── Phase 24: Render Queue + Export Presets ──
 
@@ -1293,6 +1362,11 @@ export type WorkerCommand =
 	| { type: 'queue-set-stop-on-error'; stopOnError: boolean }
 	| { type: 'request-diagnostic-snapshot'; requestId: string }
 	| { type: 'run-recovery-action'; actionId: string }
+	// Phase 47: program-feed tap for WHIP publish. 'worker-track' transfers a
+	// MediaStreamTrack out of the worker; 'main-frames' is the probed fallback that
+	// transfers one VideoFrame at a time (bounded to a single frame in flight).
+	| { type: 'publish-tap-start'; mode: 'worker-track' | 'main-frames' }
+	| { type: 'publish-tap-stop' }
 	| { type: 'dispose' };
 
 /** A measured preview resolution tier (adaptive downscale of the decode path). */
@@ -1472,6 +1546,11 @@ export type WorkerStateMessage =
 	  }
 	| { type: 'diagnostic-snapshot'; requestId?: string; snapshot: DiagnosticSnapshot }
 	| { type: 'recent-error'; error: RecentError }
+	// Phase 47: publish tap responses. The track/frame messages carry transferables.
+	| { type: 'publish-tap-track'; track: MediaStreamTrack }
+	| { type: 'publish-tap-frame'; frame: VideoFrame }
+	| { type: 'publish-tap-stats'; framesDelivered: number; framesDropped: number }
+	| { type: 'publish-tap-error'; message: string }
 	| {
 			type: 'recovery-state';
 			state: 'idle' | 'recovering' | 'failed';

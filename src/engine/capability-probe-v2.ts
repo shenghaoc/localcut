@@ -3,7 +3,8 @@ import type {
 	CapabilityTierV2,
 	CodecProbeResult,
 	ExportCodecSupport,
-	FeatureSupport
+	FeatureSupport,
+	LivePublishProbeResult
 } from '../protocol';
 import { probeWebNN } from './audio-cleanup/webnn-probe';
 
@@ -17,6 +18,7 @@ interface CodecProbeConfig {
 	sampleRate?: number;
 	numberOfChannels?: number;
 	bitrate?: number;
+	hardwareAcceleration?: 'prefer-hardware';
 }
 
 type CodecProbeConstructor = {
@@ -184,6 +186,58 @@ export function anyAudioEncodeSupported(codecs: CodecProbeResult): boolean {
 	return codecs.aacEncode === 'supported' || codecs.opusEncode === 'supported';
 }
 
+/**
+ * Phase 47 (T4.1): live-publish probes. Runs where `probeCapabilities` runs —
+ * the main thread (App startup) — which is exactly where `RTCPeerConnection`
+ * lives; worker-side generator availability is re-confirmed by the worker at
+ * tap start, falling back to the main-frames mode.
+ */
+export async function probeLivePublish(): Promise<LivePublishProbeResult> {
+	const globals = globalThis as unknown as Record<string, unknown>;
+	const rtcPeerConnection = supportFromBoolean(typeof globals.RTCPeerConnection === 'function');
+	const trackGenerator = supportFromBoolean(
+		typeof globals.MediaStreamTrackGenerator === 'function'
+	);
+
+	// Transferable MediaStreamTrack: the only honest detection is attempting a
+	// transfer. The generator track is created solely to be detached; a
+	// DataCloneError means tracks are not transferable in this browser.
+	let trackTransfer: FeatureSupport = 'unsupported';
+	if (trackGenerator === 'supported' && typeof MessageChannel === 'function') {
+		try {
+			const generatorCtor = globals.MediaStreamTrackGenerator as new (init: {
+				kind: 'video';
+			}) => MediaStreamTrack;
+			const track = new generatorCtor({ kind: 'video' });
+			const channel = new MessageChannel();
+			channel.port1.postMessage(track, [track as unknown as Transferable]);
+			channel.port1.close();
+			channel.port2.close();
+			trackTransfer = 'supported';
+		} catch {
+			trackTransfer = 'unsupported';
+		}
+	}
+
+	const rtpScriptTransform = supportFromBoolean(
+		typeof globals.RTCRtpScriptTransform === 'function'
+	);
+	const hardwareH264Encode = await probeCodec(getCodecConstructor('VideoEncoder'), {
+		codec: 'avc1.42e029',
+		width: 1920,
+		height: 1080,
+		bitrate: 6_000_000,
+		hardwareAcceleration: 'prefer-hardware'
+	});
+
+	return { rtcPeerConnection, trackGenerator, trackTransfer, rtpScriptTransform, hardwareH264Encode };
+}
+
+/** R3.1: the publish feature exists only when the strictly required pieces do. */
+export function livePublishAvailable(probe: LivePublishProbeResult): boolean {
+	return probe.rtcPeerConnection === 'supported' && probe.trackGenerator === 'supported';
+}
+
 export function deriveCapabilityTierV2(
 	probe: Omit<CapabilityProbeResult, 'tier'>
 ): CapabilityTierV2 {
@@ -242,6 +296,15 @@ export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 		probeWebNN()
 	]);
 	const codecs = await probeCodecs().catch(() => unknownCodecs);
+	const livePublish = await probeLivePublish().catch(
+		(): LivePublishProbeResult => ({
+			rtcPeerConnection: 'unknown',
+			trackGenerator: 'unknown',
+			trackTransfer: 'unknown',
+			rtpScriptTransform: 'unknown',
+			hardwareH264Encode: 'unknown'
+		})
+	);
 	const probeWithoutTier: Omit<CapabilityProbeResult, 'tier'> = {
 		crossOriginIsolated: globalThis.crossOriginIsolated === true,
 		sharedArrayBuffer: hasSharedArrayBuffer(),
@@ -261,7 +324,8 @@ export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 		audioWorklet: supportFromBoolean(
 			typeof AudioContext !== 'undefined' && 'audioWorklet' in AudioContext.prototype
 		),
-		offscreenCanvas: supportFromBoolean(typeof OffscreenCanvas !== 'undefined')
+		offscreenCanvas: supportFromBoolean(typeof OffscreenCanvas !== 'undefined'),
+		livePublish
 	};
 	return {
 		...probeWithoutTier,

@@ -2,7 +2,8 @@ import type {
 	CapabilityProbeResult,
 	CapabilityTierV2,
 	CodecProbeResult,
-	FeatureSupport
+	FeatureSupport,
+	LivePublishProbeResult
 } from '../../protocol';
 
 const supportedCodecs: CodecProbeResult = {
@@ -18,6 +19,16 @@ const supportedCodecs: CodecProbeResult = {
 	opusEncode: 'supported'
 } as const;
 
+function livePublishProbe(value: FeatureSupport): LivePublishProbeResult {
+	return {
+		rtcPeerConnection: value,
+		trackGenerator: value,
+		trackTransfer: value,
+		rtpScriptTransform: value,
+		hardwareH264Encode: value
+	};
+}
+
 function baseProbe(): CapabilityProbeResult {
 	return {
 		crossOriginIsolated: true,
@@ -32,6 +43,7 @@ function baseProbe(): CapabilityProbeResult {
 		opfs: 'supported',
 		audioWorklet: 'supported',
 		offscreenCanvas: 'supported',
+		livePublish: livePublishProbe('supported'),
 		tier: 'core-webgpu'
 	};
 }
@@ -107,6 +119,7 @@ export function probeResultFor(tier: CapabilityTierV2): CapabilityProbeResult {
 				codecs: setCodecs('unsupported'),
 				fileSystemAccess: 'unsupported',
 				offscreenCanvas: 'unsupported',
+				livePublish: livePublishProbe('unsupported'),
 				tier
 			};
 	}
