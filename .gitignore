@@ -158,3 +158,5 @@ dev.env
 .wrangler
 .dev.vars*
 !.dev.vars.example
+test-results/
+playwright-report/
