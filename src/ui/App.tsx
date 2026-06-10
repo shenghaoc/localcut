@@ -182,19 +182,27 @@ function downloadTextFile(fileName: string, mimeType: string, content: string): 
 
 /** File System Access save with download-blob fallback (Phase 48 R8.1). */
 async function saveTextFile(fileName: string, mimeType: string, content: string): Promise<void> {
+	let handle: FileSystemFileHandle | null = null;
 	if (typeof window.showSaveFilePicker === 'function') {
 		try {
-			const handle = await window.showSaveFilePicker({ suggestedName: fileName });
-			const writable = await handle.createWritable();
-			await writable.write(new Blob([content], { type: mimeType }));
-			await writable.close();
-			return;
+			handle = await window.showSaveFilePicker({ suggestedName: fileName });
 		} catch (error) {
 			// User canceled the picker — not a failure, and not a download.
 			if (error instanceof DOMException && error.name === 'AbortError') return;
+			// The picker API itself failed; fall back to a plain download.
+			handle = null;
 		}
 	}
-	downloadTextFile(fileName, mimeType, content);
+	if (!handle) {
+		downloadTextFile(fileName, mimeType, content);
+		return;
+	}
+	// Write failures (disk full, permission revoked) propagate to the caller:
+	// the user picked a destination, so silently downloading instead would
+	// misreport where the file went.
+	const writable = await handle.createWritable();
+	await writable.write(new Blob([content], { type: mimeType }));
+	await writable.close();
 }
 
 function capabilityTierV2Label(probe: CapabilityProbeResult | null): string | null {
@@ -686,7 +694,11 @@ export function App() {
 					msg.suggestedName,
 					msg.format === 'otio' ? 'application/json' : 'text/plain',
 					msg.text
-				);
+				).catch((error: unknown) => {
+					const message = error instanceof Error ? error.message : String(error);
+					setInterchangeMessage(`Save failed: ${message}`);
+					setStatusLine(`Interchange save failed: ${message}`);
+				});
 				setInterchangeWarnings(msg.warnings);
 				setInterchangeMessage(
 					msg.warnings.length > 0
@@ -1884,9 +1896,13 @@ export function App() {
 								}))}
 							warnings={interchangeWarnings()}
 							lastMessage={interchangeMessage()}
-							onExport={(format, trackId) =>
-								bridge?.send({ type: 'export-interchange', format, trackId })
-							}
+							onExport={(format, trackId) => {
+								// Clear the previous export's outcome so stale warnings don't
+								// show against the in-flight one.
+								setInterchangeWarnings([]);
+								setInterchangeMessage(null);
+								bridge?.send({ type: 'export-interchange', format, trackId });
+							}}
 						/>
 						<BundleDialog
 							disabled={!accelerated()}
