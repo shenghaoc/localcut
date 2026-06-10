@@ -3,9 +3,10 @@
 ## T1 — WHIP HTTP client (R1)
 
 - [ ] **T1.1** `src/engine/whip-client.ts`: `publish(offerSdp)` POSTs
-  `application/sdp` with optional `Authorization: Bearer`, follows a bounded
-  chain of up to 3 `307` redirects (failing fast beyond that), resolves the
-  `Location` header against the final request URL, and returns
+  `application/sdp` with optional `Authorization: Bearer`, relies on the
+  browser to follow redirects (`redirect: 'follow'` — manual redirect counting
+  is not feasible due to opaque-redirect CORS restrictions), resolves the
+  `Location` header from the final `201` response, and returns
   `{ resourceUrl, answerSdp, iceServers }`.
 - [ ] **T1.2** Parse `Link` headers with `rel="ice-server"` (urls + optional
   `username`/`credential`) into `RTCIceServer[]` per RFC 9725 §4.4.
@@ -47,9 +48,9 @@
 - [ ] **T3.3** Bitrate via `RTCRtpSender.setParameters({ maxBitrate })` with
   per-endpoint-type defaults/caps from the design table; validated override
   range.
-- [ ] **T3.4** Keyframe interval (default 2 s) via `RTCRtpScriptTransform` +
-  `generateKeyFrame()` timer where probed; otherwise the control reads as
-  "platform default GOP" instead of a dead knob.
+- [ ] **T3.4** Keyframe interval (default 2 s) via
+  `RTCRtpSender.generateKeyFrame()` timer where supported; otherwise the
+  control reads as "platform default GOP" instead of a dead knob.
 - [ ] **T3.5** Optional stream-side resolution/fps cap via
   `scaleResolutionDownBy`/track constraints, leaving preview and export
   untouched.
@@ -58,7 +59,7 @@
 
 - [ ] **T4.1** Extend `src/engine/capability-probe-v2.ts` +
   `CapabilityProbeResult` with `LivePublishProbeResult`: `rtcPeerConnection`,
-  `trackGeneratorWorker`, `trackTransfer`, `rtpScriptTransform` — same
+  `trackGeneratorWorker`, `trackTransfer`, `generateKeyFrame` — same
   `FeatureSupport` pattern as existing probes.
 - [ ] **T4.2** `src/engine/encoder-budget.ts`: lease ledger shared by publish,
   ISO recording, and export; hardware-encode probe → budget 2, software-only
@@ -115,7 +116,7 @@
 ## T8 — Diagnostics (R5)
 
 - [ ] **T8.1** Publish findings (`publish.rtc`, `publish.track-transfer`,
-  `publish.keyframe-control`, …) in the Phase 25/26 diagnostics snapshot via
+  `publish.generateKeyFrame`, …) in the Phase 25/26 diagnostics snapshot via
   the existing `finding()` pattern.
 - [ ] **T8.2** Lifecycle events, HTTP statuses (token redacted), retry
   attempts, and tap drop counters recorded so a failed session is explainable
@@ -125,8 +126,8 @@
 
 - [ ] **T9.1** `whip-client.test.ts`: mocked `fetch` — POST/201/Location
   resolution (relative + absolute), bearer header on POST/PATCH/DELETE, Link
-  ice-server parsing incl. TURN credentials, bounded 307 chain (≤3, then
-  fail fast), error mapping incl. `400` → rejected-offer, keepalive DELETE.
+  ice-server parsing incl. TURN credentials, error mapping incl. `400` →
+  rejected-offer, keepalive DELETE.
 - [ ] **T9.2** `whip-reconnect.test.ts`: fake timers — grace period,
   PATCH-unsupported → re-POST fallback, full 2/4/8/16 s ladder, max-attempts
   terminal `failed`, user stop during `reconnecting` still DELETEs.

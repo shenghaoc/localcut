@@ -29,7 +29,7 @@ internal media engine does the encoding**, not a JS-owned `VideoEncoder`.
 That keeps every architectural hard gate intact — no sustained encode loop in
 JS anywhere, main thread included — at the cost of indirect encoder control
 (`setCodecPreferences`, `setParameters({ maxBitrate })`,
-`generateKeyFrame()` via encoded transforms) instead of a full WebCodecs
+`generateKeyFrame()` directly) instead of a full WebCodecs
 config. The design treats those knobs as the contract and labels anything the
 platform won't honour (R2.4).
 
@@ -103,7 +103,7 @@ interface WhipPublishResource {
 }
 
 interface WhipClient {
-  publish(offerSdp: string): Promise<WhipPublishResource>;       // POST, ≤3 chained 307s
+  publish(offerSdp: string): Promise<WhipPublishResource>;       // POST, browser-followed redirects
   patchIceRestart(resourceUrl: string, fragment: string): Promise<'ok' | 'unsupported'>;
   teardown(resourceUrl: string): Promise<void>;                  // DELETE, keepalive
 }
@@ -174,7 +174,7 @@ interface LivePublishProbeResult {
   rtcPeerConnection: FeatureSupport;
   trackGeneratorWorker: FeatureSupport;   // MediaStreamTrackGenerator in worker
   trackTransfer: FeatureSupport;          // transferable MediaStreamTrack
-  rtpScriptTransform: FeatureSupport;     // keyframe-interval enforcement
+  generateKeyFrame: FeatureSupport;       // RTCRtpSender.generateKeyFrame() timer
 }
 ```
 
@@ -193,14 +193,14 @@ Talks to the session via the protocol messages below; holds no media objects.
 Following existing command/state naming:
 
 ```typescript
-// commands (UI → worker)
-| { type: 'publish-tap-start'; mode: 'worker-track' | 'main-frames' }
-| { type: 'publish-tap-stop' }
+type PublishCommand =
+  | { type: 'publish-tap-start'; mode: 'worker-track' | 'main-frames' }
+  | { type: 'publish-tap-stop' };
 
-// state (worker → UI)
-| { type: 'publish-tap-track'; track: MediaStreamTrack }   // transferred
-| { type: 'publish-tap-frame'; frame: VideoFrame }         // fallback mode, one in flight
-| { type: 'publish-tap-stats'; framesDelivered: number; framesDropped: number }
+type PublishWorkerMessage =
+  | { type: 'publish-tap-track'; track: MediaStreamTrack }   // transferred
+  | { type: 'publish-tap-frame'; frame: VideoFrame }         // fallback mode, one in flight
+  | { type: 'publish-tap-stats'; framesDelivered: number; framesDropped: number };
 ```
 
 Session state for the UI is main-thread-local (the session lives on main),
@@ -240,7 +240,7 @@ ingest accepts, with enough level headroom for the 1080p30 stream cap
 (Level 3.1 would top out at 720p30). AV1 is gated
 twice: the Phase 26 `av1Encode` probe **and** an endpoint type known to take
 it (R2.2). Audio is always Opus at 128 kbps stereo (WebRTC mandatory codec).
-Keyframe cadence uses `RTCRtpScriptTransform` + `generateKeyFrame()` on a
+Keyframe cadence uses `RTCRtpSender.generateKeyFrame()` directly on a
 timer where supported; otherwise the platform GOP applies and the control is
 labeled accordingly (R2.4) — an honest label beats a fake knob.
 
@@ -284,8 +284,8 @@ bitrate, and tap drop counters. The `StatsPoller` runs at ≤ 1 Hz and stops at
 
 - **Unit (Vitest, Node, co-located):** `whip-client.test.ts` (mocked fetch:
   POST/201/Location resolution, bearer header on all verbs, Link ice-server
-  parsing incl. TURN credentials, bounded 307 chain (≤3, then fail fast),
-  error mapping incl. `400` → rejected-offer, DELETE with keepalive);
+  parsing incl. TURN credentials, error mapping incl. `400` → rejected-offer,
+  DELETE with keepalive);
   `whip-reconnect.test.ts` (fake timers: grace period,
   PATCH-unsupported fallback to re-POST, full backoff ladder, max-attempts
   terminal state); `encoder-budget.test.ts` (acquire/release, exhaustion,

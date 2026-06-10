@@ -30,8 +30,10 @@ gated by the Phase 26 probe rather than assumed.
   offer (malformed/unsupported SDP, no retry), `401`/`403` → invalid token
   (no retry), `404` → wrong endpoint URL (no retry), `405`/`409`/`5xx` and
   network errors → retryable per the R5 reconnect policy. Redirects (`307`)
-  on the initial `POST` are followed up to a bounded chain of 3 per RFC 9725
-  §4.1; exceeding the limit fails fast as a non-retryable error.
+  on the initial `POST` are followed automatically by the browser
+  (`redirect: 'follow'`); the final session resource URL is resolved from the
+  `Location` header of the `201` response. Manual redirect counting is not
+  feasible client-side due to opaque-redirect CORS restrictions.
 - **R1.6** ICE restart uses an HTTP `PATCH` to the session resource with
   `Content-Type: application/trickle-ice-sdpfrag` when the server advertised
   support; if the server answers `405`/`501` the client falls back to a full
@@ -57,9 +59,9 @@ gated by the Phase 26 probe rather than assumed.
   within a validated range; the UI shows the platform-recommended cap for the
   selected endpoint type.
 - **R2.4** Keyframe interval (default 2 s) is enforced by a timer calling
-  `generateKeyFrame()` through an `RTCRtpScriptTransform` where the browser
-  supports it; where it does not, the platform encoder's default GOP applies
-  and the settings UI states this plainly instead of showing a dead control.
+  `RTCRtpSender.generateKeyFrame()` directly where the browser supports it;
+  where it does not, the platform encoder's default GOP applies and the
+  settings UI states this plainly instead of showing a dead control.
 - **R2.5** The published resolution and frame rate follow the project's
   program output; an optional stream-side cap (e.g. 1080p, 30 fps) downscales
   via `scaleResolutionDownBy` / track constraints without touching the
@@ -69,10 +71,10 @@ gated by the Phase 26 probe rather than assumed.
 
 - **R3.1** The Phase 26 probe gains live-publish probes: `RTCPeerConnection`
   availability, `MediaStreamTrackGenerator` (in worker and on main),
-  transferable `MediaStreamTrack`, and `RTCRtpScriptTransform`. Each reports
-  `supported` / `unsupported` / `unknown` like existing probes; absence of any
-  required feature hides or disables the publish UI with a reduced-tier
-  explanation, never a crash.
+  transferable `MediaStreamTrack`, and `RTCRtpSender.prototype.generateKeyFrame`.
+  Each reports `supported` / `unsupported` / `unknown` like existing probes;
+  absence of any required feature hides or disables the publish UI with a
+  reduced-tier explanation, never a crash.
 - **R3.2** A single encoder-session budget governs hardware encoder consumers:
   WHIP publish (WebRTC's internal encoder), ISO recording, and export each
   check out a session from `src/engine/encoder-budget.ts`. The budget is
@@ -97,8 +99,9 @@ gated by the Phase 26 probe rather than assumed.
   drop counted), never queued unboundedly.
 - **R4.3** Every cloned `VideoFrame` in the publish path is closed exactly
   once across normal write, drop, error, and stop paths — including the
-  frames buffered when the stream stops mid-write. (The audio path produces
-  no JS-owned media objects; see R4.4.)
+  frames buffered when the stream stops mid-write. Audio is routed directly
+  via `MediaStreamAudioDestinationNode`; no JS-owned `AudioData` objects are
+  used in the publish path (see R4.4).
 - **R4.4** Audio taps the Phase 16 master bus output (post-gain, post-pan,
   post-fades) so the stream hears exactly what the program monitor plays.
   Opus encoding is handled by the WebRTC stack, not by JS.
@@ -117,8 +120,9 @@ gated by the Phase 26 probe rather than assumed.
   short grace period (default 3 s) for self-healing; on `failed` (or grace
   expiry) it attempts ICE restart (R1.6), then falls back to a full
   re-`POST`. Retries use exponential backoff capped at 16 s (delays 2 s,
-  4 s, 8 s, 16 s, 16 s; max 5 attempts) before declaring `failed`. The whole
-  policy is documented and the integration test exercises it (R8.4).
+  4 s, 8 s, 16 s, 16 s — the 5th attempt reuses the 16 s cap; max 5 attempts)
+  before declaring `failed`. The whole policy is documented and the integration
+  test exercises it (R8.4).
 - **R5.3** During `reconnecting`, the local timeline keeps playing and ISO
   recording (if active) continues unaffected; only the network leg retries.
 - **R5.4** A low-rate `getStats()` poll (≤ 1 Hz) surfaces achieved bitrate,
