@@ -3,14 +3,16 @@
 ## T1 — WHIP HTTP client (R1)
 
 - [ ] **T1.1** `src/engine/whip-client.ts`: `publish(offerSdp)` POSTs
-  `application/sdp` with optional `Authorization: Bearer`, follows at most one
-  `307`, resolves the `Location` header against the request URL, and returns
+  `application/sdp` with optional `Authorization: Bearer`, follows a bounded
+  chain of up to 3 `307` redirects (failing fast beyond that), resolves the
+  `Location` header against the final request URL, and returns
   `{ resourceUrl, answerSdp, iceServers }`.
 - [ ] **T1.2** Parse `Link` headers with `rel="ice-server"` (urls + optional
   `username`/`credential`) into `RTCIceServer[]` per RFC 9725 §4.4.
-- [ ] **T1.3** Typed error mapping: `401`/`403` → `auth`, `404` → `not-found`,
-  `405`/`409`/`5xx`/network → `retryable`; bearer token never appears in any
-  error message, log line, or diagnostics payload.
+- [ ] **T1.3** Typed error mapping: `400` → `rejected-offer`, `401`/`403` →
+  `auth`, `404` → `not-found`, `405`/`409`/`5xx`/network → `retryable`;
+  bearer token never appears in any error message, log line, or diagnostics
+  payload.
 - [ ] **T1.4** `patchIceRestart()` with
   `Content-Type: application/trickle-ice-sdpfrag`, returning `'unsupported'`
   on `405`/`501`; `teardown()` issues `DELETE` with `keepalive: true` so it
@@ -28,7 +30,7 @@
 - [ ] **T2.3** `src/engine/whip-reconnect.ts`: `ReconnectController` over
   injected timers — 3 s grace on `disconnected`, ICE restart via PATCH on
   `failed`, fallback to full re-POST when PATCH is unsupported, backoff
-  2/4/8/16 s, max 5 attempts, then terminal `failed`.
+  2/4/8/16/16 s (capped at 16 s), max 5 attempts, then terminal `failed`.
 - [ ] **T2.4** Best-effort teardown on `pagehide`/`beforeunload` via the
   keepalive `DELETE`; local fatal errors also tear down before surfacing.
 - [ ] **T2.5** `StatsPoller`: `getStats()` at ≤ 1 Hz mapping achieved bitrate,
@@ -36,8 +38,9 @@
 
 ## T3 — Codec negotiation + encode settings (R2)
 
-- [ ] **T3.1** `setCodecPreferences` pinning H.264 constrained baseline
-  (`profile-level-id=42e01f`, `packetization-mode=1`) by default; Opus audio.
+- [ ] **T3.1** `setCodecPreferences` pinning H.264 constrained baseline up to
+  Level 4.1 (`profile-level-id=42e029`, `packetization-mode=1`) by default so
+  1080p30 fits the negotiated level; Opus audio.
 - [ ] **T3.2** AV1 offered only when `av1Encode === 'supported'` **and** the
   endpoint type allows it (MediaMTX, custom); labeled endpoint-dependent in
   the UI.
@@ -122,8 +125,8 @@
 
 - [ ] **T9.1** `whip-client.test.ts`: mocked `fetch` — POST/201/Location
   resolution (relative + absolute), bearer header on POST/PATCH/DELETE, Link
-  ice-server parsing incl. TURN credentials, single-307 follow, error
-  mapping, keepalive DELETE.
+  ice-server parsing incl. TURN credentials, bounded 307 chain (≤3, then
+  fail fast), error mapping incl. `400` → rejected-offer, keepalive DELETE.
 - [ ] **T9.2** `whip-reconnect.test.ts`: fake timers — grace period,
   PATCH-unsupported → re-POST fallback, full 2/4/8/16 s ladder, max-attempts
   terminal `failed`, user stop during `reconnecting` still DELETEs.

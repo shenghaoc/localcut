@@ -103,14 +103,15 @@ interface WhipPublishResource {
 }
 
 interface WhipClient {
-  publish(offerSdp: string): Promise<WhipPublishResource>;       // POST, one 307 follow
+  publish(offerSdp: string): Promise<WhipPublishResource>;       // POST, ≤3 chained 307s
   patchIceRestart(resourceUrl: string, fragment: string): Promise<'ok' | 'unsupported'>;
   teardown(resourceUrl: string): Promise<void>;                  // DELETE, keepalive
 }
 ```
 
 Error mapping per R1.5 is a typed result, not thrown strings:
-`{ kind: 'auth' | 'not-found' | 'retryable'; status: number }`. Tokens are
+`{ kind: 'rejected-offer' | 'auth' | 'not-found' | 'retryable'; status: number }`
+(`400` → `rejected-offer`, fail fast — retrying a bad SDP is futile). Tokens are
 attached as `Authorization: Bearer` headers and never echoed into errors,
 logs, or diagnostics (R1.2).
 
@@ -137,8 +138,9 @@ state machine:
 `ReconnectController`: pure state machine over injected timers. Policy
 (R5.2): 3 s grace on `disconnected`; on `failed` try ICE restart via `PATCH`
 (`application/trickle-ice-sdpfrag`); on `405`/`501` or restart failure, full
-re-`POST` as a new session; backoff 2 s → 4 s → 8 s → 16 s, max 5 attempts,
-then terminal `failed`. Unit-tested with fake timers across every branch.
+re-`POST` as a new session; backoff 2 s → 4 s → 8 s → 16 s → 16 s (capped),
+max 5 attempts, then terminal `failed`. Unit-tested with fake timers across
+every branch.
 
 ### `src/engine/encoder-budget.ts`
 
@@ -232,8 +234,10 @@ Defaults per endpoint type (overridable within validated ranges, R2.3):
 | Self-hosted MediaMTX | H.264 (AV1 opt-in) | user-set, 4500 default| 2 s      | AV1 only when probe + server allow      |
 | Custom WHIP URL      | H.264 (AV1 opt-in) | 4500 default          | 2 s      | No assumptions about the server         |
 
-H.264 constrained baseline (`42e01f`, packetization-mode 1) is the
-lowest-common-denominator default every listed ingest accepts. AV1 is gated
+H.264 constrained baseline negotiated up to Level 4.1 (`42e029`,
+packetization-mode 1) is the lowest-common-denominator default every listed
+ingest accepts, with enough level headroom for the 1080p30 stream cap
+(Level 3.1 would top out at 720p30). AV1 is gated
 twice: the Phase 26 `av1Encode` probe **and** an endpoint type known to take
 it (R2.2). Audio is always Opus at 128 kbps stereo (WebRTC mandatory codec).
 Keyframe cadence uses `RTCRtpScriptTransform` + `generateKeyFrame()` on a
@@ -280,8 +284,9 @@ bitrate, and tap drop counters. The `StatsPoller` runs at ≤ 1 Hz and stops at
 
 - **Unit (Vitest, Node, co-located):** `whip-client.test.ts` (mocked fetch:
   POST/201/Location resolution, bearer header on all verbs, Link ice-server
-  parsing incl. TURN credentials, single 307 follow, error mapping, DELETE
-  with keepalive); `whip-reconnect.test.ts` (fake timers: grace period,
+  parsing incl. TURN credentials, bounded 307 chain (≤3, then fail fast),
+  error mapping incl. `400` → rejected-offer, DELETE with keepalive);
+  `whip-reconnect.test.ts` (fake timers: grace period,
   PATCH-unsupported fallback to re-POST, full backoff ladder, max-attempts
   terminal state); `encoder-budget.test.ts` (acquire/release, exhaustion,
   double-release guard); `publish-frame-tap.test.ts` (mocked generator

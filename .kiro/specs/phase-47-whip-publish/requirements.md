@@ -26,10 +26,12 @@ gated by the Phase 26 probe rather than assumed.
   page `pagehide`/`beforeunload` (best effort via `keepalive` fetch), and
   fatal local errors. The peer connection closes only after the `DELETE` has
   been issued.
-- **R1.5** HTTP failure modes map to actionable states: `401`/`403` → invalid
-  token (no retry), `404` → wrong endpoint URL (no retry), `405`/`409`/`5xx`
-  and network errors → retryable per the R5 reconnect policy. Redirects
-  (`307`) on the initial `POST` are followed once per RFC 9725 §4.1.
+- **R1.5** HTTP failure modes map to actionable states: `400` → rejected
+  offer (malformed/unsupported SDP, no retry), `401`/`403` → invalid token
+  (no retry), `404` → wrong endpoint URL (no retry), `405`/`409`/`5xx` and
+  network errors → retryable per the R5 reconnect policy. Redirects (`307`)
+  on the initial `POST` are followed up to a bounded chain of 3 per RFC 9725
+  §4.1; exceeding the limit fails fast as a non-retryable error.
 - **R1.6** ICE restart uses an HTTP `PATCH` to the session resource with
   `Content-Type: application/trickle-ice-sdpfrag` when the server advertised
   support; if the server answers `405`/`501` the client falls back to a full
@@ -39,10 +41,12 @@ gated by the Phase 26 probe rather than assumed.
 
 ## R2 — Codec negotiation and encode settings
 
-- **R2.1** Video defaults to **H.264 constrained baseline**
-  (`profile-level-id=42e01f`, `packetization-mode=1`), enforced via
-  `setCodecPreferences` on the video transceiver. Audio is **Opus** (WebRTC
-  mandatory-to-implement; always available).
+- **R2.1** Video defaults to **H.264 constrained baseline** negotiated up to
+  **Level 4.1** (`profile-level-id=42e029`, `packetization-mode=1`) so the
+  1080p30 cap in R2.5 fits within the level's macroblock budget (Level 3.1
+  tops out at 720p30), enforced via `setCodecPreferences` on the video
+  transceiver. Audio is **Opus** (WebRTC mandatory-to-implement; always
+  available).
 - **R2.2** AV1 is offered as a video codec choice only when the Phase 26 probe
   reports `av1Encode: 'supported'` **and** the selected endpoint type is known
   to accept AV1 (self-hosted MediaMTX, custom). The UI labels AV1 as
@@ -91,9 +95,10 @@ gated by the Phase 26 probe rather than assumed.
 - **R4.2** The tap is latest-frame-wins: at most one frame is in flight to the
   generator. If the writer back-pressures, older frames are dropped (and the
   drop counted), never queued unboundedly.
-- **R4.3** Every cloned `VideoFrame` and `AudioData` in the publish path is
-  closed exactly once across normal write, drop, error, and stop paths —
-  including the frames buffered when the stream stops mid-write.
+- **R4.3** Every cloned `VideoFrame` in the publish path is closed exactly
+  once across normal write, drop, error, and stop paths — including the
+  frames buffered when the stream stops mid-write. (The audio path produces
+  no JS-owned media objects; see R4.4.)
 - **R4.4** Audio taps the Phase 16 master bus output (post-gain, post-pan,
   post-fades) so the stream hears exactly what the program monitor plays.
   Opus encoding is handled by the WebRTC stack, not by JS.
@@ -111,9 +116,9 @@ gated by the Phase 26 probe rather than assumed.
 - **R5.2** On `iceconnectionstatechange` → `disconnected`, the client waits a
   short grace period (default 3 s) for self-healing; on `failed` (or grace
   expiry) it attempts ICE restart (R1.6), then falls back to a full
-  re-`POST`. Retries use exponential backoff (2 s, 4 s, 8 s, 16 s; max 5
-  attempts) before declaring `failed`. The whole policy is documented and the
-  integration test exercises it (R8.4).
+  re-`POST`. Retries use exponential backoff capped at 16 s (delays 2 s,
+  4 s, 8 s, 16 s, 16 s; max 5 attempts) before declaring `failed`. The whole
+  policy is documented and the integration test exercises it (R8.4).
 - **R5.3** During `reconnecting`, the local timeline keeps playing and ISO
   recording (if active) continues unaffected; only the network leg retries.
 - **R5.4** A low-rate `getStats()` poll (≤ 1 Hz) surfaces achieved bitrate,
@@ -163,8 +168,8 @@ gated by the Phase 26 probe rather than assumed.
 
 - **R8.1** Unit tests (Vitest, Node environment, co-located) cover: WHIP HTTP
   client against a mocked `fetch` (POST/201/Location, bearer header, Link
-  ice-server parsing, DELETE on stop, 401/404/5xx mapping, single-redirect
-  follow); the reconnect state machine with fake timers (grace period,
+  ice-server parsing, DELETE on stop, 400/401/404/5xx mapping, bounded
+  redirect chain); the reconnect state machine with fake timers (grace period,
   backoff sequence, max attempts, PATCH-then-re-POST fallback); the
   encoder-budget ledger; the frame-tap drop/close accounting with mocked
   generator writers; and protocol type guards. No large media fixtures.
