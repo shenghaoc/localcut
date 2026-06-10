@@ -32,6 +32,8 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 
 **Active:**
 
+- [**Phase 48: OpenTimelineIO export**](.kiro/specs/phase-48-otio-export/tasks.md) — TypeScript `ProjectDoc` → `.otio` serialiser (tracks, gaps, clips with P23 fingerprints, markers, transitions); `metadata.localcut` round-trip namespace; `project.otio` in the bundle root beside authoritative `project.json`; cuts-only CMX3600 EDL; documented `otioconvert` path for AAF/FCPXML.
+
 - [**Bugfix: IMG_6213.mov media handling**](.kiro/specs/bugfix-img-6213-media-issues/tasks.md) — apply rotation metadata on placement, rotation-aware fit rect, VFR-aware frame cadence, codec-named warnings, Media Bin details popover, user-guide updates.
 
 - [**Bugfix: Mixed-rate audio resampling**](.kiro/specs/bugfix-mixed-rate-audio/tasks.md) — streaming polyphase sinc resampler complementing Mediabunny; per-call target-rate `pcmWindowAt`/`pcmAt`; canonical playback ring rate; anti-aliased downsample; source-health + docs.

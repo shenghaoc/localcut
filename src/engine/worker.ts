@@ -217,6 +217,10 @@ import {
 	runImportProjectBundle,
 	type BundleWorkerContext
 } from './project-bundle/bundle-jobs';
+import { defaultAppVersion } from './project-bundle/manifest';
+import { sanitizeBundleFileName } from './project-bundle/paths';
+import { serializeTimelineToEdl } from './interchange/edl';
+import { serializeTimelineToOtio } from './interchange/otio';
 import { proxyStatusForAsset } from './proxy-jobs';
 import { buildWorkerDiagnosticSnapshot } from './diagnostics';
 import {
@@ -3123,6 +3127,38 @@ function projectDisplayName(): string {
 	return stem || first.fileName;
 }
 
+function handleExportInterchange(
+	cmd: Extract<WorkerCommand, { type: 'export-interchange' }>
+): void {
+	const doc = serializeProject({
+		projectId,
+		timeline,
+		captionTracks,
+		transitions,
+		markers,
+		sources: currentProjectSources(),
+		masterGain,
+		exportSettings: lastExportSettings ?? undefined
+	});
+	const displayName = projectDisplayName();
+	try {
+		const output =
+			cmd.format === 'otio'
+				? serializeTimelineToOtio(doc, { displayName, appVersion: defaultAppVersion() })
+				: serializeTimelineToEdl(doc, { displayName, trackId: cmd.trackId });
+		const stem = sanitizeBundleFileName(displayName) || 'timeline';
+		post({
+			type: 'interchange-result',
+			format: cmd.format,
+			suggestedName: `${stem}.${cmd.format}`,
+			text: output.text,
+			warnings: output.warnings
+		});
+	} catch (error) {
+		post({ type: 'interchange-error', format: cmd.format, message: errorMessage(error) });
+	}
+}
+
 async function applyImportedDoc(doc: ProjectDoc): Promise<void> {
 	restoreOfferGeneration += 1;
 	await flushPendingAutosave();
@@ -4341,6 +4377,9 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			break;
 		case 'bundle-replace-decision':
 			resolveBundleReplaceDecision(cmd.jobId, cmd.action);
+			break;
+		case 'export-interchange':
+			handleExportInterchange(cmd);
 			break;
 		case 'insert-edit':
 			handleInsertEdit(cmd);

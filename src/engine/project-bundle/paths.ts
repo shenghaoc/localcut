@@ -21,3 +21,5 @@ export function lutRelativePath(fingerprint: MediaFingerprint, fileName: string)
 
 export const MANIFEST_PATH = 'manifest.json';
 export const PROJECT_PATH = 'project.json';
+/** Derived OTIO interchange document (Phase 48); `project.json` stays authoritative. */
+export const PROJECT_OTIO_PATH = 'project.otio';

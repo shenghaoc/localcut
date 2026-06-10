@@ -907,6 +907,9 @@ export type BundleSourcePolicySnapshot =
 	| { mode: 'reference-only' }
 	| { mode: 'collect-media'; relocate: boolean };
 
+/** Phase 48 timeline interchange formats: OpenTimelineIO JSON and CMX3600 EDL. */
+export type InterchangeFormat = 'otio' | 'edl';
+
 export type BundleIntegrityCodeSnapshot =
 	| 'ok'
 	| 'missing-file'
@@ -917,6 +920,7 @@ export type BundleIntegrityCodeSnapshot =
 	| 'unsupported-bundle-schema'
 	| 'unsupported-project-schema'
 	| 'unsupported-operation'
+	| 'interchange-export-failed'
 	| 'cache-stale';
 
 export interface BundleIntegrityItemSnapshot {
@@ -1123,6 +1127,7 @@ export type WorkerCommand =
 	  }
 	| { type: 'cancel-bundle-job'; jobId: string }
 	| { type: 'bundle-replace-decision'; jobId: string; action: 'replace' | 'cancel' }
+	| { type: 'export-interchange'; format: InterchangeFormat; trackId?: string }
 	| InsertEditCommand
 	| OverwriteEditCommand
 	| RippleDeleteCommand
@@ -1288,6 +1293,14 @@ export type WorkerStateMessage =
 			projectId?: string;
 			reason?: string;
 	  }
+	| {
+			type: 'interchange-result';
+			format: InterchangeFormat;
+			suggestedName: string;
+			text: string;
+			warnings: readonly string[];
+	  }
+	| { type: 'interchange-error'; format: InterchangeFormat; message: string }
 	| { type: 'hdr-warnings'; warnings: HDRWarningSnapshot[] }
 	| { type: 'presets-state'; presets: ExportPresetDoc[] }
 	| { type: 'queue-state'; queue: RenderQueueState }
