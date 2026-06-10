@@ -180,9 +180,15 @@ class WebCodecsVideoSample implements VideoSampleLike {
 
 export class WebCodecsAudioDecoder implements AudioSampleStream {
 	private readonly track: InputAudioTrack;
+	private readonly maxQueueDepth: number;
+	// Note: hardwareAcceleration from WebCodecsDecoderConfig is intentionally not
+	// forwarded for audio. Audio decoders are always CPU-bound and do not benefit
+	// from GPU acceleration; the AudioDecoderConfig type does not include a
+	// hardwareAcceleration field.
 
-	constructor(track: InputAudioTrack) {
+	constructor(track: InputAudioTrack, config?: WebCodecsDecoderConfig) {
 		this.track = track;
+		this.maxQueueDepth = config?.maxQueueDepth ?? DEFAULT_MAX_QUEUE_DEPTH;
 	}
 
 	async *samples(
@@ -232,8 +238,8 @@ export class WebCodecsAudioDecoder implements AudioSampleStream {
 				// Bound total in-flight data: stop feeding when either the decode queue
 				// or the decoded-but-unyielded backlog reaches the depth limit.
 				while (
-					decoder.decodeQueueSize < DEFAULT_MAX_QUEUE_DEPTH &&
-					pending.length < DEFAULT_MAX_QUEUE_DEPTH
+					decoder.decodeQueueSize < this.maxQueueDepth &&
+					pending.length < this.maxQueueDepth
 				) {
 					const next = await packets.next();
 					if (next.done) {

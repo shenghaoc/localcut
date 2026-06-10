@@ -3,6 +3,7 @@ import type {
 	CapabilityFinding,
 	CapabilityReport,
 	CodecSupportSummary,
+	FormatCompatibilitySummary as DiagFormatCompatibilitySummary,
 	DeviceLostSummary,
 	DiagnosticSnapshot,
 	DiagnosticCapabilityTier,
@@ -15,6 +16,7 @@ import type {
 } from '../diagnostics/types';
 import { DIAGNOSTIC_SNAPSHOT_SCHEMA_VERSION } from '../diagnostics/types';
 import { buildDefaultPerformanceBudgets } from '../diagnostics/performance-budgets';
+import { probeAllCodecs } from './codec-support';
 
 interface DiagnosticSourceLike {
 	readonly proxy?: {
@@ -142,6 +144,7 @@ const ENCODER_PROBES = [
 // the cache is only cleared explicitly via `invalidateDiagnosticProbeCache()`.
 let cachedDecoderProbe: Promise<CodecSupportSummary[]> | null = null;
 let cachedEncoderProbe: Promise<CodecSupportSummary[]> | null = null;
+let cachedFormatCompatibility: Promise<DiagFormatCompatibilitySummary> | null = null;
 // The storage estimate is cheap-ish but still I/O; cache it for a short window so a
 // single open/refresh burst doesn't issue several `navigator.storage.estimate()`
 // calls in a row, while still reflecting changes on the next manual refresh.
@@ -152,6 +155,7 @@ const STORAGE_CACHE_TTL_MS = 2_000;
 export function invalidateDiagnosticProbeCache(): void {
 	cachedDecoderProbe = null;
 	cachedEncoderProbe = null;
+	cachedFormatCompatibility = null;
 	cachedStorage = null;
 }
 
@@ -253,6 +257,41 @@ function probeEncoders(): Promise<CodecSupportSummary[]> {
 	return cachedEncoderProbe;
 }
 
+async function probeFormatCompatibilityUncached(): Promise<DiagFormatCompatibilitySummary> {
+	try {
+		const codecs = await probeAllCodecs();
+		const demuxableContainers = ['mp4', 'mov', 'webm', 'mp3', 'ogg', 'wav', 'm4a', 'm4v'];
+		return {
+			totalVideoCodecs: codecs.video.length,
+			supportedVideoCodecs: codecs.video.filter((c) => c.strategy !== 'unsupported').length,
+			hwPreferredVideoCodecs: codecs.video.filter((c) => c.hardwarePreferred).length,
+			totalAudioCodecs: codecs.audio.length,
+			supportedAudioCodecs: codecs.audio.filter((c) => c.strategy !== 'unsupported').length,
+			demuxableContainers,
+			videoCodecs: codecs.video,
+			audioCodecs: codecs.audio
+		};
+	} catch {
+		return {
+			totalVideoCodecs: 0,
+			supportedVideoCodecs: 0,
+			hwPreferredVideoCodecs: 0,
+			totalAudioCodecs: 0,
+			supportedAudioCodecs: 0,
+			demuxableContainers: [],
+			videoCodecs: [],
+			audioCodecs: []
+		};
+	}
+}
+
+function probeFormatCompatibility(): Promise<DiagFormatCompatibilitySummary> {
+	if (!cachedFormatCompatibility) {
+		cachedFormatCompatibility = probeFormatCompatibilityUncached();
+	}
+	return cachedFormatCompatibility;
+}
+
 async function buildCapabilityReport(input: WorkerDiagnosticInput): Promise<CapabilityReport> {
 	const isolated = globalThis.crossOriginIsolated === true;
 	const hasSab = typeof SharedArrayBuffer === 'function';
@@ -315,6 +354,7 @@ async function buildCapabilityReport(input: WorkerDiagnosticInput): Promise<Capa
 			decoders: await probeDecoders(),
 			encoders: await probeEncoders()
 		},
+		formatCompatibility: await probeFormatCompatibility(),
 		mediabunny: finding(
 			'capability.mediabunny',
 			true,

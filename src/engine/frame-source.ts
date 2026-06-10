@@ -39,6 +39,35 @@ export interface VideoFrameProvider {
 	reset(): void;
 }
 
+/**
+ * Phase 27 transition readahead primitive: two independent decode streams, each
+ * with its own iterator and seek position, so the compositor can readahead two
+ * different timestamps concurrently without sharing iterator state.
+ */
+export class DualStreamFrameSource {
+	constructor(
+		private readonly streamA: VideoFrameProvider,
+		private readonly streamB: VideoFrameProvider
+	) {}
+
+	async frameAtA(time: number): Promise<DecodedFrame | null> {
+		return this.streamA.frameAt(time);
+	}
+
+	async frameAtB(time: number): Promise<DecodedFrame | null> {
+		return this.streamB.frameAt(time);
+	}
+
+	reset(): void {
+		this.streamA.reset();
+		this.streamB.reset();
+	}
+
+	dispose(): void {
+		this.reset();
+	}
+}
+
 /** Forward jumps larger than this (seconds) re-seek from a keyframe instead of scanning. */
 const DEFAULT_RESYNC_THRESHOLD_S = 1;
 

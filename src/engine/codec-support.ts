@@ -25,6 +25,9 @@ export interface FormatSupport {
 	readonly audioCodecs: readonly CodecCapability[];
 }
 
+// NOTE: This list must be kept in sync manually with Mediabunny's actual
+// supported container formats. There is no runtime API to query them, so any
+// update to Mediabunny's demuxer support requires a corresponding update here.
 const MEDIABUNNY_CONTAINERS = new Set([
 	'mp4', 'mov', 'webm', 'mp3', 'ogg', 'wav', 'm4a', 'm4v'
 ]);

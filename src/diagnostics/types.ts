@@ -39,6 +39,26 @@ export interface CodecSupportSummary {
 	readonly reason?: string;
 }
 
+export type DecodeStrategy = 'webcodecs-native' | 'webcodecs-software' | 'unsupported';
+
+export interface CodecCapabilitySummary {
+	readonly codec: string;
+	readonly strategy: DecodeStrategy;
+	readonly hardwarePreferred: boolean;
+	readonly notes: string | null;
+}
+
+export interface FormatCompatibilitySummary {
+	readonly totalVideoCodecs: number;
+	readonly supportedVideoCodecs: number;
+	readonly hwPreferredVideoCodecs: number;
+	readonly totalAudioCodecs: number;
+	readonly supportedAudioCodecs: number;
+	readonly demuxableContainers: readonly string[];
+	readonly videoCodecs: readonly CodecCapabilitySummary[];
+	readonly audioCodecs: readonly CodecCapabilitySummary[];
+}
+
 export interface CapabilityReport {
 	readonly tier: DiagnosticCapabilityTier;
 	readonly tierReason: string;
@@ -49,6 +69,7 @@ export interface CapabilityReport {
 		readonly decoders: readonly CodecSupportSummary[];
 		readonly encoders: readonly CodecSupportSummary[];
 	};
+	readonly formatCompatibility: FormatCompatibilitySummary | null;
 	readonly mediabunny: CapabilityFinding;
 	readonly audioWorklet: CapabilityFinding;
 	readonly fileSystemAccess: CapabilityFinding;

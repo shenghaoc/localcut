@@ -152,6 +152,7 @@ function capabilityReport(
 				}
 			]
 		},
+		formatCompatibility: null,
 		mediabunny: {
 			code: 'capability.mediabunny',
 			status: 'supported',
