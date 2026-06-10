@@ -5,7 +5,14 @@ import { fingerprintBlob } from './fingerprint';
 import { serializeProjectDocForBundle } from './serialize-doc';
 import { addIntegrityItem, createEmptyIntegrityReport, integrityItem } from './integrity';
 import { defaultAppVersion, makeAssetId, makeBundleId, serializeBundleManifest } from './manifest';
-import { lutRelativePath, MANIFEST_PATH, mediaRelativePath, PROJECT_PATH } from './paths';
+import {
+	lutRelativePath,
+	MANIFEST_PATH,
+	mediaRelativePath,
+	PROJECT_OTIO_PATH,
+	PROJECT_PATH
+} from './paths';
+import { serializeTimelineToOtio } from '../interchange/otio';
 import type { BundleDirectorySink } from './sinks';
 import type {
 	BundleAsset,
@@ -201,6 +208,39 @@ export async function exportProjectBundle(
 
 	progress('project');
 	await sink.writeText(PROJECT_PATH, serializeProjectDocForBundle(options.doc));
+
+	// Derived interchange artifact (Phase 48); project.json stays
+	// authoritative and a failure here must not fail the bundle.
+	progress('interchange');
+	try {
+		const mediaPathBySourceId = new Map<string, string>();
+		for (const entry of sources) {
+			if (!entry.mediaAssetId) continue;
+			const asset = assets.find((item) => item.assetId === entry.mediaAssetId);
+			if (asset) mediaPathBySourceId.set(entry.sourceId, asset.relativePath);
+		}
+		const otio = serializeTimelineToOtio(
+			// Source entries carry the fingerprints computed during this export.
+			{ ...options.doc, sources: sources.map((entry) => entry.descriptor) },
+			{
+				displayName: options.displayName,
+				appVersion: defaultAppVersion(),
+				resolveTargetUrl: (sourceId) => mediaPathBySourceId.get(sourceId) ?? null
+			}
+		);
+		await sink.writeText(PROJECT_OTIO_PATH, otio.text);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		report = addIntegrityItem(
+			report,
+			integrityItem(
+				'interchange-export-failed',
+				'warning',
+				`Failed to write ${PROJECT_OTIO_PATH}: ${message} — project.json is unaffected.`,
+				{ relativePath: PROJECT_OTIO_PATH }
+			)
+		);
+	}
 
 	progress('manifest');
 	await sink.writeText(MANIFEST_PATH, serializeBundleManifest(manifest));

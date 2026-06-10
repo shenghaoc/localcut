@@ -52,6 +52,7 @@ import { AudioEngine } from './audio-engine';
 import { ExportDialog } from './ExportDialog';
 import { RenderQueuePanel } from './RenderQueuePanel';
 import { BundleDialog } from './BundleDialog';
+import { InterchangeMenu } from './InterchangeMenu';
 import { Button, buttonVariants } from './components/button';
 import { cn } from '../lib/utils';
 import { CapabilityPanel } from './CapabilityPanel';
@@ -179,6 +180,23 @@ function downloadTextFile(fileName: string, mimeType: string, content: string): 
 	URL.revokeObjectURL(url);
 }
 
+/** File System Access save with download-blob fallback (Phase 48 R8.1). */
+async function saveTextFile(fileName: string, mimeType: string, content: string): Promise<void> {
+	if (typeof window.showSaveFilePicker === 'function') {
+		try {
+			const handle = await window.showSaveFilePicker({ suggestedName: fileName });
+			const writable = await handle.createWritable();
+			await writable.write(new Blob([content], { type: mimeType }));
+			await writable.close();
+			return;
+		} catch (error) {
+			// User canceled the picker — not a failure, and not a download.
+			if (error instanceof DOMException && error.name === 'AbortError') return;
+		}
+	}
+	downloadTextFile(fileName, mimeType, content);
+}
+
 function capabilityTierV2Label(probe: CapabilityProbeResult | null): string | null {
 	if (!probe) return null;
 	switch (probe.tier) {
@@ -233,7 +251,10 @@ export function App() {
 	const [markers, setMarkers] = createSignal<TimelineMarkerSnapshot[]>([]);
 	const [transitions, setTransitions] = createSignal<TimelineTransitionSnapshot[]>([]);
 	// Phase 13: currently selected transition for the Inspector panel.
-	const transitionMeta = new Map<string, { trackId: string; fromClipId: string; toClipId: string }>();
+	const transitionMeta = new Map<
+		string,
+		{ trackId: string; fromClipId: string; toClipId: string }
+	>();
 	const [selectedTransitionId, setSelectedTransitionId] = createSignal<string | null>(null);
 	const selectedTransition = createMemo<SelectedTransition | null>(() => {
 		const id = selectedTransitionId();
@@ -292,6 +313,8 @@ export function App() {
 	const [bundlePhase, setBundlePhase] = createSignal<string | null>(null);
 	const [bundleReport, setBundleReport] = createSignal<BundleIntegrityReportSnapshot | null>(null);
 	const [bundleMessage, setBundleMessage] = createSignal<string | null>(null);
+	const [interchangeWarnings, setInterchangeWarnings] = createSignal<readonly string[]>([]);
+	const [interchangeMessage, setInterchangeMessage] = createSignal<string | null>(null);
 	const [thumbnailVersion, setThumbnailVersion] = createSignal(0);
 	const thumbnailStore = new ThumbnailStore();
 
@@ -657,6 +680,25 @@ export function App() {
 				setStatusLine(
 					`Exported ${msg.files.length} caption file${msg.files.length === 1 ? '' : 's'}`
 				);
+				break;
+			case 'interchange-result':
+				void saveTextFile(
+					msg.suggestedName,
+					msg.format === 'otio' ? 'application/json' : 'text/plain',
+					msg.text
+				);
+				setInterchangeWarnings(msg.warnings);
+				setInterchangeMessage(
+					msg.warnings.length > 0
+						? `Exported ${msg.suggestedName} with ${msg.warnings.length} warning${msg.warnings.length === 1 ? '' : 's'}`
+						: `Exported ${msg.suggestedName}`
+				);
+				setStatusLine(`Exported ${msg.suggestedName}`);
+				break;
+			case 'interchange-error':
+				setInterchangeWarnings([]);
+				setInterchangeMessage(`Export failed: ${msg.message}`);
+				setStatusLine(`Interchange export failed: ${msg.message}`);
 				break;
 			case 'history-state':
 				setHistoryState({ canUndo: msg.canUndo, canRedo: msg.canRedo });
@@ -1831,6 +1873,21 @@ export function App() {
 				}}
 				exportControl={
 					<>
+						<InterchangeMenu
+							hasTimeline={hasTimeline()}
+							videoTracks={timeline()
+								.filter((track) => track.type === 'video')
+								.map((track, index) => ({
+									id: track.id,
+									name: `V${index + 1}`,
+									clipCount: track.clips.length
+								}))}
+							warnings={interchangeWarnings()}
+							lastMessage={interchangeMessage()}
+							onExport={(format, trackId) =>
+								bridge?.send({ type: 'export-interchange', format, trackId })
+							}
+						/>
 						<BundleDialog
 							disabled={!accelerated()}
 							directoryPickerAvailable={'showDirectoryPicker' in window}

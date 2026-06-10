@@ -30,7 +30,7 @@
 
 ## R5 — Transitions
 
-- **R5.1** Each `TimelineTransition` (Phase 13, cut-point centred) maps to an OTIO `Transition` placed at the cut between the corresponding clips, with `in_offset` and `out_offset` each equal to half the transition duration, frame-snapped.
+- **R5.1** Each `TimelineTransition` (Phase 13, cut-point centred) maps to an OTIO `Transition` placed at the cut between the corresponding clips. The total transition duration is snapped to frames first, then split as `in_offset = floor(totalFrames / 2)` and `out_offset = totalFrames − in_offset`, so the offsets always sum exactly to the snapped total (no frame gained or lost on odd totals).
 - **R5.2** `cross-dissolve` maps to `transition_type: "SMPTE_Dissolve"`; `dip-to-black`, `wipe`, and `slide` map to `"Custom_Transition"`.
 - **R5.3** Every transition carries `metadata.localcut.transition` with the exact LocalCut `kind` and `params` so LocalCut can restore the original transition on a future import.
 - **R5.4** A transition whose clips were dropped (R2.4) or that no longer brackets an adjacent pair after snapping is omitted with a warning, never emitted in an invalid position.
@@ -62,7 +62,7 @@
 - **R9.1** EDL export emits a cuts-only CMX3600 list for one video track (default: the first video track with clips; the UI offers a track picker). Other tracks, audio events, and transitions are omitted; transitions on the exported track become straight cuts at the cut point, and each omission is reported as a warning.
 - **R9.2** Output conforms to CMX3600: `TITLE:` header, `FCM: NON-DROP FRAME`, sequential 3-digit event numbers, `V` / `C` event lines with four `HH:MM:SS:FF` timecodes (source in/out, record in/out), and record timecode starting at `01:00:00:00`.
 - **R9.3** Timecodes use a non-drop integer frame rate (`Math.round` of the sequence rate); when the sequence rate is fractional, the EDL notes the rounding in a comment line.
-- **R9.4** Reel names are 8-character uppercase alphanumeric identifiers derived from the source file name, deduplicated deterministically; full file names are preserved via `* FROM CLIP NAME:` comment lines. Title clips export with reel `AX`.
+- **R9.4** Reel names are uppercase alphanumeric identifiers of at most 8 characters derived from the source file name, falling back to `REEL` when the file name yields no alphanumeric characters. Deduplication suffixes count toward the 8-character limit (the base is shortened to fit), assigned deterministically in first-appearance order. Full file names are preserved via `* FROM CLIP NAME:` comment lines; title clips export with reel `AX`.
 - **R9.5** Gaps produce no events — record timecode simply advances.
 
 ## R10 — Documentation

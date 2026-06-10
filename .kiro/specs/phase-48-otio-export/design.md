@@ -1,6 +1,6 @@
 # Design: Phase 48 — OpenTimelineIO Export
 
-> Status: **Planned** — TypeScript ProjectDoc → `.otio` serialiser with P23 fingerprints in metadata, plus a cuts-only CMX3600 EDL; `project.otio` lands in the bundle root next to the authoritative `project.json`.
+> Status: **Active** — TypeScript ProjectDoc → `.otio` serialiser with P23 fingerprints in metadata, plus a cuts-only CMX3600 EDL; `project.otio` lands in the bundle root next to the authoritative `project.json`. Implemented; manual external-app verification pending.
 
 ## Goal
 
@@ -92,7 +92,7 @@ Determinism: the serialiser is a pure function of `ProjectDoc` (plus an options 
 | `TimelineClip` (title) | `Clip.2` + `GeneratorReference.1` | `generator_kind: "localcut.title"`; `TitleContent` in `metadata.localcut.title` |
 | source missing at export | `Clip.2` + `MissingReference.1` | original file name + `sourceId` preserved |
 | `TimelineMarker` | `Marker.2` on the `Stack` | zero-duration `marked_range`; color `PURPLE` |
-| `TimelineTransition` | `Transition.1` between the two clips | `in_offset = out_offset = durationS/2` snapped; `cross-dissolve` → `SMPTE_Dissolve`, others → `Custom_Transition` |
+| `TimelineTransition` | `Transition.1` between the two clips | total duration snapped first, then `in_offset = floor(total/2)`, `out_offset = total − in_offset`; `cross-dissolve` → `SMPTE_Dissolve`, others → `Custom_Transition` |
 | effects / transform / keyframes / LUT ref / fades | `Clip.metadata.localcut` | LUT by `key` + `fileName` only — never texture data |
 | caption tracks + styling | `Timeline.metadata.localcut.captionTracks` | no portable OTIO caption schema; not emitted as tracks |
 | `MediaFingerprint` (P23) | `ExternalReference.metadata.localcut.fingerprint` | content identity for future re-linking |
@@ -112,7 +112,7 @@ FCM: NON-DROP FRAME
 
 - Record TC starts at `01:00:00:00` (broadcast convention); gaps advance record TC without an event.
 - Frame rate is `Math.round(sequenceRate)` non-drop; fractional rates add a `* LOCALCUT: RATE 29.97 ROUNDED TO 30 NDF` comment (R9.3).
-- Reel names: uppercase alphanumeric from the file-name stem, padded/truncated to 8 chars, deduplicated with numeric suffixes assigned in first-appearance order (deterministic). Titles use reel `AX`.
+- Reel names: uppercase alphanumeric from the file-name stem (fallback `REEL` when the stem yields no alphanumeric characters), at most 8 chars *including* any dedup suffix — the base is shortened so `<base><n>` never exceeds 8 — with suffixes assigned in first-appearance order (deterministic). Titles use reel `AX`.
 - Transitions on the exported track become straight cuts at the cut point; each omission (transitions, other tracks, audio) is returned as a warning, not silently dropped.
 
 ## P23 bundle integration
@@ -120,7 +120,7 @@ FCM: NON-DROP FRAME
 `exportProjectBundle` gains one step after writing `project.json`: serialise the same `doc` with bundle-relative `target_url`s and write `PROJECT_OTIO_PATH = 'project.otio'` to the bundle root. The serialiser receives a `resolveTargetUrl(sourceId): string` hook; bundle export supplies fingerprint-derived `media/…` paths (from the just-built asset table), standalone export supplies original file names.
 
 - `project.json` stays authoritative; `project.otio` is derived and **never read back** by bundle import (R7.4).
-- Serialisation/write failure → `addIntegrityItem(report, integrityItem('ok' → no; use a warning item))` — concretely: a `warning`-severity integrity item with a message naming `project.otio`, and bundle export still succeeds (R7.3).
+- Serialisation/write failure → a new `'interchange-export-failed'` member of `BundleIntegrityCode`, added as a `warning`-severity integrity item whose message names `project.otio`; bundle export still succeeds (R7.3).
 - The file is a root-level sibling of `project.json`, not an entry in the asset table; `BUNDLE_SCHEMA_VERSION` stays 1 (optional additive file).
 
 ## Protocol sketch

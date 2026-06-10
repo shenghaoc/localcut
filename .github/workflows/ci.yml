@@ -28,3 +28,11 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
+
+      # Phase 48: parse the golden .otio fixtures with the reference Python
+      # implementation (CI-only — the app never ships or requires Python).
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: pip install opentimelineio
+      - run: python scripts/validate-otio-fixtures.py

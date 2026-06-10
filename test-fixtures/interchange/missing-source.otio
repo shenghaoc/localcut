@@ -1,0 +1,193 @@
+{
+  "OTIO_SCHEMA": "Timeline.1",
+  "metadata": {
+    "localcut": {
+      "projectId": "fixture-missing-source",
+      "projectSchemaVersion": 10,
+      "appVersion": "0.1.0",
+      "savedAt": "2026-01-01T00:00:00.000Z",
+      "masterGain": 1,
+      "captionTracks": []
+    }
+  },
+  "name": "Fixture Project",
+  "global_start_time": {
+    "OTIO_SCHEMA": "RationalTime.1",
+    "rate": 30,
+    "value": 0
+  },
+  "tracks": {
+    "OTIO_SCHEMA": "Stack.1",
+    "metadata": {},
+    "name": "tracks",
+    "source_range": null,
+    "effects": [],
+    "markers": [],
+    "enabled": true,
+    "children": [
+      {
+        "OTIO_SCHEMA": "Track.1",
+        "metadata": {
+          "localcut": {
+            "trackId": "track-v1",
+            "gain": 1,
+            "pan": 0,
+            "muted": false,
+            "solo": false,
+            "locked": false,
+            "visible": true,
+            "syncLocked": false,
+            "editTarget": true
+          }
+        },
+        "name": "V1",
+        "source_range": null,
+        "effects": [],
+        "markers": [],
+        "enabled": true,
+        "children": [
+          {
+            "OTIO_SCHEMA": "Clip.2",
+            "metadata": {
+              "localcut": {
+                "clipId": "clip-ghost",
+                "effects": {
+                  "brightness": 0,
+                  "contrast": 0,
+                  "saturation": 1,
+                  "temperature": 0,
+                  "temperatureStrength": 0,
+                  "lutStrength": 0
+                },
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "scale": 1,
+                  "rotation": 0,
+                  "opacity": 1,
+                  "anchorX": 0.5,
+                  "anchorY": 0.5,
+                  "fit": "fill"
+                },
+                "audioFadeIn": 0,
+                "audioFadeOut": 0
+              }
+            },
+            "name": "clip-ghost",
+            "source_range": {
+              "OTIO_SCHEMA": "TimeRange.1",
+              "duration": {
+                "OTIO_SCHEMA": "RationalTime.1",
+                "rate": 30,
+                "value": 60
+              },
+              "start_time": {
+                "OTIO_SCHEMA": "RationalTime.1",
+                "rate": 30,
+                "value": 0
+              }
+            },
+            "effects": [],
+            "markers": [],
+            "enabled": true,
+            "media_references": {
+              "DEFAULT_MEDIA": {
+                "OTIO_SCHEMA": "MissingReference.1",
+                "metadata": {
+                  "localcut": {
+                    "sourceId": "source-ghost"
+                  }
+                },
+                "name": "source-ghost",
+                "available_range": null,
+                "available_image_bounds": null
+              }
+            },
+            "active_media_reference_key": "DEFAULT_MEDIA"
+          },
+          {
+            "OTIO_SCHEMA": "Gap.1",
+            "metadata": {},
+            "name": "",
+            "source_range": {
+              "OTIO_SCHEMA": "TimeRange.1",
+              "duration": {
+                "OTIO_SCHEMA": "RationalTime.1",
+                "rate": 30,
+                "value": 30
+              },
+              "start_time": {
+                "OTIO_SCHEMA": "RationalTime.1",
+                "rate": 30,
+                "value": 0
+              }
+            },
+            "effects": [],
+            "markers": [],
+            "enabled": true
+          },
+          {
+            "OTIO_SCHEMA": "Clip.2",
+            "metadata": {
+              "localcut": {
+                "clipId": "clip-after",
+                "effects": {
+                  "brightness": 0,
+                  "contrast": 0,
+                  "saturation": 1,
+                  "temperature": 0,
+                  "temperatureStrength": 0,
+                  "lutStrength": 0
+                },
+                "transform": {
+                  "x": 0,
+                  "y": 0,
+                  "scale": 1,
+                  "rotation": 0,
+                  "opacity": 1,
+                  "anchorX": 0.5,
+                  "anchorY": 0.5,
+                  "fit": "fill"
+                },
+                "audioFadeIn": 0,
+                "audioFadeOut": 0
+              }
+            },
+            "name": "clip-after",
+            "source_range": {
+              "OTIO_SCHEMA": "TimeRange.1",
+              "duration": {
+                "OTIO_SCHEMA": "RationalTime.1",
+                "rate": 30,
+                "value": 30
+              },
+              "start_time": {
+                "OTIO_SCHEMA": "RationalTime.1",
+                "rate": 30,
+                "value": 0
+              }
+            },
+            "effects": [],
+            "markers": [],
+            "enabled": true,
+            "media_references": {
+              "DEFAULT_MEDIA": {
+                "OTIO_SCHEMA": "MissingReference.1",
+                "metadata": {
+                  "localcut": {
+                    "sourceId": "source-ghost"
+                  }
+                },
+                "name": "source-ghost",
+                "available_range": null,
+                "available_image_bounds": null
+              }
+            },
+            "active_media_reference_key": "DEFAULT_MEDIA"
+          }
+        ],
+        "kind": "Video"
+      }
+    ]
+  }
+}
