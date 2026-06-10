@@ -112,7 +112,7 @@ export class TrackPipeline {
 		encoder.configure(config);
 
 		const reader = processor.readable.getReader();
-		this.reader = reader as ReadableStreamDefaultReader<AudioData>;
+		this.reader = reader as ReadableStreamDefaultReader<VideoFrame>;
 		try {
 			while (this.running && !this.abort.signal.aborted) {
 				const result = await reader.read();
@@ -176,7 +176,7 @@ export class TrackPipeline {
 		encoder.configure(config);
 
 		const reader = processor.readable.getReader();
-		this.reader = reader as ReadableStreamDefaultReader<VideoFrame>;
+		this.reader = reader as ReadableStreamDefaultReader<AudioData>;
 		try {
 			while (this.running && !this.abort.signal.aborted) {
 				const result = await reader.read();

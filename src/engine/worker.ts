@@ -4907,11 +4907,11 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 				void captureSession.stop().catch(() => {});
 				captureSession.reset();
 				captureSession = null;
-				for (const [, src] of pendingCaptureSources) {
-					src.track.stop();
-				}
-				pendingCaptureSources.clear();
 			}
+			for (const [, src] of pendingCaptureSources) {
+				src.track.stop();
+			}
+			pendingCaptureSources.clear();
 			break;
 		case 'capture-recovery-import':
 			// TODO: Phase 41 — T7 crash recovery: scan + import orphaned session

@@ -258,6 +258,9 @@ class CaptureWriter {
 				let hasFinalize = false;
 				let totalBytes = 0;
 				let sourceCount = 0;
+				let startedAtIso = '';
+				let firstTs: number | null = null;
+				let lastTs: number | null = null;
 				try {
 					const manifestHandle = await dirHandle.getFileHandle('manifest.ndjson');
 					const file = await (manifestHandle as FileSystemFileHandle).getFile();
@@ -267,18 +270,28 @@ class CaptureWriter {
 						try {
 							const record = JSON.parse(line);
 							if (record.kind === 'finalize') hasFinalize = true;
-							if (record.kind === 'chunk') totalBytes += record.byteLength ?? 0;
-							if (record.kind === 'header') sourceCount = (record.sources ?? []).length;
+							if (record.kind === 'chunk') {
+								totalBytes += record.byteLength ?? 0;
+								if (firstTs === null || record.fromUs < firstTs) firstTs = record.fromUs;
+								if (lastTs === null || record.toUs > lastTs) lastTs = record.toUs;
+							}
+							if (record.kind === 'header') {
+								sourceCount = (record.sources ?? []).length;
+								startedAtIso = record.startedAtIso ?? '';
+							}
 						} catch {}
 					}
 				} catch {}
 
 				if (!hasFinalize) {
+					const recoveredDurationS = (firstTs !== null && lastTs !== null)
+						? (lastTs - firstTs) / 1_000_000
+						: 0;
 					sessions.push({
 						sessionId: name,
-						startedAtIso: '',
+						startedAtIso,
 						sourceCount,
-						recoveredDurationS: 0,
+						recoveredDurationS,
 						totalBytes
 					});
 				}

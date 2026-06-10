@@ -28,7 +28,7 @@ function mockCloseable(orig: Record<string, unknown>): Record<string, unknown> {
 		get(target, prop) {
 			if (prop === 'close') {
 				return () => {
-					if (closed) throw new DOMException('Already closed', 'InvalidStateError');
+					if (closed) return; // real VideoFrame.close() is a silent no-op on subsequent calls
 					closed = true;
 				};
 			}
