@@ -10,6 +10,7 @@ export interface TrackPipelineCallbacks {
 		keyFrame: boolean,
 		preEncodeDrops: number
 	): void;
+	onChunkAck(sourceId: string): void;
 	onEncodeError(sourceId: string, error: string): void;
 	onAudioOverrun(sourceId: string): void;
 	onPipelineEnded(sourceId: string): void;
@@ -28,6 +29,7 @@ export interface TrackPipelineOptions {
 const VIDEO_QUEUE_BOUND = 8;
 const AUDIO_QUEUE_BOUND = 16;
 const AUDIO_OVERRUN_CONSECUTIVE = 4;
+const MAX_IN_FLIGHT_CHUNKS = 2;
 /** Request a key frame every N frames to start a new fragment. */
 const KEYFRAME_INTERVAL = 60;
 
@@ -38,14 +40,14 @@ export class TrackPipeline {
 	private readonly callbacks: TrackPipelineCallbacks;
 	private readonly abort: AbortController;
 	private encoder: VideoEncoder | AudioEncoder | null = null;
-	private reader: ReadableStreamDefaultReader<VideoFrame> | ReadableStreamDefaultReader<AudioData> | null = null;
+	private reader: ReadableStreamDefaultReader<VideoFrame | AudioData> | null = null;
 	private preEncodeDrops = 0;
 	private audioOverrunCount = 0;
 	private running = false;
 	private ended = false;
 	private frameCount = 0;
-	/** True after a pre-encode drop — next frame must be a keyframe for recoverability. */
-	private needKeyFrame = false;
+	private inFlightChunks = 0;
+	private chunkWaiters: Array<() => void> = [];
 
 	constructor(private readonly options: TrackPipelineOptions) {
 		this.sourceId = options.sourceId;
@@ -84,24 +86,65 @@ export class TrackPipeline {
 		}
 	}
 
+	private async onEncodedChunk(
+		packet: EncodedPacket,
+		fromUs: number,
+		toUs: number,
+		keyFrame: boolean,
+		preEncodeDrops: number
+	): Promise<void> {
+		await this.waitForChunkSlot();
+		if (!this.running) return;
+
+		this.inFlightChunks++;
+		this.callbacks.onEncodedChunk(this.sourceId, packet, fromUs, toUs, keyFrame, preEncodeDrops);
+	}
+
+	private waitForChunkSlot(): Promise<void> {
+		if (!this.running || this.inFlightChunks < MAX_IN_FLIGHT_CHUNKS) return Promise.resolve();
+
+		return new Promise((resolve) => {
+			this.chunkWaiters.push(() => {
+				resolve();
+			});
+		});
+	}
+
+	private resolveChunkWaiters(): void {
+		while (this.chunkWaiters.length > 0 && this.inFlightChunks < MAX_IN_FLIGHT_CHUNKS) {
+			const waiter = this.chunkWaiters.shift();
+			waiter?.();
+		}
+	}
+
+	onChunkAck(): void {
+		if (this.inFlightChunks > 0) {
+			this.inFlightChunks -= 1;
+			this.resolveChunkWaiters();
+		}
+		this.callbacks.onChunkAck(this.sourceId);
+	}
+
+	private clearChunkWaiters(): void {
+		this.inFlightChunks = 0;
+		this.resolveChunkWaiters();
+	}
+
 	private async runVideoPipeline(config: VideoEncoderConfig): Promise<void> {
 		const processor = new MediaStreamTrackProcessor({ track: this.track as MediaStreamVideoTrack });
 
 		const encoderInit: VideoEncoderInit = {
 			output: (chunk: EncodedVideoChunk, _metadata?: EncodedVideoChunkMetadata) => {
-				try {
-					const packet = EncodedPacket.fromEncodedChunk(chunk);
-					const drops = this.preEncodeDrops;
-					this.preEncodeDrops = 0;
-					this.callbacks.onEncodedChunk(
-						this.sourceId,
-						packet,
-						chunk.timestamp,
-						chunk.timestamp + (chunk.duration ?? 0),
-						chunk.type === 'key',
-						drops
-					);
-				} catch {}
+				const packet = EncodedPacket.fromEncodedChunk(chunk);
+				const drops = this.preEncodeDrops;
+				this.preEncodeDrops = 0;
+				void this.onEncodedChunk(
+					packet,
+					chunk.timestamp,
+					chunk.timestamp + (chunk.duration ?? 0),
+					chunk.type === 'key',
+					drops
+				).catch(() => {});
 			},
 			error: (err: DOMException) => {
 				this.callbacks.onEncodeError(this.sourceId, `VideoEncoder error: ${err.message}`);
@@ -114,36 +157,47 @@ export class TrackPipeline {
 		encoder.configure(config);
 
 		const reader = processor.readable.getReader();
-		this.reader = reader as ReadableStreamDefaultReader<VideoFrame>;
+		this.reader = reader;
 		try {
 			while (this.running && !this.abort.signal.aborted) {
 				const result = await reader.read();
-				if (result.done) break;
+				if (result.done) {
+					break;
+				}
 				const frame = result.value as VideoFrame;
-
-				if (encoder.encodeQueueSize > VIDEO_QUEUE_BOUND) {
-					frame.close();
-					this.preEncodeDrops++;
-					this.needKeyFrame = true;
-					continue;
-				}
-
-				const keyFrame = this.needKeyFrame || this.frameCount % KEYFRAME_INTERVAL === 0;
-				this.frameCount++;
-				this.needKeyFrame = false;
 				try {
-					encoder.encode(frame, { keyFrame });
-				} catch {
-					// Encode failed — close frame and continue
+					if (encoder.encodeQueueSize > VIDEO_QUEUE_BOUND) {
+						this.preEncodeDrops++;
+						frame.close();
+						continue;
+					}
+
+					const keyFrame = this.frameCount % KEYFRAME_INTERVAL === 0;
+					this.frameCount++;
+					try {
+						encoder.encode(frame, { keyFrame });
+					} catch {
+						// Encode failed — close frame in finally below
+					}
+				} finally {
+					frame.close();
 				}
-				frame.close();
 			}
 		} finally {
-			try { reader.cancel(); } catch {}
-			try { reader.releaseLock(); } catch {}
+			try {
+				await reader.cancel();
+			} catch {}
+			try {
+				reader.releaseLock();
+			} catch {}
 			this.reader = null;
-			try { await encoder.flush(); } catch {}
-			try { encoder.close(); } catch {}
+			this.clearChunkWaiters();
+			try {
+				await encoder.flush();
+			} catch {}
+			try {
+				encoder.close();
+			} catch {}
 			this.encoder = null;
 			this.running = false;
 			this.emitEnded();
@@ -155,17 +209,10 @@ export class TrackPipeline {
 
 		const encoderInit: AudioEncoderInit = {
 			output: (chunk: EncodedAudioChunk, _metadata?: EncodedAudioChunkMetadata) => {
-				try {
-					const packet = EncodedPacket.fromEncodedChunk(chunk);
-					this.callbacks.onEncodedChunk(
-						this.sourceId,
-						packet,
-						chunk.timestamp,
-						chunk.timestamp + (chunk.duration ?? 0),
-						true,
-						0
-					);
-				} catch {}
+				const packet = EncodedPacket.fromEncodedChunk(chunk);
+				void this.onEncodedChunk(packet, chunk.timestamp, chunk.timestamp + (chunk.duration ?? 0), true, 0).catch(
+					() => {}
+				);
 			},
 			error: (err: DOMException) => {
 				this.callbacks.onEncodeError(this.sourceId, `AudioEncoder error: ${err.message}`);
@@ -178,39 +225,50 @@ export class TrackPipeline {
 		encoder.configure(config);
 
 		const reader = processor.readable.getReader();
-		this.reader = reader as ReadableStreamDefaultReader<AudioData>;
+		this.reader = reader;
 		try {
 			while (this.running && !this.abort.signal.aborted) {
 				const result = await reader.read();
-				if (result.done) break;
+				if (result.done) {
+					break;
+				}
 				const data = result.value as AudioData;
-
-				if (encoder.encodeQueueSize > AUDIO_QUEUE_BOUND) {
-					this.audioOverrunCount++;
-					if (this.audioOverrunCount >= AUDIO_OVERRUN_CONSECUTIVE) {
-						data.close();
-						this.callbacks.onAudioOverrun(this.sourceId);
-						this.running = false;
-						this.emitEnded();
-						return;
-					}
-				} else {
-					this.audioOverrunCount = 0;
-				}
-
 				try {
-					encoder.encode(data);
+					if (encoder.encodeQueueSize > AUDIO_QUEUE_BOUND) {
+						this.audioOverrunCount++;
+						if (this.audioOverrunCount >= AUDIO_OVERRUN_CONSECUTIVE) {
+							this.callbacks.onAudioOverrun(this.sourceId);
+							this.running = false;
+							data.close();
+							return;
+						}
+					} else {
+						this.audioOverrunCount = 0;
+					}
+
+					try {
+						encoder.encode(data);
+					} finally {
+						data.close();
+					}
 				} catch {
-					// Encode failed — close data and continue
 				}
-				data.close();
 			}
 		} finally {
-			try { reader.cancel(); } catch {}
-			try { reader.releaseLock(); } catch {}
+			try {
+				await reader.cancel();
+			} catch {}
+			try {
+				reader.releaseLock();
+			} catch {}
 			this.reader = null;
-			try { await encoder.flush(); } catch {}
-			try { encoder.close(); } catch {}
+			this.clearChunkWaiters();
+			try {
+				await encoder.flush();
+			} catch {}
+			try {
+				encoder.close();
+			} catch {}
 			this.encoder = null;
 			this.running = false;
 			this.emitEnded();
@@ -219,19 +277,27 @@ export class TrackPipeline {
 
 	async stop(): Promise<void> {
 		this.running = false;
+		this.clearChunkWaiters();
 		if (this.reader) {
-			try { await this.reader.cancel(); } catch {}
+			try {
+				await this.reader.cancel();
+			} catch {}
 		}
 	}
 
 	dispose(): void {
 		this.running = false;
+		this.clearChunkWaiters();
 		this.track.stop();
 		if (this.reader) {
-			try { this.reader.cancel(); } catch {}
+			try {
+				this.reader.cancel();
+			} catch {}
 		}
 		if (this.encoder) {
-			try { this.encoder.close(); } catch {}
+			try {
+				this.encoder.close();
+			} catch {}
 			this.encoder = null;
 		}
 	}

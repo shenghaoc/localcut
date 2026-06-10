@@ -32,6 +32,19 @@ interface SourceEntry {
 	firstSampleUs: number | null;
 }
 
+interface WriterChunkAckMessage {
+	type: 'chunk-ack';
+	sourceId: string;
+}
+
+interface WriterChunkErrorMessage {
+	type: 'chunk-error';
+	sourceId: string;
+	error: string;
+}
+
+type WriterPortMessage = WriterChunkAckMessage | WriterChunkErrorMessage;
+
 export class CaptureSession {
 	readonly sessionId: string;
 	private startedAtIso = '';
@@ -42,12 +55,26 @@ export class CaptureSession {
 	private totalBytesWritten = 0;
 	private abort = new AbortController();
 	private callbacks: CaptureSessionCallbacks;
-	private readonly writerPort: MessagePort | null;
+	private writerPort: MessagePort | null;
+	private readonly writerMessageHandler = (event: MessageEvent<WriterPortMessage>) => {
+		const message = event.data;
+		switch (message.type) {
+			case 'chunk-ack':
+				this.handleChunkAck(message.sourceId);
+				break;
+			case 'chunk-error':
+				this.handleSourceError(message.sourceId, message.error);
+				break;
+		}
+	};
 
 	constructor(sessionId: string, callbacks: CaptureSessionCallbacks, writerPort?: MessagePort) {
 		this.sessionId = sessionId;
 		this.callbacks = callbacks;
 		this.writerPort = writerPort ?? null;
+		if (this.writerPort) {
+			this.writerPort.addEventListener('message', this.writerMessageHandler);
+		}
 	}
 
 	addSource(
@@ -61,6 +88,9 @@ export class CaptureSession {
 		const pipelineCallbacks: TrackPipelineCallbacks = {
 			onEncodedChunk: (srcId, packet, fromUs, toUs, keyFrame, preEncodeDrops) => {
 				this.routeChunk(srcId, packet, fromUs, toUs, keyFrame, preEncodeDrops);
+			},
+			onChunkAck: (srcId) => {
+				this.handleChunkAck(srcId);
 			},
 			onEncodeError: (srcId, error) => {
 				this.handleSourceError(srcId, error);
@@ -102,10 +132,21 @@ export class CaptureSession {
 	}
 
 	async start(chunkDurationS: number): Promise<void> {
-		void chunkDurationS; // TBD: Mediabunny fragment duration wiring (T6)
+		const sourceHeaders = [...this.sources.values()].map((entry) => ({
+			sourceId: entry.sourceId,
+			kind: entry.kind
+		}));
 		this.state = 'recording';
 		this.startedAtIso = new Date().toISOString();
 		this.startTime = performance.now();
+		if (this.writerPort) {
+			this.writerPort.postMessage({
+				type: 'write-header',
+				sessionId: this.sessionId,
+				sources: sourceHeaders,
+				chunkTargetS: chunkDurationS
+			});
+		}
 
 		for (const [, entry] of this.sources) {
 			entry.pipeline.start();
@@ -115,13 +156,19 @@ export class CaptureSession {
 	}
 
 	async stop(reason: CaptureStopReason = 'user-stop'): Promise<void> {
-		void reason; // TBD: manifest finalize reason (T7)
 		if (this.state !== 'recording') return;
 		this.state = 'stopping';
 		this.emitStatus();
 
 		for (const [, entry] of this.sources) {
 			try { await entry.pipeline.stop(); } catch {}
+		}
+		if (this.writerPort) {
+			this.writerPort.postMessage({
+				type: 'write-finalize',
+				sessionId: this.sessionId,
+				reason
+			});
 		}
 
 		this.state = 'idle';
@@ -149,29 +196,34 @@ export class CaptureSession {
 		}
 
 		if (this.writerPort) {
-			const record = {
-				kind: 'chunk' as const,
-				sourceId,
-				file: `${entry.kind === 'screen' || entry.kind === 'webcam' ? 'video' : 'audio'}-${sourceId}.mp4`,
-				byteOffset: 0,
-				byteLength: packet.byteLength,
-				fromUs,
-				toUs,
-				keyFrame,
-				preEncodeDrops
+		const file = `${entry.kind === 'screen' || entry.kind === 'webcam' ? 'video' : 'audio'}-${sourceId}.mp4`;
+		const record = {
+			kind: 'chunk' as const,
+			sourceId,
+			file,
+			byteLength: packet.byteLength,
+			fromUs,
+			toUs,
+			keyFrame,
+			preEncodeDrops
 			};
 			this.writerPort.postMessage({
 				type: 'write-chunk',
 				sessionId: this.sessionId,
 				sourceId,
-				file: record.file,
+				file,
 				data: packet.data.buffer,
-				byteOffset: 0,
 				record
 			}, [packet.data.buffer]);
 		}
 
 		this.emitStatus();
+	}
+
+	private handleChunkAck(sourceId: string): void {
+		const entry = this.sources.get(sourceId);
+		if (!entry) return;
+		entry.pipeline.onChunkAck();
 	}
 
 	private handleSourceError(sourceId: string, _error: string): void {
@@ -193,7 +245,19 @@ export class CaptureSession {
 		this.stop('audio-overrun').catch(() => {});
 	}
 
-	private handlePipelineEnded(_sourceId: string): void {
+	private handlePipelineEnded(sourceId: string): void {
+		const entry = this.sources.get(sourceId);
+		if (entry) {
+			entry.state = 'ended';
+			if (this.writerPort) {
+				this.writerPort.postMessage({
+					type: 'write-source-ended',
+					sessionId: this.sessionId,
+					sourceId,
+					reason: 'pipeline-ended'
+				});
+			}
+		}
 		const allEnded = [...this.sources.values()].every((s) => s.state === 'ended' || s.state === 'error');
 		if (allEnded && this.state === 'recording') {
 			this.stop('user-stop').catch(() => {});
@@ -243,6 +307,9 @@ export class CaptureSession {
 	}
 
 	reset(): void {
+		if (this.writerPort) {
+			this.writerPort.removeEventListener('message', this.writerMessageHandler);
+		}
 		this.abort.abort();
 		for (const [, entry] of this.sources) {
 			entry.pipeline.dispose();

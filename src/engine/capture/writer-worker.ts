@@ -18,7 +18,6 @@ interface WriteChunkMessage {
 	sourceId: string;
 	file: string;
 	data: ArrayBuffer;
-	byteOffset: number;
 	record: {
 		kind: 'chunk';
 		sourceId: string;
@@ -166,32 +165,48 @@ class CaptureWriter {
 		const dirHandle = await this.getOrCreateSessionDir(sessionId);
 
 		const fileMap = new Map<string, OpenFile>();
-		for (const src of sources) {
-			const fileName = `${src.kind === 'screen' || src.kind === 'webcam' ? 'video' : 'audio'}-${src.sourceId}.mp4`;
-			const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
-			const access = await (fileHandle as FileSystemFileHandle).createSyncAccessHandle();
-			fileMap.set(src.sourceId, { handle: access, file: fileName });
+		const openFiles: OpenFile[] = [];
+		let manifestAccess: FileSystemSyncAccessHandle | null = null;
+		try {
+			for (const src of sources) {
+				const fileName = `${src.kind === 'screen' || src.kind === 'webcam' ? 'video' : 'audio'}-${src.sourceId}.mp4`;
+				const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
+				const access = await (fileHandle as FileSystemFileHandle).createSyncAccessHandle();
+				const openFile = { handle: access, file: fileName };
+				fileMap.set(src.sourceId, openFile);
+				openFiles.push(openFile);
+			}
+
+			const manifestHandle = await dirHandle.getFileHandle('manifest.ndjson', { create: true });
+			manifestAccess = await (manifestHandle as FileSystemFileHandle).createSyncAccessHandle();
+
+			this.sessions.set(sessionId, fileMap);
+			this.manifestHandles.set(sessionId, manifestAccess);
+
+			const header = JSON.stringify({
+				kind: 'header',
+				version: 1,
+				sessionId,
+				startedAtIso: new Date().toISOString(),
+				epochUs: null,
+				sources: sources.map((s) => ({ sourceId: s.sourceId, kind: s.kind })),
+				chunkTargetS
+			}) + '\n';
+
+			const encoded = new TextEncoder().encode(header);
+			manifestAccess.write(encoded.buffer as ArrayBuffer, { at: manifestAccess.getSize() });
+			await manifestAccess.flush();
+		} catch (error) {
+			for (const openFile of openFiles) {
+				try { openFile.handle.close(); } catch {}
+			}
+			if (manifestAccess) {
+				try { manifestAccess.close(); } catch {}
+			}
+			this.sessions.delete(sessionId);
+			this.manifestHandles.delete(sessionId);
+			throw error;
 		}
-
-		const manifestHandle = await dirHandle.getFileHandle('manifest.ndjson', { create: true });
-		const manifestAccess = await (manifestHandle as FileSystemFileHandle).createSyncAccessHandle();
-
-		this.sessions.set(sessionId, fileMap);
-		this.manifestHandles.set(sessionId, manifestAccess);
-
-		const header = JSON.stringify({
-			kind: 'header',
-			version: 1,
-			sessionId,
-			startedAtIso: new Date().toISOString(),
-			epochUs: null,
-			sources: sources.map((s) => ({ sourceId: s.sourceId, kind: s.kind })),
-			chunkTargetS
-		}) + '\n';
-
-		const encoded = new TextEncoder().encode(header);
-		manifestAccess.write(encoded.buffer as ArrayBuffer, { at: manifestAccess.getSize() });
-		manifestAccess.flush();
 	}
 
 	private async handleWriteChunk(msg: WriteChunkMessage): Promise<void> {
@@ -207,15 +222,16 @@ class CaptureWriter {
 		}
 
 		// 1. Write data
-		openFile.handle.write(msg.data, { at: msg.byteOffset });
+		const byteOffset = openFile.handle.getSize();
+		openFile.handle.write(msg.data, { at: byteOffset });
 		// 2. Flush data
-		openFile.handle.flush();
+		await openFile.handle.flush();
 		// 3. Append manifest record
-		const record = JSON.stringify(msg.record) + '\n';
+		const record = JSON.stringify({ ...msg.record, byteOffset, byteLength: msg.data.byteLength }) + '\n';
 		const encoded = new TextEncoder().encode(record);
 		manifestAccess.write(encoded.buffer as ArrayBuffer, { at: manifestAccess.getSize() });
 		// 4. Flush manifest
-		manifestAccess.flush();
+		await manifestAccess.flush();
 
 		// 5. Send ACK back to pipeline worker
 		this.post({ type: 'chunk-ack', sourceId: msg.sourceId });
@@ -231,7 +247,7 @@ class CaptureWriter {
 			}) + '\n';
 			const encoded = new TextEncoder().encode(record);
 			manifestAccess.write(encoded.buffer as ArrayBuffer, { at: manifestAccess.getSize() });
-			manifestAccess.flush();
+			await manifestAccess.flush();
 			manifestAccess.close();
 		}
 
@@ -257,8 +273,9 @@ class CaptureWriter {
 			}
 
 			const sessions: RecoveryListMessage['sessions'] = [];
-			const dirs = captureDir as unknown as AsyncIterable<[string, FileSystemDirectoryHandle]>;
+			const dirs = captureDir as unknown as AsyncIterable<[string, FileSystemHandle]>;
 			for await (const [name, dirHandle] of dirs) {
+				if (dirHandle.kind !== 'directory') continue;
 				let hasFinalize = false;
 				let totalBytes = 0;
 				let sourceCount = 0;
@@ -266,7 +283,7 @@ class CaptureWriter {
 				let firstTs: number | null = null;
 				let lastTs: number | null = null;
 				try {
-					const manifestHandle = await dirHandle.getFileHandle('manifest.ndjson');
+					const manifestHandle = await (dirHandle as FileSystemDirectoryHandle).getFileHandle('manifest.ndjson');
 					const file = await (manifestHandle as FileSystemFileHandle).getFile();
 					const text = await file.text();
 					const lines = text.trim().split('\n');

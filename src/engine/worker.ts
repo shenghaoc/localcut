@@ -4905,9 +4905,17 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 		}
 		case 'capture-stop':
 			if (captureSession) {
-				void captureSession.stop().catch(() => {});
-				captureSession.reset();
-				captureSession = null;
+				const session = captureSession;
+				void (async () => {
+					try {
+						await session.stop();
+					} finally {
+						session.reset();
+						if (captureSession === session) {
+							captureSession = null;
+						}
+					}
+				})();
 			}
 			for (const [, src] of pendingCaptureSources) {
 				src.track.stop();

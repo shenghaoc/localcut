@@ -304,9 +304,7 @@ export function exportConstraintsForProbe(
 
 function probeMediaStreamTrackProcessor(): FeatureSupport {
 	try {
-		if (typeof MediaStreamTrackProcessor !== 'function') return 'unsupported';
-		const videoCheck = typeof MediaStreamTrackProcessor === 'function' ? 'unknown' : 'unsupported';
-		return videoCheck === 'unknown' ? 'supported' : videoCheck;
+		return typeof MediaStreamTrackProcessor === 'function' ? 'supported' : 'unsupported';
 	} catch {
 		return 'unknown';
 	}
@@ -314,21 +312,24 @@ function probeMediaStreamTrackProcessor(): FeatureSupport {
 
 function probeTransferableMediaStreamTrack(): FeatureSupport {
 	try {
-		// Transferable MediaStreamTrack requires structuredClone with transfer of
-		// a real track. ArrayBuffer transfer succeeds on Safari where track transfer
-		// does not — cannot confirm without a real track, which needs user permission.
-		if (typeof MediaStreamTrack === 'undefined' || typeof structuredClone !== 'function') {
+		if (
+			typeof document === 'undefined' ||
+			typeof MediaStreamTrack === 'undefined' ||
+			typeof structuredClone !== 'function'
+		) {
 			return 'unsupported';
 		}
-		// Verify structuredClone's transfer mechanism exists at all (smoke test).
-		// A real track transfer test requires getUserMedia permission, so we return
-		// 'unknown' — the platform has the API but we can't confirm track transfer.
-		const buffer = new ArrayBuffer(16);
+		const canvas = document.createElement('canvas');
+		const stream = canvas.captureStream();
+		const track = stream.getVideoTracks().at(0);
+		if (!track) return 'unsupported';
 		try {
-			structuredClone({ buffer }, { transfer: [buffer] });
-			return 'unknown'; // API exists but track transfer unconfirmed without gesture
+			const cloned = structuredClone(track, { transfer: [track] });
+			return typeof cloned === 'object' && cloned !== null ? 'supported' : 'unsupported';
 		} catch {
 			return 'unsupported';
+		} finally {
+			track.stop();
 		}
 	} catch {
 		return 'unknown';
@@ -345,6 +346,9 @@ function probeDisplayCapture(): FeatureSupport {
 
 async function probeDisplayAudioCapture(): Promise<FeatureSupport> {
 	try {
+		if (typeof navigator === 'undefined') {
+			return 'unsupported';
+		}
 		const md = navigator.mediaDevices as MediaDevices | undefined;
 		if (!md || typeof md.getDisplayMedia !== 'function') return 'unsupported';
 		// Attempt to query supported constraints without a full picker gesture.
