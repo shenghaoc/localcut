@@ -360,7 +360,19 @@ export function createWhipSession(deps: WhipSessionDeps): WhipSession {
 				await pc.setLocalDescription(offer);
 				await waitForIceGathering(pc);
 				const fragment = buildIceRestartFragment(pc.localDescription?.sdp ?? '');
-				const result = await client.patchIceRestart(resourceUrl, fragment);
+				let result: Awaited<ReturnType<WhipClient['patchIceRestart']>>;
+				try {
+					result = await client.patchIceRestart(resourceUrl, fragment);
+				} catch (error) {
+					// A 404 means the server lost the session (e.g. it restarted) while
+					// the endpoint itself is fine — fall back to a full re-POST instead
+					// of declaring the publish dead.
+					if (error instanceof WhipRequestError && error.kind === 'not-found') {
+						controller.attemptPatchUnsupported();
+						return;
+					}
+					throw error;
+				}
 				if (result.status === 'unsupported') {
 					controller.attemptPatchUnsupported();
 					return;

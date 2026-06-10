@@ -277,6 +277,15 @@ Queue multiple export jobs to run sequentially:
 
 The queue supports per-job progress, retry on failure, and stop-on-error mode.
 
+## Live Streaming
+
+Broadcast the program output to a WHIP ingest endpoint (Twitch WHIP,
+Cloudflare-class CDNs, or self-hosted MediaMTX) directly from the browser.
+RTMP-only platforms (YouTube, Douyin, Bilibili) require a user-supplied
+WHIP→RTMP gateway — browsers cannot open raw RTMP connections. Setup,
+per-platform guidance, the reconnect policy, and the record+stream encoder
+budget are covered in the [Live streaming guide](LIVE-STREAMING.md).
+
 ## Project Bundles
 
 Bundle your project for portability or backup:

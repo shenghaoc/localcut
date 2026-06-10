@@ -268,6 +268,23 @@ describe('mid-stream drop', () => {
 		expect(session.state.phase).toBe('live');
 	});
 
+	it('a PATCH 404 (server lost the session) falls back to a full re-POST', async () => {
+		const patchIceRestart = vi.fn(async () => {
+			throw new WhipRequestError('not-found', 404, 'session gone');
+		});
+		const { session, client, connections } = makeHarness({ patchIceRestart });
+		await session.start(settingsFixture(), fakeTracks());
+		connections[0].fireIce('connected');
+
+		connections[0].fireIce('failed');
+		await vi.advanceTimersByTimeAsync(2_000);
+		expect(patchIceRestart).toHaveBeenCalledTimes(1);
+		expect(client.publish).toHaveBeenCalledTimes(2);
+
+		connections.at(-1)?.fireIce('connected');
+		expect(session.state.phase).toBe('live');
+	});
+
 	it('a disconnect that self-heals within grace never retries', async () => {
 		const { session, client, connections } = makeHarness();
 		await session.start(settingsFixture(), fakeTracks());
