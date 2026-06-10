@@ -85,6 +85,13 @@ import {
 import { BUILT_IN_PRESETS } from '../engine/export-presets';
 import { createRecoveryMachine, type WorkerRecoveryState } from '../engine/recovery';
 import { AppErrorBoundary } from './ErrorBoundary';
+import { AudioCleanupPanel, type AppliedCleanupInfo } from './AudioCleanupPanel';
+import {
+	CleanupController,
+	type CleanupClipTarget,
+	type CleanupControllerState
+} from './cleanup-controller';
+import { spawnCleanupWorker } from './cleanup-bridge';
 import PipelineWorker from '../engine/worker.ts?worker';
 
 const VIDEO_ACCEPT =
@@ -237,6 +244,7 @@ export function App() {
 	const [capabilityPanelOpen, setCapabilityPanelOpen] = createSignal(false);
 	const [helpPanelOpen, setHelpPanelOpen] = createSignal(false);
 	const [diagnosticsPanelOpen, setDiagnosticsPanelOpen] = createSignal(false);
+	const [audioCleanupOpen, setAudioCleanupOpen] = createSignal(false);
 	const [diagnosticSnapshot, setDiagnosticSnapshot] = createSignal<DiagnosticSnapshot | null>(null);
 	const [recentErrorLog, setRecentErrorLog] = createSignal(createEmptyRecentErrorLog());
 	const [compatibilityPreview, setCompatibilityPreview] =
@@ -366,6 +374,86 @@ export function App() {
 		createSignal<WorkerRecoveryState>('running');
 	const [previewKey, setPreviewKey] = createSignal(0);
 	let awaitingRestartReady = false;
+
+	// ── Phase 27: Local Audio Cleanup (WebNN RNNoise, experimental) ──
+	// The controller spawns its dedicated worker lazily on first action; the
+	// pipeline worker only supplies PCM windows and applies the result.
+	const cleanupController = new CleanupController({
+		spawnWorker: spawnCleanupWorker,
+		requestClipAudio: (request) => {
+			if (!bridge) throw new Error('Media pipeline is not ready.');
+			bridge.send({ type: 'extract-clip-audio', ...request });
+		},
+		applyToClip: (request) => {
+			if (!bridge) throw new Error('Media pipeline is not ready.');
+			const file = new File([request.wav], request.fileName, { type: 'audio/wav' });
+			bridge.send({
+				type: 'apply-audio-cleanup',
+				trackId: request.trackId,
+				clipId: request.clipId,
+				file,
+				clipInPointS: request.clipInPointS,
+				durationS: request.durationS,
+				modelId: request.modelId,
+				modelVersion: request.modelVersion
+			});
+		},
+		fetchManifest: async () => {
+			const response = await fetch(`${import.meta.env.BASE_URL}models/rnnoise/manifest.json`);
+			if (!response.ok) throw new Error(`Model manifest unavailable (HTTP ${response.status}).`);
+			return response.json();
+		},
+		weightsUrl: `${import.meta.env.BASE_URL}models/rnnoise/weights.bin`,
+		onError: (message) => {
+			setRecentErrorLog((prev) =>
+				addRecentError(
+					prev,
+					createRecentError({
+						code: 'audio_cleanup.worker_crashed',
+						subsystem: 'audio',
+						severity: 'error',
+						message
+					})
+				)
+			);
+		}
+	});
+	const [cleanupState, setCleanupState] = createSignal<CleanupControllerState>(
+		cleanupController.getState()
+	);
+	cleanupController.subscribe(setCleanupState);
+
+	const selectedAudioCleanupClip = createMemo<CleanupClipTarget | null>(() => {
+		for (const ref of selectedClipRefs()) {
+			const track = timeline().find((item) => item.id === ref.trackId);
+			if (!track || track.type !== 'audio') continue;
+			const clip = track.clips.find((item) => item.id === ref.clipId);
+			if (!clip || clip.kind === 'title' || !clip.sourceId) continue;
+			const asset = assets().find((item) => item.sourceId === clip.sourceId);
+			return {
+				trackId: track.id,
+				clipId: clip.id,
+				inPointS: clip.inPoint,
+				durationS: clip.duration,
+				fileName: asset?.fileName ?? clip.sourceId
+			};
+		}
+		return null;
+	});
+
+	const appliedCleanupInfo = createMemo<AppliedCleanupInfo | null>(() => {
+		const target = selectedAudioCleanupClip();
+		if (!target) return null;
+		const track = timeline().find((item) => item.id === target.trackId);
+		const clip = track?.clips.find((item) => item.id === target.clipId);
+		if (!clip?.cleanedAudio) return null;
+		return {
+			trackId: target.trackId,
+			clipId: target.clipId,
+			modelId: clip.cleanedAudio.modelId,
+			modelVersion: clip.cleanedAudio.modelVersion
+		};
+	});
 
 	function findTimelineClip(ref: TimelineClipReference): TimelineClipSnapshot | null {
 		const track = timeline().find((item) => item.id === ref.trackId);
@@ -574,6 +662,19 @@ export function App() {
 			case 'capability-probe-v2':
 				setCapabilityProbeV2(msg.result);
 				setExportCodecs([...exportConstraintsForProbe(msg.result)]);
+				cleanupController.setWebNNProbe(msg.result.webnn ?? null);
+				break;
+			case 'clip-audio':
+			case 'clip-audio-error':
+				cleanupController.handlePipelineMessage(msg);
+				break;
+			case 'audio-cleanup-applied':
+				cleanupController.handlePipelineMessage(msg);
+				setStatusLine(
+					msg.ok
+						? 'Cleaned audio asset applied'
+						: `Audio cleanup failed: ${msg.message ?? 'unknown error'}`
+				);
 				break;
 			case 'clock-update':
 				// Reduced tiers without SAB: the worker drives the clock over postMessage.
@@ -1701,6 +1802,7 @@ export function App() {
 			const probe = await probeCapabilitiesV2();
 			setCapabilityProbeV2(probe);
 			setExportCodecs([...exportConstraintsForProbe(probe)]);
+			cleanupController.setWebNNProbe(probe.webnn ?? null);
 			if (pendingInitCanvas) {
 				const canvas = pendingInitCanvas;
 				pendingInitCanvas = null;
@@ -1820,6 +1922,7 @@ export function App() {
 			pendingRelinkSourceId = null;
 			clearCompatibilityPreview();
 			thumbnailStore.clear();
+			cleanupController.dispose();
 			if (worker && bridge) {
 				const workerToDispose = worker;
 				workerToDispose.removeEventListener('error', handleWorkerCrash);
@@ -1877,6 +1980,7 @@ export function App() {
 				encodeFps={encodeFps()}
 				onOpenCapabilities={() => setCapabilityPanelOpen(true)}
 				onOpenHelp={() => setHelpPanelOpen(true)}
+				onOpenAudioCleanup={() => setAudioCleanupOpen(true)}
 				masterGain={masterGain()}
 				meterSab={meterSab()}
 				onMasterGain={(gain) => {
@@ -2421,6 +2525,36 @@ export function App() {
 					</span>
 				</footer>
 				<HelpPanel open={helpPanelOpen()} onClose={() => setHelpPanelOpen(false)} />
+				<AudioCleanupPanel
+					open={audioCleanupOpen()}
+					state={cleanupState()}
+					selectedClip={selectedAudioCleanupClip()}
+					appliedCleanup={appliedCleanupInfo()}
+					onLoadModel={() => void cleanupController.loadModel()}
+					onPreview={() => {
+						const clip = selectedAudioCleanupClip();
+						if (!clip) return;
+						pauseFromKeyboard();
+						void cleanupController.previewCleanup(clip);
+					}}
+					onApply={() => {
+						const clip = selectedAudioCleanupClip();
+						if (!clip) return;
+						pauseFromKeyboard();
+						void cleanupController.applyCleanup(clip);
+					}}
+					onCancel={() => cleanupController.cancel()}
+					onRemoveCleanup={() => {
+						const applied = appliedCleanupInfo();
+						if (!applied) return;
+						bridge?.send({
+							type: 'remove-audio-cleanup',
+							trackId: applied.trackId,
+							clipId: applied.clipId
+						});
+					}}
+					onClose={() => setAudioCleanupOpen(false)}
+				/>
 				<CapabilityPanel
 					open={capabilityPanelOpen()}
 					tier={pipelineMode()}

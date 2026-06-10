@@ -170,8 +170,26 @@ function rowsForProbe(probe: CapabilityProbeResult): CapabilityRow[] {
 			support: probe.audioWorklet,
 			active: probe.audioWorklet === 'supported',
 			action: null
-		}
+		},
+		webnnRow(probe)
 	];
+}
+
+/** WebNN gates only the experimental Audio Cleanup feature — never the tier. */
+function webnnRow(probe: CapabilityProbeResult): CapabilityRow {
+	const webnn = probe.webnn;
+	const backends = webnn
+		? (['npu', 'gpu', 'cpu'] as const).filter((b) => webnn.backends[b] === 'supported')
+		: [];
+	const supported = webnn?.mlPresent === true && backends.length > 0;
+	return {
+		label: 'WebNN (audio cleanup)',
+		support: webnn ? (supported ? 'supported' : 'unsupported') : 'unknown',
+		active: false,
+		action: supported
+			? `Local Audio Cleanup (Experimental) available via ${backends.join(', ')}.`
+			: 'Optional on-device audio cleanup needs a browser with WebNN (navigator.ml).'
+	};
 }
 
 export function CapabilityMatrixPanel(props: CapabilityMatrixPanelProps) {

@@ -1,0 +1,312 @@
+import { describe, expect, it, vi } from 'vitest';
+import {
+	CLEANUP_SAMPLE_RATE,
+	CLEANUP_UNAVAILABLE_MESSAGE,
+	cleanedFileName,
+	cleanupActionAvailability,
+	CleanupController,
+	type ApplyCleanupRequest,
+	type CleanupClipTarget,
+	type ClipAudioRequest
+} from './cleanup-controller';
+import type { CleanupWorkerCommand, CleanupWorkerState, WebNNProbeResult } from '../protocol';
+
+const WEBNN_OK: WebNNProbeResult = {
+	mlPresent: true,
+	backends: { cpu: 'supported', gpu: 'unsupported', npu: 'unsupported' },
+	modelSupport: 'unknown'
+};
+
+const WEBNN_ABSENT: WebNNProbeResult = {
+	mlPresent: false,
+	backends: { cpu: 'unsupported', gpu: 'unsupported', npu: 'unsupported' },
+	modelSupport: 'unknown'
+};
+
+const CLIP: CleanupClipTarget = {
+	trackId: 'track-1',
+	clipId: 'clip-1',
+	inPointS: 1.5,
+	durationS: 25,
+	fileName: 'interview.mov'
+};
+
+interface Harness {
+	controller: CleanupController;
+	spawnCount: () => number;
+	extractions: ClipAudioRequest[];
+	applied: ApplyCleanupRequest[];
+	workerCommands: CleanupWorkerCommand[];
+	/** When false, extraction requests are left pending (for cancel tests). */
+	autoRespond: { extraction: boolean };
+	crashWorker: (message: string) => void;
+	errors: string[];
+}
+
+function harness(): Harness {
+	let spawns = 0;
+	const extractions: ClipAudioRequest[] = [];
+	const applied: ApplyCleanupRequest[] = [];
+	const workerCommands: CleanupWorkerCommand[] = [];
+	const autoRespond = { extraction: true };
+	const errors: string[] = [];
+	let postState: (msg: CleanupWorkerState) => void = () => undefined;
+	let crash: (message: string) => void = () => undefined;
+
+	const controller = new CleanupController({
+		spawnWorker: async (onState, onCrash) => {
+			spawns += 1;
+			postState = onState;
+			crash = onCrash;
+			return {
+				send(cmd: CleanupWorkerCommand) {
+					workerCommands.push(cmd);
+					queueMicrotask(() => {
+						switch (cmd.type) {
+							case 'cleanup-load-model':
+								postState({
+									type: 'cleanup-model-status',
+									status: 'loaded',
+									backend: 'cpu',
+									sizeBytes: 352_968
+								});
+								break;
+							case 'cleanup-chunk':
+								postState({
+									type: 'cleanup-progress',
+									jobId: cmd.jobId,
+									processedFrames: 100,
+									totalFrames: 1000,
+									fraction: 0.1
+								});
+								break;
+							case 'cleanup-end':
+								postState({
+									type: 'cleanup-result',
+									jobId: cmd.jobId,
+									sampleRate: 48000,
+									channels: 1,
+									...(cmd.output === 'wav'
+										? { wav: new ArrayBuffer(44) }
+										: { pcm: new Float32Array(480) }),
+									durationMs: 42
+								});
+								break;
+							case 'cleanup-cancel':
+								postState({ type: 'cleanup-cancelled', jobId: cmd.jobId });
+								break;
+							default:
+								break;
+						}
+					});
+				},
+				terminate: vi.fn()
+			};
+		},
+		requestClipAudio: (request) => {
+			extractions.push(request);
+			if (!autoRespond.extraction) return;
+			queueMicrotask(() => {
+				controller.handlePipelineMessage({
+					type: 'clip-audio',
+					requestId: request.requestId,
+					pcm: new Float32Array(Math.round(request.durationS * request.sampleRate)),
+					sampleRate: request.sampleRate,
+					channels: 1,
+					clipOffsetS: request.clipOffsetS,
+					clipDurationS: CLIP.durationS
+				});
+			});
+		},
+		applyToClip: (request) => applied.push(request),
+		fetchManifest: async () => ({ version: 'manifest-v1' }),
+		weightsUrl: '/models/rnnoise/weights.bin',
+		onError: (message) => errors.push(message)
+	});
+	return {
+		controller,
+		spawnCount: () => spawns,
+		extractions,
+		applied,
+		workerCommands,
+		autoRespond,
+		crashWorker: (message: string) => crash(message),
+		errors
+	};
+}
+
+describe('CleanupController', () => {
+	it('never spawns the worker until an explicit user action', () => {
+		const h = harness();
+		h.controller.setWebNNProbe(WEBNN_OK);
+		expect(h.controller.workerSpawned).toBe(false);
+		expect(h.spawnCount()).toBe(0);
+	});
+
+	it('keeps the feature unavailable and spawns nothing when WebNN is absent', async () => {
+		const h = harness();
+		h.controller.setWebNNProbe(WEBNN_ABSENT);
+		expect(h.controller.getState().available).toBe(false);
+		expect(await h.controller.loadModel()).toBe(false);
+		expect(await h.controller.previewCleanup(CLIP)).toBe(false);
+		expect(h.controller.getState().error).toBe(CLEANUP_UNAVAILABLE_MESSAGE);
+		expect(h.spawnCount()).toBe(0);
+		expect(h.extractions.length).toBe(0);
+	});
+
+	it('loads the model on explicit action and upgrades modelSupport from the build outcome', async () => {
+		const h = harness();
+		h.controller.setWebNNProbe(WEBNN_OK);
+		expect(await h.controller.loadModel()).toBe(true);
+		const state = h.controller.getState();
+		expect(state.modelStatus).toBe('loaded');
+		expect(state.backend).toBe('cpu');
+		expect(state.modelSizeBytes).toBe(352_968);
+		expect(state.webnn?.modelSupport).toBe('supported');
+		expect(h.spawnCount()).toBe(1);
+		const load = h.workerCommands.find((cmd) => cmd.type === 'cleanup-load-model');
+		expect(load).toBeDefined();
+	});
+
+	it('runs a preview job over a bounded range and stores A/B buffers', async () => {
+		const h = harness();
+		h.controller.setWebNNProbe(WEBNN_OK);
+		expect(await h.controller.previewCleanup(CLIP)).toBe(true);
+		// 25 s clip → preview bounded to 10 s → a single 10 s extraction window.
+		expect(h.extractions.length).toBe(1);
+		expect(h.extractions[0]!.durationS).toBe(10);
+		expect(h.extractions[0]!.sampleRate).toBe(CLEANUP_SAMPLE_RATE);
+		const state = h.controller.getState();
+		expect(state.job).toBeNull();
+		expect(state.preview).not.toBeNull();
+		expect(state.preview!.cleaned.length).toBe(480);
+		expect(state.preview!.original.length).toBe(10 * CLEANUP_SAMPLE_RATE);
+		expect(state.lastAnalysisMs).toBe(42);
+	});
+
+	it('applies cleanup end-to-end: windowed extraction → WAV → pipeline apply → undoable state', async () => {
+		const h = harness();
+		h.controller.setWebNNProbe(WEBNN_OK);
+		const clip = { ...CLIP, durationS: 12 };
+		expect(await h.controller.applyCleanup(clip)).toBe(true);
+		// 12 s clip → two extraction windows (10 s + 2 s).
+		expect(h.extractions.map((r) => r.durationS)).toEqual([10, 2]);
+		expect(h.applied.length).toBe(1);
+		const request = h.applied[0]!;
+		expect(request.fileName).toBe('interview.cleaned.wav');
+		expect(request.clipInPointS).toBe(1.5);
+		expect(request.durationS).toBe(12);
+		expect(request.modelId).toBe('rnnoise');
+		expect(request.modelVersion).toBe('manifest-v1');
+		// Pipeline confirmation clears the applying state.
+		expect(h.controller.getState().job?.phase).toBe('applying');
+		h.controller.handlePipelineMessage({
+			type: 'audio-cleanup-applied',
+			trackId: clip.trackId,
+			clipId: clip.clipId,
+			ok: true,
+			assetId: 'derived-1'
+		});
+		expect(h.controller.getState().job).toBeNull();
+		expect(h.controller.getState().error).toBeNull();
+	});
+
+	it('surfaces a failed apply from the pipeline worker', async () => {
+		const h = harness();
+		h.controller.setWebNNProbe(WEBNN_OK);
+		await h.controller.applyCleanup({ ...CLIP, durationS: 3 });
+		h.controller.handlePipelineMessage({
+			type: 'audio-cleanup-applied',
+			trackId: CLIP.trackId,
+			clipId: CLIP.clipId,
+			ok: false,
+			message: 'No decodable audio.'
+		});
+		const state = h.controller.getState();
+		expect(state.job).toBeNull();
+		expect(state.error).toBe('No decodable audio.');
+	});
+
+	it('rejects clips longer than one cleanup pass with a clear error', async () => {
+		const h = harness();
+		h.controller.setWebNNProbe(WEBNN_OK);
+		expect(await h.controller.applyCleanup({ ...CLIP, durationS: 1000 })).toBe(false);
+		expect(h.controller.getState().error).toMatch(/too long/);
+		expect(h.spawnCount()).toBe(0);
+	});
+
+	it('cancel during extraction stops the job promptly without an error state', async () => {
+		const h = harness();
+		h.controller.setWebNNProbe(WEBNN_OK);
+		h.autoRespond.extraction = false;
+		const pending = h.controller.previewCleanup(CLIP);
+		// Wait for the job to reach the extraction request.
+		await vi.waitFor(() => expect(h.extractions.length).toBe(1));
+		h.controller.cancel();
+		expect(await pending).toBe(false);
+		const state = h.controller.getState();
+		expect(state.job).toBeNull();
+		expect(state.preview).toBeNull();
+		expect(state.error).toBeNull();
+	});
+
+	it('a cleanup-worker crash resets the feature without touching the rest of the app', async () => {
+		const h = harness();
+		h.controller.setWebNNProbe(WEBNN_OK);
+		expect(await h.controller.loadModel()).toBe(true);
+		h.crashWorker('worker died');
+		const state = h.controller.getState();
+		expect(state.modelStatus).toBe('not-loaded');
+		expect(state.job).toBeNull();
+		expect(state.error).toBe('worker died');
+		expect(h.errors).toEqual(['worker died']);
+		// The next explicit action recovers by re-spawning a fresh worker.
+		expect(await h.controller.loadModel()).toBe(true);
+		expect(h.spawnCount()).toBe(2);
+	});
+
+	it('reports extraction errors from the pipeline worker as job errors', async () => {
+		const h = harness();
+		h.controller.setWebNNProbe(WEBNN_OK);
+		h.autoRespond.extraction = false;
+		const pending = h.controller.previewCleanup(CLIP);
+		await vi.waitFor(() => expect(h.extractions.length).toBe(1));
+		h.controller.handlePipelineMessage({
+			type: 'clip-audio-error',
+			requestId: h.extractions[0]!.requestId,
+			message: 'Clip not found.'
+		});
+		expect(await pending).toBe(false);
+		expect(h.controller.getState().error).toBe('Clip not found.');
+		expect(h.controller.getState().job).toBeNull();
+	});
+});
+
+describe('cleanupActionAvailability', () => {
+	it('disables everything with the unavailable message when WebNN is unsupported', () => {
+		const h = harness();
+		h.controller.setWebNNProbe(WEBNN_ABSENT);
+		const availability = cleanupActionAvailability(h.controller.getState(), CLIP);
+		expect(availability.loadModel.enabled).toBe(false);
+		expect(availability.preview.enabled).toBe(false);
+		expect(availability.apply.enabled).toBe(false);
+		expect(availability.loadModel.reason).toBe(CLEANUP_UNAVAILABLE_MESSAGE);
+	});
+
+	it('requires a selected audio clip for preview/apply', () => {
+		const h = harness();
+		h.controller.setWebNNProbe(WEBNN_OK);
+		const availability = cleanupActionAvailability(h.controller.getState(), null);
+		expect(availability.loadModel.enabled).toBe(true);
+		expect(availability.preview.enabled).toBe(false);
+		expect(availability.preview.reason).toMatch(/Select an audio clip/);
+		expect(availability.cancel.enabled).toBe(false);
+	});
+});
+
+describe('cleanedFileName', () => {
+	it('derives a .cleaned.wav name from the original', () => {
+		expect(cleanedFileName('interview.mov')).toBe('interview.cleaned.wav');
+		expect(cleanedFileName('noext')).toBe('noext.cleaned.wav');
+	});
+});

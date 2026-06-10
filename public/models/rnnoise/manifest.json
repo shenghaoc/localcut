@@ -1,0 +1,80 @@
+{
+	"id": "rnnoise",
+	"version": "2018-emit-wasm-sample",
+	"license": "BSD-3-Clause",
+	"source": "https://github.com/webmachinelearning/webnn-samples/tree/master/rnnoise (weights: https://github.com/webmachinelearning/test-data/tree/main/models/rnnoise/weights)",
+	"sizeBytes": 352968,
+	"checksum": "sha256-22140d5ffbf9ea6cc8f1499f608575f2a67d936cc635eeaab2a1d5cca020ad0c",
+	"audio": {
+		"sampleRate": 48000,
+		"channels": 1,
+		"frameSize": 480
+	},
+	"tensors": [
+		{
+			"name": "input_dense_kernel_0",
+			"byteOffset": 0,
+			"byteLength": 4112
+		},
+		{
+			"name": "input_dense_bias_0",
+			"byteOffset": 4112,
+			"byteLength": 176
+		},
+		{
+			"name": "vad_gru_W",
+			"byteOffset": 4288,
+			"byteLength": 6992
+		},
+		{
+			"name": "vad_gru_R",
+			"byteOffset": 11280,
+			"byteLength": 6992
+		},
+		{
+			"name": "vad_gru_B",
+			"byteOffset": 18272,
+			"byteLength": 656
+		},
+		{
+			"name": "noise_gru_W",
+			"byteOffset": 18928,
+			"byteLength": 51920
+		},
+		{
+			"name": "noise_gru_R",
+			"byteOffset": 70848,
+			"byteLength": 27728
+		},
+		{
+			"name": "noise_gru_B",
+			"byteOffset": 98576,
+			"byteLength": 1232
+		},
+		{
+			"name": "denoise_gru_W",
+			"byteOffset": 99808,
+			"byteLength": 131408
+		},
+		{
+			"name": "denoise_gru_R",
+			"byteOffset": 231216,
+			"byteLength": 110672
+		},
+		{
+			"name": "denoise_gru_B",
+			"byteOffset": 341888,
+			"byteLength": 2384
+		},
+		{
+			"name": "denoise_output_kernel_0",
+			"byteOffset": 344272,
+			"byteLength": 8528
+		},
+		{
+			"name": "denoise_output_bias_0",
+			"byteOffset": 352800,
+			"byteLength": 168
+		}
+	]
+}

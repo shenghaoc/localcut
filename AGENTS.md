@@ -40,11 +40,9 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 
 - [**Phase 26: Cross-browser compatibility engine**](.kiro/specs/phase-26-cross-browser-compatibility-engine/tasks.md) — CapabilityTierV2 probes, reduced-tier diagnostics, optional-SAB worker init, codec/export constraints, compatibility resource-lifetime helpers.
 
+- [**Phase 27: Local Audio Cleanup with WebNN RNNoise**](.kiro/specs/phase-27-webnn-audio-cleanup/tasks.md) — optional/experimental on-device noise suppression; WebNN probe + capability row; lazy, cancellable Audio Cleanup worker separate from the pipeline worker; checksummed RNNoise weights loaded only on explicit user action; TypeScript DSP port + WebNN GRU graph; undoable cleaned-audio assets through playback/export. Foundation implemented; Inspector badge + manual browser matrix pending.
+
 - [**Phase 23: Project packaging + portability**](.kiro/specs/phase-23-project-packaging/tasks.md) — directory bundles, fingerprint dedup, integrity validation, collect media, import/export.
-
-**Planned:**
-
-- [**Phase 27: Local Audio Cleanup with WebNN RNNoise**](.kiro/specs/phase-27-webnn-audio-cleanup/tasks.md) — optional/experimental on-device noise suppression; WebNN probe + diagnostics; lazy, cancellable Audio Cleanup worker separate from the pipeline worker; manifest-validated RNNoise weights loaded only on explicit user action; undoable cleaned-audio assets; no cloud AI, no startup model load.
 
 **Completed:**
 

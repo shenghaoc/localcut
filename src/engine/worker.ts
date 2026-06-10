@@ -79,6 +79,7 @@ import {
 	setTrackSolo,
 	setTrackPan,
 	setClipAudioFade,
+	setClipCleanedAudio,
 	setTitleContent,
 	defaultTimelineClip,
 	defaultTitleClip,
@@ -135,6 +136,7 @@ import {
 	unavailableAudioSilenceFrames
 } from './media-adapters/source-timing';
 import { sourceHealthReportFromError } from './media-adapters/source-health';
+import { cleanedAudioMissing, cleanedAudioSubstitute } from './audio-cleanup/cleaned-audio';
 import { ThumbnailGenerator } from './thumbnails';
 import { initCompatibilityGpu, initGpu, type CompositeLayer, type PreviewRenderer } from './gpu';
 import { createCanvasTitleUploader, loadTitleFonts, TitleTextureCache } from './titles';
@@ -684,7 +686,11 @@ async function pumpAudioOnce(): Promise<void> {
 		audioWriteFrames += written;
 		return;
 	}
-	const handle = sourceInputs.get(resolved.clip.sourceId);
+	// Cleaned-audio routing (Phase 27): substitute the derived denoised asset
+	// when applied and still covering the clip range; otherwise play original.
+	const substitute = cleanedAudioSubstitute(resolved.clip, sourceInputs);
+	const audioClip = substitute?.clip ?? resolved.clip;
+	const handle = substitute?.handle ?? sourceInputs.get(resolved.clip.sourceId);
 	if (!handle?.audioSource) {
 		const channels = Math.max(1, Atomics.load(audioRing.header, RingHeader.CHANNELS));
 		const silenceFrames = Math.min(freeFrames, 1024);
@@ -700,7 +706,7 @@ async function pumpAudioOnce(): Promise<void> {
 		pcmRemainder = null;
 	} else {
 		const sourceTimestamp = resolveSourceTimestamp({
-			clip: resolved.clip,
+			clip: audioClip,
 			timelineTime,
 			trackKind: 'audio',
 			timing: handle.timing
@@ -709,7 +715,7 @@ async function pumpAudioOnce(): Promise<void> {
 			const silenceFrames = unavailableAudioSilenceFrames({
 				resolution: sourceTimestamp,
 				timing: handle.timing,
-				clip: resolved.clip,
+				clip: audioClip,
 				timelineTime,
 				sampleRate,
 				maxFrames: Math.min(freeFrames, 1024)
@@ -1190,6 +1196,7 @@ function afterTimelineMutation(
 	ensureClockAndTimeline();
 	postHistoryState();
 	postRecoveryCheckpoint();
+	postCleanedAudioWarnings();
 	if (options.refreshPlayback === 'refresh') {
 		playback?.refresh();
 	} else if (options.refreshPlayback !== 'none') {
@@ -2475,6 +2482,181 @@ function handleSetClipFade(cmd: Extract<WorkerCommand, { type: 'set-clip-fade' }
 			syncLuts: false
 		}
 	);
+}
+
+// ── Phase 27: Local audio cleanup (WebNN RNNoise) ──
+// The pipeline worker only extracts PCM (existing decode path) and routes the
+// cleaned derived asset through explicit, undoable timeline state. Model
+// inference never runs here; it lives in the separate Audio Cleanup worker.
+
+/** Per-window extraction cap keeps each transferred PCM buffer small. */
+const CLIP_AUDIO_WINDOW_MAX_S = 30;
+
+/** Cleaned assets already flagged as missing this session (avoid re-warning). */
+const warnedMissingCleanedAssets = new Set<string>();
+
+function postCleanedAudioWarnings(): void {
+	for (const track of timeline) {
+		if (track.type !== 'audio') continue;
+		for (const clip of track.clips) {
+			const ref = clip.cleanedAudio;
+			if (!ref || warnedMissingCleanedAssets.has(ref.assetId)) continue;
+			// Only warn for assets the project no longer knows at all; offline
+			// (re-linkable) sources go through the existing relink flow instead.
+			if (sourceDescriptors.has(ref.assetId)) continue;
+			if (!cleanedAudioMissing(clip, sourceInputs)) continue;
+			warnedMissingCleanedAssets.add(ref.assetId);
+			const original = sourceDescriptors.get(clip.sourceId);
+			const fileName = original?.fileName ?? clip.sourceId;
+			post({
+				type: 'source-health',
+				report: {
+					sourceId: clip.sourceId,
+					fileName,
+					status: 'warnings',
+					warnings: [
+						{
+							code: 'missing-cleaned-audio',
+							severity: 'warning',
+							blocking: false,
+							sourceId: clip.sourceId,
+							message: `Cleaned audio for "${fileName}" is unavailable; the original audio will play instead.`,
+							details: { cleanedAssetId: ref.assetId, clipId: clip.id }
+						}
+					]
+				}
+			});
+		}
+	}
+}
+
+async function handleExtractClipAudio(
+	cmd: Extract<WorkerCommand, { type: 'extract-clip-audio' }>
+): Promise<void> {
+	const fail = (message: string) =>
+		post({ type: 'clip-audio-error', requestId: cmd.requestId, message });
+	try {
+		const track = timeline.find((t) => t.id === cmd.trackId);
+		const clip = track?.clips.find((c) => c.id === cmd.clipId);
+		if (!track || !clip) return fail('Clip not found.');
+		if (isTitleClip(clip)) return fail('Title clips carry no audio.');
+		const handle = sourceInputs.get(clip.sourceId);
+		if (!handle?.audioSource) return fail('No decodable audio for this clip.');
+		const sampleRate = Math.max(8000, Math.floor(cmd.sampleRate));
+		const clipOffsetS = Math.max(0, cmd.clipOffsetS);
+		if (clipOffsetS >= clip.duration) return fail('Requested window is past the clip end.');
+		const durationS = Math.min(
+			Math.max(0, cmd.durationS),
+			CLIP_AUDIO_WINDOW_MAX_S,
+			clip.duration - clipOffsetS
+		);
+		if (durationS <= 0) return fail('Requested window is empty.');
+		const timelineTime = clip.start + clipOffsetS;
+		const resolution = resolveSourceTimestamp({
+			clip,
+			timelineTime,
+			trackKind: 'audio',
+			timing: handle.timing
+		});
+		if (!resolution.available) return fail('Audio is unavailable at the requested time.');
+		const channels = Math.max(1, Math.min(2, handle.audioChannels || 1));
+		const frameCount = Math.max(1, Math.round(durationS * sampleRate));
+		const pcm = await handle.audioSource.pcmWindowAt(
+			resolution.adapterTimestampS,
+			frameCount,
+			channels,
+			sampleRate
+		);
+		self.postMessage(
+			{
+				type: 'clip-audio',
+				requestId: cmd.requestId,
+				pcm,
+				sampleRate,
+				channels,
+				clipOffsetS,
+				clipDurationS: clip.duration
+			} satisfies WorkerStateMessage,
+			[pcm.buffer]
+		);
+	} catch (error) {
+		fail(errorMessage(error));
+	}
+}
+
+async function handleApplyAudioCleanup(
+	cmd: Extract<WorkerCommand, { type: 'apply-audio-cleanup' }>
+): Promise<void> {
+	const fail = (message: string) =>
+		post({
+			type: 'audio-cleanup-applied',
+			trackId: cmd.trackId,
+			clipId: cmd.clipId,
+			ok: false,
+			message
+		});
+	const track = timeline.find((t) => t.id === cmd.trackId);
+	const clip = track?.clips.find((c) => c.id === cmd.clipId);
+	if (!track || !clip || isTitleClip(clip)) return fail('Clip not found.');
+	if (cmd.durationS <= 0 || cmd.clipInPointS < 0) return fail('Invalid cleaned-audio range.');
+
+	let assetId: string | null = null;
+	let handle: MediaInputHandle | null = null;
+	try {
+		assetId = makeSourceId();
+		handle = await openMediaFile(cmd.file, assetId);
+		if (!handle.audioSource) throw new Error('Cleaned WAV has no decodable audio track.');
+		sourceInputs.set(assetId, handle);
+		const descriptor = sourceDescriptorFromHandle(assetId, cmd.file, handle);
+		sourceDescriptors.set(assetId, descriptor);
+		await persistSourceBestEffort({ sourceId: assetId, descriptor, file: cmd.file });
+		binSourceIds.add(assetId);
+
+		const committed = commitTimelineMutation(
+			() =>
+				setClipCleanedAudio(timeline, cmd.trackId, cmd.clipId, {
+					assetId: assetId!,
+					clipInPointS: cmd.clipInPointS,
+					durationS: cmd.durationS,
+					modelId: cmd.modelId,
+					modelVersion: cmd.modelVersion
+				}),
+			{ refreshPlayback: 'refresh', prune: false, syncLuts: false }
+		);
+		if (!committed) throw new Error('Timeline update failed.');
+		postMediaAssets();
+		post({
+			type: 'audio-cleanup-applied',
+			trackId: cmd.trackId,
+			clipId: cmd.clipId,
+			ok: true,
+			assetId
+		});
+	} catch (error) {
+		if (handle) handle.dispose();
+		if (assetId) {
+			sourceInputs.delete(assetId);
+			sourceDescriptors.delete(assetId);
+			binSourceIds.delete(assetId);
+		}
+		recordRecentError({
+			code: 'audio_cleanup.apply_failed',
+			subsystem: 'audio',
+			severity: 'error',
+			message: errorMessage(error)
+		});
+		fail(errorMessage(error));
+	}
+}
+
+function handleRemoveAudioCleanup(
+	cmd: Extract<WorkerCommand, { type: 'remove-audio-cleanup' }>
+): void {
+	commitTimelineMutation(() => setClipCleanedAudio(timeline, cmd.trackId, cmd.clipId, null), {
+		refreshPlayback: 'refresh',
+		prune: false,
+		syncLuts: false
+	});
 }
 
 function handleAddTransition(cmd: Extract<WorkerCommand, { type: 'add-transition' }>) {
@@ -4276,6 +4458,15 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			break;
 		case 'set-clip-fade':
 			handleSetClipFade(cmd);
+			break;
+		case 'extract-clip-audio':
+			void handleExtractClipAudio(cmd);
+			break;
+		case 'apply-audio-cleanup':
+			void handleApplyAudioCleanup(cmd);
+			break;
+		case 'remove-audio-cleanup':
+			handleRemoveAudioCleanup(cmd);
 			break;
 		case 'add-transition':
 			handleAddTransition(cmd);

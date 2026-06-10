@@ -1,6 +1,6 @@
 # Design: Phase 27 — Local Audio Cleanup with WebNN RNNoise
 
-> Status: **Planned / Optional / Experimental.** First on-device ML feature. Local-first by construction: no cloud AI, no API keys, no accounts, no media upload. WebNN inference runs in a dedicated Audio Cleanup worker — never on the SolidJS main thread, never in the pipeline worker.
+> Status: **Active (foundation implemented) / Optional / Experimental.** First on-device ML feature. Local-first by construction: no cloud AI, no API keys, no accounts, no media upload. WebNN inference runs in a dedicated Audio Cleanup worker — never on the SolidJS main thread, never in the pipeline worker.
 
 ## Goal
 

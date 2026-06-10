@@ -68,7 +68,99 @@ export interface CapabilityProbeResult {
 	audioWorklet: FeatureSupport;
 	offscreenCanvas: FeatureSupport;
 	tier: CapabilityTierV2;
+	/** Phase 27 (WebNN audio cleanup): display/feature-gate only — never
+	 *  consulted by tier derivation or any pipeline code path. */
+	webnn?: WebNNProbeResult;
 }
+
+// ── Phase 27: Local Audio Cleanup (WebNN RNNoise) ──
+
+export type WebNNDeviceTypeSnapshot = 'cpu' | 'gpu' | 'npu';
+
+export interface WebNNProbeResult {
+	/** `navigator.ml` exists in this browsing context. */
+	mlPresent: boolean;
+	backends: Record<WebNNDeviceTypeSnapshot, FeatureSupport>;
+	/** Unknown until the user explicitly loads the model; the graph build
+	 *  outcome is the ground truth. */
+	modelSupport: FeatureSupport;
+}
+
+/** Reference from a timeline clip to its denoised derived audio asset. */
+export interface CleanedAudioRefSnapshot {
+	/** Source id of the derived (cleaned) audio asset. */
+	assetId: string;
+	/** Clip `inPoint` at generation time; the cleaned asset's t=0 maps here. */
+	clipInPointS: number;
+	/** Covered duration in source seconds starting at `clipInPointS`. */
+	durationS: number;
+	modelId: string;
+	modelVersion: string;
+}
+
+export type CleanupModelStatus = 'not-loaded' | 'loading' | 'loaded' | 'failed';
+
+/** Manifest document validated by the Audio Cleanup worker before any fetch. */
+export interface CleanupModelManifestSnapshot {
+	id: 'rnnoise';
+	version: string;
+	license: string;
+	source: string;
+	sizeBytes: number;
+	checksum: string;
+	audio: { sampleRate: 48000; channels: 1; frameSize: 480 };
+	tensors: Array<{ name: string; byteOffset: number; byteLength: number }>;
+}
+
+/** Commands posted from the UI bridge to the Audio Cleanup worker. */
+export type CleanupWorkerCommand =
+	| { type: 'cleanup-probe' }
+	| {
+			type: 'cleanup-load-model';
+			manifest: CleanupModelManifestSnapshot;
+			weightsUrl: string;
+			preferredBackends: WebNNDeviceTypeSnapshot[];
+	  }
+	| { type: 'cleanup-begin'; jobId: number; totalFrames: number }
+	| {
+			type: 'cleanup-chunk';
+			jobId: number;
+			pcm: Float32Array;
+			sampleRate: number;
+			channels: number;
+	  }
+	| { type: 'cleanup-end'; jobId: number; output: 'pcm' | 'wav' }
+	| { type: 'cleanup-cancel'; jobId?: number }
+	| { type: 'cleanup-dispose' };
+
+/** State messages posted from the Audio Cleanup worker back to the UI. */
+export type CleanupWorkerState =
+	| { type: 'cleanup-probe-result'; result: WebNNProbeResult }
+	| {
+			type: 'cleanup-model-status';
+			status: CleanupModelStatus;
+			backend?: WebNNDeviceTypeSnapshot;
+			sizeBytes?: number;
+			error?: string;
+	  }
+	| {
+			type: 'cleanup-progress';
+			jobId: number;
+			processedFrames: number;
+			totalFrames: number;
+			fraction: number;
+	  }
+	| {
+			type: 'cleanup-result';
+			jobId: number;
+			sampleRate: 48000;
+			channels: 1;
+			pcm?: Float32Array;
+			wav?: ArrayBuffer;
+			durationMs: number;
+	  }
+	| { type: 'cleanup-cancelled'; jobId?: number }
+	| { type: 'cleanup-error'; jobId?: number; message: string };
 
 export interface WorkerInit {
 	type: 'init';
@@ -248,7 +340,8 @@ export type SourceHealthWarningCodeSnapshot =
 	| 'unsupported-audio-codec'
 	| 'corrupt-or-truncated-file'
 	| 'missing-duration'
-	| 'undecodable-track';
+	| 'undecodable-track'
+	| 'missing-cleaned-audio';
 
 export interface SourceHealthWarningSnapshot {
 	code: SourceHealthWarningCodeSnapshot;
@@ -432,6 +525,8 @@ export interface TimelineClipSnapshot {
 	/** Present iff `kind === 'title'`. */
 	title?: TitleContentSnapshot;
 	linkedGroupId?: string;
+	/** Optional denoised audio routing (Phase 27); absent = original audio. */
+	cleanedAudio?: CleanedAudioRefSnapshot;
 }
 
 export interface TimelineTrackSnapshot {
@@ -1039,6 +1134,42 @@ interface SetTrackEditTargetCommand {
 	editTarget: boolean;
 }
 
+/** Extracts a window of a clip's source audio PCM for local analysis
+ *  (Phase 27 audio cleanup). Decode stays in the pipeline worker; inference
+ *  never runs here. */
+interface ExtractClipAudioCommand {
+	type: 'extract-clip-audio';
+	requestId: string;
+	trackId: string;
+	clipId: string;
+	/** Window start in clip-local seconds (0 = clip in-point). */
+	clipOffsetS: number;
+	/** Window length in seconds (bounded by the caller). */
+	durationS: number;
+	sampleRate: number;
+}
+
+/** Registers a cleaned WAV as a derived audio asset and routes the clip's
+ *  audio through it (undoable timeline mutation). */
+interface ApplyAudioCleanupCommand {
+	type: 'apply-audio-cleanup';
+	trackId: string;
+	clipId: string;
+	file: File;
+	clipInPointS: number;
+	durationS: number;
+	modelId: string;
+	modelVersion: string;
+}
+
+/** Removes the cleaned-audio routing from a clip (undoable). The derived
+ *  asset stays registered in the media bin. */
+interface RemoveAudioCleanupCommand {
+	type: 'remove-audio-cleanup';
+	trackId: string;
+	clipId: string;
+}
+
 export type WorkerCommand =
 	| WorkerInit
 	| WorkerInitV2
@@ -1143,6 +1274,9 @@ export type WorkerCommand =
 	| SetTrackVisibleCommand
 	| SetTrackSyncLockCommand
 	| SetTrackEditTargetCommand
+	| ExtractClipAudioCommand
+	| ApplyAudioCleanupCommand
+	| RemoveAudioCleanupCommand
 	| { type: 'toggle-scopes'; enabled: boolean }
 	| { type: 'toggle-zebra'; enabled: boolean }
 	| { type: 'preset-save'; preset: ExportPresetDoc }
@@ -1316,6 +1450,26 @@ export type WorkerStateMessage =
 	| { type: 'queue-job-failed'; jobId: string; error: string }
 	| { type: 'queue-job-canceled'; jobId: string }
 	| { type: 'queue-complete'; completedCount: number; failedCount: number; canceledCount: number }
+	| {
+			type: 'clip-audio';
+			requestId: string;
+			pcm: Float32Array;
+			sampleRate: number;
+			channels: number;
+			/** Clip-local start of the returned window in seconds. */
+			clipOffsetS: number;
+			/** Total extractable clip duration in seconds (for progress math). */
+			clipDurationS: number;
+	  }
+	| { type: 'clip-audio-error'; requestId: string; message: string }
+	| {
+			type: 'audio-cleanup-applied';
+			trackId: string;
+			clipId: string;
+			ok: boolean;
+			assetId?: string;
+			message?: string;
+	  }
 	| { type: 'diagnostic-snapshot'; requestId?: string; snapshot: DiagnosticSnapshot }
 	| { type: 'recent-error'; error: RecentError }
 	| {

@@ -5,6 +5,7 @@ import type {
 	ExportCodecSupport,
 	FeatureSupport
 } from '../protocol';
+import { probeWebNN } from './audio-cleanup/webnn-probe';
 
 type VideoCodecProbeName = 'h264' | 'vp9' | 'av1';
 type AudioCodecProbeName = 'aac' | 'opus';
@@ -233,9 +234,12 @@ export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 	// standard adapter succeeds would mislabel Chrome — which exposes both — as
 	// lacking the compatibility adapter. The compatibilityAdapter boolean below (not
 	// the raw support flag) is what drives the reduced-pipeline wiring decision.
-	const [webGPUCore, webGPUCompat] = await Promise.all([
+	// WebNN gates only the optional Audio Cleanup feature; it is carried for
+	// diagnostics display and never consulted by deriveCapabilityTierV2.
+	const [webGPUCore, webGPUCompat, webnn] = await Promise.all([
 		probeGpuAdapter(false),
-		probeGpuAdapter(true)
+		probeGpuAdapter(true),
+		probeWebNN()
 	]);
 	const codecs = await probeCodecs().catch(() => unknownCodecs);
 	const probeWithoutTier: Omit<CapabilityProbeResult, 'tier'> = {
@@ -261,6 +265,7 @@ export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 	};
 	return {
 		...probeWithoutTier,
-		tier: deriveCapabilityTierV2(probeWithoutTier)
+		tier: deriveCapabilityTierV2(probeWithoutTier),
+		webnn
 	};
 }

@@ -36,7 +36,20 @@ export default defineConfig({
 					{ src: '/icons/512.png', sizes: '512x512', type: 'image/png' }
 				]
 			},
-			workbox: { globPatterns: ['**/*.{js,css,html,wasm,wgsl,woff,woff2}'] }
+			workbox: {
+				globPatterns: ['**/*.{js,css,html,wasm,wgsl,woff,woff2}'],
+				// Phase 27: model weights must never precache at install — startup
+				// stays model-free. They enter the runtime cache only after the user
+				// explicitly loads the model, so later loads work offline.
+				globIgnores: ['**/models/**'],
+				runtimeCaching: [
+					{
+						urlPattern: /\/models\/rnnoise\//,
+						handler: 'CacheFirst',
+						options: { cacheName: 'rnnoise-model' }
+					}
+				]
+			}
 		})
 	],
 	assetsInclude: ['**/*.wgsl'],
