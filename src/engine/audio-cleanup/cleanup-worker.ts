@@ -289,10 +289,16 @@ self.onmessage = (event: MessageEvent<CleanupWorkerCommand>) => {
 					await handleEnd(cmd);
 					break;
 			}
-		} catch {
+		} catch (error) {
 			// An unhandled rejection would break the promise chain permanently,
-			// skipping every subsequent command. Absorb the error so the queue
-			// stays alive.
+			// skipping every subsequent command. Keep the queue alive, but never
+			// silently: drop any half-processed job and surface the failure.
+			dropJob();
+			try {
+				post({ type: 'cleanup-error', message: errorText(error) });
+			} catch {
+				// Posting can only fail if the worker is being torn down.
+			}
 		}
 	});
 };
