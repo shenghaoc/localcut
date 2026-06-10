@@ -271,22 +271,28 @@ self.onmessage = (event: MessageEvent<CleanupWorkerCommand>) => {
 		return;
 	}
 	queue = queue.then(async () => {
-		switch (cmd.type) {
-			case 'cleanup-probe':
-				await handleProbe();
-				break;
-			case 'cleanup-load-model':
-				await handleLoadModel(cmd);
-				break;
-			case 'cleanup-begin':
-				handleBegin(cmd);
-				break;
-			case 'cleanup-chunk':
-				await handleChunk(cmd);
-				break;
-			case 'cleanup-end':
-				await handleEnd(cmd);
-				break;
+		try {
+			switch (cmd.type) {
+				case 'cleanup-probe':
+					await handleProbe();
+					break;
+				case 'cleanup-load-model':
+					await handleLoadModel(cmd);
+					break;
+				case 'cleanup-begin':
+					handleBegin(cmd);
+					break;
+				case 'cleanup-chunk':
+					await handleChunk(cmd);
+					break;
+				case 'cleanup-end':
+					await handleEnd(cmd);
+					break;
+			}
+		} catch {
+			// An unhandled rejection would break the promise chain permanently,
+			// skipping every subsequent command. Absorb the error so the queue
+			// stays alive.
 		}
 	});
 };

@@ -125,7 +125,7 @@ export class CleanupJobProcessor {
 				frame * RNNOISE_GAINS_SIZE,
 				(frame + 1) * RNNOISE_GAINS_SIZE
 			);
-			this.dsp.postProcessFrame(new Float32Array(frameGains), this.spectra[frame]!, this.frameOut);
+			this.dsp.postProcessFrame(frameGains, this.spectra[frame]!, this.frameOut);
 			if (this.leadingSamplesToDrop >= RNNOISE_FRAME_SIZE) {
 				this.leadingSamplesToDrop -= RNNOISE_FRAME_SIZE;
 			} else {

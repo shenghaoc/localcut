@@ -203,15 +203,19 @@ function cloneClip(clip: TimelineClip): TimelineClip {
  *  entries degrade to "no cleanup" rather than rejecting the whole clip. */
 function parseCleanedAudio(value: unknown): TimelineClip['cleanedAudio'] | undefined {
 	if (!isRecord(value)) return undefined;
-	const assetId = requiredString(value.assetId);
-	const clipInPointS = finiteNumber(value.clipInPointS);
-	const durationS = finiteNumber(value.durationS);
-	const modelId = requiredString(value.modelId);
-	const modelVersion = requiredString(value.modelVersion);
-	if (!assetId || !modelId || !modelVersion) return undefined;
-	if (clipInPointS === null || clipInPointS < 0) return undefined;
-	if (durationS === null || durationS <= 0) return undefined;
-	return { assetId, clipInPointS, durationS, modelId, modelVersion };
+	try {
+		const assetId = requiredString(value.assetId);
+		const clipInPointS = finiteNumber(value.clipInPointS);
+		const durationS = finiteNumber(value.durationS);
+		const modelId = requiredString(value.modelId);
+		const modelVersion = requiredString(value.modelVersion);
+		if (!assetId || !modelId || !modelVersion) return undefined;
+		if (clipInPointS === null || clipInPointS < 0) return undefined;
+		if (durationS === null || durationS <= 0) return undefined;
+		return { assetId, clipInPointS, durationS, modelId, modelVersion };
+	} catch {
+		return undefined;
+	}
 }
 
 export function cloneTimelineSnapshot(timeline: Timeline): Timeline {
