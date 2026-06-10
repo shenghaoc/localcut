@@ -29,6 +29,16 @@ describe('buildIceRestartFragment', () => {
 		expect(fragmentLines.filter((line) => line === 'a=end-of-candidates')).toHaveLength(2);
 	});
 
+	it('does not duplicate an end-of-candidates marker the local SDP already has', () => {
+		const withMarker = LOCAL_SDP.replace(
+			'm=audio',
+			'a=end-of-candidates\r\nm=audio'
+		);
+		const fragment = buildIceRestartFragment(withMarker);
+		const videoSection = fragment.slice(fragment.indexOf('m=video'), fragment.indexOf('m=audio'));
+		expect(videoSection.match(/a=end-of-candidates/g)).toHaveLength(1);
+	});
+
 	it('throws when the local description lacks ICE credentials', () => {
 		expect(() => buildIceRestartFragment('v=0\r\nm=video 9 RTP 96')).toThrow();
 	});
@@ -60,9 +70,11 @@ describe('applyIceRestartAnswer', () => {
 		'm=video 9 UDP/TLS/RTP/SAVPF 96',
 		'a=mid:0',
 		'a=candidate:21 1 udp 2 203.0.113.5 4100 typ host',
+		'a=end-of-candidates',
 		'm=audio 9 UDP/TLS/RTP/SAVPF 111',
 		'a=mid:1',
-		'a=candidate:22 1 udp 2 203.0.113.5 4101 typ host'
+		'a=candidate:22 1 udp 2 203.0.113.5 4101 typ host',
+		'a=end-of-candidates'
 	].join('\r\n');
 
 	it('swaps credentials and replaces stale candidates per mid', () => {
@@ -81,6 +93,10 @@ describe('applyIceRestartAnswer', () => {
 
 		// Non-ICE attributes survive untouched.
 		expect(merged).toContain('a=rtpmap:96 H264/90000');
+
+		// The fragment's end-of-candidates markers are preserved per section —
+		// strict implementations require the signal.
+		expect(merged.match(/a=end-of-candidates/g)).toHaveLength(2);
 	});
 
 	it('throws when the fragment lacks credentials', () => {

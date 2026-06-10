@@ -226,13 +226,20 @@ export async function probeLivePublish(): Promise<LivePublishProbeResult> {
 	const generateKeyFrame = supportFromBoolean(
 		typeof senderCtor?.prototype?.generateKeyFrame === 'function'
 	);
-	const hardwareH264Encode = await probeCodec(getCodecConstructor('VideoEncoder'), {
-		codec: 'avc1.42e029',
-		width: 1920,
-		height: 1080,
-		bitrate: 6_000_000,
-		hardwareAcceleration: 'prefer-hardware'
-	});
+	// Isolated so an encoder-probe failure can never reject probeLivePublish and
+	// take the (independent) WebRTC findings down to 'unknown' with it.
+	let hardwareH264Encode: FeatureSupport = 'unsupported';
+	try {
+		hardwareH264Encode = await probeCodec(getCodecConstructor('VideoEncoder'), {
+			codec: 'avc1.42e029',
+			width: 1920,
+			height: 1080,
+			bitrate: 6_000_000,
+			hardwareAcceleration: 'prefer-hardware'
+		});
+	} catch {
+		hardwareH264Encode = 'unknown';
+	}
 
 	return {
 		rtcPeerConnection,

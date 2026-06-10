@@ -141,6 +141,28 @@ describe('createPublishFrameTap', () => {
 		expect(late.clones).toHaveLength(0);
 	});
 
+	it('a synchronously throwing write closes the clone and fails the tap', () => {
+		const onError = vi.fn();
+		const writer: TapWriter<FakeFrame> = {
+			write() {
+				throw new DOMException('detached', 'DataCloneError');
+			},
+			close: async () => undefined
+		};
+		const tap = createPublishFrameTap<FakeFrame>(writer, onError);
+		const frame = new FakeFrame();
+		tap.push(frame);
+
+		expect(frame.clones[0].closed).toBe(1);
+		expect(onError).toHaveBeenCalledTimes(1);
+
+		// Not deadlocked in `writing`: the tap is stopped, so later frames are
+		// ignored rather than silently queued behind a write that never settles.
+		const late = new FakeFrame();
+		tap.push(late);
+		expect(late.clones).toHaveLength(0);
+	});
+
 	it('a failing clone() surfaces as an error without touching the original', () => {
 		const writer = manualWriter();
 		const onError = vi.fn();

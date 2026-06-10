@@ -42,7 +42,9 @@ function parseSections(sdp: string): ParsedFragment {
 			parsed.pwd ??= valueOf(line);
 		} else if (current && line.startsWith('a=mid:')) {
 			current.mid = valueOf(line);
-		} else if (current && line.startsWith('a=candidate:')) {
+		} else if (current && (line.startsWith('a=candidate:') || line === 'a=end-of-candidates')) {
+			// end-of-candidates travels with the candidate list so the merge
+			// preserves the signal — strict implementations require it.
 			current.candidates.push(line);
 		}
 	}
@@ -62,7 +64,12 @@ export function buildIceRestartFragment(localSdp: string): string {
 	for (const section of parsed.sections) {
 		fragment.push(section.mLine);
 		if (section.mid !== null) fragment.push(`a=mid:${section.mid}`);
-		fragment.push(...section.candidates, 'a=end-of-candidates');
+		fragment.push(...section.candidates);
+		// Gathering already completed (the session waits for it before building
+		// the fragment), but the local SDP only carries the marker sometimes.
+		if (section.candidates.at(-1) !== 'a=end-of-candidates') {
+			fragment.push('a=end-of-candidates');
+		}
 	}
 	return fragment.join('\r\n') + '\r\n';
 }

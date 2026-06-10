@@ -62,20 +62,29 @@ export function createPublishFrameTap<F extends TapFrame>(
 		const frame = pending;
 		pending = null;
 		writing = true;
-		writer.write(frame).then(
-			() => {
-				// The generator consumed (and closed) the frame.
-				delivered += 1;
-				writing = false;
-				pump();
-			},
-			(error) => {
-				// Writer contract: a rejected write does not consume the chunk.
-				frame.close();
-				writing = false;
-				fail(error);
-			}
-		);
+		// write() can also throw synchronously (released lock, or a postMessage
+		// DataCloneError in the fallback writer); without the catch that would
+		// leave `writing` stuck true and leak every later frame.
+		try {
+			writer.write(frame).then(
+				() => {
+					// The generator consumed (and closed) the frame.
+					delivered += 1;
+					writing = false;
+					pump();
+				},
+				(error) => {
+					// Writer contract: a rejected write does not consume the chunk.
+					frame.close();
+					writing = false;
+					fail(error);
+				}
+			);
+		} catch (error) {
+			frame.close();
+			writing = false;
+			fail(error);
+		}
 	}
 
 	return {

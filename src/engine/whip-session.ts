@@ -228,15 +228,22 @@ export function createWhipSession(deps: WhipSessionDeps): WhipSession {
 		statsTimer = schedule.set(() => {
 			statsTimer = null;
 			if (state.phase !== 'live' || !pc) return;
-			void pc.getStats().then((report) => {
-				if (state.phase !== 'live') return;
-				const entries: Record<string, unknown>[] = [];
-				report.forEach((entry) => entries.push(entry as unknown as Record<string, unknown>));
-				const sample = extractOutboundSample(entries, now());
-				setState({ phase: 'live', stats: statsFromSamples(lastSample, sample, framesDropped) });
-				lastSample = sample;
-				pollStats();
-			});
+			pc.getStats()
+				.then((report) => {
+					if (state.phase !== 'live') return;
+					const entries: Record<string, unknown>[] = [];
+					report.forEach((entry) => entries.push(entry as unknown as Record<string, unknown>));
+					const sample = extractOutboundSample(entries, now());
+					setState({ phase: 'live', stats: statsFromSamples(lastSample, sample, framesDropped) });
+					lastSample = sample;
+					pollStats();
+				})
+				.catch(() => {
+					// getStats can reject while the connection is tearing down or
+					// mid-restart; stats are best-effort, so keep polling while live
+					// instead of surfacing an unhandled rejection.
+					if (state.phase === 'live') pollStats();
+				});
 		}, statsIntervalMs);
 	}
 
