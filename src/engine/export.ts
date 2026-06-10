@@ -37,11 +37,13 @@ import {
 	getTimelineDuration,
 	isTitleClip,
 	resolveAllAt,
+	sharedSourceIncomingLayers,
 	type Timeline,
 	type TimelineClip,
 	type TimelineTrack
 } from './timeline';
 import type { TitleTexture } from './titles';
+import { SecondaryFrameSourcePool } from './frame-source';
 import { sampleClipParamsAt } from './keyframes';
 import {
 	audioAvailabilityWindowFrames,
@@ -121,12 +123,12 @@ export interface TimelineExportOptions {
 	onProgress: (progress: ExportProgress) => void;
 	masterGain?: number;
 	transitions?: readonly AudioTransitionCut[];
+	/** Phase 13 video transitions — passed through to resolveAllAt for window blending. */
+	videoTransitions?: readonly import('./timeline').TimelineTransition[];
 	/** Resolves a title clip's cached raster texture (Phase 14); rasters on the
 	 *  cold path if needed, never per frame. Returns `null` for non-title clips. */
 	titleTextureFor?: (clip: TimelineClip) => TitleTexture | null;
-	overlayTextureLayersAt?: (
-		timelineTime: number
-	) => Array<{
+	overlayTextureLayersAt?: (timelineTime: number) => Array<{
 		view: GPUTextureView;
 		sourceWidth: number;
 		sourceHeight: number;
@@ -826,109 +828,126 @@ async function encodeVideoRange(
 	let lastReport = 0;
 	const keyFrameInterval = Math.max(1, Math.round(plan.frameRate * 2));
 	const layerBudget = layerBudgetFromProbe(throughputProbe);
+	// Same-source transition pairs decode the incoming side through a dedicated
+	// secondary sink (T2.2), mirroring preview; released when the range finishes.
+	const secondarySinks = new SecondaryFrameSourcePool();
 
-	for (let frameIndex = startFrame; frameIndex < endFrame; frameIndex += 1) {
-		throwIfCanceled(signal);
-		const outputTimestamp = rebaseOutputTimestamp(frameIndex, plan.frameRate);
-		const timelineTime = timelineTimeAt(plan, outputTimestamp);
-		const duration = Math.max(1e-6, Math.min(frameDuration, plan.exportDuration - outputTimestamp));
-		// resolveAllAt is bottom→top. Skip offline/non-decodable sources first, then
-		// keep the bottom `layerBudget` decodable layers (dropping the topmost
-		// extras) so export degrades identically to preview's makeGetLayers.
-		const resolvedLayers = resolveAllAt(
-			timeline,
-			Math.min(timelineTime, plan.rangeStartS + plan.exportDuration - 1e-6)
-		);
+	try {
+		for (let frameIndex = startFrame; frameIndex < endFrame; frameIndex += 1) {
+			throwIfCanceled(signal);
+			const outputTimestamp = rebaseOutputTimestamp(frameIndex, plan.frameRate);
+			const timelineTime = timelineTimeAt(plan, outputTimestamp);
+			const duration = Math.max(
+				1e-6,
+				Math.min(frameDuration, plan.exportDuration - outputTimestamp)
+			);
+			// resolveAllAt is bottom→top. Skip offline/non-decodable sources first, then
+			// keep the bottom `layerBudget` decodable layers (dropping the topmost
+			// extras) so export degrades identically to preview's makeGetLayers.
+			const resolvedLayers = resolveAllAt(
+				timeline,
+				Math.min(timelineTime, plan.rangeStartS + plan.exportDuration - 1e-6),
+				options.videoTransitions
+			);
+			const secondarySinkLayers = sharedSourceIncomingLayers(resolvedLayers);
 
-		// Decode each layer's source frame, build the composite stack, and render
-		// through the same compositor as preview. Every decoded VideoFrame is closed
-		// exactly once below — including on a mid-stack decode failure.
-		const decodedFrames: VideoFrame[] = [];
-		const layers: CompositeLayer[] = [];
-		let exportFrame: VideoFrame;
-		try {
-			let decodedCount = 0;
-			for (const layer of resolvedLayers) {
-				// Title layers composite from the cached raster (no decode, no budget),
-				// preserving z-order — matching preview's makeGetLayers.
-				if (isTitleClip(layer.clip)) {
-					const texture = layer.clip.title ? titleTextureFor?.(layer.clip) : null;
-					if (!texture) continue;
+			// Decode each layer's source frame, build the composite stack, and render
+			// through the same compositor as preview. Every decoded VideoFrame is closed
+			// exactly once below — including on a mid-stack decode failure.
+			const decodedFrames: VideoFrame[] = [];
+			const layers: CompositeLayer[] = [];
+			let exportFrame: VideoFrame;
+			try {
+				let decodedCount = 0;
+				for (const layer of resolvedLayers) {
+					// Title layers composite from the cached raster (no decode, no budget),
+					// preserving z-order — matching preview's makeGetLayers.
+					if (isTitleClip(layer.clip)) {
+						const texture = layer.clip.title ? titleTextureFor?.(layer.clip) : null;
+						if (!texture) continue;
+						const sampled = sampleClipParamsAt(layer.clip, timelineTime);
+						layers.push({
+							kind: 'texture',
+							view: texture.view,
+							sourceWidth: texture.width,
+							sourceHeight: texture.height,
+							transform: sampled.transform,
+							transition: layer.transition
+						});
+						continue;
+					}
+					const sourceHandle = sources.get(layer.clip.sourceId);
+					if (!sourceHandle?.frameSource) continue;
+					// Stop decoding video past the budget but keep scanning so source-less
+					// title layers above the budgeted stack still composite (preview parity).
+					if (decodedCount >= layerBudget) continue;
+					const sourceTimestamp = resolveSourceTimestamp({
+						clip: layer.clip,
+						timelineTime,
+						trackKind: 'video',
+						timing: sourceHandle.timing
+					});
+					if (!sourceTimestamp.available) continue;
+					const frameProvider = secondarySinkLayers.has(layer)
+						? secondarySinks.acquire(sourceHandle)
+						: sourceHandle.frameSource;
+					const decoded = await frameProvider?.frameAt(sourceTimestamp.adapterTimestampS);
+					if (!decoded) continue;
+					decodedCount += 1;
+					let videoFrame: VideoFrame;
+					try {
+						videoFrame = decoded.toVideoFrame();
+					} finally {
+						decoded.close();
+					}
 					const sampled = sampleClipParamsAt(layer.clip, timelineTime);
+					decodedFrames.push(videoFrame);
+					layers.push({
+						kind: 'frame',
+						frame: videoFrame,
+						effects: sampled.effects,
+						transform: sampled.transform,
+						lut: layer.clip.lut,
+						transition: layer.transition
+					});
+				}
+				for (const overlay of overlayTextureLayersAt?.(timelineTime) ?? []) {
 					layers.push({
 						kind: 'texture',
-						view: texture.view,
-						sourceWidth: texture.width,
-						sourceHeight: texture.height,
-						transform: sampled.transform
+						view: overlay.view,
+						sourceWidth: overlay.sourceWidth,
+						sourceHeight: overlay.sourceHeight,
+						transform: overlay.transform
 					});
-					continue;
 				}
-				const sourceHandle = sources.get(layer.clip.sourceId);
-				if (!sourceHandle?.frameSource) continue;
-				// Stop decoding video past the budget but keep scanning so source-less
-				// title layers above the budgeted stack still composite (preview parity).
-				if (decodedCount >= layerBudget) continue;
-				const sourceTimestamp = resolveSourceTimestamp({
-					clip: layer.clip,
-					timelineTime,
-					trackKind: 'video',
-					timing: sourceHandle.timing
-				});
-				if (!sourceTimestamp.available) continue;
-				const decoded = await sourceHandle.frameSource.frameAt(sourceTimestamp.adapterTimestampS);
-				if (!decoded) continue;
-				decodedCount += 1;
-				let videoFrame: VideoFrame;
-				try {
-					videoFrame = decoded.toVideoFrame();
-				} finally {
-					decoded.close();
-				}
-				const sampled = sampleClipParamsAt(layer.clip, timelineTime);
-				decodedFrames.push(videoFrame);
-				layers.push({
-					kind: 'frame',
-					frame: videoFrame,
-					effects: sampled.effects,
-					transform: sampled.transform,
-					lut: layer.clip.lut
-				});
+				exportFrame =
+					layers.length > 0
+						? await renderer.renderLayeredForExport(layers, outputTimestamp, duration)
+						: await renderer.renderBlackForExport(outputTimestamp, duration);
+			} finally {
+				for (const frame of decodedFrames) frame.close();
 			}
-			for (const overlay of overlayTextureLayersAt?.(timelineTime) ?? []) {
-				layers.push({
-					kind: 'texture',
-					view: overlay.view,
-					sourceWidth: overlay.sourceWidth,
-					sourceHeight: overlay.sourceHeight,
-					transform: overlay.transform
-				});
+
+			let sample: VideoSample;
+			try {
+				sample = new VideoSample(exportFrame, { timestamp: outputTimestamp, duration });
+			} catch (error) {
+				exportFrame.close();
+				throw error;
 			}
-			exportFrame =
-				layers.length > 0
-					? await renderer.renderLayeredForExport(layers, outputTimestamp, duration)
-					: await renderer.renderBlackForExport(outputTimestamp, duration);
-		} finally {
-			for (const frame of decodedFrames) frame.close();
-		}
 
-		let sample: VideoSample;
-		try {
-			sample = new VideoSample(exportFrame, { timestamp: outputTimestamp, duration });
-		} catch (error) {
-			exportFrame.close();
-			throw error;
-		}
+			await videoSource
+				.add(sample, { keyFrame: frameIndex % keyFrameInterval === 0 })
+				.finally(() => sample.close());
 
-		await videoSource
-			.add(sample, { keyFrame: frameIndex % keyFrameInterval === 0 })
-			.finally(() => sample.close());
-
-		const now = performance.now();
-		if (now - lastReport > 250 || frameIndex === plan.totalFrames - 1) {
-			lastReport = now;
-			onProgress(makeProgress(plan, 'video', frameIndex + 1, startedAt, throughputProbe));
+			const now = performance.now();
+			if (now - lastReport > 250 || frameIndex === plan.totalFrames - 1) {
+				lastReport = now;
+				onProgress(makeProgress(plan, 'video', frameIndex + 1, startedAt, throughputProbe));
+			}
 		}
+	} finally {
+		secondarySinks.disposeAll();
 	}
 }
 

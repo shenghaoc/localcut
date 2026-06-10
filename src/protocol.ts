@@ -466,6 +466,8 @@ export interface TimelineTransitionSnapshot {
 	fromClipId: string;
 	toClipId: string;
 	durationS: number;
+	/** Maximum achievable duration in seconds, derived from clip headroom on both sides. */
+	maxDurationS: number;
 	kind: TransitionKindSnapshot;
 	params: TransitionParamsSnapshot;
 }

@@ -44,7 +44,7 @@ import { DiagnosticsPanel } from './DiagnosticsPanel';
 import { buildUiDiagnosticSnapshot } from './diagnostic-snapshot';
 import { Toolbar } from './Toolbar';
 import { Timeline } from './Timeline';
-import { Inspector, type SelectedClip } from './Inspector';
+import { Inspector, type SelectedClip, type SelectedTransition } from './Inspector';
 import { MediaBin } from './MediaBin';
 import { TranscriptPanel } from './TranscriptPanel';
 import { ThumbnailStore } from './thumbnail-store';
@@ -232,6 +232,31 @@ export function App() {
 	const [captionDiagnostics, setCaptionDiagnostics] = createSignal<CaptionDiagnosticSnapshot[]>([]);
 	const [markers, setMarkers] = createSignal<TimelineMarkerSnapshot[]>([]);
 	const [transitions, setTransitions] = createSignal<TimelineTransitionSnapshot[]>([]);
+	// Phase 13: currently selected transition for the Inspector panel.
+	const transitionMeta = new Map<string, { trackId: string; fromClipId: string; toClipId: string }>();
+	const [selectedTransitionId, setSelectedTransitionId] = createSignal<string | null>(null);
+	const selectedTransition = createMemo<SelectedTransition | null>(() => {
+		const id = selectedTransitionId();
+		if (!id) return null;
+		const all = transitions();
+		const live = all.find((t) => t.id === id);
+		if (!live) return null;
+		// Derive SelectedTransition from the live snapshot so durationS and
+		// maxDurationS always reflect worker-side clamping.
+		// trackId/fromClipId/toClipId/kind are captured when the user selects
+		// a transition (onSelectTransition) and stored in a companion map.
+		const meta = transitionMeta.get(id);
+		if (!meta) return null;
+		return {
+			transitionId: id,
+			trackId: meta.trackId,
+			fromClipId: meta.fromClipId,
+			toClipId: meta.toClipId,
+			durationS: live.durationS,
+			maxDurationS: live.maxDurationS,
+			kind: live.kind
+		};
+	});
 	const [masterGain, setMasterGain] = createSignal(1);
 	const [selectedClipRefs, setSelectedClipRefs] = createSignal<TimelineClipReference[]>([]);
 	const [selectedCaptionTrackId, setSelectedCaptionTrackId] = createSignal<string | null>(null);
@@ -2065,6 +2090,7 @@ export function App() {
 							selectedClipFades={selectedClipFades()}
 							selectedClipTransform={selectedClipTransform()}
 							selectedTitle={selectedTitle()}
+							selectedTransition={selectedTransition()}
 							onSetTitle={(trackId, clipId, patch) =>
 								bridge?.send({ type: 'set-title', trackId, clipId, ...patch })
 							}
@@ -2102,6 +2128,17 @@ export function App() {
 							}}
 							onClipFade={(trackId, clipId, edge, durationS) => {
 								bridge?.send({ type: 'set-clip-fade', trackId, clipId, edge, durationS });
+							}}
+							onTransitionKind={(transitionId, kind) => {
+								bridge?.send({ type: 'set-transition', transitionId, kind });
+							}}
+							onTransitionDuration={(transitionId, durationS) => {
+								bridge?.send({ type: 'set-transition', transitionId, durationS });
+							}}
+							onRemoveTransition={(transitionId) => {
+								bridge?.send({ type: 'remove-transition', transitionId });
+								transitionMeta.delete(transitionId);
+								setSelectedTransitionId(null);
 							}}
 						/>
 						<TranscriptPanel
@@ -2176,6 +2213,18 @@ export function App() {
 					markers={markers}
 					selectedClipRefs={selectedClipRefs}
 					waveformPeaks={() => waveformPeaks()}
+					transitions={transitions}
+					selectedTransition={selectedTransition}
+					onSelectTransition={(transitionId, fromClipId, toClipId, trackId) => {
+						const transition = transitions().find((t) => t.id === transitionId);
+						if (transition) {
+							transitionMeta.set(transitionId, { trackId, fromClipId, toClipId });
+							setSelectedTransitionId(transitionId);
+						}
+					}}
+					onTransitionDuration={(transitionId, durationS) => {
+						bridge?.send({ type: 'set-transition', transitionId, durationS });
+					}}
 					onSeek={(t) => {
 						if (audioSabReady()) void audioEngine.seek(t);
 						bridge?.send({ type: 'seek', time: t });

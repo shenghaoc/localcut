@@ -45,6 +45,7 @@
 		"vite-plugin-pwa": "^0.21.2",
 		"vite-plugin-solid": "^2.11.6",
 		"vitest": "^4.1.8",
+		"wabt": "^1.0.39",
 		"wrangler": "^4.98.0"
 	}
 }

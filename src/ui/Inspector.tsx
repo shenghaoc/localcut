@@ -54,6 +54,18 @@ export interface SelectedClipFades {
 	audioFadeOut: number;
 }
 
+/** Phase 13: selected transition metadata for the Inspector panel. */
+export interface SelectedTransition {
+	transitionId: string;
+	trackId: string;
+	fromClipId: string;
+	toClipId: string;
+	durationS: number;
+	/** Maximum achievable duration in seconds based on source clip headroom. */
+	maxDurationS?: number;
+	kind: import('../protocol').TransitionKindSnapshot;
+}
+
 interface InspectorProps {
 	metadata: MediaMetadata | null;
 	selectedClip: SelectedClip | null;
@@ -61,6 +73,8 @@ interface InspectorProps {
 	selectedClipFades: SelectedClipFades | null;
 	selectedClipTransform: SelectedClipTransform | null;
 	selectedTitle: SelectedTitle | null;
+	/** Phase 13: selected transition data. */
+	selectedTransition: SelectedTransition | null;
 	playheadTime: number;
 	onSetTitle: (
 		trackId: string,
@@ -100,6 +114,10 @@ interface InspectorProps {
 	onTrackSolo: (trackId: string, solo: boolean) => void;
 	onTrackPan: (trackId: string, pan: number) => void;
 	onClipFade: (trackId: string, clipId: string, edge: 'in' | 'out', durationS: number) => void;
+	/** Phase 13: transition editing callbacks. */
+	onTransitionKind?: (transitionId: string, kind: import('../protocol').TransitionKindSnapshot) => void;
+	onTransitionDuration?: (transitionId: string, durationS: number) => void;
+	onRemoveTransition?: (transitionId: string) => void;
 }
 
 type TransformSliderKey = 'x' | 'y' | 'scale' | 'rotation' | 'opacity';
@@ -1233,6 +1251,62 @@ export function Inspector(props: InspectorProps) {
 								)}
 							</Show>
 						</dl>
+					</>
+				)}
+			</Show>
+			{/* Phase 13: transition editor */}
+			<Show when={props.selectedTransition} keyed>
+				{(transition) => (
+					<>
+						<h3 class="panel-subtitle">Transition</h3>
+						<div class="inspector-section">
+							<label class="inspector-label">
+								<span>Kind</span>
+								<select
+									class="inspector-select"
+									value={transition.kind}
+									onChange={(e) =>
+										props.onTransitionKind?.(
+											transition.transitionId,
+											e.currentTarget.value as import('../protocol').TransitionKindSnapshot
+										)
+									}
+								>
+									<option value="cross-dissolve">Cross Dissolve</option>
+									<option value="dip-to-black">Dip to Black</option>
+									<option value="wipe">Wipe</option>
+									<option value="slide">Slide</option>
+								</select>
+							</label>
+							<label class="inspector-label">
+								<span>Duration</span>
+								<div class="inspector-slider-row">
+									<input
+										type="range"
+										min={0.1}
+										max={Math.max(0.1, transition.maxDurationS ?? 5)}
+										step={0.1}
+										value={transition.durationS}
+										onInput={(e) =>
+											props.onTransitionDuration?.(
+												transition.transitionId,
+												Number((e.currentTarget as HTMLInputElement).value)
+											)
+										}
+									/>
+									<span class="tabular-nums inspector-value">
+										{transition.durationS.toFixed(2)}s
+									</span>
+								</div>
+							</label>
+							<button
+								type="button"
+								class="inspector-button is-danger"
+								onClick={() => props.onRemoveTransition?.(transition.transitionId)}
+							>
+								Remove Transition
+							</button>
+						</div>
 					</>
 				)}
 			</Show>

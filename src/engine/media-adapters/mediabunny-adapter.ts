@@ -507,6 +507,8 @@ export const mediabunnyAdapter: MediaAdapter = {
 
 			let frameSource: SequentialFrameSource | null = null;
 			let thumbnailSink: VideoSampleSink | null = null;
+			let videoMinFrameDuration = 0;
+			const secondaryFrameSources: SequentialFrameSource[] = [];
 			const displayWidth = primaryVideoInspection?.displayWidth ?? 0;
 			const displayHeight = primaryVideoInspection?.displayHeight ?? 0;
 			const frameRate =
@@ -526,6 +528,7 @@ export const mediabunnyAdapter: MediaAdapter = {
 							? 1 / frameRate
 							: 0;
 				frameSource = new SequentialFrameSource(sink, minFrameDuration);
+				videoMinFrameDuration = minFrameDuration;
 				thumbnailSink = new VideoSampleSink(primaryVideo);
 			}
 
@@ -566,6 +569,15 @@ export const mediabunnyAdapter: MediaAdapter = {
 				timing,
 				warnings,
 				frameSource,
+				createSecondaryFrameSource: () => {
+					if (!frameSource || !primaryVideo) return null;
+					const secondary = new SequentialFrameSource(
+						new VideoSampleSink(primaryVideo),
+						videoMinFrameDuration
+					);
+					secondaryFrameSources.push(secondary);
+					return secondary;
+				},
 				audioSource,
 				audioChannels,
 				audioSampleRate,
@@ -576,6 +588,8 @@ export const mediabunnyAdapter: MediaAdapter = {
 				thumbnailAt,
 				dispose: () => {
 					frameSource?.reset();
+					for (const secondary of secondaryFrameSources) secondary.reset();
+					secondaryFrameSources.length = 0;
 					audioSource?.dispose();
 					mediaInput.dispose();
 				}

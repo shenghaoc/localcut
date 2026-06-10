@@ -10,7 +10,8 @@ import {
 	Type,
 	X,
 	ZoomIn,
-	ZoomOut
+	ZoomOut,
+	Diamond
 } from 'lucide-solid';
 import { TimelineClip } from './TimelineClip';
 import { TimelineTrack } from './TimelineTrack';
@@ -23,6 +24,7 @@ import {
 	type TimelineClipSnapshot as ProtocolTimelineClip,
 	type TimelineMarkerSnapshot,
 	type TimelineTrackSnapshot as ProtocolTimelineTrack,
+	type TimelineTransitionSnapshot,
 	type WaveformPeaks
 } from '../protocol';
 import {
@@ -69,6 +71,11 @@ interface TimelineProps {
 	getThumbnail: (sourceId: string, timestamp: number) => ThumbnailEntry | null;
 	thumbnailVersion: () => number;
 	onRequestThumbnails: (sourceId: string, timestamps: number[]) => void;
+	/** Phase 13: cut-point transitions rendered on the timeline. */
+	transitions: () => TimelineTransitionSnapshot[];
+	onSelectTransition?: (transitionId: string, fromClipId: string, toClipId: string, trackId: string) => void;
+	onTransitionDuration?: (transitionId: string, durationS: number) => void;
+	selectedTransition?: () => { transitionId: string } | null;
 }
 
 interface MarqueeBox {
@@ -281,6 +288,42 @@ export function Timeline(props: TimelineProps) {
 		};
 	}
 
+	let cleanupTransitionListeners: (() => void) | null = null;
+	let transitionDragRef: { transitionId: string; startX: number; startDurationS: number; pxPerSec: number } | null = null;
+
+	function onTransitionPointerDown(event: PointerEvent, transitionId: string, durationS: number) {
+		if (!props.onTransitionDuration) return;
+		event.preventDefault();
+		event.stopPropagation();
+		transitionDragRef = {
+			transitionId,
+			startX: event.clientX,
+			startDurationS: durationS,
+			pxPerSec: pxPerSecond()
+		};
+		const onMove = (move: PointerEvent) => {
+			if (!transitionDragRef) return;
+			const dx = move.clientX - transitionDragRef.startX;
+			const deltaS = dx / transitionDragRef.pxPerSec;
+			const newDuration = Math.max(0.05, transitionDragRef.startDurationS + deltaS * 2);
+			props.onTransitionDuration?.(transitionDragRef.transitionId, newDuration);
+		};
+		const onUp = () => {
+			transitionDragRef = null;
+			cleanupTransitionListeners?.();
+			cleanupTransitionListeners = null;
+		};
+		cleanupTransitionListeners?.();
+		window.addEventListener('pointermove', onMove);
+		window.addEventListener('pointerup', onUp);
+		window.addEventListener('pointercancel', onUp);
+		cleanupTransitionListeners = () => {
+			window.removeEventListener('pointermove', onMove);
+			window.removeEventListener('pointerup', onUp);
+			window.removeEventListener('pointercancel', onUp);
+		};
+	}
+
 	function handleMoveClip(trackId: string, clipId: string, toStart: number, fromStart: number) {
 		const currentRef = { trackId, clipId };
 		const selection = selectedKeys().has(selectionKey(currentRef))
@@ -430,6 +473,7 @@ export function Timeline(props: TimelineProps) {
 			if (zoomRaf !== null) cancelAnimationFrame(zoomRaf);
 			cleanupScrubListeners?.();
 			cleanupMarqueeListeners?.();
+			cleanupTransitionListeners?.();
 		});
 	});
 
@@ -622,6 +666,37 @@ export function Timeline(props: TimelineProps) {
 													}
 												/>
 											)}
+										</For>
+										{/* Phase 13: transition affordances at cut boundaries */}
+										<For each={props.transitions().filter((t) => t.trackId === track.id)}>
+											{(transition) => {
+												const fromClip = track.clips.find((c) => c.id === transition.fromClipId);
+												const toClip = track.clips.find((c) => c.id === transition.toClipId);
+												if (!fromClip || !toClip) return null;
+												const cutPoint = fromClip.start + fromClip.duration;
+												const px = () => cutPoint * pxPerSecond();
+												return (
+													<button
+														type="button"
+														class={`timeline-transition${props.selectedTransition?.()?.transitionId === transition.id ? ' is-selected' : ''}`}
+														style={{ left: `${px()}px` }}
+														title={`${transition.kind} (${transition.durationS.toFixed(2)}s)`}
+														onClick={(e) => {
+															e.stopPropagation();
+															props.onSelectTransition?.(
+																transition.id,
+																transition.fromClipId,
+																transition.toClipId,
+																transition.trackId
+															);
+														}}
+														onPointerDown={(e) => onTransitionPointerDown(e, transition.id, transition.durationS)}
+														aria-label={`${transition.kind} transition between ${transition.fromClipId} and ${transition.toClipId}`}
+													>
+														<Diamond size={12} aria-hidden="true" />
+													</button>
+												);
+											}}
 										</For>
 									</div>
 								)}

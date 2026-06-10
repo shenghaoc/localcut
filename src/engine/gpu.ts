@@ -6,6 +6,8 @@ import transformF32 from './shaders/transform.wgsl?raw';
 import transformF16 from './shaders/transform.f16.wgsl?raw';
 import compositeOverF32 from './shaders/composite-over.wgsl?raw';
 import compositeOverF16 from './shaders/composite-over.f16.wgsl?raw';
+import transitionMixF32 from './shaders/transition-mix.wgsl?raw';
+import transitionMixF16 from './shaders/transition-mix.f16.wgsl?raw';
 import sourceNormalizeF32 from './shaders/source-normalize.wgsl?raw';
 import sourceNormalizeF16 from './shaders/source-normalize.f16.wgsl?raw';
 import outputConvertF32 from './shaders/output-convert.wgsl?raw';
@@ -29,6 +31,11 @@ import {
 	beginScopeWrite,
 	endScopeWrite
 } from './scopes';
+
+const TRANSITION_KIND_MAP: Record<string, number> = {
+	'cross-dissolve': 0, 'dip-to-black': 1, wipe: 2, slide: 3
+};
+const TRANSITION_DIR_MAP: Record<string, number> = { left: 0, right: 1, up: 2, down: 3 };
 
 export interface DeviceLostInfo {
 	readonly reason: GPUDeviceLostReason;
@@ -60,6 +67,8 @@ export interface FrameCompositeLayer {
 	effects: ClipEffectParams;
 	transform: TransformParams;
 	lut?: ClipLut;
+	/** Phase 13: present when this layer participates in a transition blend. */
+	transition?: import('./timeline').TransitionResolveMeta;
 }
 
 /**
@@ -73,6 +82,8 @@ export interface TextureCompositeLayer {
 	sourceWidth: number;
 	sourceHeight: number;
 	transform: TransformParams;
+	/** Phase 13: present when this layer participates in a transition blend. */
+	transition?: import('./timeline').TransitionResolveMeta;
 }
 
 export type CompositeLayer = FrameCompositeLayer | TextureCompositeLayer;
@@ -116,6 +127,8 @@ export class PreviewRenderer {
 	private readonly clearPipeline: GPUComputePipeline;
 	private readonly transformPipeline: GPUComputePipeline;
 	private readonly compositePipeline: GPUComputePipeline;
+	// Phase 13: transition-mix pipeline (replaces over-blend for transition pairs)
+	private readonly transitionMixPipeline: GPUComputePipeline;
 	// Phase 21: new pipeline stages
 	private readonly sourceNormalizePipeline: GPUComputePipeline;
 	private readonly outputConvertPipeline: GPUComputePipeline;
@@ -133,6 +146,9 @@ export class PreviewRenderer {
 	// Per-layer transform output.
 	private transformTex: GPUTexture | null = null;
 	private transformView: GPUTextureView | null = null;
+	// Phase 13: second transform output for transition pairs.
+	private transformTexB: GPUTexture | null = null;
+	private transformViewB: GPUTextureView | null = null;
 	// Accumulator ping-pong.
 	private accTex: [GPUTexture, GPUTexture] | null = null;
 	private accView: [GPUTextureView, GPUTextureView] | null = null;
@@ -154,6 +170,9 @@ export class PreviewRenderer {
 	// Per-layer opacity uniform buffers.
 	private readonly opacityBuffers: GPUBuffer[] = [];
 	private readonly opacityGroupLayout: GPUBindGroupLayout;
+	// Phase 13: transition-mix uniform buffers.
+	private readonly transitionUniformBuffers: GPUBuffer[] = [];
+	private readonly transitionGroupLayout: GPUBindGroupLayout;
 	// Output-conversion uniform buffer.
 	private outConvUniform: GPUBuffer | null = null;
 	private readonly outConvGroupLayout: GPUBindGroupLayout;
@@ -213,6 +232,15 @@ export class PreviewRenderer {
 			}
 		});
 
+		// Phase 13: transition-mix pipeline for cut-point blends.
+		this.transitionMixPipeline = device.createComputePipeline({
+			layout: 'auto',
+			compute: {
+				module: device.createShaderModule({ code: useF16 ? transitionMixF16 : transitionMixF32 }),
+				entryPoint: 'main'
+			}
+		});
+
 		// Phase 21: new stage pipelines
 		this.sourceNormalizePipeline = device.createComputePipeline({
 			layout: 'auto',
@@ -254,6 +282,7 @@ export class PreviewRenderer {
 		this.normalizeGroupLayout = this.sourceNormalizePipeline.getBindGroupLayout(0);
 		this.outConvGroupLayout = this.outputConvertPipeline.getBindGroupLayout(0);
 		this.opacityGroupLayout = this.opacityPipeline.getBindGroupLayout(0);
+		this.transitionGroupLayout = this.transitionMixPipeline.getBindGroupLayout(0);
 
 		this.sampler = device.createSampler({
 			magFilter: 'linear',
@@ -351,6 +380,7 @@ export class PreviewRenderer {
 		this.storageB = this.device.createTexture({ size, format: 'rgba8unorm', usage });
 		this.storageC = this.device.createTexture({ size, format: 'rgba8unorm', usage });
 		this.transformTex = this.device.createTexture({ size, format: 'rgba8unorm', usage });
+		this.transformTexB = this.device.createTexture({ size, format: 'rgba8unorm', usage });
 		// Phase 21: output-conversion scratch
 		this.outConvTex = this.device.createTexture({ size, format: 'rgba8unorm', usage });
 		// Phase 21: opacity scratch (dedicated to avoid aliasing)
@@ -368,6 +398,7 @@ export class PreviewRenderer {
 		this.accView = [this.accTex[0].createView(), this.accTex[1].createView()];
 
 		this.lastPresentView = null;
+		this.transformViewB = this.transformTexB?.createView() ?? null;
 		this.presentBindGroup = null;
 	}
 
@@ -460,85 +491,146 @@ export class PreviewRenderer {
 		}
 
 		const storage = { a: this.storageAView!, b: this.storageBView!, c: this.storageCView! };
-		let acc = 0; // index of the accumulator holding the current "under"
+		let acc = 0;
+		let transitionCount = 0;
 
-		layers.forEach((layer, slot) => {
-			// Stage 1: source-normalization + colour import
+		const processLayer = (
+			layer: CompositeLayer,
+			slot: number,
+			transformDst: GPUTextureView
+		): { srcWidth: number; srcHeight: number } => {
 			const srcView =
 				layer.kind === 'frame'
 					? this.encodeSourceNormalize(encoder, layer, storage, slot)
 					: layer.view;
-
 			const srcWidth = layer.kind === 'frame' ? layer.frame.displayWidth : layer.sourceWidth;
 			const srcHeight = layer.kind === 'frame' ? layer.frame.displayHeight : layer.sourceHeight;
-
-			// Stage 2: base-correction (only for frame layers)
 			const correctedView =
 				layer.kind === 'frame'
-					? this.effectChain.encodeBaseCorrection(
-							encoder,
-							srcView,
-							storage,
-							this.width,
-							this.height,
-							layer.effects,
-							slot
-						)
+					? this.effectChain.encodeBaseCorrection(encoder, srcView, storage, this.width, this.height, layer.effects, slot)
 					: srcView;
-
-			// Stage 3: lut-apply (only for frame layers with an active LUT)
 			let lutView = correctedView;
 			if (layer.kind === 'frame' && layer.lut && layer.effects.lutStrength > 0) {
-				// Pick a destination that is not the current source
 				const lutDst =
-					correctedView === storage.a
-						? storage.b
-						: correctedView === storage.b
-							? storage.c
-							: storage.a;
-				lutView = this.effectChain.encodeLut(
-					encoder,
-					correctedView,
-					lutDst,
-					layer.lut,
-					layer.effects,
-					slot,
-					wgX,
-					wgY
-				);
+					correctedView === storage.a ? storage.b : correctedView === storage.b ? storage.c : storage.a;
+				lutView = this.effectChain.encodeLut(encoder, correctedView, lutDst, layer.lut, layer.effects, slot, wgX, wgY);
 			}
-
-			// Stage 4: opacity
 			const opaqueView = this.encodeOpacity(encoder, lutView, layer.transform, slot, wgX, wgY);
-
-			// Stage 5: transform — pass identity opacity if the opacity stage already
-			// multiplied alpha (the transform shader also multiplies by u.params.z).
 			const xfParams =
 				layer.transform.opacity < 1.0 && opaqueView !== lutView
 					? { ...layer.transform, opacity: 1.0 }
 					: layer.transform;
-			this.encodeTransform(encoder, xfParams, opaqueView, srcWidth, srcHeight, slot, wgX, wgY);
+			this.encodeTransformDirect(encoder, xfParams, opaqueView, srcWidth, srcHeight, slot, wgX, wgY, transformDst);
+			return { srcWidth, srcHeight };
+		};
 
-			// Stage 6: compositing
-			const under = acc;
-			const over = under === 0 ? 1 : 0;
-			const bindGroup = this.device.createBindGroup({
-				layout: this.compositePipeline.getBindGroupLayout(0),
-				entries: [
-					{ binding: 0, resource: accView[under] },
-					{ binding: 1, resource: this.transformView! },
-					{ binding: 2, resource: accView[over] }
-				]
-			});
-			const pass = encoder.beginComputePass();
-			pass.setPipeline(this.compositePipeline);
-			pass.setBindGroup(0, bindGroup);
-			pass.dispatchWorkgroups(wgX, wgY);
-			pass.end();
-			acc = over;
-		});
+		for (let i = 0; i < layers.length; i++) {
+			const layer = layers[i]!;
+			const nextLayer = layers[i + 1];
+			const isTransitionPair =
+				layer.transition &&
+				nextLayer?.transition &&
+				layer.transition.transitionId === nextLayer.transition.transitionId;
 
-		// Stage 7: output-conversion (applied to final accumulator)
+			if (isTransitionPair) {
+				const transition = layer.transition!;
+				const isOutgoing = transition.role === 'outgoing';
+				const outgoing = isOutgoing ? layer : nextLayer;
+				const incoming = isOutgoing ? nextLayer : layer;
+
+				processLayer(outgoing, i, this.transformViewB!);
+				processLayer(incoming, i + 1, this.transformView!);
+
+				const under = acc;
+				const over = under === 0 ? 1 : 0;
+
+				let transBuffer = this.transitionUniformBuffers[transitionCount];
+				if (!transBuffer) {
+					transBuffer = this.device.createBuffer({
+						size: 16,
+						usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+					});
+					this.transitionUniformBuffers[transitionCount] = transBuffer;
+				}
+				transitionCount++;
+				const direction = TRANSITION_DIR_MAP[transition.params?.direction ?? 'left'] ?? 0;
+				const arrayBuffer = new ArrayBuffer(16);
+				const floatView = new Float32Array(arrayBuffer);
+				const uintView = new Uint32Array(arrayBuffer);
+				floatView[0] = transition.mixT;
+				uintView[1] = TRANSITION_KIND_MAP[transition.kind] ?? 0;
+				uintView[2] = direction;
+				this.device.queue.writeBuffer(transBuffer, 0, arrayBuffer);
+
+				// Phase 13: blend the two transform outputs into a scratch texture
+				// first, then composite that result over the accumulator so layers
+				// below the transition track are preserved.
+				// blendDst intentionally aliases storage.a.  This is safe only because the
+				// transition-mix dispatch is recorded immediately after both processLayer calls
+				// and before any subsequent layer's colour-chain pass could write storage.a.
+				// Any future change to processLayer that writes storage.a after its transform
+				// pass would silently corrupt the transition blend — update this invariant if so.
+				const blendDst = storage.a;
+				const transitionBindGroup = this.device.createBindGroup({
+					layout: this.transitionGroupLayout,
+					entries: [
+						{ binding: 0, resource: { buffer: transBuffer } },
+						{ binding: 1, resource: this.transformViewB! },  // outgoing
+						{ binding: 2, resource: this.transformView! },   // incoming
+						{ binding: 3, resource: this.sampler },
+						{ binding: 4, resource: this.sampler },
+						{ binding: 5, resource: blendDst }
+					]
+				});
+				{
+					const transPass = encoder.beginComputePass();
+					transPass.setPipeline(this.transitionMixPipeline);
+					transPass.setBindGroup(0, transitionBindGroup);
+					transPass.dispatchWorkgroups(wgX, wgY);
+					transPass.end();
+				}
+
+				// Composite the blended pair over the accumulator.
+				{
+					const compBindGroup = this.device.createBindGroup({
+						layout: this.compositePipeline.getBindGroupLayout(0),
+						entries: [
+							{ binding: 0, resource: accView[under] },
+							{ binding: 1, resource: blendDst },
+							{ binding: 2, resource: accView[over] }
+						]
+					});
+					const compPass = encoder.beginComputePass();
+					compPass.setPipeline(this.compositePipeline);
+					compPass.setBindGroup(0, compBindGroup);
+					compPass.dispatchWorkgroups(wgX, wgY);
+					compPass.end();
+				}
+
+				acc = over;
+				i += 1;
+			} else {
+				processLayer(layer, i, this.transformView!);
+
+				const under = acc;
+				const over = under === 0 ? 1 : 0;
+				const bindGroup = this.device.createBindGroup({
+					layout: this.compositePipeline.getBindGroupLayout(0),
+					entries: [
+						{ binding: 0, resource: accView[under] },
+						{ binding: 1, resource: this.transformView! },
+						{ binding: 2, resource: accView[over] }
+					]
+				});
+				const pass = encoder.beginComputePass();
+				pass.setPipeline(this.compositePipeline);
+				pass.setBindGroup(0, bindGroup);
+				pass.dispatchWorkgroups(wgX, wgY);
+				pass.end();
+				acc = over;
+			}
+		}
+
 		this._lastAccView = accView[acc];
 		return this.encodeOutputConvert(encoder, accView[acc], wgX, wgY);
 	}
@@ -678,7 +770,8 @@ export class PreviewRenderer {
 		return this.outConvView;
 	}
 
-	private encodeTransform(
+	/** Phase 13: transform encode with explicit destination view. */
+	private encodeTransformDirect(
 		encoder: GPUCommandEncoder,
 		transform: TransformParams,
 		srcView: GPUTextureView,
@@ -686,7 +779,8 @@ export class PreviewRenderer {
 		srcHeight: number,
 		slot: number,
 		wgX: number,
-		wgY: number
+		wgY: number,
+		dstView: GPUTextureView
 	): void {
 		let buffer = this.transformBuffers[slot];
 		if (!buffer) {
@@ -698,14 +792,13 @@ export class PreviewRenderer {
 		}
 		const packed = packTransformUniform(transform, this.width, this.height, srcWidth, srcHeight);
 		this.device.queue.writeBuffer(buffer, 0, packed);
-
 		const bindGroup = this.device.createBindGroup({
 			layout: this.transformPipeline.getBindGroupLayout(0),
 			entries: [
 				{ binding: 0, resource: { buffer } },
 				{ binding: 1, resource: srcView },
 				{ binding: 2, resource: this.sampler },
-				{ binding: 3, resource: this.transformView! }
+				{ binding: 3, resource: dstView }
 			]
 		});
 		const pass = encoder.beginComputePass();
@@ -804,6 +897,8 @@ export class PreviewRenderer {
 		this.normalizeBuffers.length = 0;
 		for (const buffer of this.opacityBuffers) buffer.destroy();
 		this.opacityBuffers.length = 0;
+		for (const buffer of this.transitionUniformBuffers) buffer.destroy();
+		this.transitionUniformBuffers.length = 0;
 		this.outConvUniform?.destroy();
 		this.outConvUniform = null;
 		this.presentBindGroup = null;
@@ -817,6 +912,7 @@ export class PreviewRenderer {
 		this.storageB?.destroy();
 		this.storageC?.destroy();
 		this.transformTex?.destroy();
+		this.transformTexB?.destroy();
 		this.outConvTex?.destroy();
 		this.opacityTex?.destroy();
 		this.zebraTex?.destroy();
@@ -826,6 +922,7 @@ export class PreviewRenderer {
 		this.storageB = null;
 		this.storageC = null;
 		this.transformTex = null;
+		this.transformTexB = null;
 		this.outConvTex = null;
 		this.outConvView = null;
 		this.opacityTex = null;
@@ -839,6 +936,7 @@ export class PreviewRenderer {
 		this.storageBView = null;
 		this.storageCView = null;
 		this.transformView = null;
+		this.transformViewB = null;
 		this.accView = null;
 	}
 

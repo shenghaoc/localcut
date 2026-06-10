@@ -162,6 +162,18 @@ Import a `.cube` LUT file for professional color grading:
 2. In the Inspector, click **Import LUT** and choose a `.cube` file.
 3. Adjust the **LUT Strength** slider to blend between the original and graded look.
 
+## Video Transitions
+
+Add a transition between two adjacent clips on the same video track:
+
+1. Split or arrange two clips so they share a cut point on the same track.
+2. A **diamond** icon appears at the cut boundary — click it to select the transition.
+3. In the Inspector, choose a **Kind** (Cross Dissolve, Dip to Black, Wipe, Slide) and adjust the **Duration** slider.
+4. The duration slider maximum reflects how much source headroom each clip has on either side of the cut.
+5. Click **Remove Transition** to delete it.
+
+> **Compatibility note**: Video transitions require the full-performance (WebGPU) export path. If your browser uses the reduced-compatibility export path, transitions are skipped and a warning is shown in the export dialog. Switch to a Chromium-based browser with WebGPU support for full transition rendering.
+
 ## Titles & Text
 
 Add title cards to your project:

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+	SecondaryFrameSourcePool,
 	SequentialFrameSource,
 	type SequentialVideoSource,
+	type VideoFrameProvider,
 	type VideoSampleLike
 } from './frame-source';
 
@@ -179,5 +181,85 @@ describe('SequentialFrameSource', () => {
 
 		await fs.frameAt(0.2);
 		expect(source.starts).toEqual([0, 0.2]);
+	});
+});
+
+describe('SecondaryFrameSourcePool (Phase 13 T2.2)', () => {
+	function poolHandle(sourceId: string) {
+		const primary = new SequentialFrameSource(new FakeSource(makeFrames()));
+		const secondaries: SequentialFrameSource[] = [];
+		return {
+			handle: {
+				sourceId,
+				frameSource: primary as VideoFrameProvider,
+				createSecondaryFrameSource: () => {
+					const secondary = new SequentialFrameSource(new FakeSource(makeFrames()));
+					secondaries.push(secondary);
+					return secondary;
+				}
+			},
+			primary,
+			secondaries
+		};
+	}
+
+	it('creates one secondary per source and reuses it across acquires', () => {
+		const pool = new SecondaryFrameSourcePool();
+		const { handle, primary, secondaries } = poolHandle('s1');
+
+		const first = pool.acquire(handle);
+		const second = pool.acquire(handle);
+		expect(first).toBe(second);
+		expect(first).not.toBe(primary);
+		expect(secondaries).toHaveLength(1);
+	});
+
+	it('keeps independent iterators so a same-source pair never cross-seeks', async () => {
+		const pool = new SecondaryFrameSourcePool();
+		const primarySource = new FakeSource(makeFrames());
+		const primary = new SequentialFrameSource(primarySource);
+		const secondarySource = new FakeSource(makeFrames());
+		const handle = {
+			sourceId: 's1',
+			frameSource: primary as VideoFrameProvider,
+			createSecondaryFrameSource: () => new SequentialFrameSource(secondarySource)
+		};
+		const secondary = pool.acquire(handle)!;
+
+		// Outgoing reads near the end while incoming reads near the start, every
+		// frame of the window — neither sink re-seeks after its first iterator open.
+		for (const t of [0, 0.1, 0.2]) {
+			await primary.frameAt(1.5 + t);
+			await secondary.frameAt(t);
+		}
+		expect(primarySource.starts).toEqual([1.5]);
+		expect(secondarySource.starts).toEqual([0]);
+	});
+
+	it('falls back to the primary provider when the handle has no factory', () => {
+		const pool = new SecondaryFrameSourcePool();
+		const primary = new SequentialFrameSource(new FakeSource(makeFrames()));
+		const handle = { sourceId: 'still', frameSource: primary as VideoFrameProvider };
+
+		expect(pool.acquire(handle)).toBe(primary);
+		// Nothing was pooled, so releasing is a no-op rather than resetting primary.
+		pool.release('still');
+	});
+
+	it('release and disposeAll reset pooled sinks and forget them', async () => {
+		const pool = new SecondaryFrameSourcePool();
+		const a = poolHandle('a');
+		const b = poolHandle('b');
+		const secondaryA = pool.acquire(a.handle)!;
+		const secondaryB = pool.acquire(b.handle)!;
+		await secondaryA.frameAt(0);
+		await secondaryB.frameAt(0);
+
+		pool.release('a');
+		expect(pool.acquire(a.handle)).not.toBe(secondaryA); // re-created after release
+		expect(a.secondaries).toHaveLength(2);
+
+		pool.disposeAll();
+		expect(pool.acquire(b.handle)).not.toBe(secondaryB);
 	});
 });

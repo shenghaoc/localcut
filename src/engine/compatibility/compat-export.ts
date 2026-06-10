@@ -113,6 +113,9 @@ export interface ReducedTimelineExportOptions {
 	onProgress: (progress: ExportProgress) => void;
 	masterGain?: number;
 	transitions?: readonly AudioTransitionCut[];
+	/** When true, the project contains at least one video transition that cannot be
+	 *  rendered on the reduced-compatibility path; a warning is surfaced to the user. */
+	hasVideoTransitions?: boolean;
 	overlayTitleLayersAt?: (
 		timelineTime: number
 	) => Array<{ content: TitleContent; transform: TransformParams }>;
@@ -222,6 +225,10 @@ async function encodeReducedVideo(
 	const layerBudget = layerBudgetFromProbe(options.throughputProbe);
 	let lastReport = 0;
 
+	if (options.hasVideoTransitions) {
+		console.warn('Video transitions are not rendered on the reduced-compatibility export path.');
+	}
+
 	for (let frameIndex = startFrame; frameIndex < endFrame; frameIndex += 1) {
 		throwIfCanceled(options.signal);
 		const outputTimestamp = rebaseOutputTimestamp(frameIndex, plan.frameRate);
@@ -229,7 +236,8 @@ async function encodeReducedVideo(
 		const duration = Math.max(1e-6, Math.min(frameDuration, plan.exportDuration - outputTimestamp));
 		const resolvedLayers = resolveAllAt(
 			options.timeline,
-			Math.min(timelineTime, plan.rangeStartS + plan.exportDuration - 1e-6)
+			Math.min(timelineTime, plan.rangeStartS + plan.exportDuration - 1e-6),
+			undefined // Phase 13 transitions not supported on reduced path
 		);
 		const decodedFrames: VideoFrame[] = [];
 		const renderLayers: CanvasCompatibilityLayer[] = [];
@@ -374,6 +382,12 @@ export async function exportTimelineReduced(
 
 	const candidate = REDUCED_CODECS[plan.codec];
 	const warnings: string[] = [];
+	if (options.hasVideoTransitions) {
+		warnings.push(
+			'Video transitions are not rendered on the reduced-compatibility export path. ' +
+				'Use the full-performance (WebGPU) path to include transitions in your export.'
+		);
+	}
 	const includeAudio =
 		plan.hasAudio &&
 		(await reducedAudioSupported(

@@ -1,6 +1,10 @@
 /** Sequential decoded-audio source for real-time PCM pumping (Phase 5). */
 
-import { AudioResampler } from './audio-resampler';
+import { WasmAudioResampler } from './audio-resampler-wasm';
+
+// Kick off WASM compilation early so the module is ready before the first
+// synchronous process() call. Failure is non-fatal.
+WasmAudioResampler.init();
 
 export interface AudioSampleLike {
 	readonly timestamp: number;
@@ -25,7 +29,7 @@ export class SequentialAudioSource {
 	private iterator: AsyncGenerator<AudioSampleLike, void, unknown> | null = null;
 	private current: AudioSampleLike | null = null;
 	private anchor = Number.NEGATIVE_INFINITY;
-	private resampler: AudioResampler | null = null;
+	private resampler: WasmAudioResampler | null = null;
 	private resamplerSourceRate = 0;
 	private resamplerSourceChannels = 0;
 	private resamplerTargetRate = 0;
@@ -152,7 +156,7 @@ export class SequentialAudioSource {
 		sourceRate: number,
 		sourceChannels: number,
 		targetRate: number
-	): AudioResampler {
+	): WasmAudioResampler {
 		if (
 			this.resampler &&
 			this.resamplerSourceRate === sourceRate &&
@@ -161,10 +165,10 @@ export class SequentialAudioSource {
 		) {
 			return this.resampler;
 		}
-		this.resampler = new AudioResampler({
+		this.resampler = new WasmAudioResampler({
 			inputRate: sourceRate,
 			outputRate: targetRate,
-			channels: sourceChannels
+			channels: sourceChannels,
 		});
 		this.resamplerSourceRate = sourceRate;
 		this.resamplerSourceChannels = sourceChannels;

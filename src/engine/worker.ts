@@ -61,6 +61,7 @@ import {
 	reorderTrack,
 	revalidateTransitions,
 	resolveAllAt,
+	sharedSourceIncomingLayers,
 	resolveAudioAt,
 	setClipDuration,
 	setTransition,
@@ -103,6 +104,7 @@ import {
 	DEFAULT_MASTER_GAIN,
 	DEFAULT_TITLE_DURATION_S,
 	normalizeTransform,
+	maxTransitionDurationS,
 	type Timeline,
 	type TimelineClip,
 	type TimelineMarker,
@@ -146,6 +148,7 @@ import {
 } from './playback';
 import { probeEncodeThroughput } from './hardware-probe';
 import { FrameCache, makeFrameCacheKey } from './frame-cache';
+import { SecondaryFrameSourcePool, type VideoFrameProvider } from './frame-source';
 import {
 	ExportCancelledError,
 	defaultExportSettings,
@@ -263,6 +266,8 @@ let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
 let autosaveInFlight: Promise<void> | null = null;
 let restoreOfferGeneration = 0;
 let frameCache: FrameCache | null = null;
+/** Secondary decode sinks for same-source transition pairs (Phase 13 T2.2). */
+const secondaryFrameSources = new SecondaryFrameSourcePool();
 let currentProbe: ThroughputProbe | null = null;
 let currentCapabilityProbe: CapabilityProbeResult | null = null;
 let layerBudgetWarned = false;
@@ -412,7 +417,13 @@ function postTimelineState() {
 		burnedIn: track.burnedIn,
 		visible: track.visible
 	}));
-	const transitionSnapshot: TimelineTransitionSnapshot[] = cloneTransitionsSnapshot(transitions);
+	const sourceDurs = transitionSourceDurations();
+	const transitionSnapshot: TimelineTransitionSnapshot[] = cloneTransitionsSnapshot(
+		transitions
+	).map((t) => ({
+		...t,
+		maxDurationS: maxTransitionDurationS(timeline, sourceDurs, t.trackId, t.fromClipId, t.toClipId)
+	}));
 	post({
 		type: 'timeline-state',
 		timeline: snapshot,
@@ -1729,6 +1740,7 @@ function teardownMedia() {
 	adaptive = null;
 	frameCache?.clear();
 	frameCache = null;
+	secondaryFrameSources.disposeAll();
 	for (const handle of sourceInputs.values()) {
 		handle.dispose();
 	}
@@ -1748,16 +1760,17 @@ function teardownMedia() {
 
 function wrapDecodedFrameForPlayback(
 	frameSource: MediaInputHandle,
-	sourceTimestamp: number
+	sourceTimestamp: number,
+	provider: VideoFrameProvider | null = frameSource.frameSource
 ): Promise<DecodedFrame | null> {
-	if (!frameSource.frameSource) {
+	if (!provider) {
 		return Promise.resolve(null);
 	}
 	// Capture the controller that requested this decode. If playback is disposed or
 	// rebuilt (re-import, teardown) before the decode resolves, the old controller
 	// will never receive or close this frame — drop it here so it can't leak.
 	const activePlayback = playback;
-	return frameSource.frameSource.frameAt(sourceTimestamp).then((decoded) => {
+	return provider.frameAt(sourceTimestamp).then((decoded) => {
 		if (!decoded) return null;
 		// Close the decoded sample even if toVideoFrame() throws on a corrupt
 		// sample — otherwise the underlying decoder resource leaks. The thrown
@@ -1789,10 +1802,11 @@ function wrapDecodedFrameForPlayback(
 function decodeFrameForLayer(
 	sourceHandle: MediaInputHandle,
 	sourceId: string,
-	sourceTime: number
+	sourceTime: number,
+	provider: VideoFrameProvider | null = sourceHandle.frameSource
 ): Promise<DecodedFrame | null> {
 	if (!frameCache) {
-		return wrapDecodedFrameForPlayback(sourceHandle, sourceTime);
+		return wrapDecodedFrameForPlayback(sourceHandle, sourceTime, provider);
 	}
 	const key = makeFrameCacheKey(sourceId, sourceTime);
 	// FrameCache.get() returns a caller-owned clone. The wrapper owns it (closed via
@@ -1805,7 +1819,7 @@ function decodeFrameForLayer(
 			close: () => cached.close()
 		});
 	}
-	return wrapDecodedFrameForPlayback(sourceHandle, sourceTime);
+	return wrapDecodedFrameForPlayback(sourceHandle, sourceTime, provider);
 }
 
 /** Every title clip on the timeline, paired with its owning track id. */
@@ -1878,10 +1892,23 @@ function activeCaptionLayersAt(
 /**
  * Colour/transform metadata carried per decoded layer (no shared mutable state).
  * Title layers carry no decode — they composite from the cached title texture.
+ * Phase 13: `transition` metadata flows from resolveAllAt through to CompositeLayer.
  */
 type LayerMeta =
-	| { kind: 'frame'; effects: ClipEffectParams; transform: TransformParams; lut?: ClipLut }
-	| { kind: 'title'; clipId: string; content: TitleContent; transform: TransformParams };
+	| {
+			kind: 'frame';
+			effects: ClipEffectParams;
+			transform: TransformParams;
+			lut?: ClipLut;
+			transition?: import('./timeline').TransitionResolveMeta;
+	  }
+	| {
+			kind: 'title';
+			clipId: string;
+			content: TitleContent;
+			transform: TransformParams;
+			transition?: import('./timeline').TransitionResolveMeta;
+	  };
 
 /**
  * Decodes the budgeted video layer stack at `timestamp` (bottom → top) for the
@@ -1894,7 +1921,10 @@ type LayerMeta =
  */
 function makeGetLayers() {
 	return async (timestamp: number): Promise<DecodedLayer<LayerMeta>[] | null> => {
-		const layers = resolveAllAt(timeline, timestamp);
+		const layers = resolveAllAt(timeline, timestamp, transitions);
+		// Same-source transition pairs route the incoming side through a secondary
+		// sink so the two cut sides don't keyframe-re-seek each other (T2.2).
+		const secondarySinkLayers = sharedSourceIncomingLayers(layers);
 		const budget = layerBudgetFromProbe(currentProbe);
 		const decodedLayers: DecodedLayer<LayerMeta>[] = [];
 		let decodedCount = 0;
@@ -1912,7 +1942,8 @@ function makeGetLayers() {
 							kind: 'title',
 							clipId: layer.clip.id,
 							content: layer.clip.title,
-							transform: sampled.transform
+							transform: sampled.transform,
+							transition: layer.transition
 						}
 					});
 					continue;
@@ -1935,7 +1966,10 @@ function makeGetLayers() {
 				const decoded = await decodeFrameForLayer(
 					handle,
 					layer.clip.sourceId,
-					sourceTimestamp.adapterTimestampS
+					sourceTimestamp.adapterTimestampS,
+					secondarySinkLayers.has(layer)
+						? secondaryFrameSources.acquire(handle)
+						: handle.frameSource
 				);
 				if (!decoded) continue;
 				const sampled = sampleClipParamsAt(layer.clip, timestamp);
@@ -1946,7 +1980,8 @@ function makeGetLayers() {
 						kind: 'frame',
 						effects: sampled.effects,
 						transform: sampled.transform,
-						lut: layer.clip.lut
+						lut: layer.clip.lut,
+						transition: layer.transition
 					}
 				});
 			}
@@ -2088,6 +2123,7 @@ function pruneUnusedSources(): void {
 	if (exportAbort) return;
 	for (const [id, handle] of [...sourceInputs.entries()]) {
 		if (binSourceIds.has(id)) continue;
+		secondaryFrameSources.release(id);
 		handle.dispose();
 		sourceInputs.delete(id);
 		thumbnailGen?.cancelSource(id);
@@ -2578,6 +2614,7 @@ function handleRemoveAsset(cmd: Extract<WorkerCommand, { type: 'remove-asset' }>
 	}
 	const handle = sourceInputs.get(cmd.sourceId);
 	if (handle) {
+		secondaryFrameSources.release(cmd.sourceId);
 		handle.dispose();
 		sourceInputs.delete(cmd.sourceId);
 		if (primaryHandle === handle) primaryHandle = null;
@@ -3116,6 +3153,7 @@ async function applyImportedDoc(doc: ProjectDoc): Promise<void> {
 	for (const id of [...binSourceIds]) {
 		if (keepIds.has(id)) continue;
 		binSourceIds.delete(id);
+		secondaryFrameSources.release(id);
 		sourceInputs.get(id)?.dispose();
 		sourceInputs.delete(id);
 		sourceDescriptors.delete(id);
@@ -3269,7 +3307,8 @@ function setupPlayback() {
 							view: texture.view,
 							sourceWidth: texture.width,
 							sourceHeight: texture.height,
-							transform: layer.meta.transform
+							transform: layer.meta.transform,
+							transition: layer.meta.transition
 						});
 					} else if (layer.frame) {
 						stack.push({
@@ -3277,7 +3316,8 @@ function setupPlayback() {
 							frame: layer.frame,
 							effects: layer.meta.effects,
 							transform: layer.meta.transform,
-							lut: layer.meta.lut
+							lut: layer.meta.lut,
+							transition: layer.meta.transition
 						});
 					}
 				}
@@ -3557,6 +3597,7 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
 				onProgress: (progress) => post({ type: 'export-progress', progress }),
 				masterGain,
 				transitions: audioTransitions,
+				videoTransitions: transitions,
 				// Title layers composite from the cached raster; `ensure` (re)rasters once
 				// per title on the cold export path, never per frame.
 				titleTextureFor: (clip) =>
@@ -3603,6 +3644,7 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
 				onProgress: (progress) => post({ type: 'export-progress', progress }),
 				masterGain,
 				transitions: audioTransitions,
+				hasVideoTransitions: transitions.length > 0,
 				overlayTitleLayersAt: (timelineTime) =>
 					activeCaptionLayersAt(exportCaptionTracksSnapshot, timelineTime, (trackId, segmentId) =>
 						exportCaptionTextureId(exportCaptionTextureGroupId, trackId, segmentId)
@@ -3862,6 +3904,7 @@ async function runQueueJob(job: RenderQueueJob): Promise<void> {
 			settings,
 			throughputProbe: currentProbe,
 			signal: controller.signal,
+			videoTransitions: transitions,
 			onProgress: (progress) => {
 				if (progress.phase === 'finalizing' && !finalizingSaved) {
 					queueState = markJobFinalizing(queueState, job.id);

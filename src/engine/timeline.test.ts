@@ -17,6 +17,7 @@ import {
 	duplicateClips,
 	isTitleClip,
 	resolveAllAt,
+	sharedSourceIncomingLayers,
 	setClipTransform,
 	setTitleContent,
 	getTimelineDuration,
@@ -54,7 +55,8 @@ import {
 	extractRegion,
 	type TimelineClip,
 	type TimelineTrack,
-	type TimelineMarker
+	type TimelineMarker,
+	type TimelineTransition
 } from './timeline';
 
 function clip(
@@ -1021,6 +1023,110 @@ describe('timeline tracks', () => {
 			sourceDuration: 10
 		});
 		expect(revalidateTransitions(stillAdjacent, transitions, durations)).toHaveLength(1);
+	});
+});
+
+describe('resolveAllAt transition windows (T2.1)', () => {
+	const transition: TimelineTransition = {
+		id: 'tr-1',
+		trackId: 'video-track',
+		fromClipId: 'a',
+		toClipId: 'b',
+		durationS: 1,
+		kind: 'cross-dissolve',
+		params: {}
+	};
+
+	function cutTimeline(sourceIds: { a: string; b: string } = { a: 'src-a', b: 'src-b' }) {
+		return [
+			{
+				id: 'video-track',
+				type: 'video' as const,
+				...DEFAULT_TRACK_MIX,
+				clips: [
+					clip({ id: 'a', sourceId: sourceIds.a, start: 0, duration: 4, inPoint: 1 }),
+					clip({ id: 'b', sourceId: sourceIds.b, start: 4, duration: 4, inPoint: 2 })
+				]
+			},
+			{
+				id: 'video-top',
+				type: 'video' as const,
+				...DEFAULT_TRACK_MIX,
+				clips: [clip({ id: 'pip', sourceId: 'src-pip', start: 0, duration: 10, inPoint: 0 })]
+			}
+		];
+	}
+
+	it('emits outgoing + incoming with mixT inside the window, replacing the base layer', () => {
+		// Cut at 4, durationS 1 → window [3.5, 4.5). At 4.25 the pair reads past
+		// a's out-point and into b, with mixT 3/4 through the window.
+		const layers = resolveAllAt(cutTimeline(), 4.25, [transition]);
+		expect(layers.map((l) => l.clip.id)).toEqual(['a', 'b', 'pip']);
+		const [outgoing, incoming, top] = layers;
+		expect(outgoing!.transition).toMatchObject({
+			role: 'outgoing',
+			mixT: 0.75,
+			transitionId: 'tr-1'
+		});
+		expect(incoming!.transition).toMatchObject({ role: 'incoming', mixT: 0.75 });
+		expect(top!.transition).toBeUndefined();
+		expect(outgoing!.sourceTime).toBeCloseTo(1 + 4.25); // intentionally past a's out-point
+		expect(incoming!.sourceTime).toBeCloseTo(2 + 0.25);
+	});
+
+	it('reads the incoming clip before its in-point in the first half of the window', () => {
+		const layers = resolveAllAt(cutTimeline(), 3.75, [transition]);
+		const incoming = layers.find((l) => l.transition?.role === 'incoming')!;
+		expect(incoming.transition!.mixT).toBeCloseTo(0.25);
+		expect(incoming.sourceTime).toBeCloseTo(2 - 0.25);
+	});
+
+	it('clamps mixT to [0, 1] at the window edges', () => {
+		const atStart = resolveAllAt(cutTimeline(), 3.5, [transition]);
+		expect(atStart[0]!.transition!.mixT).toBe(0);
+		const nearEnd = resolveAllAt(cutTimeline(), 4.4999, [transition]);
+		expect(nearEnd[0]!.transition!.mixT).toBeLessThanOrEqual(1);
+		expect(nearEnd[0]!.transition!.mixT).toBeGreaterThan(0.99);
+	});
+
+	it('emits plain layers outside the window', () => {
+		for (const time of [3.4, 4.5, 1]) {
+			const layers = resolveAllAt(cutTimeline(), time, [transition]);
+			expect(layers.map((l) => l.clip.id)).toEqual([time < 4 ? 'a' : 'b', 'pip']);
+			expect(layers.every((l) => l.transition === undefined)).toBe(true);
+		}
+	});
+
+	it('inserts the pair at the track z-position when the track has no clip at the time', () => {
+		// A gap right after the cut: the window still covers 4.2 but neither clip does.
+		const gapped = cutTimeline();
+		gapped[0]!.clips[1]!.start = 4.5;
+		const layers = resolveAllAt(gapped, 4.2, [transition]);
+		expect(layers.map((l) => l.clip.id)).toEqual(['a', 'b', 'pip']);
+		expect(layers[0]!.transition?.role).toBe('outgoing');
+		expect(layers[1]!.transition?.role).toBe('incoming');
+	});
+
+	it('ignores transitions whose clips are missing or non-adjacent in track order', () => {
+		const layers = resolveAllAt(cutTimeline(), 4.25, [{ ...transition, toClipId: 'missing' }]);
+		expect(layers.every((l) => l.transition === undefined)).toBe(true);
+	});
+
+	describe('sharedSourceIncomingLayers (T2.2)', () => {
+		it('flags the incoming layer only when both sides read the same source', () => {
+			const sameSource = resolveAllAt(cutTimeline({ a: 'src-x', b: 'src-x' }), 4.25, [transition]);
+			const shared = sharedSourceIncomingLayers(sameSource);
+			expect(shared.size).toBe(1);
+			const [flagged] = [...shared];
+			expect(flagged!.transition?.role).toBe('incoming');
+
+			const distinct = resolveAllAt(cutTimeline(), 4.25, [transition]);
+			expect(sharedSourceIncomingLayers(distinct).size).toBe(0);
+		});
+
+		it('returns an empty set for plain layer stacks', () => {
+			expect(sharedSourceIncomingLayers(resolveAllAt(cutTimeline(), 1, [transition])).size).toBe(0);
+		});
 	});
 });
 
