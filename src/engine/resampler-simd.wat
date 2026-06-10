@@ -1,6 +1,8 @@
 ;; Polyphase sinc resampler inner loop with wasm-simd128 intrinsics.
 ;; Implements the same streaming contract as the JS AudioResampler.process().
 ;; Memory layout is caller-managed.
+;;
+;; Compiled to resampler-simd.wasm + resampler-simd-wasm-b64.ts via npm run build:wasm (wabt).
 
 (module
   (memory (export "memory") 1)
@@ -49,11 +51,11 @@
     (local $center f64) (local $intCenter i32) (local $frac f64)
     (local $phaseIdx i32) (local $filterRow i32) (local $sampleBase i32)
     (local $c i32) (local $tap i32)
-    (local $simdIters i32) (local $remTaps i32)
+    (local $simdIters i32) (local $simdLimit i32)
     (local $simdAcc v128) (local $fCoefs v128) (local $samples v128)
     (local $sum f64) (local $consume i32) (local $remStart i32)
     (local $sIdx i32) (local $chBytes i32)
-    (local $t1 i32) (local $t2 i32) (local $t3 i32)
+    (local $t1 i32) (local $t2 i32) (local $t3 i32) (local $chanBaseBytePtr i32)
 
     (local.set $fs (global.get $filterSize))
     (local.set $ch (global.get $channels))
@@ -65,6 +67,10 @@
     (local.set $srcPos (global.get $inputFraction))
     (local.set $writeIdx (i32.const 0))
     (local.set $chBytes (i32.shl (local.get $ch) (i32.const 2)))
+
+    ;; $simdIters/$simdLimit depend only on filterSize (constant per process() call)
+    (local.set $simdIters (i32.div_u (local.get $fs) (i32.const 4)))
+    (local.set $simdLimit (i32.mul (local.get $simdIters) (i32.const 4)))
 
     (block $done
       (loop $outer
@@ -80,23 +86,22 @@
         (local.set $filterRow (i32.mul (local.get $phaseIdx) (local.get $fs)))
         (local.set $sampleBase (i32.mul (i32.sub (local.get $intCenter) (local.get $hfi)) (local.get $ch)))
 
-        ;; $simdIters/$remTaps depend only on filterSize (constant) — compute once before channel loop
-        (local.set $simdIters (i32.div_u (local.get $fs) (i32.const 4)))
-        (local.set $remTaps (i32.rem_u (local.get $fs) (i32.const 4)))
-
         (local.set $c (i32.const 0))
         (block $chanDone
           (loop $chanLoop
             (br_if $chanDone (i32.ge_u (local.get $c) (local.get $ch)))
             (local.set $simdAcc (v128.const i32x4 0 0 0 0))
             (local.set $tap (i32.const 0))
+            (local.set $chanBaseBytePtr
+              (i32.add (local.get $inputPtr)
+                (i32.shl (i32.add (local.get $sampleBase) (local.get $c)) (i32.const 2))))
 
             (if (i32.eq (local.get $ch) (i32.const 1))
               (then
                 (block $simdMonoDone
                   (loop $simdMonoLoop
                     (br_if $simdMonoDone
-                      (i32.ge_u (local.get $tap) (i32.mul (local.get $simdIters) (i32.const 4))))
+                      (i32.ge_u (local.get $tap) (local.get $simdLimit)))
                     (local.set $fCoefs
                       (v128.load (i32.add (local.get $ftPtr)
                         (i32.shl (i32.add (local.get $filterRow) (local.get $tap)) (i32.const 2)))))
@@ -111,40 +116,32 @@
                 (block $simdMultiDone
                   (loop $simdMultiLoop
                     (br_if $simdMultiDone
-                      (i32.ge_u (local.get $tap) (i32.mul (local.get $simdIters) (i32.const 4))))
+                      (i32.ge_u (local.get $tap) (local.get $simdLimit)))
                     (local.set $fCoefs
                       (v128.load (i32.add (local.get $ftPtr)
                         (i32.shl (i32.add (local.get $filterRow) (local.get $tap)) (i32.const 2)))))
                     (local.set $samples
                       (v128.load32_lane 0
-                        (i32.add (local.get $inputPtr)
-                          (i32.add
-                            (i32.shl (i32.add (local.get $sampleBase) (local.get $c)) (i32.const 2))
-                            (i32.mul (local.get $tap) (local.get $chBytes))))
+                        (i32.add (local.get $chanBaseBytePtr)
+                          (i32.mul (local.get $tap) (local.get $chBytes)))
                         (v128.const i32x4 0 0 0 0)))
                     (local.set $t1 (i32.add (local.get $tap) (i32.const 1)))
                     (local.set $samples
                       (v128.load32_lane 1
-                        (i32.add (local.get $inputPtr)
-                          (i32.add
-                            (i32.shl (i32.add (local.get $sampleBase) (local.get $c)) (i32.const 2))
-                            (i32.mul (local.get $t1) (local.get $chBytes))))
+                        (i32.add (local.get $chanBaseBytePtr)
+                          (i32.mul (local.get $t1) (local.get $chBytes)))
                         (local.get $samples)))
                     (local.set $t2 (i32.add (local.get $tap) (i32.const 2)))
                     (local.set $samples
                       (v128.load32_lane 2
-                        (i32.add (local.get $inputPtr)
-                          (i32.add
-                            (i32.shl (i32.add (local.get $sampleBase) (local.get $c)) (i32.const 2))
-                            (i32.mul (local.get $t2) (local.get $chBytes))))
+                        (i32.add (local.get $chanBaseBytePtr)
+                          (i32.mul (local.get $t2) (local.get $chBytes)))
                         (local.get $samples)))
                     (local.set $t3 (i32.add (local.get $tap) (i32.const 3)))
                     (local.set $samples
                       (v128.load32_lane 3
-                        (i32.add (local.get $inputPtr)
-                          (i32.add
-                            (i32.shl (i32.add (local.get $sampleBase) (local.get $c)) (i32.const 2))
-                            (i32.mul (local.get $t3) (local.get $chBytes))))
+                        (i32.add (local.get $chanBaseBytePtr)
+                          (i32.mul (local.get $t3) (local.get $chBytes)))
                         (local.get $samples)))
                     (local.set $simdAcc (f32x4.add (local.get $simdAcc)
                       (f32x4.mul (local.get $samples) (local.get $fCoefs))))
@@ -158,7 +155,7 @@
             (local.set $sum (f64.add (local.get $sum) (f64.promote_f32 (f32x4.extract_lane 3 (local.get $simdAcc)))))
 
             ;; Scalar remainder taps
-            (local.set $remStart (i32.mul (local.get $simdIters) (i32.const 4)))
+            (local.set $remStart (local.get $simdLimit))
             (block $remDone
               (loop $remLoop
                 (br_if $remDone (i32.ge_u (local.get $remStart) (local.get $fs)))

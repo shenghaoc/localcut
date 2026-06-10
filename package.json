@@ -15,7 +15,8 @@
 		"lint": "eslint .",
 		"format": "prettier --write .",
 		"format:check": "prettier --check .",
-		"verify": "npm test && npm run build"
+		"verify": "npm test && npm run build",
+		"build:wasm": "node scripts/build-wasm.mjs"
 	},
 	"dependencies": {
 		"@fontsource/dm-sans": "^5.2.8",

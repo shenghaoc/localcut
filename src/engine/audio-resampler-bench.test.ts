@@ -4,6 +4,12 @@
  *
  * Measures samples/sec for 44.1 kHz → 48 kHz stereo resampling.
  * Requirement R4.1: ≥2x throughput improvement.
+ *
+ * Multi-channel SIMD note:
+ * SIMD gains are most pronounced for mono. For ch>1 the per-channel
+ * lane-gather (v128.load32_lane ×4) executes scalar-equivalent loads per
+ * 4 taps — the conventional WASM SIMD pattern for interleaved audio — so
+ * stereo speedup is lower than mono.
  */
 
 import { describe, it, beforeAll, expect } from 'vitest';
@@ -91,6 +97,14 @@ describe('Resampler Benchmark (R4.1)', () => {
 		// R4.1: ≥2x target (informational — CI hardware varies).
 		// Benchmark correctness is gated by audio-resampler-wasm.test.ts.
 		if (WasmAudioResampler.isAvailable) {
+			if (speedup < 2) {
+				console.warn(
+					`[R4.1] WASM SIMD speedup below 2x target: ${speedup.toFixed(2)}x ` +
+					`(JS ${Math.round(jsThroughput).toLocaleString()} vs ` +
+					`WASM ${Math.round(wasmThroughput).toLocaleString()} samples/sec). ` +
+					`This may indicate a performance regression.`,
+				);
+			}
 			expect(speedup).toBeGreaterThan(0);
 		}
 	});

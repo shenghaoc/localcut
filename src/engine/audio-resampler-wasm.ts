@@ -153,7 +153,7 @@ export class WasmAudioResampler {
 	// WASM instance (null if using JS fallback)
 	private instance: WebAssembly.Instance | null = null;
 	private memory: WebAssembly.Memory | null = null;
-	private wasmInitAttempted = false;
+	private usedFallback = false;
 
 	// JS-side history buffer (samples are stored here, copied to WASM per call)
 	private history: Float32Array;
@@ -190,7 +190,6 @@ export class WasmAudioResampler {
 	}
 
 	private initWasm(config: ResamplerConfig): void {
-		this.wasmInitAttempted = true;
 		if (!wasmModule) return;
 
 		try {
@@ -219,7 +218,6 @@ export class WasmAudioResampler {
 
 			// Working area starts after filter table
 			this.workingOffset = filterTableBytes;
-			this.outputOffset = this.workingOffset + workingBytes / 2;
 
 			// Call WASM init
 			(instance.exports['init'] as Function)(
@@ -240,6 +238,7 @@ export class WasmAudioResampler {
 	reset(): void {
 		this.history.fill(0);
 		this.historyFilled = 0;
+		this.usedFallback = false;
 		this.jsFallback.reset();
 		if (this.instance) {
 			(this.instance.exports['reset'] as Function)();
@@ -250,10 +249,11 @@ export class WasmAudioResampler {
 		if (!this.instance || !this.memory) {
 			// Lazy-init guard: handle race where WASM init completes
 			// between construction and first process() call.
-			if (wasmAvailable && !this.wasmInitAttempted) {
+			if (wasmAvailable && !this.usedFallback) {
 				this.initWasm(this.config);
 			}
 			if (!this.instance || !this.memory) {
+				this.usedFallback = true;
 				return this.jsFallback.process(input, inputFrames);
 			}
 			// initWasm succeeded — fall through to WASM path below
@@ -291,9 +291,14 @@ export class WasmAudioResampler {
 
 			// Copy combined buffer to WASM memory
 			const memF32 = new Float32Array(this.memory!.buffer);
-			memF32.set(combined, this.workingOffset / 4);
+			memF32.set(combined.subarray(0, combinedLen), this.workingOffset / 4);
 
-			// Call WASM process
+			// Call WASM process.
+			// Contract: the combined buffer at workingOffset holds
+			// (historyFilled + inputFrames) frames. The WASM side computes the
+			// total from its own $historyFilled global, which must stay in sync
+			// with JS this.historyFilled — JS reads the global back after every
+			// call. A mismatch would silently corrupt the convolution window.
 			const exports = this.instance.exports;
 			const outputFrames = (exports['process'] as Function)(
 				this.workingOffset,
@@ -328,6 +333,9 @@ export class WasmAudioResampler {
 			console.warn('WASM process failed, falling back to JS:', e);
 			this.instance = null;
 			this.memory = null;
+			// Stick to the JS path until reset() — re-initializing WASM
+			// mid-stream would discard accumulated history and pop.
+			this.usedFallback = true;
 			return this.jsFallback.process(input, inputFrames);
 		}
 	}
@@ -336,10 +344,11 @@ export class WasmAudioResampler {
 		if (!this.instance || !this.memory) {
 			// Lazy-init guard: handle race where WASM init completes
 			// between construction and first flush() call.
-			if (wasmAvailable && !this.wasmInitAttempted) {
+			if (wasmAvailable && !this.usedFallback) {
 				this.initWasm(this.config);
 			}
 			if (!this.instance || !this.memory) {
+				this.usedFallback = true;
 				return this.jsFallback.flush();
 			}
 			// initWasm succeeded — fall through to WASM path below
@@ -399,6 +408,9 @@ export class WasmAudioResampler {
 			console.warn('WASM flush failed, falling back to JS:', e);
 			this.instance = null;
 			this.memory = null;
+			// Stick to the JS path until reset() — re-initializing WASM
+			// mid-stream would discard accumulated history and pop.
+			this.usedFallback = true;
 			return this.jsFallback.flush();
 		}
 	}
@@ -407,6 +419,11 @@ export class WasmAudioResampler {
 /**
  * Resample a single block using the WASM-accelerated path when available,
  * falling back to the JS AudioResampler otherwise.
+ *
+ * NOTE: This is a one-shot block resample that constructs a fresh resampler
+ * per call — NOT for streaming use. For streaming, use `WasmAudioResampler`
+ * directly: create one instance and call `process()` / `flush()` across
+ * consecutive chunks so that history is preserved between calls.
  */
 export function resampleBlockWasm(
 	input: Float32Array,
@@ -416,7 +433,9 @@ export function resampleBlockWasm(
 	channels: number,
 ): Float32Array {
 	if (inputRate === outputRate) return input.slice(0, inputFrames * channels);
-	const resampler = new WasmAudioResampler({ inputRate, outputRate, channels });
+	const resampler = WasmAudioResampler.isAvailable
+		? new WasmAudioResampler({ inputRate, outputRate, channels })
+		: new AudioResampler({ inputRate, outputRate, channels });
 	const main = resampler.process(input, inputFrames);
 	const tail = resampler.flush();
 	const expectedFrames = Math.round((inputFrames * outputRate) / inputRate);

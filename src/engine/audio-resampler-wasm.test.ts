@@ -152,6 +152,62 @@ describe('WasmAudioResampler', () => {
 		expect(Math.abs(totalOutput - expectedTotal)).toBeLessThan(20);
 	});
 
+	it('streaming content matches single-block processing (history carryover)', () => {
+		const inputRate = 48000;
+		const outputRate = 44100;
+		const totalFrames = 8192;
+		const freq = 440;
+
+		// Generate a deterministic sine signal
+		const signal = new Float32Array(totalFrames);
+		for (let i = 0; i < totalFrames; i++) {
+			signal[i] = Math.sin((2 * Math.PI * freq * i) / inputRate);
+		}
+
+		// Resampler A: single process() call + flush()
+		const resamplerA = new WasmAudioResampler({ inputRate, outputRate, channels: 1 });
+		const singleOut = resamplerA.process(signal, totalFrames);
+		const singleTail = resamplerA.flush();
+		const singleTotal = new Float32Array(singleOut.length + singleTail.length);
+		singleTotal.set(singleOut);
+		singleTotal.set(singleTail, singleOut.length);
+
+		// Resampler B: uneven chunks + flush()
+		const resamplerB = new WasmAudioResampler({ inputRate, outputRate, channels: 1 });
+		const chunkSizes = [1000, 512, 3000, totalFrames - 1000 - 512 - 3000];
+		const streamParts: Float32Array[] = [];
+		let offset = 0;
+		for (const size of chunkSizes) {
+			const chunk = signal.subarray(offset, offset + size);
+			streamParts.push(resamplerB.process(new Float32Array(chunk), size));
+			offset += size;
+		}
+		const streamTail = resamplerB.flush();
+		streamParts.push(streamTail);
+		const streamTotalLen = streamParts.reduce((s, p) => s + p.length, 0);
+		const streamTotal = new Float32Array(streamTotalLen);
+		let writePos = 0;
+		for (const part of streamParts) {
+			streamTotal.set(part, writePos);
+			writePos += part.length;
+		}
+
+		// Total lengths must match
+		expect(singleTotal.length).toBe(streamTotal.length);
+
+		// Sample-by-sample comparison. The polyphase sinc convolution accumulates
+		// f32 products, so splitting input across chunks introduces float32
+		// ordering differences (associativity) — 2e-4 is tight enough to catch
+		// history-carryover bugs while tolerating expected float32 rounding from
+		// f32 history copies at chunk boundaries.
+		let maxErr = 0;
+		for (let i = 0; i < singleTotal.length; i++) {
+			const err = Math.abs(singleTotal[i]! - streamTotal[i]!);
+			if (err > maxErr) maxErr = err;
+		}
+		expect(maxErr).toBeLessThan(2e-4);
+	});
+
 	it('output is within f32 tolerance of JS AudioResampler (R1.3)', () => {
 		const inputRate = 44100;
 		const outputRate = 48000;
@@ -243,5 +299,18 @@ describe('WasmAudioResampler SIMD feature detection', () => {
 		if (typeof WebAssembly !== 'undefined') {
 			expect(typeof WasmAudioResampler.isAvailable).toBe('boolean');
 		}
+	});
+
+	it('works regardless of WASM availability', () => {
+		// Do NOT call WasmAudioResampler.init() in this test body — verifies
+		// the resampler produces output whether WASM is available or not.
+		const resampler = new WasmAudioResampler({
+			inputRate: 48000,
+			outputRate: 24000,
+			channels: 1,
+		});
+		const input = new Float32Array(480).fill(0.5);
+		const output = resampler.process(input, 480);
+		expect(output.length).toBeGreaterThan(0);
 	});
 });

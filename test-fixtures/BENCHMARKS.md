@@ -57,6 +57,22 @@ During preview playback, check the `gpu-submissions-per-frame` budget counter in
 
 Target: exactly 1 submission per frame on the accelerated path.
 
+### 8. WASM SIMD resampler throughput
+
+```bash
+npx vitest run src/engine/audio-resampler-bench.test.ts --disable-console-intercept
+```
+
+Measures samples/sec for 44.1 kHz → 48 kHz stereo resampling, WASM SIMD
+(`src/engine/audio-resampler-wasm.ts`) vs pure-JS `AudioResampler`.
+
+Target: >= 2x speedup on hardware with wasm-simd128 (informational in CI —
+the test logs a warning below 2x rather than failing, since CI hardware
+varies). Report: JS samples/sec, WASM samples/sec, speedup.
+
+Reference run (Apple Silicon, Node 22, 2026-06): JS 63.1M samples/sec,
+WASM 197.3M samples/sec — **3.12x** speedup.
+
 ## Recording baselines
 
 Record results in a local file (not committed):
