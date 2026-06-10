@@ -1,6 +1,7 @@
 import { Show, type JSX } from 'solid-js';
 import {
 	Activity,
+	AudioWaveform,
 	Cpu,
 	FolderOpen,
 	Gauge,
@@ -43,6 +44,7 @@ interface ToolbarProps {
 	encodeFps: number | null;
 	onOpenCapabilities?: () => void;
 	onOpenHelp?: () => void;
+	onOpenAudioCleanup?: () => void;
 	masterGain: number;
 	meterSab: SharedArrayBuffer | null;
 	onMasterGain: (gain: number) => void;
@@ -234,6 +236,15 @@ export function Toolbar(props: ToolbarProps) {
 				>
 					<Info size={13} aria-hidden="true" />
 					Capabilities
+				</button>
+				<button
+					type="button"
+					class="pipeline-chip pipeline-chip-button"
+					onClick={() => props.onOpenAudioCleanup?.()}
+					title="Local Audio Cleanup (Experimental) — on-device noise suppression"
+				>
+					<AudioWaveform size={13} aria-hidden="true" />
+					Audio Cleanup
 				</button>
 				<button
 					type="button"

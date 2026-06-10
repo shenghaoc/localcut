@@ -26,7 +26,10 @@ import {
 	type KeyframeEasing
 } from './keyframes';
 import { cloneClipLut, type ClipLut } from './lut';
-import { TIMELINE_EPSILON } from '../protocol';
+import { TIMELINE_EPSILON, type CleanedAudioRefSnapshot } from '../protocol';
+
+/** Denoised-audio routing for a clip (Phase 27 local audio cleanup). */
+export type CleanedAudioRef = CleanedAudioRefSnapshot;
 
 /** Source clips decode media; title clips are source-less text overlays (Phase 14). */
 export type ClipKind = 'video' | 'title';
@@ -52,6 +55,8 @@ export interface TimelineClip {
 	title?: TitleContent;
 	/** Shared group id linking A/V clips from the same source (Phase 20). */
 	linkedGroupId?: string;
+	/** Denoised derived-asset routing; absent = original audio (Phase 27). */
+	cleanedAudio?: CleanedAudioRef;
 }
 
 /** A title clip carries source-less text; it composites as a cached texture. */
@@ -624,7 +629,8 @@ function cloneClip(clip: TimelineClip): TimelineClip {
 		audioFadeIn: clip.audioFadeIn,
 		audioFadeOut: clip.audioFadeOut,
 		title: clip.title ? cloneTitleContent(clip.title) : undefined,
-		linkedGroupId: clip.linkedGroupId
+		linkedGroupId: clip.linkedGroupId,
+		cleanedAudio: clip.cleanedAudio ? { ...clip.cleanedAudio } : undefined
 	};
 	const keyframes = cloneClipKeyframes(clip.keyframes);
 	if (keyframes) cloned.keyframes = keyframes;
@@ -1380,6 +1386,39 @@ export function setClipAudioFade(
 	const next = cloneTimeline(timeline);
 	const nextClip = next[loc.trackIndex]!.clips[loc.clipIndex]!;
 	nextClip[key] = durationS;
+	return next;
+}
+
+/**
+ * Sets or clears a clip's denoised-audio routing (Phase 27). Pass `null` to
+ * remove cleanup and return to the original source audio. Returns the
+ * original timeline on no-op so undo history stays clean.
+ */
+export function setClipCleanedAudio(
+	timeline: Timeline,
+	trackId: string,
+	clipId: string,
+	ref: CleanedAudioRef | null
+): Timeline {
+	const loc = trackWithClip(timeline, trackId, clipId);
+	if (!loc) return timeline;
+	const clip = timeline[loc.trackIndex]!.clips[loc.clipIndex]!;
+	if (isTitleClip(clip)) return timeline;
+	const current = clip.cleanedAudio ?? null;
+	const sameRef =
+		current === ref ||
+		(current !== null &&
+			ref !== null &&
+			current.assetId === ref.assetId &&
+			current.clipInPointS === ref.clipInPointS &&
+			current.durationS === ref.durationS &&
+			current.modelId === ref.modelId &&
+			current.modelVersion === ref.modelVersion);
+	if (sameRef) return timeline;
+	const next = cloneTimeline(timeline);
+	const nextClip = next[loc.trackIndex]!.clips[loc.clipIndex]!;
+	if (ref) nextClip.cleanedAudio = { ...ref };
+	else delete nextClip.cleanedAudio;
 	return next;
 }
 

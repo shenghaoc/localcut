@@ -45,6 +45,7 @@ import {
 import type { TitleTexture } from './titles';
 import { SecondaryFrameSourcePool } from './frame-source';
 import { sampleClipParamsAt } from './keyframes';
+import { cleanedAudioSubstitute } from './audio-cleanup/cleaned-audio';
 import {
 	audioAvailabilityWindowFrames,
 	resolveSourceTimestamp,
@@ -520,14 +521,18 @@ export async function mixAudioWindow(
 						1,
 						Math.min(frameCount - offsetFrames, Math.ceil((windowEnd - timelineTime) * sampleRate))
 					);
-					const outHandle = sources.get(outgoing.sourceId);
-					const inHandle = sources.get(incoming.sourceId);
+					const outSubstitute = cleanedAudioSubstitute(outgoing, sources);
+					const inSubstitute = cleanedAudioSubstitute(incoming, sources);
+					const outgoingAudio = outSubstitute?.clip ?? outgoing;
+					const incomingAudio = inSubstitute?.clip ?? incoming;
+					const outHandle = outSubstitute?.handle ?? sources.get(outgoing.sourceId);
+					const inHandle = inSubstitute?.handle ?? sources.get(incoming.sourceId);
 					const hasOut = Boolean(outHandle?.audioSource);
 					const hasIn = Boolean(inHandle?.audioSource);
 					if (hasOut || hasIn) {
 						const outSourceTime = outHandle
 							? resolveSourceTimestamp({
-									clip: outgoing,
+									clip: outgoingAudio,
 									timelineTime,
 									trackKind: 'audio',
 									timing: outHandle.timing
@@ -535,7 +540,7 @@ export async function mixAudioWindow(
 							: null;
 						const inSourceTime = inHandle
 							? resolveSourceTimestamp({
-									clip: incoming,
+									clip: incomingAudio,
 									timelineTime,
 									trackKind: 'audio',
 									timing: inHandle.timing
@@ -549,7 +554,7 @@ export async function mixAudioWindow(
 									? audioAvailabilityWindowFrames({
 											resolution: outSourceTime,
 											timing: outHandle.timing,
-											clip: outgoing,
+											clip: outgoingAudio,
 											timelineTime,
 											sampleRate,
 											maxFrames: baseRunFrames
@@ -559,7 +564,7 @@ export async function mixAudioWindow(
 									? audioAvailabilityWindowFrames({
 											resolution: inSourceTime,
 											timing: inHandle.timing,
-											clip: incoming,
+											clip: incomingAudio,
 											timelineTime,
 											sampleRate,
 											maxFrames: baseRunFrames
@@ -591,7 +596,7 @@ export async function mixAudioWindow(
 									? unavailableAudioSilenceFrames({
 											resolution: outSourceTime,
 											timing: outHandle.timing,
-											clip: outgoing,
+											clip: outgoingAudio,
 											timelineTime,
 											sampleRate,
 											maxFrames: runFrames
@@ -602,7 +607,7 @@ export async function mixAudioWindow(
 									? unavailableAudioSilenceFrames({
 											resolution: inSourceTime,
 											timing: inHandle.timing,
-											clip: incoming,
+											clip: incomingAudio,
 											timelineTime,
 											sampleRate,
 											maxFrames: runFrames
@@ -670,7 +675,11 @@ export async function mixAudioWindow(
 				continue;
 			}
 
-			const handle = sources.get(clip.sourceId);
+			// Cleaned-audio routing (Phase 27): use the derived denoised asset when
+			// applied and covering; otherwise the original source audio.
+			const substitute = cleanedAudioSubstitute(clip, sources);
+			const audioClip = substitute?.clip ?? clip;
+			const handle = substitute?.handle ?? sources.get(clip.sourceId);
 			const clipEnd = clip.start + clip.duration;
 			const runFrames = Math.max(
 				1,
@@ -682,7 +691,7 @@ export async function mixAudioWindow(
 			}
 
 			const sourceTime = resolveSourceTimestamp({
-				clip,
+				clip: audioClip,
 				timelineTime,
 				trackKind: 'audio',
 				timing: handle.timing
@@ -690,7 +699,7 @@ export async function mixAudioWindow(
 			const availableRunFrames = audioAvailabilityWindowFrames({
 				resolution: sourceTime,
 				timing: handle.timing,
-				clip,
+				clip: audioClip,
 				timelineTime,
 				sampleRate,
 				maxFrames: runFrames

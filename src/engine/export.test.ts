@@ -479,6 +479,82 @@ describe('mixAudioWindow', () => {
 		expect([...mixed]).toEqual([0.75, 0.75]);
 	});
 
+	it('routes a clip with applied cleanup through its derived asset (Phase 27)', async () => {
+		const original = sourceWith(1);
+		const cleaned = sourceWith(0.25);
+		const sources = new Map<string, MediaInputHandle>([
+			[
+				'orig',
+				mediaHandle({
+					sourceId: 'orig',
+					audioSource: original as unknown as MediaInputHandle['audioSource']
+				})
+			],
+			[
+				'cleaned-asset',
+				mediaHandle({
+					sourceId: 'cleaned-asset',
+					kind: 'audio',
+					audioSource: cleaned as unknown as MediaInputHandle['audioSource']
+				})
+			]
+		]);
+		const clip = defaultTimelineClip({
+			id: 'a',
+			sourceId: 'orig',
+			start: 0,
+			duration: 1,
+			inPoint: 0
+		});
+		clip.cleanedAudio = {
+			assetId: 'cleaned-asset',
+			clipInPointS: 0,
+			durationS: 1,
+			modelId: 'rnnoise',
+			modelVersion: 'test'
+		};
+		const edit: Timeline = [audioTrack({ id: 'a-track', clips: [clip] })];
+
+		const mixed = await mixAudioWindow(edit, sources, 0, 4, 4, 1);
+
+		expect([...mixed]).toEqual([0.25, 0.25, 0.25, 0.25]);
+		expect(original.pcmWindowAt).not.toHaveBeenCalled();
+		expect(cleaned.pcmWindowAt).toHaveBeenCalled();
+	});
+
+	it('falls back to original audio when the cleaned asset is missing (Phase 27)', async () => {
+		const original = sourceWith(1);
+		const sources = new Map<string, MediaInputHandle>([
+			[
+				'orig',
+				mediaHandle({
+					sourceId: 'orig',
+					audioSource: original as unknown as MediaInputHandle['audioSource']
+				})
+			]
+		]);
+		const clip = defaultTimelineClip({
+			id: 'a',
+			sourceId: 'orig',
+			start: 0,
+			duration: 1,
+			inPoint: 0
+		});
+		clip.cleanedAudio = {
+			assetId: 'missing-asset',
+			clipInPointS: 0,
+			durationS: 1,
+			modelId: 'rnnoise',
+			modelVersion: 'test'
+		};
+		const edit: Timeline = [audioTrack({ id: 'a-track', clips: [clip] })];
+
+		const mixed = await mixAudioWindow(edit, sources, 0, 4, 4, 1);
+
+		expect([...mixed]).toEqual([1, 1, 1, 1]);
+		expect(original.pcmWindowAt).toHaveBeenCalled();
+	});
+
 	it('leaves timeline gaps silent', async () => {
 		const source = sourceWith(0.5);
 		const sources = new Map<string, MediaInputHandle>([
