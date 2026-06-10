@@ -37,8 +37,8 @@ interface Harness {
 	extractions: ClipAudioRequest[];
 	applied: ApplyCleanupRequest[];
 	workerCommands: CleanupWorkerCommand[];
-	/** When false, extraction requests are left pending (for cancel tests). */
-	autoRespond: { extraction: boolean };
+	/** When false, the matching requests are left pending (for cancel/crash tests). */
+	autoRespond: { extraction: boolean; modelLoad: boolean };
 	crashWorker: (message: string) => void;
 	errors: string[];
 }
@@ -48,7 +48,7 @@ function harness(): Harness {
 	const extractions: ClipAudioRequest[] = [];
 	const applied: ApplyCleanupRequest[] = [];
 	const workerCommands: CleanupWorkerCommand[] = [];
-	const autoRespond = { extraction: true };
+	const autoRespond = { extraction: true, modelLoad: true };
 	const errors: string[] = [];
 	let postState: (msg: CleanupWorkerState) => void = () => undefined;
 	let crash: (message: string) => void = () => undefined;
@@ -64,6 +64,7 @@ function harness(): Harness {
 					queueMicrotask(() => {
 						switch (cmd.type) {
 							case 'cleanup-load-model':
+								if (!autoRespond.modelLoad) break;
 								postState({
 									type: 'cleanup-model-status',
 									status: 'loaded',
@@ -248,6 +249,45 @@ describe('CleanupController', () => {
 		expect(state.job).toBeNull();
 		expect(state.preview).toBeNull();
 		expect(state.error).toBeNull();
+	});
+
+	it('a crash during model load drains all waiters instead of hanging them', async () => {
+		const h = harness();
+		h.controller.setWebNNProbe(WEBNN_OK);
+		h.autoRespond.modelLoad = false;
+		const first = h.controller.loadModel();
+		await vi.waitFor(() =>
+			expect(h.workerCommands.some((cmd) => cmd.type === 'cleanup-load-model')).toBe(true)
+		);
+		// A second caller queues on the in-flight load.
+		const second = h.controller.loadModel();
+		h.crashWorker('worker died during load');
+		expect(await first).toBe(false);
+		expect(await second).toBe(false);
+		expect(h.controller.getState().modelStatus).toBe('not-loaded');
+	});
+
+	it('a crash mid-job stops the extraction loop instead of requesting more windows', async () => {
+		const h = harness();
+		h.controller.setWebNNProbe(WEBNN_OK);
+		h.autoRespond.extraction = false;
+		const pending = h.controller.previewCleanup(CLIP);
+		await vi.waitFor(() => expect(h.extractions.length).toBe(1));
+		h.crashWorker('worker died mid-job');
+		// The pipeline worker (still alive) answers the in-flight extraction;
+		// the loop must bail on the crash flag rather than fetch the next window.
+		h.controller.handlePipelineMessage({
+			type: 'clip-audio',
+			requestId: h.extractions[0]!.requestId,
+			pcm: new Float32Array(48000),
+			sampleRate: 48000,
+			channels: 1,
+			clipOffsetS: 0,
+			clipDurationS: CLIP.durationS
+		});
+		expect(await pending).toBe(false);
+		expect(h.extractions.length).toBe(1);
+		expect(h.controller.getState().job).toBeNull();
 	});
 
 	it('a cleanup-worker crash resets the feature without touching the rest of the app', async () => {

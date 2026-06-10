@@ -289,7 +289,16 @@ export class CleanupController {
 					job: null,
 					error: message
 				});
-				this.activeJob?.resultReject?.(new Error(message));
+				// A crash bypasses cleanup-model-status, so drain any callers blocked
+				// on the in-flight load and short-circuit the extraction loop before
+				// rejecting the job result.
+				const waiters = this.modelLoadWaiters;
+				this.modelLoadWaiters = [];
+				for (const waiter of waiters) waiter(false);
+				if (this.activeJob) {
+					this.activeJob.cancelled = true;
+					this.activeJob.resultReject?.(new Error(message));
+				}
 				this.activeJob = null;
 				this.worker = null;
 				this.workerSpawn = null;

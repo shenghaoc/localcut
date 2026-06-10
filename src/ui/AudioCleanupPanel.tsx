@@ -8,7 +8,7 @@
  * a media pipeline).
  */
 
-import { createSignal, onCleanup, Show, type Component } from 'solid-js';
+import { createEffect, createSignal, onCleanup, Show, type Component } from 'solid-js';
 import { X } from 'lucide-solid';
 import { Button } from './components/button';
 import {
@@ -98,8 +98,15 @@ export const AudioCleanupPanel: Component<AudioCleanupPanelProps> = (props) => {
 
 	onCleanup(() => {
 		stopPlayback();
-		void audioContext?.close();
+		audioContext?.close().catch(() => undefined);
 		audioContext = null;
+	});
+
+	// ARIA modal dialog pattern: move focus into the panel when it opens.
+	createEffect(() => {
+		if (props.open) {
+			requestAnimationFrame(() => panelRef?.focus());
+		}
 	});
 
 	const availability = () => cleanupActionAvailability(props.state, props.selectedClip);
@@ -236,7 +243,7 @@ export const AudioCleanupPanel: Component<AudioCleanupPanelProps> = (props) => {
 								disabled={!availability().preview.enabled}
 								title={
 									availability().preview.reason ??
-									`Clean the first ${CLEANUP_PREVIEW_SECONDS} s for A/B comparison`
+									`Clean the first ${CLEANUP_PREVIEW_SECONDS} s for A/B comparison (loads the model first if needed)`
 								}
 								onClick={props.onPreview}
 							>
@@ -257,7 +264,7 @@ export const AudioCleanupPanel: Component<AudioCleanupPanelProps> = (props) => {
 								disabled={!availability().apply.enabled}
 								title={
 									availability().apply.reason ??
-									'Create a cleaned audio asset and route this clip through it'
+									'Create a cleaned audio asset and route this clip through it (loads the model first if needed)'
 								}
 								onClick={props.onApply}
 							>

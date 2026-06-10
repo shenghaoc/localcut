@@ -16,7 +16,16 @@ export interface FrameDsp {
 	postProcessFrame(gains: Float32Array, spectra: FrameSpectra, out: Float32Array): void;
 }
 
-/** Runs model inference for a batch of frames; returns per-frame band gains. */
+/**
+ * Runs model inference for a batch of frames; returns per-frame band gains.
+ *
+ * Contract: `features` always holds a full `batchFrames × 42` buffer with
+ * rows past `frameCount` zero-padded, and the returned gains must cover the
+ * full batch (`batchFrames × 22`). The real `RnnoiseModel` ignores
+ * `frameCount` and always processes the whole fixed-size batch; `frameCount`
+ * only tells the runner how many leading rows are meaningful (the scheduler
+ * discards gains past it).
+ */
 export interface CleanupInferenceRunner {
 	infer(features: Float32Array, frameCount: number): Promise<Float32Array>;
 }
@@ -72,7 +81,9 @@ export class CleanupJobProcessor {
 	private readonly batchFrames: number;
 	private readonly onBatch: ((report: CleanupBatchReport) => void) | undefined;
 
-	private readonly pending: number[] = [];
+	/** Residual partial frame carried between pushes (< one frame). */
+	private readonly pending = new Float32Array(RNNOISE_FRAME_SIZE);
+	private pendingCount = 0;
 	private readonly features: Float32Array;
 	private readonly spectra: FrameSpectra[];
 	private readonly frameIn = new Float32Array(RNNOISE_FRAME_SIZE);
@@ -146,14 +157,14 @@ export class CleanupJobProcessor {
 		const outputs: Float32Array[] = [];
 		let cursor = 0;
 		// Top up any residual partial frame first.
-		if (this.pending.length > 0) {
-			while (this.pending.length < RNNOISE_FRAME_SIZE && cursor < pcm.length) {
-				this.pending.push(pcm[cursor]!);
-				cursor += 1;
-			}
-			if (this.pending.length === RNNOISE_FRAME_SIZE) {
+		if (this.pendingCount > 0) {
+			const take = Math.min(RNNOISE_FRAME_SIZE - this.pendingCount, pcm.length - cursor);
+			this.pending.set(pcm.subarray(cursor, cursor + take), this.pendingCount);
+			this.pendingCount += take;
+			cursor += take;
+			if (this.pendingCount === RNNOISE_FRAME_SIZE) {
 				this.frameIn.set(this.pending);
-				this.pending.length = 0;
+				this.pendingCount = 0;
 				await this.pushFrame(this.frameIn, outputs);
 			}
 		}
@@ -162,7 +173,12 @@ export class CleanupJobProcessor {
 			cursor += RNNOISE_FRAME_SIZE;
 			await this.pushFrame(this.frameIn, outputs);
 		}
-		for (; cursor < pcm.length; cursor++) this.pending.push(pcm[cursor]!);
+		if (cursor < pcm.length) {
+			// Either the buffer was empty (loops above ran) or the input ended
+			// inside the top-up; both leave room for the tail.
+			this.pending.set(pcm.subarray(cursor), this.pendingCount);
+			this.pendingCount += pcm.length - cursor;
+		}
 		return concatPcm(outputs);
 	}
 
@@ -176,11 +192,11 @@ export class CleanupJobProcessor {
 		this.finalized = true;
 		const outputs: Float32Array[] = [];
 		let tailPadding = 0;
-		if (this.pending.length > 0) {
-			tailPadding = RNNOISE_FRAME_SIZE - this.pending.length;
+		if (this.pendingCount > 0) {
+			tailPadding = RNNOISE_FRAME_SIZE - this.pendingCount;
 			this.frameIn.fill(0);
-			this.frameIn.set(this.pending);
-			this.pending.length = 0;
+			this.frameIn.set(this.pending.subarray(0, this.pendingCount));
+			this.pendingCount = 0;
 			await this.pushFrame(this.frameIn, outputs);
 		}
 		// One zero frame recovers the last real frame from the synthesis overlap.
