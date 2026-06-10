@@ -67,6 +67,17 @@ export interface LivePublishProbeResult {
 	hardwareH264Encode: FeatureSupport;
 }
 
+export interface CaptureProbeResult {
+	mediaStreamTrackProcessor: FeatureSupport;
+	transferableMediaStreamTrack: FeatureSupport;
+	displayCapture: FeatureSupport;
+	displayAudioCapture: FeatureSupport;
+	videoEncodeRealtime: FeatureSupport;
+	audioEncodeOpus: FeatureSupport;
+	audioEncodeAac: FeatureSupport;
+	opfsSyncAccessHandle: FeatureSupport;
+}
+
 export interface CapabilityProbeResult {
 	crossOriginIsolated: boolean;
 	sharedArrayBuffer: FeatureSupport;
@@ -81,6 +92,7 @@ export interface CapabilityProbeResult {
 	audioWorklet: FeatureSupport;
 	offscreenCanvas: FeatureSupport;
 	livePublish: LivePublishProbeResult;
+	capture: CaptureProbeResult;
 	tier: CapabilityTierV2;
 	/** Phase 27 (WebNN audio cleanup): display/feature-gate only — never
 	 *  consulted by tier derivation or any pipeline code path. */

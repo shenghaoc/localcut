@@ -1,6 +1,7 @@
 import type {
 	CapabilityProbeResult,
 	CapabilityTierV2,
+	CaptureProbeResult,
 	CodecProbeResult,
 	FeatureSupport,
 	LivePublishProbeResult
@@ -29,6 +30,17 @@ function livePublishProbe(value: FeatureSupport): LivePublishProbeResult {
 	};
 }
 
+const supportedCapture: CaptureProbeResult = {
+	mediaStreamTrackProcessor: 'supported',
+	transferableMediaStreamTrack: 'supported',
+	displayCapture: 'supported',
+	displayAudioCapture: 'supported',
+	videoEncodeRealtime: 'supported',
+	audioEncodeOpus: 'supported',
+	audioEncodeAac: 'supported',
+	opfsSyncAccessHandle: 'supported'
+};
+
 function baseProbe(): CapabilityProbeResult {
 	return {
 		crossOriginIsolated: true,
@@ -39,6 +51,7 @@ function baseProbe(): CapabilityProbeResult {
 		webCodecsDecode: 'supported',
 		webCodecsEncode: 'supported',
 		codecs: { ...supportedCodecs },
+		capture: { ...supportedCapture },
 		fileSystemAccess: 'supported',
 		opfs: 'supported',
 		audioWorklet: 'supported',
@@ -90,6 +103,10 @@ export function probeResultFor(tier: CapabilityTierV2): CapabilityProbeResult {
 				crossOriginIsolated: false,
 				sharedArrayBuffer: 'unsupported',
 				codecs: { ...probe.codecs, av1Encode: 'unsupported' },
+				capture: {
+					...supportedCapture,
+					transferableMediaStreamTrack: 'unsupported'
+				},
 				tier
 			};
 		case 'limited-webcodecs':
@@ -106,6 +123,13 @@ export function probeResultFor(tier: CapabilityTierV2): CapabilityProbeResult {
 					aacEncode: 'unsupported',
 					opusEncode: 'unsupported'
 				},
+				capture: {
+					...supportedCapture,
+					mediaStreamTrackProcessor: 'unsupported',
+					transferableMediaStreamTrack: 'unsupported',
+					videoEncodeRealtime: 'unsupported',
+					audioEncodeOpus: 'unsupported'
+				},
 				fileSystemAccess: 'unsupported',
 				tier
 			};
@@ -117,6 +141,14 @@ export function probeResultFor(tier: CapabilityTierV2): CapabilityProbeResult {
 				webCodecsDecode: 'unsupported',
 				webCodecsEncode: 'unsupported',
 				codecs: setCodecs('unsupported'),
+				capture: {
+					...supportedCapture,
+					mediaStreamTrackProcessor: 'unsupported',
+					transferableMediaStreamTrack: 'unsupported',
+					videoEncodeRealtime: 'unsupported',
+					audioEncodeOpus: 'unsupported',
+					opfsSyncAccessHandle: 'unsupported'
+				},
 				fileSystemAccess: 'unsupported',
 				offscreenCanvas: 'unsupported',
 				livePublish: livePublishProbe('unsupported'),

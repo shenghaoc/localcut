@@ -171,7 +171,79 @@ function rowsForProbe(probe: CapabilityProbeResult): CapabilityRow[] {
 			active: probe.audioWorklet === 'supported',
 			action: null
 		},
-		webnnRow(probe)
+		webnnRow(probe),
+		// ── Capture Engine (Phase 41) probes ─────────────────────────
+		{
+			label: 'Capture: MSTP',
+			support: probe.capture.mediaStreamTrackProcessor,
+			active: probe.capture.mediaStreamTrackProcessor === 'supported',
+			action:
+				probe.capture.mediaStreamTrackProcessor === 'supported'
+					? null
+					: 'Recording requires MediaStreamTrackProcessor (Chromium desktop).'
+		},
+		{
+			label: 'Capture: Transferable Track',
+			support: probe.capture.transferableMediaStreamTrack,
+			active: probe.capture.transferableMediaStreamTrack === 'supported',
+			action:
+				probe.capture.transferableMediaStreamTrack === 'supported'
+					? null
+					: 'Recording requires transferable MediaStreamTrack (Chromium).'
+		},
+		{
+			label: 'Capture: Display Capture',
+			support: probe.capture.displayCapture,
+			active: probe.capture.displayCapture === 'supported',
+			action:
+				probe.capture.displayCapture === 'supported'
+					? null
+					: 'Screen recording requires getDisplayMedia support.'
+		},
+		{
+			label: 'Capture: Display Audio',
+			support: probe.capture.displayAudioCapture,
+			active: probe.capture.displayAudioCapture === 'supported',
+			action:
+				probe.capture.displayAudioCapture === 'supported'
+					? null
+					: probe.capture.displayAudioCapture === 'unknown'
+						? 'System/tab audio capture support is unknown until first use.'
+						: 'System/tab audio capture is not available on this platform.'
+		},
+		{
+			label: 'Capture: Video Encode (realtime)',
+			support: probe.capture.videoEncodeRealtime,
+			active: probe.capture.videoEncodeRealtime === 'supported',
+			action:
+				probe.capture.videoEncodeRealtime === 'supported'
+					? null
+					: 'Recording requires hardware-accelerated realtime video encoding.'
+		},
+		{
+			label: 'Capture: Opus Encode',
+			support: probe.capture.audioEncodeOpus,
+			active: probe.capture.audioEncodeOpus === 'supported',
+			action:
+				probe.capture.audioEncodeOpus === 'supported'
+					? null
+					: 'Audio recording requires Opus encode support.'
+		},
+		{
+			label: 'Capture: AAC Encode',
+			support: probe.capture.audioEncodeAac,
+			active: probe.capture.audioEncodeAac === 'supported',
+			action: null
+		},
+		{
+			label: 'Capture: OPFS Sync Access',
+			support: probe.capture.opfsSyncAccessHandle,
+			active: probe.capture.opfsSyncAccessHandle === 'supported',
+			action:
+				probe.capture.opfsSyncAccessHandle === 'supported'
+					? null
+					: 'Recording requires OPFS SyncAccessHandle for crash-safe writes.'
+		}
 	];
 }
 

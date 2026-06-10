@@ -1,6 +1,7 @@
 import type {
 	CapabilityProbeResult,
 	CapabilityTierV2,
+	CaptureProbeResult,
 	CodecProbeResult,
 	ExportCodecSupport,
 	FeatureSupport,
@@ -299,6 +300,161 @@ export function exportConstraintsForProbe(
 	return supported;
 }
 
+// ── Capture probes (Phase 41) ─────────────────────────────────────────────
+
+function probeMediaStreamTrackProcessor(): FeatureSupport {
+	try {
+		if (typeof MediaStreamTrackProcessor !== 'function') return 'unsupported';
+		const videoCheck = typeof MediaStreamTrackProcessor === 'function' ? 'unknown' : 'unsupported';
+		return videoCheck === 'unknown' ? 'supported' : videoCheck;
+	} catch {
+		return 'unknown';
+	}
+}
+
+function probeTransferableMediaStreamTrack(): FeatureSupport {
+	try {
+		// Test structuredClone with transfer list using a transferable ArrayBuffer.
+		// structuredClone({ transfer }) support is the same mechanism used for
+		// transferable MediaStreamTrack; an actual track requires user permission.
+		const buffer = new ArrayBuffer(16);
+		const cloned = structuredClone({ buffer }, { transfer: [buffer] }) as { buffer: ArrayBuffer };
+		if (buffer.byteLength === 0 && cloned.buffer.byteLength === 16) {
+			return 'supported';
+		}
+		return 'unsupported';
+	} catch {
+		return 'unknown';
+	}
+}
+
+function probeDisplayCapture(): FeatureSupport {
+	if (typeof navigator !== 'undefined' && 'mediaDevices' in navigator) {
+		const md = navigator.mediaDevices as MediaDevices | undefined;
+		return md && typeof md.getDisplayMedia === 'function' ? 'supported' : 'unsupported';
+	}
+	return 'unsupported';
+}
+
+async function probeDisplayAudioCapture(): Promise<FeatureSupport> {
+	try {
+		const md = navigator.mediaDevices as MediaDevices | undefined;
+		if (!md || typeof md.getDisplayMedia !== 'function') return 'unsupported';
+		// Attempt to query supported constraints without a full picker gesture.
+		// This is a best-effort probe; the result may be 'unknown' until first real use.
+		if (typeof md.getSupportedConstraints !== 'function') return 'unknown';
+		const constraints = md.getSupportedConstraints();
+		if ('systemAudio' in constraints && (constraints as Record<string, boolean>).systemAudio) {
+			return 'supported';
+		}
+		return 'unknown';
+	} catch {
+		return 'unknown';
+	}
+}
+
+async function probeVideoEncodeRealtime(): Promise<FeatureSupport> {
+	if (typeof VideoEncoder !== 'function') return 'unsupported';
+	try {
+		const config: VideoEncoderConfig = {
+			codec: 'avc1.42001E',
+			width: 1920,
+			height: 1080,
+			bitrate: 5_000_000,
+			latencyMode: 'realtime',
+			hardwareAcceleration: 'prefer-hardware'
+		};
+		const result = await VideoEncoder.isConfigSupported(config);
+		return result.supported === true ? 'supported' : 'unsupported';
+	} catch {
+		return 'unknown';
+	}
+}
+
+async function probeAudioEncode(codec: 'opus' | 'aac'): Promise<FeatureSupport> {
+	if (typeof AudioEncoder !== 'function') return 'unsupported';
+	try {
+		const config: AudioEncoderConfig = {
+			codec: codec === 'opus' ? 'opus' : 'mp4a.40.2',
+			sampleRate: 48_000,
+			numberOfChannels: 2,
+			bitrate: 128_000
+		};
+		const result = await AudioEncoder.isConfigSupported(config);
+		return result.supported === true ? 'supported' : 'unsupported';
+	} catch {
+		return 'unknown';
+	}
+}
+
+async function probeOpfsSyncAccessHandle(): Promise<FeatureSupport> {
+	try {
+		if (typeof navigator === 'undefined' || typeof navigator.storage?.getDirectory !== 'function') {
+			return 'unsupported';
+		}
+		const root = await navigator.storage.getDirectory();
+		const fileName = `_cap_probe_${Date.now()}_${Math.random().toString(36).slice(2)}.tmp`;
+		const handle = await root.getFileHandle(fileName, { create: true });
+		const access = await (handle as FileSystemFileHandle).createSyncAccessHandle();
+		access.close();
+		await root.removeEntry(fileName);
+		return 'supported';
+	} catch {
+		return 'unknown';
+	}
+}
+
+async function probeCaptureCapabilities(): Promise<CaptureProbeResult> {
+	const [displayAudioCapture, videoEncodeRealtime, audioEncodeOpus, audioEncodeAac, opfsSyncAccessHandle] =
+		await Promise.all([
+			probeDisplayAudioCapture(),
+			probeVideoEncodeRealtime(),
+			probeAudioEncode('opus'),
+			probeAudioEncode('aac'),
+			probeOpfsSyncAccessHandle()
+		]);
+
+	return {
+		mediaStreamTrackProcessor: probeMediaStreamTrackProcessor(),
+		transferableMediaStreamTrack: probeTransferableMediaStreamTrack(),
+		displayCapture: probeDisplayCapture(),
+		displayAudioCapture,
+		videoEncodeRealtime,
+		audioEncodeOpus,
+		audioEncodeAac,
+		opfsSyncAccessHandle
+	};
+}
+
+const unknownCapture: CaptureProbeResult = {
+	mediaStreamTrackProcessor: 'unknown',
+	transferableMediaStreamTrack: 'unknown',
+	displayCapture: 'unknown',
+	displayAudioCapture: 'unknown',
+	videoEncodeRealtime: 'unknown',
+	audioEncodeOpus: 'unknown',
+	audioEncodeAac: 'unknown',
+	opfsSyncAccessHandle: 'unknown'
+};
+
+/**
+ * Whether recording is available: accelerated tier + all critical capture probes
+ * are `'supported'`. Display audio is NOT critical (its absence only disables the
+ * audio toggle; video recording remains available).
+ */
+export function recordingAvailable(probe: CapabilityProbeResult): boolean {
+	const cap = probe.capture;
+	return (
+		probe.tier === 'core-webgpu' &&
+		cap.mediaStreamTrackProcessor === 'supported' &&
+		cap.transferableMediaStreamTrack === 'supported' &&
+		cap.displayCapture === 'supported' &&
+		cap.videoEncodeRealtime === 'supported' &&
+		cap.audioEncodeOpus === 'supported' &&
+		cap.opfsSyncAccessHandle === 'supported'
+	);
+}
+
 export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 	// Probe both adapters independently so the diagnostic panel reports each one's
 	// true availability. Short-circuiting webGPUCompat to 'unsupported' whenever the
@@ -322,6 +478,7 @@ export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 			hardwareH264Encode: 'unknown'
 		})
 	);
+	const capture = await probeCaptureCapabilities().catch(() => unknownCapture);
 	const probeWithoutTier: Omit<CapabilityProbeResult, 'tier'> = {
 		crossOriginIsolated: globalThis.crossOriginIsolated === true,
 		sharedArrayBuffer: hasSharedArrayBuffer(),
@@ -331,6 +488,7 @@ export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 		webCodecsDecode: supportFromBoolean(typeof VideoDecoder !== 'undefined'),
 		webCodecsEncode: supportFromBoolean(typeof VideoEncoder !== 'undefined'),
 		codecs,
+		capture,
 		fileSystemAccess: supportFromBoolean(
 			typeof window !== 'undefined' &&
 				('showOpenFilePicker' in window || 'showSaveFilePicker' in window)
