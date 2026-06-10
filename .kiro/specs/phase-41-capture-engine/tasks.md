@@ -1,19 +1,21 @@
 # Tasks: Phase 41 — Capture Engine
 
-> Status: **Planned** — no implementation yet. Order matters: T1–T2 (model + probes) unblock everything; T6 (writer + manifest) before T7 (recovery); T9 (landing) before T10 (UI happy path).
+> Status: **Active / foundation implemented.** Protocol + manifest types (T1), capture probes + `recordingAvailable` gating + diagnostics rows (T2), per-track ingestion pipelines with backpressure, timestamp-based keyframe cadence, and close-exactly-once tests (T4), the writer worker with ordered chunk+manifest writes, ACK backpressure, and recovery scan (T6.2/T6.3/T6.5), and the pipeline-worker command handlers are implemented.
+>
+> Open build-out, honestly labeled: **track files are not yet valid fMP4** — encoded packets are appended raw pending the Mediabunny fragmented muxer (T6.1); acquisition UI + Record panel (T3/T10); recovery wiring + dialog (T7); quota wiring (T8); landing (T9); remaining tests, Playwright, docs (T11/T12). Order matters: T6.1 before T7.3/T9; T9 before T10 happy path.
 
 ## T1 — Protocol and model
 
-- [ ] **T1.1** Add capture types to `src/protocol.ts`: `CaptureSourceDescriptor`, `CaptureSettingsSnapshot`, `CaptureSourceSnapshot`, `CaptureSourceStatusSnapshot`, `CaptureRecoverySessionSnapshot`, `CaptureErrorCode`, `CaptureStopReason`, `CaptureSourceEndReason`.
-- [ ] **T1.2** Add worker commands `capture-add-source` (with transferred `MediaStreamTrack`), `capture-remove-source`, `capture-start`, `capture-stop`, `capture-recovery-import`, `capture-recovery-discard` to the `WorkerCommand` union.
-- [ ] **T1.3** Add state messages `capture-status`, `capture-error`, `capture-recovery-list`, `capture-landed` to the worker state message union.
-- [ ] **T1.4** Define `CaptureManifestRecord` (header / epoch / chunk / source-ended / finalize) in `src/engine/capture/chunk-manifest.ts` with version field `1`.
+- [x] **T1.1** Add capture types to `src/protocol.ts`: `CaptureSourceDescriptor`, `CaptureSettingsSnapshot`, `CaptureSourceSnapshot`, `CaptureSourceStatusSnapshot`, `CaptureRecoverySessionSnapshot`, `CaptureErrorCode`, `CaptureStopReason`, `CaptureSourceEndReason`.
+- [x] **T1.2** Add worker commands `capture-add-source` (with transferred `MediaStreamTrack`), `capture-remove-source`, `capture-start`, `capture-stop`, `capture-recovery-import`, `capture-recovery-discard` to the `WorkerCommand` union.
+- [x] **T1.3** Add state messages `capture-status`, `capture-error`, `capture-recovery-list`, `capture-landed` to the worker state message union.
+- [x] **T1.4** Define `CaptureManifestRecord` (header / epoch / chunk / source-ended / finalize) in `src/engine/capture/chunk-manifest.ts` with version field `1`.
 
 ## T2 — Capability probes and gating
 
-- [ ] **T2.1** Extend the capability probe with the capture group: `mediaStreamTrackProcessor`, `transferableMediaStreamTrack`, `displayCapture`, `displayAudioCapture`, `videoEncodeRealtime` (recording hw-preferred vs fallback), `audioEncode` (Opus, AAC separately), `opfsSyncAccessHandle`. Each maps probe errors to `'unknown'`.
-- [ ] **T2.2** Add a `recordingAvailable` derivation: `core-webgpu` tier AND all critical capture probes `supported`; export it as a pure function alongside `deriveCapabilityTierV2`.
-- [ ] **T2.3** Add one `CapabilityMatrixPanel` row per capture probe with action links (e.g. "Recording requires a Chromium browser").
+- [x] **T2.1** Extend the capability probe with the capture group: `mediaStreamTrackProcessor`, `transferableMediaStreamTrack`, `displayCapture`, `displayAudioCapture`, `videoEncodeRealtime` (recording hw-preferred vs fallback), `audioEncode` (Opus, AAC separately), `opfsSyncAccessHandle`. Each maps probe errors to `'unknown'`.
+- [x] **T2.2** Add a `recordingAvailable` derivation: `core-webgpu` tier AND all critical capture probes `supported`; export it as a pure function alongside `deriveCapabilityTierV2`.
+- [x] **T2.3** Add one `CapabilityMatrixPanel` row per capture probe with action links (e.g. "Recording requires a Chromium browser").
 - [ ] **T2.4** Unit-test `recordingAvailable` across fixture probe results: accelerated tier with all probes (enabled), Safari-like and Firefox-like fixtures (disabled with the correct missing set), accelerated tier minus `opfsSyncAccessHandle` (disabled).
 
 ## T3 — Acquisition (main thread)
@@ -26,11 +28,11 @@
 
 ## T4 — Worker ingestion (per-track pipelines)
 
-- [ ] **T4.1** Create `src/engine/capture/track-pipeline.ts`: MSTP reader loop per track driven by `AbortController`; preserves MSTP timestamps unmodified; closes every `VideoFrame`/`AudioData` exactly once on happy, drop, error, and abort paths.
-- [ ] **T4.2** Video backpressure: when `encodeQueueSize > 8`, perform pre-encode drop-and-close of non-key `VideoFrame` objects (never drop already-encoded chunks). Track `preEncodeDrops` per source; emit gap info for the chunk manifest; surface a live warning via `capture-status`.
-- [ ] **T4.3** Audio overrun policy: audio is never silently dropped. Use higher encode queue bound (16 vs 8) with sustained-overrun guard (≥ 4 consecutive frames above threshold) before triggering graceful stop with reason `audio-overrun`; prevents premature shutdown from brief audio encode bursts.
-- [ ] **T4.4** Per-source error policy: encoder/reader failure finalizes that source's file; session continues when another source remains; emit `capture-error` naming the source and code.
-- [ ] **T4.5** Unit-test close-exactly-once and backpressure with `capture-fixtures.ts` mock readers and spy encoders, including VFR timestamp sequences and abort mid-frame.
+- [x] **T4.1** Create `src/engine/capture/track-pipeline.ts`: MSTP reader loop per track driven by `AbortController`; preserves MSTP timestamps unmodified; closes every `VideoFrame`/`AudioData` exactly once on happy, drop, error, and abort paths.
+- [x] **T4.2** Video backpressure: when `encodeQueueSize > 8`, perform pre-encode drop-and-close of non-key `VideoFrame` objects (never drop already-encoded chunks). Track `preEncodeDrops` per source; emit gap info for the chunk manifest; surface a live warning via `capture-status`.
+- [x] **T4.3** Audio overrun policy: audio is never silently dropped. Use higher encode queue bound (16 vs 8) with sustained-overrun guard (≥ 4 consecutive frames above threshold) before triggering graceful stop with reason `audio-overrun`; prevents premature shutdown from brief audio encode bursts.
+- [x] **T4.4** Per-source error policy: encoder/reader failure finalizes that source's file; session continues when another source remains; emit `capture-error` naming the source and code.
+- [x] **T4.5** Unit-test close-exactly-once and backpressure with `capture-fixtures.ts` mock readers and spy encoders, including VFR timestamp sequences and abort mid-frame.
 
 ## T5 — Encode while recording
 
@@ -42,10 +44,10 @@
 ## T6 — Fragmented writer + chunk manifest
 
 - [ ] **T6.1** Create `src/engine/capture/fragmented-writer.ts`: per-track Mediabunny `Output` with `Mp4OutputFormat({ fastStart: 'fragmented' })` + `StreamTarget`, fed by encoded-packet sources; assert append-only chunk positions (no backpatching) at runtime.
-- [ ] **T6.2** Create `src/engine/capture/writer-worker.ts`: dedicated worker owning one `SyncAccessHandle` per track file plus one for `manifest.ndjson`; receives transferred `ArrayBuffer` chunks.
-- [ ] **T6.3** Enforce per-chunk write ordering: data write → data flush → manifest append → manifest flush → send `chunk-ack` to pipeline worker; one NDJSON record per flushed chunk with byte offset/length, time range, key-frame flag, and drop-gap info. Pipeline worker limits in-flight chunks per track (max 2) and waits for ACK before sending the next chunk.
+- [x] **T6.2** Create `src/engine/capture/writer-worker.ts`: dedicated worker owning one `SyncAccessHandle` per track file plus one for `manifest.ndjson`; receives transferred `ArrayBuffer` chunks.
+- [x] **T6.3** Enforce per-chunk write ordering: data write → data flush → manifest append → manifest flush → send `chunk-ack` to pipeline worker; one NDJSON record per flushed chunk with byte offset/length, time range, key-frame flag, and drop-gap info. Pipeline worker limits in-flight chunks per track (max 2) and waits for ACK before sending the next chunk.
 - [ ] **T6.4** Bound the writer buffer to one fragment + fixed slack per track; surface overflow as a session error.
-- [ ] **T6.5** Write `header` at start, `epoch` once the minimum first-sample timestamp is known, `source-ended` per source, `finalize` on clean/graceful stop.
+- [x] **T6.5** Write `header` at start, `epoch` once the minimum first-sample timestamp is known, `source-ended` per source, `finalize` on clean/graceful stop.
 - [ ] **T6.6** Build the in-memory fault-injecting `SyncAccessHandle` mock in `capture-fixtures.ts` (kill-after-N-writes, torn final write); unit-test write ordering and bounded buffering against it.
 - [ ] **T6.7** Bounded-memory acceptance test: mocked 30-minute 1080p session (mocked chunks); assert constant high-water marks for writer buffers, encoder queues, and manifest in-memory state.
 
@@ -90,6 +92,6 @@
 ## T12 — Documentation and manual verification
 
 - [ ] **T12.1** `docs/USER-GUIDE.md`: recording section — starting a session, one-gesture-per-screen-source rule, audio capability matrix summary, crash recovery flow, where recordings are stored.
-- [ ] **T12.2** Add Phase 41 to the AGENTS.md spec index.
+- [x] **T12.2** Add Phase 41 to the AGENTS.md spec index.
 - [ ] **T12.3** Manual: 2-minute screen+mic recording on Chromium — tracks land aligned; static-window capture plays back without frame-skip cadence; kill-tab mid-record → recovery dialog → import succeeds.
 - [ ] **T12.4** Manual: system-audio toggle disabled-with-reason on an unsupported OS; Safari/Firefox show the disabled panel with per-probe reasons; no crash.

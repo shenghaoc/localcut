@@ -30,8 +30,12 @@ const VIDEO_QUEUE_BOUND = 8;
 const AUDIO_QUEUE_BOUND = 16;
 const AUDIO_OVERRUN_CONSECUTIVE = 4;
 const MAX_IN_FLIGHT_CHUNKS = 2;
-/** Request a key frame every N frames to start a new fragment. */
-const KEYFRAME_INTERVAL = 60;
+/**
+ * Key frames are requested on a capture-timestamp cadence, not a frame count —
+ * screen capture is VFR, so a frame count would stretch fragments arbitrarily
+ * during static holds (R4.4 / T5.3).
+ */
+const DEFAULT_KEYFRAME_INTERVAL_US = 2_000_000;
 
 export class TrackPipeline {
 	readonly sourceId: string;
@@ -45,7 +49,8 @@ export class TrackPipeline {
 	private audioOverrunCount = 0;
 	private running = false;
 	private ended = false;
-	private frameCount = 0;
+	private keyframeIntervalUs = DEFAULT_KEYFRAME_INTERVAL_US;
+	private lastKeyframeTs: number | null = null;
 	private inFlightChunks = 0;
 	private chunkWaiters: Array<() => void> = [];
 
@@ -57,7 +62,10 @@ export class TrackPipeline {
 		this.abort = options.abort;
 	}
 
-	start(): void {
+	start(keyframeIntervalUs?: number): void {
+		if (keyframeIntervalUs !== undefined && keyframeIntervalUs > 0) {
+			this.keyframeIntervalUs = keyframeIntervalUs;
+		}
 		this.running = true;
 		this.ended = false;
 		if (this.kind === 'screen' || this.kind === 'webcam') {
@@ -168,12 +176,10 @@ export class TrackPipeline {
 				try {
 					if (encoder.encodeQueueSize > VIDEO_QUEUE_BOUND) {
 						this.preEncodeDrops++;
-						frame.close();
-						continue;
+						continue; // frame closed exactly once in finally
 					}
 
-					const keyFrame = this.frameCount % KEYFRAME_INTERVAL === 0;
-					this.frameCount++;
+					const keyFrame = this.shouldRequestKeyframe(frame.timestamp);
 					try {
 						encoder.encode(frame, { keyFrame });
 					} catch {
@@ -202,6 +208,14 @@ export class TrackPipeline {
 			this.running = false;
 			this.emitEnded();
 		}
+	}
+
+	private shouldRequestKeyframe(timestampUs: number): boolean {
+		if (this.lastKeyframeTs === null || timestampUs - this.lastKeyframeTs >= this.keyframeIntervalUs) {
+			this.lastKeyframeTs = timestampUs;
+			return true;
+		}
+		return false;
 	}
 
 	private async runAudioPipeline(config: AudioEncoderConfig): Promise<void> {

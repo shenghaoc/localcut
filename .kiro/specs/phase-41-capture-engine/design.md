@@ -1,6 +1,6 @@
 # Design: Phase 41 — Capture Engine
 
-> Status: **Planned** — recording as a first-class source. Capture streams are hardware-encoded while recording, streamed to OPFS in crash-safe chunks, and land as separate, sample-aligned timeline tracks.
+> Status: **Active / foundation implemented** — recording as a first-class source. Capture streams are hardware-encoded while recording, streamed to OPFS in crash-safe chunks, and land as separate, sample-aligned timeline tracks. See `tasks.md` for the implemented-vs-open breakdown.
 
 ## Goal
 

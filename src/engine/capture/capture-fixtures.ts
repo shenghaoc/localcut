@@ -23,19 +23,26 @@ export interface ScriptedAudioData {
 }
 
 function mockCloseable(orig: Record<string, unknown>): Record<string, unknown> {
-	let closed = false;
+	let closeCount = 0;
 	return new Proxy(orig, {
 		get(target, prop) {
 			if (prop === 'close') {
 				return () => {
-					if (closed) return; // real VideoFrame.close() is a silent no-op on subsequent calls
-					closed = true;
+					// Real VideoFrame.close() is a silent no-op on subsequent calls,
+					// but the count lets tests assert the exactly-once invariant (R0.3).
+					closeCount++;
 				};
 			}
-			if (prop === 'closed') return closed;
+			if (prop === 'closed') return closeCount > 0;
+			if (prop === 'closeCount') return closeCount;
 			return Reflect.get(target, prop);
 		}
 	});
+}
+
+/** Number of `close()` calls on a frame/data created by the mock factories. */
+export function getCloseCount(obj: VideoFrame | AudioData): number {
+	return (obj as unknown as { closeCount: number }).closeCount;
 }
 
 export function createMockVideoFrame(frame: ScriptedVideoFrame): VideoFrame {
@@ -177,8 +184,9 @@ export function createSpyVideoEncoder(): VideoEncoder & SpyEncoder {
 		configure(config: VideoEncoderConfig): void {
 			spy.configuredConfig = config;
 		},
-		encode(frame: VideoFrame, _options?: VideoEncoderEncodeOptions): void {
-			frame.close();
+		encode(_frame: VideoFrame, _options?: VideoEncoderEncodeOptions): void {
+			// Real VideoEncoder.encode() copies the frame; the caller still owns
+			// it and must close it — closing here would mask leaks in tests.
 		},
 		async flush(): Promise<void> {
 			spy.flushCalled = true;
@@ -214,8 +222,8 @@ export function createSpyAudioEncoder(): AudioEncoder & SpyEncoder {
 		configure(config: AudioEncoderConfig): void {
 			spy.configuredConfig = config;
 		},
-		encode(data: AudioData): void {
-			data.close();
+		encode(_data: AudioData): void {
+			// Caller owns the AudioData; see the video spy note above.
 		},
 		async flush(): Promise<void> {
 			spy.flushCalled = true;

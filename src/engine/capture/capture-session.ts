@@ -148,8 +148,9 @@ export class CaptureSession {
 			});
 		}
 
+		const keyframeIntervalUs = Math.round(chunkDurationS * 1_000_000);
 		for (const [, entry] of this.sources) {
-			entry.pipeline.start();
+			entry.pipeline.start(keyframeIntervalUs);
 		}
 
 		this.emitStatus();
@@ -268,9 +269,13 @@ export class CaptureSession {
 		const firstSamples = [...this.sources.values()]
 			.filter((s) => s.firstSampleUs !== null)
 			.map((s) => s.firstSampleUs!);
-		if (firstSamples.length > 0) {
-			this.epochUs = Math.min(...firstSamples);
-		}
+		if (firstSamples.length === 0) return;
+		const epochUs = Math.min(...firstSamples);
+		if (epochUs === this.epochUs) return;
+		this.epochUs = epochUs;
+		// Recovery takes the last epoch record; it can only decrease as late
+		// sources report earlier first samples.
+		this.writerPort?.postMessage({ type: 'write-epoch', sessionId: this.sessionId, epochUs });
 	}
 
 	private configLabel(

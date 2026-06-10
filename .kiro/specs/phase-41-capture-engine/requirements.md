@@ -1,6 +1,6 @@
 # Requirements: Phase 41 — Capture Engine
 
-> Status: **Planned** — recording as a first-class source: screen, webcam, mic, and system audio captured, hardware-encoded while recording, streamed crash-safely to OPFS, and landed as separate timeline tracks.
+> Status: **Active / foundation implemented** — recording as a first-class source: screen, webcam, mic, and system audio captured, hardware-encoded while recording, streamed crash-safely to OPFS, and landed as separate timeline tracks. Implementation status is tracked in `tasks.md`.
 
 ## R0 — Hard Constraints
 
