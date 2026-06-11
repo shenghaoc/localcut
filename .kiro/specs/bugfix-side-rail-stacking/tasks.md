@@ -54,12 +54,34 @@
 - [x] **T5.2** Use mutable ref object for `terminateFallback` to avoid TDZ and
   satisfy `prefer-const`.
 
-## T6 — Review fixes (Gemini)
+## T6 — Review fixes (Gemini round 1)
 
 - [x] **T6.1** Inline `SideRailTab` type into `createSignal` call.
 - [x] **T6.2** Add full ARIA tab/tabpanel attributes (`id`, `aria-controls`,
-  `role="tabpanel"`, `aria-labelledby`, `display: contents` wrappers).
+  `role="tabpanel"`, `aria-labelledby`).
 - [x] **T6.3** Fix undefined CSS variable `var(--bg)` → `var(--bg-panel)`.
+
+## T6b — Review fixes (Gemini round 2)
+
+- [x] **T6b.1** Use SolidJS `classList` instead of string interpolation for tab
+  button classes.
+- [x] **T6b.2** Replace `display: contents` on `role="tabpanel"` with
+  `.side-rail-tab-panel` CSS class (display:contents strips semantic roles from
+  the a11y tree).
+- [x] **T6b.3** Add `.side-rail-tab-panel` CSS class.
+
+## T6c — Review fixes (Claude)
+
+- [x] **T6c.1** Add `initiallyExpanded` prop to `ReplayBufferPanel` and
+  `LiveAudioChainPanel`; pass `true` from tab content so panels show content
+  immediately (P1: panels started collapsed, requiring double-click).
+- [x] **T6c.2** Add roving tabindex (`active=0`, `inactive=-1`) and
+  ArrowLeft/Right keyboard navigation to tab buttons (P1: WAI-ARIA APG tabs
+  pattern).
+- [x] **T6c.3** Add transparent baseline border to `.side-rail-tab` to prevent
+  2px layout shift on activation.
+- [x] **T6c.4** Remove redundant `overflow: visible` on panels inside
+  `overflow: auto` container.
 
 ## T7 — Build and test gate
 
