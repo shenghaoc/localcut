@@ -123,8 +123,9 @@ function createRnnoiseInstance(mod: RnnoiseModule): RnnoiseInstance {
 	}
 
 	// Allocate two 480-float regions in the WASM heap (input + output)
+	const allocSize = FRAME_SIZE * 4 * 2; // both input and output frames
 	const inPtr = mod.instance.exports['malloc']
-		? (mod.instance.exports['malloc'] as (size: number) => number)(FRAME_SIZE * 4)
+		? (mod.instance.exports['malloc'] as (size: number) => number)(allocSize)
 		: statePtr + 1024; // fallback: offset from state
 	const outPtr = inPtr + FRAME_SIZE * 4;
 
@@ -147,6 +148,10 @@ function createRnnoiseInstance(mod: RnnoiseModule): RnnoiseInstance {
 			if (!destroyed) {
 				destroyed = true;
 				mod.destroy(statePtr);
+				// Free the allocated I/O buffers
+				if (mod.instance.exports['free']) {
+					(mod.instance.exports['free'] as (ptr: number) => void)(inPtr);
+				}
 			}
 		},
 	};

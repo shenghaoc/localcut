@@ -57,12 +57,16 @@ describe('LoudnessAnalyser', () => {
 
 	it('reset clears accumulated state', () => {
 		const analyser = new LoudnessAnalyser(48000);
-		analyser.feedBlock(generateSine(997, 48000, 0.1, 0.5));
+		// Feed enough blocks to prime the 400 ms window (need ≥4 blocks)
+		for (let i = 0; i < 5; i++) {
+			analyser.feedBlock(generateSine(997, 48000, 0.1, 0.5));
+		}
 		const before = analyser.integratedLoudness();
+		expect(Number.isFinite(before)).toBe(true);
 		analyser.reset();
-		analyser.feedBlock(new Float32Array(4800)); // silence
+		// After reset, feed silence — window not primed, so loudness is −Infinity
+		analyser.feedBlock(new Float32Array(4800));
 		const after = analyser.integratedLoudness();
-		expect(before).not.toBe(after);
 		expect(after).toBe(-Infinity);
 	});
 });

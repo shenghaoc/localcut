@@ -18,6 +18,7 @@ export class LoudnessAnalyser {
 	private kWeightStates: KWeightState[] = [];
 	private ringBuffers: Float32Array[] = [];
 	private ringWritePos = 0;
+	private samplesAccumulated = 0;
 	private readonly windowLoudnesses: number[] = [];
 
 	constructor(sampleRate: number) {
@@ -32,6 +33,7 @@ export class LoudnessAnalyser {
 	feedBlock(leftOrMono: Float32Array, right?: Float32Array): void {
 		const channels = right ? 2 : 1;
 		const samples = leftOrMono.length;
+		this.samplesAccumulated += samples;
 
 		// Lazy-init per-channel state
 		while (this.kWeightStates.length < channels) {
@@ -54,6 +56,10 @@ export class LoudnessAnalyser {
 			}
 		}
 		this.ringWritePos = (this.ringWritePos + samples) % this.windowSize;
+
+		// Only compute loudness once the 400 ms window is fully primed
+		// to avoid diluting measurements with zero-padded samples.
+		if (this.samplesAccumulated < this.windowSize) return;
 
 		// Compute mean square over the full 400 ms ring
 		const ms0 = meanSquare(this.ringBuffers[0]);
@@ -114,6 +120,7 @@ export class LoudnessAnalyser {
 			buf.fill(0);
 		}
 		this.ringWritePos = 0;
+		this.samplesAccumulated = 0;
 		this.windowLoudnesses.length = 0;
 	}
 }

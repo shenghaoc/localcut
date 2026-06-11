@@ -1144,7 +1144,8 @@ async function persistCurrentProject(): Promise<void> {
 		exportPresets: exportPresets.filter((p) => !p.builtIn),
 		renderQueueHistory: serializeQueueHistory(queueState),
 		replayBufferConfig: replayRing.getConfig(),
-		liveAudioChainConfig: liveChainConfig
+		liveAudioChainConfig: liveChainConfig,
+		voiceCleanup: voiceCleanupSettings
 	});
 	await saveStoredProject(doc);
 }
@@ -4962,13 +4963,17 @@ function postLiveChainState(): void {
 	post({ type: 'live-chain-latency', latencyMs: chainLatencyS(liveChainConfig) * 1000 });
 }
 
-/** Applies (or defaults) the persisted Phase 46 configs from a project doc. */
+/** Applies (or defaults) the persisted Phase 46/36 configs from a project doc. */
 function applyProjectPhase46Config(doc: ProjectDoc): void {
 	if (capture) requestCaptureStop();
 	replayRing.updateConfig(doc.replayBufferConfig ?? { ...DEFAULT_RING_BUFFER_CONFIG });
 	liveChainConfig = cloneLiveChainConfig(
 		doc.liveAudioChainConfig ?? DEFAULT_LIVE_AUDIO_CHAIN_CONFIG
 	);
+	// Phase 36: restore voice cleanup settings from project doc
+	voiceCleanupSettings = doc.voiceCleanup
+		? { ...doc.voiceCleanup }
+		: { ...DEFAULT_VOICE_CLEANUP_SETTINGS };
 	postReplayBufferState();
 	postLiveChainState();
 }

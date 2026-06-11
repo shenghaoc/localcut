@@ -47,9 +47,13 @@ export function denoiseTrackPcm(
 	if (!ring) return; // denoiser not enabled for this track
 
 	const denoised = ring.push(monoPcm);
-	if (denoised.length > 0) {
-		const copyLen = Math.min(denoised.length, monoPcm.length);
+	const copyLen = Math.min(denoised.length, monoPcm.length);
+	if (copyLen > 0) {
 		monoPcm.set(denoised.subarray(0, copyLen));
+	}
+	// Zero-fill any remainder (denoiser latency means first blocks may be shorter)
+	if (copyLen < monoPcm.length) {
+		monoPcm.fill(0, copyLen);
 	}
 }
 
