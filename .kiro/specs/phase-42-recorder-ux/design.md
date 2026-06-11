@@ -136,12 +136,13 @@ relative to canvas) is derived from corner + size + margin as follows (for canva
 ```
 webcamW = sizePercent(size) * 1.0           // S=0.20, M=0.30, L=0.40 of canvas width
 webcamH = webcamW * (sourceHeight / sourceWidth)   // preserve aspect ratio
-marginN = margin / canvasPixelWidth         // normalised margin
+marginX = margin / canvasPixelWidth         // normalised horizontal margin
+marginY = margin / canvasPixelHeight        // normalised vertical margin (distinct for non-square canvases)
 
-bottom-right:   x = 1 − marginN − webcamW,  y = 1 − marginN − webcamH
-bottom-left:    x = marginN,                 y = 1 − marginN − webcamH
-top-right:      x = 1 − marginN − webcamW,  y = marginN
-top-left:       x = marginN,                y = marginN
+bottom-right:   x = 1 − marginX − webcamW,  y = 1 − marginY − webcamH
+bottom-left:    x = marginX,                 y = 1 − marginY − webcamH
+top-right:      x = 1 − marginX − webcamW,  y = marginY
+top-left:       x = marginX,                 y = marginY
 ```
 
 The screen track uses `FitMode = 'letterbox'` (existing, no change). Both are written
@@ -210,7 +211,7 @@ interface RecordPanelState {
 Emits to worker via `worker.postMessage`: `capture-start`, `capture-stop`,
 `capture-pause`, `capture-resume`, `capture-add-source`, `capture-remove-source`.
 Reads `capture-status`, `capture-error`, `capture-landed` from worker state. Uses
-`onCleanup` for PiP window `pagehide` listener and countdown timer.
+`onCleanup` for PiP window `pagehide` listener, PiP SolidJS root disposal, and countdown timer.
 
 ### `src/ui/RecorderControlStrip.tsx` (new)
 

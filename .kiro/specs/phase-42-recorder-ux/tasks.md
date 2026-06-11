@@ -18,6 +18,10 @@
 - [ ] **T1.5** Add optional `captureSessionId?: string` field to
   `TimelineClipSnapshot` in `src/protocol.ts` (inert for tools that do not know
   Phase 42; ignored by existing import/serialization validators).
+- [ ] **T1.6** Add `capture-apply-region` command to the `WorkerCommand` union in
+  `src/protocol.ts`:
+  `{ type: 'capture-apply-region'; sourceId: string; mode: 'crop' | 'element' }`.
+  Referenced by T12.4 for Region/Element Capture.
 
 ## T2 — Manifest record extensions (R3, R4, R7)
 
@@ -183,6 +187,10 @@
     the 1280 × 720 source.
   - **Margin clamping:** `marginPx = -4` clamps to 0; `marginPx = 100` clamps to 64;
     assert the resulting transform differs from the unclamped case.
+  - **Non-square canvas margin uniformity:** with a 1080 × 1920 (portrait) canvas and
+    `marginPx = 16`, assert the pixel margin is 16 px on all four sides (i.e.
+    `x * canvasW ≈ 16` and `y * canvasH ≈ 16` for top-left corner), confirming
+    separate X/Y normalisation.
 - [ ] **T8.2** Create `src/engine/capture/retake.test.ts`:
   - Build a `TimelineClipSnapshot` with `id`, `sourceId`, `duration`, `inPoint`,
     `outPoint`, `transform`, `keyframes`, and `captureSessionId` fields.
@@ -227,7 +235,9 @@
   document body. Set `documentPipActive` signal to `true`. If the call throws or the
   window is null, fall through to the in-page path.
 - [ ] **T10.3** Register a `pagehide` listener on the PiP window in an `onCleanup`
-  callback: when fired (user closed the PiP window), set `documentPipActive` to
+  callback: when fired (user closed the PiP window), call the `dispose()` function
+  returned by `render()` to tear down the SolidJS root in the PiP window (preventing
+  memory leaks from orphaned reactive subscriptions), then set `documentPipActive` to
   `false`; the in-page strip becomes visible automatically (it is always mounted, just
   hidden via CSS when `documentPipActive` is `true`).
 - [ ] **T10.4** Render the in-page `RecorderControlStrip` unconditionally into the main
