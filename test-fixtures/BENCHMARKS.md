@@ -6,7 +6,7 @@ Reproducible performance benchmark procedures for release validation.
 
 - Chromium 120+ with WebGPU enabled
 - Hardware GPU (discrete preferred; integrated acceptable with noted baselines)
-- `crossOriginIsolated === true` (COOP/COEP headers via `npm run dev`)
+- `crossOriginIsolated === true` (COOP/COEP headers via `pnpm dev`)
 - Test fixtures generated: `cd test-fixtures && ./generate-fixtures.sh`
 
 ## Benchmark commands
@@ -14,7 +14,7 @@ Reproducible performance benchmark procedures for release validation.
 ### 1. Build timing
 
 ```bash
-time npm run build
+time pnpm build
 ```
 
 Baseline: < 10s on modern hardware. Report: build time, output bundle size.
@@ -22,7 +22,7 @@ Baseline: < 10s on modern hardware. Report: build time, output bundle size.
 ### 2. Test suite timing
 
 ```bash
-time npm test
+time pnpm test
 ```
 
 Baseline: < 2s. Report: total duration, test count.
@@ -60,7 +60,7 @@ Target: exactly 1 submission per frame on the accelerated path.
 ### 8. WASM SIMD resampler throughput
 
 ```bash
-npx vitest run src/engine/audio-resampler-bench.test.ts --disable-console-intercept
+pnpm exec vitest run src/engine/audio-resampler-bench.test.ts --disable-console-intercept
 ```
 
 Measures samples/sec for 44.1 kHz → 48 kHz stereo resampling, WASM SIMD
@@ -101,6 +101,6 @@ GPU submits/frame: 1
 
 ## Where release evidence is recorded
 
-- CI: `npm run build` and `npm test` output in CI logs
+- CI: `pnpm build` and `pnpm test` output in CI logs
 - Performance: local benchmark file (not committed; screenshot in PR description)
 - Diagnostics: copy report from diagnostics panel pasted in PR description

@@ -4,11 +4,11 @@ Generated from Phase 25 spec. Every item maps to a command, test, diagnostic pan
 
 ## Build and Test Gates
 
-| Gate                       | Command                               | Status |
-| -------------------------- | ------------------------------------- | ------ |
-| TypeScript strict build    | `npm run build`                       |        |
-| Vitest suite               | `npm test`                            |        |
-| Test count (no regression) | Compare `npm test` output to previous |        |
+| Gate                       | Command                                | Status |
+| -------------------------- | -------------------------------------- | ------ |
+| TypeScript strict build    | `pnpm build`                           |        |
+| Vitest suite               | `pnpm test`                            |        |
+| Test count (no regression) | Compare `pnpm test` output to previous |        |
 
 ## Fixture Matrix
 
@@ -58,12 +58,12 @@ Generate fixtures: `cd test-fixtures && ./generate-fixtures.sh`
 
 ## COOP/COEP Verification
 
-| Environment                          | Check                                     |
-| ------------------------------------ | ----------------------------------------- |
-| Dev (`npm run dev`)                  | `crossOriginIsolated === true` in console |
-| Production build (`npm run preview`) | `crossOriginIsolated === true` in console |
-| Cloudflare Pages                     | `public/_headers` sets COOP/COEP          |
-| Missing isolation                    | Limited mode with actionable message      |
+| Environment                       | Check                                     |
+| --------------------------------- | ----------------------------------------- |
+| Dev (`pnpm dev`)                  | `crossOriginIsolated === true` in console |
+| Production build (`pnpm preview`) | `crossOriginIsolated === true` in console |
+| Cloudflare Pages                  | `public/_headers` sets COOP/COEP          |
+| Missing isolation                 | Limited mode with actionable message      |
 
 ## Accessibility
 

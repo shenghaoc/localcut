@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { createRingBuffer, type RingBufferEntry } from './ring-buffer';
 import { assembleSaveEntries, computeSaveRange, saveLastN } from './replay-save';
 import { DEFAULT_RING_BUFFER_CONFIG } from '../../protocol';
@@ -8,7 +8,14 @@ function video(timestamp: number, isKeyframe: boolean, duration = 1 / 30): RingB
 }
 
 function audio(timestamp: number, duration = 0.02): RingBufferEntry {
-	return { type: 'audio', timestamp, duration, byteSize: 2, isKeyframe: false, data: new Uint8Array(2) };
+	return {
+		type: 'audio',
+		timestamp,
+		duration,
+		byteSize: 2,
+		isKeyframe: false,
+		data: new Uint8Array(2)
+	};
 }
 
 function populatedRing(seconds: number, fps = 30, gopS = 1) {
@@ -42,10 +49,7 @@ describe('computeSaveRange / saveLastN', () => {
 		const result = saveLastN(ring, 4.5)!;
 		const range = computeSaveRange(ring, 4.5)!;
 		expect(result.entries).toEqual(range.snapshot.entries);
-		expect(result.totalDurationS).toBeCloseTo(
-			range.endTimestamp - range.startTimestamp,
-			6
-		);
+		expect(result.totalDurationS).toBeCloseTo(range.endTimestamp - range.startTimestamp, 6);
 	});
 
 	it('saves whatever is available when N exceeds the buffered duration', () => {
@@ -68,7 +72,13 @@ describe('computeSaveRange / saveLastN', () => {
 
 describe('assembleSaveEntries', () => {
 	it('prefers the latest keyframe at or before the raw start', () => {
-		const entries = [video(0, true), video(1, false), video(2, true), video(3, false), video(4, true)];
+		const entries = [
+			video(0, true),
+			video(1, false),
+			video(2, true),
+			video(3, false),
+			video(4, true)
+		];
 		const saved = assembleSaveEntries(entries, 2.5, 4.5);
 		expect(saved[0].timestamp).toBe(2);
 		expect(saved.at(-1)?.timestamp).toBe(4);

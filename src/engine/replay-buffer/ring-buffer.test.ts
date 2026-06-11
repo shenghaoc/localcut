@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import {
 	createRingBuffer,
 	MAX_RING_DURATION_S,
@@ -16,7 +16,13 @@ function bytes(size: number, fill = 0xab): Uint8Array {
 }
 
 /** Pushes `gops` GOPs of `gopFrames` frames each at `fps`, 1KB per frame. */
-function pushGops(ring: RingBuffer, gops: number, gopFrames: number, fps = 30, startTs = 0): number {
+function pushGops(
+	ring: RingBuffer,
+	gops: number,
+	gopFrames: number,
+	fps = 30,
+	startTs = 0
+): number {
 	const dt = 1 / fps;
 	let ts = startTs;
 	for (let g = 0; g < gops; g++) {

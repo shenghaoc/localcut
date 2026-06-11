@@ -15,8 +15,8 @@
 
 ### Quality Gates
 
-- [ ] `npm run build` succeeds (strict TypeScript)
-- [ ] `npm test` passes (test count has not decreased for non-trivial logic)
+- [ ] `pnpm build` succeeds (strict TypeScript)
+- [ ] `pnpm test` passes (test count has not decreased for non-trivial logic)
 - [ ] No `VideoFrame` leaked (every `.close()` exactly once)
 - [ ] Main thread stays interactive (no sustained media loops)
 - [ ] COOP/COEP verified in dev and preview modes

@@ -5,7 +5,7 @@
 - **Runtime**: Modern desktop browser with progressive capability tiers. Chromium with WebCodecs + WebGPU + SAB is the full-performance target; other browsers may run reduced client-side workflows when feature detection supports them.
 - **Frontend**: SolidJS (no meta-framework) + Vite + `vite-plugin-solid`.
 - **Language**: TypeScript strict mode throughout.
-- **Package manager**: **npm only** (`packageManager` in `package.json`; `package-lock.json` lockfile).
+- **Package manager**: **pnpm only** (`packageManager` in `package.json`; `pnpm-lock.yaml` lockfile).
 - **Media I/O**: Mediabunny (latest) — tree-shaken MP4/QTFF/WebM demux/mux + WebCodecs abstractions.
 - **GPU**: WebGPU compute shaders for accelerated effects and preview; future compatibility preview paths may use lower-resolution Canvas/WebGL/WebCodecs combinations when clearly labeled.
 - **Audio**: Web Audio API + AudioWorklet (Phase 5).

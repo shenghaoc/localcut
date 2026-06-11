@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { createRingBuffer, type RingBufferEntry } from './ring-buffer';
 import type { RingBufferConfig } from '../../protocol';
 
@@ -6,7 +6,8 @@ import type { RingBufferConfig } from '../../protocol';
 function rng(seed: number): () => number {
 	let a = seed >>> 0;
 	return () => {
-		a |= 0; a = (a + 0x6d2b79f5) | 0;
+		a |= 0;
+		a = (a + 0x6d2b79f5) | 0;
 		let t = Math.imul(a ^ (a >>> 15), 1 | a);
 		t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
 		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
@@ -16,7 +17,7 @@ function rng(seed: number): () => number {
 const baseCfg: RingBufferConfig = {
 	maxDurationS: 5,
 	maxMemoryBytes: 256 * 1024 * 1024,
-	saveDurationS: 3,
+	saveDurationS: 3
 };
 
 // ---------------------------------------------------------------------------
@@ -31,7 +32,11 @@ function createOldModel(config: RingBufferConfig) {
 
 	function totalDuration(): number {
 		if (entries.length === 0) return 0;
-		return entries[entries.length - 1].timestamp + entries[entries.length - 1].duration - entries[0].timestamp;
+		return (
+			entries[entries.length - 1].timestamp +
+			entries[entries.length - 1].duration -
+			entries[0].timestamp
+		);
 	}
 	function evictToFitDuration(): void {
 		const maxDur = cfg.maxDurationS;
@@ -39,16 +44,24 @@ function createOldModel(config: RingBufferConfig) {
 		for (let i = 0; i < entries.length; i++) {
 			if (entries[i].type === 'video' && entries[i].isKeyframe) {
 				const after = entries.slice(i);
-				const span = after.length > 0
-					? after[after.length - 1].timestamp + after[after.length - 1].duration - after[0].timestamp
-					: 0;
-				if (span <= maxDur) { cutoffIdx = i; break; }
+				const span =
+					after.length > 0
+						? after[after.length - 1].timestamp +
+							after[after.length - 1].duration -
+							after[0].timestamp
+						: 0;
+				if (span <= maxDur) {
+					cutoffIdx = i;
+					break;
+				}
 			}
 		}
 		if (cutoffIdx === -1) {
 			for (let i = 1; i < entries.length; i++) {
 				if (entries[i].type === 'video' && entries[i].isKeyframe) {
-					cutoffIdx = i; droppedFrameCount++; break;
+					cutoffIdx = i;
+					droppedFrameCount++;
+					break;
 				}
 			}
 		}
@@ -56,11 +69,25 @@ function createOldModel(config: RingBufferConfig) {
 	}
 	return {
 		pushVideo(timestamp: number, duration: number, data: Uint8Array, isKeyframe: boolean) {
-			entries.push({ type: 'video', timestamp, duration, byteSize: data.byteLength, isKeyframe, data });
+			entries.push({
+				type: 'video',
+				timestamp,
+				duration,
+				byteSize: data.byteLength,
+				isKeyframe,
+				data
+			});
 			if (totalDuration() > cfg.maxDurationS) evictToFitDuration();
 		},
 		pushAudio(timestamp: number, duration: number, data: Uint8Array) {
-			entries.push({ type: 'audio', timestamp, duration, byteSize: data.byteLength, isKeyframe: false, data });
+			entries.push({
+				type: 'audio',
+				timestamp,
+				duration,
+				byteSize: data.byteLength,
+				isKeyframe: false,
+				data
+			});
 			if (totalDuration() > cfg.maxDurationS) evictToFitDuration();
 		},
 		spillOldest(targetByteReduction: number): RingBufferEntry[] | null {
@@ -68,12 +95,16 @@ function createOldModel(config: RingBufferConfig) {
 			let bytesToSpill = 0;
 			let spillCount = 0;
 			for (const e of entries) {
-				bytesToSpill += e.byteSize; spillCount++;
+				bytesToSpill += e.byteSize;
+				spillCount++;
 				if (bytesToSpill >= targetByteReduction) break;
 			}
 			let aligned = -1;
 			for (let i = spillCount; i < entries.length; i++) {
-				if (entries[i].type === 'video' && entries[i].isKeyframe) { aligned = i; break; }
+				if (entries[i].type === 'video' && entries[i].isKeyframe) {
+					aligned = i;
+					break;
+				}
 			}
 			if (aligned === -1) return null;
 			spillCount = aligned;
@@ -85,9 +116,16 @@ function createOldModel(config: RingBufferConfig) {
 			cfg.saveDurationS = Math.min(cfg.maxDurationS, Math.max(1, cfg.saveDurationS));
 			if (totalDuration() > cfg.maxDurationS) evictToFitDuration();
 		},
-		reset() { entries = []; droppedFrameCount = 0; },
-		entriesView(): RingBufferEntry[] { return entries; },
-		dropped(): number { return droppedFrameCount; },
+		reset() {
+			entries = [];
+			droppedFrameCount = 0;
+		},
+		entriesView(): RingBufferEntry[] {
+			return entries;
+		},
+		dropped(): number {
+			return droppedFrameCount;
+		}
 	};
 }
 
@@ -126,7 +164,7 @@ describe('fuzz: incremental counters never drift from ground truth', () => {
 				const trueKeyframes = ground.filter((e) => e.isKeyframe).length;
 				if (stats.memoryBytes !== trueBytes || stats.keyframeCount !== trueKeyframes) {
 					throw new Error(
-						`DRIFT seed=${seed} op=${op}: memoryBytes=${stats.memoryBytes} (true ${trueBytes}) keyframeCount=${stats.keyframeCount} (true ${trueKeyframes})`,
+						`DRIFT seed=${seed} op=${op}: memoryBytes=${stats.memoryBytes} (true ${trueBytes}) keyframeCount=${stats.keyframeCount} (true ${trueKeyframes})`
 					);
 				}
 			}
@@ -206,12 +244,16 @@ describe('fuzz: new O(1) span eviction === old slice-based eviction (video prese
 				}
 				const groundNew = residentEntries(neu);
 				const groundOld = old.entriesView();
-				if (groundNew.length !== groundOld.length
-					|| (groundNew.length > 0 && (groundNew[0].timestamp !== groundOld[0].timestamp
-						|| groundNew[groundNew.length - 1].timestamp !== groundOld[groundOld.length - 1].timestamp))) {
+				if (
+					groundNew.length !== groundOld.length ||
+					(groundNew.length > 0 &&
+						(groundNew[0].timestamp !== groundOld[0].timestamp ||
+							groundNew[groundNew.length - 1].timestamp !==
+								groundOld[groundOld.length - 1].timestamp))
+				) {
 					throw new Error(
-						`DIVERGENCE seed=${seed} op=${op}: new len=${groundNew.length} old len=${groundOld.length} `
-						+ `new[0]=${groundNew[0]?.timestamp} old[0]=${groundOld[0]?.timestamp}`,
+						`DIVERGENCE seed=${seed} op=${op}: new len=${groundNew.length} old len=${groundOld.length} ` +
+							`new[0]=${groundNew[0]?.timestamp} old[0]=${groundOld[0]?.timestamp}`
 					);
 				}
 				expect(neu.getStats().droppedFrameCount).toBe(old.dropped());

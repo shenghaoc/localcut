@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { createCompressorState, processCompressor, type CompressorState } from './compressor';
 import type { CompressorParams } from '../../protocol';
 
@@ -70,12 +70,7 @@ describe('compressor', () => {
 
 	it('applies makeup gain after the gain computer', () => {
 		const quiet = new Float32Array(64).fill(0.05);
-		const out = processCompressor(
-			quiet,
-			params({ makeupGainDb: 6 }),
-			createCompressorState(),
-			SR
-		);
+		const out = processCompressor(quiet, params({ makeupGainDb: 6 }), createCompressorState(), SR);
 		expect(Math.abs(out[0])).toBeCloseTo(0.05 * Math.pow(10, 6 / 20), 4);
 	});
 

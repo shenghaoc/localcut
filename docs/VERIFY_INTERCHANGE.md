@@ -61,7 +61,7 @@ File → Import → Timeline → the bundle's `project.otio`.
 
 Export the `.edl` for V1 from the Interchange menu.
 
-- [ ] `npm test` passes (includes the CMX3600 grammar check on goldens).
+- [ ] `pnpm test` passes (includes the CMX3600 grammar check on goldens).
 - [ ] Import the EDL into Resolve (File → Import → Timeline → EDL) at the
       project rate: two events, record TC starting `01:00:00:00`, cut at
       `01:00:04:00`, source TCs honouring the in-points (`00:00:01:00`,

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { createLimiterState, processLimiter, type LimiterState } from './limiter';
 import type { LimiterParams } from '../../protocol';
 
@@ -23,11 +23,7 @@ function processInBlocks(
 }
 
 /** Reference implementation: O(N×M) full delay-line scan per sample. */
-function referenceLimiter(
-	input: Float32Array,
-	p: LimiterParams,
-	lookahead: number
-): Float32Array {
+function referenceLimiter(input: Float32Array, p: LimiterParams, lookahead: number): Float32Array {
 	const output = new Float32Array(input.length);
 	const ceilingLinear = Math.pow(10, p.ceilingDb / 20);
 	const attackCoef = Math.exp(-1 / ((p.attackUs / 1_000_000) * SR));

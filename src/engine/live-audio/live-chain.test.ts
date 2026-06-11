@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import {
 	anyInsertActive,
 	chainLatencyS,
@@ -32,14 +32,18 @@ describe('live chain helpers', () => {
 	it('anyInsertActive reflects per-insert bypass flags', () => {
 		expect(anyInsertActive(config())).toBe(false);
 		expect(
-			anyInsertActive(config({ limiter: { bypass: false, ceilingDb: -1, attackUs: 100, releaseMs: 50 } }))
+			anyInsertActive(
+				config({ limiter: { bypass: false, ceilingDb: -1, attackUs: 100, releaseMs: 50 } })
+			)
 		).toBe(true);
 	});
 
 	it('chainLatencyS reports the limiter lookahead only when the limiter is active', () => {
 		expect(chainLatencyS(config())).toBe(0);
 		expect(
-			chainLatencyS(config({ limiter: { bypass: false, ceilingDb: -1, attackUs: 100, releaseMs: 50 } }))
+			chainLatencyS(
+				config({ limiter: { bypass: false, ceilingDb: -1, attackUs: 100, releaseMs: 50 } })
+			)
 		).toBe(LIMITER_LOOKAHEAD_S);
 	});
 
