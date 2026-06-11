@@ -625,12 +625,11 @@ export function App() {
 			const streams = await startCapture('display');
 			replayCaptureStream = streams.mediaStream;
 			// The browser's own "Stop sharing" ends the track; mirror it as a stop.
-			streams.mediaStream.getVideoTracks()[0]?.addEventListener(
-				'ended',
-				() => stopReplayCapture(),
-				{ once: true }
-			);
-			const transfer: Transferable[] = [streams.videoStream];
+			const lifetimeTrack =
+				streams.mediaStream.getVideoTracks()[0] ?? streams.mediaStream.getAudioTracks()[0];
+			lifetimeTrack?.addEventListener('ended', () => stopReplayCapture(), { once: true });
+			const transfer: Transferable[] = [];
+			if (streams.videoStream) transfer.push(streams.videoStream);
 			if (streams.audioStream) transfer.push(streams.audioStream);
 			bridge?.send(
 				{

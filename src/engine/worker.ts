@@ -51,7 +51,10 @@ import {
 	anyInsertActive,
 	chainLatencyS,
 	createLiveChainProcessor,
-	type LiveChainProcessor
+	interleavedPcmToF32Planes,
+	pcmPlaneToF32,
+	type LiveChainProcessor,
+	type PcmPlane
 } from './live-audio/live-chain';
 import { exportCaptionSidecars } from './captions/export';
 import { activeCaptionPayloadsAt, captionTextureId } from './captions/render';
@@ -338,7 +341,7 @@ const REPLAY_SAVE_PROGRESS_EVERY = 25;
 
 interface CaptureRuntime {
 	state: CaptureSessionState;
-	videoReader: ReadableStreamDefaultReader<VideoFrame>;
+	videoReader: ReadableStreamDefaultReader<VideoFrame> | null;
 	audioReader: ReadableStreamDefaultReader<AudioData> | null;
 	videoEncoder: VideoEncoder | null;
 	audioEncoder: AudioEncoder | null;
@@ -4324,6 +4327,58 @@ function ensureCaptureAudioEncoder(rt: CaptureRuntime, data: AudioData): AudioEn
 }
 
 /**
+ * Extracts capture PCM as per-channel f32 planes. `AudioData.copyTo` is only
+ * guaranteed to convert *to* f32-planar by newer engines, and capture sources
+ * commonly deliver s16/f32 interleaved — so read in the data's native format
+ * and convert with the pure helpers instead of relying on implicit conversion.
+ */
+function captureAudioToPlanes(data: AudioData): Float32Array[] {
+	const frames = data.numberOfFrames;
+	const channels = data.numberOfChannels;
+	const format = data.format;
+	const planarBuffer = (): PcmPlane => {
+		switch (format) {
+			case 's16-planar': return new Int16Array(frames);
+			case 's32-planar': return new Int32Array(frames);
+			case 'u8-planar': return new Uint8Array(frames);
+			default: return new Float32Array(frames);
+		}
+	};
+	const interleavedBuffer = (): PcmPlane => {
+		switch (format) {
+			case 's16': return new Int16Array(frames * channels);
+			case 's32': return new Int32Array(frames * channels);
+			case 'u8': return new Uint8Array(frames * channels);
+			default: return new Float32Array(frames * channels);
+		}
+	};
+	switch (format) {
+		case 'f32-planar':
+		case 's16-planar':
+		case 's32-planar':
+		case 'u8-planar': {
+			const planes: Float32Array[] = [];
+			for (let c = 0; c < channels; c++) {
+				const raw = planarBuffer();
+				data.copyTo(raw, { planeIndex: c, format });
+				planes.push(pcmPlaneToF32(raw));
+			}
+			return planes;
+		}
+		case 'f32':
+		case 's16':
+		case 's32':
+		case 'u8': {
+			const raw = interleavedBuffer();
+			data.copyTo(raw, { planeIndex: 0, format });
+			return interleavedPcmToF32Planes(raw, channels, frames);
+		}
+		default:
+			throw new Error(`Unsupported AudioData format: ${String(format)}`);
+	}
+}
+
+/**
  * Print-to-recording path: runs gate → compressor → limiter on capture PCM in
  * this worker before encoding, so the recorded chain never depends on the
  * monitor AudioContext running (it can be suspended by autoplay policy or
@@ -4336,13 +4391,7 @@ function applyChainToAudioData(rt: CaptureRuntime, data: AudioData): AudioData |
 		if (!rt.chain || rt.chain.sampleRate !== data.sampleRate) {
 			rt.chain = createLiveChainProcessor(cloneLiveChainConfig(liveChainConfig), data.sampleRate);
 		}
-		const planes: Float32Array[] = [];
-		for (let c = 0; c < channels; c++) {
-			const plane = new Float32Array(frames);
-			data.copyTo(plane, { planeIndex: c, format: 'f32-planar' });
-			planes.push(plane);
-		}
-		const processed = rt.chain.process(planes);
+		const processed = rt.chain.process(captureAudioToPlanes(data));
 		const planar = new Float32Array(frames * channels);
 		processed.forEach((plane, c) => planar.set(plane, c * frames));
 		return new AudioData({
@@ -4366,6 +4415,7 @@ function applyChainToAudioData(rt: CaptureRuntime, data: AudioData): AudioData |
 }
 
 async function pumpCaptureVideo(rt: CaptureRuntime): Promise<void> {
+	if (!rt.videoReader) return;
 	const defaults = getDefaultCaptureConfig();
 	const keyIntervalFrames = Math.max(
 		1,
@@ -4435,17 +4485,26 @@ async function pumpCaptureAudio(rt: CaptureRuntime): Promise<void> {
 			break;
 		}
 	}
+	// For an audio-only session the audio stream is the session's lifetime,
+	// mirroring the video pump's end-of-stream handling below.
+	if (capture === rt && !rt.stopping && !rt.videoReader) {
+		rt.stopping = true;
+	}
 }
 
 function handleCaptureTransferStreams(
-	videoStream: ReadableStream<VideoFrame>,
+	videoStream: ReadableStream<VideoFrame> | undefined,
 	audioStream: ReadableStream<AudioData> | undefined,
 	settings: CaptureStreamSettings | undefined
 ): void {
 	if (capture) {
 		post({ type: 'capture-error', message: 'A capture session is already active.' });
-		void videoStream.cancel().catch(() => undefined);
+		void videoStream?.cancel().catch(() => undefined);
 		void audioStream?.cancel().catch(() => undefined);
+		return;
+	}
+	if (!videoStream && !audioStream) {
+		post({ type: 'capture-error', message: 'The captured stream has no video or audio tracks.' });
 		return;
 	}
 	// A new session owns the buffer: discard the previous session's chunks and
@@ -4456,21 +4515,24 @@ function handleCaptureTransferStreams(
 	captureAudioDecoderConfig = null;
 
 	const defaults = getDefaultCaptureConfig();
+	const hasVideo = videoStream != null;
 	const rt: CaptureRuntime = {
 		state: {
 			active: true,
 			sourceLabel: settings?.sourceLabel ?? 'Screen Capture',
 			source: settings?.source ?? 'display',
-			hasVideo: true,
+			hasVideo,
 			hasAudio: audioStream != null,
-			resolution: {
-				width: settings?.width ?? defaults.width,
-				height: settings?.height ?? defaults.height
-			},
-			frameRate: settings?.frameRate ?? defaults.framerate,
+			resolution: hasVideo
+				? {
+						width: settings?.width ?? defaults.width,
+						height: settings?.height ?? defaults.height
+					}
+				: null,
+			frameRate: hasVideo ? (settings?.frameRate ?? defaults.framerate) : null,
 			elapsedS: 0
 		},
-		videoReader: videoStream.getReader(),
+		videoReader: videoStream?.getReader() ?? null,
 		audioReader: audioStream?.getReader() ?? null,
 		videoEncoder: null,
 		audioEncoder: null,
@@ -4550,7 +4612,7 @@ function requestCaptureStop(): void {
 	}
 	if (rt.stopping) return;
 	rt.stopping = true;
-	void rt.videoReader.cancel().catch(() => undefined);
+	void rt.videoReader?.cancel().catch(() => undefined);
 	void rt.audioReader?.cancel().catch(() => undefined);
 }
 
@@ -4607,6 +4669,10 @@ async function handleReplaySaveLastN(nSeconds?: number): Promise<void> {
 		if (hasVideoEntries && !captureVideoDecoderConfig) {
 			throw new Error('Video decoder configuration is unavailable for the buffered media.');
 		}
+		if (hasAudioEntries && !captureAudioDecoderConfig) {
+			// Failing loudly beats silently saving a clip without its audio track.
+			throw new Error('Audio decoder configuration is unavailable for the buffered media.');
+		}
 
 		const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 		saveFileName = `replay-${stamp}.mp4`;
@@ -4623,8 +4689,7 @@ async function handleReplaySaveLastN(nSeconds?: number): Promise<void> {
 			const frameRate = capture?.state.frameRate;
 			output.addVideoTrack(videoSource, frameRate ? { frameRate } : undefined);
 		}
-		const audioSource =
-			hasAudioEntries && captureAudioDecoderConfig ? new EncodedAudioPacketSource('aac') : null;
+		const audioSource = hasAudioEntries ? new EncodedAudioPacketSource('aac') : null;
 		if (audioSource) output.addAudioTrack(audioSource);
 		await output.start();
 

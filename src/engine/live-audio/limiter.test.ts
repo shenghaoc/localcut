@@ -112,6 +112,15 @@ describe('limiter', () => {
 		}
 	});
 
+	it('clamps non-positive timing params instead of diverging to NaN/Infinity', () => {
+		const hostile = params({ attackUs: -100, releaseMs: 0 });
+		const input = randomSignal(2048).map((v) => v * 1.5);
+		const out = processLimiter(input, hostile, createLimiterState(240), SR);
+		for (let i = 0; i < out.length; i++) {
+			expect(Number.isFinite(out[i])).toBe(true);
+		}
+	});
+
 	it('catches a peak that arrives in a later block than its lookahead window', () => {
 		// Quiet first block, loud spike early in the second block: the limiter
 		// must already be attenuating when the pre-spike samples leave the delay

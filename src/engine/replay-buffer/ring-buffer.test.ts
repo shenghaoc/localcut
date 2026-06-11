@@ -178,6 +178,49 @@ describe('replay ring buffer', () => {
 		expect(ring.getSpilledRanges()).toHaveLength(0);
 	});
 
+	it('keeps incremental stats counters consistent across push/evict/spill/reset', () => {
+		const ring = makeRing({ maxDurationS: 3 });
+		// Mixed workload: pushes that trigger duration eviction, then a spill.
+		for (let g = 0; g < 6; g++) {
+			for (let f = 0; f < 30; f++) {
+				ring.pushVideo(g + f / 30, 1 / 30, bytes(512), f === 0);
+				if (f % 3 === 0) ring.pushAudio(g + f / 30 + 0.001, 0.02, bytes(64));
+			}
+		}
+		ring.spillOldest(2048);
+		const stats = ring.getStats();
+		const snapshot = ring.getSnapshot(-Infinity, Infinity).entries;
+		expect(stats.memoryBytes).toBe(snapshot.reduce((sum, e) => sum + e.byteSize, 0));
+		expect(stats.keyframeCount).toBe(snapshot.filter((e) => e.isKeyframe).length);
+		ring.reset();
+		expect(ring.getStats().memoryBytes).toBe(0);
+		expect(ring.getStats().keyframeCount).toBe(0);
+	});
+
+	it('evicts audio-only buffers by timestamp (no GOP constraint)', () => {
+		const ring = makeRing({ maxDurationS: 2 });
+		for (let i = 0; i < 300; i++) {
+			ring.pushAudio(i * 0.02, 0.02, bytes(64)); // 6 s of audio
+		}
+		const stats = ring.getStats();
+		expect(stats.totalDurationS).toBeLessThanOrEqual(2.01);
+		expect(stats.oldestTimestamp).toBeGreaterThan(3.9);
+	});
+
+	it('spills audio-only buffers without requiring a keyframe boundary', () => {
+		const ring = makeRing();
+		for (let i = 0; i < 100; i++) {
+			ring.pushAudio(i * 0.02, 0.02, bytes(64));
+		}
+		const result = ring.spillOldest(64 * 10);
+		expect(result).not.toBeNull();
+		expect(result!.entries.length).toBeGreaterThanOrEqual(10);
+		// The newest entry stays resident even under an oversized byte target.
+		const all = ring.spillOldest(Number.MAX_SAFE_INTEGER);
+		expect(ring.getStats().memoryBytes).toBeGreaterThan(0);
+		expect(all === null || all.entries.length < 100).toBe(true);
+	});
+
 	it('reset clears entries, spill ranges, and counters', () => {
 		const ring = makeRing();
 		pushGops(ring, 4, 30);

@@ -34,8 +34,8 @@ export interface RingBuffer {
 	/**
 	 * Splice the oldest entries (at least `targetByteReduction` bytes, extended
 	 * to the next video keyframe so RAM keeps starting on a GOP boundary) for
-	 * OPFS spill. Returns null when the buffer can't spill without splitting
-	 * the only GOP.
+	 * OPFS spill. Audio-only buffers have no GOP constraint and split anywhere.
+	 * Returns null when the buffer can't spill without splitting the only GOP.
 	 */
 	spillOldest(targetByteReduction: number): { entries: RingBufferEntry[]; range: SpillRange } | null;
 	getSpilledRanges(): SpillRange[];
@@ -50,6 +50,11 @@ export function createRingBuffer(config: RingBufferConfig): RingBuffer {
 	let cfg = { ...config };
 	let droppedFrameCount = 0;
 	let spillSeq = 0;
+	// Running counters so getStats() — called from the per-chunk capture hot
+	// path — never re-reduces the whole entry list.
+	let memoryBytesCount = 0;
+	let keyframeCount = 0;
+	let videoEntryCount = 0;
 
 	function totalDuration(): number {
 		if (entries.length === 0) return 0;
@@ -58,47 +63,79 @@ export function createRingBuffer(config: RingBufferConfig): RingBuffer {
 		return newest - oldest;
 	}
 
-	function memoryBytes(): number {
-		return entries.reduce((sum, e) => sum + e.byteSize, 0);
+	function trackPush(entry: RingBufferEntry): void {
+		memoryBytesCount += entry.byteSize;
+		if (entry.isKeyframe) keyframeCount++;
+		if (entry.type === 'video') videoEntryCount++;
+	}
+
+	/** Removes entries[0..count) keeping the running counters consistent. */
+	function dropPrefix(count: number): RingBufferEntry[] {
+		const removed = entries.slice(0, count);
+		for (const entry of removed) {
+			memoryBytesCount -= entry.byteSize;
+			if (entry.isKeyframe) keyframeCount--;
+			if (entry.type === 'video') videoEntryCount--;
+		}
+		entries = entries.slice(count);
+		return removed;
 	}
 
 	function evictToFitDuration(): void {
 		const maxDur = cfg.maxDurationS;
+		if (entries.length === 0) return;
+		// The list is timestamp-ordered, so each candidate's retained span is an
+		// O(1) subtraction from the newest end — no per-candidate slicing.
+		const last = entries[entries.length - 1];
+		const newestEnd = last.timestamp + last.duration;
 		let cutoffIdx = -1;
-		for (let i = 0; i < entries.length; i++) {
-			if (entries[i].type === 'video' && entries[i].isKeyframe) {
-				const after = entries.slice(i);
-				const span = after.length > 0
-					? after[after.length - 1].timestamp + after[after.length - 1].duration - after[0].timestamp
-					: 0;
-				if (span <= maxDur) { cutoffIdx = i; break; }
+		if (videoEntryCount === 0) {
+			// Audio-only buffer: no GOP constraint, evict purely by timestamp.
+			for (let i = 0; i < entries.length; i++) {
+				if (newestEnd - entries[i].timestamp <= maxDur) { cutoffIdx = i; break; }
 			}
-		}
-		if (cutoffIdx === -1) {
-			// No keyframe yields a window within budget (a single GOP longer than
-			// the limit). Drop the oldest whole GOP: search from index 1 so the
-			// guaranteed-first keyframe doesn't satisfy the scan immediately.
-			for (let i = 1; i < entries.length; i++) {
-				if (entries[i].type === 'video' && entries[i].isKeyframe) {
-					cutoffIdx = i; droppedFrameCount++; break;
+		} else {
+			for (let i = 0; i < entries.length; i++) {
+				const e = entries[i];
+				if (e.type === 'video' && e.isKeyframe && newestEnd - e.timestamp <= maxDur) {
+					cutoffIdx = i;
+					break;
+				}
+			}
+			if (cutoffIdx === -1) {
+				// No keyframe yields a window within budget (a single GOP longer than
+				// the limit). Drop the oldest whole GOP: search from index 1 so the
+				// guaranteed-first keyframe doesn't satisfy the scan immediately.
+				for (let i = 1; i < entries.length; i++) {
+					if (entries[i].type === 'video' && entries[i].isKeyframe) {
+						cutoffIdx = i; droppedFrameCount++; break;
+					}
 				}
 			}
 		}
 		// Spilled ranges are NOT dropped here: their OPFS files must be deleted
 		// by the owner, which collects expired ranges via evictSpilledBefore().
 		if (cutoffIdx > 0) {
-			entries = entries.slice(cutoffIdx);
+			dropPrefix(cutoffIdx);
 		}
 	}
 
 	return {
 		pushVideo(timestamp: number, duration: number, data: Uint8Array, isKeyframe: boolean): void {
-			entries.push({ type: 'video', timestamp, duration, byteSize: data.byteLength, isKeyframe, data });
+			const entry: RingBufferEntry = {
+				type: 'video', timestamp, duration, byteSize: data.byteLength, isKeyframe, data
+			};
+			entries.push(entry);
+			trackPush(entry);
 			if (totalDuration() > cfg.maxDurationS) evictToFitDuration();
 		},
 
 		pushAudio(timestamp: number, duration: number, data: Uint8Array): void {
-			entries.push({ type: 'audio', timestamp, duration, byteSize: data.byteLength, isKeyframe: false, data });
+			const entry: RingBufferEntry = {
+				type: 'audio', timestamp, duration, byteSize: data.byteLength, isKeyframe: false, data
+			};
+			entries.push(entry);
+			trackPush(entry);
 			if (totalDuration() > cfg.maxDurationS) evictToFitDuration();
 		},
 
@@ -132,12 +169,12 @@ export function createRingBuffer(config: RingBufferConfig): RingBuffer {
 		getStats(): RingBufferStats {
 			return {
 				totalDurationS: totalDuration(),
-				memoryBytes: memoryBytes(),
+				memoryBytes: memoryBytesCount,
 				spilledBytes: spilledRanges.reduce((sum, r) => sum + r.byteCount, 0),
 				oldestTimestamp: entries.length > 0 ? entries[0].timestamp : null,
 				newestTimestamp: entries.length > 0
 					? entries[entries.length - 1].timestamp + entries[entries.length - 1].duration : null,
-				keyframeCount: entries.filter((e) => e.isKeyframe).length,
+				keyframeCount,
 				droppedFrameCount,
 			};
 		},
@@ -159,17 +196,25 @@ export function createRingBuffer(config: RingBufferConfig): RingBuffer {
 				bytesToSpill += e.byteSize; spillCount++;
 				if (bytesToSpill >= targetByteReduction) break;
 			}
-			// Extend to the next video keyframe so the remaining RAM window still
-			// starts on a GOP boundary; without one we'd split the only GOP, so
-			// decline and let duration eviction handle it.
-			let aligned = -1;
-			for (let i = spillCount; i < entries.length; i++) {
-				if (entries[i].type === 'video' && entries[i].isKeyframe) { aligned = i; break; }
+			if (videoEntryCount > 0) {
+				// Extend to the next video keyframe so the remaining RAM window still
+				// starts on a GOP boundary; without one we'd split the only GOP, so
+				// decline and let duration eviction handle it.
+				let aligned = -1;
+				for (let i = spillCount; i < entries.length; i++) {
+					if (entries[i].type === 'video' && entries[i].isKeyframe) { aligned = i; break; }
+				}
+				if (aligned === -1) return null;
+				for (let i = spillCount; i < aligned; i++) bytesToSpill += entries[i].byteSize;
+				spillCount = aligned;
+			} else if (spillCount >= entries.length) {
+				// Audio-only: keep at least the newest entry resident.
+				spillCount = entries.length - 1;
+				if (spillCount === 0) return null;
+				bytesToSpill = 0;
+				for (let i = 0; i < spillCount; i++) bytesToSpill += entries[i].byteSize;
 			}
-			if (aligned === -1) return null;
-			for (let i = spillCount; i < aligned; i++) bytesToSpill += entries[i].byteSize;
-			spillCount = aligned;
-			const spilled = entries.splice(0, spillCount);
+			const spilled = dropPrefix(spillCount);
 			const startTs = spilled[0].timestamp;
 			const endTs = spilled[spilled.length - 1].timestamp + spilled[spilled.length - 1].duration;
 			const seq = spillSeq++;
@@ -205,6 +250,9 @@ export function createRingBuffer(config: RingBufferConfig): RingBuffer {
 			spilledRanges = [];
 			droppedFrameCount = 0;
 			spillSeq = 0;
+			memoryBytesCount = 0;
+			keyframeCount = 0;
+			videoEntryCount = 0;
 		},
 	};
 }

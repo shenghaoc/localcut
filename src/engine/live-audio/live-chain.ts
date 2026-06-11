@@ -59,6 +59,41 @@ export function chainLatencyS(config: LiveAudioChainConfig): number {
 	return config.limiter.bypass ? 0 : LIMITER_LOOKAHEAD_S;
 }
 
+/** Raw PCM views the capture path may hand us, per WebCodecs AudioSampleFormat. */
+export type PcmPlane = Float32Array | Int16Array | Int32Array | Uint8Array;
+
+function pcmSampleToF32(raw: PcmPlane, index: number): number {
+	if (raw instanceof Float32Array) return raw[index];
+	if (raw instanceof Int16Array) return raw[index] / 32768;
+	if (raw instanceof Int32Array) return raw[index] / 2147483648;
+	return (raw[index] - 128) / 128; // u8 is unsigned with 128 as silence
+}
+
+/** Converts one channel-plane of integer/float PCM to normalized f32. */
+export function pcmPlaneToF32(raw: PcmPlane): Float32Array {
+	if (raw instanceof Float32Array) return raw;
+	const out = new Float32Array(raw.length);
+	for (let i = 0; i < raw.length; i++) out[i] = pcmSampleToF32(raw, i);
+	return out;
+}
+
+/** Deinterleaves packed PCM into per-channel normalized f32 planes. */
+export function interleavedPcmToF32Planes(
+	raw: PcmPlane,
+	channels: number,
+	frames: number,
+): Float32Array[] {
+	const planes: Float32Array[] = [];
+	for (let c = 0; c < channels; c++) {
+		const plane = new Float32Array(frames);
+		for (let i = 0; i < frames; i++) {
+			plane[i] = pcmSampleToF32(raw, i * channels + c);
+		}
+		planes.push(plane);
+	}
+	return planes;
+}
+
 interface ChannelStates {
 	gate: GateState;
 	compressor: CompressorState;

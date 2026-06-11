@@ -41,9 +41,14 @@ export function processLimiter(
 		return output;
 	}
 
+	// Clamp timing params: zero/negative values would push the one-pole
+	// coefficients above 1 and make the envelope diverge to NaN/Infinity.
+	const attackUs = Math.max(1, params.attackUs);
+	const releaseMs = Math.max(1, params.releaseMs);
+
 	const ceilingLinear = Math.pow(10, params.ceilingDb / 20);
-	const attackCoef = Math.exp(-1 / ((params.attackUs / 1_000_000) * sampleRate));
-	const releaseCoef = Math.exp(-1 / ((params.releaseMs / 1000) * sampleRate));
+	const attackCoef = Math.exp(-1 / ((attackUs / 1_000_000) * sampleRate));
+	const releaseCoef = Math.exp(-1 / ((releaseMs / 1000) * sampleRate));
 	const delayLen = state.delayLine.length;
 	const dequeCap = state.dequePos.length;
 

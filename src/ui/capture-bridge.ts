@@ -1,7 +1,8 @@
 import type { CaptureSource } from '../protocol';
 
 export interface CaptureStreams {
-	videoStream: ReadableStream<VideoFrame>;
+	/** Absent for an audio-only capture (R1.2). */
+	videoStream?: ReadableStream<VideoFrame>;
 	audioStream?: ReadableStream<AudioData>;
 	mediaStream: MediaStream;
 	sourceLabel: string;
@@ -51,10 +52,11 @@ export async function startCapture(source: CaptureSource): Promise<CaptureStream
 		audioStream = processor.readable as unknown as ReadableStream<AudioData>;
 	}
 
-	if (!videoStream) {
-		// Clean up if no video
+	// R1.2: a missing video or audio track must not block capturing the other;
+	// only a stream with no usable tracks at all is an error.
+	if (!videoStream && !audioStream) {
 		mediaStream.getTracks().forEach((t) => t.stop());
-		throw new Error('No video track available in the captured stream.');
+		throw new Error('The captured stream has no video or audio tracks.');
 	}
 
 	return {

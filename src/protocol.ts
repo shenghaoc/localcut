@@ -1162,8 +1162,10 @@ export type WorkerCommand =
 	// Phase 46: Replay Buffer + Live Audio Chain
 	| { type: 'capture-stop' }
 	| {
+		// At least one stream is present; an audio-only capture (R1.2) omits
+		// videoStream entirely.
 		type: 'capture-transfer-streams';
-		videoStream: ReadableStream<VideoFrame>;
+		videoStream?: ReadableStream<VideoFrame>;
 		audioStream?: ReadableStream<AudioData>;
 		settings?: CaptureStreamSettings;
 	}

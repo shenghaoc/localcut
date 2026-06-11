@@ -3,7 +3,9 @@ import {
 	anyInsertActive,
 	chainLatencyS,
 	createLiveChainProcessor,
+	interleavedPcmToF32Planes,
 	LIMITER_LOOKAHEAD_S,
+	pcmPlaneToF32,
 	writeChainParamsToSab
 } from './live-chain';
 import {
@@ -55,6 +57,42 @@ describe('live chain helpers', () => {
 		expect(Math.max(...(Object.values(LiveChainMeterIndex) as number[]))).toBeLessThan(
 			LIVE_CHAIN_TOTAL_FIELDS
 		);
+	});
+});
+
+describe('PCM conversion helpers', () => {
+	it('normalizes s16 planes to f32 in [-1, 1)', () => {
+		const raw = new Int16Array([0, 16384, -16384, 32767, -32768]);
+		const out = pcmPlaneToF32(raw);
+		expect(out[0]).toBe(0);
+		expect(out[1]).toBeCloseTo(0.5, 6);
+		expect(out[2]).toBeCloseTo(-0.5, 6);
+		expect(out[3]).toBeCloseTo(0.99997, 4);
+		expect(out[4]).toBe(-1);
+	});
+
+	it('normalizes s32 and u8 planes', () => {
+		const s32 = pcmPlaneToF32(new Int32Array([0, 2 ** 30, -(2 ** 31)]));
+		expect(s32[1]).toBeCloseTo(0.5, 6);
+		expect(s32[2]).toBe(-1);
+		const u8 = pcmPlaneToF32(new Uint8Array([128, 255, 0, 192]));
+		expect(u8[0]).toBe(0);
+		expect(u8[1]).toBeCloseTo(0.992, 3);
+		expect(u8[2]).toBe(-1);
+		expect(u8[3]).toBeCloseTo(0.5, 6);
+	});
+
+	it('passes f32 planes through unchanged', () => {
+		const raw = new Float32Array([0.25, -0.75]);
+		expect([...pcmPlaneToF32(raw)]).toEqual([0.25, -0.75]);
+	});
+
+	it('deinterleaves packed PCM into per-channel planes with normalization', () => {
+		// L/R interleaved s16: L = ramp, R = constant half-scale.
+		const raw = new Int16Array([0, 16384, 8192, 16384, 16384, 16384]);
+		const [left, right] = interleavedPcmToF32Planes(raw, 2, 3);
+		expect([...left].map((v) => Math.round(v * 4) / 4)).toEqual([0, 0.25, 0.5]);
+		expect(right.every((v) => Math.abs(v - 0.5) < 1e-6)).toBe(true);
 	});
 });
 

@@ -23,9 +23,15 @@ export function processGate(
 		return output;
 	}
 
-	const attackCoef = Math.exp(-1 / ((params.attackMs / 1000) * sampleRate));
-	const holdSamples = Math.round((params.holdMs / 1000) * sampleRate);
-	const releaseCoef = Math.exp(-1 / ((params.releaseMs / 1000) * sampleRate));
+	// Clamp timing params: zero/negative values would push the one-pole
+	// coefficients above 1 and make the envelope diverge to NaN/Infinity.
+	const attackMs = Math.max(0.01, params.attackMs);
+	const releaseMs = Math.max(0.01, params.releaseMs);
+	const holdMs = Math.max(0, params.holdMs);
+
+	const attackCoef = Math.exp(-1 / ((attackMs / 1000) * sampleRate));
+	const holdSamples = Math.round((holdMs / 1000) * sampleRate);
+	const releaseCoef = Math.exp(-1 / ((releaseMs / 1000) * sampleRate));
 	const rangeLinear = Math.pow(10, params.rangeDb / 20);
 	const thresholdLinear = Math.pow(10, params.thresholdDb / 20);
 

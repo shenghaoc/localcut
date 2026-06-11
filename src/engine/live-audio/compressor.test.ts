@@ -79,6 +79,17 @@ describe('compressor', () => {
 		expect(Math.abs(out[0])).toBeCloseTo(0.05 * Math.pow(10, 6 / 20), 4);
 	});
 
+	it('clamps hostile params (negative timing, sub-unity ratio, negative knee) to finite output', () => {
+		const hostile = params({ attackMs: -1, releaseMs: -10, ratio: -4, kneeDb: -6 });
+		const input = new Float32Array(2048).fill(0.8);
+		const out = processCompressor(input, hostile, createCompressorState(), SR);
+		for (let i = 0; i < out.length; i++) {
+			expect(Number.isFinite(out[i])).toBe(true);
+		}
+		// ratio clamped to 1 → no compression; output stays at input level.
+		expect(Math.abs(out[2047])).toBeCloseTo(0.8, 3);
+	});
+
 	it('produces identical output regardless of block size', () => {
 		const input = new Float32Array(4096);
 		for (let i = 0; i < input.length; i++) {

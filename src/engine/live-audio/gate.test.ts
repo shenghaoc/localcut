@@ -84,6 +84,17 @@ describe('gate', () => {
 		}
 	});
 
+	it('clamps non-positive timing params instead of diverging to NaN/Infinity', () => {
+		const hostile = params({ attackMs: -5, releaseMs: 0, holdMs: -100 });
+		const input = new Float32Array(2048);
+		for (let i = 0; i < input.length; i++) input[i] = i % 100 < 50 ? 0.5 : 0.001;
+		const out = processGate(input, hostile, createGateState(), SR);
+		for (let i = 0; i < out.length; i++) {
+			expect(Number.isFinite(out[i])).toBe(true);
+			expect(Math.abs(out[i])).toBeLessThanOrEqual(1);
+		}
+	});
+
 	it('re-arms the hold when the signal re-opens the gate', () => {
 		const state = createGateState();
 		const p = params({ holdMs: 10 });
