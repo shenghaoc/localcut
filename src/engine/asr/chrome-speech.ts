@@ -43,12 +43,19 @@ export function transcribeWithWebSpeech(
 	pcm: Float32Array,
 	sampleRate: number,
 	channels: number,
-	language?: string
+	language?: string,
+	signal?: AbortSignal
 ): Promise<CaptionSegmentSnapshot[]> {
 	return new Promise((resolve, reject) => {
+		if (signal?.aborted) {
+			reject(new DOMException('Aborted', 'AbortError'));
+			return;
+		}
+
+		let audioContext: AudioContext | undefined;
 		try {
 			const recognition = createSpeechRecognition(language);
-			const audioContext = new AudioContext({ sampleRate });
+			audioContext = new AudioContext({ sampleRate });
 
 			// Downmix and create an AudioBuffer
 			const mono = channels > 1 ? downmixToMono(pcm, channels) : new Float32Array(pcm);
@@ -104,8 +111,18 @@ export function transcribeWithWebSpeech(
 					// already stopped
 				}
 				source.disconnect();
-				audioContext.close().catch(() => undefined);
+				if (audioContext) {
+					audioContext.close().catch(() => undefined);
+				}
 			};
+
+			if (signal) {
+				signal.addEventListener('abort', () => {
+					recognition.abort();
+					cleanup();
+					reject(new DOMException('Aborted', 'AbortError'));
+				}, { once: true });
+			}
 
 			// Start recognition and playback simultaneously
 			recognition.start();
@@ -117,6 +134,9 @@ export function transcribeWithWebSpeech(
 				void audioContext.resume().catch(() => undefined);
 			}
 		} catch (error) {
+			if (audioContext) {
+				audioContext.close().catch(() => undefined);
+			}
 			reject(error);
 		}
 	});

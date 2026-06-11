@@ -53,6 +53,8 @@ export interface CaptionTrack {
 	defaultStyle: CaptionStyle;
 	burnedIn: boolean;
 	visible: boolean;
+	/** Metadata marker for auto-generated caption tracks (e.g. "auto-captions-phase-29"). */
+	generatedBy?: string | null;
 }
 
 export interface CaptionImportResult {
@@ -259,7 +261,8 @@ export function normalizeCaptionTrack(track: CaptionTrack): CaptionTrack {
 		segments: sortCaptionSegments(track.segments.map(normalizeCaptionSegment)),
 		defaultStyle: normalizeCaptionStyle(track.defaultStyle),
 		burnedIn: track.burnedIn,
-		visible: track.visible
+		visible: track.visible,
+		generatedBy: track.generatedBy ?? null
 	};
 }
 
@@ -272,7 +275,8 @@ export function cloneCaptionTrack(track: CaptionTrack): CaptionTrack {
 		segments: track.segments.map(cloneCaptionSegment),
 		defaultStyle: cloneCaptionStyle(track.defaultStyle),
 		burnedIn: track.burnedIn,
-		visible: track.visible
+		visible: track.visible,
+		generatedBy: track.generatedBy ?? null
 	};
 }
 
@@ -284,6 +288,7 @@ export function createCaptionTrack(partial: {
 	defaultStyle?: Partial<CaptionStyle>;
 	burnedIn?: boolean;
 	visible?: boolean;
+	generatedBy?: string | null;
 }): CaptionTrack {
 	return normalizeCaptionTrack({
 		id: partial.id,
@@ -293,7 +298,8 @@ export function createCaptionTrack(partial: {
 		segments: [...(partial.segments ?? [])],
 		defaultStyle: normalizeCaptionStyle(partial.defaultStyle),
 		burnedIn: partial.burnedIn ?? false,
-		visible: partial.visible ?? true
+		visible: partial.visible ?? true,
+		generatedBy: partial.generatedBy ?? null
 	});
 }
 

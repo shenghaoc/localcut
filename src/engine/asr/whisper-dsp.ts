@@ -215,8 +215,11 @@ export function chunkAndExtractMel(
 	sampleRate: number,
 	config: MelSpectrogramConfig = DEFAULT_MEL_CONFIG
 ): ChunkedMelSpectrogram[] {
-	const maxChunkSamples = 30 * sampleRate;
-	const overlapSamples = 3 * sampleRate;
+	if (sampleRate !== config.sampleRate) {
+		config = { ...config, sampleRate };
+	}
+	const maxChunkSamples = 30 * config.sampleRate;
+	const overlapSamples = 3 * config.sampleRate;
 	const chunks: ChunkedMelSpectrogram[] = [];
 
 	let start = 0;
@@ -230,9 +233,9 @@ export function chunkAndExtractMel(
 			nFrames: mel.nFrames,
 			startFrame: Math.floor(chunkIndex * (maxChunkSamples - overlapSamples) / config.hopLength)
 		});
-		if (end === pcm.length) break;
-		start = end - overlapSamples;
-		if (start >= pcm.length) break;
+		const advance = maxChunkSamples - overlapSamples;
+		if (advance <= 0 || end >= pcm.length) break;
+		start += advance;
 		chunkIndex++;
 	}
 	return chunks;

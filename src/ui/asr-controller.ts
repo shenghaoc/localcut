@@ -259,6 +259,7 @@ export class AsrController {
 					this.activeJob.resultReject?.(new Error(message));
 				}
 				this.activeJob = null;
+				this.worker?.terminate();
 				this.worker = null;
 				this.workerSpawn = null;
 				this.ports.onError?.(message);
@@ -297,10 +298,10 @@ export class AsrController {
 					version: '1.0.0',
 					license: 'MIT',
 					source: 'https://github.com/openai/whisper',
-					sizeBytes: 0,
+					sizeBytes: 77_700_000,
 					checksum: 'sha256-0000000000000000000000000000000000000000000000000000000000000000',
 					audio: { sampleRate: 16000, channels: 1, hopLength: 160, nMel: 80 },
-					vocabSize: 0,
+					vocabSize: 51_866,
 					encoderFramesPerSecond: 50,
 					languages: ['zh', 'en']
 				},
@@ -391,6 +392,10 @@ export class AsrController {
 		language: string | undefined,
 		timelineRange: AsrTimelineRange | null
 	): Promise<boolean> {
+		if (kind === 'timeline-range') {
+			this.update({ error: 'Timeline range transcription requires a selected clip.' });
+			return false;
+		}
 		const { transcribeWithWebSpeech } = await import('../engine/asr/chrome-speech');
 		const engine = 'chrome-speech' as const;
 
@@ -591,7 +596,8 @@ export class AsrController {
 			this.worker?.send({ type: 'asr-cancel', jobId: job.jobId });
 			job.resultReject?.(new AsrCancelled());
 		}
-		for (const [, pending] of this.pendingExtractions) {
+		for (const [requestId, pending] of [...this.pendingExtractions]) {
+			this.pendingExtractions.delete(requestId);
 			pending.reject(new AsrCancelled());
 		}
 		this.pendingExtractions.clear();
@@ -604,6 +610,7 @@ export class AsrController {
 		this.worker?.terminate();
 		this.worker = null;
 		this.workerSpawn = null;
+		this.pendingExtractions.clear();
 		this.listeners.clear();
 	}
 }
@@ -647,8 +654,8 @@ export function asrActionAvailability(
 			reason: busyReason ?? clipReason ?? modelReason
 		},
 		transcribeRange: {
-			enabled: !busy && !modelNeeded,
-			reason: busyReason ?? modelReason
+			enabled: !busy && !noClip && !modelNeeded,
+			reason: busyReason ?? clipReason ?? modelReason
 		},
 		cancel: { enabled: busy, reason: busy ? null : 'Nothing to cancel.' }
 	};

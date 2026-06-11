@@ -645,6 +645,7 @@ export interface CaptionTrackSnapshot {
 	defaultStyle: CaptionStyleSnapshot;
 	burnedIn: boolean;
 	visible: boolean;
+	generatedBy?: string | null;
 }
 
 export interface CaptionImportResultSnapshot {

@@ -618,7 +618,8 @@ function postTimelineState() {
 			lineWrap: track.defaultStyle.lineWrap
 		},
 		burnedIn: track.burnedIn,
-		visible: track.visible
+		visible: track.visible,
+		generatedBy: track.generatedBy ?? null
 	}));
 	const sourceDurs = transitionSourceDurations();
 	const transitionSnapshot: TimelineTransitionSnapshot[] = cloneTransitionsSnapshot(
@@ -2924,7 +2925,8 @@ function handleAsrCreateCaptionTrack(
 		language: cmd.language ?? null,
 		burnedIn: false,
 		visible: true,
-		segments
+		segments,
+		generatedBy: 'auto-captions-phase-29'
 	});
 	commitCaptionMutation(() => [...captionTracks, track], {
 		refreshPlayback: 'refresh'
@@ -2953,7 +2955,8 @@ function handleAsrCreateCaptionTrack(
 				lineWrap: track.defaultStyle.lineWrap
 			},
 			burnedIn: track.burnedIn,
-			visible: track.visible
+			visible: track.visible,
+			generatedBy: track.generatedBy ?? null
 		}
 	});
 }

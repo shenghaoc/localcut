@@ -46,7 +46,7 @@ export function validateAsrManifest(value: unknown): AsrModelManifestSnapshot {
 	if (!isNumber(sizeBytes) || sizeBytes <= 0) throw new AsrManifestError('sizeBytes must be a positive number');
 
 	const checksum = value['checksum'];
-	if (!isString(checksum) || !checksum.startsWith('sha256-') || checksum.length < 72)
+	if (!isString(checksum) || !checksum.startsWith('sha256-') || checksum.length < 71)
 		throw new AsrManifestError('checksum must be "sha256-<hex>" (64 hex chars)');
 
 	const audio = value['audio'];
