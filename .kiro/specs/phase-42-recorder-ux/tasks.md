@@ -125,12 +125,12 @@
   - `seamMarkerPositionsUs(pairs: readonly PauseResumePair[]): { positionUs: number; label: string }[]`
     — returns `{ positionUs: computeGapCollapsedUs(pair.resumeAtUs, allPriorPairs),
     label: "Resume N" }` for each pair (N is 1-based index).
-- [ ] **T6.2** Add `capture-pause` command handler to `src/engine/capture/capture-session.ts`:
+- [x] **T6.2** Add `capture-pause` command handler to `src/engine/capture/capture-session.ts`:
   suspend the MSTP reader loops for all active sources (via their `AbortController`
   signals — pause should abort the reader and let it restart on resume); call
   `appendPauseRecord(lastEncodedFrameTs)` on the manifest; transition session state to
   `'paused'`; emit `capture-status` with `state: 'paused'`.
-- [ ] **T6.3** Add `capture-resume` command handler: restart the MSTP reader loops
+- [x] **T6.3** Add `capture-resume` command handler: restart the MSTP reader loops
   (construct new `AbortController`, re-create reader from `MediaStreamTrack`); call the
   Phase 41 epoch mechanism to start a new chunk epoch; call `appendResumeRecord(firstEncodedFrameTs)`
   after the first frame encodes; transition state to `'recording'`; emit `capture-status`.
