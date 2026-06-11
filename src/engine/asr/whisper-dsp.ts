@@ -104,18 +104,29 @@ export function powerSpectrum(frame: Float32Array, window: Float32Array, nFft: n
 	return power;
 }
 
-/** Naive DFT (O(n²)) — correct but not fast. Suitable for unit tests
- *  and small FFT sizes (nFft=400). Production would use a real FFT. */
+/** DFT (O(n²)) with precomputed sine/cosine tables. For nFft=400
+ *  the tables are ~3.2 KB and eliminate all trig calls from the inner loop. */
 function dft(real: Float32Array, imag: Float32Array, n: number): void {
 	const resultReal = new Float32Array(n);
 	const resultImag = new Float32Array(n);
+
+	const cosTable = new Float32Array(n);
+	const sinTable = new Float32Array(n);
+	for (let i = 0; i < n; i++) {
+		const angle = (-2 * Math.PI * i) / n;
+		cosTable[i] = Math.cos(angle);
+		sinTable[i] = Math.sin(angle);
+	}
+
 	for (let k = 0; k < n; k++) {
 		let sumReal = 0;
 		let sumImag = 0;
 		for (let t = 0; t < n; t++) {
-			const angle = (-2 * Math.PI * k * t) / n;
-			sumReal += real[t] * Math.cos(angle) + imag[t] * Math.sin(angle);
-			sumImag += -real[t] * Math.sin(angle) + imag[t] * Math.cos(angle);
+			const idx = (k * t) % n;
+			const c = cosTable[idx];
+			const s = sinTable[idx];
+			sumReal += real[t] * c + imag[t] * s;
+			sumImag += -real[t] * s + imag[t] * c;
 		}
 		resultReal[k] = sumReal;
 		resultImag[k] = sumImag;

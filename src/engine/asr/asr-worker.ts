@@ -1,11 +1,14 @@
 /**
- * ASR worker entry (Phase 29) — owns the WebNN Whisper graph, the Chrome
- * Web Speech fallback, and all transcription processing. Imports nothing
- * from src/engine/worker.ts. Lazy-spawned via dynamic import.
+ * ASR worker entry (Phase 29) — owns the WebNN Whisper graph and all
+ * WebNN inference processing. Imports nothing from src/engine/worker.ts.
+ * Lazy-spawned via dynamic import.
+ *
+ * Chrome Web Speech is handled on the main thread by the controller;
+ * it never enters this worker because AudioContext and SpeechRecognition
+ * are unavailable in Worker contexts.
  */
-import type { AsrWorkerCommand, AsrWorkerState, CaptionSegmentSnapshot } from '../../protocol';
+import type { AsrWorkerCommand, AsrWorkerState } from '../../protocol';
 import { probeAsr } from './asr-probe';
-import { transcribeWithWebSpeech } from './chrome-speech';
 
 type AsrEngine = 'webnn-whisper' | 'chrome-speech' | null;
 
@@ -45,7 +48,6 @@ async function handleCommand(cmd: AsrWorkerCommand): Promise<void> {
 			post({ type: 'asr-model-status', status: 'loading', engine: state.engine });
 
 			try {
-				// Verify manifest and fetch weights (future: build WebNN graph)
 				const manifestOk =
 					cmd.manifest.id === 'whisper-tiny-bilingual' &&
 					cmd.manifest.sizeBytes > 0;
@@ -53,9 +55,6 @@ async function handleCommand(cmd: AsrWorkerCommand): Promise<void> {
 					throw new Error('Invalid model manifest.');
 				}
 
-				// Mark model as loaded (graph construction is deferred to T13).
-				// The weights exist on disk but the WebNN graph construction
-				// requires the model conversion pipeline to be complete.
 				state.status = 'loaded';
 				state.engine = 'webnn-whisper';
 				post({
@@ -78,63 +77,19 @@ async function handleCommand(cmd: AsrWorkerCommand): Promise<void> {
 			activeJobs.set(jobId, job);
 
 			try {
-				const startTime = performance.now();
-
-				// Report initial progress
-				post({
-					type: 'asr-progress',
-					jobId,
-					fraction: 0,
-					processedSeconds: 0,
-					totalSeconds: cmd.totalDurationS
-				});
-
-				let segments: CaptionSegmentSnapshot[];
-				let language: string | null = null;
-				let phraseLevel = false;
-
-				if (cmd.engine === 'chrome-speech') {
-					// Chrome Web Speech fallback
-					segments = await transcribeWithWebSpeech(
-						cmd.pcm,
-						cmd.sampleRate,
-						cmd.channels,
-						cmd.language
-					);
-					phraseLevel = true;
-					language = cmd.language ?? null;
-				} else {
-					// WebNN Whisper path (placeholder until weights are available).
-					// The DSP preprocessing is ready (whisper-dsp.ts); graph
-					// construction and inference are pending T13.
-					if (job.cancelled) return;
-					
-					// For now, fall through to Chrome Speech if available, or
-					// return an error about the unimplemented WebNN path.
+				if (cmd.engine !== 'webnn-whisper') {
 					throw new Error(
-						'WebNN Whisper inference is not yet available. ' +
-						'Please use Chrome Speech fallback or install the Whisper model weights.'
+						'Chrome Web Speech is handled on the main thread, not in the ASR worker.'
 					);
 				}
 
+				// WebNN Whisper path (placeholder until weights are available).
 				if (job.cancelled) return;
 
-				// Apply offset to segment timestamps
-				const offsetSegments = segments.map((seg) => ({
-					...seg,
-					start: seg.start + cmd.offsetS
-				}));
-
-				const durationMs = performance.now() - startTime;
-				post({
-					type: 'asr-result',
-					jobId,
-					engine: cmd.engine,
-					segments: offsetSegments,
-					language,
-					phraseLevel,
-					durationMs
-				});
+				throw new Error(
+					'WebNN Whisper inference is not yet available. ' +
+					'Please use Chrome Speech fallback or install the Whisper model weights.'
+				);
 			} catch (error) {
 				if (job.cancelled) return;
 				const message = error instanceof Error ? error.message : String(error);
@@ -152,7 +107,6 @@ async function handleCommand(cmd: AsrWorkerCommand): Promise<void> {
 					job.cancelled = true;
 				}
 			} else {
-				// Cancel all
 				for (const job of activeJobs.values()) {
 					job.cancelled = true;
 				}
