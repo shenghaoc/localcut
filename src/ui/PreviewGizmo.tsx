@@ -1,4 +1,4 @@
-import { createSignal, onCleanup, onMount, Show, For } from 'solid-js';
+import { createSignal, onCleanup, onMount, Show } from 'solid-js';
 import type { TransformParamsSnapshot } from '../protocol';
 import { computeFitRect } from '../engine/transform';
 
@@ -175,14 +175,14 @@ export function PreviewGizmo(props: PreviewGizmoProps) {
 						onPointerDown={(e) => beginDrag('move', e)}
 						title="Drag to reposition"
 					/>
-					<For each={CORNERS}>{(corner) => (
+					{CORNERS.map((corner) => (
 						<div
 							class="preview-gizmo-handle"
 							style={{ left: `${corner.x * 100}%`, top: `${corner.y * 100}%` }}
 							onPointerDown={(e) => beginDrag('scale', e)}
 							title="Drag to scale"
 						/>
-					)}</For>
+					))}
 					<div
 						class="preview-gizmo-rotate"
 						onPointerDown={(e) => beginDrag('rotate', e)}
