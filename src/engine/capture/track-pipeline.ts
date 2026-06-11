@@ -325,6 +325,25 @@ export class TrackPipeline {
 		}
 	}
 
+	/**
+	 * Phase 42: Pause — suspends the MSTP reader loop by setting running=false.
+	 * The async read loop will exit on its next iteration; the encoder is flushed
+	 * and closed in the finally block. Call resume() to restart.
+	 */
+	pause(): void {
+		this.running = false;
+		this.clearChunkWaiters();
+	}
+
+	/**
+	 * Phase 42: Resume — restarts the MSTP reader loop and encoder.
+	 * Creates a fresh encoder and reader from the same track.
+	 */
+	resume(): void {
+		if (this.running || this.ended) return;
+		this.start(this.keyframeIntervalUs);
+	}
+
 	dispose(): void {
 		this.running = false;
 		this.clearChunkWaiters();

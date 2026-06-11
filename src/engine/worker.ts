@@ -8307,6 +8307,23 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			}
 			pendingCaptureSources.clear();
 			break;
+		case 'capture-pause':
+			// Phase 42: Pause capture session (suspend MSTP reader loops)
+			if (captureSession) {
+				captureSession.pause();
+			}
+			break;
+		case 'capture-resume':
+			// Phase 42: Resume capture session (restart MSTP reader loops)
+			if (captureSession) {
+				captureSession.resume();
+			}
+			break;
+		case 'capture-apply-region':
+			// Phase 42: Apply Region/Element Capture to an existing source track
+			// TODO: Phase 42 T12.4 — apply crop/restriction to the source track
+			void cmd;
+			break;
 		case 'capture-recovery-import':
 			// TODO: Phase 41 — T7 crash recovery: scan + import orphaned session
 			void cmd;

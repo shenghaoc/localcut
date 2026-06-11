@@ -9,7 +9,7 @@ import { TrackPipeline, type TrackPipelineCallbacks } from './track-pipeline';
 
 export interface CaptureSessionCallbacks {
 	onStatusChange(status: {
-		state: 'idle' | 'armed' | 'recording' | 'stopping';
+		state: 'idle' | 'armed' | 'recording' | 'paused' | 'stopping';
 		elapsedUs: number;
 		bytesWritten: number;
 		remainingSeconds: number | null;
@@ -49,7 +49,7 @@ export class CaptureSession {
 	readonly sessionId: string;
 	private startedAtIso = '';
 	private sources = new Map<string, SourceEntry>();
-	private state: 'idle' | 'armed' | 'recording' | 'stopping' = 'idle';
+	private state: 'idle' | 'armed' | 'recording' | 'paused' | 'stopping' = 'idle';
 	private startTime = 0;
 	private epochUs: number | null = null;
 	private totalBytesWritten = 0;
@@ -158,7 +158,7 @@ export class CaptureSession {
 	}
 
 	async stop(reason: CaptureStopReason = 'user-stop'): Promise<void> {
-		if (this.state !== 'recording') return;
+		if (this.state !== 'recording' && this.state !== 'paused') return;
 		this.state = 'stopping';
 		this.emitStatus();
 
@@ -178,6 +178,38 @@ export class CaptureSession {
 		}
 
 		this.state = 'idle';
+		this.emitStatus();
+	}
+
+	/**
+	 * Phase 42: Pause capture — suspends MSTP reader loops by aborting
+	 * each source pipeline's reader. The pipeline remains alive (not stopped)
+	 * so it can be resumed.
+	 */
+	pause(): void {
+		if (this.state !== 'recording') return;
+		// Abort all source readers — pipelines stay in the sources map.
+		for (const [, entry] of this.sources) {
+			if (entry.state === 'capturing') {
+				entry.pipeline.pause();
+			}
+		}
+		this.state = 'paused';
+		this.emitStatus();
+	}
+
+	/**
+	 * Phase 42: Resume capture — restarts MSTP reader loops for all
+	 * sources that were capturing before the pause.
+	 */
+	resume(): void {
+		if (this.state !== 'paused') return;
+		for (const [, entry] of this.sources) {
+			if (entry.state === 'capturing') {
+				entry.pipeline.resume();
+			}
+		}
+		this.state = 'recording';
 		this.emitStatus();
 	}
 
@@ -346,7 +378,7 @@ export class CaptureSession {
 		}));
 	}
 
-	get stateValue(): 'idle' | 'armed' | 'recording' | 'stopping' {
+	get stateValue(): 'idle' | 'armed' | 'recording' | 'paused' | 'stopping' {
 		return this.state;
 	}
 	get byteCount(): number {

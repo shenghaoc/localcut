@@ -95,6 +95,16 @@ export interface CaptureProbeResult {
 	opfsSyncAccessHandle: FeatureSupport;
 }
 
+/** Phase 42: Recorder UX capability probes (Chromium-only). */
+export interface CaptureUxProbeResult {
+	/** `documentPictureInPicture` in window. */
+	documentPip: FeatureSupport;
+	/** `CropTarget` in globalThis. */
+	cropTarget: FeatureSupport;
+	/** `RestrictionTarget` in globalThis. */
+	elementCapture: FeatureSupport;
+}
+
 export interface CapabilityProbeResult {
 	crossOriginIsolated: boolean;
 	sharedArrayBuffer: FeatureSupport;
@@ -110,6 +120,8 @@ export interface CapabilityProbeResult {
 	offscreenCanvas: FeatureSupport;
 	livePublish: LivePublishProbeResult;
 	capture: CaptureProbeResult;
+	/** Phase 42: Recorder UX probes (optional — absent when Phase 42 not compiled). */
+	captureUx?: CaptureUxProbeResult;
 	tier: CapabilityTierV2;
 	/** Phase 28 (LiteRT DTLN audio cleanup): display/feature-gate only — never
 	 *  consulted by tier derivation or any pipeline code path. */
@@ -1246,6 +1258,8 @@ export interface TimelineClipSnapshot {
 	cleanedAudio?: CleanedAudioRefSnapshot;
 	/** Phase 35: optional time-remap speed curve; absent = constant 1× speed. */
 	timeRemap?: TimeRemapSnapshot;
+	/** Phase 42: origin capture session id for retake detection. */
+	captureSessionId?: string;
 }
 
 export interface TimelineTrackSnapshot {
@@ -2249,8 +2263,11 @@ export type WorkerCommand =
 	| { type: 'publish-tap-stop' }
 	| { type: 'capture-add-source'; source: CaptureSourceDescriptor; track: MediaStreamTrack }
 	| { type: 'capture-remove-source'; sourceId: string }
-	| { type: 'capture-start'; settings: CaptureSettingsSnapshot; writerPort?: MessagePort }
+	| { type: 'capture-start'; settings: CaptureSettingsSnapshot; writerPort?: MessagePort; retakeClipId?: string }
 	| { type: 'capture-stop' }
+	| { type: 'capture-pause' }
+	| { type: 'capture-resume' }
+	| { type: 'capture-apply-region'; sourceId: string; mode: 'crop' | 'element' }
 	| { type: 'capture-recovery-import'; sessionId: string }
 	| { type: 'capture-recovery-discard'; sessionId: string }
 	| { type: 'set-skin-mask'; trackId: string; clipId: string; mask: SkinMaskSnapshot }
@@ -2552,7 +2569,7 @@ export type WorkerStateMessage =
 	| { type: 'live-chain-error'; message: string }
 	| {
 			type: 'capture-status';
-			state: 'idle' | 'armed' | 'recording' | 'stopping';
+			state: 'idle' | 'armed' | 'recording' | 'paused' | 'stopping';
 			elapsedUs: number;
 			bytesWritten: number;
 			remainingSeconds: number | null;
