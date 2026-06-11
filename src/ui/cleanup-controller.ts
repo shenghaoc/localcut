@@ -1,5 +1,5 @@
 /**
- * Orchestration for Local Audio Cleanup (Phase 27). Framework-free state
+ * Orchestration for Local Audio Cleanup (Phase 28). Framework-free state
  * machine between three parties:
  *
  *   pipeline worker  ──(extract-clip-audio PCM windows)──►  controller

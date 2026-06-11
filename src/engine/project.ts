@@ -565,7 +565,8 @@ function parseCaptionTrack(value: unknown): CaptionTrack | null {
 		segments: sortCaptionSegments(segments),
 		defaultStyle,
 		burnedIn: value.burnedIn,
-		visible: value.visible
+		visible: value.visible,
+		generatedBy: optionalString(value.generatedBy) ?? null
 	});
 }
 

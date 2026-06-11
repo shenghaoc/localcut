@@ -106,6 +106,15 @@ import {
 	type CleanupControllerState
 } from './cleanup-controller';
 import { spawnCleanupWorker } from './cleanup-bridge';
+// Phase 29: Auto Captions (ASR)
+import { AutoCaptionsPanel } from './AutoCaptionsPanel';
+import {
+	AsrController,
+	ASR_PREVIEW_SECONDS,
+	type AsrClipTarget,
+	type AsrControllerState
+} from './asr-controller';
+import { spawnAsrWorker } from './asr-bridge';
 import PipelineWorker from '../engine/worker.ts?worker';
 
 const VIDEO_ACCEPT =
@@ -264,6 +273,7 @@ export function App() {
 	const [publishErrorDetail, setPublishErrorDetail] = createSignal<string | null>(null);
 	const [diagnosticsPanelOpen, setDiagnosticsPanelOpen] = createSignal(false);
 	const [audioCleanupOpen, setAudioCleanupOpen] = createSignal(false);
+	const [asrPanelOpen, setAsrPanelOpen] = createSignal(false);
 	const [diagnosticSnapshot, setDiagnosticSnapshot] = createSignal<DiagnosticSnapshot | null>(null);
 	const [recentErrorLog, setRecentErrorLog] = createSignal(createEmptyRecentErrorLog());
 	const [compatibilityPreview, setCompatibilityPreview] =
@@ -421,7 +431,7 @@ export function App() {
 	const [previewKey, setPreviewKey] = createSignal(0);
 	let awaitingRestartReady = false;
 
-	// ── Phase 27: Local Audio Cleanup (WebNN RNNoise, experimental) ──
+	// ── Phase 28: Local Audio Cleanup (WebNN RNNoise, experimental) ──
 	// The controller spawns its dedicated worker lazily on first action; the
 	// pipeline worker only supplies PCM windows and applies the result.
 	const cleanupController = new CleanupController({
@@ -499,6 +509,56 @@ export function App() {
 			modelId: clip.cleanedAudio.modelId,
 			modelVersion: clip.cleanedAudio.modelVersion
 		};
+	});
+
+	// ── Phase 29: Auto Captions (ASR, experimental) ──
+	const asrController = new AsrController({
+		spawnWorker: spawnAsrWorker,
+		requestClipAudio: (request) => {
+			if (!bridge) throw new Error('Media pipeline is not ready.');
+			bridge.send({ type: 'extract-clip-audio', ...request });
+		},
+		createCaptionTrack: (request) => {
+			if (!bridge) throw new Error('Media pipeline is not ready.');
+			bridge.send({
+				type: 'asr-create-caption-track',
+				...request
+			});
+		},
+		onError: (message) => {
+			setRecentErrorLog((prev) =>
+				addRecentError(
+					prev,
+					createRecentError({
+						code: 'asr.worker_crashed',
+						subsystem: 'audio',
+						severity: 'error',
+						message
+					})
+				)
+			);
+		}
+	});
+	const [asrState, setAsrState] = createSignal<AsrControllerState>(
+		asrController.getState()
+	);
+	asrController.subscribe(setAsrState);
+
+	const selectedAsrClip = createMemo<AsrClipTarget | null>(() => {
+		for (const ref of selectedClipRefs()) {
+			const track = timeline().find((item) => item.id === ref.trackId);
+			if (!track) continue;
+			const clip = track.clips.find((item) => item.id === ref.clipId);
+			if (!clip || clip.kind === 'title' || !clip.sourceId) continue;
+			const asset = assets().find((item) => item.sourceId === clip.sourceId);
+			return {
+				trackId: track.id,
+				clipId: clip.id,
+				durationS: clip.duration,
+				fileName: asset?.fileName ?? clip.sourceId
+			};
+		}
+		return null;
 	});
 
 	function findTimelineClip(ref: TimelineClipReference): TimelineClipSnapshot | null {
@@ -788,10 +848,12 @@ export function App() {
 				setCapabilityProbeV2(msg.result);
 				setExportCodecs([...exportConstraintsForProbe(msg.result)]);
 				cleanupController.setWebNNProbe(msg.result.webnn ?? null);
+				asrController.setProbe(msg.result.webnn ?? null);
 				break;
 			case 'clip-audio':
 			case 'clip-audio-error':
 				cleanupController.handlePipelineMessage(msg);
+				asrController.handlePipelineMessage(msg);
 				break;
 			case 'audio-cleanup-applied':
 				cleanupController.handlePipelineMessage(msg);
@@ -800,6 +862,10 @@ export function App() {
 						? 'Cleaned audio asset applied'
 						: `Audio cleanup failed: ${msg.message ?? 'unknown error'}`
 				);
+				break;
+			case 'asr-caption-track-created':
+				asrController.handlePipelineMessage(msg);
+				setStatusLine(`Auto-caption track "${msg.track.name}" created`);
 				break;
 			case 'clock-update':
 				// Reduced tiers without SAB: the worker drives the clock over postMessage.
@@ -1965,6 +2031,7 @@ export function App() {
 			setCapabilityProbeV2(probe);
 			setExportCodecs([...exportConstraintsForProbe(probe)]);
 			cleanupController.setWebNNProbe(probe.webnn ?? null);
+			asrController.setProbe(probe.webnn ?? null);
 			if (pendingInitCanvas) {
 				const canvas = pendingInitCanvas;
 				pendingInitCanvas = null;
@@ -2093,6 +2160,7 @@ export function App() {
 			clearCompatibilityPreview();
 			thumbnailStore.clear();
 			cleanupController.dispose();
+			asrController.dispose();
 			if (worker && bridge) {
 				const workerToDispose = worker;
 				workerToDispose.removeEventListener('error', handleWorkerCrash);
@@ -2154,6 +2222,7 @@ export function App() {
 					setHelpPanelOpen(true);
 				}}
 				onOpenAudioCleanup={() => setAudioCleanupOpen(true)}
+				onOpenAutoCaptions={() => setAsrPanelOpen(true)}
 				onOpenPublish={() => setPublishPanelOpen(true)}
 				publishLive={publishBusy()}
 				masterGain={masterGain()}
@@ -2757,6 +2826,30 @@ export function App() {
 						});
 					}}
 					onClose={() => setAudioCleanupOpen(false)}
+				/>
+				<AutoCaptionsPanel
+					open={asrPanelOpen()}
+					state={asrState()}
+					selectedClip={selectedAsrClip()}
+					onLoadModel={() => void asrController.loadModel()}
+					onTranscribeClip={(language) => {
+						const clip = selectedAsrClip();
+						if (!clip) return;
+						pauseFromKeyboard();
+						void asrController.transcribeClip(clip, language);
+					}}
+					onTranscribeRange={(language) => {
+						pauseFromKeyboard();
+						const startS = clock.currentTime();
+						const durationS = Math.min(
+							ASR_PREVIEW_SECONDS,
+							Math.max(0, clock.duration() - startS)
+						);
+						if (durationS <= 0) return;
+						void asrController.transcribeRange({ startS, durationS }, language);
+					}}
+					onCancel={() => asrController.cancel()}
+					onClose={() => setAsrPanelOpen(false)}
 				/>
 				<PublishPanel
 					open={publishPanelOpen()}

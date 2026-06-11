@@ -109,6 +109,9 @@ Build capability tracks in an order that protects the premium path while making 
 | 24 | Render queue + export presets: saved presets, multi-job queue, sequential execution, range jobs | Done |
 | 25 | Release hardening: diagnostics, recovery, performance budgets, fixture matrix, accessibility, release gates | Done |
 | 26 | Cross-browser compatibility engine: CapabilityTierV2 probes, optional-SAB init, diagnostics, export constraints, reduced-tier helpers | Active |
+| 27 | WebCodecs decode bridge: direct VideoDecoder/AudioDecoder over Mediabunny demux; bounded backpressure; DualStreamFrameSource | Done |
+| 28 | Local Audio Cleanup with WebNN RNNoise: on-device noise suppression; dedicated cleanup worker; checksummed weights; undoable cleaned-audio routing | Done |
+| 29 | Auto Captions (ASR): Whisper-class WebNN speech recognition; bilingual zh/en; Chrome Web Speech fallback; word-level timestamps into caption tracks | Active |
 
 ## Critical Implementation Details
 

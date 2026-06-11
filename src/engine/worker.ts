@@ -617,7 +617,8 @@ function postTimelineState() {
 			lineWrap: track.defaultStyle.lineWrap
 		},
 		burnedIn: track.burnedIn,
-		visible: track.visible
+		visible: track.visible,
+		generatedBy: track.generatedBy ?? null
 	}));
 	const sourceDurs = transitionSourceDurations();
 	const transitionSnapshot: TimelineTransitionSnapshot[] = cloneTransitionsSnapshot(
@@ -2861,6 +2862,62 @@ function handleRemoveAudioCleanup(
 		refreshPlayback: 'refresh',
 		prune: false,
 		syncLuts: false
+	});
+}
+
+function handleAsrCreateCaptionTrack(
+	cmd: Extract<WorkerCommand, { type: 'asr-create-caption-track' }>
+): void {
+	const trackId = makeCaptionTrackId();
+	const segments = cmd.segments.map((segment) => ({
+		...segment,
+		id: makeCaptionSegmentId()
+	}));
+	const track = createCaptionTrack({
+		id: trackId,
+		name: cmd.trackName,
+		language: cmd.language ?? null,
+		burnedIn: false,
+		visible: true,
+		segments,
+		generatedBy: JSON.stringify({
+			generatedBy: 'auto-captions-phase-29',
+			engine: cmd.engine,
+			language: cmd.language,
+			phraseLevel: cmd.phraseLevel,
+			createdAt: new Date().toISOString()
+		})
+	});
+	commitCaptionMutation(() => [...captionTracks, track], {
+		refreshPlayback: 'refresh'
+	});
+	post({
+		type: 'asr-caption-track-created',
+		trackId: track.id,
+		track: {
+			id: track.id,
+			kind: track.kind,
+			name: track.name,
+			language: track.language,
+			segments: track.segments.map((seg) => ({
+				id: seg.id,
+				start: seg.start,
+				duration: seg.duration,
+				text: seg.text,
+				style: seg.style ?? null
+			})),
+			defaultStyle: {
+				presetId: track.defaultStyle.presetId ?? null,
+				overrides: track.defaultStyle.overrides,
+				anchor: track.defaultStyle.anchor,
+				insetPx: track.defaultStyle.insetPx,
+				maxWidthPercent: track.defaultStyle.maxWidthPercent,
+				lineWrap: track.defaultStyle.lineWrap
+			},
+			burnedIn: track.burnedIn,
+			visible: track.visible,
+			generatedBy: track.generatedBy ?? null
+		}
 	});
 }
 
@@ -5275,6 +5332,9 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			break;
 		case 'remove-audio-cleanup':
 			handleRemoveAudioCleanup(cmd);
+			break;
+		case 'asr-create-caption-track':
+			handleAsrCreateCaptionTrack(cmd);
 			break;
 		case 'add-transition':
 			handleAddTransition(cmd);

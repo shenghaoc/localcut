@@ -172,6 +172,7 @@ function rowsForProbe(probe: CapabilityProbeResult): CapabilityRow[] {
 			action: null
 		},
 		webnnRow(probe),
+		asrRow(probe),
 		// ── Capture Engine (Phase 41) probes ─────────────────────────
 		{
 			label: 'Capture: MSTP',
@@ -261,6 +262,27 @@ function webnnRow(probe: CapabilityProbeResult): CapabilityRow {
 		action: supported
 			? `Local Audio Cleanup (Experimental) available via ${backends.join(', ')}.`
 			: 'Optional on-device audio cleanup needs a browser with WebNN (navigator.ml).'
+	};
+}
+
+/** ASR probes gate only the experimental Auto Captions feature — never the tier. */
+function asrRow(probe: CapabilityProbeResult): CapabilityRow {
+	const asr = probe.asr;
+	const engineLabel = asr
+		? asr.recommended === 'webnn-whisper'
+			? 'WebNN Whisper'
+			: asr.recommended === 'chrome-speech'
+				? 'Browser Speech (phrase-level)'
+				: 'unavailable'
+		: 'unknown';
+	const supported = asr?.recommended !== 'none';
+	return {
+		label: 'Auto Captions (ASR)',
+		support: asr ? (supported ? 'supported' : 'unsupported') : 'unknown',
+		active: false,
+		action: supported
+			? `Auto Captions (Experimental) available via ${engineLabel}.`
+			: 'On-device speech recognition requires WebNN or Chrome 139+.'
 	};
 }
 

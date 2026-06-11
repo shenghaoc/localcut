@@ -1,5 +1,5 @@
 /**
- * Lazy bridge to the Audio Cleanup worker (Phase 27). The worker module is
+ * Lazy bridge to the Audio Cleanup worker (Phase 28). The worker module is
  * loaded via dynamic import only when the user opens the panel or starts a
  * cleanup action, so nothing WebNN/model-related ever enters the startup
  * module graph or spawns eagerly.

@@ -1,6 +1,6 @@
-# Tasks: Phase 27 — Local Audio Cleanup with WebNN RNNoise
+# Tasks: Phase 28 — Local Audio Cleanup with WebNN RNNoise
 
-> Status: **Active / foundation implemented.** Probe, manifest + checksummed weights asset, the dedicated lazy cleanup worker (TypeScript RNNoise DSP port + WebNN graph), the panel, undoable cleaned-audio routing through playback/export, docs, and the test suite are implemented. Open items: an Inspector/timeline badge for cleaned clips (the panel shows applied state), a dedicated DiagnosticsPanel section (status lives in the panel + capability matrix row), and the manual browser verification matrix (T10.3–T10.5). `npm run lint` / `npm run format:check` have pre-existing failures on files this phase does not touch; all Phase 27 files pass both.
+> Status: **Active / foundation implemented.** Probe, manifest + checksummed weights asset, the dedicated lazy cleanup worker (TypeScript RNNoise DSP port + WebNN graph), the panel, undoable cleaned-audio routing through playback/export, docs, and the test suite are implemented. Open items: an Inspector/timeline badge for cleaned clips (the panel shows applied state), a dedicated DiagnosticsPanel section (status lives in the panel + capability matrix row), and the manual browser verification matrix (T10.3–T10.5). `npm run lint` / `npm run format:check` have pre-existing failures on files this phase does not touch; all Phase 28 files pass both.
 
 ## T1 — WebNN capability probe
 
@@ -73,8 +73,8 @@
 
 - [x] **T9.1** Existing import/play/export suites stay green with WebNN absent and cleanup modules never loaded; `no-startup-load.test.ts` pins the module graph (R9.7).
 - [x] **T9.2** Cleanup-worker crash test: feature resets to not-loaded with a recorded error and recovers on the next explicit action; timeline/playback/export untouched (separate worker by construction).
-- [x] **T9.3** `npm run lint`: all Phase 27 files clean; repo baseline has pre-existing failures in untouched files (count unchanged by this phase).
-- [x] **T9.4** `npm run format:check`: all Phase 27 files clean; same pre-existing baseline caveat.
+- [x] **T9.3** `npm run lint`: all Phase 28 files clean; repo baseline has pre-existing failures in untouched files (count unchanged by this phase).
+- [x] **T9.4** `npm run format:check`: all Phase 28 files clean; same pre-existing baseline caveat.
 - [x] **T9.5** `npm test` green; test count grew from 700 to 764.
 - [x] **T9.6** `npm run build` green (strict TypeScript); cleanup worker emitted as a separate lazy chunk; `dist/sw.js` precaches no model bytes.
 
