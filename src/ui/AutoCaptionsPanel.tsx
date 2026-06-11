@@ -140,6 +140,11 @@ export const AutoCaptionsPanel: Component<AutoCaptionsPanelProps> = (props) => {
 								{props.state.error}
 							</p>
 						</Show>
+						<Show when={props.state.recommendedEngine === 'webnn-whisper' && props.state.modelStatus === 'loaded'}>
+							<p class="capability-panel-note" style={{ 'font-style': 'italic' }}>
+								Model loaded — WebNN Whisper inference is not yet available. Transcription will use a stub; install Whisper model weights for full word-level ASR.
+							</p>
+						</Show>
 					</section>
 
 					<section class="diagnostics-section">
@@ -255,7 +260,7 @@ export const AutoCaptionsPanel: Component<AutoCaptionsPanelProps> = (props) => {
 								disabled={!availability().transcribeRange.enabled}
 								title={
 									availability().transcribeRange.reason ??
-									'Transcribe the visible timeline range (Chrome Speech only)'
+									'Transcribe the visible timeline range (requires WebNN Whisper)'
 								}
 								onClick={() => props.onTranscribeRange(language() || undefined)}
 							>

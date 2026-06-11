@@ -366,7 +366,7 @@ export class AsrController {
 		language: string | undefined
 	): Promise<boolean> {
 		if (kind === 'timeline-range') {
-			this.update({ error: 'Timeline range transcription requires a selected clip.' });
+			this.update({ error: 'Timeline range transcription requires WebNN Whisper. Chrome Speech only supports selected clips.' });
 			return false;
 		}
 		const { transcribeWithWebSpeech } = await import('../engine/asr/chrome-speech');
