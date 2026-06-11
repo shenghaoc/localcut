@@ -2,30 +2,30 @@
 
 ## T1 — Protocol extensions (R3, R4, R6, R7, R8)
 
-- [ ] **T1.1** Add `capture-pause` and `capture-resume` commands to the `WorkerCommand`
+- [x] **T1.1** Add `capture-pause` and `capture-resume` commands to the `WorkerCommand`
   union in `src/protocol.ts` (no payload for either; timing is derived worker-side
   from the first/last encoded frame timestamp).
-- [ ] **T1.2** Extend the `capture-start` command type in `src/protocol.ts` with an
+- [x] **T1.2** Extend the `capture-start` command type in `src/protocol.ts` with an
   optional `retakeClipId?: string` field (backward-compatible; undefined means normal
   session start).
-- [ ] **T1.3** Add `CaptureUxProbeResult` interface and optional `captureUx?:
+- [x] **T1.3** Add `CaptureUxProbeResult` interface and optional `captureUx?:
   CaptureUxProbeResult` field to `CapabilityProbeResult` in `src/protocol.ts`:
   `{ documentPip: FeatureSupport; cropTarget: FeatureSupport;
   elementCapture: FeatureSupport }`.
-- [ ] **T1.4** Extend the `capture-status` state union in `src/protocol.ts` to include
+- [x] **T1.4** Extend the `capture-status` state union in `src/protocol.ts` to include
   `'paused'` alongside the Phase 41 states (`'idle' | 'armed' | 'recording' |
   'paused' | 'stopping'`).
-- [ ] **T1.5** Add optional `captureSessionId?: string` field to
+- [x] **T1.5** Add optional `captureSessionId?: string` field to
   `TimelineClipSnapshot` in `src/protocol.ts` (inert for tools that do not know
   Phase 42; ignored by existing import/serialization validators).
-- [ ] **T1.6** Add `capture-apply-region` command to the `WorkerCommand` union in
+- [x] **T1.6** Add `capture-apply-region` command to the `WorkerCommand` union in
   `src/protocol.ts`:
   `{ type: 'capture-apply-region'; sourceId: string; mode: 'crop' | 'element' }`.
   Referenced by T12.4 for Region/Element Capture.
 
 ## T2 — Manifest record extensions (R3, R4, R7)
 
-- [ ] **T2.1** Add four new record kinds to the `CaptureManifestRecord` discriminated
+- [x] **T2.1** Add four new record kinds to the `CaptureManifestRecord` discriminated
   union in `src/engine/capture/chunk-manifest.ts`:
   ```typescript
   | { kind: 'pause';               atUs: number }
@@ -33,29 +33,29 @@
   | { kind: 'source-added';        source: CaptureSourceSnapshot; atUs: number }
   | { kind: 'source-region-applied'; sourceId: string; mode: 'crop' | 'element'; atUs: number }
   ```
-- [ ] **T2.2** Update the NDJSON parser in `chunk-manifest.ts` to recognise the four
+- [x] **T2.2** Update the NDJSON parser in `chunk-manifest.ts` to recognise the four
   new record kinds and to silently skip any `kind` value it does not recognise (forward
   compatibility). The parser must not throw on unknown kinds — it must continue parsing
   the remaining lines. Add a test case in T7.1 for this.
-- [ ] **T2.3** Add `appendPauseRecord(atUs: number)` and `appendResumeRecord(atUs:
+- [x] **T2.3** Add `appendPauseRecord(atUs: number)` and `appendResumeRecord(atUs:
   number)` helpers to the manifest API in `chunk-manifest.ts` following the same
   pattern as the existing `appendChunkRecord` / `appendSourceEndedRecord` helpers.
 
 ## T3 — Capability probes (R6, R7)
 
-- [ ] **T3.1** Create a `captureUxProbe()` async function in
+- [x] **T3.1** Create a `captureUxProbe()` async function in
   `src/engine/capability-probe-v2.ts` that returns `CaptureUxProbeResult`:
   probe `documentPip` via `'documentPictureInPicture' in window`; probe `cropTarget`
   via `'CropTarget' in globalThis`; probe `elementCapture` via `'RestrictionTarget' in
   globalThis`. Map probe errors to `'unknown'` (same pattern as existing probes).
-- [ ] **T3.2** Call `captureUxProbe()` from the main probe function and assign the
+- [x] **T3.2** Call `captureUxProbe()` from the main probe function and assign the
   result to `result.captureUx` in `src/engine/capability-probe-v2.ts`.
 - [ ] **T3.3** Surface `captureUx.documentPip`, `captureUx.cropTarget`, and
   `captureUx.elementCapture` as three rows in `src/ui/CapabilityMatrixPanel.tsx`
   labelled "Document PiP", "Region Capture (Experimental)", and "Element Capture
   (Experimental)" respectively, using the existing chip + note format. None of these
   rows drives a reduced-tier action — they are informational.
-- [ ] **T3.4** Implement the `window.__localcutCapabilityOverrides` dev hook at the
+- [x] **T3.4** Implement the `window.__localcutCapabilityOverrides` dev hook at the
   bottom of the probe function in `src/engine/capability-probe-v2.ts`:
   ```typescript
   if (import.meta.env.DEV) {
@@ -93,7 +93,7 @@
 
 ## T5 — Webcam PiP transform derivation (R5)
 
-- [ ] **T5.1** Create `src/engine/capture/webcam-preset.ts` with:
+- [x] **T5.1** Create `src/engine/capture/webcam-preset.ts` with:
   - `WebcamPipCorner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'`
   - `WebcamPipSize = 'S' | 'M' | 'L'`
   - `WebcamPipPreset { corner: WebcamPipCorner; size: WebcamPipSize; marginPx: number }`
@@ -113,7 +113,7 @@
 
 ## T6 — Pause/resume engine (R3)
 
-- [ ] **T6.1** Create `src/engine/capture/pause-resume.ts` with three exported pure
+- [x] **T6.1** Create `src/engine/capture/pause-resume.ts` with three exported pure
   functions:
   - `extractPauseResumePairs(records: readonly CaptureManifestRecord[]): PauseResumePair[]`
     — pairs consecutive `pause`/`resume` records in manifest order; a final unpaired
@@ -149,7 +149,7 @@
 
 ## T7 — Unit tests: manifest extensions and pause/resume (R10)
 
-- [ ] **T7.1** Create `src/engine/capture/manifest-extensions.test.ts`:
+- [x] **T7.1** Create `src/engine/capture/manifest-extensions.test.ts`:
   - Forward-compatibility: parse an NDJSON manifest containing an unknown
     `kind: 'future-record'` — assert the parser does not throw, skips the line, and
     returns all other records correctly.
@@ -157,7 +157,7 @@
     `source-region-applied` records — assert each field is correctly read.
   - Torn-tail tolerance: a manifest ending mid-JSON after a `pause` record — assert
     the torn line is discarded and prior records are parsed correctly.
-- [ ] **T7.2** Create `src/engine/capture/pause-resume.test.ts`:
+- [x] **T7.2** Create `src/engine/capture/pause-resume.test.ts`:
   - **Three-pause drift test:** construct a synthetic manifest with 3 pause/resume
     pairs (arbitrary µs timestamps); run `computeGapCollapsedUs` on 12 sample
     timestamps distributed across the 4 segments; assert that for each sample, the
@@ -176,7 +176,7 @@
 
 ## T8 — Unit tests: webcam preset and retake (R10)
 
-- [ ] **T8.1** Create `src/engine/capture/webcam-preset.test.ts`:
+- [x] **T8.1** Create `src/engine/capture/webcam-preset.test.ts`:
   - For all 4 corners × 3 sizes (12 combinations), call `deriveWebcamTransform` with
     a 1920 × 1080 canvas and a 1280 × 720 source; assert `x`, `y`, `width`, `height`
     are all in [0, 1] and that the clip fits within the canvas (no overflow for any
@@ -191,7 +191,7 @@
     `marginPx = 16`, assert the pixel margin is 16 px on all four sides (i.e.
     `x * canvasW ≈ 16` and `y * canvasH ≈ 16` for top-left corner), confirming
     separate X/Y normalisation.
-- [ ] **T8.2** Create `src/engine/capture/retake.test.ts`:
+- [x] **T8.2** Create `src/engine/capture/retake.test.ts`:
   - Build a `TimelineClipSnapshot` with `id`, `sourceId`, `duration`, `inPoint`,
     `outPoint`, `transform`, `keyframes`, and `captureSessionId` fields.
   - Call `applyRetakeToClip(original, newSourceId, newDuration)`; assert `id` is
@@ -250,7 +250,7 @@
 
 ## T11 — Retake engine (R8)
 
-- [ ] **T11.1** Create `src/engine/capture/retake.ts` exporting `applyRetakeToClip`:
+- [x] **T11.1** Create `src/engine/capture/retake.ts` exporting `applyRetakeToClip`:
   takes the original `TimelineClipSnapshot` and new `sourceId` + `durationS`; returns
   a new `TimelineClipSnapshot` with `id`, `transform`, `keyframes`, and all other
   fields preserved, and `sourceId`, `duration`, `inPoint` (0), `outPoint` (durationS)
