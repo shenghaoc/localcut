@@ -361,8 +361,7 @@ export function App() {
 	const [bundleJobId, setBundleJobId] = createSignal<string | null>(null);
 	const [bundlePhase, setBundlePhase] = createSignal<string | null>(null);
 	const [bundleReport, setBundleReport] = createSignal<BundleIntegrityReportSnapshot | null>(null);
-	type SideRailTab = 'replay' | 'live-audio';
-	const [activeSideRailTab, setActiveSideRailTab] = createSignal<SideRailTab>('replay');
+	const [activeSideRailTab, setActiveSideRailTab] = createSignal<'replay' | 'live-audio'>('replay');
 	const [bundleMessage, setBundleMessage] = createSignal<string | null>(null);
 	const [interchangeWarnings, setInterchangeWarnings] = createSignal<readonly string[]>([]);
 	const [interchangeMessage, setInterchangeMessage] = createSignal<string | null>(null);
@@ -2160,14 +2159,17 @@ export function App() {
 			if (worker && bridge) {
 				const workerToDispose = worker;
 				workerToDispose.removeEventListener('error', handleWorkerCrash);
+				const cleanup = {
+					terminateFallback: undefined as ReturnType<typeof setTimeout> | undefined
+				};
 				const onDisposeComplete = (event: MessageEvent<WorkerStateMessage>) => {
 					if (event.data.type !== 'dispose-complete') return;
-					clearTimeout(terminateFallback);
+					clearTimeout(cleanup.terminateFallback);
 					workerToDispose.removeEventListener('message', onDisposeComplete);
 					workerToDispose.terminate();
 				};
 				workerToDispose.addEventListener('message', onDisposeComplete);
-				const terminateFallback = setTimeout(() => {
+				cleanup.terminateFallback = setTimeout(() => {
 					workerToDispose.removeEventListener('message', onDisposeComplete);
 					workerToDispose.terminate();
 				}, 1500);
@@ -2614,17 +2616,21 @@ export function App() {
 						<div class="side-rail-tabs">
 							<div class="side-rail-tab-bar" role="tablist">
 								<button
+									id="tab-replay"
 									class={`side-rail-tab${activeSideRailTab() === 'replay' ? ' active' : ''}`}
 									role="tab"
 									aria-selected={activeSideRailTab() === 'replay'}
+									aria-controls="panel-replay"
 									onClick={() => setActiveSideRailTab('replay')}
 								>
 									Replay Buffer
 								</button>
 								<button
+									id="tab-live-audio"
 									class={`side-rail-tab${activeSideRailTab() === 'live-audio' ? ' active' : ''}`}
 									role="tab"
 									aria-selected={activeSideRailTab() === 'live-audio'}
+									aria-controls="panel-live-audio"
 									onClick={() => setActiveSideRailTab('live-audio')}
 								>
 									Live Audio Chain
@@ -2632,32 +2638,46 @@ export function App() {
 							</div>
 							<div class="side-rail-tab-content">
 								<Show when={activeSideRailTab() === 'replay'}>
-									<ReplayBufferPanel
-										captureState={captureSession()}
-										ringBufferState={replayBufferState()}
-										onStartCapture={() => void startReplayCapture()}
-										onStopCapture={stopReplayCapture}
-										onSaveLastN={(nSeconds) => {
-											if (!bridge) return;
-											setReplaySaveInProgress(true);
-											bridge.send({ type: 'replay-save-last-n', nSeconds });
-										}}
-										saveInProgress={replaySaveInProgress()}
-										isSupported={replayCaptureSupported()}
-										supportedReason={replayCaptureUnsupportedReason()}
-										crossOriginIsolated={capabilities().crossOriginIsolated}
-									/>
+									<div
+										id="panel-replay"
+										role="tabpanel"
+										aria-labelledby="tab-replay"
+										style={{ display: 'contents' }}
+									>
+										<ReplayBufferPanel
+											captureState={captureSession()}
+											ringBufferState={replayBufferState()}
+											onStartCapture={() => void startReplayCapture()}
+											onStopCapture={stopReplayCapture}
+											onSaveLastN={(nSeconds) => {
+												if (!bridge) return;
+												setReplaySaveInProgress(true);
+												bridge.send({ type: 'replay-save-last-n', nSeconds });
+											}}
+											saveInProgress={replaySaveInProgress()}
+											isSupported={replayCaptureSupported()}
+											supportedReason={replayCaptureUnsupportedReason()}
+											crossOriginIsolated={capabilities().crossOriginIsolated}
+										/>
+									</div>
 								</Show>
 								<Show when={activeSideRailTab() === 'live-audio'}>
-									<LiveAudioChainPanel
-										config={liveChainConfig()}
-										onConfigChange={(partial) =>
-											bridge?.send({ type: 'update-live-chain-config', config: partial })
-										}
-										latencyMs={liveChainLatencyMs()}
-										crossOriginIsolated={capabilities().crossOriginIsolated}
-										isCapturing={captureSession()?.active ?? false}
-									/>
+									<div
+										id="panel-live-audio"
+										role="tabpanel"
+										aria-labelledby="tab-live-audio"
+										style={{ display: 'contents' }}
+									>
+										<LiveAudioChainPanel
+											config={liveChainConfig()}
+											onConfigChange={(partial) =>
+												bridge?.send({ type: 'update-live-chain-config', config: partial })
+											}
+											latencyMs={liveChainLatencyMs()}
+											crossOriginIsolated={capabilities().crossOriginIsolated}
+											isCapturing={captureSession()?.active ?? false}
+										/>
+									</div>
 								</Show>
 							</div>
 						</div>

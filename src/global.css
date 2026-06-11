@@ -1823,7 +1823,7 @@ body {
 
 .side-rail-tab.active {
 	color: var(--primary);
-	background: var(--bg);
+	background: var(--bg-panel);
 	border-bottom: 2px solid var(--primary);
 }
 
