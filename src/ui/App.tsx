@@ -29,7 +29,11 @@ import {
 	type TimelineTransitionSnapshot,
 	type PublishState,
 	type WorkerStateMessage,
-	type WaveformPeaks
+	type WaveformPeaks,
+	DEFAULT_LIVE_AUDIO_CHAIN_CONFIG,
+	type CaptureSessionState,
+	type LiveAudioChainConfig,
+	type RingBufferState
 } from '../protocol';
 import type { DiagnosticSnapshot, DiagnosticSourceInput } from '../diagnostics/types';
 import {
@@ -52,6 +56,13 @@ import { ThumbnailStore } from './thumbnail-store';
 import { AudioEngine } from './audio-engine';
 import { ExportDialog } from './ExportDialog';
 import { RenderQueuePanel } from './RenderQueuePanel';
+import { ReplayBufferPanel } from './ReplayBufferPanel';
+import { LiveAudioChainPanel } from './LiveAudioChainPanel';
+import {
+	probeMediaStreamTrackProcessor,
+	startCapture,
+	stopCaptureStreams
+} from './capture-bridge';
 import { BundleDialog } from './BundleDialog';
 import { InterchangeMenu } from './InterchangeMenu';
 import { Button, buttonVariants } from './components/button';
@@ -319,6 +330,14 @@ export function App() {
 		BUILT_IN_PRESETS.map((preset) => ({ ...preset }))
 	);
 	const [renderQueue, setRenderQueue] = createSignal<RenderQueueState>(createEmptyQueueState());
+	// Phase 46: Replay Buffer + Live Audio Chain
+	const [captureSession, setCaptureSession] = createSignal<CaptureSessionState | null>(null);
+	const [replayBufferState, setReplayBufferState] = createSignal<RingBufferState | null>(null);
+	const [replaySaveInProgress, setReplaySaveInProgress] = createSignal(false);
+	const [liveChainConfig, setLiveChainConfig] = createSignal<LiveAudioChainConfig>(
+		DEFAULT_LIVE_AUDIO_CHAIN_CONFIG
+	);
+	const [liveChainLatencyMs, setLiveChainLatencyMs] = createSignal(0);
 	const [isOffline, setIsOffline] = createSignal(!initialOnlineStatus());
 	const [hasActiveSW, setHasActiveSW] = createSignal(false);
 	const [audioWarning, setAudioWarning] = createSignal<string | null>(null);
@@ -647,6 +666,26 @@ export function App() {
 			webgpuReady: webgpuAvailable(),
 			runtimeIssue: runtimeIssue()
 		});
+	// Phase 46: capture needs MediaStreamTrackProcessor + getDisplayMedia and a
+	// running pipeline worker; crossOriginIsolated is NOT required (R0.8).
+	const replayCaptureSupported = () =>
+		workerReady() &&
+		probeMediaStreamTrackProcessor() &&
+		typeof navigator !== 'undefined' &&
+		typeof navigator.mediaDevices?.getDisplayMedia === 'function';
+	const replayCaptureUnsupportedReason = () => {
+		if (!probeMediaStreamTrackProcessor()) {
+			return 'Replay Buffer requires MediaStreamTrackProcessor (a recent Chromium browser).';
+		}
+		if (
+			typeof navigator === 'undefined' ||
+			typeof navigator.mediaDevices?.getDisplayMedia !== 'function'
+		) {
+			return 'Replay Buffer requires screen capture (getDisplayMedia) in a secure context.';
+		}
+		if (!workerReady()) return 'Replay Buffer is unavailable until the pipeline worker is ready.';
+		return null;
+	};
 	const diagnosticSources = createMemo<DiagnosticSourceInput[]>(() => [
 		...assets(),
 		...unresolvedSources().map((source) => ({ ...source, offline: true }))
@@ -682,6 +721,63 @@ export function App() {
 		const preview = compatibilityPreview();
 		if (preview) preview.revoke();
 		setCompatibilityPreview(null);
+	}
+
+	// Phase 46: the main thread owns the MediaStream (getDisplayMedia needs a
+	// user gesture and tracks can't leave this thread); the frame/audio streams
+	// are transferred to the pipeline worker, which encodes into the ring buffer.
+	let replayCaptureStream: MediaStream | null = null;
+
+	function releaseReplayCaptureStream() {
+		if (!replayCaptureStream) return;
+		stopCaptureStreams(replayCaptureStream);
+		replayCaptureStream = null;
+	}
+
+	async function startReplayCapture() {
+		if (replayCaptureStream || captureSession()?.active) return;
+		try {
+			const streams = await startCapture('display');
+			replayCaptureStream = streams.mediaStream;
+			// The browser's own "Stop sharing" ends the track; mirror it as a stop.
+			const lifetimeTrack =
+				streams.mediaStream.getVideoTracks()[0] ?? streams.mediaStream.getAudioTracks()[0];
+			lifetimeTrack?.addEventListener('ended', () => stopReplayCapture(), { once: true });
+			const transfer: Transferable[] = [];
+			if (streams.videoStream) transfer.push(streams.videoStream);
+			if (streams.audioStream) transfer.push(streams.audioStream);
+			bridge?.send(
+				{
+					type: 'replay-capture-transfer-streams',
+					videoStream: streams.videoStream,
+					audioStream: streams.audioStream,
+					settings: {
+						source: 'display',
+						sourceLabel: streams.sourceLabel,
+						width: streams.videoTrackSettings?.width,
+						height: streams.videoTrackSettings?.height,
+						frameRate: streams.videoTrackSettings?.frameRate
+					}
+				},
+				transfer
+			);
+		} catch (error) {
+			releaseReplayCaptureStream();
+			// Dismissing the browser's share picker surfaces as NotAllowedError;
+			// treat it like a cancel rather than a failure.
+			const dismissed =
+				isAbortError(error) ||
+				(error instanceof DOMException && error.name === 'NotAllowedError');
+			if (!dismissed) {
+				const message = error instanceof Error ? error.message : String(error);
+				setStatusLine(`Capture failed: ${message}`);
+			}
+		}
+	}
+
+	function stopReplayCapture() {
+		bridge?.send({ type: 'replay-capture-stop' });
+		releaseReplayCaptureStream();
 	}
 
 	function handleState(msg: WorkerStateMessage) {
@@ -1085,6 +1181,43 @@ export function App() {
 				break;
 			case 'project-warning':
 				setStatusLine(msg.message);
+				break;
+			// Phase 46: Replay Buffer + Live Audio Chain
+			case 'replay-capture-state':
+				setCaptureSession(msg.state);
+				if (!msg.state.active) releaseReplayCaptureStream();
+				break;
+			case 'replay-capture-error':
+				releaseReplayCaptureStream();
+				setStatusLine(`Capture: ${msg.message}`);
+				break;
+			case 'replay-buffer-state':
+				setReplayBufferState(msg.state);
+				break;
+			case 'replay-save-progress':
+				setReplaySaveInProgress(true);
+				setStatusLine(`Saving replay… ${msg.chunksWritten}/${msg.totalChunks} chunks`);
+				break;
+			case 'replay-save-complete':
+				setReplaySaveInProgress(false);
+				setStatusLine(`Replay saved · ${msg.fileName}`);
+				break;
+			case 'replay-save-error':
+				setReplaySaveInProgress(false);
+				setStatusLine(`Replay save failed: ${msg.message}`);
+				break;
+			case 'replay-save-canceled':
+				setReplaySaveInProgress(false);
+				setStatusLine('Replay save canceled');
+				break;
+			case 'live-chain-config':
+				setLiveChainConfig(msg.config);
+				break;
+			case 'live-chain-latency':
+				setLiveChainLatencyMs(msg.latencyMs);
+				break;
+			case 'live-chain-error':
+				setStatusLine(`Live audio chain: ${msg.message}`);
 				break;
 			case 'error':
 				setImporting(false);
@@ -1946,6 +2079,7 @@ export function App() {
 		window.addEventListener('drop', onDrop);
 		onCleanup(() => {
 			unregisterKeyboard();
+			releaseReplayCaptureStream();
 			unsubscribePublish();
 			publishController.dispose();
 			window.removeEventListener('offline', handleOffline);
@@ -2412,6 +2546,30 @@ export function App() {
 							onSnap={(trackId, segmentId, edge) =>
 								captionBridge().send({ type: 'snap-caption-segment', trackId, segmentId, edge })
 							}
+						/>
+						<ReplayBufferPanel
+							captureState={captureSession()}
+							ringBufferState={replayBufferState()}
+							onStartCapture={() => void startReplayCapture()}
+							onStopCapture={stopReplayCapture}
+							onSaveLastN={(nSeconds) => {
+								if (!bridge) return;
+								setReplaySaveInProgress(true);
+								bridge.send({ type: 'replay-save-last-n', nSeconds });
+							}}
+							saveInProgress={replaySaveInProgress()}
+							isSupported={replayCaptureSupported()}
+							supportedReason={replayCaptureUnsupportedReason()}
+							crossOriginIsolated={capabilities().crossOriginIsolated}
+						/>
+						<LiveAudioChainPanel
+							config={liveChainConfig()}
+							onConfigChange={(partial) =>
+								bridge?.send({ type: 'update-live-chain-config', config: partial })
+							}
+							latencyMs={liveChainLatencyMs()}
+							crossOriginIsolated={capabilities().crossOriginIsolated}
+							isCapturing={captureSession()?.active ?? false}
 						/>
 					</div>
 				</main>

@@ -19,8 +19,43 @@ import {
 	type WorkerCommand,
 	type WorkerStateMessage,
 	type ExportBackend,
-	type PreviewBackend
+	type PreviewBackend,
+	DEFAULT_LIVE_AUDIO_CHAIN_CONFIG,
+	DEFAULT_RING_BUFFER_CONFIG,
+	type CaptureSessionState,
+	type CaptureStreamSettings,
+	type LiveAudioChainConfig,
+	type SpillRange
 } from '../protocol';
+import {
+	EncodedAudioPacketSource,
+	EncodedPacket,
+	EncodedVideoPacketSource,
+	Mp4OutputFormat,
+	Output,
+	StreamTarget,
+	type StreamTargetChunk
+} from 'mediabunny';
+import { createRingBuffer, type RingBuffer, type RingBufferEntry } from './replay-buffer/ring-buffer';
+import {
+	cleanupSpills,
+	createReplaySaveFile,
+	deleteReplaySaveFile,
+	deleteSpillFile,
+	readSpillRange,
+	spillEntries
+} from './replay-buffer/spill';
+import { assembleSaveEntries } from './replay-buffer/replay-save';
+import { CAPTURE_VIDEO_CODEC_FALLBACKS, getDefaultCaptureConfig } from './replay-buffer/capture';
+import {
+	anyInsertActive,
+	chainLatencyS,
+	createLiveChainProcessor,
+	interleavedPcmToF32Planes,
+	pcmPlaneToF32,
+	type LiveChainProcessor,
+	type PcmPlane
+} from './live-audio/live-chain';
 import { exportCaptionSidecars } from './captions/export';
 import { activeCaptionPayloadsAt, captionTextureId } from './captions/render';
 import {
@@ -309,6 +344,49 @@ let audioWriteFrames = 0;
 let pcmRemainder: Float32Array | null = null;
 let audioPumpGen = 0;
 const AUTOSAVE_DEBOUNCE_MS = 300;
+
+// ── Phase 46: Replay Buffer + Live Audio Chain ──
+const CAPTURE_KEYFRAME_INTERVAL_S = 2;
+const CAPTURE_STATS_INTERVAL_MS = 500;
+const CAPTURE_MAX_VIDEO_QUEUE = 8;
+const CAPTURE_MAX_AUDIO_QUEUE = 16;
+const REPLAY_SAVE_PROGRESS_EVERY = 25;
+
+interface CaptureRuntime {
+	state: CaptureSessionState;
+	videoReader: ReadableStreamDefaultReader<VideoFrame> | null;
+	audioReader: ReadableStreamDefaultReader<AudioData> | null;
+	videoEncoder: VideoEncoder | null;
+	audioEncoder: AudioEncoder | null;
+	chain: LiveChainProcessor | null;
+	chainErrorPosted: boolean;
+	startedAtMs: number;
+	statsTimer: ReturnType<typeof setInterval> | null;
+	videoFramesSinceKey: number;
+	stopping: boolean;
+	/** Resolves once both pumps have exited and encoders are flushed/closed. */
+	finished: Promise<void>;
+}
+
+function cloneLiveChainConfig(config: LiveAudioChainConfig): LiveAudioChainConfig {
+	return {
+		gate: { ...config.gate },
+		compressor: { ...config.compressor },
+		limiter: { ...config.limiter },
+		denoiserBypass: config.denoiserBypass,
+		printToRecording: config.printToRecording
+	};
+}
+
+const replayRing: RingBuffer = createRingBuffer({ ...DEFAULT_RING_BUFFER_CONFIG });
+let liveChainConfig: LiveAudioChainConfig = cloneLiveChainConfig(DEFAULT_LIVE_AUDIO_CHAIN_CONFIG);
+let capture: CaptureRuntime | null = null;
+/** Serializes OPFS spill writes/deletes so a file is never read or deleted mid-write. */
+let replaySpillChain: Promise<void> = Promise.resolve();
+/** Decoder configs from the capture encoders; survive capture-stop so the buffer stays saveable. */
+let captureVideoDecoderConfig: VideoDecoderConfig | null = null;
+let captureAudioDecoderConfig: AudioDecoderConfig | null = null;
+let replaySaveAbort: AbortController | null = null;
 
 function makeSourceId(): string {
 	return `source-${nextSourceId++}`;
@@ -1037,7 +1115,9 @@ async function persistCurrentProject(): Promise<void> {
 		masterGain,
 		exportSettings: lastExportSettings ?? undefined,
 		exportPresets: exportPresets.filter((p) => !p.builtIn),
-		renderQueueHistory: serializeQueueHistory(queueState)
+		renderQueueHistory: serializeQueueHistory(queueState),
+		replayBufferConfig: replayRing.getConfig(),
+		liveAudioChainConfig: liveChainConfig
 	});
 	await saveStoredProject(doc);
 }
@@ -1763,6 +1843,7 @@ async function handleRestoreProject(): Promise<void> {
 		queueState = { ...queueState, jobs: deserializeQueueHistory(doc.renderQueueHistory) };
 	}
 	masterGain = doc.masterGain;
+	applyProjectPhase46Config(doc);
 	nextSourceId = nextSourceIdFromDescriptors(doc.sources);
 	for (const descriptor of doc.sources) {
 		sourceDescriptors.set(descriptor.sourceId, descriptor);
@@ -1818,6 +1899,11 @@ async function handleNewProject(): Promise<void> {
 	captionTracks = [];
 	markers = [];
 	masterGain = DEFAULT_MASTER_GAIN;
+	if (capture) requestCaptureStop();
+	replayRing.updateConfig({ ...DEFAULT_RING_BUFFER_CONFIG });
+	liveChainConfig = cloneLiveChainConfig(DEFAULT_LIVE_AUDIO_CHAIN_CONFIG);
+	postReplayBufferState();
+	postLiveChainState();
 	ensureClockAndTimeline();
 	postMediaAssets();
 	postHistoryState();
@@ -3484,6 +3570,7 @@ async function applyImportedDoc(doc: ProjectDoc): Promise<void> {
 		queueState = { ...queueState, jobs: deserializeQueueHistory(doc.renderQueueHistory) };
 	}
 	masterGain = doc.masterGain;
+	applyProjectPhase46Config(doc);
 	nextSourceId = nextSourceIdFromDescriptors(doc.sources);
 
 	const keepIds = new Set(doc.sources.map((source) => source.sourceId));
@@ -4351,6 +4438,12 @@ async function handleQueueStart() {
 
 async function handleDispose(): Promise<void> {
 	restoreOfferGeneration += 1;
+	replaySaveAbort?.abort();
+	if (capture) {
+		const finished = capture.finished;
+		requestCaptureStop();
+		await finished.catch(() => undefined);
+	}
 	await flushPendingAutosave();
 	stopAudioPump();
 	abortQueueWork();
@@ -4394,6 +4487,598 @@ async function handleDiagnosticSnapshot(requestId: string): Promise<void> {
 		livePublish: currentCapabilityProbe?.livePublish ?? null
 	});
 	post({ type: 'diagnostic-snapshot', requestId, snapshot });
+}
+
+// ── Phase 46: Replay Buffer + Live Audio Chain ──
+
+function postReplayBufferState(): void {
+	post({
+		type: 'replay-buffer-state',
+		state: { config: replayRing.getConfig(), stats: replayRing.getStats() }
+	});
+}
+
+function postLiveChainState(): void {
+	post({ type: 'live-chain-config', config: cloneLiveChainConfig(liveChainConfig) });
+	post({ type: 'live-chain-latency', latencyMs: chainLatencyS(liveChainConfig) * 1000 });
+}
+
+/** Applies (or defaults) the persisted Phase 46 configs from a project doc. */
+function applyProjectPhase46Config(doc: ProjectDoc): void {
+	if (capture) requestCaptureStop();
+	replayRing.updateConfig(doc.replayBufferConfig ?? { ...DEFAULT_RING_BUFFER_CONFIG });
+	liveChainConfig = cloneLiveChainConfig(doc.liveAudioChainConfig ?? DEFAULT_LIVE_AUDIO_CHAIN_CONFIG);
+	postReplayBufferState();
+	postLiveChainState();
+}
+
+function queueSpillWrite(entries: RingBufferEntry[], range: SpillRange): void {
+	replaySpillChain = replaySpillChain.then(async () => {
+		try {
+			await spillEntries(entries, range);
+		} catch (error) {
+			// The entries were already spliced out of RAM; without the file they
+			// are gone, so say so instead of silently shrinking the buffer.
+			replayRing.removeSpilledRange(range.opfsFileName);
+			postProjectWarning(
+				`Replay buffer spill failed — the oldest ${entries.length} buffered chunks were dropped: ${errorMessage(error)}`
+			);
+		}
+	});
+}
+
+function queueSpillDelete(range: SpillRange): void {
+	replaySpillChain = replaySpillChain.then(() => deleteSpillFile(range)).catch(() => undefined);
+}
+
+function maybeSpillForMemory(): void {
+	const stats = replayRing.getStats();
+	const maxBytes = replayRing.getConfig().maxMemoryBytes;
+	if (stats.memoryBytes <= maxBytes) return;
+	// Spill down to ~90% of the budget so each overshoot doesn't trigger a write.
+	const result = replayRing.spillOldest(stats.memoryBytes - Math.floor(maxBytes * 0.9));
+	if (result) queueSpillWrite(result.entries, result.range);
+}
+
+function failCapture(rt: CaptureRuntime, error: unknown): void {
+	if (capture !== rt) return; // stale callback from an already-replaced session
+	if (!rt.stopping) {
+		post({ type: 'replay-capture-error', message: errorMessage(error) });
+		recordRecentError({
+			code: 'capture.session_failed',
+			subsystem: 'worker',
+			severity: 'error',
+			message: errorMessage(error)
+		});
+	}
+	requestCaptureStop();
+}
+
+async function ensureCaptureVideoEncoder(rt: CaptureRuntime, frame: VideoFrame): Promise<VideoEncoder> {
+	if (rt.videoEncoder) return rt.videoEncoder;
+	const defaults = getDefaultCaptureConfig();
+	const width = frame.displayWidth || frame.codedWidth;
+	const height = frame.displayHeight || frame.codedHeight;
+	const framerate = rt.state.frameRate ?? defaults.framerate;
+	const candidates = [...new Set([defaults.videoCodec, ...CAPTURE_VIDEO_CODEC_FALLBACKS])];
+	let config: VideoEncoderConfig | null = null;
+	for (const codec of candidates) {
+		const candidate: VideoEncoderConfig = {
+			codec,
+			width,
+			height,
+			bitrate: defaults.videoBitrate,
+			framerate,
+			latencyMode: 'realtime',
+			avc: { format: 'avc' }
+		};
+		const support = await VideoEncoder.isConfigSupported(candidate);
+		if (support.supported) {
+			config = candidate;
+			break;
+		}
+	}
+	if (!config) {
+		throw new Error(`No supported H.264 encoder configuration for ${width}×${height} capture.`);
+	}
+	const encoder = new VideoEncoder({
+		output: (chunk, metadata) => {
+			if (capture !== rt) return;
+			if (metadata?.decoderConfig) captureVideoDecoderConfig = metadata.decoderConfig;
+			const data = new Uint8Array(chunk.byteLength);
+			chunk.copyTo(data);
+			const fallbackDurationUs = 1_000_000 / framerate;
+			replayRing.pushVideo(
+				chunk.timestamp / 1e6,
+				(chunk.duration ?? fallbackDurationUs) / 1e6,
+				data,
+				chunk.type === 'key'
+			);
+			maybeSpillForMemory();
+		},
+		error: (error) => failCapture(rt, error)
+	});
+	encoder.configure(config);
+	rt.videoEncoder = encoder;
+	rt.state.resolution = { width, height };
+	post({ type: 'replay-capture-state', state: { ...rt.state } });
+	return encoder;
+}
+
+function ensureCaptureAudioEncoder(rt: CaptureRuntime, data: AudioData): AudioEncoder {
+	if (rt.audioEncoder) return rt.audioEncoder;
+	const defaults = getDefaultCaptureConfig();
+	const encoder = new AudioEncoder({
+		output: (chunk, metadata) => {
+			if (capture !== rt) return;
+			if (metadata?.decoderConfig) captureAudioDecoderConfig = metadata.decoderConfig;
+			const bytes = new Uint8Array(chunk.byteLength);
+			chunk.copyTo(bytes);
+			replayRing.pushAudio(chunk.timestamp / 1e6, (chunk.duration ?? 0) / 1e6, bytes);
+			maybeSpillForMemory();
+		},
+		error: (error) => failCapture(rt, error)
+	});
+	// AAC bitstream format defaults to 'aac' (raw, with AudioSpecificConfig in
+	// decoderConfig.description), which is what the mp4 muxer needs.
+	encoder.configure({
+		codec: defaults.audioCodec,
+		sampleRate: data.sampleRate,
+		numberOfChannels: data.numberOfChannels,
+		bitrate: defaults.audioBitrate
+	});
+	rt.audioEncoder = encoder;
+	return encoder;
+}
+
+/**
+ * Extracts capture PCM as per-channel f32 planes. `AudioData.copyTo` is only
+ * guaranteed to convert *to* f32-planar by newer engines, and capture sources
+ * commonly deliver s16/f32 interleaved — so read in the data's native format
+ * and convert with the pure helpers instead of relying on implicit conversion.
+ */
+function captureAudioToPlanes(data: AudioData): Float32Array[] {
+	const frames = data.numberOfFrames;
+	const channels = data.numberOfChannels;
+	const format = data.format;
+	const planarBuffer = (): PcmPlane => {
+		switch (format) {
+			case 's16-planar': return new Int16Array(frames);
+			case 's32-planar': return new Int32Array(frames);
+			case 'u8-planar': return new Uint8Array(frames);
+			default: return new Float32Array(frames);
+		}
+	};
+	const interleavedBuffer = (): PcmPlane => {
+		switch (format) {
+			case 's16': return new Int16Array(frames * channels);
+			case 's32': return new Int32Array(frames * channels);
+			case 'u8': return new Uint8Array(frames * channels);
+			default: return new Float32Array(frames * channels);
+		}
+	};
+	switch (format) {
+		case 'f32-planar':
+		case 's16-planar':
+		case 's32-planar':
+		case 'u8-planar': {
+			const planes: Float32Array[] = [];
+			for (let c = 0; c < channels; c++) {
+				const raw = planarBuffer();
+				data.copyTo(raw, { planeIndex: c, format });
+				planes.push(pcmPlaneToF32(raw));
+			}
+			return planes;
+		}
+		case 'f32':
+		case 's16':
+		case 's32':
+		case 'u8': {
+			const raw = interleavedBuffer();
+			data.copyTo(raw, { planeIndex: 0, format });
+			return interleavedPcmToF32Planes(raw, channels, frames);
+		}
+		default:
+			throw new Error(`Unsupported AudioData format: ${String(format)}`);
+	}
+}
+
+/**
+ * Print-to-recording path: runs gate → compressor → limiter on capture PCM in
+ * this worker before encoding, so the recorded chain never depends on the
+ * monitor AudioContext running (it can be suspended by autoplay policy or
+ * background throttling without starving the encoder).
+ */
+function applyChainToAudioData(rt: CaptureRuntime, data: AudioData): AudioData | null {
+	try {
+		const frames = data.numberOfFrames;
+		const channels = data.numberOfChannels;
+		if (!rt.chain || rt.chain.sampleRate !== data.sampleRate) {
+			rt.chain = createLiveChainProcessor(cloneLiveChainConfig(liveChainConfig), data.sampleRate);
+		}
+		const processed = rt.chain.process(captureAudioToPlanes(data));
+		const planar = new Float32Array(frames * channels);
+		processed.forEach((plane, c) => planar.set(plane, c * frames));
+		return new AudioData({
+			format: 'f32-planar',
+			sampleRate: data.sampleRate,
+			numberOfFrames: frames,
+			numberOfChannels: channels,
+			timestamp: data.timestamp,
+			data: planar
+		});
+	} catch (error) {
+		if (!rt.chainErrorPosted) {
+			rt.chainErrorPosted = true;
+			post({
+				type: 'live-chain-error',
+				message: `Live chain processing failed — recording raw audio: ${errorMessage(error)}`
+			});
+		}
+		return null;
+	}
+}
+
+async function pumpCaptureVideo(rt: CaptureRuntime): Promise<void> {
+	if (!rt.videoReader) return;
+	const defaults = getDefaultCaptureConfig();
+	const keyIntervalFrames = Math.max(
+		1,
+		Math.round((rt.state.frameRate ?? defaults.framerate) * CAPTURE_KEYFRAME_INTERVAL_S)
+	);
+	for (;;) {
+		const { done, value: frame } = await rt.videoReader.read();
+		if (done || rt.stopping) {
+			frame?.close();
+			break;
+		}
+		try {
+			const encoder = await ensureCaptureVideoEncoder(rt, frame);
+			if (encoder.encodeQueueSize > CAPTURE_MAX_VIDEO_QUEUE) {
+				// Live sources can't be stalled; shed load at the input instead of
+				// queueing unboundedly. Cadence counts encoded frames, so drops
+				// don't perturb the GOP structure.
+				replayRing.noteDroppedFrame();
+				frame.close();
+				continue;
+			}
+			encoder.encode(frame, { keyFrame: rt.videoFramesSinceKey === 0 });
+			rt.videoFramesSinceKey = (rt.videoFramesSinceKey + 1) % keyIntervalFrames;
+			frame.close();
+		} catch (error) {
+			frame.close();
+			failCapture(rt, error);
+			break;
+		}
+	}
+	// The video stream ending on its own (browser "Stop sharing") ends the
+	// session even if the audio track keeps producing; otherwise the audio pump
+	// would hold the session open forever.
+	if (capture === rt && !rt.stopping) {
+		rt.stopping = true;
+		void rt.audioReader?.cancel().catch(() => undefined);
+	}
+}
+
+async function pumpCaptureAudio(rt: CaptureRuntime): Promise<void> {
+	if (!rt.audioReader) return;
+	for (;;) {
+		const { done, value } = await rt.audioReader.read();
+		if (done || rt.stopping) {
+			value?.close();
+			break;
+		}
+		let input = value;
+		try {
+			const encoder = ensureCaptureAudioEncoder(rt, input);
+			if (encoder.encodeQueueSize > CAPTURE_MAX_AUDIO_QUEUE) {
+				input.close();
+				continue;
+			}
+			if (liveChainConfig.printToRecording && anyInsertActive(liveChainConfig)) {
+				const processed = applyChainToAudioData(rt, input);
+				if (processed) {
+					input.close();
+					input = processed;
+				}
+			}
+			encoder.encode(input);
+			input.close();
+		} catch (error) {
+			input.close();
+			failCapture(rt, error);
+			break;
+		}
+	}
+	// For an audio-only session the audio stream is the session's lifetime,
+	// mirroring the video pump's end-of-stream handling below.
+	if (capture === rt && !rt.stopping && !rt.videoReader) {
+		rt.stopping = true;
+	}
+}
+
+function handleCaptureTransferStreams(
+	videoStream: ReadableStream<VideoFrame> | undefined,
+	audioStream: ReadableStream<AudioData> | undefined,
+	settings: CaptureStreamSettings | undefined
+): void {
+	if (capture) {
+		post({ type: 'replay-capture-error', message: 'A capture session is already active.' });
+		void videoStream?.cancel().catch(() => undefined);
+		void audioStream?.cancel().catch(() => undefined);
+		return;
+	}
+	if (!videoStream && !audioStream) {
+		post({ type: 'replay-capture-error', message: 'The captured stream has no video or audio tracks.' });
+		return;
+	}
+	// A new session owns the buffer: discard the previous session's chunks and
+	// any spill files left behind (also covers files orphaned by a crash).
+	replayRing.reset();
+	replaySpillChain = replaySpillChain.then(() => cleanupSpills()).catch(() => undefined);
+	captureVideoDecoderConfig = null;
+	captureAudioDecoderConfig = null;
+
+	const defaults = getDefaultCaptureConfig();
+	const hasVideo = videoStream != null;
+	const rt: CaptureRuntime = {
+		state: {
+			active: true,
+			sourceLabel: settings?.sourceLabel ?? 'Screen Capture',
+			source: settings?.source ?? 'display',
+			hasVideo,
+			hasAudio: audioStream != null,
+			resolution: hasVideo
+				? {
+						width: settings?.width ?? defaults.width,
+						height: settings?.height ?? defaults.height
+					}
+				: null,
+			frameRate: hasVideo ? (settings?.frameRate ?? defaults.framerate) : null,
+			elapsedS: 0
+		},
+		videoReader: videoStream?.getReader() ?? null,
+		audioReader: audioStream?.getReader() ?? null,
+		videoEncoder: null,
+		audioEncoder: null,
+		chain: null,
+		chainErrorPosted: false,
+		startedAtMs: performance.now(),
+		statsTimer: null,
+		videoFramesSinceKey: 0,
+		stopping: false,
+		finished: Promise.resolve()
+	};
+	capture = rt;
+
+	rt.statsTimer = setInterval(() => {
+		if (capture !== rt) return;
+		rt.state.elapsedS = (performance.now() - rt.startedAtMs) / 1000;
+		post({ type: 'replay-capture-state', state: { ...rt.state } });
+		postReplayBufferState();
+		// Spill files older than the duration window are unreachable by any save.
+		const stats = replayRing.getStats();
+		if (stats.newestTimestamp !== null) {
+			const cutoff = stats.newestTimestamp - replayRing.getConfig().maxDurationS;
+			for (const range of replayRing.evictSpilledBefore(cutoff)) {
+				queueSpillDelete(range);
+			}
+		}
+	}, CAPTURE_STATS_INTERVAL_MS);
+
+	const pumps = [pumpCaptureVideo(rt), pumpCaptureAudio(rt)];
+	rt.finished = (async () => {
+		await Promise.allSettled(pumps);
+		// Flush so frames buffered inside the encoders land in the ring; the
+		// output callbacks still run because `capture === rt` until the end.
+		if (rt.statsTimer) clearInterval(rt.statsTimer);
+		try {
+			if (rt.videoEncoder && rt.videoEncoder.state === 'configured') await rt.videoEncoder.flush();
+		} catch { /* flush after an encoder error is expected to fail */ }
+		try {
+			if (rt.audioEncoder && rt.audioEncoder.state === 'configured') await rt.audioEncoder.flush();
+		} catch { /* ditto */ }
+		try { if (rt.videoEncoder && rt.videoEncoder.state !== 'closed') rt.videoEncoder.close(); } catch { /* already closed */ }
+		try { if (rt.audioEncoder && rt.audioEncoder.state !== 'closed') rt.audioEncoder.close(); } catch { /* already closed */ }
+		rt.state.active = false;
+		rt.state.elapsedS = (performance.now() - rt.startedAtMs) / 1000;
+		capture = null;
+		post({ type: 'replay-capture-state', state: { ...rt.state } });
+		postReplayBufferState();
+	})();
+
+	post({ type: 'replay-capture-state', state: { ...rt.state } });
+	postReplayBufferState();
+}
+
+/**
+ * Signals the pumps to exit; finalization (encoder flush/close + final state
+ * posts) runs in the session's `finished` chain. Idempotent, and also called
+ * when a pump fails or the captured track ends on its own.
+ */
+function requestCaptureStop(): void {
+	const rt = capture;
+	if (!rt) {
+		// Nothing running — still answer so the UI can settle.
+		post({
+			type: 'replay-capture-state',
+			state: {
+				active: false,
+				sourceLabel: '',
+				source: 'display',
+				hasVideo: false,
+				hasAudio: false,
+				resolution: null,
+				frameRate: null,
+				elapsedS: 0
+			}
+		});
+		return;
+	}
+	if (rt.stopping) return;
+	rt.stopping = true;
+	void rt.videoReader?.cancel().catch(() => undefined);
+	void rt.audioReader?.cancel().catch(() => undefined);
+}
+
+function mergeLiveChainConfig(
+	current: LiveAudioChainConfig,
+	partial: Partial<LiveAudioChainConfig>
+): LiveAudioChainConfig {
+	return {
+		gate: partial.gate ? { ...partial.gate } : { ...current.gate },
+		compressor: partial.compressor ? { ...partial.compressor } : { ...current.compressor },
+		limiter: partial.limiter ? { ...partial.limiter } : { ...current.limiter },
+		denoiserBypass: partial.denoiserBypass ?? current.denoiserBypass,
+		printToRecording: partial.printToRecording ?? current.printToRecording
+	};
+}
+
+async function handleReplaySaveLastN(nSeconds?: number): Promise<void> {
+	if (replaySaveAbort) {
+		post({ type: 'replay-save-error', message: 'A replay save is already in progress.' });
+		return;
+	}
+	const abort = new AbortController();
+	replaySaveAbort = abort;
+	let saveFileName: string | null = null;
+	try {
+		const windowS = nSeconds ?? replayRing.getConfig().saveDurationS;
+		const stats = replayRing.getStats();
+		if (stats.newestTimestamp === null) {
+			throw new Error('Nothing has been captured yet.');
+		}
+		const endTimestamp = stats.newestTimestamp;
+		const rawStart = endTimestamp - windowS;
+
+		// Snapshot RAM now: chunks that arrive after this point stay in the ring
+		// and belong to the next save, not this one (R8.4 snapshot semantics).
+		const ramEntries = replayRing.getSnapshot(rawStart, endTimestamp).entries;
+		// Spill files are written asynchronously; wait for in-flight writes, then
+		// read back the ranges that overlap the window.
+		await replaySpillChain;
+		const overlapping = replayRing
+			.getSpilledRanges()
+			.filter((r) => r.endTimestamp > rawStart && r.startTimestamp <= endTimestamp);
+		const spilled: RingBufferEntry[] = [];
+		for (const range of overlapping) {
+			spilled.push(...(await readSpillRange(range)));
+		}
+		const combined = [...spilled, ...ramEntries].sort((a, b) => a.timestamp - b.timestamp);
+		const entries = assembleSaveEntries(combined, rawStart, endTimestamp);
+		if (entries.length === 0) {
+			throw new Error('No saveable media in the requested range.');
+		}
+		const hasVideoEntries = entries.some((e) => e.type === 'video');
+		const hasAudioEntries = entries.some((e) => e.type === 'audio');
+		if (hasVideoEntries && !captureVideoDecoderConfig) {
+			throw new Error('Video decoder configuration is unavailable for the buffered media.');
+		}
+		if (hasAudioEntries && !captureAudioDecoderConfig) {
+			// Failing loudly beats silently saving a clip without its audio track.
+			throw new Error('Audio decoder configuration is unavailable for the buffered media.');
+		}
+
+		const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+		saveFileName = `replay-${stamp}.mp4`;
+		const fileHandle = await createReplaySaveFile(saveFileName);
+		const writable = await fileHandle.createWritable();
+		const output = new Output({
+			format: new Mp4OutputFormat({ fastStart: false }),
+			target: new StreamTarget(writable as unknown as WritableStream<StreamTargetChunk>, {
+				chunked: true
+			})
+		});
+		const videoSource = hasVideoEntries ? new EncodedVideoPacketSource('avc') : null;
+		if (videoSource) {
+			const frameRate = capture?.state.frameRate;
+			output.addVideoTrack(videoSource, frameRate ? { frameRate } : undefined);
+		}
+		const audioSource = hasAudioEntries ? new EncodedAudioPacketSource('aac') : null;
+		if (audioSource) output.addAudioTrack(audioSource);
+		await output.start();
+
+		const base = entries[0].timestamp;
+		let written = 0;
+		let firstVideo = true;
+		let firstAudio = true;
+		let canceled = false;
+		for (const entry of entries) {
+			if (abort.signal.aborted) {
+				canceled = true;
+				break;
+			}
+			const packet = new EncodedPacket(
+				entry.data,
+				entry.isKeyframe ? 'key' : 'delta',
+				Math.max(0, entry.timestamp - base),
+				entry.duration
+			);
+			if (entry.type === 'video' && videoSource) {
+				await videoSource.add(
+					packet,
+					firstVideo ? { decoderConfig: captureVideoDecoderConfig ?? undefined } : undefined
+				);
+				firstVideo = false;
+			} else if (entry.type === 'audio' && audioSource) {
+				await audioSource.add(
+					packet,
+					firstAudio ? { decoderConfig: captureAudioDecoderConfig ?? undefined } : undefined
+				);
+				firstAudio = false;
+			}
+			written++;
+			if (written % REPLAY_SAVE_PROGRESS_EVERY === 0 || written === entries.length) {
+				post({ type: 'replay-save-progress', chunksWritten: written, totalChunks: entries.length });
+			}
+		}
+		if (canceled) {
+			await output.cancel();
+			await deleteReplaySaveFile(saveFileName).catch(() => undefined);
+			post({ type: 'replay-save-canceled' });
+			return;
+		}
+		videoSource?.close();
+		audioSource?.close();
+		await output.finalize();
+
+		// Register the finalized file as a regular media source and append it to
+		// the timeline through the undoable mutation path (T4.5).
+		const file = await fileHandle.getFile();
+		const sourceId = makeSourceId();
+		const handle = await openMediaFile(file, sourceId);
+		sourceInputs.set(sourceId, handle);
+		const descriptor = sourceDescriptorFromHandle(sourceId, file, handle);
+		sourceDescriptors.set(sourceId, descriptor);
+		binSourceIds.add(sourceId);
+		await persistSourceBestEffort({ sourceId, descriptor, file });
+		if (!primaryHandle && handle.frameSource) {
+			primaryHandle = handle;
+		}
+		const placedHandle = handle;
+		const placed = commitTimelineMutation(
+			() => placeAsset(timeline, placedHandle, undefined, undefined),
+			{ prune: false }
+		);
+		if (placed) void computeWaveformsForSource(placedHandle);
+		postMediaAssets();
+		postSourceHealth(descriptor.health);
+		post({ type: 'replay-save-complete', sourceId, fileName: file.name });
+	} catch (error) {
+		if (saveFileName) {
+			await deleteReplaySaveFile(saveFileName).catch(() => undefined);
+		}
+		const message = errorMessage(error);
+		recordRecentError({
+			code: 'replay.save_failed',
+			subsystem: 'worker',
+			severity: 'error',
+			message
+		});
+		post({ type: 'replay-save-error', message });
+	} finally {
+		replaySaveAbort = null;
+	}
 }
 
 self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
@@ -4840,6 +5525,35 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 					}
 				]
 			});
+			break;
+		// Phase 46: Replay Buffer + Live Audio Chain
+		case 'replay-capture-stop':
+			requestCaptureStop();
+			break;
+		case 'replay-capture-transfer-streams':
+			handleCaptureTransferStreams(cmd.videoStream, cmd.audioStream, cmd.settings);
+			break;
+		case 'replay-save-last-n':
+			void handleReplaySaveLastN(cmd.nSeconds);
+			break;
+		case 'replay-save-cancel':
+			replaySaveAbort?.abort();
+			break;
+		case 'update-replay-buffer-config':
+			replayRing.updateConfig(cmd.config);
+			scheduleAutosave();
+			postReplayBufferState();
+			break;
+		case 'update-live-chain-config':
+			liveChainConfig = mergeLiveChainConfig(liveChainConfig, cmd.config);
+			capture?.chain?.setConfig(cloneLiveChainConfig(liveChainConfig));
+			scheduleAutosave();
+			postLiveChainState();
+			break;
+		case 'set-print-to-recording':
+			liveChainConfig = { ...liveChainConfig, printToRecording: cmd.enabled };
+			scheduleAutosave();
+			postLiveChainState();
 			break;
 		case 'publish-tap-start':
 			handlePublishTapStart(cmd.mode);

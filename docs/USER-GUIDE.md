@@ -244,6 +244,28 @@ Import, edit, and export caption tracks:
 - **Style**: Set preset, font size, color, background, burn-in, and visibility per track. Individual segments can override color and background.
 - **Export**: Export captions as SRT or VTT files.
 
+## Replay Buffer
+
+Continuously record a screen capture into a rolling buffer and save the last moments as a timeline clip — without interrupting the recording.
+
+- **Start Capture**: Open the **Replay Buffer** panel in the right sidebar and click **Start Capture**. Your browser shows its screen-share picker; choose a tab, window, or screen. Capture begins immediately and the panel shows a red **Recording** indicator with the elapsed time.
+- **Rolling buffer**: The newest 30 seconds (by default) are kept encoded in memory, oldest-first eviction. The fill bar shows how much of the buffer window is populated. Excess data beyond the memory budget spills to private browser storage (OPFS) automatically.
+- **Save Last N Seconds**: Click **Save Last 30s** at any time. The buffered range is finalized into an MP4, added to the Media Bin, and appended to the timeline as a regular clip — capture keeps running while this happens. Saving is undoable like any other timeline edit.
+- **Stop Capture**: Click **Stop Capture** (or use the browser's own "Stop sharing" control). The buffered media stays available for one final save until the next capture starts.
+- **Requirements**: Replay Buffer needs a recent Chromium browser with `MediaStreamTrackProcessor` and screen-capture support. It works even when cross-origin isolation is unavailable; only the Live Audio Chain below needs isolation. When unsupported, the panel explains why and disables its controls.
+
+Saved replay files are written to the app's private browser storage and registered like imported media. Buffer contents are discarded when a new capture session starts.
+
+## Live Audio Chain
+
+Process capture audio with a gate → compressor → limiter insert chain.
+
+- **Inserts**: The **Live Audio Chain** panel (right sidebar) shows three insert rows — **Gate**, **Compressor**, and **Limiter** — each with a power toggle and expandable parameter sliders (threshold, ratio, attack/release, and so on). A **Noise Suppression** slot is visible but reserved for a future update.
+- **Bypass**: Every insert defaults to bypassed. Bypassed inserts are a clean pass-through — they add no latency and do not alter the signal.
+- **Print chain to recording**: During an active capture, enable this toggle to bake the chain into the recorded audio. Processing runs in the pipeline worker as frames are encoded, so recordings are processed reliably even when the tab is backgrounded or monitor audio is muted. In this version the chain applies to the **recording only** — monitor output (what you hear live) stays unprocessed.
+- **Latency**: The panel header reports the chain's processing latency. The limiter's 5 ms lookahead is the only contributor; gate and compressor are zero-latency.
+- **Requirements**: The Live Audio Chain requires cross-origin isolation (the same requirement as full-performance playback). Chain settings persist with the project.
+
 ## Exporting
 
 ### Direct Export

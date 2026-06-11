@@ -2,8 +2,10 @@ import type {
 	CaptionTrackSnapshot,
 	ExportPresetDoc,
 	ExportSettings,
+	LiveAudioChainConfig,
 	NormalizedSourceTimingSnapshot,
 	PersistedQueueJob,
+	RingBufferConfig,
 	SourceColorHintsSnapshot,
 	SourceDescriptorSnapshot,
 	SourceFrameRateModeSnapshot,
@@ -42,7 +44,7 @@ import { cloneClipKeyframes, parseClipKeyframes } from './keyframes';
 import { cloneClipLut, parsePersistedClipLut } from './lut';
 import { parseExportPresetDoc } from './export-presets';
 
-export const PROJECT_SCHEMA_VERSION = 10;
+export const PROJECT_SCHEMA_VERSION = 11;
 const DURATION_MATCH_TOLERANCE_S = 0.25;
 const TIMING_MATCH_TOLERANCE_S = 0.05;
 
@@ -61,6 +63,8 @@ export interface ProjectDoc {
 	exportSettings?: ExportSettings;
 	exportPresets?: ExportPresetDoc[];
 	renderQueueHistory?: PersistedQueueJob[];
+	replayBufferConfig?: RingBufferConfig;
+	liveAudioChainConfig?: LiveAudioChainConfig;
 }
 
 export interface SerializeProjectOptions {
@@ -75,6 +79,8 @@ export interface SerializeProjectOptions {
 	exportSettings?: ExportSettings;
 	exportPresets?: readonly ExportPresetDoc[];
 	renderQueueHistory?: readonly PersistedQueueJob[];
+	replayBufferConfig?: RingBufferConfig;
+	liveAudioChainConfig?: LiveAudioChainConfig;
 }
 
 export type DeserializeProjectResult =
@@ -382,7 +388,23 @@ export function serializeProject(options: SerializeProjectOptions): ProjectDoc {
 			jobRange: { ...j.jobRange } as PersistedQueueJob['jobRange']
 		}));
 	}
+	if (options.replayBufferConfig) {
+		doc.replayBufferConfig = { ...options.replayBufferConfig };
+	}
+	if (options.liveAudioChainConfig) {
+		doc.liveAudioChainConfig = cloneLiveAudioChainConfig(options.liveAudioChainConfig);
+	}
 	return doc;
+}
+
+function cloneLiveAudioChainConfig(config: LiveAudioChainConfig): LiveAudioChainConfig {
+	return {
+		gate: { ...config.gate },
+		compressor: { ...config.compressor },
+		limiter: { ...config.limiter },
+		denoiserBypass: config.denoiserBypass,
+		printToRecording: config.printToRecording
+	};
 }
 
 function parseClip(value: unknown): TimelineClip | null {
@@ -1169,6 +1191,63 @@ function parseExportSettingsForQueue(value: unknown): ExportSettings | null {
 	return { preset, codec, container, width, height, fps, videoBitrate, range };
 }
 
+function parseRingBufferConfig(value: unknown): RingBufferConfig | undefined {
+	if (!isRecord(value)) return undefined;
+	const maxDurationS = finiteNumber(value.maxDurationS);
+	const maxMemoryBytes = finiteNumber(value.maxMemoryBytes);
+	const saveDurationS = finiteNumber(value.saveDurationS);
+	if (maxDurationS === null || maxMemoryBytes === null || saveDurationS === null) {
+		return undefined;
+	}
+	if (maxDurationS <= 0 || maxMemoryBytes <= 0 || saveDurationS <= 0) return undefined;
+	return { maxDurationS, maxMemoryBytes, saveDurationS };
+}
+
+function parseInsertNumbers<K extends string>(
+	value: unknown,
+	keys: readonly K[]
+): ({ bypass: boolean } & Record<K, number>) | undefined {
+	if (!isRecord(value) || typeof value.bypass !== 'boolean') return undefined;
+	const out = { bypass: value.bypass } as { bypass: boolean } & Record<K, number>;
+	for (const key of keys) {
+		const num = finiteNumber(value[key]);
+		if (num === null) return undefined;
+		out[key] = num as ({ bypass: boolean } & Record<K, number>)[K];
+	}
+	return out;
+}
+
+function parseLiveAudioChainConfig(value: unknown): LiveAudioChainConfig | undefined {
+	if (!isRecord(value)) return undefined;
+	const gate = parseInsertNumbers(value.gate, [
+		'thresholdDb',
+		'rangeDb',
+		'attackMs',
+		'holdMs',
+		'releaseMs'
+	]);
+	const compressor = parseInsertNumbers(value.compressor, [
+		'thresholdDb',
+		'ratio',
+		'attackMs',
+		'releaseMs',
+		'kneeDb',
+		'makeupGainDb'
+	]);
+	const limiter = parseInsertNumbers(value.limiter, ['ceilingDb', 'attackUs', 'releaseMs']);
+	if (!gate || !compressor || !limiter) return undefined;
+	if (typeof value.denoiserBypass !== 'boolean' || typeof value.printToRecording !== 'boolean') {
+		return undefined;
+	}
+	return {
+		gate,
+		compressor,
+		limiter,
+		denoiserBypass: value.denoiserBypass,
+		printToRecording: value.printToRecording
+	};
+}
+
 function deserializeV10(value: Record<string, unknown>): DeserializeProjectResult {
 	const result = deserializeV9(value);
 	if (!result.ok) return result;
@@ -1180,7 +1259,11 @@ function deserializeV10(value: Record<string, unknown>): DeserializeProjectResul
 			...result.doc,
 			schemaVersion: PROJECT_SCHEMA_VERSION,
 			exportPresets: exportPresets.length > 0 ? exportPresets : undefined,
-			renderQueueHistory: renderQueueHistory.length > 0 ? renderQueueHistory : undefined
+			renderQueueHistory: renderQueueHistory.length > 0 ? renderQueueHistory : undefined,
+			// v11 (Phase 46): optional configs; invalid/absent values fall back to
+			// factory defaults at the consumer, so v10 docs parse unchanged.
+			replayBufferConfig: parseRingBufferConfig(value.replayBufferConfig),
+			liveAudioChainConfig: parseLiveAudioChainConfig(value.liveAudioChainConfig)
 		}
 	};
 }
@@ -1212,6 +1295,9 @@ export function deserializeProject(value: unknown): DeserializeProjectResult {
 		case 9:
 			return deserializeV9(value);
 		case 10:
+		case 11:
+			// v11 adds replayBufferConfig + liveAudioChainConfig (Phase 46).
+			// Both fields are optional with factory defaults; v10 docs deserialize fine.
 			return deserializeV10(value);
 		default:
 			return { ok: false, reason: `Unsupported project schemaVersion ${schemaVersion}.` };
