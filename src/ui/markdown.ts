@@ -17,7 +17,7 @@ export function renderMarkdown(source: string): string {
 
 		// Fenced code block
 		if (/^```/.test(line)) {
-			const lang = line.slice(3).trim();
+			const lang = escapeHtml(line.slice(3).trim());
 			html.push(`<pre><code class="${lang ? `language-${lang}` : ''}">`);
 			i++;
 			while (i < lines.length && !/^```/.test(lines[i]!)) {
@@ -163,7 +163,8 @@ function renderInline(text: string): string {
 
 	// Links [text](url) — sanitize URL to prevent XSS
 	out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_full, linkText: string, url: string) => {
-		const safeUrl = isSafeUrl(url.trim()) ? url : '#';
+		const trimmedUrl = url.trim();
+		const safeUrl = isSafeUrl(trimmedUrl) ? trimmedUrl : '#';
 		return `<a href="${safeUrl}" target="_blank" rel="noopener">${linkText}</a>`;
 	});
 
@@ -174,7 +175,7 @@ function renderInline(text: string): string {
 }
 
 function isSafeUrl(url: string): boolean {
-	return /^(https?:|mailto:|tel:|#|\/|\.\/|\.\.\/)/i.test(url);
+	return /^(https?:\/\/|mailto:|tel:|#|\/|\.\/|\.\.\/)/i.test(url);
 }
 
 function escapeHtml(text: string): string {
