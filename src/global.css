@@ -307,6 +307,7 @@ body {
 	border-radius: var(--radius-xs);
 	background: rgb(5 6 16 / 62%);
 	overflow: hidden;
+	isolation: isolate;
 }
 
 .meter-rms,

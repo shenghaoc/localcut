@@ -11,11 +11,11 @@ function MeterBar(props: { label: string; peak: () => number; rms: () => number 
 			<div class="meter-bar">
 				<div
 					class="meter-rms"
-					style={{ transform: `scaleY(${meterHeightPercent(props.rms()) / 100})` }}
+					style={{ transform: `scaleY(${(meterHeightPercent(props.rms()) || 0) / 100})` }}
 				/>
 				<div
 					class="meter-peak"
-					style={{ transform: `scaleY(${meterHeightPercent(props.peak()) / 100})` }}
+					style={{ transform: `scaleY(${(meterHeightPercent(props.peak()) || 0) / 100})` }}
 				/>
 			</div>
 			<span class="meter-label">{props.label}</span>
