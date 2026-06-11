@@ -294,12 +294,12 @@ A brickwall lookahead limiter on the master bus. Prevents peaks from exceeding t
 
 With all inserts active at 48 kHz / 128-sample quantum:
 
-| Stage | Latency |
-|---|---|
-| AudioWorklet quantum | 2.67 ms |
-| Denoiser ring | 10.00 ms |
-| Limiter lookahead | 5.00 ms |
-| **Total** | **≈ 17.67 ms** |
+| Stage                | Latency        |
+| -------------------- | -------------- |
+| AudioWorklet quantum | 2.67 ms        |
+| Denoiser ring        | 10.00 ms       |
+| Limiter lookahead    | 5.00 ms        |
+| **Total**            | **≈ 17.67 ms** |
 
 When all inserts are bypassed, latency is 0 ms (pass-through).
 

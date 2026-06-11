@@ -124,6 +124,10 @@ export interface TimelineExportOptions {
 	onProgress: (progress: ExportProgress) => void;
 	masterGain?: number;
 	transitions?: readonly AudioTransitionCut[];
+	/** Phase 36: voice cleanup settings for master-bus inserts during export. */
+	voiceCleanupSettings?: import('./voice-cleanup/voice-cleanup-processor').MasterCleanupChainParams;
+	/** Phase 36: persistent cleanup state (gate/limiter DSP state) across blocks. */
+	cleanupState?: import('./voice-cleanup/voice-cleanup-processor').VoiceCleanupChainState;
 	/** Phase 13 video transitions — passed through to resolveAllAt for window blending. */
 	videoTransitions?: readonly import('./timeline').TimelineTransition[];
 	/** Resolves a title clip's cached raster texture (Phase 14); rasters on the
@@ -482,6 +486,10 @@ function nextClipStart(track: TimelineTrack, time: number): number {
 export interface MixAudioWindowOptions {
 	masterGain?: number;
 	transitions?: readonly AudioTransitionCut[];
+	/** If provided, master-bus inserts (gate, gain, limiter) are applied after mixing. */
+	voiceCleanup?: import('./voice-cleanup/voice-cleanup-processor').MasterCleanupChainParams;
+	/** Persistent voice cleanup state across blocks (gate/limiter DSP state). */
+	cleanupState?: import('./voice-cleanup/voice-cleanup-processor').VoiceCleanupChainState;
 }
 
 export async function mixAudioWindow(
@@ -730,7 +738,21 @@ export async function mixAudioWindow(
 		}
 	}
 
-	return applyMasterAndClamp(out, masterGain);
+	const mixed = applyMasterAndClamp(out, masterGain);
+
+	// Apply voice cleanup master-bus inserts (gate → normalisation → limiter)
+	if (options.voiceCleanup && options.cleanupState) {
+		const { applyMasterCleanupChain } = await import('./voice-cleanup/voice-cleanup-processor');
+		return applyMasterCleanupChain(
+			mixed,
+			channels,
+			options.voiceCleanup,
+			options.cleanupState,
+			sampleRate
+		);
+	}
+
+	return mixed;
 }
 
 function codecConfig(candidateCodec: ExportVideoCodec): (typeof CODEC_CANDIDATES)[number] {
@@ -990,7 +1012,9 @@ async function encodeAudioRange(
 			plan.audioChannels,
 			{
 				masterGain: options.masterGain,
-				transitions: options.transitions
+				transitions: options.transitions,
+				voiceCleanup: options.voiceCleanupSettings,
+				cleanupState: options.cleanupState
 			}
 		);
 		const sample = new AudioSample({

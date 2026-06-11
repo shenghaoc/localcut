@@ -104,7 +104,7 @@ function SliderControl(props: {
 const LUFS_TARGETS = [
 	{ label: '−14 LUFS (streaming)', value: -14 },
 	{ label: '−16 LUFS (podcast)', value: -16 },
-	{ label: '−23 LUFS (broadcast)', value: -23 },
+	{ label: '−23 LUFS (broadcast)', value: -23 }
 ];
 
 export function VoiceCleanupPanel(props: VoiceCleanupPanelProps) {
@@ -174,8 +174,8 @@ export function VoiceCleanupPanel(props: VoiceCleanupPanelProps) {
 					>
 						<div class="denoiser-tracks">
 							<p class="insert-hint">
-								Enable per-track denoising. The WASM RNNoise denoiser
-								runs on the monitor bus and export chain.
+								Enable per-track denoising. The WASM RNNoise denoiser runs on the monitor bus and
+								export chain.
 							</p>
 							<For each={[...props.trackNames.entries()]}>
 								{([trackId, name]) => (
@@ -242,7 +242,10 @@ export function VoiceCleanupPanel(props: VoiceCleanupPanelProps) {
 									max={-6}
 									step={0.5}
 									unit=" LUFS"
-									onChange={setCustomTargetLufs}
+									onChange={(v) => {
+										setCustomTargetLufs(v);
+										updateSettings({ normalisationTargetLufs: v });
+									}}
 								/>
 							</Show>
 							<div class="analysis-actions">
@@ -252,11 +255,7 @@ export function VoiceCleanupPanel(props: VoiceCleanupPanelProps) {
 										<div class="analysis-progress">
 											<progress value={props.analysisProgress} max={1} />
 											<span>{(props.analysisProgress * 100).toFixed(0)}%</span>
-											<Button
-												variant="secondary"
-												size="sm"
-												onClick={props.onCancelAnalysis}
-											>
+											<Button variant="secondary" size="sm" onClick={props.onCancelAnalysis}>
 												Cancel
 											</Button>
 										</div>
@@ -289,9 +288,7 @@ export function VoiceCleanupPanel(props: VoiceCleanupPanelProps) {
 									<Button
 										variant="default"
 										size="sm"
-										onClick={() =>
-											props.onApplyNormalisation(props.proposedGainDb)
-										}
+										onClick={() => props.onApplyNormalisation(props.proposedGainDb)}
 									>
 										Apply ({props.proposedGainDb >= 0 ? '+' : ''}
 										{props.proposedGainDb.toFixed(1)} dB)

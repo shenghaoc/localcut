@@ -431,7 +431,7 @@ function cloneVoiceCleanupSettings(settings: VoiceCleanupSettings): VoiceCleanup
 		normaliseGainDb: settings.normaliseGainDb,
 		limiterCeilingDbtp: settings.limiterCeilingDbtp,
 		gateParams: { ...settings.gateParams },
-		limiterParams: { ...settings.limiterParams },
+		limiterParams: { ...settings.limiterParams }
 	};
 }
 
@@ -1320,19 +1320,37 @@ function parseLiveAudioChainConfig(value: unknown): LiveAudioChainConfig | undef
 function parseVoiceCleanupSettings(value: unknown): VoiceCleanupSettings | undefined {
 	if (!isRecord(value)) return undefined;
 	const gateParams = parseInsertNumbers(value.gateParams, [
-		'thresholdDb', 'rangeDb', 'attackMs', 'holdMs', 'releaseMs'
+		'thresholdDb',
+		'rangeDb',
+		'attackMs',
+		'holdMs',
+		'releaseMs'
 	]);
-	const limiterParams = parseInsertNumbers(value.limiterParams, ['ceilingDb', 'attackUs', 'releaseMs']);
+	const limiterParams = parseInsertNumbers(value.limiterParams, [
+		'ceilingDb',
+		'attackUs',
+		'releaseMs'
+	]);
 	if (!gateParams || !limiterParams) return undefined;
 	const normalisationTargetLufs = finiteNumber(value.normalisationTargetLufs);
 	const normaliseGainDb = finiteNumber(value.normaliseGainDb);
 	const limiterCeilingDbtp = finiteNumber(value.limiterCeilingDbtp);
-	if (normalisationTargetLufs === null || normaliseGainDb === null || limiterCeilingDbtp === null) return undefined;
+	if (normalisationTargetLufs === null || normaliseGainDb === null || limiterCeilingDbtp === null)
+		return undefined;
 	let denoiserEnabledTracks: string[] = DEFAULT_VOICE_CLEANUP_SETTINGS.denoiserEnabledTracks;
 	if (Array.isArray(value.denoiserEnabledTracks)) {
-		denoiserEnabledTracks = value.denoiserEnabledTracks.filter((t): t is string => typeof t === 'string');
+		denoiserEnabledTracks = value.denoiserEnabledTracks.filter(
+			(t): t is string => typeof t === 'string'
+		);
 	}
-	return { denoiserEnabledTracks, normalisationTargetLufs, normaliseGainDb, limiterCeilingDbtp, gateParams, limiterParams };
+	return {
+		denoiserEnabledTracks,
+		normalisationTargetLufs,
+		normaliseGainDb,
+		limiterCeilingDbtp,
+		gateParams,
+		limiterParams
+	};
 }
 
 function deserializeV10(value: Record<string, unknown>): DeserializeProjectResult {

@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { LoudnessAnalyser, normalisationGain } from './ebu-r128';
 
-function generateSine(freq: number, sampleRate: number, durationS: number, amplitude = 1): Float32Array {
+function generateSine(
+	freq: number,
+	sampleRate: number,
+	durationS: number,
+	amplitude = 1
+): Float32Array {
 	const samples = Math.round(sampleRate * durationS);
 	const buf = new Float32Array(samples);
 	for (let i = 0; i < samples; i++) {
-		buf[i] = amplitude * Math.sin(2 * Math.PI * freq * i / sampleRate);
+		buf[i] = amplitude * Math.sin((2 * Math.PI * freq * i) / sampleRate);
 	}
 	return buf;
 }

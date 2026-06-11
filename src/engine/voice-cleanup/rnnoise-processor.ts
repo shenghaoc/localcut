@@ -50,7 +50,7 @@ export async function loadRnnoise(): Promise<{ createInstance(): RnnoiseInstance
 	return {
 		createInstance(): RnnoiseInstance {
 			return createRnnoiseInstance(mod);
-		},
+		}
 	};
 }
 
@@ -63,7 +63,7 @@ async function loadRnnoiseModule(): Promise<RnnoiseModule> {
 		const b64Mod = await import('./rnnoise-wasm-b64');
 		b64 = b64Mod.RNNOISE_WASM_B64;
 		const manifestMod = await import('./rnnoise-wasm-manifest.json', {
-			with: { type: 'json' },
+			with: { type: 'json' }
 		});
 		manifest = (manifestMod as { default: { sizeBytes: number; checksum: string } }).default;
 	} catch (err) {
@@ -105,7 +105,7 @@ async function loadRnnoiseModule(): Promise<RnnoiseModule> {
 	const processFrame = exports['rnnoise_process_frame'] as (
 		state: number,
 		out: number,
-		inp: number,
+		inp: number
 	) => number;
 	const destroy = exports['rnnoise_destroy'] as (state: number) => number;
 
@@ -124,9 +124,14 @@ function createRnnoiseInstance(mod: RnnoiseModule): RnnoiseInstance {
 
 	// Allocate two 480-float regions in the WASM heap (input + output)
 	const allocSize = FRAME_SIZE * 4 * 2; // both input and output frames
-	const inPtr = mod.instance.exports['malloc']
-		? (mod.instance.exports['malloc'] as (size: number) => number)(allocSize)
-		: statePtr + 1024; // fallback: offset from state
+	const malloc = mod.instance.exports['malloc'] as ((size: number) => number) | undefined;
+	if (!malloc) {
+		throw new RnnoiseLoadError('malloc is not exported by the WASM module');
+	}
+	const inPtr = malloc(allocSize);
+	if (!inPtr) {
+		throw new RnnoiseLoadError('Failed to allocate memory in WASM heap');
+	}
 	const outPtr = inPtr + FRAME_SIZE * 4;
 
 	let destroyed = false;
@@ -153,79 +158,143 @@ function createRnnoiseInstance(mod: RnnoiseModule): RnnoiseInstance {
 					(mod.instance.exports['free'] as (ptr: number) => void)(inPtr);
 				}
 			}
-		},
+		}
 	};
 }
 
 /**
- * Frame-adaptation ring: buffers input chunks until 480 samples are available,
- * then calls processFrame and emits 480 samples. Processes ALL complete
- * 480-sample frames in a single push() call to prevent accumulator growth
- * when input blocks are larger than 480 samples (e.g. 1024-sample export
- * blocks). Stateful.
+ * Frame-adaptation ring with fixed-size I/O guarantee.
+ *
+ * push(N) always returns exactly N denoised samples by maintaining both an
+ * input accumulator (feeds 480-sample frames to the denoiser) and an output
+ * ring buffer (pre-primed with 480 silence samples to compensate for the
+ * denoiser's one-frame latency). This guarantees rate-matched I/O for any
+ * block size (128-sample worklet quanta, 1024-sample export blocks, etc.).
  */
 export class RnnoiseRing {
 	private readonly instance: RnnoiseInstance;
-	private accumulator: Float32Array;
-	private accLen = 0;
+	private inputBuffer: Float32Array;
+	private inputWritePos = 0;
+	private inputReadPos = 0;
+	private inputCount = 0;
+
+	private outputBuffer: Float32Array;
+	private outputReadPos = 0;
+	private outputWritePos = 0;
+	private outputCount = 0;
 
 	constructor(instance: RnnoiseInstance) {
 		this.instance = instance;
-		this.accumulator = new Float32Array(FRAME_SIZE * 2); // room for partial + new
+		this.inputBuffer = new Float32Array(FRAME_SIZE * 4);
+		this.outputBuffer = new Float32Array(FRAME_SIZE * 4);
+		// Pre-prime output with one frame of silence to compensate denoiser latency.
+		// The first real output appears after the first 480 input samples are processed.
+		this.outputWritePos = FRAME_SIZE;
+		this.outputCount = FRAME_SIZE;
 	}
 
 	/**
-	 * Push a mono block of any size. Returns all denoised 480-sample frames
-	 * produced (may be empty, 480, 960, etc. samples).
+	 * Push a mono block of any size. Returns exactly `input.length` denoised
+	 * samples, rate-matched via the internal output ring buffer.
 	 * Caller must not modify the returned buffer.
 	 */
 	push(input: Float32Array): Float32Array {
-		// Append input to accumulator
-		const totalLen = this.accLen + input.length;
-		if (totalLen > this.accumulator.length) {
-			const grown = new Float32Array(totalLen + FRAME_SIZE);
-			grown.set(this.accumulator.subarray(0, this.accLen));
-			this.accumulator = grown;
+		this.ensureInputCapacity(input.length);
+
+		// Append input to ring buffer
+		for (let i = 0; i < input.length; i++) {
+			this.inputBuffer[this.inputWritePos] = input[i];
+			this.inputWritePos = (this.inputWritePos + 1) % this.inputBuffer.length;
 		}
-		this.accumulator.set(input, this.accLen);
-		this.accLen = totalLen;
+		this.inputCount += input.length;
 
 		// Process all complete 480-sample frames
-		const outputParts: Float32Array[] = [];
-		while (this.accLen >= FRAME_SIZE) {
-			const frameIn = this.accumulator.subarray(0, FRAME_SIZE);
+		while (this.inputCount >= FRAME_SIZE) {
+			this.ensureOutputCapacity(FRAME_SIZE);
+			const frameIn = new Float32Array(FRAME_SIZE);
+			for (let i = 0; i < FRAME_SIZE; i++) {
+				frameIn[i] = this.inputBuffer[this.inputReadPos];
+				this.inputReadPos = (this.inputReadPos + 1) % this.inputBuffer.length;
+			}
+			this.inputCount -= FRAME_SIZE;
+
 			const frameOut = new Float32Array(FRAME_SIZE);
 			this.instance.processFrame(frameIn, frameOut);
-			outputParts.push(frameOut);
 
-			// Shift remaining samples to front
-			this.accLen -= FRAME_SIZE;
-			if (this.accLen > 0) {
-				this.accumulator.copyWithin(0, FRAME_SIZE, FRAME_SIZE + this.accLen);
+			for (let i = 0; i < FRAME_SIZE; i++) {
+				this.outputBuffer[this.outputWritePos] = frameOut[i];
+				this.outputWritePos = (this.outputWritePos + 1) % this.outputBuffer.length;
 			}
+			this.outputCount += FRAME_SIZE;
 		}
 
-		if (outputParts.length === 0) return new Float32Array(0);
-		if (outputParts.length === 1) return outputParts[0];
-
-		// Concatenate all output frames
-		const totalOutput = outputParts.length * FRAME_SIZE;
-		const result = new Float32Array(totalOutput);
-		for (let i = 0; i < outputParts.length; i++) {
-			result.set(outputParts[i], i * FRAME_SIZE);
+		// Read exactly input.length samples from output ring
+		const result = new Float32Array(input.length);
+		const readLen = Math.min(input.length, this.outputCount);
+		for (let i = 0; i < readLen; i++) {
+			result[i] = this.outputBuffer[this.outputReadPos];
+			this.outputReadPos = (this.outputReadPos + 1) % this.outputBuffer.length;
 		}
+		this.outputCount -= readLen;
+		// Any remainder in result stays 0 (latency — output not yet available)
+
 		return result;
 	}
 
 	/** Drain remaining buffered samples (call at end of stream). */
 	drain(): Float32Array {
-		if (this.accLen === 0) return new Float32Array(0);
-		// Zero-pad to 480
-		const padded = new Float32Array(FRAME_SIZE);
-		padded.set(this.accumulator.subarray(0, this.accLen));
-		this.accLen = 0;
-		const output = new Float32Array(FRAME_SIZE);
-		this.instance.processFrame(padded, output);
-		return output;
+		// Process any remaining input as a final zero-padded frame
+		if (this.inputCount > 0) {
+			const frameIn = new Float32Array(FRAME_SIZE);
+			for (let i = 0; i < this.inputCount; i++) {
+				frameIn[i] = this.inputBuffer[this.inputReadPos];
+				this.inputReadPos = (this.inputReadPos + 1) % this.inputBuffer.length;
+			}
+			this.inputCount = 0;
+
+			this.ensureOutputCapacity(FRAME_SIZE);
+			const frameOut = new Float32Array(FRAME_SIZE);
+			this.instance.processFrame(frameIn, frameOut);
+			for (let i = 0; i < FRAME_SIZE; i++) {
+				this.outputBuffer[this.outputWritePos] = frameOut[i];
+				this.outputWritePos = (this.outputWritePos + 1) % this.outputBuffer.length;
+			}
+			this.outputCount += FRAME_SIZE;
+		}
+
+		// Return all remaining output
+		const result = new Float32Array(this.outputCount);
+		for (let i = 0; i < result.length; i++) {
+			result[i] = this.outputBuffer[this.outputReadPos];
+			this.outputReadPos = (this.outputReadPos + 1) % this.outputBuffer.length;
+		}
+		this.outputCount = 0;
+		return result;
+	}
+
+	private ensureInputCapacity(additionalSamples: number): void {
+		const needed = this.inputCount + additionalSamples;
+		if (needed <= this.inputBuffer.length) return;
+		const newSize = Math.max(this.inputBuffer.length * 2, needed + FRAME_SIZE);
+		const newBuf = new Float32Array(newSize);
+		for (let i = 0; i < this.inputCount; i++) {
+			newBuf[i] = this.inputBuffer[(this.inputReadPos + i) % this.inputBuffer.length];
+		}
+		this.inputBuffer = newBuf;
+		this.inputReadPos = 0;
+		this.inputWritePos = this.inputCount;
+	}
+
+	private ensureOutputCapacity(additionalSamples: number): void {
+		const needed = this.outputCount + additionalSamples;
+		if (needed <= this.outputBuffer.length) return;
+		const newSize = Math.max(this.outputBuffer.length * 2, needed + FRAME_SIZE);
+		const newBuf = new Float32Array(newSize);
+		for (let i = 0; i < this.outputCount; i++) {
+			newBuf[i] = this.outputBuffer[(this.outputReadPos + i) % this.outputBuffer.length];
+		}
+		this.outputBuffer = newBuf;
+		this.outputReadPos = 0;
+		this.outputWritePos = this.outputCount;
 	}
 }

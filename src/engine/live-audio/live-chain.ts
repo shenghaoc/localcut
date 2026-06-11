@@ -57,7 +57,7 @@ export function writeChainParamsToSab(sab: Float32Array, config: LiveAudioChainC
 export function writeDenoiserBypassToSab(
 	sab: Float32Array,
 	trackIds: readonly string[],
-	enabledTracks: readonly string[],
+	enabledTracks: readonly string[]
 ): void {
 	let mask0 = 0; // tracks 0–15
 	let mask1 = 0; // tracks 16–31

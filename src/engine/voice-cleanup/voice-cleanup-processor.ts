@@ -11,11 +11,7 @@
 
 import type { GateParams, LimiterParams } from '../../protocol';
 import { processGate, type GateState, createGateState } from '../live-audio/gate';
-import {
-	processLimiter,
-	type LimiterState,
-	createLimiterState,
-} from '../live-audio/limiter';
+import { processLimiter, type LimiterState, createLimiterState } from '../live-audio/limiter';
 import { applyMasterAndClamp } from '../audio-mix';
 import type { RnnoiseRing } from './rnnoise-processor';
 
@@ -29,7 +25,7 @@ export function createVoiceCleanupChainState(): VoiceCleanupChainState {
 	return {
 		denoiserRings: new Map(),
 		gateState: createGateState(),
-		limiterState: createLimiterState(),
+		limiterState: createLimiterState()
 	};
 }
 
@@ -41,20 +37,14 @@ export function createVoiceCleanupChainState(): VoiceCleanupChainState {
 export function denoiseTrackPcm(
 	trackId: string,
 	monoPcm: Float32Array,
-	state: VoiceCleanupChainState,
+	state: VoiceCleanupChainState
 ): void {
 	const ring = state.denoiserRings.get(trackId);
 	if (!ring) return; // denoiser not enabled for this track
 
+	// push() now returns exactly monoPcm.length samples (rate-matched I/O)
 	const denoised = ring.push(monoPcm);
-	const copyLen = Math.min(denoised.length, monoPcm.length);
-	if (copyLen > 0) {
-		monoPcm.set(denoised.subarray(0, copyLen));
-	}
-	// Zero-fill any remainder (denoiser latency means first blocks may be shorter)
-	if (copyLen < monoPcm.length) {
-		monoPcm.fill(0, copyLen);
-	}
+	monoPcm.set(denoised);
 }
 
 export interface MasterCleanupChainParams {
@@ -75,7 +65,7 @@ export function applyMasterCleanupChain(
 	_channels: number,
 	params: MasterCleanupChainParams,
 	state: VoiceCleanupChainState,
-	sampleRate: number,
+	sampleRate: number
 ): Float32Array {
 	// Gate insert (handles bypass internally via params.bypass)
 	let buf = processGate(pcm, params.gateParams, state.gateState, sampleRate);

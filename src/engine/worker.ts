@@ -1945,8 +1945,10 @@ async function handleNewProject(): Promise<void> {
 	if (capture) requestCaptureStop();
 	replayRing.updateConfig({ ...DEFAULT_RING_BUFFER_CONFIG });
 	liveChainConfig = cloneLiveChainConfig(DEFAULT_LIVE_AUDIO_CHAIN_CONFIG);
+	voiceCleanupSettings = { ...DEFAULT_VOICE_CLEANUP_SETTINGS };
 	postReplayBufferState();
 	postLiveChainState();
+	postVoiceCleanupState();
 	ensureClockAndTimeline();
 	postMediaAssets();
 	postHistoryState();
@@ -4355,6 +4357,8 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
 		if (renderer) {
 			const outputHandle = cmd.output;
 			if (!outputHandle) throw new Error('Accelerated export requires a file destination.');
+			const { createVoiceCleanupChainState } =
+				await import('./voice-cleanup/voice-cleanup-processor');
 			const result = await exportTimeline({
 				timeline: exportTimelineSnapshot,
 				sources: sourceInputs,
@@ -4367,6 +4371,13 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
 				masterGain,
 				transitions: audioTransitions,
 				videoTransitions: transitions,
+				voiceCleanupSettings: {
+					normaliseGainDb: voiceCleanupSettings.normaliseGainDb,
+					limiterCeilingDbtp: voiceCleanupSettings.limiterCeilingDbtp,
+					gateParams: voiceCleanupSettings.gateParams,
+					limiterParams: voiceCleanupSettings.limiterParams
+				},
+				cleanupState: createVoiceCleanupChainState(),
 				// Title layers composite from the cached raster; `ensure` (re)rasters once
 				// per title on the cold export path, never per frame.
 				titleTextureFor: (clip) =>
@@ -4422,6 +4433,8 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
 				projectDisplayName()
 					.replace(/[^a-z0-9._-]+/gi, '-')
 					.replace(/^-+|-+$/g, '') || 'localcut-reduced';
+			const { createVoiceCleanupChainState } =
+				await import('./voice-cleanup/voice-cleanup-processor');
 			const result = await exportTimelineReduced({
 				timeline: exportTimelineSnapshot,
 				sources: sourceInputs,
@@ -4433,6 +4446,13 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
 				onProgress: (progress) => post({ type: 'export-progress', progress }),
 				masterGain,
 				transitions: audioTransitions,
+				voiceCleanupSettings: {
+					normaliseGainDb: voiceCleanupSettings.normaliseGainDb,
+					limiterCeilingDbtp: voiceCleanupSettings.limiterCeilingDbtp,
+					gateParams: voiceCleanupSettings.gateParams,
+					limiterParams: voiceCleanupSettings.limiterParams
+				},
+				cleanupState: createVoiceCleanupChainState(),
 				hasVideoTransitions: transitions.length > 0,
 				overlayTitleLayersAt: (timelineTime) =>
 					activeCaptionLayersAt(exportCaptionTracksSnapshot, timelineTime, (editPathId) =>
@@ -4681,6 +4701,8 @@ async function runQueueJob(job: RenderQueueJob): Promise<void> {
 			getTimelineDuration(exportTimelineSnapshot)
 		);
 
+		const { createVoiceCleanupChainState } =
+			await import('./voice-cleanup/voice-cleanup-processor');
 		await exportTimeline({
 			timeline: exportTimelineSnapshot,
 			sources: sourceInputs,
@@ -4702,6 +4724,13 @@ async function runQueueJob(job: RenderQueueJob): Promise<void> {
 			},
 			masterGain,
 			transitions: audioTransitions,
+			voiceCleanupSettings: {
+				normaliseGainDb: voiceCleanupSettings.normaliseGainDb,
+				limiterCeilingDbtp: voiceCleanupSettings.limiterCeilingDbtp,
+				gateParams: voiceCleanupSettings.gateParams,
+				limiterParams: voiceCleanupSettings.limiterParams
+			},
+			cleanupState: createVoiceCleanupChainState(),
 			titleTextureFor: (clip) =>
 				clip.title ? (titleCache?.ensure(clip.id, clip.title) ?? null) : null,
 			overlayTextureLayersAt: (timelineTime) => {
@@ -4835,9 +4864,7 @@ async function handleVoiceCleanupAnalyseLoudness(
 	const sampleRate = audioRing
 		? Atomics.load(audioRing.header, RingHeader.SAMPLE_RATE) || 48_000
 		: 48_000;
-	const channels = audioRing
-		? Math.max(1, Atomics.load(audioRing.header, RingHeader.CHANNELS))
-		: 2;
+	const channels = audioRing ? Math.max(1, Atomics.load(audioRing.header, RingHeader.CHANNELS)) : 2;
 
 	try {
 		const { analyseLoudness } = await import('./voice-cleanup/loudness-analysis');
@@ -4848,21 +4875,21 @@ async function handleVoiceCleanupAnalyseLoudness(
 				sampleRate,
 				channels,
 				timelineDurationS: durationS,
-				targetLufs: cmd.targetLufs,
+				targetLufs: cmd.targetLufs
 			},
 			(fraction) => {
 				post({
 					type: 'voice-cleanup-analysis-progress',
 					fraction,
-					currentWindowS: fraction * durationS,
+					currentWindowS: fraction * durationS
 				});
 			},
-			signal,
+			signal
 		);
 		post({
 			type: 'voice-cleanup-analysis-result',
 			measuredLufs: result.measuredLufs,
-			normalisationGainDb: result.normalisationGainDb,
+			normalisationGainDb: result.normalisationGainDb
 		});
 	} catch (err) {
 		if (err instanceof DOMException && err.name === 'AbortError') {
@@ -4870,7 +4897,7 @@ async function handleVoiceCleanupAnalyseLoudness(
 		} else {
 			post({
 				type: 'voice-cleanup-analysis-error',
-				message: err instanceof Error ? err.message : String(err),
+				message: err instanceof Error ? err.message : String(err)
 			});
 		}
 	} finally {
@@ -4880,13 +4907,15 @@ async function handleVoiceCleanupAnalyseLoudness(
 
 function handleVoiceCleanupCancelAnalysis(): void {
 	analysisAbortController?.abort();
-	analysisAbortController = null;
+	// Don't clear the controller here — the running analysis handler's finally
+	// block will clear it. This avoids a race where a new analysis starts before
+	// the old one has observed the abort.
 }
 
 function handleVoiceCleanupApplyNormalisation(normalisationGainDb: number): void {
 	voiceCleanupSettings = { ...voiceCleanupSettings, normaliseGainDb: normalisationGainDb };
 	scheduleAutosave();
-	post({ type: 'voice-cleanup-analysis-result', measuredLufs: 0, normalisationGainDb });
+	post({ type: 'voice-cleanup-applied', normalisationGainDb });
 }
 
 function handleVoiceCleanupUpdateSettings(settings: VoiceCleanupSettings): void {
@@ -4963,6 +4992,10 @@ function postLiveChainState(): void {
 	post({ type: 'live-chain-latency', latencyMs: chainLatencyS(liveChainConfig) * 1000 });
 }
 
+function postVoiceCleanupState(): void {
+	post({ type: 'voice-cleanup-settings', settings: { ...voiceCleanupSettings } });
+}
+
 /** Applies (or defaults) the persisted Phase 46/36 configs from a project doc. */
 function applyProjectPhase46Config(doc: ProjectDoc): void {
 	if (capture) requestCaptureStop();
@@ -4976,6 +5009,7 @@ function applyProjectPhase46Config(doc: ProjectDoc): void {
 		: { ...DEFAULT_VOICE_CLEANUP_SETTINGS };
 	postReplayBufferState();
 	postLiveChainState();
+	postVoiceCleanupState();
 }
 
 function queueSpillWrite(entries: RingBufferEntry[], range: SpillRange): void {

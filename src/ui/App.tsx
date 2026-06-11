@@ -70,11 +70,7 @@ import { RenderQueuePanel } from './RenderQueuePanel';
 import { ReplayBufferPanel } from './ReplayBufferPanel';
 import { LiveAudioChainPanel } from './LiveAudioChainPanel';
 import { VoiceCleanupPanel } from './VoiceCleanupPanel';
-import {
-	probeMediaStreamTrackProcessor,
-	startCapture,
-	stopCaptureStreams
-} from './capture-bridge';
+import { probeMediaStreamTrackProcessor, startCapture, stopCaptureStreams } from './capture-bridge';
 import { BundleDialog } from './BundleDialog';
 import { InterchangeMenu } from './InterchangeMenu';
 import { Button, buttonVariants } from './components/button';
@@ -395,7 +391,9 @@ export function App() {
 	const [voiceCleanupSettings, setVoiceCleanupSettings] = createSignal<VoiceCleanupSettings>(
 		DEFAULT_VOICE_CLEANUP_SETTINGS
 	);
-	const [voiceCleanupAnalysisState, setVoiceCleanupAnalysisState] = createSignal<'idle' | 'running' | 'done' | 'error'>('idle');
+	const [voiceCleanupAnalysisState, setVoiceCleanupAnalysisState] = createSignal<
+		'idle' | 'running' | 'done' | 'error'
+	>('idle');
 	const [voiceCleanupAnalysisProgress, setVoiceCleanupAnalysisProgress] = createSignal(0);
 	const [voiceCleanupMeasuredLufs, setVoiceCleanupMeasuredLufs] = createSignal(0);
 	const [voiceCleanupProposedGainDb, setVoiceCleanupProposedGainDb] = createSignal(0);
@@ -1435,6 +1433,12 @@ export function App() {
 			case 'voice-cleanup-analysis-error':
 				setVoiceCleanupAnalysisState('error');
 				setVoiceCleanupAnalysisError(msg.message);
+				break;
+			case 'voice-cleanup-applied':
+				setVoiceCleanupSettings((s) => ({ ...s, normaliseGainDb: msg.normalisationGainDb }));
+				break;
+			case 'voice-cleanup-settings':
+				setVoiceCleanupSettings(msg.settings);
 				break;
 			case 'error':
 				setImporting(false);

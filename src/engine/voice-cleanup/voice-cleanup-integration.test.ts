@@ -3,15 +3,20 @@ import { LoudnessAnalyser, normalisationGain } from './ebu-r128';
 import {
 	createVoiceCleanupChainState,
 	applyMasterCleanupChain,
-	type MasterCleanupChainParams,
+	type MasterCleanupChainParams
 } from './voice-cleanup-processor';
 import { DEFAULT_GATE_PARAMS, DEFAULT_LIMITER_PARAMS } from '../../protocol';
 
-function generateSine(freq: number, sampleRate: number, durationS: number, amplitude = 1): Float32Array {
+function generateSine(
+	freq: number,
+	sampleRate: number,
+	durationS: number,
+	amplitude = 1
+): Float32Array {
 	const samples = Math.round(sampleRate * durationS);
 	const buf = new Float32Array(samples);
 	for (let i = 0; i < samples; i++) {
-		buf[i] = amplitude * Math.sin(2 * Math.PI * freq * i / sampleRate);
+		buf[i] = amplitude * Math.sin((2 * Math.PI * freq * i) / sampleRate);
 	}
 	return buf;
 }
@@ -44,13 +49,13 @@ describe('voice-cleanup integration', () => {
 			normaliseGainDb: 0,
 			limiterCeilingDbtp: -1,
 			gateParams: { ...DEFAULT_GATE_PARAMS, bypass: true },
-			limiterParams: { ...DEFAULT_LIMITER_PARAMS, bypass: true },
+			limiterParams: { ...DEFAULT_LIMITER_PARAMS, bypass: true }
 		};
 		// Create stereo interleaved buffer (48000 samples = 1 second)
 		const pcm = new Float32Array(48000 * 2);
 		for (let i = 0; i < 48000; i++) {
-			pcm[i * 2] = 0.5 * Math.sin(2 * Math.PI * 440 * i / 48000);
-			pcm[i * 2 + 1] = 0.5 * Math.sin(2 * Math.PI * 440 * i / 48000);
+			pcm[i * 2] = 0.5 * Math.sin((2 * Math.PI * 440 * i) / 48000);
+			pcm[i * 2 + 1] = 0.5 * Math.sin((2 * Math.PI * 440 * i) / 48000);
 		}
 		const result = applyMasterCleanupChain(pcm, 2, params, state, 48000);
 		expect(result.length).toBe(pcm.length);
@@ -63,12 +68,12 @@ describe('voice-cleanup integration', () => {
 			normaliseGainDb: 0,
 			limiterCeilingDbtp: -1,
 			gateParams: { ...DEFAULT_GATE_PARAMS, bypass: false, thresholdDb: -20 },
-			limiterParams: { ...DEFAULT_LIMITER_PARAMS, bypass: true },
+			limiterParams: { ...DEFAULT_LIMITER_PARAMS, bypass: true }
 		};
 		// Very quiet signal (below gate threshold)
 		const pcm = new Float32Array(48000 * 2);
 		for (let i = 0; i < 48000; i++) {
-			const sample = 0.001 * Math.sin(2 * Math.PI * 440 * i / 48000);
+			const sample = 0.001 * Math.sin((2 * Math.PI * 440 * i) / 48000);
 			pcm[i * 2] = sample;
 			pcm[i * 2 + 1] = sample;
 		}

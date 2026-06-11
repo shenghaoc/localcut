@@ -2006,6 +2006,8 @@ export type WorkerStateMessage =
 	| { type: 'voice-cleanup-analysis-result'; measuredLufs: number; normalisationGainDb: number }
 	| { type: 'voice-cleanup-analysis-cancelled' }
 	| { type: 'voice-cleanup-analysis-error'; message: string }
+	| { type: 'voice-cleanup-applied'; normalisationGainDb: number }
+	| { type: 'voice-cleanup-settings'; settings: VoiceCleanupSettings }
 	| { type: 'error'; message: string };
 
 // ── Phase 46: Replay Buffer + Live Audio Chain ──
@@ -2166,7 +2168,7 @@ export const DEFAULT_VOICE_CLEANUP_SETTINGS: VoiceCleanupSettings = {
 	normaliseGainDb: 0,
 	limiterCeilingDbtp: -1,
 	gateParams: { ...DEFAULT_GATE_PARAMS },
-	limiterParams: { ...DEFAULT_LIMITER_PARAMS },
+	limiterParams: { ...DEFAULT_LIMITER_PARAMS }
 };
 
 // Extended SAB layout for live audio chain (appended to Phase 16 meter SAB).

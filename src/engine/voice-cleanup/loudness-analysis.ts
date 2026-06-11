@@ -30,7 +30,7 @@ export interface LoudnessAnalysisOptions {
 export async function analyseLoudness(
 	options: LoudnessAnalysisOptions,
 	onProgress: (fraction: number) => void,
-	signal: AbortSignal,
+	signal: AbortSignal
 ): Promise<{ measuredLufs: number; normalisationGainDb: number }> {
 	const { timeline, sources, sampleRate, channels, timelineDurationS, targetLufs } = options;
 	const analyser = new LoudnessAnalyser(sampleRate);
@@ -44,20 +44,14 @@ export async function analyseLoudness(
 		}
 
 		const startS = i * blockDurationS;
-		const pcm = await mixAudioWindow(
-			timeline,
-			sources,
-			startS,
-			blockSamples,
-			sampleRate,
-			channels,
-		);
+		const pcm = await mixAudioWindow(timeline, sources, startS, blockSamples, sampleRate, channels);
 
 		// De-interleave if stereo
 		if (channels >= 2) {
 			const left = new Float32Array(blockSamples);
 			const right = new Float32Array(blockSamples);
-			for (let s = 0; s < blockSamples; s++) {
+			const limit = Math.min(blockSamples, Math.floor(pcm.length / 2));
+			for (let s = 0; s < limit; s++) {
 				left[s] = pcm[s * 2];
 				right[s] = pcm[s * 2 + 1];
 			}

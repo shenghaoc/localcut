@@ -117,6 +117,10 @@ export interface ReducedTimelineExportOptions {
 	onProgress: (progress: ExportProgress) => void;
 	masterGain?: number;
 	transitions?: readonly AudioTransitionCut[];
+	/** Phase 36: voice cleanup settings for master-bus inserts during export. */
+	voiceCleanupSettings?: import('../voice-cleanup/voice-cleanup-processor').MasterCleanupChainParams;
+	/** Phase 36: persistent cleanup state (gate/limiter DSP state) across blocks. */
+	cleanupState?: import('../voice-cleanup/voice-cleanup-processor').VoiceCleanupChainState;
 	/** When true, the project contains at least one video transition that cannot be
 	 *  rendered on the reduced-compatibility path; a warning is surfaced to the user. */
 	hasVideoTransitions?: boolean;
@@ -344,7 +348,12 @@ async function encodeReducedAudio(
 			frames,
 			plan.audioSampleRate,
 			plan.audioChannels,
-			{ masterGain: options.masterGain, transitions: options.transitions }
+			{
+				masterGain: options.masterGain,
+				transitions: options.transitions,
+				voiceCleanup: options.voiceCleanupSettings,
+				cleanupState: options.cleanupState
+			}
 		);
 		const sample = new AudioSample({
 			data: pcm,
