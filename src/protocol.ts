@@ -97,12 +97,15 @@ export interface CapabilityProbeResult {
 	livePublish: LivePublishProbeResult;
 	capture: CaptureProbeResult;
 	tier: CapabilityTierV2;
-	/** Phase 27 (WebNN audio cleanup): display/feature-gate only — never
+	/** Phase 28 (WebNN audio cleanup): display/feature-gate only — never
 	 *  consulted by tier derivation or any pipeline code path. */
 	webnn?: WebNNProbeResult;
+	/** Phase 29 (ASR auto captions): display/feature-gate only — never
+	 *  consulted by tier derivation or any pipeline code path. */
+	asr?: AsrProbeResult;
 }
 
-// ── Phase 27: Local Audio Cleanup (WebNN RNNoise) ──
+// ── Phase 28: Local Audio Cleanup (WebNN RNNoise) ──
 
 export type WebNNDeviceTypeSnapshot = 'cpu' | 'gpu' | 'npu';
 
@@ -190,6 +193,108 @@ export type CleanupWorkerState =
 	  }
 	| { type: 'cleanup-cancelled'; jobId?: number }
 	| { type: 'cleanup-error'; jobId?: number; message: string };
+
+// ── Phase 29: Auto Captions (ASR) ──
+
+export type AsrRecommendedEngine = 'webnn-whisper' | 'chrome-speech' | 'none';
+
+/** ASR capability probe result. Reuses the Phase 28 WebNN probe;
+ *  SpeechRecognition is checked separately. */
+export interface AsrProbeResult {
+	webnn: WebNNProbeResult;
+	speechRecognition: FeatureSupport;
+	recommended: AsrRecommendedEngine;
+}
+
+export type AsrModelStatus = 'not-loaded' | 'loading' | 'loaded' | 'failed';
+
+/** Manifest document validated by the ASR worker before any fetch. */
+export interface AsrModelManifestSnapshot {
+	id: 'whisper-tiny-bilingual';
+	version: string;
+	license: string;
+	source: string;
+	sizeBytes: number;
+	checksum: string;
+	audio: { sampleRate: 16000; channels: 1; hopLength: 160; nMel: 80 };
+	vocabSize: number;
+	encoderFramesPerSecond: number;
+	languages: string[];
+}
+
+/** Metadata marker for auto-generated caption tracks. */
+export interface AsrGeneratedCaptionMetadata {
+	generatedBy: 'auto-captions-phase-29';
+	engine: 'webnn-whisper' | 'chrome-speech';
+	language: string | null;
+	phraseLevel: boolean;
+	createdAt: string;
+}
+
+/** Commands posted from the UI bridge to the ASR worker. */
+export type AsrWorkerCommand =
+	| { type: 'asr-probe' }
+	| {
+			type: 'asr-load-model';
+			manifest: AsrModelManifestSnapshot;
+			weightsUrl: string;
+			vocabUrl: string;
+			preferredBackends: WebNNDeviceTypeSnapshot[];
+	  }
+	| {
+			type: 'asr-transcribe';
+			jobId: number;
+			engine: 'webnn-whisper' | 'chrome-speech';
+			pcm: Float32Array;
+			sampleRate: number;
+			channels: number;
+			offsetS: number;
+			totalDurationS: number;
+			language?: string;
+	  }
+	| { type: 'asr-cancel'; jobId?: number }
+	| { type: 'asr-dispose' };
+
+/** State messages posted from the ASR worker back to the UI. */
+export type AsrWorkerState =
+	| { type: 'asr-probe-result'; result: AsrProbeResult }
+	| {
+			type: 'asr-model-status';
+			status: AsrModelStatus;
+			engine: 'webnn-whisper' | 'chrome-speech' | null;
+			backend?: WebNNDeviceTypeSnapshot;
+			sizeBytes?: number;
+			error?: string;
+	  }
+	| {
+			type: 'asr-progress';
+			jobId: number;
+			fraction: number;
+			processedSeconds: number;
+			totalSeconds: number;
+	  }
+	| {
+			type: 'asr-result';
+			jobId: number;
+			engine: 'webnn-whisper' | 'chrome-speech';
+			segments: CaptionSegmentSnapshot[];
+			language: string | null;
+			phraseLevel: boolean;
+			durationMs: number;
+	  }
+	| { type: 'asr-cancelled'; jobId?: number }
+	| { type: 'asr-error'; jobId?: number; message: string };
+
+/** Timeline command: create a caption track from ASR result. */
+export interface AsrCreateCaptionTrackCommand {
+	type: 'asr-create-caption-track';
+	segments: CaptionSegmentSnapshot[];
+	language: string | null;
+	engine: 'webnn-whisper' | 'chrome-speech';
+	phraseLevel: boolean;
+	/** Human-readable name for the generated track. */
+	trackName: string;
+}
 
 export interface WorkerInit {
 	type: 'init';
@@ -1219,7 +1324,7 @@ interface SetTrackEditTargetCommand {
 }
 
 /** Extracts a window of a clip's source audio PCM for local analysis
- *  (Phase 27 audio cleanup). Decode stays in the pipeline worker; inference
+ *  (Phase 28 audio cleanup). Decode stays in the pipeline worker; inference
  *  never runs here. */
 interface ExtractClipAudioCommand {
 	type: 'extract-clip-audio';
@@ -1412,6 +1517,7 @@ export type WorkerCommand =
 	| ExtractClipAudioCommand
 	| ApplyAudioCleanupCommand
 	| RemoveAudioCleanupCommand
+	| AsrCreateCaptionTrackCommand
 	| { type: 'toggle-scopes'; enabled: boolean }
 	| { type: 'toggle-zebra'; enabled: boolean }
 	| { type: 'preset-save'; preset: ExportPresetDoc }
@@ -1631,6 +1737,12 @@ export type WorkerStateMessage =
 			ok: boolean;
 			assetId?: string;
 			message?: string;
+	  }
+	// Phase 29: ASR auto-caption result to pass back to the caller.
+	| {
+			type: 'asr-caption-track-created';
+			trackId: string;
+			track: CaptionTrackSnapshot;
 	  }
 	| { type: 'diagnostic-snapshot'; requestId?: string; snapshot: DiagnosticSnapshot }
 	| { type: 'recent-error'; error: RecentError }

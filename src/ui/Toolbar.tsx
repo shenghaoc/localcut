@@ -5,6 +5,7 @@ import {
 	Cpu,
 	FolderOpen,
 	Gauge,
+	Languages,
 	CircleQuestionMark,
 	Info,
 	Pause,
@@ -46,6 +47,7 @@ interface ToolbarProps {
 	onOpenCapabilities?: () => void;
 	onOpenHelp?: () => void;
 	onOpenAudioCleanup?: () => void;
+	onOpenAutoCaptions?: () => void;
 	onOpenPublish?: () => void;
 	/** True while a publish session is connecting/live/reconnecting. */
 	publishLive?: boolean;
@@ -249,6 +251,15 @@ export function Toolbar(props: ToolbarProps) {
 				>
 					<AudioWaveform size={13} aria-hidden="true" />
 					Audio Cleanup
+				</button>
+				<button
+					type="button"
+					class="pipeline-chip pipeline-chip-button"
+					onClick={() => props.onOpenAutoCaptions?.()}
+					title="Auto Captions (Experimental) — on-device speech recognition"
+				>
+					<Languages size={13} aria-hidden="true" />
+					Auto Captions
 				</button>
 				<button
 					type="button"

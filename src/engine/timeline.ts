@@ -28,7 +28,7 @@ import {
 import { cloneClipLut, type ClipLut } from './lut';
 import { TIMELINE_EPSILON, type CleanedAudioRefSnapshot } from '../protocol';
 
-/** Denoised-audio routing for a clip (Phase 27 local audio cleanup). */
+/** Denoised-audio routing for a clip (Phase 28 local audio cleanup). */
 export type CleanedAudioRef = CleanedAudioRefSnapshot;
 
 /** Source clips decode media; title clips are source-less text overlays (Phase 14). */

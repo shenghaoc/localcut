@@ -1,5 +1,5 @@
 /**
- * Audio Cleanup worker (Phase 27) — owns the WebNN context, the RNNoise graph,
+ * Audio Cleanup worker (Phase 28) — owns the WebNN context, the RNNoise graph,
  * and all chunk processing. Lazily spawned by `src/ui/cleanup-bridge.ts` only
  * when the user opens the panel or starts a cleanup action; entirely separate
  * from the pipeline worker, which it never imports.

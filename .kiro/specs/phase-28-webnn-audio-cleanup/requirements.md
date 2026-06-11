@@ -1,4 +1,4 @@
-# Requirements: Phase 27 — Local Audio Cleanup with WebNN RNNoise
+# Requirements: Phase 28 — Local Audio Cleanup with WebNN RNNoise
 
 > **Optional, experimental phase.** Adds local-only, on-device noise suppression for audio using WebNN and the RNNoise model. The core editor must be completely unaffected when WebNN is absent or the feature is never used.
 

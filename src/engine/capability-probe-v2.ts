@@ -8,6 +8,7 @@ import type {
 	LivePublishProbeResult
 } from '../protocol';
 import { probeWebNN } from './audio-cleanup/webnn-probe';
+import { probeAsr } from './asr/asr-probe';
 
 type VideoCodecProbeName = 'h264' | 'vp9' | 'av1';
 type AudioCodecProbeName = 'aac' | 'opus';
@@ -506,6 +507,7 @@ export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 	return {
 		...probeWithoutTier,
 		tier: deriveCapabilityTierV2(probeWithoutTier),
-		webnn
+		webnn,
+		asr: probeAsr(webnn)
 	};
 }

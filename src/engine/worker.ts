@@ -2689,7 +2689,7 @@ function handleSetClipFade(cmd: Extract<WorkerCommand, { type: 'set-clip-fade' }
 	);
 }
 
-// ── Phase 27: Local audio cleanup (WebNN RNNoise) ──
+// ── Phase 28: Local audio cleanup (WebNN RNNoise) ──
 // The pipeline worker only extracts PCM (existing decode path) and routes the
 // cleaned derived asset through explicit, undoable timeline state. Model
 // inference never runs here; it lives in the separate Audio Cleanup worker.
@@ -2861,6 +2861,56 @@ function handleRemoveAudioCleanup(
 		refreshPlayback: 'refresh',
 		prune: false,
 		syncLuts: false
+	});
+}
+
+// ── Phase 29: Auto Captions (ASR) ──
+
+function handleAsrCreateCaptionTrack(
+	cmd: Extract<WorkerCommand, { type: 'asr-create-caption-track' }>
+): void {
+	const trackId = makeCaptionTrackId();
+	const segments = cmd.segments.map((segment) => ({
+		...segment,
+		id: makeCaptionSegmentId()
+	}));
+	const track = createCaptionTrack({
+		id: trackId,
+		name: cmd.trackName,
+		language: cmd.language ?? null,
+		burnedIn: false,
+		visible: true,
+		segments
+	});
+	commitCaptionMutation(() => [...captionTracks, track], {
+		refreshPlayback: 'refresh'
+	});
+	post({
+		type: 'asr-caption-track-created',
+		trackId: track.id,
+		track: {
+			id: track.id,
+			kind: track.kind,
+			name: track.name,
+			language: track.language,
+			segments: track.segments.map((seg) => ({
+				id: seg.id,
+				start: seg.start,
+				duration: seg.duration,
+				text: seg.text,
+				style: seg.style ?? null
+			})),
+			defaultStyle: {
+				presetId: track.defaultStyle.presetId ?? null,
+				overrides: track.defaultStyle.overrides,
+				anchor: track.defaultStyle.anchor,
+				insetPx: track.defaultStyle.insetPx,
+				maxWidthPercent: track.defaultStyle.maxWidthPercent,
+				lineWrap: track.defaultStyle.lineWrap
+			},
+			burnedIn: track.burnedIn,
+			visible: track.visible
+		}
 	});
 }
 
@@ -5275,6 +5325,9 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			break;
 		case 'remove-audio-cleanup':
 			handleRemoveAudioCleanup(cmd);
+			break;
+		case 'asr-create-caption-track':
+			handleAsrCreateCaptionTrack(cmd);
 			break;
 		case 'add-transition':
 			handleAddTransition(cmd);
