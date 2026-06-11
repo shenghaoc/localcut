@@ -31,12 +31,16 @@ import { livePublishAvailable } from '../engine/capability-probe-v2';
 export type PublishTapMode = 'worker-track' | 'main-frames';
 
 /**
- * Data-plane mode selection (R4.5): transferable `MediaStreamTrack` keeps the
- * generator in the worker; otherwise the generator runs on main and the worker
- * transfers one `VideoFrame` at a time.
+ * Data-plane mode selection (R4.5): the worker-track mode needs the generator
+ * available to the worker AND a transferable `MediaStreamTrack` to hand it out;
+ * otherwise the generator runs on main and the worker transfers one
+ * `VideoFrame` at a time. (`trackTransfer` is the pure transfer capability —
+ * shared with the capture probe group — so the generator is checked here.)
  */
 export function selectTapMode(probe: LivePublishProbeResult): PublishTapMode {
-	return probe.trackTransfer === 'supported' ? 'worker-track' : 'main-frames';
+	return probe.trackGeneratorWorker === 'supported' && probe.trackTransfer === 'supported'
+		? 'worker-track'
+		: 'main-frames';
 }
 
 // ── Shared encoder budget (R3.2) ──

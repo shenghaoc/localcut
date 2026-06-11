@@ -193,7 +193,12 @@ export function anyAudioEncodeSupported(codecs: CodecProbeResult): boolean {
  * lives; worker-side generator availability is re-confirmed by the worker at
  * tap start, falling back to the main-frames mode.
  */
-export async function probeLivePublish(): Promise<LivePublishProbeResult> {
+export async function probeLivePublish(
+	// Shared with the Phase 41 capture group — one transfer-detection
+	// implementation (probeTransferableMediaStreamTrack), probed once per
+	// session by probeCapabilities and fed to both groups.
+	trackTransfer: FeatureSupport = probeTransferableMediaStreamTrack()
+): Promise<LivePublishProbeResult> {
 	const globals = globalThis as unknown as Record<string, unknown>;
 	const rtcPeerConnection = supportFromBoolean(typeof globals.RTCPeerConnection === 'function');
 	// Main-side constructor presence is the proxy for worker availability —
@@ -202,26 +207,6 @@ export async function probeLivePublish(): Promise<LivePublishProbeResult> {
 	const trackGeneratorWorker = supportFromBoolean(
 		typeof globals.MediaStreamTrackGenerator === 'function'
 	);
-
-	// Transferable MediaStreamTrack: the only honest detection is attempting a
-	// transfer. The generator track is created solely to be detached; a
-	// DataCloneError means tracks are not transferable in this browser.
-	let trackTransfer: FeatureSupport = 'unsupported';
-	if (trackGeneratorWorker === 'supported' && typeof MessageChannel === 'function') {
-		try {
-			const generatorCtor = globals.MediaStreamTrackGenerator as new (init: {
-				kind: 'video';
-			}) => MediaStreamTrack;
-			const track = new generatorCtor({ kind: 'video' });
-			const channel = new MessageChannel();
-			channel.port1.postMessage(track, [track as unknown as Transferable]);
-			channel.port1.close();
-			channel.port2.close();
-			trackTransfer = 'supported';
-		} catch {
-			trackTransfer = 'unsupported';
-		}
-	}
 
 	const senderCtor = globals.RTCRtpSender as { prototype?: Record<string, unknown> } | undefined;
 	const generateKeyFrame = supportFromBoolean(
@@ -415,7 +400,9 @@ async function probeOpfsSyncAccessHandle(): Promise<FeatureSupport> {
 	}
 }
 
-async function probeCaptureCapabilities(): Promise<CaptureProbeResult> {
+async function probeCaptureCapabilities(
+	transferableMediaStreamTrack: FeatureSupport = probeTransferableMediaStreamTrack()
+): Promise<CaptureProbeResult> {
 	const [displayAudioCapture, videoEncodeRealtime, audioEncodeOpus, audioEncodeAac, opfsSyncAccessHandle] =
 		await Promise.all([
 			probeDisplayAudioCapture(),
@@ -427,7 +414,7 @@ async function probeCaptureCapabilities(): Promise<CaptureProbeResult> {
 
 	return {
 		mediaStreamTrackProcessor: probeMediaStreamTrackProcessor(),
-		transferableMediaStreamTrack: probeTransferableMediaStreamTrack(),
+		transferableMediaStreamTrack,
 		displayCapture: probeDisplayCapture(),
 		displayAudioCapture,
 		videoEncodeRealtime,
@@ -480,7 +467,10 @@ export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 		probeWebNN()
 	]);
 	const codecs = await probeCodecs().catch(() => unknownCodecs);
-	const livePublish = await probeLivePublish().catch(
+	// One transfer attempt feeds both the publish and capture probe groups, so
+	// the two diagnostics rows can never drift apart within a session.
+	const trackTransfer = probeTransferableMediaStreamTrack();
+	const livePublish = await probeLivePublish(trackTransfer).catch(
 		(): LivePublishProbeResult => ({
 			rtcPeerConnection: 'unknown',
 			trackGeneratorWorker: 'unknown',
@@ -489,7 +479,7 @@ export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 			hardwareH264Encode: 'unknown'
 		})
 	);
-	const capture = await probeCaptureCapabilities().catch(() => unknownCapture);
+	const capture = await probeCaptureCapabilities(trackTransfer).catch(() => unknownCapture);
 	const probeWithoutTier: Omit<CapabilityProbeResult, 'tier'> = {
 		crossOriginIsolated: globalThis.crossOriginIsolated === true,
 		sharedArrayBuffer: hasSharedArrayBuffer(),

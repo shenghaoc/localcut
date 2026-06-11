@@ -59,7 +59,9 @@ export interface LivePublishProbeResult {
 	rtcPeerConnection: FeatureSupport;
 	/** Insertable-streams `MediaStreamTrackGenerator` for the worker-side tap. */
 	trackGeneratorWorker: FeatureSupport;
-	/** Transferable `MediaStreamTrack` (worker-side generator mode). */
+	/** Transferable `MediaStreamTrack` — pure transfer capability, one shared
+	 *  probe with `CaptureProbeResult.transferableMediaStreamTrack`; the
+	 *  worker-side generator mode additionally needs `trackGeneratorWorker`. */
 	trackTransfer: FeatureSupport;
 	/** `RTCRtpSender.prototype.generateKeyFrame` — keyframe-interval timer. */
 	generateKeyFrame: FeatureSupport;
@@ -69,6 +71,7 @@ export interface LivePublishProbeResult {
 
 export interface CaptureProbeResult {
 	mediaStreamTrackProcessor: FeatureSupport;
+	/** Same shared transfer probe as `LivePublishProbeResult.trackTransfer`. */
 	transferableMediaStreamTrack: FeatureSupport;
 	displayCapture: FeatureSupport;
 	displayAudioCapture: FeatureSupport;
