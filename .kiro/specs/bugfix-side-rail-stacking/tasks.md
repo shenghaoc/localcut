@@ -51,24 +51,31 @@
 
 - [x] **T5.1** Wrap `case 'timeline-state':` body in `{}` to fix
   `no-case-declarations` lint error.
-- [x] **T5.2** Change `let terminateFallback` to `const` by reordering the
-  `setTimeout` before the callback.
+- [x] **T5.2** Use mutable ref object for `terminateFallback` to avoid TDZ and
+  satisfy `prefer-const`.
 
-## T6 — Build and test gate
+## T6 — Review fixes (Gemini)
 
-- [x] **T6.1** `vp build` passes (strict TypeScript).
-- [x] **T6.2** `vp test run` passes — 97 files, 1032 tests green (no decrease).
-- [x] **T6.3** Pre-commit hook (`vp check --fix`) passes.
+- [x] **T6.1** Inline `SideRailTab` type into `createSignal` call.
+- [x] **T6.2** Add full ARIA tab/tabpanel attributes (`id`, `aria-controls`,
+  `role="tabpanel"`, `aria-labelledby`, `display: contents` wrappers).
+- [x] **T6.3** Fix undefined CSS variable `var(--bg)` → `var(--bg-panel)`.
 
-## T7 — Manual verification
+## T7 — Build and test gate
 
-- [ ] **T7.1** Open the editor, expand Replay Buffer — Inspector and Captions
+- [x] **T7.1** `vp build` passes (strict TypeScript).
+- [x] **T7.2** `vp test run` passes — 97 files, 1032 tests green (no decrease).
+- [x] **T7.3** Pre-commit hook (`vp check --fix`) passes.
+
+## T8 — Manual verification
+
+- [ ] **T8.1** Open the editor, expand Replay Buffer — Inspector and Captions
   retain their full height.
-- [ ] **T7.2** Switch to Live Audio Chain tab — Replay Buffer is hidden, Live
+- [ ] **T8.2** Switch to Live Audio Chain tab — Replay Buffer is hidden, Live
   Audio Chain fills the same space.
-- [ ] **T7.3** Expand Gate/Limiter controls inside Live Audio Chain — the
+- [ ] **T8.3** Expand Gate/Limiter controls inside Live Audio Chain — the
   collapse-body scrolls internally instead of being capped at 280px.
-- [ ] **T7.4** Tab buttons are keyboard-navigable (Tab/Enter/Space) with visible
+- [ ] **T8.4** Tab buttons are keyboard-navigable (Tab/Enter/Space) with visible
   focus indicators.
-- [ ] **T7.5** On the Phase 36 branch, rebase and add Voice Cleanup as a third
+- [ ] **T8.5** On the Phase 36 branch, rebase and add Voice Cleanup as a third
   tab — verify all 3 tabs switch correctly.
