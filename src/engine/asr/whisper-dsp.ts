@@ -122,6 +122,21 @@ function dftTrigTables(n: number): { cos: Float32Array; sin: Float32Array } {
 	return tables;
 }
 
+const melStaticCache = new Map<string, { window: Float32Array; filterbank: Float32Array }>();
+
+function getMelStatics(config: MelSpectrogramConfig): { window: Float32Array; filterbank: Float32Array } {
+	const key = `${config.nFft}-${config.nMel}-${config.sampleRate}`;
+	let statics = melStaticCache.get(key);
+	if (!statics) {
+		statics = {
+			window: hannWindow(config.nFft),
+			filterbank: melFilterbank(config.nMel, config.nFft, config.sampleRate)
+		};
+		melStaticCache.set(key, statics);
+	}
+	return statics;
+}
+
 /** DFT (O(n²)) with cached sine/cosine tables. For nFft=400
  *  the tables are ~3.2 KB and eliminate all trig calls from the inner loop. */
 function dft(real: Float32Array, imag: Float32Array, n: number): void {
@@ -152,11 +167,10 @@ export function extractMelSpectrogram(
 	pcm: Float32Array,
 	config: MelSpectrogramConfig = DEFAULT_MEL_CONFIG
 ): MelSpectrogram {
-	const { hopLength, nFft, nMel, sampleRate } = config;
+	const { hopLength, nFft, nMel } = config;
 	const nFreq = nFft / 2 + 1;
 	const nFrames = Math.max(1, Math.floor((pcm.length - nFft) / hopLength) + 1);
-	const window = hannWindow(nFft);
-	const filterbank = melFilterbank(nMel, nFft, sampleRate);
+	const { window, filterbank } = getMelStatics(config);
 
 	const melData = new Float32Array(nFrames * nMel);
 
@@ -228,8 +242,9 @@ export function chunkAndExtractMel(
 		const end = Math.min(start + maxChunkSamples, pcm.length);
 		const chunkPcm = pcm.slice(start, end);
 		const mel = extractMelSpectrogram(chunkPcm, config);
+		const normalised = normaliseMelSpectrogram(mel);
 		chunks.push({
-			data: mel.data,
+			data: normalised,
 			nFrames: mel.nFrames,
 			startFrame: Math.floor(chunkIndex * (maxChunkSamples - overlapSamples) / config.hopLength)
 		});

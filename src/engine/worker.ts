@@ -191,7 +191,6 @@ import {
 	defaultExportSettings,
 	exportTimeline,
 	layerBudgetFromProbe,
-	mixAudioWindow,
 	normalizeExportSettings,
 	probeExportCodecs
 } from './export';
@@ -2691,7 +2690,7 @@ function handleSetClipFade(cmd: Extract<WorkerCommand, { type: 'set-clip-fade' }
 	);
 }
 
-// ── Phase 28: Local audio cleanup (WebNN RNNoise) ──
+// ── Phase 27: Local audio cleanup (WebNN RNNoise) ──
 // The pipeline worker only extracts PCM (existing decode path) and routes the
 // cleaned derived asset through explicit, undoable timeline state. Model
 // inference never runs here; it lives in the separate Audio Cleanup worker.
@@ -2791,49 +2790,6 @@ async function handleExtractClipAudio(
 	}
 }
 
-async function handleExtractTimelineAudio(
-	cmd: Extract<WorkerCommand, { type: 'extract-timeline-audio' }>
-): Promise<void> {
-	const fail = (message: string) =>
-		post({ type: 'clip-audio-error', requestId: cmd.requestId, message });
-	try {
-		const timelineDuration = getTimelineDuration(timeline);
-		const startS = Math.max(0, cmd.startS);
-		if (startS >= timelineDuration) return fail('Requested window is past the timeline end.');
-		const sampleRate = Math.max(8000, Math.floor(cmd.sampleRate));
-		const durationS = Math.min(
-			Math.max(0, cmd.durationS),
-			CLIP_AUDIO_WINDOW_MAX_S,
-			timelineDuration - startS
-		);
-		if (durationS <= 0) return fail('Requested window is empty.');
-		const channels = 1;
-		const frameCount = Math.max(1, Math.round(durationS * sampleRate));
-		const pcm = await mixAudioWindow(
-			timeline,
-			sourceInputs,
-			startS,
-			frameCount,
-			sampleRate,
-			channels
-		);
-		self.postMessage(
-			{
-				type: 'clip-audio',
-				requestId: cmd.requestId,
-				pcm,
-				sampleRate,
-				channels,
-				clipOffsetS: startS,
-				clipDurationS: durationS
-			} satisfies WorkerStateMessage,
-			[pcm.buffer]
-		);
-	} catch (error) {
-		fail(errorMessage(error));
-	}
-}
-
 async function handleApplyAudioCleanup(
 	cmd: Extract<WorkerCommand, { type: 'apply-audio-cleanup' }>
 ): Promise<void> {
@@ -2909,8 +2865,6 @@ function handleRemoveAudioCleanup(
 	});
 }
 
-// ── Phase 29: Auto Captions (ASR) ──
-
 function handleAsrCreateCaptionTrack(
 	cmd: Extract<WorkerCommand, { type: 'asr-create-caption-track' }>
 ): void {
@@ -2926,7 +2880,13 @@ function handleAsrCreateCaptionTrack(
 		burnedIn: false,
 		visible: true,
 		segments,
-		generatedBy: 'auto-captions-phase-29'
+		generatedBy: JSON.stringify({
+			generatedBy: 'auto-captions-phase-29',
+			engine: cmd.engine,
+			language: cmd.language,
+			phraseLevel: cmd.phraseLevel,
+			createdAt: new Date().toISOString()
+		})
 	});
 	commitCaptionMutation(() => [...captionTracks, track], {
 		refreshPlayback: 'refresh'
@@ -5366,9 +5326,6 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			break;
 		case 'extract-clip-audio':
 			void handleExtractClipAudio(cmd);
-			break;
-		case 'extract-timeline-audio':
-			void handleExtractTimelineAudio(cmd);
 			break;
 		case 'apply-audio-cleanup':
 			void handleApplyAudioCleanup(cmd);

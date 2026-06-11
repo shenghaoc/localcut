@@ -71,20 +71,12 @@ export interface ClipAudioRequest {
 	sampleRate: number;
 }
 
-export interface TimelineAudioRequest {
-	requestId: string;
-	startS: number;
-	durationS: number;
-	sampleRate: number;
-}
-
 export interface AsrControllerPorts {
 	spawnWorker(
 		onState: (msg: AsrWorkerState) => void,
 		onCrash: (message: string) => void
 	): Promise<AsrWorkerPort>;
 	requestClipAudio(request: ClipAudioRequest): void;
-	requestTimelineAudio(request: TimelineAudioRequest): void;
 	createCaptionTrack(request: {
 		segments: CaptionSegmentSnapshot[];
 		language: string | null;
@@ -110,6 +102,7 @@ interface ActiveJob {
 	language: string | null;
 	phraseLevel: boolean;
 	startedAt: number;
+	abortController: AbortController;
 	resultResolve?: (msg: Extract<AsrWorkerState, { type: 'asr-result' }>) => void;
 	resultReject?: (error: Error) => void;
 }
@@ -318,32 +311,13 @@ export class AsrController {
 	}
 
 	private requestExtraction(
-		kind: AsrJobKind,
-		clip: AsrClipTarget | null,
-		timelineRange: AsrTimelineRange | null,
+		clip: AsrClipTarget,
 		offsetS: number,
 		durationS: number
 	): Promise<Extract<WorkerStateMessage, { type: 'clip-audio' }>> {
 		const requestId = `asr-${this.nextRequestId++}`;
 		return new Promise((resolve, reject) => {
 			this.pendingExtractions.set(requestId, { resolve, reject });
-			if (kind === 'timeline-range') {
-				if (!timelineRange) {
-					reject(new Error('Timeline range is required.'));
-					return;
-				}
-				this.ports.requestTimelineAudio({
-					requestId,
-					startS: timelineRange.startS + offsetS,
-					durationS,
-					sampleRate: ASR_SAMPLE_RATE
-				});
-				return;
-			}
-			if (!clip) {
-				reject(new Error('Clip is required.'));
-				return;
-			}
 			this.ports.requestClipAudio({
 				requestId,
 				trackId: clip.trackId,
@@ -378,19 +352,18 @@ export class AsrController {
 
 		// Chrome Web Speech runs on the main thread — bypass the ASR worker entirely.
 		if (this.state.recommendedEngine === 'chrome-speech') {
-			return this.runChromeSpeechTranscribe(kind, clip, durationS, language, timelineRange ?? null);
+			return this.runChromeSpeechTranscribe(kind, clip, durationS, language);
 		}
 
 		// WebNN Whisper path — uses the dedicated ASR worker.
-		return this.runWebNNTranscribe(kind, clip, durationS, language, timelineRange ?? null);
+		return this.runWebNNTranscribe(kind, clip, durationS, language);
 	}
 
 	private async runChromeSpeechTranscribe(
 		kind: AsrJobKind,
 		clip: AsrClipTarget | null,
 		durationS: number,
-		language: string | undefined,
-		timelineRange: AsrTimelineRange | null
+		language: string | undefined
 	): Promise<boolean> {
 		if (kind === 'timeline-range') {
 			this.update({ error: 'Timeline range transcription requires a selected clip.' });
@@ -408,7 +381,8 @@ export class AsrController {
 			allSegments: [],
 			language: null,
 			phraseLevel: true,
-			startedAt: Date.now()
+			startedAt: Date.now(),
+			abortController: new AbortController()
 		};
 		this.activeJob = job;
 
@@ -418,23 +392,24 @@ export class AsrController {
 		});
 
 		try {
-			const timeBaseS = timelineRange?.startS ?? 0;
 			let offsetS = 0;
 			const allSegments: CaptionSegmentSnapshot[] = [];
 			while (offsetS < durationS) {
 				if (job.cancelled) throw new AsrCancelled();
 				const windowS = Math.min(ASR_EXTRACT_WINDOW_SECONDS, durationS - offsetS);
+				if (!clip) throw new AsrCancelled();
 				const window = await this.requestExtraction(
-					kind, clip, timelineRange, offsetS, windowS
+					clip, offsetS, windowS
 				);
 				if (job.cancelled) throw new AsrCancelled();
 
 				const segments = await transcribeWithWebSpeech(
-					window.pcm, window.sampleRate, window.channels, language
+					window.pcm, window.sampleRate, window.channels, language,
+					job.abortController.signal
 				);
 
 				for (const seg of segments) {
-					allSegments.push({ ...seg, start: seg.start + offsetS + timeBaseS });
+					allSegments.push({ ...seg, start: seg.start + offsetS });
 				}
 				offsetS += windowS;
 
@@ -486,8 +461,7 @@ export class AsrController {
 		kind: AsrJobKind,
 		clip: AsrClipTarget | null,
 		durationS: number,
-		language: string | undefined,
-		timelineRange: AsrTimelineRange | null
+		language: string | undefined
 	): Promise<boolean> {
 		const engine = 'webnn-whisper' as const;
 
@@ -502,7 +476,8 @@ export class AsrController {
 			allSegments: [],
 			language: null,
 			phraseLevel: false,
-			startedAt: Date.now()
+			startedAt: Date.now(),
+			abortController: new AbortController()
 		};
 		this.activeJob = job;
 
@@ -520,13 +495,13 @@ export class AsrController {
 		result.catch(() => undefined);
 
 		try {
-			const timeBaseS = timelineRange?.startS ?? 0;
 			let offsetS = 0;
 			while (offsetS < durationS) {
 				if (job.cancelled) throw new AsrCancelled();
 				const windowS = Math.min(ASR_EXTRACT_WINDOW_SECONDS, durationS - offsetS);
+				if (!clip) throw new AsrCancelled();
 				const window = await this.requestExtraction(
-					kind, clip, timelineRange, offsetS, windowS
+					clip, offsetS, windowS
 				);
 				if (job.cancelled) throw new AsrCancelled();
 
@@ -538,7 +513,7 @@ export class AsrController {
 						pcm: window.pcm,
 						sampleRate: window.sampleRate,
 						channels: window.channels,
-						offsetS: offsetS + timeBaseS,
+						offsetS,
 						totalDurationS: durationS,
 						language
 					},
@@ -592,6 +567,7 @@ export class AsrController {
 	cancel(): void {
 		const job = this.activeJob;
 		if (job) {
+			job.abortController.abort();
 			job.cancelled = true;
 			this.worker?.send({ type: 'asr-cancel', jobId: job.jobId });
 			job.resultReject?.(new AsrCancelled());
@@ -641,9 +617,11 @@ export function asrActionAvailability(
 	const busy = state.job !== null || state.modelStatus === 'loading';
 	const noClip = selectedClip === null;
 	const modelNeeded = state.recommendedEngine === 'webnn-whisper' && state.modelStatus !== 'loaded';
+	const engineBlocksRange = state.recommendedEngine === 'chrome-speech';
 	const clipReason = noClip ? 'Select a clip on the timeline first.' : null;
 	const modelReason = modelNeeded ? 'Load the ASR model first.' : null;
 	const busyReason = busy ? 'A transcription is in progress.' : null;
+	const rangeReason = engineBlocksRange ? 'Timeline range requires WebNN Whisper.' : null;
 	return {
 		loadModel: {
 			enabled: !busy && modelNeeded,
@@ -654,8 +632,8 @@ export function asrActionAvailability(
 			reason: busyReason ?? clipReason ?? modelReason
 		},
 		transcribeRange: {
-			enabled: !busy && !noClip && !modelNeeded,
-			reason: busyReason ?? clipReason ?? modelReason
+			enabled: !busy && !noClip && !modelNeeded && !engineBlocksRange,
+			reason: busyReason ?? clipReason ?? modelReason ?? rangeReason
 		},
 		cancel: { enabled: busy, reason: busy ? null : 'Nothing to cancel.' }
 	};

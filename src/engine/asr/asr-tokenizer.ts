@@ -89,8 +89,8 @@ function isSpecialToken(token: string): boolean {
 		token === '<|notimestamps|>' ||
 		token === '<|endoftext|>' ||
 		token === '<|nospeech|>' ||
-		token.startsWith('<|zh|') ||
-		token.startsWith('<|en|')
+		token === '<|zh|>' ||
+		token === '<|en|>'
 	);
 }
 

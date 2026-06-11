@@ -518,10 +518,6 @@ export function App() {
 			if (!bridge) throw new Error('Media pipeline is not ready.');
 			bridge.send({ type: 'extract-clip-audio', ...request });
 		},
-		requestTimelineAudio: (request) => {
-			if (!bridge) throw new Error('Media pipeline is not ready.');
-			bridge.send({ type: 'extract-timeline-audio', ...request });
-		},
 		createCaptionTrack: (request) => {
 			if (!bridge) throw new Error('Media pipeline is not ready.');
 			bridge.send({

@@ -1337,17 +1337,6 @@ interface ExtractClipAudioCommand {
 	sampleRate: number;
 }
 
-/** Extracts a mixed-audio window from the timeline for ASR (Phase 29). */
-interface ExtractTimelineAudioCommand {
-	type: 'extract-timeline-audio';
-	requestId: string;
-	/** Timeline start in seconds. */
-	startS: number;
-	/** Window length in seconds (bounded by the caller). */
-	durationS: number;
-	sampleRate: number;
-}
-
 /** Registers a cleaned WAV as a derived audio asset and routes the clip's
  *  audio through it (undoable timeline mutation). */
 interface ApplyAudioCleanupCommand {
@@ -1529,7 +1518,6 @@ export type WorkerCommand =
 	| SetTrackSyncLockCommand
 	| SetTrackEditTargetCommand
 	| ExtractClipAudioCommand
-	| ExtractTimelineAudioCommand
 	| ApplyAudioCleanupCommand
 	| RemoveAudioCleanupCommand
 	| AsrCreateCaptionTrackCommand
