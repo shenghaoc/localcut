@@ -1805,6 +1805,7 @@ body {
 	flex: 1;
 	padding: 0.45rem 0.65rem;
 	border: none;
+	border-bottom: 2px solid transparent;
 	background: transparent;
 	color: var(--text-muted);
 	font-size: var(--text-xs);
@@ -1849,7 +1850,6 @@ body {
 	display: flex;
 	flex-direction: column;
 	height: 100%;
-	overflow: visible;
 }
 
 .button {

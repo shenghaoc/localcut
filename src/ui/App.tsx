@@ -2619,9 +2619,17 @@ export function App() {
 									id="tab-replay"
 									classList={{ 'side-rail-tab': true, active: activeSideRailTab() === 'replay' }}
 									role="tab"
+									tabIndex={activeSideRailTab() === 'replay' ? 0 : -1}
 									aria-selected={activeSideRailTab() === 'replay'}
 									aria-controls="panel-replay"
 									onClick={() => setActiveSideRailTab('replay')}
+									onKeyDown={(e) => {
+										if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+											setActiveSideRailTab('live-audio');
+											queueMicrotask(() => document.getElementById('tab-live-audio')?.focus());
+											e.preventDefault();
+										}
+									}}
 								>
 									Replay Buffer
 								</button>
@@ -2632,9 +2640,17 @@ export function App() {
 										active: activeSideRailTab() === 'live-audio'
 									}}
 									role="tab"
+									tabIndex={activeSideRailTab() === 'live-audio' ? 0 : -1}
 									aria-selected={activeSideRailTab() === 'live-audio'}
 									aria-controls="panel-live-audio"
 									onClick={() => setActiveSideRailTab('live-audio')}
+									onKeyDown={(e) => {
+										if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+											setActiveSideRailTab('replay');
+											queueMicrotask(() => document.getElementById('tab-replay')?.focus());
+											e.preventDefault();
+										}
+									}}
 								>
 									Live Audio Chain
 								</button>
@@ -2661,6 +2677,7 @@ export function App() {
 											isSupported={replayCaptureSupported()}
 											supportedReason={replayCaptureUnsupportedReason()}
 											crossOriginIsolated={capabilities().crossOriginIsolated}
+											initiallyExpanded={true}
 										/>
 									</div>
 								</Show>
@@ -2679,6 +2696,7 @@ export function App() {
 											latencyMs={liveChainLatencyMs()}
 											crossOriginIsolated={capabilities().crossOriginIsolated}
 											isCapturing={captureSession()?.active ?? false}
+											initiallyExpanded={true}
 										/>
 									</div>
 								</Show>
