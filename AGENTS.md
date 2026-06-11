@@ -32,6 +32,8 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 
 **Active:**
 
+- [**Phase 47: WHIP Publish**](.kiro/specs/phase-47-whip-publish/tasks.md) — RFC 9725 WHIP client over RTCPeerConnection; bearer-token endpoints; H.264 baseline default with probed AV1; encoder-session budget gating record+stream; ICE restart/reconnect policy; clean HTTP DELETE teardown; MediaMTX CI integration test.
+
 - [**Phase 48: OpenTimelineIO export**](.kiro/specs/phase-48-otio-export/tasks.md) — TypeScript `ProjectDoc` → `.otio` serialiser (tracks, gaps, clips with P23 fingerprints, markers, transitions); `metadata.localcut` round-trip namespace; `project.otio` in the bundle root beside authoritative `project.json`; cuts-only CMX3600 EDL; documented `otioconvert` path for AAF/FCPXML.
 
 - [**Bugfix: IMG_6213.mov media handling**](.kiro/specs/bugfix-img-6213-media-issues/tasks.md) — apply rotation metadata on placement, rotation-aware fit rect, VFR-aware frame cadence, codec-named warnings, Media Bin details popover, user-guide updates.
@@ -40,7 +42,11 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 
 - [**Phase 26: Cross-browser compatibility engine**](.kiro/specs/phase-26-cross-browser-compatibility-engine/tasks.md) — CapabilityTierV2 probes, reduced-tier diagnostics, optional-SAB worker init, codec/export constraints, compatibility resource-lifetime helpers.
 
+- [**Phase 27: Local Audio Cleanup with WebNN RNNoise**](.kiro/specs/phase-27-webnn-audio-cleanup/tasks.md) — optional/experimental on-device noise suppression; WebNN probe + capability row; lazy, cancellable Audio Cleanup worker separate from the pipeline worker; checksummed RNNoise weights loaded only on explicit user action; TypeScript DSP port + WebNN GRU graph; undoable cleaned-audio assets through playback/export. Foundation implemented; Inspector badge + manual browser matrix pending.
+
 - [**Phase 23: Project packaging + portability**](.kiro/specs/phase-23-project-packaging/tasks.md) — directory bundles, fingerprint dedup, integrity validation, collect media, import/export.
+
+- [**Phase 41: Capture Engine**](.kiro/specs/phase-41-capture-engine/tasks.md) — recording as a first-class source: `getDisplayMedia`/`getUserMedia` acquisition; MSTP → WebCodecs realtime encode in the worker; crash-safe fragmented-MP4 chunks to OPFS via `SyncAccessHandle` + chunk manifest; boot recovery scan; screen/webcam/mic/system-audio as separate VFR-honest tracks; quota preflight + graceful stop; accelerated-tier gated.
 
 **Completed:**
 

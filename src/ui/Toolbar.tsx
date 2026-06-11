@@ -1,6 +1,7 @@
 import { Show, type JSX } from 'solid-js';
 import {
 	Activity,
+	AudioWaveform,
 	Cpu,
 	FolderOpen,
 	Gauge,
@@ -8,6 +9,7 @@ import {
 	Info,
 	Pause,
 	Play,
+	Radio,
 	Redo2,
 	ShieldCheck,
 	SkipBack,
@@ -43,6 +45,10 @@ interface ToolbarProps {
 	encodeFps: number | null;
 	onOpenCapabilities?: () => void;
 	onOpenHelp?: () => void;
+	onOpenAudioCleanup?: () => void;
+	onOpenPublish?: () => void;
+	/** True while a publish session is connecting/live/reconnecting. */
+	publishLive?: boolean;
 	masterGain: number;
 	meterSab: SharedArrayBuffer | null;
 	onMasterGain: (gain: number) => void;
@@ -238,11 +244,29 @@ export function Toolbar(props: ToolbarProps) {
 				<button
 					type="button"
 					class="pipeline-chip pipeline-chip-button"
+					onClick={() => props.onOpenAudioCleanup?.()}
+					title="Local Audio Cleanup (Experimental) — on-device noise suppression"
+				>
+					<AudioWaveform size={13} aria-hidden="true" />
+					Audio Cleanup
+				</button>
+				<button
+					type="button"
+					class="pipeline-chip pipeline-chip-button"
 					onClick={() => props.onOpenHelp?.()}
 					title="Open help and user guide"
 				>
 					<CircleQuestionMark size={13} aria-hidden="true" />
 					Help
+				</button>
+				<button
+					type="button"
+					class={cn('pipeline-chip pipeline-chip-button', props.publishLive && 'is-ok')}
+					onClick={() => props.onOpenPublish?.()}
+					title="Stream the program output to a WHIP endpoint"
+				>
+					<Radio size={13} aria-hidden="true" />
+					{props.publishLive ? 'Live' : 'Go Live'}
 				</button>
 			</div>
 		</header>

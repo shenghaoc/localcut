@@ -205,6 +205,33 @@ Audio runs through an AudioWorklet graph and is the master clock for A/V sync �
 
 When clips on the timeline use different audio sample rates (e.g. a 44.1 kHz MP3 alongside a 48 kHz video), the engine resamples all audio to the target output rate using a polyphase sinc filter. This happens transparently during both playback and export — no user action is needed. The source health panel shows a **Mixed audio sample rates** note as an informational reminder.
 
+## Local Audio Cleanup (Experimental)
+
+LocalCut Studio can reduce background noise in audio clips entirely on your device using the RNNoise model running through WebNN (`navigator.ml`). This feature is **experimental** and fully local:
+
+> Runs on this device. No upload. No API key. No server inference.
+
+**Requirements**: a browser with WebNN support (a recent Chromium with WebNN enabled). In browsers without WebNN the panel shows "WebNN local cleanup unavailable in this browser." and everything else in the editor works exactly as before — there is no cloud fallback of any kind.
+
+**How to use it**:
+
+1. Click **Audio Cleanup** in the toolbar to open the panel. Nothing is downloaded at app startup; the model loads only when you ask for it.
+2. Click **Load model** to fetch and verify the RNNoise weights (~350 KB, served from the app's own origin and checksum-verified). After one successful load the weights are cached for offline use.
+3. Select an audio clip on the timeline.
+4. Click **Preview cleanup** to denoise the first 10 seconds and A/B compare **Play original** vs **Play cleaned**.
+5. Click **Apply to export / create cleaned audio asset** to process the whole clip. This creates a derived `*.cleaned.wav` asset in the Media Bin and routes the clip's audio through it for both playback and export.
+6. Use **Cancel** at any time to stop a running model load or cleanup pass.
+
+**Notes**:
+
+- Applying cleanup is a normal timeline edit: **undo/redo** works, and **Remove cleanup** in the panel returns the clip to its original audio at any time. The derived asset stays in the Media Bin.
+- Export is unchanged unless you applied cleanup; only clips you explicitly cleaned use the denoised audio.
+- If you later trim a cleaned clip beyond the range that was cleaned, the clip automatically falls back to its original audio (re-apply cleanup to cover the new range). If the cleaned asset goes missing (e.g. cleared storage), the original audio plays and a source-health warning appears.
+- One cleanup pass is limited to 15 minutes of audio.
+- The panel shows which WebNN backend is in use (NPU/GPU/CPU), the model status and size, and the last analysis duration; the Capabilities panel has a **WebNN (audio cleanup)** row.
+
+Model: RNNoise (Jean-Marc Valin, Xiph.Org/Mozilla — BSD-3-Clause), integrated per the [WebNN samples](https://github.com/webmachinelearning/webnn-samples/tree/master/rnnoise) reference.
+
 ## Captions & Subtitles
 
 Import, edit, and export caption tracks:
@@ -272,6 +299,15 @@ Queue multiple export jobs to run sequentially:
 
 The queue supports per-job progress, retry on failure, and stop-on-error mode.
 
+## Live Streaming
+
+Broadcast the program output to a WHIP ingest endpoint (Twitch WHIP,
+Cloudflare-class CDNs, or self-hosted MediaMTX) directly from the browser.
+RTMP-only platforms (YouTube, Douyin, Bilibili) require a user-supplied
+WHIP→RTMP gateway — browsers cannot open raw RTMP connections. Setup,
+per-platform guidance, the reconnect policy, and the record+stream encoder
+budget are covered in the [Live streaming guide](LIVE-STREAMING.md).
+
 ## Project Bundles
 
 Bundle your project for portability or backup:
@@ -291,7 +327,7 @@ Send your cut to another editor with the **Interchange** toolbar menu. It works 
 - **Export Timeline (.otio)**: An [OpenTimelineIO](https://opentimeline.io/) file with your tracks, clips, gaps, markers, and transitions, frame-snapped at the project rate. Kdenlive 25.04+ and DaVinci Resolve (File → Import → Timeline) open it directly. Media is referenced by file name — or by bundle-relative path inside an exported project bundle — never embedded.
 - **Export EDL (.edl)**: A cuts-only CMX3600 edit decision list for one video track (pick the track when you have several). Transitions become straight cuts, audio and other tracks are omitted, and fractional frame rates are rounded to the nearest whole rate with a note in the file. Record timecode starts at `01:00:00:00`.
 
-What other applications see is the *cut*: clip placement, timing, markers, and dissolves. LocalCut-specific data — effects, looks/LUTs, keyframes, transforms, caption styling, track mix state — travels inside a `metadata.localcut` namespace that foreign tools ignore; it is preserved for a future re-import into LocalCut, not translated into other applications' effects.
+What other applications see is the _cut_: clip placement, timing, markers, and dissolves. LocalCut-specific data — effects, looks/LUTs, keyframes, transforms, caption styling, track mix state — travels inside a `metadata.localcut` namespace that foreign tools ignore; it is preserved for a future re-import into LocalCut, not translated into other applications' effects.
 
 Export warnings (for example, clips shorter than one frame at the sequence rate, or EDL omissions) are listed in the Interchange menu after each export; they never block the save.
 

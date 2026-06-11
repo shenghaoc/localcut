@@ -4,12 +4,19 @@ import {
 	type ProjectDoc,
 	type SourceDescriptor
 } from './project';
+import type { PublishSettingsDoc } from '../protocol';
+import { parsePublishSettings, sanitizeForPersist } from './publish-settings';
 
 const DB_NAME = 'localcut-projects';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const PROJECT_STORE = 'project';
 const SOURCE_STORE = 'sources';
+// Phase 47: device-scoped publish settings. A separate store — never part of
+// ProjectDoc — so project bundles and autosaves structurally cannot carry
+// stream destinations or bearer tokens (R7.3).
+const PUBLISH_SETTINGS_STORE = 'publish-settings';
 const LAST_PROJECT_KEY = 'last';
+const PUBLISH_SETTINGS_KEY = 'device';
 
 export interface StoredSourceRecord {
 	sourceId: string;
@@ -57,6 +64,9 @@ function openDatabase(): Promise<IDBDatabase> {
 			}
 			if (!db.objectStoreNames.contains(SOURCE_STORE)) {
 				db.createObjectStore(SOURCE_STORE, { keyPath: 'sourceId' });
+			}
+			if (!db.objectStoreNames.contains(PUBLISH_SETTINGS_STORE)) {
+				db.createObjectStore(PUBLISH_SETTINGS_STORE);
 			}
 		};
 		request.onsuccess = () => {
@@ -158,6 +168,34 @@ export async function saveStoredSource(record: StoredSourceRecord): Promise<void
 	const db = await openDatabase();
 	const transaction = db.transaction(SOURCE_STORE, 'readwrite');
 	transaction.objectStore(SOURCE_STORE).put(record);
+	await transactionDone(transaction);
+}
+
+export async function loadPublishSettings(): Promise<PublishSettingsDoc | null> {
+	const db = await openDatabase();
+	const transaction = db.transaction(PUBLISH_SETTINGS_STORE, 'readonly');
+	const done = transactionDone(transaction);
+	const [value] = await Promise.all([
+		requestResult<unknown>(transaction.objectStore(PUBLISH_SETTINGS_STORE).get(PUBLISH_SETTINGS_KEY)),
+		done
+	]);
+	return parsePublishSettings(value);
+}
+
+/** The token is stripped here unless the user opted in (R7.2). */
+export async function savePublishSettings(settings: PublishSettingsDoc): Promise<void> {
+	const db = await openDatabase();
+	const transaction = db.transaction(PUBLISH_SETTINGS_STORE, 'readwrite');
+	transaction
+		.objectStore(PUBLISH_SETTINGS_STORE)
+		.put(sanitizeForPersist(settings), PUBLISH_SETTINGS_KEY);
+	await transactionDone(transaction);
+}
+
+export async function deletePublishSettings(): Promise<void> {
+	const db = await openDatabase();
+	const transaction = db.transaction(PUBLISH_SETTINGS_STORE, 'readwrite');
+	transaction.objectStore(PUBLISH_SETTINGS_STORE).delete(PUBLISH_SETTINGS_KEY);
 	await transactionDone(transaction);
 }
 

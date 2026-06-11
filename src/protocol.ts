@@ -54,6 +54,33 @@ export interface CodecProbeResult {
 	opusEncode: FeatureSupport;
 }
 
+/** Phase 47: features the WHIP publish path needs, probed on the main thread. */
+export interface LivePublishProbeResult {
+	rtcPeerConnection: FeatureSupport;
+	/** Insertable-streams `MediaStreamTrackGenerator` for the worker-side tap. */
+	trackGeneratorWorker: FeatureSupport;
+	/** Transferable `MediaStreamTrack` — pure transfer capability, one shared
+	 *  probe with `CaptureProbeResult.transferableMediaStreamTrack`; the
+	 *  worker-side generator mode additionally needs `trackGeneratorWorker`. */
+	trackTransfer: FeatureSupport;
+	/** `RTCRtpSender.prototype.generateKeyFrame` — keyframe-interval timer. */
+	generateKeyFrame: FeatureSupport;
+	/** H.264 encode with `hardwareAcceleration: 'prefer-hardware'` honoured. */
+	hardwareH264Encode: FeatureSupport;
+}
+
+export interface CaptureProbeResult {
+	mediaStreamTrackProcessor: FeatureSupport;
+	/** Same shared transfer probe as `LivePublishProbeResult.trackTransfer`. */
+	transferableMediaStreamTrack: FeatureSupport;
+	displayCapture: FeatureSupport;
+	displayAudioCapture: FeatureSupport;
+	videoEncodeRealtime: FeatureSupport;
+	audioEncodeOpus: FeatureSupport;
+	audioEncodeAac: FeatureSupport;
+	opfsSyncAccessHandle: FeatureSupport;
+}
+
 export interface CapabilityProbeResult {
 	crossOriginIsolated: boolean;
 	sharedArrayBuffer: FeatureSupport;
@@ -67,8 +94,102 @@ export interface CapabilityProbeResult {
 	opfs: FeatureSupport;
 	audioWorklet: FeatureSupport;
 	offscreenCanvas: FeatureSupport;
+	livePublish: LivePublishProbeResult;
+	capture: CaptureProbeResult;
 	tier: CapabilityTierV2;
+	/** Phase 27 (WebNN audio cleanup): display/feature-gate only — never
+	 *  consulted by tier derivation or any pipeline code path. */
+	webnn?: WebNNProbeResult;
 }
+
+// ── Phase 27: Local Audio Cleanup (WebNN RNNoise) ──
+
+export type WebNNDeviceTypeSnapshot = 'cpu' | 'gpu' | 'npu';
+
+export interface WebNNProbeResult {
+	/** `navigator.ml` exists in this browsing context. */
+	mlPresent: boolean;
+	backends: Record<WebNNDeviceTypeSnapshot, FeatureSupport>;
+	/** Unknown until the user explicitly loads the model; the graph build
+	 *  outcome is the ground truth. */
+	modelSupport: FeatureSupport;
+}
+
+/** Reference from a timeline clip to its denoised derived audio asset. */
+export interface CleanedAudioRefSnapshot {
+	/** Source id of the derived (cleaned) audio asset. */
+	assetId: string;
+	/** Clip `inPoint` at generation time; the cleaned asset's t=0 maps here. */
+	clipInPointS: number;
+	/** Covered duration in source seconds starting at `clipInPointS`. */
+	durationS: number;
+	modelId: string;
+	modelVersion: string;
+}
+
+export type CleanupModelStatus = 'not-loaded' | 'loading' | 'loaded' | 'failed';
+
+/** Manifest document validated by the Audio Cleanup worker before any fetch. */
+export interface CleanupModelManifestSnapshot {
+	id: 'rnnoise';
+	version: string;
+	license: string;
+	source: string;
+	sizeBytes: number;
+	checksum: string;
+	audio: { sampleRate: 48000; channels: 1; frameSize: 480 };
+	tensors: Array<{ name: string; byteOffset: number; byteLength: number }>;
+}
+
+/** Commands posted from the UI bridge to the Audio Cleanup worker. */
+export type CleanupWorkerCommand =
+	| { type: 'cleanup-probe' }
+	| {
+			type: 'cleanup-load-model';
+			manifest: CleanupModelManifestSnapshot;
+			weightsUrl: string;
+			preferredBackends: WebNNDeviceTypeSnapshot[];
+	  }
+	| { type: 'cleanup-begin'; jobId: number; totalFrames: number }
+	| {
+			type: 'cleanup-chunk';
+			jobId: number;
+			pcm: Float32Array;
+			sampleRate: number;
+			channels: number;
+	  }
+	| { type: 'cleanup-end'; jobId: number; output: 'pcm' | 'wav' }
+	| { type: 'cleanup-cancel'; jobId?: number }
+	| { type: 'cleanup-dispose' };
+
+/** State messages posted from the Audio Cleanup worker back to the UI. */
+export type CleanupWorkerState =
+	| { type: 'cleanup-probe-result'; result: WebNNProbeResult }
+	| {
+			type: 'cleanup-model-status';
+			status: CleanupModelStatus;
+			backend?: WebNNDeviceTypeSnapshot;
+			sizeBytes?: number;
+			error?: string;
+	  }
+	| {
+			type: 'cleanup-progress';
+			jobId: number;
+			processedFrames: number;
+			totalFrames: number;
+			fraction: number;
+	  }
+	| {
+			type: 'cleanup-result';
+			jobId: number;
+			sampleRate: 48000;
+			channels: 1;
+			pcm?: Float32Array;
+			wav?: ArrayBuffer;
+			durationMs: number;
+	  }
+	| { type: 'cleanup-cancelled'; jobId?: number }
+	| { type: 'cleanup-error'; jobId?: number; message: string };
 
 export interface WorkerInit {
 	type: 'init';
@@ -104,6 +225,61 @@ export interface ExportCodecSupport {
 	codec: ExportVideoCodec;
 	container: ExportContainer;
 }
+
+// ── Phase 47: WHIP Publish ──
+
+export type PublishEndpointType = 'twitch-whip' | 'cloudflare-whip' | 'mediamtx' | 'custom';
+export type PublishVideoCodec = 'h264' | 'av1';
+
+/**
+ * Device-scoped publish settings. Deliberately NOT part of `ProjectDoc`:
+ * destinations (and especially bearer tokens) must never travel inside Phase 23
+ * project bundles or autosaves.
+ */
+export interface PublishSettingsDoc {
+	endpointType: PublishEndpointType;
+	endpointUrl: string;
+	codec: PublishVideoCodec;
+	videoBitrateKbps: number;
+	keyframeIntervalS: number;
+	/** Stream-side cap; null streams at program resolution/rate. */
+	maxHeight: number | null;
+	maxFps: number | null;
+	/** Token is persisted only with this explicit opt-in (R7.2). */
+	rememberToken: boolean;
+	bearerToken?: string;
+}
+
+export interface PublishStats {
+	bitrateKbps: number;
+	rttMs: number | null;
+	framesSent: number;
+	framesDropped: number;
+}
+
+export type PublishFailureReason =
+	/** `400` — the server rejected the SDP offer (codec/format mismatch). */
+	| 'rejected-offer'
+	/** `401`/`403` — bearer token missing or wrong. */
+	| 'auth'
+	/** `404` — endpoint URL does not exist. */
+	| 'not-found'
+	/** Reconnect policy exhausted its attempts. */
+	| 'gave-up'
+	/** Encoder-session budget had no free lease (R3.4). */
+	| 'budget-exhausted'
+	/** Required browser feature missing (R3.1). */
+	| 'unsupported'
+	/** Local error before/while connecting. */
+	| 'local-error';
+
+export type PublishState =
+	| { phase: 'idle' }
+	| { phase: 'connecting' }
+	| { phase: 'live'; stats: PublishStats }
+	| { phase: 'reconnecting'; attempt: number; nextRetryMs: number }
+	| { phase: 'ended' }
+	| { phase: 'failed'; reason: PublishFailureReason };
 
 // ── Phase 24: Render Queue + Export Presets ──
 
@@ -248,7 +424,8 @@ export type SourceHealthWarningCodeSnapshot =
 	| 'unsupported-audio-codec'
 	| 'corrupt-or-truncated-file'
 	| 'missing-duration'
-	| 'undecodable-track';
+	| 'undecodable-track'
+	| 'missing-cleaned-audio';
 
 export interface SourceHealthWarningSnapshot {
 	code: SourceHealthWarningCodeSnapshot;
@@ -432,6 +609,8 @@ export interface TimelineClipSnapshot {
 	/** Present iff `kind === 'title'`. */
 	title?: TitleContentSnapshot;
 	linkedGroupId?: string;
+	/** Optional denoised audio routing (Phase 27); absent = original audio. */
+	cleanedAudio?: CleanedAudioRefSnapshot;
 }
 
 export interface TimelineTrackSnapshot {
@@ -1039,6 +1218,93 @@ interface SetTrackEditTargetCommand {
 	editTarget: boolean;
 }
 
+/** Extracts a window of a clip's source audio PCM for local analysis
+ *  (Phase 27 audio cleanup). Decode stays in the pipeline worker; inference
+ *  never runs here. */
+interface ExtractClipAudioCommand {
+	type: 'extract-clip-audio';
+	requestId: string;
+	trackId: string;
+	clipId: string;
+	clipOffsetS: number;
+	durationS: number;
+	sampleRate: number;
+}
+
+interface ApplyAudioCleanupCommand {
+	type: 'apply-audio-cleanup';
+	trackId: string;
+	clipId: string;
+	file: File;
+	clipInPointS: number;
+	durationS: number;
+	modelId: string;
+	modelVersion: string;
+}
+
+interface RemoveAudioCleanupCommand {
+	type: 'remove-audio-cleanup';
+	trackId: string;
+	clipId: string;
+}
+
+// ── Capture Engine (Phase 41) ────────────────────────────────────────────
+
+export type CaptureErrorCode =
+	| 'permission-denied'
+	| 'picker-cancelled'
+	| 'device-in-use'
+	| 'encoder-error'
+	| 'writer-error'
+	| 'quota-exceeded'
+	| 'audio-overrun'
+	| 'source-ended'
+	| 'session-error';
+
+export type CaptureStopReason = 'user-stop' | 'quota' | 'audio-overrun' | 'error';
+
+export type CaptureSourceEndReason = 'user-removed' | 'browser-stop-sharing' | 'encoder-error' | 'reader-error';
+
+export type CaptureSourceKind = 'screen' | 'webcam' | 'mic' | 'system-audio';
+
+export interface CaptureSourceDescriptor {
+	sourceId: string;
+	kind: CaptureSourceKind;
+	label: string;
+}
+
+export interface CaptureSettingsSnapshot {
+	chunkDurationS: number;
+	videoCodec: string;
+	audioCodec: string;
+	videoBitrate: number | null;
+}
+
+export interface CaptureSourceSnapshot {
+	sourceId: string;
+	kind: CaptureSourceKind;
+	label: string;
+	encoderConfig: string;
+	hardwareAcceleration: 'prefer-hardware' | 'no-preference';
+}
+
+export interface CaptureSourceStatusSnapshot {
+	sourceId: string;
+	kind: CaptureSourceKind;
+	label: string;
+	preEncodeDrops: number;
+	bytesWritten: number;
+	state: 'capturing' | 'stopping' | 'ended' | 'error';
+}
+
+export interface CaptureRecoverySessionSnapshot {
+	sessionId: string;
+	startedAtIso: string;
+	sources: CaptureSourceSnapshot[];
+	recoveredDurationS: number;
+	totalBytes: number;
+}
+
 export type WorkerCommand =
 	| WorkerInit
 	| WorkerInitV2
@@ -1143,6 +1409,9 @@ export type WorkerCommand =
 	| SetTrackVisibleCommand
 	| SetTrackSyncLockCommand
 	| SetTrackEditTargetCommand
+	| ExtractClipAudioCommand
+	| ApplyAudioCleanupCommand
+	| RemoveAudioCleanupCommand
 	| { type: 'toggle-scopes'; enabled: boolean }
 	| { type: 'toggle-zebra'; enabled: boolean }
 	| { type: 'preset-save'; preset: ExportPresetDoc }
@@ -1159,12 +1428,13 @@ export type WorkerCommand =
 	| { type: 'queue-set-stop-on-error'; stopOnError: boolean }
 	| { type: 'request-diagnostic-snapshot'; requestId: string }
 	| { type: 'run-recovery-action'; actionId: string }
-	// Phase 46: Replay Buffer + Live Audio Chain
-	| { type: 'capture-stop' }
+	// Phase 46: Replay Buffer + Live Audio Chain. Commands are 'replay-'
+	// prefixed to stay clear of the Phase 41 capture engine's namespace.
+	| { type: 'replay-capture-stop' }
 	| {
 		// At least one stream is present; an audio-only capture (R1.2) omits
 		// videoStream entirely.
-		type: 'capture-transfer-streams';
+		type: 'replay-capture-transfer-streams';
 		videoStream?: ReadableStream<VideoFrame>;
 		audioStream?: ReadableStream<AudioData>;
 		settings?: CaptureStreamSettings;
@@ -1174,6 +1444,17 @@ export type WorkerCommand =
 	| { type: 'update-replay-buffer-config'; config: Partial<RingBufferConfig> }
 	| { type: 'update-live-chain-config'; config: Partial<LiveAudioChainConfig> }
 	| { type: 'set-print-to-recording'; enabled: boolean }
+	// Phase 47: program-feed tap for WHIP publish. 'worker-track' transfers a
+	// MediaStreamTrack out of the worker; 'main-frames' is the probed fallback that
+	// transfers one VideoFrame at a time (bounded to a single frame in flight).
+	| { type: 'publish-tap-start'; mode: 'worker-track' | 'main-frames' }
+	| { type: 'publish-tap-stop' }
+	| { type: 'capture-add-source'; source: CaptureSourceDescriptor; track: MediaStreamTrack }
+	| { type: 'capture-remove-source'; sourceId: string }
+	| { type: 'capture-start'; settings: CaptureSettingsSnapshot; writerPort?: MessagePort }
+	| { type: 'capture-stop' }
+	| { type: 'capture-recovery-import'; sessionId: string }
+	| { type: 'capture-recovery-discard'; sessionId: string }
 	| { type: 'dispose' };
 
 /** A measured preview resolution tier (adaptive downscale of the decode path). */
@@ -1331,17 +1612,42 @@ export type WorkerStateMessage =
 	| { type: 'queue-job-failed'; jobId: string; error: string }
 	| { type: 'queue-job-canceled'; jobId: string }
 	| { type: 'queue-complete'; completedCount: number; failedCount: number; canceledCount: number }
+	| {
+			type: 'clip-audio';
+			requestId: string;
+			pcm: Float32Array;
+			sampleRate: number;
+			channels: number;
+			/** Clip-local start of the returned window in seconds. */
+			clipOffsetS: number;
+			/** Total extractable clip duration in seconds (for progress math). */
+			clipDurationS: number;
+	  }
+	| { type: 'clip-audio-error'; requestId: string; message: string }
+	| {
+			type: 'audio-cleanup-applied';
+			trackId: string;
+			clipId: string;
+			ok: boolean;
+			assetId?: string;
+			message?: string;
+	  }
 	| { type: 'diagnostic-snapshot'; requestId?: string; snapshot: DiagnosticSnapshot }
 	| { type: 'recent-error'; error: RecentError }
+	// Phase 47: publish tap responses. The track/frame messages carry transferables.
+	| { type: 'publish-tap-track'; track: MediaStreamTrack }
+	| { type: 'publish-tap-frame'; frame: VideoFrame }
+	| { type: 'publish-tap-stats'; framesDelivered: number; framesDropped: number }
+	| { type: 'publish-tap-error'; message: string }
 	| {
 			type: 'recovery-state';
 			state: 'idle' | 'recovering' | 'failed';
 			actions: readonly RecoveryAction[];
 	  }
-	| { type: 'error'; message: string }
-	// Phase 46: Replay Buffer + Live Audio Chain
-	| { type: 'capture-session-state'; state: CaptureSessionState }
-	| { type: 'capture-error'; message: string }
+	// Phase 46: Replay Buffer + Live Audio Chain. Messages are 'replay-'
+	// prefixed to stay clear of the Phase 41 capture engine's namespace.
+	| { type: 'replay-capture-state'; state: CaptureSessionState }
+	| { type: 'replay-capture-error'; message: string }
 	| { type: 'replay-buffer-state'; state: RingBufferState }
 	| { type: 'replay-save-progress'; chunksWritten: number; totalChunks: number }
 	| { type: 'replay-save-complete'; sourceId: string; fileName: string }
@@ -1349,7 +1655,28 @@ export type WorkerStateMessage =
 	| { type: 'replay-save-canceled' }
 	| { type: 'live-chain-config'; config: LiveAudioChainConfig }
 	| { type: 'live-chain-latency'; latencyMs: number }
-	| { type: 'live-chain-error'; message: string };
+	| { type: 'live-chain-error'; message: string }
+	| {
+			type: 'capture-status';
+			state: 'idle' | 'armed' | 'recording' | 'stopping';
+			elapsedUs: number;
+			bytesWritten: number;
+			remainingSeconds: number | null;
+			sources: CaptureSourceStatusSnapshot[];
+	  }
+	| {
+			type: 'capture-error';
+			sourceId: string | null;
+			code: CaptureErrorCode;
+			detail: string;
+	  }
+	| { type: 'capture-recovery-list'; sessions: CaptureRecoverySessionSnapshot[] }
+	| {
+			type: 'capture-landed';
+			sessionId: string;
+			trackIds: string[];
+	  }
+	| { type: 'error'; message: string };
 
 // ── Phase 46: Replay Buffer + Live Audio Chain ──
 

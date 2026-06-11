@@ -149,7 +149,7 @@ describe('PlaybackController', () => {
 	it('pauses and reports when renderAt rejects during playback', async () => {
 		const writeClock = vi.fn();
 		const onPlaybackError = vi.fn();
-		let now = 0;
+		const now = 0;
 		const scheduled: Array<() => void> = [];
 
 		const controller = new PlaybackController({

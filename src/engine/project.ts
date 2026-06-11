@@ -197,11 +197,31 @@ function cloneClip(clip: TimelineClip): TimelineClip {
 		cloned.title = normalizeTitleContent(clip.title);
 	}
 	if (clip.linkedGroupId) cloned.linkedGroupId = clip.linkedGroupId;
+	if (clip.cleanedAudio) cloned.cleanedAudio = { ...clip.cleanedAudio };
 	const keyframes = cloneClipKeyframes(clip.keyframes);
 	if (keyframes) cloned.keyframes = keyframes;
 	const lut = cloneClipLut(clip.lut);
 	if (lut) cloned.lut = lut;
 	return cloned;
+}
+
+/** Parses an optional persisted cleaned-audio reference (Phase 27). Invalid
+ *  entries degrade to "no cleanup" rather than rejecting the whole clip. */
+function parseCleanedAudio(value: unknown): TimelineClip['cleanedAudio'] | undefined {
+	if (!isRecord(value)) return undefined;
+	try {
+		const assetId = requiredString(value.assetId);
+		const clipInPointS = finiteNumber(value.clipInPointS);
+		const durationS = finiteNumber(value.durationS);
+		const modelId = requiredString(value.modelId);
+		const modelVersion = requiredString(value.modelVersion);
+		if (!assetId || !modelId || !modelVersion) return undefined;
+		if (clipInPointS === null || clipInPointS < 0) return undefined;
+		if (durationS === null || durationS <= 0) return undefined;
+		return { assetId, clipInPointS, durationS, modelId, modelVersion };
+	} catch {
+		return undefined;
+	}
 }
 
 export function cloneTimelineSnapshot(timeline: Timeline): Timeline {
@@ -458,6 +478,8 @@ function parseClip(value: unknown): TimelineClip | null {
 	if (linkedGroupId) clip.linkedGroupId = linkedGroupId;
 	if (keyframes) clip.keyframes = keyframes;
 	if (lut) clip.lut = lut;
+	const cleanedAudio = isTitle ? undefined : parseCleanedAudio(value.cleanedAudio);
+	if (cleanedAudio) clip.cleanedAudio = cleanedAudio;
 	return clip;
 }
 

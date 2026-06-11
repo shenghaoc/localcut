@@ -1,4 +1,4 @@
-import type { ExportSettings } from '../protocol';
+import type { ExportSettings, FeatureSupport, LivePublishProbeResult } from '../protocol';
 import type {
 	CapabilityFinding,
 	CapabilityReport,
@@ -37,6 +37,8 @@ export interface WorkerDiagnosticInput {
 	readonly activeExportSettings: ExportSettings | null;
 	readonly recentErrors: RecentErrorLog;
 	readonly sources: readonly DiagnosticSourceLike[];
+	/** Phase 47: live-publish probe results from the main-thread capability probe. */
+	readonly livePublish?: LivePublishProbeResult | null;
 }
 
 function makeSnapshotId(): string {
@@ -58,6 +60,64 @@ function finding(
 		message,
 		action
 	};
+}
+
+/**
+ * Phase 47 (T8): live-publish capability findings. Pure capability strings —
+ * the snapshot must never carry the endpoint URL or bearer token (R1.2).
+ */
+function publishFinding(
+	code: string,
+	support: FeatureSupport,
+	label: string,
+	unavailableNote: string
+): CapabilityFinding {
+	return {
+		code,
+		// FeatureSupport values are a subset of CapabilityStatus.
+		status: support,
+		message:
+			support === 'supported'
+				? `${label} is available.`
+				: support === 'unsupported'
+					? `${label} is unavailable. ${unavailableNote}`
+					: `${label} support is unknown (probe did not run).`
+	};
+}
+
+function publishFindings(probe: LivePublishProbeResult): CapabilityFinding[] {
+	return [
+		publishFinding(
+			'publish.rtc',
+			probe.rtcPeerConnection,
+			'RTCPeerConnection (WHIP publish)',
+			'Live publish is hidden behind a reduced-tier explanation.'
+		),
+		publishFinding(
+			'publish.track-generator',
+			probe.trackGeneratorWorker,
+			'MediaStreamTrackGenerator',
+			'The publish program-feed tap cannot run.'
+		),
+		publishFinding(
+			'publish.track-transfer',
+			probe.trackTransfer,
+			'Transferable MediaStreamTrack',
+			'Publish falls back to bounded per-frame transfer.'
+		),
+		publishFinding(
+			'publish.generateKeyFrame',
+			probe.generateKeyFrame,
+			'RTCRtpSender.generateKeyFrame',
+			'The platform default GOP applies while streaming.'
+		),
+		publishFinding(
+			'publish.hw-encode',
+			probe.hardwareH264Encode,
+			'Hardware H.264 encode',
+			'The encoder-session budget is limited to one concurrent session.'
+		)
+	];
 }
 
 function featureFinding(
@@ -326,6 +386,9 @@ async function buildCapabilityReport(input: WorkerDiagnosticInput): Promise<Capa
 				: 'Use a recent Chromium-based browser for accelerated import/export.'
 		)
 	];
+	if (input.livePublish) {
+		findings.push(...publishFindings(input.livePublish));
+	}
 	if (!input.webgpuReady && input.gpuUnavailableReason) {
 		findings.push({
 			code: 'capability.webgpu_unavailable',
