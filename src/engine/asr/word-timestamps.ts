@@ -82,34 +82,46 @@ export function wordsToCaptionSegments(
 	let currentWords: WordTimestamp[] = [];
 	let segIndex = 0;
 
-	for (let i = 0; i < words.length; i++) {
-		const word = words[i];
-		currentWords.push(word);
-
+	const flushSegment = (): void => {
+		if (currentWords.length === 0) return;
 		const segStart = currentWords[0].start;
-		const segEnd = word.end;
-		const segDuration = segEnd - segStart;
+		const segEnd = currentWords[currentWords.length - 1].end;
 		const segText = currentWords
 			.map((w) => w.word)
 			.join(' ')
 			.replace(/\s+/g, ' ')
 			.trim();
+		segments.push({
+			id: `asr-seg-${segIndex++}`,
+			start: segStart + offsetS,
+			duration: segEnd - segStart,
+			text: segText
+		});
+		currentWords = [];
+	};
+
+	for (let i = 0; i < words.length; i++) {
+		const word = words[i];
+
+		if (currentWords.length > 0) {
+			const segStart = currentWords[0].start;
+			const segEnd = word.end;
+			const segDuration = segEnd - segStart;
+			const segText = [...currentWords, word]
+				.map((w) => w.word)
+				.join(' ')
+				.replace(/\s+/g, ' ')
+				.trim();
+			if (segDuration >= MAX_CAPTION_DURATION_S || segText.length >= MAX_CAPTION_CHARS) {
+				flushSegment();
+			}
+		}
+
+		currentWords.push(word);
 
 		const isLast = i === words.length - 1;
-		const hasGap =
-			!isLast && words[i + 1].start - word.end > 0.1;
-		const tooLong = segDuration >= MAX_CAPTION_DURATION_S;
-		const tooManyChars = segText.length >= MAX_CAPTION_CHARS;
-
-		if (hasGap || tooLong || tooManyChars || isLast) {
-			segments.push({
-				id: `asr-seg-${segIndex++}`,
-				start: segStart + offsetS,
-				duration: segDuration,
-				text: segText
-			});
-			currentWords = [];
-		}
+		const hasGap = !isLast && words[i + 1].start - word.end > 0.1;
+		if (hasGap || isLast) flushSegment();
 	}
 
 	return segments;

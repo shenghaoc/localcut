@@ -110,6 +110,7 @@ import { spawnCleanupWorker } from './cleanup-bridge';
 import { AutoCaptionsPanel } from './AutoCaptionsPanel';
 import {
 	AsrController,
+	ASR_PREVIEW_SECONDS,
 	type AsrClipTarget,
 	type AsrControllerState
 } from './asr-controller';
@@ -516,6 +517,10 @@ export function App() {
 		requestClipAudio: (request) => {
 			if (!bridge) throw new Error('Media pipeline is not ready.');
 			bridge.send({ type: 'extract-clip-audio', ...request });
+		},
+		requestTimelineAudio: (request) => {
+			if (!bridge) throw new Error('Media pipeline is not ready.');
+			bridge.send({ type: 'extract-timeline-audio', ...request });
 		},
 		createCaptionTrack: (request) => {
 			if (!bridge) throw new Error('Media pipeline is not ready.');
@@ -2839,7 +2844,13 @@ export function App() {
 					}}
 					onTranscribeRange={(language) => {
 						pauseFromKeyboard();
-						void asrController.transcribeRange(language);
+						const startS = clock.currentTime();
+						const durationS = Math.min(
+							ASR_PREVIEW_SECONDS,
+							Math.max(0, clock.duration() - startS)
+						);
+						if (durationS <= 0) return;
+						void asrController.transcribeRange({ startS, durationS }, language);
 					}}
 					onCancel={() => asrController.cancel()}
 					onClose={() => setAsrPanelOpen(false)}

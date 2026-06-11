@@ -104,19 +104,31 @@ export function powerSpectrum(frame: Float32Array, window: Float32Array, nFft: n
 	return power;
 }
 
-/** DFT (O(n²)) with precomputed sine/cosine tables. For nFft=400
+const dftTrigCache = new Map<number, { cos: Float32Array; sin: Float32Array }>();
+
+function dftTrigTables(n: number): { cos: Float32Array; sin: Float32Array } {
+	let tables = dftTrigCache.get(n);
+	if (!tables) {
+		const cos = new Float32Array(n);
+		const sin = new Float32Array(n);
+		for (let i = 0; i < n; i++) {
+			const angle = (-2 * Math.PI * i) / n;
+			cos[i] = Math.cos(angle);
+			sin[i] = Math.sin(angle);
+		}
+		tables = { cos, sin };
+		dftTrigCache.set(n, tables);
+	}
+	return tables;
+}
+
+/** DFT (O(n²)) with cached sine/cosine tables. For nFft=400
  *  the tables are ~3.2 KB and eliminate all trig calls from the inner loop. */
 function dft(real: Float32Array, imag: Float32Array, n: number): void {
 	const resultReal = new Float32Array(n);
 	const resultImag = new Float32Array(n);
 
-	const cosTable = new Float32Array(n);
-	const sinTable = new Float32Array(n);
-	for (let i = 0; i < n; i++) {
-		const angle = (-2 * Math.PI * i) / n;
-		cosTable[i] = Math.cos(angle);
-		sinTable[i] = Math.sin(angle);
-	}
+	const { cos: cosTable, sin: sinTable } = dftTrigTables(n);
 
 	for (let k = 0; k < n; k++) {
 		let sumReal = 0;
@@ -218,6 +230,7 @@ export function chunkAndExtractMel(
 			nFrames: mel.nFrames,
 			startFrame: Math.floor(chunkIndex * (maxChunkSamples - overlapSamples) / config.hopLength)
 		});
+		if (end === pcm.length) break;
 		start = end - overlapSamples;
 		if (start >= pcm.length) break;
 		chunkIndex++;

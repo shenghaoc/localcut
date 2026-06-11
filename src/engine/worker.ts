@@ -191,6 +191,7 @@ import {
 	defaultExportSettings,
 	exportTimeline,
 	layerBudgetFromProbe,
+	mixAudioWindow,
 	normalizeExportSettings,
 	probeExportCodecs
 } from './export';
@@ -2789,6 +2790,49 @@ async function handleExtractClipAudio(
 	}
 }
 
+async function handleExtractTimelineAudio(
+	cmd: Extract<WorkerCommand, { type: 'extract-timeline-audio' }>
+): Promise<void> {
+	const fail = (message: string) =>
+		post({ type: 'clip-audio-error', requestId: cmd.requestId, message });
+	try {
+		const timelineDuration = getTimelineDuration(timeline);
+		const startS = Math.max(0, cmd.startS);
+		if (startS >= timelineDuration) return fail('Requested window is past the timeline end.');
+		const sampleRate = Math.max(8000, Math.floor(cmd.sampleRate));
+		const durationS = Math.min(
+			Math.max(0, cmd.durationS),
+			CLIP_AUDIO_WINDOW_MAX_S,
+			timelineDuration - startS
+		);
+		if (durationS <= 0) return fail('Requested window is empty.');
+		const channels = 1;
+		const frameCount = Math.max(1, Math.round(durationS * sampleRate));
+		const pcm = await mixAudioWindow(
+			timeline,
+			sourceInputs,
+			startS,
+			frameCount,
+			sampleRate,
+			channels
+		);
+		self.postMessage(
+			{
+				type: 'clip-audio',
+				requestId: cmd.requestId,
+				pcm,
+				sampleRate,
+				channels,
+				clipOffsetS: startS,
+				clipDurationS: durationS
+			} satisfies WorkerStateMessage,
+			[pcm.buffer]
+		);
+	} catch (error) {
+		fail(errorMessage(error));
+	}
+}
+
 async function handleApplyAudioCleanup(
 	cmd: Extract<WorkerCommand, { type: 'apply-audio-cleanup' }>
 ): Promise<void> {
@@ -5319,6 +5363,9 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			break;
 		case 'extract-clip-audio':
 			void handleExtractClipAudio(cmd);
+			break;
+		case 'extract-timeline-audio':
+			void handleExtractTimelineAudio(cmd);
 			break;
 		case 'apply-audio-cleanup':
 			void handleApplyAudioCleanup(cmd);
