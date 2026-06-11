@@ -317,6 +317,7 @@ body {
 	right: 0;
 	bottom: 0;
 	height: 100%;
+	transform: scaleY(0);
 	transform-origin: bottom;
 	will-change: transform;
 }
