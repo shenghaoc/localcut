@@ -2617,7 +2617,7 @@ export function App() {
 							<div class="side-rail-tab-bar" role="tablist">
 								<button
 									id="tab-replay"
-									class={`side-rail-tab${activeSideRailTab() === 'replay' ? ' active' : ''}`}
+									classList={{ 'side-rail-tab': true, active: activeSideRailTab() === 'replay' }}
 									role="tab"
 									aria-selected={activeSideRailTab() === 'replay'}
 									aria-controls="panel-replay"
@@ -2627,7 +2627,10 @@ export function App() {
 								</button>
 								<button
 									id="tab-live-audio"
-									class={`side-rail-tab${activeSideRailTab() === 'live-audio' ? ' active' : ''}`}
+									classList={{
+										'side-rail-tab': true,
+										active: activeSideRailTab() === 'live-audio'
+									}}
 									role="tab"
 									aria-selected={activeSideRailTab() === 'live-audio'}
 									aria-controls="panel-live-audio"
@@ -2640,9 +2643,9 @@ export function App() {
 								<Show when={activeSideRailTab() === 'replay'}>
 									<div
 										id="panel-replay"
+										class="side-rail-tab-panel"
 										role="tabpanel"
 										aria-labelledby="tab-replay"
-										style={{ display: 'contents' }}
 									>
 										<ReplayBufferPanel
 											captureState={captureSession()}
@@ -2664,9 +2667,9 @@ export function App() {
 								<Show when={activeSideRailTab() === 'live-audio'}>
 									<div
 										id="panel-live-audio"
+										class="side-rail-tab-panel"
 										role="tabpanel"
 										aria-labelledby="tab-live-audio"
-										style={{ display: 'contents' }}
 									>
 										<LiveAudioChainPanel
 											config={liveChainConfig()}

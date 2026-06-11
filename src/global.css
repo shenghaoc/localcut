@@ -1838,6 +1838,12 @@ body {
 	overflow: auto;
 }
 
+.side-rail-tab-panel {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+}
+
 .side-rail-tab-content .replay-buffer-panel,
 .side-rail-tab-content .live-audio-chain-panel {
 	display: flex;
