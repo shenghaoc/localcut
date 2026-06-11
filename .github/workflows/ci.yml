@@ -23,11 +23,16 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version-file: .node-version
-          cache: npm
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
-      - run: npm ci
-      - run: npm run build
-      - run: npm test
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.1
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test
 
       # Phase 48: parse the golden .otio fixtures with the reference Python
       # implementation (CI-only — the app never ships or requires Python).
