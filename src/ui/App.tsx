@@ -58,11 +58,7 @@ import { ExportDialog } from './ExportDialog';
 import { RenderQueuePanel } from './RenderQueuePanel';
 import { ReplayBufferPanel } from './ReplayBufferPanel';
 import { LiveAudioChainPanel } from './LiveAudioChainPanel';
-import {
-	probeMediaStreamTrackProcessor,
-	startCapture,
-	stopCaptureStreams
-} from './capture-bridge';
+import { probeMediaStreamTrackProcessor, startCapture, stopCaptureStreams } from './capture-bridge';
 import { BundleDialog } from './BundleDialog';
 import { InterchangeMenu } from './InterchangeMenu';
 import { Button, buttonVariants } from './components/button';
@@ -365,6 +361,8 @@ export function App() {
 	const [bundleJobId, setBundleJobId] = createSignal<string | null>(null);
 	const [bundlePhase, setBundlePhase] = createSignal<string | null>(null);
 	const [bundleReport, setBundleReport] = createSignal<BundleIntegrityReportSnapshot | null>(null);
+	type SideRailTab = 'replay' | 'live-audio';
+	const [activeSideRailTab, setActiveSideRailTab] = createSignal<SideRailTab>('replay');
 	const [bundleMessage, setBundleMessage] = createSignal<string | null>(null);
 	const [interchangeWarnings, setInterchangeWarnings] = createSignal<readonly string[]>([]);
 	const [interchangeMessage, setInterchangeMessage] = createSignal<string | null>(null);
@@ -539,9 +537,7 @@ export function App() {
 			);
 		}
 	});
-	const [asrState, setAsrState] = createSignal<AsrControllerState>(
-		asrController.getState()
-	);
+	const [asrState, setAsrState] = createSignal<AsrControllerState>(asrController.getState());
 	asrController.subscribe(setAsrState);
 
 	const selectedAsrClip = createMemo<AsrClipTarget | null>(() => {
@@ -826,8 +822,7 @@ export function App() {
 			// Dismissing the browser's share picker surfaces as NotAllowedError;
 			// treat it like a cancel rather than a failure.
 			const dismissed =
-				isAbortError(error) ||
-				(error instanceof DOMException && error.name === 'NotAllowedError');
+				isAbortError(error) || (error instanceof DOMException && error.name === 'NotAllowedError');
 			if (!dismissed) {
 				const message = error instanceof Error ? error.message : String(error);
 				setStatusLine(`Capture failed: ${message}`);
@@ -930,7 +925,7 @@ export function App() {
 				// in createSharedClock() surfaces it. Main thread never writes the SAB.
 				setStatusLine(`Loaded ${msg.metadata.fileName}`);
 				break;
-			case 'timeline-state':
+			case 'timeline-state': {
 				setTimeline(msg.timeline);
 				setCaptionTracks(msg.captionTracks);
 				setTransitions(msg.transitions);
@@ -961,6 +956,7 @@ export function App() {
 					return next.length > 0 ? next : first ? [first] : [];
 				});
 				break;
+			}
 			case 'caption-import-result':
 				setCaptionDiagnostics([...msg.result.diagnostics]);
 				setSelectedCaptionTrackId(msg.result.track.id);
@@ -2164,7 +2160,6 @@ export function App() {
 			if (worker && bridge) {
 				const workerToDispose = worker;
 				workerToDispose.removeEventListener('error', handleWorkerCrash);
-				let terminateFallback: ReturnType<typeof setTimeout>;
 				const onDisposeComplete = (event: MessageEvent<WorkerStateMessage>) => {
 					if (event.data.type !== 'dispose-complete') return;
 					clearTimeout(terminateFallback);
@@ -2172,7 +2167,7 @@ export function App() {
 					workerToDispose.terminate();
 				};
 				workerToDispose.addEventListener('message', onDisposeComplete);
-				terminateFallback = setTimeout(() => {
+				const terminateFallback = setTimeout(() => {
 					workerToDispose.removeEventListener('message', onDisposeComplete);
 					workerToDispose.terminate();
 				}, 1500);
@@ -2616,30 +2611,56 @@ export function App() {
 								captionBridge().send({ type: 'snap-caption-segment', trackId, segmentId, edge })
 							}
 						/>
-						<ReplayBufferPanel
-							captureState={captureSession()}
-							ringBufferState={replayBufferState()}
-							onStartCapture={() => void startReplayCapture()}
-							onStopCapture={stopReplayCapture}
-							onSaveLastN={(nSeconds) => {
-								if (!bridge) return;
-								setReplaySaveInProgress(true);
-								bridge.send({ type: 'replay-save-last-n', nSeconds });
-							}}
-							saveInProgress={replaySaveInProgress()}
-							isSupported={replayCaptureSupported()}
-							supportedReason={replayCaptureUnsupportedReason()}
-							crossOriginIsolated={capabilities().crossOriginIsolated}
-						/>
-						<LiveAudioChainPanel
-							config={liveChainConfig()}
-							onConfigChange={(partial) =>
-								bridge?.send({ type: 'update-live-chain-config', config: partial })
-							}
-							latencyMs={liveChainLatencyMs()}
-							crossOriginIsolated={capabilities().crossOriginIsolated}
-							isCapturing={captureSession()?.active ?? false}
-						/>
+						<div class="side-rail-tabs">
+							<div class="side-rail-tab-bar" role="tablist">
+								<button
+									class={`side-rail-tab${activeSideRailTab() === 'replay' ? ' active' : ''}`}
+									role="tab"
+									aria-selected={activeSideRailTab() === 'replay'}
+									onClick={() => setActiveSideRailTab('replay')}
+								>
+									Replay Buffer
+								</button>
+								<button
+									class={`side-rail-tab${activeSideRailTab() === 'live-audio' ? ' active' : ''}`}
+									role="tab"
+									aria-selected={activeSideRailTab() === 'live-audio'}
+									onClick={() => setActiveSideRailTab('live-audio')}
+								>
+									Live Audio Chain
+								</button>
+							</div>
+							<div class="side-rail-tab-content">
+								<Show when={activeSideRailTab() === 'replay'}>
+									<ReplayBufferPanel
+										captureState={captureSession()}
+										ringBufferState={replayBufferState()}
+										onStartCapture={() => void startReplayCapture()}
+										onStopCapture={stopReplayCapture}
+										onSaveLastN={(nSeconds) => {
+											if (!bridge) return;
+											setReplaySaveInProgress(true);
+											bridge.send({ type: 'replay-save-last-n', nSeconds });
+										}}
+										saveInProgress={replaySaveInProgress()}
+										isSupported={replayCaptureSupported()}
+										supportedReason={replayCaptureUnsupportedReason()}
+										crossOriginIsolated={capabilities().crossOriginIsolated}
+									/>
+								</Show>
+								<Show when={activeSideRailTab() === 'live-audio'}>
+									<LiveAudioChainPanel
+										config={liveChainConfig()}
+										onConfigChange={(partial) =>
+											bridge?.send({ type: 'update-live-chain-config', config: partial })
+										}
+										latencyMs={liveChainLatencyMs()}
+										crossOriginIsolated={capabilities().crossOriginIsolated}
+										isCapturing={captureSession()?.active ?? false}
+									/>
+								</Show>
+							</div>
+						</div>
 					</div>
 				</main>
 				<Timeline
@@ -2841,10 +2862,7 @@ export function App() {
 					onTranscribeRange={(language) => {
 						pauseFromKeyboard();
 						const startS = clock.currentTime();
-						const durationS = Math.min(
-							ASR_PREVIEW_SECONDS,
-							Math.max(0, clock.duration() - startS)
-						);
+						const durationS = Math.min(ASR_PREVIEW_SECONDS, Math.max(0, clock.duration() - startS));
 						if (durationS <= 0) return;
 						void asrController.transcribeRange({ startS, durationS }, language);
 					}}
