@@ -226,6 +226,7 @@ import { serializeTimelineToEdl } from './interchange/edl';
 import { serializeTimelineToOtio } from './interchange/otio';
 import { proxyStatusForAsset } from './proxy-jobs';
 import { buildWorkerDiagnosticSnapshot } from './diagnostics';
+import { CaptureSession } from './capture/capture-session';
 import {
 	createEmptyRecentErrorLog,
 	createRecentError,
@@ -294,6 +295,15 @@ let lastGpuUnavailableReason: string | null = null;
 let lastDeviceLost: import('../diagnostics/types').DeviceLostSummary | undefined;
 const FRAME_CACHE_BUDGET_BYTES = 64 * 1024 * 1024;
 let audioRing: AudioRingViews | null = null;
+// ── Phase 41 Capture Engine ────────────────────────────────────────────
+let captureSession: CaptureSession | null = null;
+interface PendingCaptureSource {
+	sourceId: string;
+	kind: import('../protocol').CaptureSourceKind;
+	label: string;
+	track: MediaStreamTrack;
+}
+const pendingCaptureSources = new Map<string, PendingCaptureSource>();
 let audioWriteAnchor = 0;
 let audioWriteFrames = 0;
 let pcmRemainder: Float32Array | null = null;
@@ -4836,6 +4846,89 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			break;
 		case 'publish-tap-stop':
 			void handlePublishTapStop();
+			break;
+		case 'capture-add-source':
+			pendingCaptureSources.set(cmd.source.sourceId, {
+				sourceId: cmd.source.sourceId,
+				kind: cmd.source.kind,
+				label: cmd.source.label,
+				track: cmd.track
+			});
+			break;
+		case 'capture-remove-source':
+			pendingCaptureSources.delete(cmd.sourceId);
+			break;
+		case 'capture-start': {
+			if (pendingCaptureSources.size === 0) break;
+			captureSession = new CaptureSession(
+				`session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+				{
+					onStatusChange(status) {
+						post({ type: 'capture-status', ...status });
+					},
+					onError(sourceId, code, detail) {
+						post({ type: 'capture-error', sourceId, code: code as import('../protocol').CaptureErrorCode, detail });
+					},
+					onLanded(sessionId, trackIds) {
+						post({ type: 'capture-landed', sessionId, trackIds });
+					}
+				},
+				cmd.writerPort
+			);
+			const settings = cmd.settings;
+			for (const [, src] of pendingCaptureSources) {
+				const videoConfig: VideoEncoderConfig | undefined = (src.kind === 'screen' || src.kind === 'webcam')
+					? {
+							codec: settings.videoCodec,
+							width: 1920,
+							height: 1080,
+							bitrate: settings.videoBitrate ?? 5_000_000,
+							latencyMode: 'realtime',
+							hardwareAcceleration: 'prefer-hardware'
+						}
+					: undefined;
+				const audioConfig: AudioEncoderConfig | undefined = (src.kind === 'mic' || src.kind === 'system-audio')
+					? {
+							codec: settings.audioCodec,
+							sampleRate: 48_000,
+							numberOfChannels: 2,
+							bitrate: 128_000
+						}
+					: undefined;
+				captureSession!.addSource(src.sourceId, src.kind, src.label, src.track, videoConfig, audioConfig);
+			}
+			pendingCaptureSources.clear();
+			void captureSession.start(settings.chunkDurationS).catch((err: Error) => {
+				post({ type: 'capture-error', sourceId: null, code: 'session-error', detail: String(err) });
+			});
+			break;
+		}
+		case 'capture-stop':
+			if (captureSession) {
+				const session = captureSession;
+				void (async () => {
+					try {
+						await session.stop();
+					} finally {
+						session.reset();
+						if (captureSession === session) {
+							captureSession = null;
+						}
+					}
+				})();
+			}
+			for (const [, src] of pendingCaptureSources) {
+				src.track.stop();
+			}
+			pendingCaptureSources.clear();
+			break;
+		case 'capture-recovery-import':
+			// TODO: Phase 41 — T7 crash recovery: scan + import orphaned session
+			void cmd;
+			break;
+		case 'capture-recovery-discard':
+			// TODO: Phase 41 — T7 crash recovery: discard orphaned session
+			void cmd;
 			break;
 		case 'dispose':
 			void handleDispose();

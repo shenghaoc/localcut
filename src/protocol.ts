@@ -59,12 +59,26 @@ export interface LivePublishProbeResult {
 	rtcPeerConnection: FeatureSupport;
 	/** Insertable-streams `MediaStreamTrackGenerator` for the worker-side tap. */
 	trackGeneratorWorker: FeatureSupport;
-	/** Transferable `MediaStreamTrack` (worker-side generator mode). */
+	/** Transferable `MediaStreamTrack` — pure transfer capability, one shared
+	 *  probe with `CaptureProbeResult.transferableMediaStreamTrack`; the
+	 *  worker-side generator mode additionally needs `trackGeneratorWorker`. */
 	trackTransfer: FeatureSupport;
 	/** `RTCRtpSender.prototype.generateKeyFrame` — keyframe-interval timer. */
 	generateKeyFrame: FeatureSupport;
 	/** H.264 encode with `hardwareAcceleration: 'prefer-hardware'` honoured. */
 	hardwareH264Encode: FeatureSupport;
+}
+
+export interface CaptureProbeResult {
+	mediaStreamTrackProcessor: FeatureSupport;
+	/** Same shared transfer probe as `LivePublishProbeResult.trackTransfer`. */
+	transferableMediaStreamTrack: FeatureSupport;
+	displayCapture: FeatureSupport;
+	displayAudioCapture: FeatureSupport;
+	videoEncodeRealtime: FeatureSupport;
+	audioEncodeOpus: FeatureSupport;
+	audioEncodeAac: FeatureSupport;
+	opfsSyncAccessHandle: FeatureSupport;
 }
 
 export interface CapabilityProbeResult {
@@ -81,6 +95,7 @@ export interface CapabilityProbeResult {
 	audioWorklet: FeatureSupport;
 	offscreenCanvas: FeatureSupport;
 	livePublish: LivePublishProbeResult;
+	capture: CaptureProbeResult;
 	tier: CapabilityTierV2;
 	/** Phase 27 (WebNN audio cleanup): display/feature-gate only — never
 	 *  consulted by tier derivation or any pipeline code path. */
@@ -1211,15 +1226,11 @@ interface ExtractClipAudioCommand {
 	requestId: string;
 	trackId: string;
 	clipId: string;
-	/** Window start in clip-local seconds (0 = clip in-point). */
 	clipOffsetS: number;
-	/** Window length in seconds (bounded by the caller). */
 	durationS: number;
 	sampleRate: number;
 }
 
-/** Registers a cleaned WAV as a derived audio asset and routes the clip's
- *  audio through it (undoable timeline mutation). */
 interface ApplyAudioCleanupCommand {
 	type: 'apply-audio-cleanup';
 	trackId: string;
@@ -1231,12 +1242,67 @@ interface ApplyAudioCleanupCommand {
 	modelVersion: string;
 }
 
-/** Removes the cleaned-audio routing from a clip (undoable). The derived
- *  asset stays registered in the media bin. */
 interface RemoveAudioCleanupCommand {
 	type: 'remove-audio-cleanup';
 	trackId: string;
 	clipId: string;
+}
+
+// ── Capture Engine (Phase 41) ────────────────────────────────────────────
+
+export type CaptureErrorCode =
+	| 'permission-denied'
+	| 'picker-cancelled'
+	| 'device-in-use'
+	| 'encoder-error'
+	| 'writer-error'
+	| 'quota-exceeded'
+	| 'audio-overrun'
+	| 'source-ended'
+	| 'session-error';
+
+export type CaptureStopReason = 'user-stop' | 'quota' | 'audio-overrun' | 'error';
+
+export type CaptureSourceEndReason = 'user-removed' | 'browser-stop-sharing' | 'encoder-error' | 'reader-error';
+
+export type CaptureSourceKind = 'screen' | 'webcam' | 'mic' | 'system-audio';
+
+export interface CaptureSourceDescriptor {
+	sourceId: string;
+	kind: CaptureSourceKind;
+	label: string;
+}
+
+export interface CaptureSettingsSnapshot {
+	chunkDurationS: number;
+	videoCodec: string;
+	audioCodec: string;
+	videoBitrate: number | null;
+}
+
+export interface CaptureSourceSnapshot {
+	sourceId: string;
+	kind: CaptureSourceKind;
+	label: string;
+	encoderConfig: string;
+	hardwareAcceleration: 'prefer-hardware' | 'no-preference';
+}
+
+export interface CaptureSourceStatusSnapshot {
+	sourceId: string;
+	kind: CaptureSourceKind;
+	label: string;
+	preEncodeDrops: number;
+	bytesWritten: number;
+	state: 'capturing' | 'stopping' | 'ended' | 'error';
+}
+
+export interface CaptureRecoverySessionSnapshot {
+	sessionId: string;
+	startedAtIso: string;
+	sources: CaptureSourceSnapshot[];
+	recoveredDurationS: number;
+	totalBytes: number;
 }
 
 export type WorkerCommand =
@@ -1367,6 +1433,12 @@ export type WorkerCommand =
 	// transfers one VideoFrame at a time (bounded to a single frame in flight).
 	| { type: 'publish-tap-start'; mode: 'worker-track' | 'main-frames' }
 	| { type: 'publish-tap-stop' }
+	| { type: 'capture-add-source'; source: CaptureSourceDescriptor; track: MediaStreamTrack }
+	| { type: 'capture-remove-source'; sourceId: string }
+	| { type: 'capture-start'; settings: CaptureSettingsSnapshot; writerPort?: MessagePort }
+	| { type: 'capture-stop' }
+	| { type: 'capture-recovery-import'; sessionId: string }
+	| { type: 'capture-recovery-discard'; sessionId: string }
 	| { type: 'dispose' };
 
 /** A measured preview resolution tier (adaptive downscale of the decode path). */
@@ -1555,6 +1627,26 @@ export type WorkerStateMessage =
 			type: 'recovery-state';
 			state: 'idle' | 'recovering' | 'failed';
 			actions: readonly RecoveryAction[];
+	  }
+	| {
+			type: 'capture-status';
+			state: 'idle' | 'armed' | 'recording' | 'stopping';
+			elapsedUs: number;
+			bytesWritten: number;
+			remainingSeconds: number | null;
+			sources: CaptureSourceStatusSnapshot[];
+	  }
+	| {
+			type: 'capture-error';
+			sourceId: string | null;
+			code: CaptureErrorCode;
+			detail: string;
+	  }
+	| { type: 'capture-recovery-list'; sessions: CaptureRecoverySessionSnapshot[] }
+	| {
+			type: 'capture-landed';
+			sessionId: string;
+			trackIds: string[];
 	  }
 	| { type: 'error'; message: string };
 

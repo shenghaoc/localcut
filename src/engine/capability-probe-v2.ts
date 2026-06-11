@@ -1,6 +1,7 @@
 import type {
 	CapabilityProbeResult,
 	CapabilityTierV2,
+	CaptureProbeResult,
 	CodecProbeResult,
 	ExportCodecSupport,
 	FeatureSupport,
@@ -192,7 +193,12 @@ export function anyAudioEncodeSupported(codecs: CodecProbeResult): boolean {
  * lives; worker-side generator availability is re-confirmed by the worker at
  * tap start, falling back to the main-frames mode.
  */
-export async function probeLivePublish(): Promise<LivePublishProbeResult> {
+export async function probeLivePublish(
+	// Shared with the Phase 41 capture group — one transfer-detection
+	// implementation (probeTransferableMediaStreamTrack), probed once per
+	// session by probeCapabilities and fed to both groups.
+	trackTransfer: FeatureSupport = probeTransferableMediaStreamTrack()
+): Promise<LivePublishProbeResult> {
 	const globals = globalThis as unknown as Record<string, unknown>;
 	const rtcPeerConnection = supportFromBoolean(typeof globals.RTCPeerConnection === 'function');
 	// Main-side constructor presence is the proxy for worker availability —
@@ -201,26 +207,6 @@ export async function probeLivePublish(): Promise<LivePublishProbeResult> {
 	const trackGeneratorWorker = supportFromBoolean(
 		typeof globals.MediaStreamTrackGenerator === 'function'
 	);
-
-	// Transferable MediaStreamTrack: the only honest detection is attempting a
-	// transfer. The generator track is created solely to be detached; a
-	// DataCloneError means tracks are not transferable in this browser.
-	let trackTransfer: FeatureSupport = 'unsupported';
-	if (trackGeneratorWorker === 'supported' && typeof MessageChannel === 'function') {
-		try {
-			const generatorCtor = globals.MediaStreamTrackGenerator as new (init: {
-				kind: 'video';
-			}) => MediaStreamTrack;
-			const track = new generatorCtor({ kind: 'video' });
-			const channel = new MessageChannel();
-			channel.port1.postMessage(track, [track as unknown as Transferable]);
-			channel.port1.close();
-			channel.port2.close();
-			trackTransfer = 'supported';
-		} catch {
-			trackTransfer = 'unsupported';
-		}
-	}
 
 	const senderCtor = globals.RTCRtpSender as { prototype?: Record<string, unknown> } | undefined;
 	const generateKeyFrame = supportFromBoolean(
@@ -299,6 +285,174 @@ export function exportConstraintsForProbe(
 	return supported;
 }
 
+// ── Capture probes (Phase 41) ─────────────────────────────────────────────
+
+function probeMediaStreamTrackProcessor(): FeatureSupport {
+	try {
+		return typeof MediaStreamTrackProcessor === 'function' ? 'supported' : 'unsupported';
+	} catch {
+		return 'unknown';
+	}
+}
+
+function probeTransferableMediaStreamTrack(): FeatureSupport {
+	try {
+		if (
+			typeof document === 'undefined' ||
+			typeof MediaStreamTrack === 'undefined' ||
+			typeof structuredClone !== 'function'
+		) {
+			return 'unsupported';
+		}
+		const canvas = document.createElement('canvas');
+		const stream = canvas.captureStream();
+		const track = stream.getVideoTracks().at(0);
+		if (!track) return 'unsupported';
+		try {
+			const cloned = structuredClone(track, { transfer: [track] });
+			return typeof cloned === 'object' && cloned !== null ? 'supported' : 'unsupported';
+		} catch {
+			return 'unsupported';
+		} finally {
+			track.stop();
+		}
+	} catch {
+		return 'unknown';
+	}
+}
+
+function probeDisplayCapture(): FeatureSupport {
+	if (typeof navigator !== 'undefined' && 'mediaDevices' in navigator) {
+		const md = navigator.mediaDevices as MediaDevices | undefined;
+		return md && typeof md.getDisplayMedia === 'function' ? 'supported' : 'unsupported';
+	}
+	return 'unsupported';
+}
+
+async function probeDisplayAudioCapture(): Promise<FeatureSupport> {
+	try {
+		if (typeof navigator === 'undefined') {
+			return 'unsupported';
+		}
+		const md = navigator.mediaDevices as MediaDevices | undefined;
+		if (!md || typeof md.getDisplayMedia !== 'function') return 'unsupported';
+		// Attempt to query supported constraints without a full picker gesture.
+		// This is a best-effort probe; the result may be 'unknown' until first real use.
+		if (typeof md.getSupportedConstraints !== 'function') return 'unknown';
+		const constraints = md.getSupportedConstraints();
+		if ('systemAudio' in constraints && (constraints as Record<string, boolean>).systemAudio) {
+			return 'supported';
+		}
+		return 'unknown';
+	} catch {
+		return 'unknown';
+	}
+}
+
+async function probeVideoEncodeRealtime(): Promise<FeatureSupport> {
+	if (typeof VideoEncoder !== 'function') return 'unsupported';
+	try {
+		const config: VideoEncoderConfig = {
+			codec: 'avc1.42001E',
+			width: 1920,
+			height: 1080,
+			bitrate: 5_000_000,
+			latencyMode: 'realtime',
+			hardwareAcceleration: 'prefer-hardware'
+		};
+		const result = await VideoEncoder.isConfigSupported(config);
+		return result.supported === true ? 'supported' : 'unsupported';
+	} catch {
+		return 'unknown';
+	}
+}
+
+async function probeAudioEncode(codec: 'opus' | 'aac'): Promise<FeatureSupport> {
+	if (typeof AudioEncoder !== 'function') return 'unsupported';
+	try {
+		const config: AudioEncoderConfig = {
+			codec: codec === 'opus' ? 'opus' : 'mp4a.40.2',
+			sampleRate: 48_000,
+			numberOfChannels: 2,
+			bitrate: 128_000
+		};
+		const result = await AudioEncoder.isConfigSupported(config);
+		return result.supported === true ? 'supported' : 'unsupported';
+	} catch {
+		return 'unknown';
+	}
+}
+
+async function probeOpfsSyncAccessHandle(): Promise<FeatureSupport> {
+	try {
+		if (typeof navigator === 'undefined' || typeof navigator.storage?.getDirectory !== 'function') {
+			return 'unsupported';
+		}
+		const root = await navigator.storage.getDirectory();
+		const fileName = `_cap_probe_${Date.now()}_${Math.random().toString(36).slice(2)}.tmp`;
+		const handle = await root.getFileHandle(fileName, { create: true });
+		const access = await (handle as FileSystemFileHandle).createSyncAccessHandle();
+		access.close();
+		await root.removeEntry(fileName);
+		return 'supported';
+	} catch {
+		return 'unknown';
+	}
+}
+
+async function probeCaptureCapabilities(
+	transferableMediaStreamTrack: FeatureSupport = probeTransferableMediaStreamTrack()
+): Promise<CaptureProbeResult> {
+	const [displayAudioCapture, videoEncodeRealtime, audioEncodeOpus, audioEncodeAac, opfsSyncAccessHandle] =
+		await Promise.all([
+			probeDisplayAudioCapture(),
+			probeVideoEncodeRealtime(),
+			probeAudioEncode('opus'),
+			probeAudioEncode('aac'),
+			probeOpfsSyncAccessHandle()
+		]);
+
+	return {
+		mediaStreamTrackProcessor: probeMediaStreamTrackProcessor(),
+		transferableMediaStreamTrack,
+		displayCapture: probeDisplayCapture(),
+		displayAudioCapture,
+		videoEncodeRealtime,
+		audioEncodeOpus,
+		audioEncodeAac,
+		opfsSyncAccessHandle
+	};
+}
+
+const unknownCapture: CaptureProbeResult = {
+	mediaStreamTrackProcessor: 'unknown',
+	transferableMediaStreamTrack: 'unknown',
+	displayCapture: 'unknown',
+	displayAudioCapture: 'unknown',
+	videoEncodeRealtime: 'unknown',
+	audioEncodeOpus: 'unknown',
+	audioEncodeAac: 'unknown',
+	opfsSyncAccessHandle: 'unknown'
+};
+
+/**
+ * Whether recording is available: accelerated tier + all critical capture probes
+ * are `'supported'`. Display audio is NOT critical (its absence only disables the
+ * audio toggle; video recording remains available).
+ */
+export function recordingAvailable(probe: CapabilityProbeResult): boolean {
+	const cap = probe.capture;
+	return (
+		probe.tier === 'core-webgpu' &&
+		cap.mediaStreamTrackProcessor === 'supported' &&
+		cap.transferableMediaStreamTrack !== 'unsupported' &&
+		cap.displayCapture === 'supported' &&
+		cap.videoEncodeRealtime === 'supported' &&
+		cap.audioEncodeOpus === 'supported' &&
+		cap.opfsSyncAccessHandle === 'supported'
+	);
+}
+
 export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 	// Probe both adapters independently so the diagnostic panel reports each one's
 	// true availability. Short-circuiting webGPUCompat to 'unsupported' whenever the
@@ -313,7 +467,10 @@ export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 		probeWebNN()
 	]);
 	const codecs = await probeCodecs().catch(() => unknownCodecs);
-	const livePublish = await probeLivePublish().catch(
+	// One transfer attempt feeds both the publish and capture probe groups, so
+	// the two diagnostics rows can never drift apart within a session.
+	const trackTransfer = probeTransferableMediaStreamTrack();
+	const livePublish = await probeLivePublish(trackTransfer).catch(
 		(): LivePublishProbeResult => ({
 			rtcPeerConnection: 'unknown',
 			trackGeneratorWorker: 'unknown',
@@ -322,6 +479,7 @@ export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 			hardwareH264Encode: 'unknown'
 		})
 	);
+	const capture = await probeCaptureCapabilities(trackTransfer).catch(() => unknownCapture);
 	const probeWithoutTier: Omit<CapabilityProbeResult, 'tier'> = {
 		crossOriginIsolated: globalThis.crossOriginIsolated === true,
 		sharedArrayBuffer: hasSharedArrayBuffer(),
@@ -331,6 +489,7 @@ export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 		webCodecsDecode: supportFromBoolean(typeof VideoDecoder !== 'undefined'),
 		webCodecsEncode: supportFromBoolean(typeof VideoEncoder !== 'undefined'),
 		codecs,
+		capture,
 		fileSystemAccess: supportFromBoolean(
 			typeof window !== 'undefined' &&
 				('showOpenFilePicker' in window || 'showSaveFilePicker' in window)
