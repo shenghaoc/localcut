@@ -9,7 +9,7 @@
  *  - Importing the startup-adjacent modules performs zero network fetches.
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import appSource from '../../ui/App.tsx?raw';
 import toolbarSource from '../../ui/Toolbar.tsx?raw';
 import panelSource from '../../ui/AudioCleanupPanel.tsx?raw';

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import { createPublishFrameTap, type TapWriter } from './publish-frame-tap';
 
 class FakeFrame {

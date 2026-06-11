@@ -6,10 +6,7 @@
  * provides a unified view of what can be decoded and through which path.
  */
 
-export type DecodeStrategy =
-	| 'webcodecs-native'
-	| 'webcodecs-software'
-	| 'unsupported';
+export type DecodeStrategy = 'webcodecs-native' | 'webcodecs-software' | 'unsupported';
 
 export interface CodecCapability {
 	readonly codec: string;
@@ -28,9 +25,7 @@ export interface FormatSupport {
 // NOTE: This list must be kept in sync manually with Mediabunny's actual
 // supported container formats. There is no runtime API to query them, so any
 // update to Mediabunny's demuxer support requires a corresponding update here.
-const MEDIABUNNY_CONTAINERS = new Set([
-	'mp4', 'mov', 'webm', 'mp3', 'ogg', 'wav', 'm4a', 'm4v'
-]);
+const MEDIABUNNY_CONTAINERS = new Set(['mp4', 'mov', 'webm', 'mp3', 'ogg', 'wav', 'm4a', 'm4v']);
 
 const VIDEO_CODEC_PROBES: ReadonlyArray<{
 	name: string;
@@ -131,11 +126,7 @@ export async function probeAllCodecs(): Promise<{
 
 	const audioResults = await Promise.all(
 		AUDIO_CODEC_PROBES.map(async (probe) => {
-			const supported = await probeAudioCodec(
-				probe.codecString,
-				probe.sampleRate,
-				probe.channels
-			);
+			const supported = await probeAudioCodec(probe.codecString, probe.sampleRate, probe.channels);
 			const capability: CodecCapability = {
 				codec: `${probe.name} (${probe.codecString})`,
 				strategy: supported ? 'webcodecs-native' : 'unsupported',

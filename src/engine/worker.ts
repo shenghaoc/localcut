@@ -5581,7 +5581,12 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 						post({ type: 'capture-status', ...status });
 					},
 					onError(sourceId, code, detail) {
-						post({ type: 'capture-error', sourceId, code: code as import('../protocol').CaptureErrorCode, detail });
+						post({
+							type: 'capture-error',
+							sourceId,
+							code: code as import('../protocol').CaptureErrorCode,
+							detail
+						});
 					},
 					onLanded(sessionId, trackIds) {
 						post({ type: 'capture-landed', sessionId, trackIds });
@@ -5591,25 +5596,34 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			);
 			const settings = cmd.settings;
 			for (const [, src] of pendingCaptureSources) {
-				const videoConfig: VideoEncoderConfig | undefined = (src.kind === 'screen' || src.kind === 'webcam')
-					? {
-							codec: settings.videoCodec,
-							width: 1920,
-							height: 1080,
-							bitrate: settings.videoBitrate ?? 5_000_000,
-							latencyMode: 'realtime',
-							hardwareAcceleration: 'prefer-hardware'
-						}
-					: undefined;
-				const audioConfig: AudioEncoderConfig | undefined = (src.kind === 'mic' || src.kind === 'system-audio')
-					? {
-							codec: settings.audioCodec,
-							sampleRate: 48_000,
-							numberOfChannels: 2,
-							bitrate: 128_000
-						}
-					: undefined;
-				captureSession!.addSource(src.sourceId, src.kind, src.label, src.track, videoConfig, audioConfig);
+				const videoConfig: VideoEncoderConfig | undefined =
+					src.kind === 'screen' || src.kind === 'webcam'
+						? {
+								codec: settings.videoCodec,
+								width: 1920,
+								height: 1080,
+								bitrate: settings.videoBitrate ?? 5_000_000,
+								latencyMode: 'realtime',
+								hardwareAcceleration: 'prefer-hardware'
+							}
+						: undefined;
+				const audioConfig: AudioEncoderConfig | undefined =
+					src.kind === 'mic' || src.kind === 'system-audio'
+						? {
+								codec: settings.audioCodec,
+								sampleRate: 48_000,
+								numberOfChannels: 2,
+								bitrate: 128_000
+							}
+						: undefined;
+				captureSession!.addSource(
+					src.sourceId,
+					src.kind,
+					src.label,
+					src.track,
+					videoConfig,
+					audioConfig
+				);
 			}
 			pendingCaptureSources.clear();
 			void captureSession.start(settings.chunkDurationS).catch((err: Error) => {

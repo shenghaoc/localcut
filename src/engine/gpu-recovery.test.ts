@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import { createRecoveryMachine, type WorkerRecoveryMachine } from './recovery';
 
 describe('GPU unavailable / device-lost recovery paths', () => {

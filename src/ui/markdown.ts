@@ -86,10 +86,10 @@ export function renderMarkdown(source: string): string {
 		}
 
 		// Unordered list
-		if (/^[\-\*\+]\s+/.test(line)) {
+		if (/^[-\*+]\s+/.test(line)) {
 			html.push('<ul>');
-			while (i < lines.length && /^[\-\*\+]\s+/.test(lines[i]!)) {
-				const content = lines[i]!.replace(/^[\-\*\+]\s+/, '');
+			while (i < lines.length && /^[-\*+]\s+/.test(lines[i]!)) {
+				const content = lines[i]!.replace(/^[-\*+]\s+/, '');
 				html.push(`<li>${renderInline(content)}</li>`);
 				i++;
 			}
@@ -132,9 +132,9 @@ export function renderMarkdown(source: string): string {
 function isSpecialLine(line: string): boolean {
 	return (
 		/^\s*$/.test(line) ||
-		/^```/.test(line) ||
+		line.startsWith('```') ||
 		/^(#{1,3})\s+/.test(line) ||
-		/^[\-\*\+]\s+/.test(line) ||
+		/^[-\*+]\s+/.test(line) ||
 		/^\d+\.\s+/.test(line) ||
 		/^(---|\*\*\*|___)\s*$/.test(line) ||
 		/^\|.+\|$/.test(line)

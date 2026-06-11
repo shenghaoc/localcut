@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import {
 	DEFAULT_TITLE_STYLE,
 	DEFAULT_TITLE_TEXT,

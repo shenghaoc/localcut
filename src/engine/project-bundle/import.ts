@@ -20,9 +20,7 @@ export interface ImportBundleOptions {
 	) => Promise<{ ok: true } | { ok: false; message: string }>;
 }
 
-async function loadManifestAndProject(
-	sink: BundleDirectorySink
-): Promise<
+async function loadManifestAndProject(sink: BundleDirectorySink): Promise<
 	| { ok: true; manifest: ProjectBundleManifest; doc: ProjectDoc }
 	| {
 			ok: false;

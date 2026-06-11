@@ -76,9 +76,10 @@ export class WebCodecsVideoDecoder implements SequentialVideoSource {
 		decoder.configure(decoderConfig);
 
 		const sink = new EncodedPacketSink(this.track);
-		const startPacket = _startTimestamp !== undefined
-			? await sink.getKeyPacket(_startTimestamp, { skipLiveWait: true })
-			: null;
+		const startPacket =
+			_startTimestamp !== undefined
+				? await sink.getKeyPacket(_startTimestamp, { skipLiveWait: true })
+				: null;
 		const packets = sink.packets(startPacket ?? undefined, undefined, { skipLiveWait: true });
 
 		try {
@@ -224,9 +225,10 @@ export class WebCodecsAudioDecoder implements AudioSampleStream {
 		decoder.configure(decoderConfig);
 
 		const sink = new EncodedPacketSink(this.track);
-		const startPacket = _startTimestamp !== undefined
-			? await sink.getKeyPacket(_startTimestamp, { skipLiveWait: true })
-			: null;
+		const startPacket =
+			_startTimestamp !== undefined
+				? await sink.getKeyPacket(_startTimestamp, { skipLiveWait: true })
+				: null;
 		const packets = sink.packets(startPacket ?? undefined, undefined, { skipLiveWait: true });
 
 		try {

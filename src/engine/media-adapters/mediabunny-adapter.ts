@@ -566,10 +566,7 @@ export const mediabunnyAdapter: MediaAdapter = {
 				thumbnailSink = new VideoSampleSink(primaryVideo);
 
 				if (WEBCODECS_PREFERRED_WHEN_SUPPORTED) {
-					frameSource = await tryCreateWebCodecsVideoSource(
-						primaryVideo,
-						minFrameDuration
-					);
+					frameSource = await tryCreateWebCodecsVideoSource(primaryVideo, minFrameDuration);
 				}
 				if (!frameSource) {
 					const sink = new VideoSampleSink(primaryVideo);
@@ -582,10 +579,7 @@ export const mediabunnyAdapter: MediaAdapter = {
 			const audioSampleRate = primaryAudioInspection?.sampleRate ?? 48_000;
 			if (primaryAudio && primaryAudioInspection?.canDecode) {
 				if (WEBCODECS_PREFERRED_WHEN_SUPPORTED) {
-					audioSource = await tryCreateWebCodecsAudioSource(
-						primaryAudio,
-						audioSampleRate
-					);
+					audioSource = await tryCreateWebCodecsAudioSource(primaryAudio, audioSampleRate);
 				}
 				if (!audioSource) {
 					audioSource = new SequentialAudioSource(

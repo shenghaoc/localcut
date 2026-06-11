@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import videoEventsSource from './video-events.ts?raw';
 import thumbnailSource from './thumbnail.ts?raw';
 

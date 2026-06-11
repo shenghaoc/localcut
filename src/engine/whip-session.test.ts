@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { PublishSettingsDoc, PublishState } from '../protocol';
 import { defaultPublishSettings } from './publish-settings';
 import type { WhipClient } from './whip-client';

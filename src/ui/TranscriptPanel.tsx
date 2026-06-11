@@ -295,7 +295,7 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
 											props.onSetTrack(track().id, {
 												defaultStyle: {
 													overrides: {
-														...(track().defaultStyle.overrides ?? {}),
+														...track().defaultStyle.overrides,
 														fontSizePx: Number(event.currentTarget.value)
 													}
 												}

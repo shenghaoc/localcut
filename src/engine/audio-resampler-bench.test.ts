@@ -12,7 +12,7 @@
  * stereo speedup is lower than mono.
  */
 
-import { describe, it, beforeAll, expect } from 'vitest';
+import { describe, it, beforeAll, expect } from 'vite-plus/test';
 import { WasmAudioResampler } from './audio-resampler-wasm';
 import { AudioResampler } from './audio-resampler';
 
@@ -37,7 +37,7 @@ function benchResampler(
 	resampler: AudioResampler | WasmAudioResampler,
 	input: Float32Array,
 	chunkFrames: number,
-	durationMs: number,
+	durationMs: number
 ): number {
 	const start = performance.now();
 	const endTime = start + durationMs;
@@ -70,18 +70,34 @@ describe('Resampler Benchmark (R4.1)', () => {
 		const input = generateSine(frameCount, CHANNELS, INPUT_RATE);
 
 		// Warm up
-		const jsWarm = new AudioResampler({ inputRate: INPUT_RATE, outputRate: OUTPUT_RATE, channels: CHANNELS });
+		const jsWarm = new AudioResampler({
+			inputRate: INPUT_RATE,
+			outputRate: OUTPUT_RATE,
+			channels: CHANNELS
+		});
 		benchResampler(jsWarm, input, chunkFrames, 50);
 
-		const wasmWarm = new WasmAudioResampler({ inputRate: INPUT_RATE, outputRate: OUTPUT_RATE, channels: CHANNELS });
+		const wasmWarm = new WasmAudioResampler({
+			inputRate: INPUT_RATE,
+			outputRate: OUTPUT_RATE,
+			channels: CHANNELS
+		});
 		benchResampler(wasmWarm, input, chunkFrames, 50);
 
 		// Benchmark JS
-		const js = new AudioResampler({ inputRate: INPUT_RATE, outputRate: OUTPUT_RATE, channels: CHANNELS });
+		const js = new AudioResampler({
+			inputRate: INPUT_RATE,
+			outputRate: OUTPUT_RATE,
+			channels: CHANNELS
+		});
 		const jsThroughput = benchResampler(js, input, chunkFrames, BENCH_DURATION_MS);
 
 		// Benchmark WASM
-		const wasm = new WasmAudioResampler({ inputRate: INPUT_RATE, outputRate: OUTPUT_RATE, channels: CHANNELS });
+		const wasm = new WasmAudioResampler({
+			inputRate: INPUT_RATE,
+			outputRate: OUTPUT_RATE,
+			channels: CHANNELS
+		});
 		const wasmThroughput = benchResampler(wasm, input, chunkFrames, BENCH_DURATION_MS);
 
 		const speedup = wasmThroughput / jsThroughput;
@@ -100,9 +116,9 @@ describe('Resampler Benchmark (R4.1)', () => {
 			if (speedup < 2) {
 				console.warn(
 					`[R4.1] WASM SIMD speedup below 2x target: ${speedup.toFixed(2)}x ` +
-					`(JS ${Math.round(jsThroughput).toLocaleString()} vs ` +
-					`WASM ${Math.round(wasmThroughput).toLocaleString()} samples/sec). ` +
-					`This may indicate a performance regression.`,
+						`(JS ${Math.round(jsThroughput).toLocaleString()} vs ` +
+						`WASM ${Math.round(wasmThroughput).toLocaleString()} samples/sec). ` +
+						`This may indicate a performance regression.`
 				);
 			}
 			expect(speedup).toBeGreaterThan(0);

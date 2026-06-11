@@ -12,10 +12,10 @@ npm run verify
 
 This runs the following in sequence (stops on first failure):
 
-| # | Gate  | Command         | Passes When                                                    |
-|---|-------|-----------------|----------------------------------------------------------------|
-| 1 | Tests | `npm test`      | All Vitest tests pass; test count has not decreased            |
-| 2 | Build | `npm run build` | TypeScript strict check passes; Vite production build succeeds |
+| #   | Gate  | Command         | Passes When                                                    |
+| --- | ----- | --------------- | -------------------------------------------------------------- |
+| 1   | Tests | `npm test`      | All Vitest tests pass; test count has not decreased            |
+| 2   | Build | `npm run build` | TypeScript strict check passes; Vite production build succeeds |
 
 Run lint and format checks separately — they are informational:
 
@@ -84,6 +84,7 @@ After deployment, verify the live URL using [VERIFY_DEPLOYMENT.md](VERIFY_DEPLOY
 ## Record Results
 
 Document verification results with:
+
 - Date
 - Build SHA (from diagnostics report)
 - Browser and OS used for smoke test

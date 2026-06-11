@@ -23,8 +23,8 @@ import { WASM_SIMD_RESAMPLER_B64 } from './resampler-simd-wasm-b64';
  * If the browser rejects this, SIMD is not available.
  */
 const SIMD_TEST_BYTES = new Uint8Array([
-	0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 22, 1, 20,
-	0, 253, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 11,
+	0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 22, 1, 20, 0, 253, 12, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 11
 ]);
 
 let wasmAvailable = false;
@@ -99,7 +99,7 @@ function buildFilterTableF32(
 	filterSize: number,
 	tablePoints: number,
 	beta: number,
-	cutoff: number,
+	cutoff: number
 ): Float32Array {
 	const table = new Float32Array(filterSize * tablePoints);
 	const winTable = new Float64Array(filterSize);
@@ -208,7 +208,9 @@ export class WasmAudioResampler {
 			const totalNeeded = filterTableBytes + workingBytes;
 			const pagesNeeded = Math.ceil(totalNeeded / WASM_PAGE_SIZE);
 			if (this.memory!.buffer.byteLength < pagesNeeded * WASM_PAGE_SIZE) {
-				this.memory!.grow(pagesNeeded - Math.floor(this.memory!.buffer.byteLength / WASM_PAGE_SIZE));
+				this.memory!.grow(
+					pagesNeeded - Math.floor(this.memory!.buffer.byteLength / WASM_PAGE_SIZE)
+				);
 			}
 
 			// Copy filter table to WASM memory at offset 0
@@ -226,7 +228,7 @@ export class WasmAudioResampler {
 				tablePoints,
 				config.inputRate,
 				config.outputRate,
-				config.channels,
+				config.channels
 			);
 		} catch (e) {
 			console.warn('Failed to initialize WASM resampler, falling back to JS:', e);
@@ -303,7 +305,7 @@ export class WasmAudioResampler {
 			const outputFrames = (exports['process'] as Function)(
 				this.workingOffset,
 				inputFrames,
-				this.outputOffset,
+				this.outputOffset
 			) as number;
 
 			// Read output from WASM memory
@@ -380,7 +382,7 @@ export class WasmAudioResampler {
 			// Call WASM flush
 			const outputFrames = (this.instance.exports['flush'] as Function)(
 				this.workingOffset,
-				this.outputOffset,
+				this.outputOffset
 			) as number;
 
 			// Read output
@@ -390,7 +392,8 @@ export class WasmAudioResampler {
 			output.set(memF32.subarray(outputStart, outputStart + outputSamples));
 
 			// Read updated state from WASM globals
-			const keepFrames = (this.instance.exports['historyFilled'] as WebAssembly.Global).value as number;
+			const keepFrames = (this.instance.exports['historyFilled'] as WebAssembly.Global)
+				.value as number;
 			this.historyFilled = keepFrames;
 
 			// Copy leftover history from WASM memory back to JS history
@@ -399,7 +402,7 @@ export class WasmAudioResampler {
 				if (this.history.length < needed) {
 					this.history = new Float32Array(needed);
 				}
-				const srcOffset = (this.workingOffset / 4) + (totalFrames - keepFrames) * ch;
+				const srcOffset = this.workingOffset / 4 + (totalFrames - keepFrames) * ch;
 				this.history.set(memF32.subarray(srcOffset, srcOffset + needed));
 			}
 
@@ -430,7 +433,7 @@ export function resampleBlockWasm(
 	inputFrames: number,
 	inputRate: number,
 	outputRate: number,
-	channels: number,
+	channels: number
 ): Float32Array {
 	if (inputRate === outputRate) return input.slice(0, inputFrames * channels);
 	const resampler = WasmAudioResampler.isAvailable

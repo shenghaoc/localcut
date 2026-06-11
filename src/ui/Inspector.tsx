@@ -115,7 +115,10 @@ interface InspectorProps {
 	onTrackPan: (trackId: string, pan: number) => void;
 	onClipFade: (trackId: string, clipId: string, edge: 'in' | 'out', durationS: number) => void;
 	/** Phase 13: transition editing callbacks. */
-	onTransitionKind?: (transitionId: string, kind: import('../protocol').TransitionKindSnapshot) => void;
+	onTransitionKind?: (
+		transitionId: string,
+		kind: import('../protocol').TransitionKindSnapshot
+	) => void;
 	onTransitionDuration?: (transitionId: string, durationS: number) => void;
 	onRemoveTransition?: (transitionId: string) => void;
 }

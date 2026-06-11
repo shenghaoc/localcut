@@ -48,7 +48,9 @@ function buildFilterTable(
 			const x = tap - (filterSize - 1) * 0.5 + frac;
 			const scaled = cutoff * x;
 			const sinc =
-				Math.abs(scaled) < 1e-9 ? cutoff : (cutoff * Math.sin(Math.PI * scaled)) / (Math.PI * scaled);
+				Math.abs(scaled) < 1e-9
+					? cutoff
+					: (cutoff * Math.sin(Math.PI * scaled)) / (Math.PI * scaled);
 			const value = sinc * winTable[tap]!;
 			table[rowStart + tap] = value;
 			rowSum += value;
@@ -137,10 +139,7 @@ export class AudioResampler {
 			const intCenter = Math.floor(center);
 			if (intCenter - halfFilterInt + fs > totalInputFrames) break;
 			const frac = center - intCenter;
-			const phaseIdx = Math.min(
-				Math.floor(frac * this.tablePoints),
-				this.tablePoints - 1
-			);
+			const phaseIdx = Math.min(Math.floor(frac * this.tablePoints), this.tablePoints - 1);
 			const filterOffset = phaseIdx * fs;
 
 			for (let c = 0; c < ch; c++) {

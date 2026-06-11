@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { exportProjectBundle } from '../project-bundle/export';
 import { importProjectBundle } from '../project-bundle/import';
 import { createMemoryDirectorySink } from '../project-bundle/memory-sink';

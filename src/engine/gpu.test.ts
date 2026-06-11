@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import { PreviewRenderer, type CompositeLayer } from './gpu';
 import { DEFAULT_CLIP_EFFECTS } from './effects';
 import { DEFAULT_TRANSFORM } from './transform';

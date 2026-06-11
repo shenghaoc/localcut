@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { computeCacheUsage, planCacheEviction, type CacheBudgetEntry } from './cache-budget';
 import { DEFAULT_CACHE_BUDGET, type CacheBudget } from './cache-types';
 

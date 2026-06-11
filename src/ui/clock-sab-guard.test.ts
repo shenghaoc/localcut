@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import appSource from './App.tsx?raw';
 import clockSource from './clock.ts?raw';
 import audioEngineSource from './audio-engine.ts?raw';

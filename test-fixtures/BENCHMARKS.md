@@ -93,11 +93,11 @@ GPU submits/frame: 1
 
 ## Acceptable skip reasons
 
-| Metric | Skip reason | When |
-|--------|-------------|------|
-| GPU submissions | `webgpu.unavailable` | No WebGPU adapter |
-| Preview frame rate | `webgpu.unavailable` | Software rendering fallback |
-| Export throughput | `webcodecs.encoder_unsupported` | Missing H.264 encoder |
+| Metric             | Skip reason                     | When                        |
+| ------------------ | ------------------------------- | --------------------------- |
+| GPU submissions    | `webgpu.unavailable`            | No WebGPU adapter           |
+| Preview frame rate | `webgpu.unavailable`            | Software rendering fallback |
+| Export throughput  | `webcodecs.encoder_unsupported` | Missing H.264 encoder       |
 
 ## Where release evidence is recorded
 

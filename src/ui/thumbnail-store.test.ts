@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import { ThumbnailStore, thumbnailKey } from './thumbnail-store';
 
 function makeEntry(width = 160, height = 90) {

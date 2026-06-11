@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeAll } from 'vitest';
+import { describe, expect, it, beforeAll } from 'vite-plus/test';
 import { WasmAudioResampler, resampleBlockWasm } from './audio-resampler-wasm';
 import { AudioResampler } from './audio-resampler';
 
@@ -11,7 +11,7 @@ describe('WasmAudioResampler', () => {
 		const resampler = new WasmAudioResampler({
 			inputRate: 48000,
 			outputRate: 48000,
-			channels: 1,
+			channels: 1
 		});
 		const input = new Float32Array([0.1, 0.2, 0.3, 0.4]);
 		const output = resampler.process(input, 4);
@@ -59,7 +59,7 @@ describe('WasmAudioResampler', () => {
 		const resampler = new WasmAudioResampler({
 			inputRate: 48000,
 			outputRate: 24000,
-			channels: 2,
+			channels: 2
 		});
 		const frames = 480;
 		const input = new Float32Array(frames * 2);
@@ -79,7 +79,7 @@ describe('WasmAudioResampler', () => {
 		const resampler = new WasmAudioResampler({
 			inputRate: 48000,
 			outputRate: 24000,
-			channels: 1,
+			channels: 1
 		});
 		const input = new Float32Array(480).fill(0.5);
 		resampler.process(input, 480);
@@ -89,14 +89,14 @@ describe('WasmAudioResampler', () => {
 	});
 
 	it('throws on invalid sample rate', () => {
-		expect(
-			() => new WasmAudioResampler({ inputRate: 0, outputRate: 48000, channels: 1 }),
-		).toThrow('Sample rates must be positive');
+		expect(() => new WasmAudioResampler({ inputRate: 0, outputRate: 48000, channels: 1 })).toThrow(
+			'Sample rates must be positive'
+		);
 	});
 
 	it('throws on invalid channel count', () => {
 		expect(
-			() => new WasmAudioResampler({ inputRate: 48000, outputRate: 48000, channels: 0 }),
+			() => new WasmAudioResampler({ inputRate: 48000, outputRate: 48000, channels: 0 })
 		).toThrow('Channel count must be positive');
 	});
 
@@ -121,7 +121,7 @@ describe('WasmAudioResampler', () => {
 		combined.set(tail, output.length);
 		const mid = combined.subarray(
 			Math.floor(combined.length * 0.2),
-			Math.floor(combined.length * 0.8),
+			Math.floor(combined.length * 0.8)
 		);
 		const outputRMS = Math.sqrt(mid.reduce((s, v) => s + v * v, 0) / mid.length);
 
@@ -133,7 +133,7 @@ describe('WasmAudioResampler', () => {
 		const resampler = new WasmAudioResampler({
 			inputRate: 44100,
 			outputRate: 48000,
-			channels: 1,
+			channels: 1
 		});
 		const chunkSize = 1024;
 		const chunks = 4;
@@ -307,7 +307,7 @@ describe('WasmAudioResampler SIMD feature detection', () => {
 		const resampler = new WasmAudioResampler({
 			inputRate: 48000,
 			outputRate: 24000,
-			channels: 1,
+			channels: 1
 		});
 		const input = new Float32Array(480).fill(0.5);
 		const output = resampler.process(input, 480);

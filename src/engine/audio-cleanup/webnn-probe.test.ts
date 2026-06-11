@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import { probeWebNN, webNNAvailable } from './webnn-probe';
 
 function mlWith(supported: Partial<Record<'cpu' | 'gpu' | 'npu', boolean>>): ML {

@@ -17,12 +17,12 @@ infrastructure, has no accounts, and sends no telemetry.**
 
 ## Supported endpoint types
 
-| Endpoint type            | Where to get the URL and token                                                                              | Notes                                              |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| **Twitch (WHIP)**        | Twitch's WHIP ingest endpoint; your stream key is the bearer token                                           | H.264 only; keep bitrate ≤ 6000 kbps               |
-| **Cloudflare-class CDN** | Your dashboard's live input → WebRTC (WHIP) URL                                                              | Follow the dashboard's bitrate guidance            |
-| **Self-hosted MediaMTX** | `http://<host>:8889/<path>/whip`; token only if you configured one                                           | Accepts H.264 and AV1; you control the limits      |
-| **Custom WHIP URL**      | Any RFC 9725-compliant server                                                                                | LocalCut makes no assumptions about the server     |
+| Endpoint type            | Where to get the URL and token                                     | Notes                                          |
+| ------------------------ | ------------------------------------------------------------------ | ---------------------------------------------- |
+| **Twitch (WHIP)**        | Twitch's WHIP ingest endpoint; your stream key is the bearer token | H.264 only; keep bitrate ≤ 6000 kbps           |
+| **Cloudflare-class CDN** | Your dashboard's live input → WebRTC (WHIP) URL                    | Follow the dashboard's bitrate guidance        |
+| **Self-hosted MediaMTX** | `http://<host>:8889/<path>/whip`; token only if you configured one | Accepts H.264 and AV1; you control the limits  |
+| **Custom WHIP URL**      | Any RFC 9725-compliant server                                      | LocalCut makes no assumptions about the server |
 
 ### RTMP-only platforms (YouTube, Douyin, Bilibili, …)
 
@@ -57,7 +57,7 @@ for current configuration details.
 3. Check the encode settings. Defaults are H.264 (constrained baseline, up to
    Level 4.1), 4500 kbps, a 2-second keyframe interval, and a 1080p30 cap —
    safe for every listed endpoint type. AV1 is offered only when your
-   hardware supports AV1 encoding *and* the endpoint type accepts it.
+   hardware supports AV1 encoding _and_ the endpoint type accepts it.
 4. Click **Go Live**. The panel shows the connection state, the achieved vs
    target bitrate, round-trip time, and frame counters while streaming.
 5. Click **Stop** to end the stream. LocalCut sends the standard WHIP

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { serializeTimelineToEdl, validateCmx3600Document } from './edl';
 import { buildMissingSourceFixtureDoc, buildMultiTrackFixtureDoc } from './fixture-docs';
 

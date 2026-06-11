@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import { FrameCache, makeFrameCacheKey } from './frame-cache';
 
 function makeFrame(width: number, height: number, closeSpy?: ReturnType<typeof vi.fn>) {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import {
 	clipEffectsEqual,
 	DEFAULT_CLIP_EFFECTS,

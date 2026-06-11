@@ -82,11 +82,13 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 ## Useful commands
 
 ```bash
-npm install    # Install dependencies
-npm run dev    # Vite dev server (COOP/COEP headers enabled)
-npm run build  # Typecheck + production build
-npm run preview
-npm test       # Vitest
+pnpm install   # Install dependencies
+vp dev         # Vite dev server (COOP/COEP headers enabled)
+vp build       # Typecheck + production build
+vp preview     # Production preview
+vp test run    # Vitest
+vp check       # Lint + format check
+vp fmt         # Format code
 ```
 
 ## Architectural boundaries (hard gates)
@@ -96,12 +98,12 @@ npm test       # Vitest
 3. **`SharedArrayBuffer` is the premium clock** — high-frequency accelerated playback uses SAB. If `crossOriginIsolated !== true`, keep the shell alive and show a limited capability tier instead of a dead-end fatal screen.
 4. **Single WebGPU command submission per frame** for the accelerated effect chain (Phase 4+).
 5. **Client-compute core editing** — import/edit/preview/effects/audio/export must run in the user's browser. Cloudflare is for static hosting and COOP/COEP headers, not server-side media processing.
-6. **npm only** — `package-lock.json` is the lockfile; no `yarn.lock`, `pnpm-lock.yaml`, or `bun.lock`.
+6. **pnpm only** — `pnpm-lock.yaml` is the lockfile; no `yarn.lock`, `package-lock.json`, or `bun.lock`.
 
 ## Quality gate
 
-1. `npm run build` → succeeds (strict TypeScript).
-2. `npm test` → green; test count must not decrease for non-trivial logic changes.
+1. `vp build` → succeeds (strict TypeScript).
+2. `vp test run` → green; test count must not decrease for non-trivial logic changes.
 3. Full-performance dev and production must keep COOP/COEP so `crossOriginIsolated === true`; missing isolation must show the limited capability tier rather than crashing the shell.
 4. Every `VideoFrame` `.close()`d exactly once in engine code paths.
 
@@ -127,7 +129,7 @@ These guidelines drive **Codex** PR reviews (`@codex review`, or automatic revie
 - Per-frame `postMessage` for the accelerated playback clock when `SharedArrayBuffer` is available.
 - Missing COOP/COEP headers for the full-performance build, or missing user-facing capability handling when `crossOriginIsolated` is false.
 - Server runtime, external API calls, telemetry, cloud storage, or paid server compute required for core editing/export.
-- `yarn.lock`, `pnpm-lock.yaml`, or `bun.lock` added (npm only).
+- `yarn.lock`, `package-lock.json`, or `bun.lock` added (pnpm only).
 - A `VideoFrame` not `.close()`d, or closed twice.
 - Logic bugs, crashes, data loss, race conditions, or security issues introduced by the change.
 
@@ -151,8 +153,8 @@ Be thorough but not noisy: surface every P0/P1 you can substantiate, and skip pe
 - **COOP/COEP** are load-bearing: `public/_headers` and `vite.config.ts` `server.headers` / `preview.headers`.
 - **WebGPU + WebCodecs** require a modern Chromium browser for full performance; engine code runs in the pipeline worker, not on main.
 - **Preview shortcuts must be capability-tiered** — do not regress the worker WebGPU path. If adding Canvas/WebGL/CPU fallback preview, keep it separate, reduced capability, and visibly labeled.
-- **Single dev process** — no backend, media server, database, Docker, or `.env` secrets. Only `npm run dev` (port **5173**) is required for interactive work; the pipeline worker is spawned automatically by the UI.
-- **Remote browser access** — when testing via the Desktop pane, start Vite with `npm run dev -- --host 0.0.0.0` so Chrome can reach the server.
-- **Quality gate in CI-like runs** — there is no separate lint script; use `npm run build` (strict `tsc` + Vite) and `npm test` (Vitest, Node environment).
+- **Single dev process** — no backend, media server, database, Docker, or `.env` secrets. Only `vp dev` (port **5173**) is required for interactive work; the pipeline worker is spawned automatically by the UI.
+- **Remote browser access** — when testing via the Desktop pane, start Vite with `vp dev --host 0.0.0.0` so Chrome can reach the server.
+- **Quality gate in CI-like runs** — there is no separate lint script; use `vp build` (strict `tsc` + Vite) and `vp test run` (Vitest, Node environment).
 - **Manual E2E smoke test** — open Chromium to `http://localhost:5173` (or the server's remote URL when using `--host 0.0.0.0`), confirm the status bar shows the accelerated/COOP-COEP OK tier, click **Import**, and load a local MP4/MOV/WebM. Also verify a non-isolated/missing-capability run shows limited mode instead of a blank app. A tiny test clip can be generated with `ffmpeg` if none is checked in.
 - **WebGPU in cloud VMs** — headless or software-rendered environments may report “No WebGPU adapter”; metadata import and the SAB clock still work. Full zero-copy preview requires hardware WebGPU.

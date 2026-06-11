@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { TrackPipeline, type TrackPipelineCallbacks } from './track-pipeline';
 import {
 	createMockAudioData,
@@ -42,7 +42,10 @@ class StubVideoEncoder {
 	}
 	configure(_config: VideoEncoderConfig): void {}
 	encode(frame: VideoFrame, options?: VideoEncoderEncodeOptions): void {
-		encoderState.videoEncodes.push({ timestamp: frame.timestamp, keyFrame: options?.keyFrame === true });
+		encoderState.videoEncodes.push({
+			timestamp: frame.timestamp,
+			keyFrame: options?.keyFrame === true
+		});
 	}
 	async flush(): Promise<void> {
 		encoderState.flushed = true;
@@ -94,7 +97,11 @@ interface PipelineHarness {
 	errors: string[];
 }
 
-function buildPipeline(kind: 'screen' | 'mic', frames: Array<VideoFrame | AudioData>, readerOpts?: { delayMs?: number }): PipelineHarness {
+function buildPipeline(
+	kind: 'screen' | 'mic',
+	frames: Array<VideoFrame | AudioData>,
+	readerOpts?: { delayMs?: number }
+): PipelineHarness {
 	stubGlobals();
 	nextReader = createMockMSTPReader(frames as VideoFrame[], readerOpts);
 
@@ -184,7 +191,9 @@ describe('TrackPipeline video', () => {
 		harness.pipeline.start(2_000_000);
 		await harness.ended;
 
-		const keyTimestamps = encoderState.videoEncodes.filter((c) => c.keyFrame).map((c) => c.timestamp);
+		const keyTimestamps = encoderState.videoEncodes
+			.filter((c) => c.keyFrame)
+			.map((c) => c.timestamp);
 		expect(keyTimestamps).toEqual([0, 2_000_000, 4_600_000]);
 	});
 

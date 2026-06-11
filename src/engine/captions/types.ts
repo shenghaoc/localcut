@@ -309,7 +309,7 @@ export function effectiveCaptionStyle(
 	if (!segmentStyle) return base;
 	return normalizeCaptionStyle({
 		presetId: segmentStyle.presetId ?? base.presetId,
-		overrides: { ...(base.overrides ?? {}), ...(segmentStyle.overrides ?? {}) },
+		overrides: { ...base.overrides, ...segmentStyle.overrides },
 		anchor: segmentStyle.anchor ?? base.anchor,
 		insetPx: segmentStyle.insetPx ?? base.insetPx,
 		maxWidthPercent: segmentStyle.maxWidthPercent ?? base.maxWidthPercent,

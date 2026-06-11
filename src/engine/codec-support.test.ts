@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import { canDemuxContainer, probeAllCodecs, getFormatCompatibility } from './codec-support';
 
 describe('canDemuxContainer', () => {
@@ -9,12 +9,9 @@ describe('canDemuxContainer', () => {
 		}
 	);
 
-	it.each(['mkv', 'avi', 'flv', 'ts', 'mxf'])(
-		'returns false for %s',
-		(ext) => {
-			expect(canDemuxContainer(ext)).toBe(false);
-		}
-	);
+	it.each(['mkv', 'avi', 'flv', 'ts', 'mxf'])('returns false for %s', (ext) => {
+		expect(canDemuxContainer(ext)).toBe(false);
+	});
 
 	it('strips leading dot', () => {
 		expect(canDemuxContainer('.mp4')).toBe(true);

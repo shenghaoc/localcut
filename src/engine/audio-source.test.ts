@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import { SequentialAudioSource, type AudioSampleLike } from './audio-source';
 
 class MockAudioSample implements AudioSampleLike {
@@ -103,6 +103,6 @@ describe('SequentialAudioSource', () => {
 		expect(down.length).toBe(16);
 		expect(down.every((v) => Number.isFinite(v))).toBe(true);
 		// A passthrough (the bug) would return data[0..15] verbatim; resampling differs.
-		expect([...down]).not.toEqual([...data.slice(0, 16)]);
+		expect([...down]).not.toEqual(data.slice(0, 16));
 	});
 });
