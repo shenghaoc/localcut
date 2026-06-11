@@ -48,6 +48,7 @@ export class TrackPipeline {
 	private preEncodeDrops = 0;
 	private audioOverrunCount = 0;
 	private running = false;
+	private paused = false;
 	private ended = false;
 	private keyframeIntervalUs = DEFAULT_KEYFRAME_INTERVAL_US;
 	private lastKeyframeTs: number | null = null;
@@ -88,7 +89,9 @@ export class TrackPipeline {
 	}
 
 	private emitEnded(): void {
-		if (!this.ended) {
+		// Don't emit ended when paused — the pipeline will be restarted on resume.
+		// Only emit when the pipeline is truly done (stop or source ended).
+		if (!this.ended && !this.paused) {
 			this.ended = true;
 			this.callbacks.onPipelineEnded(this.sourceId);
 		}
@@ -326,11 +329,14 @@ export class TrackPipeline {
 	}
 
 	/**
-	 * Phase 42: Pause — suspends the MSTP reader loop by setting running=false.
+	 * Phase 42: Pause — suspends the MSTP reader loop by setting paused=true.
 	 * The async read loop will exit on its next iteration; the encoder is flushed
-	 * and closed in the finally block. Call resume() to restart.
+	 * and closed in the finally block. emitEnded() is suppressed while paused.
+	 * Call resume() to restart with a fresh encoder and reader.
 	 */
 	pause(): void {
+		if (!this.running || this.paused) return;
+		this.paused = true;
 		this.running = false;
 		this.clearChunkWaiters();
 	}
@@ -340,7 +346,9 @@ export class TrackPipeline {
 	 * Creates a fresh encoder and reader from the same track.
 	 */
 	resume(): void {
-		if (this.running || this.ended) return;
+		if (!this.paused) return;
+		this.paused = false;
+		this.ended = false;
 		this.start(this.keyframeIntervalUs);
 	}
 

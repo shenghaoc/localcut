@@ -57,6 +57,18 @@ interface WriteSourceEndedMessage {
 	reason: string;
 }
 
+interface WritePauseMessage {
+	type: 'write-pause';
+	sessionId: string;
+	atUs: number;
+}
+
+interface WriteResumeMessage {
+	type: 'write-resume';
+	sessionId: string;
+	atUs: number;
+}
+
 interface ScanSessionsMessage {
 	type: 'scan-sessions';
 }
@@ -72,6 +84,8 @@ type WriterMessage =
 	| WriteFinalizeMessage
 	| WriteEpochMessage
 	| WriteSourceEndedMessage
+	| WritePauseMessage
+	| WriteResumeMessage
 	| ScanSessionsMessage
 	| DiscardSessionMessage;
 
@@ -133,6 +147,18 @@ class CaptureWriter {
 						kind: 'source-ended',
 						sourceId: msg.sourceId,
 						reason: msg.reason
+					});
+					break;
+				case 'write-pause':
+					await this.appendManifest(msg.sessionId, {
+						kind: 'pause',
+						atUs: msg.atUs
+					});
+					break;
+				case 'write-resume':
+					await this.appendManifest(msg.sessionId, {
+						kind: 'resume',
+						atUs: msg.atUs
 					});
 					break;
 				case 'write-finalize':

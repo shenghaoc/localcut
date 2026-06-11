@@ -53,6 +53,8 @@ export class CaptureSession {
 	private startTime = 0;
 	private epochUs: number | null = null;
 	private totalBytesWritten = 0;
+	private lastEncodedFrameTs = 0;
+	private pendingResumeRecord = false;
 	private abort = new AbortController();
 	private callbacks: CaptureSessionCallbacks;
 	private writerPort: MessagePort | null;
@@ -182,13 +184,21 @@ export class CaptureSession {
 	}
 
 	/**
-	 * Phase 42: Pause capture — suspends MSTP reader loops by aborting
-	 * each source pipeline's reader. The pipeline remains alive (not stopped)
-	 * so it can be resumed.
+	 * Phase 42: Pause capture — suspends MSTP reader loops by pausing
+	 * each source pipeline. The pipeline remains alive (not stopped)
+	 * so it can be resumed. Writes a pause manifest record.
 	 */
 	pause(): void {
 		if (this.state !== 'recording') return;
-		// Abort all source readers — pipelines stay in the sources map.
+		// Record pause timestamp from the last encoded frame.
+		if (this.writerPort) {
+			this.writerPort.postMessage({
+				type: 'write-pause',
+				sessionId: this.sessionId,
+				atUs: this.lastEncodedFrameTs
+			});
+		}
+		// Pause all source pipelines — they stay in the sources map.
 		for (const [, entry] of this.sources) {
 			if (entry.state === 'capturing') {
 				entry.pipeline.pause();
@@ -200,7 +210,8 @@ export class CaptureSession {
 
 	/**
 	 * Phase 42: Resume capture — restarts MSTP reader loops for all
-	 * sources that were capturing before the pause.
+	 * sources that were capturing before the pause. A resume manifest
+	 * record will be written when the first new frame is encoded.
 	 */
 	resume(): void {
 		if (this.state !== 'paused') return;
@@ -210,6 +221,9 @@ export class CaptureSession {
 			}
 		}
 		this.state = 'recording';
+		// The resume manifest record is written on the next routeChunk call,
+		// using the first encoded frame's timestamp after resumption.
+		this.pendingResumeRecord = true;
 		this.emitStatus();
 	}
 
@@ -227,6 +241,19 @@ export class CaptureSession {
 		entry.preEncodeDrops += preEncodeDrops;
 		entry.bytesWritten += packet.byteLength;
 		this.totalBytesWritten += packet.byteLength;
+		this.lastEncodedFrameTs = Math.max(this.lastEncodedFrameTs, toUs);
+
+		// Write the resume manifest record on the first encoded frame after resume.
+		if (this.pendingResumeRecord) {
+			this.pendingResumeRecord = false;
+			if (this.writerPort) {
+				this.writerPort.postMessage({
+					type: 'write-resume',
+					sessionId: this.sessionId,
+					atUs: fromUs
+				});
+			}
+		}
 
 		if (entry.firstSampleUs === null) {
 			entry.firstSampleUs = fromUs;
@@ -365,6 +392,8 @@ export class CaptureSession {
 		this.sources.clear();
 		this.state = 'idle';
 		this.totalBytesWritten = 0;
+		this.lastEncodedFrameTs = 0;
+		this.pendingResumeRecord = false;
 		this.epochUs = null;
 	}
 
