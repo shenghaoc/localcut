@@ -2118,7 +2118,7 @@ export function overwriteEdit(
 	}
 
 	const targetSet = new Set(targetTrackIds);
-	let next = cloneTimeline(timeline);
+	const next = cloneTimeline(timeline);
 
 	for (const item of clips) {
 		const dest = next.find((t) => t.id === item.trackId);

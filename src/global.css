@@ -307,6 +307,7 @@ body {
 	border-radius: var(--radius-xs);
 	background: rgb(5 6 16 / 62%);
 	overflow: hidden;
+	isolation: isolate;
 }
 
 .meter-rms,
@@ -315,6 +316,10 @@ body {
 	left: 0;
 	right: 0;
 	bottom: 0;
+	height: 100%;
+	transform: scaleY(0);
+	transform-origin: bottom;
+	will-change: transform;
 }
 
 .meter-rms {
