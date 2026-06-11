@@ -9,8 +9,20 @@ function MeterBar(props: { label: string; peak: () => number; rms: () => number 
 	return (
 		<div class="meter-channel" aria-hidden="true">
 			<div class="meter-bar">
-				<div class="meter-rms" style={{ height: `${meterHeightPercent(props.rms())}%` }} />
-				<div class="meter-peak" style={{ height: `${meterHeightPercent(props.peak())}%` }} />
+				<div
+					class="meter-rms"
+					style={{
+						transform: `scaleY(${meterHeightPercent(props.rms()) / 100})`,
+						'will-change': 'transform'
+					}}
+				/>
+				<div
+					class="meter-peak"
+					style={{
+						transform: `scaleY(${meterHeightPercent(props.peak()) / 100})`,
+						'will-change': 'transform'
+					}}
+				/>
 			</div>
 			<span class="meter-label">{props.label}</span>
 			<span class="meter-db tabular-nums">{levelToDb(props.peak()).toFixed(0)}</span>
