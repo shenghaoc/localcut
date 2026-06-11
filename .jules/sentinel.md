@@ -6,8 +6,8 @@
 
 ## 2025-05-24 - [Fix XSS via Language Attribute Injection in Fenced Code Blocks]
 **Vulnerability:** The markdown renderer allowed injecting arbitrary HTML attributes into fenced code block `<code>` tags because the `lang` variable was not escaped before string interpolation (`<code class="language-${lang}">`). A payload like ```` ```html"><script>alert(1)</script> ```` successfully broke out of the attribute.
-**Learning:** Variables obtained directly from unsanitized input must always be explicitly escaped before insertion into HTML string templates, even if they represent secondary parts of the syntax like a language identifier.
-**Prevention:** Explicitly sanitize or escape all extracted variables from text input using `escapeHtml` (or similar mechanisms) before interpolating them into HTML attributes.
+**Learning:** Variables obtained directly from unsanitized input must always be restricted before insertion into HTML string templates. Escaping alone is insufficient — a whitelist that limits the value to known-safe characters is more robust and prevents class pollution from spaces or unusual characters.
+**Prevention:** Restrict extracted identifiers to a strict character whitelist (e.g. `match(/^[a-zA-Z0-9_\-+#.]+/)`) before interpolating into HTML attributes, rather than relying solely on HTML-entity escaping.
 
 ## 2025-05-24 - [Fix Improper URL Validation in isSafeUrl]
 **Vulnerability:** The regex `/^(https?:|mailto:|tel:|#|\/|\.\/|\.\.\/)/i` in `isSafeUrl` permitted malformed pseudo-protocols (e.g., `https:javascript:alert(1)`) to pass validation. Also, `isSafeUrl` correctly performed a `.trim()` check to validate URLs without leading whitespaces, but then returned the original, untrimmed URL which could still evaluate unsafely.

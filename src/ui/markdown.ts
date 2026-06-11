@@ -17,7 +17,7 @@ export function renderMarkdown(source: string): string {
 
 		// Fenced code block
 		if (/^```/.test(line)) {
-			const lang = escapeHtml(line.slice(3).trim());
+			const lang = line.slice(3).trim().match(/^[a-zA-Z0-9_\-+#.]+/)?.[0] ?? '';
 			html.push(`<pre><code class="${lang ? `language-${lang}` : ''}">`);
 			i++;
 			while (i < lines.length && !/^```/.test(lines[i]!)) {
