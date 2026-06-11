@@ -551,12 +551,12 @@ export const mediabunnyAdapter: MediaAdapter = {
 					? primaryVideoInspection.frameRate
 					: DEFAULT_FRAME_RATE;
 
-			if (primaryVideo && primaryVideoInspection?.canDecode) {
+			if (primaryVideo) {
 				// VFR: use a tiny floor (guards zero-duration frames only) so each frame
 				// advances at its actual Mediabunny-reported duration rather than being
 				// held for a full nominal-rate interval.
 				const minFrameDuration =
-					primaryVideoInspection.frameRateMode === 'variable'
+					primaryVideoInspection?.frameRateMode === 'variable'
 						? 1e-4
 						: frameRate > 0
 							? 1 / frameRate
