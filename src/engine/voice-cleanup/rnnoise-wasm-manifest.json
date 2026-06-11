@@ -1,0 +1,7 @@
+{
+  "emscriptenVersion": "3.1.51",
+  "rnnoiseCommit": "a15bc22",
+  "simd": true,
+  "sizeBytes": 0,
+  "checksum": "sha256-placeholder-build-with-scripts-build-rnnoise-wasm-mjs"
+}

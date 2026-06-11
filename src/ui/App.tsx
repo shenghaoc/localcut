@@ -40,9 +40,11 @@ import {
 	type WorkerStateMessage,
 	type WaveformPeaks,
 	DEFAULT_LIVE_AUDIO_CHAIN_CONFIG,
+	DEFAULT_VOICE_CLEANUP_SETTINGS,
 	type CaptureSessionState,
 	type LiveAudioChainConfig,
-	type RingBufferState
+	type RingBufferState,
+	type VoiceCleanupSettings
 } from '../protocol';
 import type { DiagnosticSnapshot, DiagnosticSourceInput } from '../diagnostics/types';
 import {
@@ -67,7 +69,12 @@ import { ExportDialog } from './ExportDialog';
 import { RenderQueuePanel } from './RenderQueuePanel';
 import { ReplayBufferPanel } from './ReplayBufferPanel';
 import { LiveAudioChainPanel } from './LiveAudioChainPanel';
-import { probeMediaStreamTrackProcessor, startCapture, stopCaptureStreams } from './capture-bridge';
+import { VoiceCleanupPanel } from './VoiceCleanupPanel';
+import {
+	probeMediaStreamTrackProcessor,
+	startCapture,
+	stopCaptureStreams
+} from './capture-bridge';
 import { BundleDialog } from './BundleDialog';
 import { InterchangeMenu } from './InterchangeMenu';
 import { Button, buttonVariants } from './components/button';
@@ -261,7 +268,8 @@ const SIDE_RAIL_TABS = [
 	{ id: 'inspector', label: 'Inspector' },
 	{ id: 'captions', label: 'Captions' },
 	{ id: 'replay', label: 'Replay' },
-	{ id: 'live-audio', label: 'Audio' }
+	{ id: 'live-audio', label: 'Audio' },
+	{ id: 'voice-cleanup', label: 'Cleanup' }
 ] as const;
 type SideRailTab = (typeof SIDE_RAIL_TABS)[number]['id'];
 
@@ -383,6 +391,15 @@ export function App() {
 		DEFAULT_LIVE_AUDIO_CHAIN_CONFIG
 	);
 	const [liveChainLatencyMs, setLiveChainLatencyMs] = createSignal(0);
+	// Phase 36: Voice Cleanup
+	const [voiceCleanupSettings, setVoiceCleanupSettings] = createSignal<VoiceCleanupSettings>(
+		DEFAULT_VOICE_CLEANUP_SETTINGS
+	);
+	const [voiceCleanupAnalysisState, setVoiceCleanupAnalysisState] = createSignal<'idle' | 'running' | 'done' | 'error'>('idle');
+	const [voiceCleanupAnalysisProgress, setVoiceCleanupAnalysisProgress] = createSignal(0);
+	const [voiceCleanupMeasuredLufs, setVoiceCleanupMeasuredLufs] = createSignal(0);
+	const [voiceCleanupProposedGainDb, setVoiceCleanupProposedGainDb] = createSignal(0);
+	const [voiceCleanupAnalysisError, setVoiceCleanupAnalysisError] = createSignal('');
 	const [isOffline, setIsOffline] = createSignal(!initialOnlineStatus());
 	const [hasActiveSW, setHasActiveSW] = createSignal(false);
 	const [audioWarning, setAudioWarning] = createSignal<string | null>(null);
@@ -1401,6 +1418,23 @@ export function App() {
 				break;
 			case 'live-chain-error':
 				setStatusLine(`Live audio chain: ${msg.message}`);
+				break;
+			// Phase 36: Voice Cleanup
+			case 'voice-cleanup-analysis-progress':
+				setVoiceCleanupAnalysisState('running');
+				setVoiceCleanupAnalysisProgress(msg.fraction);
+				break;
+			case 'voice-cleanup-analysis-result':
+				setVoiceCleanupAnalysisState('done');
+				setVoiceCleanupMeasuredLufs(msg.measuredLufs);
+				setVoiceCleanupProposedGainDb(msg.normalisationGainDb);
+				break;
+			case 'voice-cleanup-analysis-cancelled':
+				setVoiceCleanupAnalysisState('idle');
+				break;
+			case 'voice-cleanup-analysis-error':
+				setVoiceCleanupAnalysisState('error');
+				setVoiceCleanupAnalysisError(msg.message);
 				break;
 			case 'error':
 				setImporting(false);
@@ -2965,6 +2999,58 @@ export function App() {
 													crossOriginIsolated={capabilities().crossOriginIsolated}
 													isCapturing={captureSession()?.active ?? false}
 													initiallyExpanded={true}
+												/>
+											</div>
+										</Show>
+										<Show when={activeSideRailTab() === 'voice-cleanup'}>
+											<div
+												id="panel-voice-cleanup"
+												class="side-rail-tab-panel"
+												role="tabpanel"
+												aria-labelledby="tab-voice-cleanup"
+											>
+												<VoiceCleanupPanel
+													settings={voiceCleanupSettings()}
+													trackNames={
+														new Map(
+															timeline()
+																.filter((t) => t.type === 'audio')
+																.map((t) => [t.id, `Audio ${t.id.slice(0, 8)}`])
+														)
+													}
+													onSettingsChange={(settings) => {
+														setVoiceCleanupSettings(settings);
+														bridge?.send({ type: 'voice-cleanup-update-settings', settings });
+													}}
+													onAnalyseLoudness={(targetLufs) => {
+														setVoiceCleanupAnalysisState('running');
+														setVoiceCleanupAnalysisProgress(0);
+														setVoiceCleanupMeasuredLufs(0);
+														setVoiceCleanupProposedGainDb(0);
+														setVoiceCleanupNormalisedLufs(0);
+														bridge?.send({ type: 'voice-cleanup-analyse-loudness', targetLufs });
+													}}
+													onCancelAnalysis={() => {
+														bridge?.send({ type: 'voice-cleanup-cancel-analysis' });
+													}}
+													onApplyNormalisation={(gainDb) => {
+														setVoiceCleanupSettings((s) => ({ ...s, normaliseGainDb: gainDb }));
+														bridge?.send({
+															type: 'voice-cleanup-apply-normalisation',
+															normalisationGainDb: gainDb
+														});
+													}}
+													analysisState={voiceCleanupAnalysisState()}
+													analysisProgress={voiceCleanupAnalysisProgress()}
+													measuredLufs={voiceCleanupMeasuredLufs()}
+													proposedGainDb={voiceCleanupProposedGainDb()}
+													normalisedLufs={voiceCleanupNormalisedLufs()}
+													analysisError={voiceCleanupAnalysisError()}
+													latencyMs={voiceCleanupMonitorLatencyMs()}
+													sampleRate={voiceCleanupMonitorSampleRate()}
+													timelineEmpty={timeline().length === 0}
+													denoiserStatus={voiceCleanupDenoiserStatus()}
+													denoiserUnavailableReason={voiceCleanupDenoiserUnavailableReason()}
 												/>
 											</div>
 										</Show>

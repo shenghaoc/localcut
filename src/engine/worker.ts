@@ -23,10 +23,12 @@ import {
 	type PreviewBackend,
 	DEFAULT_LIVE_AUDIO_CHAIN_CONFIG,
 	DEFAULT_RING_BUFFER_CONFIG,
+	DEFAULT_VOICE_CLEANUP_SETTINGS,
 	type CaptureSessionState,
 	type CaptureStreamSettings,
 	type LiveAudioChainConfig,
-	type SpillRange
+	type SpillRange,
+	type VoiceCleanupSettings
 } from '../protocol';
 import {
 	EncodedAudioPacketSource,
@@ -402,6 +404,9 @@ function cloneLiveChainConfig(config: LiveAudioChainConfig): LiveAudioChainConfi
 
 const replayRing: RingBuffer = createRingBuffer({ ...DEFAULT_RING_BUFFER_CONFIG });
 let liveChainConfig: LiveAudioChainConfig = cloneLiveChainConfig(DEFAULT_LIVE_AUDIO_CHAIN_CONFIG);
+// Phase 36: Voice Cleanup state
+let voiceCleanupSettings: VoiceCleanupSettings = { ...DEFAULT_VOICE_CLEANUP_SETTINGS };
+let analysisAbortController: AbortController | null = null;
 let capture: CaptureRuntime | null = null;
 /** Serializes OPFS spill writes/deletes so a file is never read or deleted mid-write. */
 let replaySpillChain: Promise<void> = Promise.resolve();
@@ -4809,6 +4814,87 @@ async function handleQueueStart() {
 	scheduleAutosave();
 }
 
+// ── Phase 36: Voice Cleanup handlers ──
+
+async function handleVoiceCleanupAnalyseLoudness(
+	cmd: Extract<WorkerCommand, { type: 'voice-cleanup-analyse-loudness' }>
+): Promise<void> {
+	if (analysisAbortController) {
+		post({ type: 'voice-cleanup-analysis-error', message: 'Analysis already in progress.' });
+		return;
+	}
+	if (timeline.length === 0) {
+		post({ type: 'voice-cleanup-analysis-error', message: 'Timeline is empty.' });
+		return;
+	}
+
+	analysisAbortController = new AbortController();
+	const { signal } = analysisAbortController;
+	const durationS = getTimelineDuration(timeline);
+	const sampleRate = audioRing
+		? Atomics.load(audioRing.header, RingHeader.SAMPLE_RATE) || 48_000
+		: 48_000;
+	const channels = audioRing
+		? Math.max(1, Atomics.load(audioRing.header, RingHeader.CHANNELS))
+		: 2;
+
+	try {
+		const { analyseLoudness } = await import('./voice-cleanup/loudness-analysis');
+		const result = await analyseLoudness(
+			{
+				timeline,
+				sources: sourceInputs,
+				sampleRate,
+				channels,
+				timelineDurationS: durationS,
+				targetLufs: cmd.targetLufs,
+			},
+			(fraction) => {
+				post({
+					type: 'voice-cleanup-analysis-progress',
+					fraction,
+					currentWindowS: fraction * durationS,
+				});
+			},
+			signal,
+		);
+		post({
+			type: 'voice-cleanup-analysis-result',
+			measuredLufs: result.measuredLufs,
+			normalisationGainDb: result.normalisationGainDb,
+		});
+	} catch (err) {
+		if (err instanceof DOMException && err.name === 'AbortError') {
+			post({ type: 'voice-cleanup-analysis-cancelled' });
+		} else {
+			post({
+				type: 'voice-cleanup-analysis-error',
+				message: err instanceof Error ? err.message : String(err),
+			});
+		}
+	} finally {
+		analysisAbortController = null;
+	}
+}
+
+function handleVoiceCleanupCancelAnalysis(): void {
+	analysisAbortController?.abort();
+	analysisAbortController = null;
+}
+
+function handleVoiceCleanupApplyNormalisation(normalisationGainDb: number): void {
+	voiceCleanupSettings = { ...voiceCleanupSettings, normaliseGainDb: normalisationGainDb };
+	scheduleAutosave();
+	post({ type: 'voice-cleanup-analysis-result', measuredLufs: 0, normalisationGainDb });
+}
+
+function handleVoiceCleanupUpdateSettings(settings: VoiceCleanupSettings): void {
+	voiceCleanupSettings = { ...settings };
+	scheduleAutosave();
+	// SAB write for denoiser bypass bitmasks happens on the main thread
+	// (the worker doesn't have access to the meter SAB).
+}
+
 async function handleDispose(): Promise<void> {
 	restoreOfferGeneration += 1;
 	replaySaveAbort?.abort();
@@ -6085,6 +6171,19 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 		case 'capture-recovery-discard':
 			// TODO: Phase 41 — T7 crash recovery: discard orphaned session
 			void cmd;
+			break;
+		// Phase 36: Voice Cleanup
+		case 'voice-cleanup-analyse-loudness':
+			void handleVoiceCleanupAnalyseLoudness(cmd);
+			break;
+		case 'voice-cleanup-cancel-analysis':
+			handleVoiceCleanupCancelAnalysis();
+			break;
+		case 'voice-cleanup-apply-normalisation':
+			handleVoiceCleanupApplyNormalisation(cmd.normalisationGainDb);
+			break;
+		case 'voice-cleanup-update-settings':
+			handleVoiceCleanupUpdateSettings(cmd.settings);
 			break;
 		case 'dispose':
 			void handleDispose();
