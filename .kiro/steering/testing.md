@@ -40,7 +40,7 @@ Any non-trivial logic change **must** come with tests; the test count must not d
 
 Manual only — no automated headless runner for GPU work:
 
-1. `npm run dev` → open Chromium → status bar shows accelerated tier.
+1. `pnpm dev` → open Chromium → status bar shows accelerated tier.
 2. Import a local MP4/MOV/WebM clip.
 3. Cut, trim, reorder on the timeline.
 4. Export → confirm valid, timed MP4 plays back correctly.
@@ -48,4 +48,4 @@ Manual only — no automated headless runner for GPU work:
 
 ## Quality Gate
 
-`npm test` must stay green with no test count regression before merging any non-trivial logic change. `npm run build` (strict `tsc`) is a prerequisite for every merge regardless of test scope.
+`pnpm test` must stay green with no test count regression before merging any non-trivial logic change. `pnpm build` (strict `tsc`) is a prerequisite for every merge regardless of test scope.

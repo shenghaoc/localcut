@@ -432,7 +432,11 @@ export function createWhipSession(deps: WhipSessionDeps): WhipSession {
 			return () => listeners.delete(listener);
 		},
 		async start(nextSettings, nextTracks, options = {}) {
-			if (state.phase === 'connecting' || state.phase === 'live' || state.phase === 'reconnecting') {
+			if (
+				state.phase === 'connecting' ||
+				state.phase === 'live' ||
+				state.phase === 'reconnecting'
+			) {
 				throw new Error('A publish session is already running.');
 			}
 			settings = nextSettings;

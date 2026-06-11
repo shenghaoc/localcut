@@ -404,14 +404,19 @@ async function probeOpfsSyncAccessHandle(): Promise<FeatureSupport> {
 async function probeCaptureCapabilities(
 	transferableMediaStreamTrack: FeatureSupport = probeTransferableMediaStreamTrack()
 ): Promise<CaptureProbeResult> {
-	const [displayAudioCapture, videoEncodeRealtime, audioEncodeOpus, audioEncodeAac, opfsSyncAccessHandle] =
-		await Promise.all([
-			probeDisplayAudioCapture(),
-			probeVideoEncodeRealtime(),
-			probeAudioEncode('opus'),
-			probeAudioEncode('aac'),
-			probeOpfsSyncAccessHandle()
-		]);
+	const [
+		displayAudioCapture,
+		videoEncodeRealtime,
+		audioEncodeOpus,
+		audioEncodeAac,
+		opfsSyncAccessHandle
+	] = await Promise.all([
+		probeDisplayAudioCapture(),
+		probeVideoEncodeRealtime(),
+		probeAudioEncode('opus'),
+		probeAudioEncode('aac'),
+		probeOpfsSyncAccessHandle()
+	]);
 
 	return {
 		mediaStreamTrackProcessor: probeMediaStreamTrackProcessor(),

@@ -33,7 +33,10 @@ import {
 } from './scopes';
 
 const TRANSITION_KIND_MAP: Record<string, number> = {
-	'cross-dissolve': 0, 'dip-to-black': 1, wipe: 2, slide: 3
+	'cross-dissolve': 0,
+	'dip-to-black': 1,
+	wipe: 2,
+	slide: 3
 };
 const TRANSITION_DIR_MAP: Record<string, number> = { left: 0, right: 1, up: 2, down: 3 };
 
@@ -507,20 +510,51 @@ export class PreviewRenderer {
 			const srcHeight = layer.kind === 'frame' ? layer.frame.displayHeight : layer.sourceHeight;
 			const correctedView =
 				layer.kind === 'frame'
-					? this.effectChain.encodeBaseCorrection(encoder, srcView, storage, this.width, this.height, layer.effects, slot)
+					? this.effectChain.encodeBaseCorrection(
+							encoder,
+							srcView,
+							storage,
+							this.width,
+							this.height,
+							layer.effects,
+							slot
+						)
 					: srcView;
 			let lutView = correctedView;
 			if (layer.kind === 'frame' && layer.lut && layer.effects.lutStrength > 0) {
 				const lutDst =
-					correctedView === storage.a ? storage.b : correctedView === storage.b ? storage.c : storage.a;
-				lutView = this.effectChain.encodeLut(encoder, correctedView, lutDst, layer.lut, layer.effects, slot, wgX, wgY);
+					correctedView === storage.a
+						? storage.b
+						: correctedView === storage.b
+							? storage.c
+							: storage.a;
+				lutView = this.effectChain.encodeLut(
+					encoder,
+					correctedView,
+					lutDst,
+					layer.lut,
+					layer.effects,
+					slot,
+					wgX,
+					wgY
+				);
 			}
 			const opaqueView = this.encodeOpacity(encoder, lutView, layer.transform, slot, wgX, wgY);
 			const xfParams =
 				layer.transform.opacity < 1.0 && opaqueView !== lutView
 					? { ...layer.transform, opacity: 1.0 }
 					: layer.transform;
-			this.encodeTransformDirect(encoder, xfParams, opaqueView, srcWidth, srcHeight, slot, wgX, wgY, transformDst);
+			this.encodeTransformDirect(
+				encoder,
+				xfParams,
+				opaqueView,
+				srcWidth,
+				srcHeight,
+				slot,
+				wgX,
+				wgY,
+				transformDst
+			);
 			return { srcWidth, srcHeight };
 		};
 
@@ -575,8 +609,8 @@ export class PreviewRenderer {
 					layout: this.transitionGroupLayout,
 					entries: [
 						{ binding: 0, resource: { buffer: transBuffer } },
-						{ binding: 1, resource: this.transformViewB! },  // outgoing
-						{ binding: 2, resource: this.transformView! },   // incoming
+						{ binding: 1, resource: this.transformViewB! }, // outgoing
+						{ binding: 2, resource: this.transformView! }, // incoming
 						{ binding: 3, resource: this.sampler },
 						{ binding: 4, resource: this.sampler },
 						{ binding: 5, resource: blendDst }

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vite-plus/test';
 import {
 	SCOPE_HISTOGRAM_BINS,
 	SCOPE_HISTOGRAM_CHANNELS,

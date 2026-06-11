@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { WasmAudioResampler } from './audio-resampler-wasm';
 
 /**
@@ -12,7 +12,7 @@ describe('WasmAudioResampler JS fallback', () => {
 		const resampler = new WasmAudioResampler({
 			inputRate: 48000,
 			outputRate: 24000,
-			channels: 1,
+			channels: 1
 		});
 		const input = new Float32Array(480).fill(0.5);
 		const output = resampler.process(input, 480);

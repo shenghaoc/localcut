@@ -176,7 +176,9 @@ export async function loadPublishSettings(): Promise<PublishSettingsDoc | null> 
 	const transaction = db.transaction(PUBLISH_SETTINGS_STORE, 'readonly');
 	const done = transactionDone(transaction);
 	const [value] = await Promise.all([
-		requestResult<unknown>(transaction.objectStore(PUBLISH_SETTINGS_STORE).get(PUBLISH_SETTINGS_KEY)),
+		requestResult<unknown>(
+			transaction.objectStore(PUBLISH_SETTINGS_STORE).get(PUBLISH_SETTINGS_KEY)
+		),
 		done
 	]);
 	return parsePublishSettings(value);

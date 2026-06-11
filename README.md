@@ -43,23 +43,23 @@ See [docs/ALPHA.md](docs/ALPHA.md) for the alpha support boundary — what is su
 ## Development
 
 ```bash
-npm install
-npm run dev      # http://localhost:5173 — check status bar for COOP/COEP OK
-npm run build
-npm run preview
-npm test
+pnpm install
+pnpm dev         # http://localhost:5173 — check status bar for COOP/COEP OK
+pnpm build
+pnpm preview
+pnpm test
 ```
 
 ## PWA & Deployment
 
 This project is configured as an installable Progressive Web App (PWA) and is designed to be deployed to **Cloudflare Workers with Static Assets**.
 
-1. **Build**: `npm run build` generates static files in `dist/`.
+1. **Build**: `pnpm build` generates static files in `dist/`.
 2. **Service Worker**: `vite-plugin-pwa` auto-generates a service worker that precaches the app shell, allowing full offline use after the first load.
 3. **COOP/COEP**: Cross-Origin Isolation headers are enforced via `public/_headers`, ensuring the `SharedArrayBuffer` clock works in production.
 4. **Deploy**:
    ```bash
-   npm run deploy
+   pnpm deploy
    ```
    _This uses Wrangler to deploy the `dist/` folder to Cloudflare Workers based on `wrangler.jsonc`._
 

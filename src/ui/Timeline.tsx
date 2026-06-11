@@ -73,7 +73,12 @@ interface TimelineProps {
 	onRequestThumbnails: (sourceId: string, timestamps: number[]) => void;
 	/** Phase 13: cut-point transitions rendered on the timeline. */
 	transitions: () => TimelineTransitionSnapshot[];
-	onSelectTransition?: (transitionId: string, fromClipId: string, toClipId: string, trackId: string) => void;
+	onSelectTransition?: (
+		transitionId: string,
+		fromClipId: string,
+		toClipId: string,
+		trackId: string
+	) => void;
 	onTransitionDuration?: (transitionId: string, durationS: number) => void;
 	selectedTransition?: () => { transitionId: string } | null;
 }
@@ -289,7 +294,12 @@ export function Timeline(props: TimelineProps) {
 	}
 
 	let cleanupTransitionListeners: (() => void) | null = null;
-	let transitionDragRef: { transitionId: string; startX: number; startDurationS: number; pxPerSec: number } | null = null;
+	let transitionDragRef: {
+		transitionId: string;
+		startX: number;
+		startDurationS: number;
+		pxPerSec: number;
+	} | null = null;
 
 	function onTransitionPointerDown(event: PointerEvent, transitionId: string, durationS: number) {
 		if (!props.onTransitionDuration) return;
@@ -690,7 +700,9 @@ export function Timeline(props: TimelineProps) {
 																transition.trackId
 															);
 														}}
-														onPointerDown={(e) => onTransitionPointerDown(e, transition.id, transition.durationS)}
+														onPointerDown={(e) =>
+															onTransitionPointerDown(e, transition.id, transition.durationS)
+														}
 														aria-label={`${transition.kind} transition between ${transition.fromClipId} and ${transition.toClipId}`}
 													>
 														<Diamond size={12} aria-hidden="true" />
@@ -764,7 +776,7 @@ export function Timeline(props: TimelineProps) {
 								style={{
 									left: 0,
 									transform: `translateX(${boundedCurrentTime() * pxPerSecond()}px)`,
-									"will-change": "transform",
+									'will-change': 'transform'
 								}}
 							/>
 							<Show when={marquee()}>

@@ -18,7 +18,7 @@
 		"isolatedModules": true,
 		"jsx": "preserve",
 		"jsxImportSource": "solid-js",
-		"types": ["vite/client", "@webgpu/types"]
+		"types": ["vite-plus/client", "@webgpu/types"]
 	},
 	"include": ["src"]
 }

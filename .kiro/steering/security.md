@@ -30,7 +30,7 @@ Do not store API keys, credentials, internal service URLs, or proprietary algori
 
 ## Dependency Management
 
-- **npm only** — `package-lock.json` is the lockfile; no alternative lockfiles.
+- **pnpm only** — `pnpm-lock.yaml` is the lockfile; no alternative lockfiles.
 - Pin major versions for media and GPU dependencies; audit new dependencies for browser compatibility and supply-chain risk before adding.
 - Do not introduce dependencies that phone home, collect telemetry, or require a remote license check for core editing functionality.
 

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import missingSourceGolden from '../../../test-fixtures/interchange/missing-source.otio?raw';
 import multiTrackBundleGolden from '../../../test-fixtures/interchange/multi-track-bundle.otio?raw';
 import multiTrackEdlGolden from '../../../test-fixtures/interchange/multi-track.edl?raw';

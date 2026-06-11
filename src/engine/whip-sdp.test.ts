@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { applyIceRestartAnswer, buildIceRestartFragment } from './whip-sdp';
 
 const LOCAL_SDP = [
@@ -30,10 +30,7 @@ describe('buildIceRestartFragment', () => {
 	});
 
 	it('does not duplicate an end-of-candidates marker the local SDP already has', () => {
-		const withMarker = LOCAL_SDP.replace(
-			'm=audio',
-			'a=end-of-candidates\r\nm=audio'
-		);
+		const withMarker = LOCAL_SDP.replace('m=audio', 'a=end-of-candidates\r\nm=audio');
 		const fragment = buildIceRestartFragment(withMarker);
 		const videoSection = fragment.slice(fragment.indexOf('m=video'), fragment.indexOf('m=audio'));
 		expect(videoSection.match(/a=end-of-candidates/g)).toHaveLength(1);
@@ -100,6 +97,8 @@ describe('applyIceRestartAnswer', () => {
 	});
 
 	it('throws when the fragment lacks credentials', () => {
-		expect(() => applyIceRestartAnswer(remoteSdp, 'a=candidate:1 1 udp 1 1.2.3.4 1 typ host')).toThrow();
+		expect(() =>
+			applyIceRestartAnswer(remoteSdp, 'a=candidate:1 1 udp 1 1.2.3.4 1 typ host')
+		).toThrow();
 	});
 });

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { DEFAULT_TRACK_MIX, type Timeline } from '../timeline';
 import {
 	PROJECT_SCHEMA_VERSION,

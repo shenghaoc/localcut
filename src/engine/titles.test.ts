@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { TitleTextureCache, type TitleTexture, type TitleUploader } from './titles';
 import {
 	DEFAULT_TITLE_STYLE,

@@ -104,7 +104,7 @@ export function setCaptionTrackProps(
 				: {}),
 			...stylePatch,
 			overrides: stylePatch.overrides
-				? { ...(track.defaultStyle.overrides ?? {}), ...stylePatch.overrides }
+				? { ...track.defaultStyle.overrides, ...stylePatch.overrides }
 				: track.defaultStyle.overrides
 		};
 	}
@@ -158,7 +158,7 @@ export function setCaptionSegmentStyle(
 			...baseStyle,
 			...style,
 			overrides: style.overrides
-				? { ...(baseStyle.overrides ?? {}), ...style.overrides }
+				? { ...baseStyle.overrides, ...style.overrides }
 				: baseStyle.overrides
 		}
 	};

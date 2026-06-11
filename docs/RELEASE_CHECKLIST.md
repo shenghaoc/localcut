@@ -7,21 +7,21 @@ Run this checklist before every release or deployment. All automated gates must 
 Run all automated gates with a single command:
 
 ```bash
-npm run verify
+pnpm verify
 ```
 
 This runs the following in sequence (stops on first failure):
 
-| # | Gate  | Command         | Passes When                                                    |
-|---|-------|-----------------|----------------------------------------------------------------|
-| 1 | Tests | `npm test`      | All Vitest tests pass; test count has not decreased            |
-| 2 | Build | `npm run build` | TypeScript strict check passes; Vite production build succeeds |
+| #   | Gate  | Command      | Passes When                                                    |
+| --- | ----- | ------------ | -------------------------------------------------------------- |
+| 1   | Tests | `pnpm test`  | All Vitest tests pass; test count has not decreased            |
+| 2   | Build | `pnpm build` | TypeScript strict check passes; Vite production build succeeds |
 
 Run lint and format checks separately — they are informational:
 
 ```bash
-npm run lint          # ESLint (has known pre-existing issues)
-npm run format:check  # Prettier (run npm run format to fix)
+pnpm lint          # Vite+ lint (has known pre-existing issues)
+pnpm format:check  # Vite+ format check (run pnpm format to fix)
 ```
 
 ## Local Preview
@@ -29,7 +29,7 @@ npm run format:check  # Prettier (run npm run format to fix)
 After automated gates pass:
 
 ```bash
-npm run preview
+pnpm preview
 ```
 
 1. Open `http://localhost:8787` (Wrangler local preview).
@@ -76,7 +76,7 @@ For thorough validation, run through the fixture categories in [MEDIA_FIXTURES.m
 ## Deploy
 
 ```bash
-npm run deploy
+pnpm deploy
 ```
 
 After deployment, verify the live URL using [VERIFY_DEPLOYMENT.md](VERIFY_DEPLOYMENT.md).
@@ -84,6 +84,7 @@ After deployment, verify the live URL using [VERIFY_DEPLOYMENT.md](VERIFY_DEPLOY
 ## Record Results
 
 Document verification results with:
+
 - Date
 - Build SHA (from diagnostics report)
 - Browser and OS used for smoke test

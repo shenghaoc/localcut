@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { AudioResampler, resampleBlock } from './audio-resampler';
 
 describe('AudioResampler', () => {
@@ -84,15 +84,15 @@ describe('AudioResampler', () => {
 	});
 
 	it('throws on invalid sample rate', () => {
-		expect(
-			() => new AudioResampler({ inputRate: 0, outputRate: 48000, channels: 1 })
-		).toThrow('Sample rates must be positive');
+		expect(() => new AudioResampler({ inputRate: 0, outputRate: 48000, channels: 1 })).toThrow(
+			'Sample rates must be positive'
+		);
 	});
 
 	it('throws on invalid channel count', () => {
-		expect(
-			() => new AudioResampler({ inputRate: 48000, outputRate: 48000, channels: 0 })
-		).toThrow('Channel count must be positive');
+		expect(() => new AudioResampler({ inputRate: 48000, outputRate: 48000, channels: 0 })).toThrow(
+			'Channel count must be positive'
+		);
 	});
 
 	it('preserves sine wave energy through 44100→48000 conversion', () => {

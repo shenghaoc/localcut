@@ -14,8 +14,8 @@ Any of these open issues blocks the release entirely:
 - Server runtime or external API required for core editing/export
 - `VideoFrame` not `.close()`d or closed twice
 - Logic bugs, crashes, data loss, race conditions, or security issues in shipped code
-- `npm run build` fails
-- `npm test` fails or test count decreases for non-trivial logic
+- `pnpm build` fails
+- `pnpm test` fails or test count decreases for non-trivial logic
 
 ## Blocks Accelerated Tier (P1)
 

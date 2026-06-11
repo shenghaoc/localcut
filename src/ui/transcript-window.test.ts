@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { TRANSCRIPT_WINDOW_RADIUS, computeSegmentWindow } from './transcript-window';
 
 describe('computeSegmentWindow', () => {

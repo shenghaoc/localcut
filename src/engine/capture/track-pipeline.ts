@@ -211,7 +211,10 @@ export class TrackPipeline {
 	}
 
 	private shouldRequestKeyframe(timestampUs: number): boolean {
-		if (this.lastKeyframeTs === null || timestampUs - this.lastKeyframeTs >= this.keyframeIntervalUs) {
+		if (
+			this.lastKeyframeTs === null ||
+			timestampUs - this.lastKeyframeTs >= this.keyframeIntervalUs
+		) {
 			this.lastKeyframeTs = timestampUs;
 			return true;
 		}
@@ -224,9 +227,13 @@ export class TrackPipeline {
 		const encoderInit: AudioEncoderInit = {
 			output: (chunk: EncodedAudioChunk, _metadata?: EncodedAudioChunkMetadata) => {
 				const packet = EncodedPacket.fromEncodedChunk(chunk);
-				void this.onEncodedChunk(packet, chunk.timestamp, chunk.timestamp + (chunk.duration ?? 0), true, 0).catch(
-					() => {}
-				);
+				void this.onEncodedChunk(
+					packet,
+					chunk.timestamp,
+					chunk.timestamp + (chunk.duration ?? 0),
+					true,
+					0
+				).catch(() => {});
 			},
 			error: (err: DOMException) => {
 				this.callbacks.onEncodeError(this.sourceId, `AudioEncoder error: ${err.message}`);
@@ -265,8 +272,7 @@ export class TrackPipeline {
 					} finally {
 						data.close();
 					}
-				} catch {
-				}
+				} catch {}
 			}
 		} finally {
 			try {

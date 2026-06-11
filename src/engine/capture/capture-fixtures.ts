@@ -82,9 +82,10 @@ export interface MockSyncAccessHandle {
 	closed: boolean;
 }
 
-export function createMockSyncAccessHandle(
-	opts?: { killAfterWrites?: number; tornFinalWrite?: boolean }
-): MockSyncAccessHandle {
+export function createMockSyncAccessHandle(opts?: {
+	killAfterWrites?: number;
+	tornFinalWrite?: boolean;
+}): MockSyncAccessHandle {
 	const writes: ArrayBuffer[] = [];
 	let closed = false;
 	let writeCount = 0;
@@ -110,13 +111,17 @@ export function createMockSyncAccessHandle(
 		flush(): void {
 			if (closed) throw new DOMException('Handle closed', 'InvalidStateError');
 		},
-		close(): void { closed = true; },
+		close(): void {
+			closed = true;
+		},
 		getSize(): number {
 			return writes.reduce((sum, b) => sum + b.byteLength, 0);
 		},
 		truncate(_size: number): void {},
 		writes,
-		get closed() { return closed; }
+		get closed() {
+			return closed;
+		}
 	};
 }
 
@@ -179,8 +184,12 @@ export function createSpyVideoEncoder(): VideoEncoder & SpyEncoder {
 	};
 
 	const encoder = {
-		get encodeQueueSize() { return spy.encodeQueueSizeValue; },
-		get state() { return spy.closeCalled ? 'closed' : (spy.configuredConfig ? 'configured' : 'unconfigured'); },
+		get encodeQueueSize() {
+			return spy.encodeQueueSizeValue;
+		},
+		get state() {
+			return spy.closeCalled ? 'closed' : spy.configuredConfig ? 'configured' : 'unconfigured';
+		},
 		configure(config: VideoEncoderConfig): void {
 			spy.configuredConfig = config;
 		},
@@ -217,8 +226,12 @@ export function createSpyAudioEncoder(): AudioEncoder & SpyEncoder {
 	};
 
 	const encoder = {
-		get encodeQueueSize() { return spy.encodeQueueSizeValue; },
-		get state() { return spy.closeCalled ? 'closed' : (spy.configuredConfig ? 'configured' : 'unconfigured'); },
+		get encodeQueueSize() {
+			return spy.encodeQueueSizeValue;
+		},
+		get state() {
+			return spy.closeCalled ? 'closed' : spy.configuredConfig ? 'configured' : 'unconfigured';
+		},
 		configure(config: AudioEncoderConfig): void {
 			spy.configuredConfig = config;
 		},
@@ -240,7 +253,11 @@ export function createSpyAudioEncoder(): AudioEncoder & SpyEncoder {
 	return encoder;
 }
 
-export function buildVfrFrameSequence(count: number, baseTs = 0, baseDelta = 33_333): ScriptedVideoFrame[] {
+export function buildVfrFrameSequence(
+	count: number,
+	baseTs = 0,
+	baseDelta = 33_333
+): ScriptedVideoFrame[] {
 	const frames: ScriptedVideoFrame[] = [];
 	for (let i = 0; i < count; i++) {
 		const ts = baseTs + i * baseDelta;

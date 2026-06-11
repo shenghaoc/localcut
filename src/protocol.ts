@@ -1371,7 +1371,11 @@ export type CaptureErrorCode =
 
 export type CaptureStopReason = 'user-stop' | 'quota' | 'audio-overrun' | 'error';
 
-export type CaptureSourceEndReason = 'user-removed' | 'browser-stop-sharing' | 'encoder-error' | 'reader-error';
+export type CaptureSourceEndReason =
+	| 'user-removed'
+	| 'browser-stop-sharing'
+	| 'encoder-error'
+	| 'reader-error';
 
 export type CaptureSourceKind = 'screen' | 'webcam' | 'mic' | 'system-audio';
 

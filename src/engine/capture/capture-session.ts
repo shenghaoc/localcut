@@ -113,9 +113,10 @@ export class CaptureSession {
 			abort: this.abort
 		});
 
-		const hwAccel = videoEncodeConfig?.hardwareAcceleration === 'prefer-hardware'
-			? 'prefer-hardware' as const
-			: 'no-preference' as const;
+		const hwAccel =
+			videoEncodeConfig?.hardwareAcceleration === 'prefer-hardware'
+				? ('prefer-hardware' as const)
+				: ('no-preference' as const);
 
 		this.sources.set(sourceId, {
 			sourceId,
@@ -162,7 +163,9 @@ export class CaptureSession {
 		this.emitStatus();
 
 		for (const [, entry] of this.sources) {
-			try { await entry.pipeline.stop(); } catch {}
+			try {
+				await entry.pipeline.stop();
+			} catch {}
 		}
 		if (this.writerPort) {
 			this.writerPort.postMessage({
@@ -197,25 +200,28 @@ export class CaptureSession {
 		}
 
 		if (this.writerPort) {
-		const file = `${entry.kind === 'screen' || entry.kind === 'webcam' ? 'video' : 'audio'}-${sourceId}.mp4`;
-		const record = {
-			kind: 'chunk' as const,
-			sourceId,
-			file,
-			byteLength: packet.byteLength,
-			fromUs,
-			toUs,
-			keyFrame,
-			preEncodeDrops
-			};
-			this.writerPort.postMessage({
-				type: 'write-chunk',
-				sessionId: this.sessionId,
+			const file = `${entry.kind === 'screen' || entry.kind === 'webcam' ? 'video' : 'audio'}-${sourceId}.mp4`;
+			const record = {
+				kind: 'chunk' as const,
 				sourceId,
 				file,
-				data: packet.data.buffer,
-				record
-			}, [packet.data.buffer]);
+				byteLength: packet.byteLength,
+				fromUs,
+				toUs,
+				keyFrame,
+				preEncodeDrops
+			};
+			this.writerPort.postMessage(
+				{
+					type: 'write-chunk',
+					sessionId: this.sessionId,
+					sourceId,
+					file,
+					data: packet.data.buffer,
+					record
+				},
+				[packet.data.buffer]
+			);
 		}
 
 		this.emitStatus();
@@ -235,7 +241,8 @@ export class CaptureSession {
 		this.emitStatus();
 
 		const remainingVideo = [...this.sources.values()].filter(
-			(s) => (s.kind === 'screen' || s.kind === 'webcam') && s.state !== 'error' && s.state !== 'ended'
+			(s) =>
+				(s.kind === 'screen' || s.kind === 'webcam') && s.state !== 'error' && s.state !== 'ended'
 		);
 		if (remainingVideo.length === 0 && this.state === 'recording') {
 			this.stop('error').catch(() => {});
@@ -259,7 +266,9 @@ export class CaptureSession {
 				});
 			}
 		}
-		const allEnded = [...this.sources.values()].every((s) => s.state === 'ended' || s.state === 'error');
+		const allEnded = [...this.sources.values()].every(
+			(s) => s.state === 'ended' || s.state === 'error'
+		);
 		if (allEnded && this.state === 'recording') {
 			this.stop('user-stop').catch(() => {});
 		}
@@ -335,8 +344,16 @@ export class CaptureSession {
 		}));
 	}
 
-	get stateValue(): 'idle' | 'armed' | 'recording' | 'stopping' { return this.state; }
-	get byteCount(): number { return this.totalBytesWritten; }
-	get epochValue(): number | null { return this.epochUs; }
-	get startedIso(): string { return this.startedAtIso; }
+	get stateValue(): 'idle' | 'armed' | 'recording' | 'stopping' {
+		return this.state;
+	}
+	get byteCount(): number {
+		return this.totalBytesWritten;
+	}
+	get epochValue(): number | null {
+		return this.epochUs;
+	}
+	get startedIso(): string {
+		return this.startedAtIso;
+	}
 }

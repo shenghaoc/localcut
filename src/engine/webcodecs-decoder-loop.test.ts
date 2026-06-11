@@ -8,7 +8,7 @@
  *  - Key-packet seek (seeking non-zero startTimestamp)
  *  - close()-exactly-once on VideoFrame / AudioData
  */
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vite-plus/test';
 
 // ---------------------------------------------------------------------------
 // Mock infrastructure
@@ -43,9 +43,7 @@ interface MockDecoderConfig {
  * and fires the `output` callback with a SpyFrame from the array on the *next*
  * microtask (simulating real asynchronous decode).
  */
-function mockVideoDecoderFactory(
-	videoFrames: SpyFrame[]
-) {
+function mockVideoDecoderFactory(videoFrames: SpyFrame[]) {
 	let outputCallback: ((frame: unknown) => void) | null = null;
 	let nextFrameIndex = 0;
 	let configured = false;
@@ -140,9 +138,7 @@ function mockVideoDecoderFactory(
 /**
  * Builds a mock AudioDecoder constructor. Operates similarly to the video mock.
  */
-function mockAudioDecoderFactory(
-	audioFrames: SpyAudioData[]
-) {
+function mockAudioDecoderFactory(audioFrames: SpyAudioData[]) {
 	let outputCallback: ((data: unknown) => void) | null = null;
 	let nextFrameIndex = 0;
 	let configured = false;
@@ -192,7 +188,9 @@ function mockAudioDecoderFactory(
 						sampleRate: spy.sampleRate,
 						allocationSize: () => spy.buffer.byteLength,
 						copyTo: (dest: Float32Array) => {
-							new Float32Array(spy.buffer).forEach((v, i) => { dest[i] = v; });
+							new Float32Array(spy.buffer).forEach((v, i) => {
+								dest[i] = v;
+							});
 						},
 						close: () => {
 							spy.closeCount++;
@@ -260,14 +258,23 @@ describe('WebCodecsVideoDecoder decode loop', () => {
 		expect(support.supported).toBe(true);
 
 		const decoder = new MockVideoDecoder({
-			output(_frame: unknown) { /* captured internally */ },
-			error(_err: DOMException) { /* captured internally */ }
+			output(_frame: unknown) {
+				/* captured internally */
+			},
+			error(_err: DOMException) {
+				/* captured internally */
+			}
 		});
 		decoder.configure(config);
 
 		// Feed 5 key packets
 		for (let i = 0; i < 5; i++) {
-			decoder.decode({ type: 'key', timestamp: 1_000_000 + i * 33_000, duration: 33_000, byteLength: 1000 });
+			decoder.decode({
+				type: 'key',
+				timestamp: 1_000_000 + i * 33_000,
+				duration: 33_000,
+				byteLength: 1000
+			});
 		}
 
 		// Wait for microtasks to flush
@@ -282,7 +289,7 @@ describe('WebCodecsVideoDecoder decode loop', () => {
 		// Create many frames; the mock decoder should respect the maxQueueDepth
 		// bound implemented in WebCodecsVideoDecoder.samples().
 		const frames: SpyFrame[] = Array.from({ length: 20 }, (_, i) => ({
-			timestamp: (1_000_000 + i * 33_000),
+			timestamp: 1_000_000 + i * 33_000,
 			duration: 33_000,
 			closeCount: 0
 		}));
@@ -291,14 +298,23 @@ describe('WebCodecsVideoDecoder decode loop', () => {
 
 		const config = { codec: 'avc1.42E01E', codedWidth: 640, codedHeight: 480 };
 		const decoder = new MockVideoDecoder({
-			output(_frame: unknown) { /* captured internally */ },
-			error(_err: DOMException) { /* captured internally */ }
+			output(_frame: unknown) {
+				/* captured internally */
+			},
+			error(_err: DOMException) {
+				/* captured internally */
+			}
 		});
 		decoder.configure(config);
 
 		// Feed all 20 packets at once
 		for (const f of frames) {
-			decoder.decode({ type: 'key', timestamp: f.timestamp, duration: f.duration, byteLength: 1000 });
+			decoder.decode({
+				type: 'key',
+				timestamp: f.timestamp,
+				duration: f.duration,
+				byteLength: 1000
+			});
 		}
 
 		await new Promise((r) => setTimeout(r, 10));
@@ -310,7 +326,7 @@ describe('WebCodecsVideoDecoder decode loop', () => {
 	it('close() is called exactly once on frames that go through clone/close cycle', async () => {
 		const frames: SpyFrame[] = [
 			{ timestamp: 1_000_000, duration: 33_000, closeCount: 0 },
-			{ timestamp: 1_033_000, duration: 33_000, closeCount: 0 },
+			{ timestamp: 1_033_000, duration: 33_000, closeCount: 0 }
 		];
 		const { MockVideoDecoder } = mockVideoDecoderFactory(frames);
 		(globalThis as Record<string, unknown>).VideoDecoder = MockVideoDecoder;
@@ -322,7 +338,9 @@ describe('WebCodecsVideoDecoder decode loop', () => {
 			output(frame: unknown) {
 				outputFrames.push(frame as { clone: () => unknown; close: () => void });
 			},
-			error(_err: DOMException) { /* captured internally */ }
+			error(_err: DOMException) {
+				/* captured internally */
+			}
 		});
 		decoder.configure({ codec: 'avc1.42E01E', codedWidth: 640, codedHeight: 480 });
 		decoder.decode({ type: 'key', timestamp: 1_000_000, duration: 33_000, byteLength: 1000 });
@@ -355,21 +373,30 @@ describe('WebCodecsVideoDecoder decode loop', () => {
 		const frames: SpyFrame[] = [
 			{ timestamp: 3_000_000, duration: 33_000, closeCount: 0 }, // seeked to this keyframe
 			{ timestamp: 3_033_000, duration: 33_000, closeCount: 0 },
-			{ timestamp: 3_066_000, duration: 33_000, closeCount: 0 },
+			{ timestamp: 3_066_000, duration: 33_000, closeCount: 0 }
 		];
 		const { MockVideoDecoder } = mockVideoDecoderFactory(frames);
 		(globalThis as Record<string, unknown>).VideoDecoder = MockVideoDecoder;
 
 		const outputFrames: Array<unknown> = [];
 		const decoder = new MockVideoDecoder({
-			output(frame: unknown) { outputFrames.push(frame); },
-			error(_err: DOMException) { /* captured internally */ }
+			output(frame: unknown) {
+				outputFrames.push(frame);
+			},
+			error(_err: DOMException) {
+				/* captured internally */
+			}
 		});
 		decoder.configure({ codec: 'avc1.42E01E', codedWidth: 640, codedHeight: 480 });
 
 		// Simulate seeking to 3s: feed packets starting from that keyframe
 		for (const f of frames) {
-			decoder.decode({ type: 'key', timestamp: f.timestamp, duration: f.duration, byteLength: 1000 });
+			decoder.decode({
+				type: 'key',
+				timestamp: f.timestamp,
+				duration: f.duration,
+				byteLength: 1000
+			});
 		}
 
 		await new Promise((r) => setTimeout(r, 10));
@@ -381,7 +408,7 @@ describe('WebCodecsVideoDecoder decode loop', () => {
 
 	it('exactly-once close: no frame is closed more than once in the full decode loop', async () => {
 		const frames: SpyFrame[] = Array.from({ length: 5 }, (_, i) => ({
-			timestamp: (1_000_000 + i * 33_000),
+			timestamp: 1_000_000 + i * 33_000,
 			duration: 33_000,
 			closeCount: 0
 		}));
@@ -393,12 +420,19 @@ describe('WebCodecsVideoDecoder decode loop', () => {
 			output(frame: unknown) {
 				outputFrames.push(frame as { clone: () => unknown; close: () => void });
 			},
-			error(_err: DOMException) { /* captured internally */ }
+			error(_err: DOMException) {
+				/* captured internally */
+			}
 		});
 		decoder.configure({ codec: 'avc1.42E01E', codedWidth: 640, codedHeight: 480 });
 
 		for (const f of frames) {
-			decoder.decode({ type: 'key', timestamp: f.timestamp, duration: f.duration, byteLength: 1000 });
+			decoder.decode({
+				type: 'key',
+				timestamp: f.timestamp,
+				duration: f.duration,
+				byteLength: 1000
+			});
 		}
 
 		await new Promise((r) => setTimeout(r, 10));
@@ -419,23 +453,24 @@ describe('WebCodecsVideoDecoder decode loop', () => {
 // Mediabunny EncodedPacketSink mock for WebCodecsVideoDecoder integration tests
 // ---------------------------------------------------------------------------
 
-const { mockEncodedPackets, mockSinkState, resetMockEncodedPackets, getKeyPacketCalls } = vi.hoisted(() => {
-	const state = {
-		packets: [] as Array<{ timestamp: number; duration: number }>,
-		keyPacket: null as { timestamp: number; duration: number } | null
-	};
-	const calls: Array<{ timestamp?: number; opts?: unknown }> = [];
-	return {
-		mockEncodedPackets: state.packets,
-		mockSinkState: state,
-		getKeyPacketCalls: calls,
-		resetMockEncodedPackets: () => {
-			state.packets.length = 0;
-			state.keyPacket = null;
-			calls.length = 0;
-		}
-	};
-});
+const { mockEncodedPackets, mockSinkState, resetMockEncodedPackets, getKeyPacketCalls } =
+	vi.hoisted(() => {
+		const state = {
+			packets: [] as Array<{ timestamp: number; duration: number }>,
+			keyPacket: null as { timestamp: number; duration: number } | null
+		};
+		const calls: Array<{ timestamp?: number; opts?: unknown }> = [];
+		return {
+			mockEncodedPackets: state.packets,
+			mockSinkState: state,
+			getKeyPacketCalls: calls,
+			resetMockEncodedPackets: () => {
+				state.packets.length = 0;
+				state.keyPacket = null;
+				calls.length = 0;
+			}
+		};
+	});
 
 vi.mock('mediabunny', () => ({
 	EncodedPacketSink: class {
@@ -826,9 +861,30 @@ describe('WebCodecsAudioDecoder decode loop', () => {
 	it('yields audio data in timestamp order', async () => {
 		const buffer = new ArrayBuffer(1024);
 		const audioFrames: SpyAudioData[] = [
-			{ timestamp: 1_000_000, duration: 23_000, numberOfFrames: 1024, sampleRate: 48000, buffer, closeCount: 0 },
-			{ timestamp: 1_023_000, duration: 23_000, numberOfFrames: 1024, sampleRate: 48000, buffer, closeCount: 0 },
-			{ timestamp: 1_046_000, duration: 23_000, numberOfFrames: 1024, sampleRate: 48000, buffer, closeCount: 0 },
+			{
+				timestamp: 1_000_000,
+				duration: 23_000,
+				numberOfFrames: 1024,
+				sampleRate: 48000,
+				buffer,
+				closeCount: 0
+			},
+			{
+				timestamp: 1_023_000,
+				duration: 23_000,
+				numberOfFrames: 1024,
+				sampleRate: 48000,
+				buffer,
+				closeCount: 0
+			},
+			{
+				timestamp: 1_046_000,
+				duration: 23_000,
+				numberOfFrames: 1024,
+				sampleRate: 48000,
+				buffer,
+				closeCount: 0
+			}
 		];
 		const { MockAudioDecoder } = mockAudioDecoderFactory(audioFrames);
 		(globalThis as Record<string, unknown>).AudioDecoder = MockAudioDecoder;
@@ -842,13 +898,22 @@ describe('WebCodecsAudioDecoder decode loop', () => {
 
 		const outputData: Array<unknown> = [];
 		const decoder = new MockAudioDecoder({
-			output(data: unknown) { outputData.push(data); },
-			error(_err: DOMException) { /* captured internally */ }
+			output(data: unknown) {
+				outputData.push(data);
+			},
+			error(_err: DOMException) {
+				/* captured internally */
+			}
 		});
 		decoder.configure({ codec: 'mp4a.40.2', sampleRate: 48000, numberOfChannels: 2 });
 
 		for (const a of audioFrames) {
-			decoder.decode({ type: 'key', timestamp: a.timestamp, duration: a.duration, byteLength: 500 });
+			decoder.decode({
+				type: 'key',
+				timestamp: a.timestamp,
+				duration: a.duration,
+				byteLength: 500
+			});
 		}
 
 		await new Promise((r) => setTimeout(r, 10));
@@ -861,15 +926,26 @@ describe('WebCodecsAudioDecoder decode loop', () => {
 	it('close() is called exactly once on audio data', async () => {
 		const buffer = new ArrayBuffer(1024);
 		const audioFrames: SpyAudioData[] = [
-			{ timestamp: 1_000_000, duration: 23_000, numberOfFrames: 1024, sampleRate: 48000, buffer, closeCount: 0 },
+			{
+				timestamp: 1_000_000,
+				duration: 23_000,
+				numberOfFrames: 1024,
+				sampleRate: 48000,
+				buffer,
+				closeCount: 0
+			}
 		];
 		const { MockAudioDecoder } = mockAudioDecoderFactory(audioFrames);
 		(globalThis as Record<string, unknown>).AudioDecoder = MockAudioDecoder;
 
 		const outputData: Array<{ close: () => void }> = [];
 		const decoder = new MockAudioDecoder({
-			output(data: unknown) { outputData.push(data as { close: () => void }); },
-			error(_err: DOMException) { /* captured internally */ }
+			output(data: unknown) {
+				outputData.push(data as { close: () => void });
+			},
+			error(_err: DOMException) {
+				/* captured internally */
+			}
 		});
 		decoder.configure({ codec: 'mp4a.40.2', sampleRate: 48000, numberOfChannels: 2 });
 		decoder.decode({ type: 'key', timestamp: 1_000_000, duration: 23_000, byteLength: 500 });
@@ -889,7 +965,7 @@ describe('WebCodecsAudioDecoder decode loop', () => {
 	it('handles backpressure bound for audio decode', async () => {
 		const buffer = new ArrayBuffer(1024);
 		const audioFrames: SpyAudioData[] = Array.from({ length: 16 }, (_, i) => ({
-			timestamp: (1_000_000 + i * 23_000),
+			timestamp: 1_000_000 + i * 23_000,
 			duration: 23_000,
 			numberOfFrames: 1024,
 			sampleRate: 48000,
@@ -900,14 +976,23 @@ describe('WebCodecsAudioDecoder decode loop', () => {
 		(globalThis as Record<string, unknown>).AudioDecoder = MockAudioDecoder;
 
 		const decoder = new MockAudioDecoder({
-			output(_data: unknown) { /* captured internally */ },
-			error(_err: DOMException) { /* captured internally */ }
+			output(_data: unknown) {
+				/* captured internally */
+			},
+			error(_err: DOMException) {
+				/* captured internally */
+			}
 		});
 		decoder.configure({ codec: 'mp4a.40.2', sampleRate: 48000, numberOfChannels: 2 });
 
 		// Feed all packets
 		for (const a of audioFrames) {
-			decoder.decode({ type: 'key', timestamp: a.timestamp, duration: a.duration, byteLength: 500 });
+			decoder.decode({
+				type: 'key',
+				timestamp: a.timestamp,
+				duration: a.duration,
+				byteLength: 500
+			});
 		}
 
 		await new Promise((r) => setTimeout(r, 10));

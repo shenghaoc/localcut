@@ -93,18 +93,19 @@ For browsers without full WebGPU or COOP/COEP isolation:
 
 ## Browser Matrix
 
-| Browser | Platform | Expected Tier | Import | Preview | Export | Notes |
-|---------|----------|---------------|--------|---------|--------|-------|
-| Chrome 120+ | Windows/macOS/Linux | Accelerated | Yes | WebGPU | H.264/VP9/AV1 | Full support |
-| Edge 120+ | Windows/macOS | Accelerated | Yes | WebGPU | H.264/VP9/AV1 | Full support |
-| Chrome (no WebGPU flag) | Any | Limited | Yes | Canvas2D | Limited | Experimental compatibility mode |
-| Firefox | Any | Shell Only | Partial | No | No | WebGPU not yet shipped by default |
-| Safari | macOS | Shell Only | Partial | No | No | WebGPU partial, WebCodecs limited |
-| Mobile Chrome | Android | Shell Only | No | No | No | Not optimized for mobile |
+| Browser                 | Platform            | Expected Tier | Import  | Preview  | Export        | Notes                             |
+| ----------------------- | ------------------- | ------------- | ------- | -------- | ------------- | --------------------------------- |
+| Chrome 120+             | Windows/macOS/Linux | Accelerated   | Yes     | WebGPU   | H.264/VP9/AV1 | Full support                      |
+| Edge 120+               | Windows/macOS       | Accelerated   | Yes     | WebGPU   | H.264/VP9/AV1 | Full support                      |
+| Chrome (no WebGPU flag) | Any                 | Limited       | Yes     | Canvas2D | Limited       | Experimental compatibility mode   |
+| Firefox                 | Any                 | Shell Only    | Partial | No       | No            | WebGPU not yet shipped by default |
+| Safari                  | macOS               | Shell Only    | Partial | No       | No            | WebGPU partial, WebCodecs limited |
+| Mobile Chrome           | Android             | Shell Only    | No      | No       | No            | Not optimized for mobile          |
 
 ## Result Recording
 
 Record verification results with:
+
 - Date and time
 - Browser name and version
 - Operating system

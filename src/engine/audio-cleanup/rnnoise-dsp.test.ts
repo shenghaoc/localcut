@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { createFrameSpectra, FRAME_SIZE, NB_BANDS, NB_FEATURES, RnnoiseDsp } from './rnnoise-dsp';
 
 /** Deterministic multi-tone test signal, band-limited well below 20 kHz so the

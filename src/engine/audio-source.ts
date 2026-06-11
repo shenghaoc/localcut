@@ -107,7 +107,10 @@ export class SequentialAudioSource {
 		const targetRate = targetSampleRate ?? this.sampleRate;
 		const sourceRate = this.current.sampleRate || targetRate;
 		if (sourceRate !== targetRate) {
-			const sourceChannels = Math.max(1, Math.round(floats.length / (this.current.numberOfFrames || 1)));
+			const sourceChannels = Math.max(
+				1,
+				Math.round(floats.length / (this.current.numberOfFrames || 1))
+			);
 			const resampler = this.getResampler(sourceRate, sourceChannels, targetRate);
 			const resampled = resampler.process(floats, this.current.numberOfFrames);
 			const resampledFrames = Math.floor(resampled.length / sourceChannels);
@@ -123,7 +126,8 @@ export class SequentialAudioSource {
 			const out = new Float32Array(resampledFrames * channels);
 			for (let i = 0; i < resampledFrames; i++) {
 				for (let ch = 0; ch < channels; ch++) {
-					out[i * channels + ch] = resampled[i * sourceChannels + Math.min(ch, sourceChannels - 1)] ?? 0;
+					out[i * channels + ch] =
+						resampled[i * sourceChannels + Math.min(ch, sourceChannels - 1)] ?? 0;
 				}
 			}
 			return out;
@@ -168,7 +172,7 @@ export class SequentialAudioSource {
 		this.resampler = new WasmAudioResampler({
 			inputRate: sourceRate,
 			outputRate: targetRate,
-			channels: sourceChannels,
+			channels: sourceChannels
 		});
 		this.resamplerSourceRate = sourceRate;
 		this.resamplerSourceChannels = sourceChannels;
@@ -237,7 +241,11 @@ export class SequentialAudioSource {
 				this.resampleBufferOffset = 0;
 			} else {
 				const drained = this.drainResampleBuffer(
-					out, written, frameCount, channels, this.resampleBufferChannels
+					out,
+					written,
+					frameCount,
+					channels,
+					this.resampleBufferChannels
 				);
 				written += drained;
 				cursor += drained / targetRate;
@@ -272,7 +280,10 @@ export class SequentialAudioSource {
 			const bytes = this.current.allocationSize({ format: 'f32', planeIndex: 0 });
 			const floats = new Float32Array(bytes / 4);
 			this.current.copyTo(floats, { format: 'f32', planeIndex: 0 });
-			const sourceChannels = Math.max(1, Math.round(floats.length / (this.current.numberOfFrames || 1)));
+			const sourceChannels = Math.max(
+				1,
+				Math.round(floats.length / (this.current.numberOfFrames || 1))
+			);
 			const sourceOffset = Math.max(0, Math.floor((cursor - currentStart) * rate + epsilon));
 			const available = Math.max(0, this.current.numberOfFrames - sourceOffset);
 

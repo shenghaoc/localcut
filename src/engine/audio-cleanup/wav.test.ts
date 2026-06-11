@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { encodeWavPcm16 } from './wav';
 
 function ascii(view: DataView, offset: number, length: number): string {
