@@ -15,12 +15,14 @@ function rng(seed: number): () => number {
 
 const baseCfg: RingBufferConfig = {
 	maxDurationS: 5,
+	maxMemoryBytes: 256 * 1024 * 1024,
 	saveDurationS: 3,
-} as unknown as RingBufferConfig;
+};
 
 // ---------------------------------------------------------------------------
-// Reference model: OLD slice-based eviction + OLD spillOldest, naive stats.
-// Mirrors the committed HEAD implementation exactly.
+// Reference model: the pre-optimization implementation (slice-based span per
+// eviction candidate, naive stats, splice-based spill) — differential oracle
+// for the O(1)-span + incremental-counter rewrite.
 // ---------------------------------------------------------------------------
 function createOldModel(config: RingBufferConfig) {
 	let entries: RingBufferEntry[] = [];
