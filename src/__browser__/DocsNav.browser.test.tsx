@@ -2,6 +2,8 @@ import { describe, it, expect, afterEach, vi } from 'vite-plus/test';
 import { render } from 'solid-js/web';
 import { DocsNav } from '../features/docs/DocsNav';
 
+const disposers: Array<() => void> = [];
+
 function renderDocsNav(activeSlug = 'index', onNavigate = vi.fn()) {
 	const container = document.createElement('div');
 	document.body.appendChild(container);
@@ -9,10 +11,13 @@ function renderDocsNav(activeSlug = 'index', onNavigate = vi.fn()) {
 		() => <DocsNav activeSlug={activeSlug} onNavigate={onNavigate} />,
 		container
 	);
+	disposers.push(dispose);
 	return { container, dispose, onNavigate };
 }
 
 afterEach(() => {
+	for (const dispose of disposers) dispose();
+	disposers.length = 0;
 	document.body.innerHTML = '';
 });
 

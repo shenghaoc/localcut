@@ -10,14 +10,19 @@ const defaultProps = {
 	duration: 125.5
 };
 
+const disposers: Array<() => void> = [];
+
 function renderLimitedPreview(props = defaultProps) {
 	const container = document.createElement('div');
 	document.body.appendChild(container);
 	const dispose = render(() => <LimitedPreview {...props} />, container);
+	disposers.push(dispose);
 	return { container, dispose };
 }
 
 afterEach(() => {
+	for (const dispose of disposers) dispose();
+	disposers.length = 0;
 	document.body.innerHTML = '';
 });
 
@@ -73,7 +78,7 @@ describe('LimitedPreview', () => {
 	it('sets width and height attributes on the image', () => {
 		const { container } = renderLimitedPreview();
 		const img = container.querySelector('img')!;
-		expect(img.width).toBe(1920);
-		expect(img.height).toBe(1080);
+		expect(img.getAttribute('width')).toBe('1920');
+		expect(img.getAttribute('height')).toBe('1080');
 	});
 });
