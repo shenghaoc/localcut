@@ -12,6 +12,7 @@ import type { Timeline } from '../timeline';
 import type { MediaInputHandle } from '../media-io';
 import { mixAudioWindow } from '../export';
 import { LoudnessAnalyser, normalisationGain } from './ebu-r128';
+import type { MasterCleanupChainParams, VoiceCleanupChainState } from './voice-cleanup-processor';
 
 export interface LoudnessAnalysisOptions {
 	timeline: Timeline;
@@ -20,6 +21,9 @@ export interface LoudnessAnalysisOptions {
 	channels: number;
 	timelineDurationS: number;
 	targetLufs: number;
+	masterGain?: number;
+	voiceCleanup?: MasterCleanupChainParams;
+	cleanupState?: VoiceCleanupChainState;
 }
 
 /**
@@ -44,7 +48,19 @@ export async function analyseLoudness(
 		}
 
 		const startS = i * blockDurationS;
-		const pcm = await mixAudioWindow(timeline, sources, startS, blockSamples, sampleRate, channels);
+		const pcm = await mixAudioWindow(
+			timeline,
+			sources,
+			startS,
+			blockSamples,
+			sampleRate,
+			channels,
+			{
+				masterGain: options.masterGain,
+				voiceCleanup: options.voiceCleanup,
+				cleanupState: options.cleanupState
+			}
+		);
 
 		// De-interleave if stereo
 		if (channels >= 2) {

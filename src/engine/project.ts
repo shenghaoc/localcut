@@ -424,7 +424,7 @@ function cloneLiveAudioChainConfig(config: LiveAudioChainConfig): LiveAudioChain
 	};
 }
 
-function cloneVoiceCleanupSettings(settings: VoiceCleanupSettings): VoiceCleanupSettings {
+export function cloneVoiceCleanupSettings(settings: VoiceCleanupSettings): VoiceCleanupSettings {
 	return {
 		denoiserEnabledTracks: [...settings.denoiserEnabledTracks],
 		normalisationTargetLufs: settings.normalisationTargetLufs,

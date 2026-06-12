@@ -11,7 +11,9 @@ import {
 import {
 	DEFAULT_LIVE_AUDIO_CHAIN_CONFIG,
 	LIVE_CHAIN_TOTAL_FIELDS,
+	METER_BUFFER_BYTES,
 	LiveChainMeterIndex,
+	VOICE_CLEANUP_NORMALISE_GAIN_DB,
 	type LiveAudioChainConfig
 } from '../../protocol';
 
@@ -61,6 +63,13 @@ describe('live chain helpers', () => {
 		expect(Math.max(...(Object.values(LiveChainMeterIndex) as number[]))).toBeLessThan(
 			LIVE_CHAIN_TOTAL_FIELDS
 		);
+	});
+
+	it('allocated meter SAB covers Phase 36 extended live-chain fields', () => {
+		const sab = new Float32Array(new SharedArrayBuffer(METER_BUFFER_BYTES));
+		expect(sab.length).toBeGreaterThan(VOICE_CLEANUP_NORMALISE_GAIN_DB);
+		sab[VOICE_CLEANUP_NORMALISE_GAIN_DB] = 3;
+		expect(sab[VOICE_CLEANUP_NORMALISE_GAIN_DB]).toBe(3);
 	});
 });
 

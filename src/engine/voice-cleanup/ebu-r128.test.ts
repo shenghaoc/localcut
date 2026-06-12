@@ -38,11 +38,9 @@ describe('LoudnessAnalyser', () => {
 			analyser.feedBlock(block);
 		}
 		const lufs = analyser.integratedLoudness();
-		// The exact value depends on K-weighting at 997 Hz
-		// Allow a generous tolerance since the exact expected value is complex
 		expect(Number.isFinite(lufs)).toBe(true);
-		expect(lufs).toBeLessThan(0); // should be negative
-		expect(lufs).toBeGreaterThan(-30); // but not too quiet
+		expect(lufs).toBeGreaterThan(-23.5);
+		expect(lufs).toBeLessThan(-22.5);
 	});
 
 	it('excludes quiet blocks via relative gate', () => {

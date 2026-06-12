@@ -17,22 +17,25 @@ two features coexist. Phase 36 does not modify Phase 28 code.
 
 ## R1 — WASM RNNoise denoiser
 
-- **R1.1** The denoiser is compiled from the upstream
-  [xiph/rnnoise](https://github.com/xiph/rnnoise) C sources using a pinned
-  Emscripten build script (`scripts/build-rnnoise-wasm.mjs`) committed to the
-  repo. The resulting artifact (`src/engine/voice-cleanup/rnnoise.wasm`) and its
-  base-64 wrapper (`src/engine/voice-cleanup/rnnoise-wasm-b64.ts`) are checked
-  in, consistent with the PR #57 resampler pattern. A SHA-256 checksum of the
-  `.wasm` binary is stored in
-  `src/engine/voice-cleanup/rnnoise-wasm-manifest.json` and verified at load
-  time via `crypto.subtle.digest`. Mismatch is a hard, user-visible error; no
-  silent retry.
+- **R1.1** The denoiser artifact provenance is chosen explicitly and documented
+  in `design.md`. The implementation vendors the pinned
+  `@jitsi/rnnoise-wasm@0.2.1` prebuilt artifact via
+  `scripts/build-rnnoise-wasm.mjs`, verifies the npm tarball SHA-256, and checks
+  in `src/engine/voice-cleanup/rnnoise.wasm` plus
+  `src/engine/voice-cleanup/rnnoise-wasm-b64.ts`, consistent with the PR #57
+  checked-in WASM pattern. Runtime copies are written to `public/rnnoise/` so
+  the UI can fetch verified bytes and pass them to the AudioWorklet without
+  Emscripten JS glue. A SHA-256 checksum of the `.wasm` binary is stored in
+  `src/engine/voice-cleanup/rnnoise-wasm-manifest.json` and
+  `public/rnnoise/manifest.json`, then verified at load time via
+  `crypto.subtle.digest`. Mismatch is a hard, user-visible error; no silent
+  retry. An in-repo Emscripten dependency requires separate justification.
 - **R1.2** The WASM module processes audio at 48 kHz mono in 480-sample
   (10 ms) frames, matching the RNNoise C API contract. The denoiser adapts to
-  the 128-sample AudioWorklet quantum via an internal ring buffer: samples are
-  collected until 480 are available, then one RNNoise frame is processed and
-  480 denoised samples emitted. This adds a fixed latency of 480 samples
-  (10 ms at 48 kHz) per processing pass.
+  the 128-sample AudioWorklet quantum via an internal input accumulator and a
+  pre-primed output ring: `push(N)` always returns exactly `N` samples while
+  RNNoise processing still occurs in complete 480-sample frames. This adds a
+  fixed latency of 480 samples (10 ms at 48 kHz) per processing pass.
 - **R1.3** The denoiser is enabled per-track: a list of track IDs with
   denoiser enabled is stored in `ProjectDoc.voiceCleanup.denoiserEnabledTracks`
   (an array of strings). An empty array means the denoiser is off for all
@@ -44,9 +47,11 @@ two features coexist. Phase 36 does not modify Phase 28 code.
   at 48 kHz) to prevent clicks. The bypass state is written into the Phase 46
   SAB layout's reserved denoiser slots as two 16-bit float-safe integers
   (max value 65,535 each) to avoid IEEE 754 NaN canonicalization risks:
-  `SAB[34]` stores the bypass bitmask for tracks 0–15,
-  `SAB[35]` stores the bypass bitmask for tracks 16–31.
-  The AudioWorklet reads `Math.round(sab[34])` / `Math.round(sab[35])` and
+  `SAB[35]` stores the bypass bitmask for tracks 0–15,
+  `SAB[36]` stores the bypass bitmask for tracks 16–31.
+  `SAB[34]` remains the Phase 46 insert-level denoiser bypass flag and
+  `SAB[37]` stores the Phase 36 normalisation gain in dB. The AudioWorklet reads
+  `Math.round(sab[35])` / `Math.round(sab[36])` and
   extracts bits using standard bitwise operations. This supports up to 32
   tracks without precision loss or NaN corruption.
 - **R1.5** The WASM module is loaded lazily — only when the first track with

@@ -1,10 +1,12 @@
 import type { Timeline, TimelineMarker, TimelineTransition } from './timeline';
 import type { CaptionTrack } from './captions/types';
+import type { VoiceCleanupSettings } from '../protocol';
 import {
 	cloneCaptionTracksSnapshot,
 	cloneMarkersSnapshot,
 	cloneTimelineSnapshot,
-	cloneTransitionsSnapshot
+	cloneTransitionsSnapshot,
+	cloneVoiceCleanupSettings
 } from './project';
 
 const DEFAULT_HISTORY_LIMIT = 100;
@@ -31,6 +33,7 @@ export interface TimelineHistorySnapshot {
 	captionTracks?: CaptionTrack[];
 	transitions: TimelineTransition[];
 	markers: TimelineMarker[];
+	voiceCleanup?: VoiceCleanupSettings;
 }
 
 export interface TimelineHistory {
@@ -67,6 +70,9 @@ export function createTimelineHistory(options: TimelineHistoryOptions = {}): Tim
 		};
 		if (snapshot.captionTracks !== undefined) {
 			cloned.captionTracks = cloneCaptionTracksSnapshot(snapshot.captionTracks);
+		}
+		if (snapshot.voiceCleanup !== undefined) {
+			cloned.voiceCleanup = cloneVoiceCleanupSettings(snapshot.voiceCleanup);
 		}
 		return cloned;
 	}

@@ -13,7 +13,7 @@ import type { GateParams, LimiterParams } from '../../protocol';
 import { processGate, type GateState, createGateState } from '../live-audio/gate';
 import { processLimiter, type LimiterState, createLimiterState } from '../live-audio/limiter';
 import { applyMasterAndClamp } from '../audio-mix';
-import type { RnnoiseRing } from './rnnoise-processor';
+import { RnnoiseRing, loadRnnoise } from './rnnoise-processor';
 
 export interface VoiceCleanupChainState {
 	denoiserRings: Map<string, RnnoiseRing>; // keyed by trackId
@@ -27,6 +27,43 @@ export function createVoiceCleanupChainState(): VoiceCleanupChainState {
 		gateState: createGateState(),
 		limiterState: createLimiterState()
 	};
+}
+
+export async function ensureDenoiserRings(
+	state: VoiceCleanupChainState,
+	enabledTrackIds: readonly string[]
+): Promise<void> {
+	for (const [trackId, ring] of state.denoiserRings) {
+		if (!enabledTrackIds.includes(trackId)) {
+			ring.destroy();
+			state.denoiserRings.delete(trackId);
+		}
+	}
+	if (enabledTrackIds.length === 0) return;
+
+	let rnnoise: Awaited<ReturnType<typeof loadRnnoise>>;
+	try {
+		rnnoise = await loadRnnoise();
+	} catch (error) {
+		console.warn('RNNoise unavailable; falling back to dry voice-cleanup export path:', error);
+		for (const ring of state.denoiserRings.values()) {
+			ring.destroy();
+		}
+		state.denoiserRings.clear();
+		return;
+	}
+	for (const trackId of enabledTrackIds) {
+		if (!state.denoiserRings.has(trackId)) {
+			state.denoiserRings.set(trackId, new RnnoiseRing(rnnoise.createInstance()));
+		}
+	}
+}
+
+export function destroyVoiceCleanupChainState(state: VoiceCleanupChainState): void {
+	for (const ring of state.denoiserRings.values()) {
+		ring.destroy();
+	}
+	state.denoiserRings.clear();
 }
 
 /**
@@ -47,7 +84,46 @@ export function denoiseTrackPcm(
 	monoPcm.set(denoised);
 }
 
+export function denoiseInterleavedTrackPcm(
+	trackId: string,
+	pcm: Float32Array,
+	channels: number,
+	state: VoiceCleanupChainState
+): void {
+	const ring = state.denoiserRings.get(trackId);
+	if (!ring || channels <= 0) return;
+
+	const frames = Math.floor(pcm.length / channels);
+	const mono = new Float32Array(frames);
+	for (let frame = 0; frame < frames; frame += 1) {
+		let sum = 0;
+		const base = frame * channels;
+		for (let channel = 0; channel < channels; channel += 1) {
+			sum += pcm[base + channel] ?? 0;
+		}
+		mono[frame] = sum / channels;
+	}
+
+	const denoised = ring.push(mono);
+	for (let frame = 0; frame < frames; frame += 1) {
+		const denoisedMono = denoised[frame] ?? 0;
+		const dryMono = mono[frame] ?? 0;
+		const base = frame * channels;
+		let absSum = 0;
+		for (let channel = 0; channel < channels; channel += 1) {
+			absSum += Math.abs(pcm[base + channel] ?? 0);
+		}
+		for (let channel = 0; channel < channels; channel += 1) {
+			const drySample = pcm[base + channel] ?? 0;
+			const ratio =
+				Math.abs(dryMono) > 1e-9 ? drySample / dryMono : absSum > 1e-9 ? drySample / absSum : 0;
+			pcm[base + channel] = denoisedMono * ratio;
+		}
+	}
+}
+
 export interface MasterCleanupChainParams {
+	denoiserEnabledTracks: string[];
 	normaliseGainDb: number;
 	limiterCeilingDbtp: number;
 	gateParams: GateParams;

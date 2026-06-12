@@ -488,7 +488,7 @@ export interface MixAudioWindowOptions {
 	transitions?: readonly AudioTransitionCut[];
 	/** If provided, master-bus inserts (gate, gain, limiter) are applied after mixing. */
 	voiceCleanup?: import('./voice-cleanup/voice-cleanup-processor').MasterCleanupChainParams;
-	/** Persistent voice cleanup state across blocks (gate/limiter DSP state). */
+	/** Persistent voice cleanup state across blocks (denoiser/gate/limiter DSP state). */
 	cleanupState?: import('./voice-cleanup/voice-cleanup-processor').VoiceCleanupChainState;
 }
 
@@ -600,6 +600,17 @@ export async function mixAudioWindow(
 										sampleRate
 									)
 								: null;
+						if (
+							options.voiceCleanup?.denoiserEnabledTracks.includes(track.id) &&
+							options.cleanupState
+						) {
+							const { denoiseInterleavedTrackPcm } =
+								await import('./voice-cleanup/voice-cleanup-processor');
+							if (outPcm)
+								denoiseInterleavedTrackPcm(track.id, outPcm, channels, options.cleanupState);
+							if (inPcm)
+								denoiseInterleavedTrackPcm(track.id, inPcm, channels, options.cleanupState);
+						}
 						if (!outPcm && !inPcm) {
 							const outSkip =
 								outSourceTime && outHandle
@@ -724,6 +735,11 @@ export async function mixAudioWindow(
 				channels,
 				sampleRate
 			);
+			if (options.voiceCleanup?.denoiserEnabledTracks.includes(track.id) && options.cleanupState) {
+				const { denoiseInterleavedTrackPcm } =
+					await import('./voice-cleanup/voice-cleanup-processor');
+				denoiseInterleavedTrackPcm(track.id, pcm, channels, options.cleanupState);
+			}
 			const mixed = applyMixStage(pcm, channels, {
 				gain: track.gain,
 				pan: track.pan,

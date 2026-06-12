@@ -97,7 +97,7 @@ export class LoudnessAnalyser {
 		for (const l of absSurvivors) {
 			sum += Math.pow(10, l / 10);
 		}
-		const L_KG = -0.691 + 10 * Math.log10(sum / absSurvivors.length);
+		const L_KG = 10 * Math.log10(sum / absSurvivors.length);
 
 		// Relative gate: discard windows below (ungated − 10 LU)
 		const relSurvivors = absSurvivors.filter((l) => l >= L_KG - 10);
@@ -108,7 +108,7 @@ export class LoudnessAnalyser {
 		for (const l of relSurvivors) {
 			relSum += Math.pow(10, l / 10);
 		}
-		return -0.691 + 10 * Math.log10(relSum / relSurvivors.length);
+		return 10 * Math.log10(relSum / relSurvivors.length);
 	}
 
 	/** Reset all accumulated state. */

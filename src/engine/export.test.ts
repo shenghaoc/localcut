@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
-import type { ExportSettings, ThroughputProbe } from '../protocol';
+import {
+	DEFAULT_GATE_PARAMS,
+	DEFAULT_LIMITER_PARAMS,
+	type ExportSettings,
+	type ThroughputProbe
+} from '../protocol';
 import {
 	buildExportPlan,
 	defaultExportSettings,
@@ -23,6 +28,8 @@ import {
 } from './timeline';
 import type { MediaInputHandle } from './media-io';
 import { defaultNormalizedSourceTiming } from './media-adapters/source-timing';
+import { createVoiceCleanupChainState } from './voice-cleanup/voice-cleanup-processor';
+import type { RnnoiseRing } from './voice-cleanup/rnnoise-processor';
 
 function audioTrack(
 	partial: Partial<Omit<TimelineTrack, 'type' | 'clips'>> & {
@@ -477,6 +484,124 @@ describe('mixAudioWindow', () => {
 		const mixed = await mixAudioWindow(edit, sources, 0, 2, 4, 1);
 
 		expect([...mixed]).toEqual([0.75, 0.75]);
+	});
+
+	it('applies Phase 36 denoising to enabled track PCM before summation', async () => {
+		const enabled = sourceWith(1);
+		const dry = sourceWith(0.5);
+		const sources = new Map<string, MediaInputHandle>([
+			[
+				'enabled',
+				mediaHandle({
+					sourceId: 'enabled',
+					audioSource: enabled as unknown as MediaInputHandle['audioSource']
+				})
+			],
+			[
+				'dry',
+				mediaHandle({
+					sourceId: 'dry',
+					audioSource: dry as unknown as MediaInputHandle['audioSource']
+				})
+			]
+		]);
+		const edit: Timeline = [
+			audioTrack({
+				id: 'voice-track',
+				clips: [
+					defaultTimelineClip({
+						id: 'voice',
+						sourceId: 'enabled',
+						start: 0,
+						duration: 1,
+						inPoint: 0
+					})
+				]
+			}),
+			audioTrack({
+				id: 'music-track',
+				clips: [
+					defaultTimelineClip({ id: 'music', sourceId: 'dry', start: 0, duration: 1, inPoint: 0 })
+				]
+			})
+		];
+		const cleanupState = createVoiceCleanupChainState();
+		cleanupState.denoiserRings.set('voice-track', {
+			push(input: Float32Array): Float32Array {
+				return input.map((sample) => sample * 0.25);
+			},
+			drain(): Float32Array {
+				return new Float32Array();
+			},
+			destroy(): void {}
+		} as unknown as RnnoiseRing);
+
+		const mixed = await mixAudioWindow(edit, sources, 0, 2, 4, 1, {
+			voiceCleanup: {
+				denoiserEnabledTracks: ['voice-track'],
+				normaliseGainDb: 0,
+				limiterCeilingDbtp: -1,
+				gateParams: { ...DEFAULT_GATE_PARAMS, bypass: true },
+				limiterParams: { ...DEFAULT_LIMITER_PARAMS, bypass: true }
+			},
+			cleanupState
+		});
+
+		expect([...mixed]).toEqual([0.75, 0.75]);
+	});
+
+	it('preserves stereo channel balance when denoising interleaved export PCM', async () => {
+		const stereoSource = {
+			pcmWindowAt: vi.fn(async (_time: number, frames: number, channels: number) => {
+				const pcm = new Float32Array(frames * channels);
+				for (let frame = 0; frame < frames; frame += 1) {
+					const base = frame * channels;
+					pcm[base] = 0.5;
+					pcm[base + 1] = -0.25;
+				}
+				return pcm;
+			})
+		};
+		const sources = new Map<string, MediaInputHandle>([
+			[
+				'voice',
+				mediaHandle({
+					sourceId: 'voice',
+					audioSource: stereoSource as unknown as MediaInputHandle['audioSource']
+				})
+			]
+		]);
+		const edit: Timeline = [
+			audioTrack({
+				id: 'voice-track',
+				clips: [
+					defaultTimelineClip({ id: 'voice', sourceId: 'voice', start: 0, duration: 1, inPoint: 0 })
+				]
+			})
+		];
+		const cleanupState = createVoiceCleanupChainState();
+		cleanupState.denoiserRings.set('voice-track', {
+			push(input: Float32Array): Float32Array {
+				return input.map((sample) => sample * 0.5);
+			},
+			drain(): Float32Array {
+				return new Float32Array();
+			},
+			destroy(): void {}
+		} as unknown as RnnoiseRing);
+
+		const mixed = await mixAudioWindow(edit, sources, 0, 1, 4, 2, {
+			voiceCleanup: {
+				denoiserEnabledTracks: ['voice-track'],
+				normaliseGainDb: 0,
+				limiterCeilingDbtp: -1,
+				gateParams: { ...DEFAULT_GATE_PARAMS, bypass: true },
+				limiterParams: { ...DEFAULT_LIMITER_PARAMS, bypass: true }
+			},
+			cleanupState
+		});
+
+		expect([...mixed]).toEqual([0.25, -0.125]);
 	});
 
 	it('routes a clip with applied cleanup through its derived asset (Phase 27)', async () => {

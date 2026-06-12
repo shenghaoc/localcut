@@ -14,7 +14,7 @@ export const ClockIndex = {
 
 /** Meter SAB layout: peak/RMS pairs written by the AudioWorklet (single writer). */
 export const METER_FIELD_COUNT = 4;
-export const METER_BUFFER_BYTES = METER_FIELD_COUNT * Float32Array.BYTES_PER_ELEMENT;
+export const METER_BUFFER_BYTES = 48 * Float32Array.BYTES_PER_ELEMENT;
 
 export const MeterIndex = {
 	PEAK_L: 0,
@@ -2003,7 +2003,12 @@ export type WorkerStateMessage =
 	  }
 	// Phase 36: Voice Cleanup
 	| { type: 'voice-cleanup-analysis-progress'; fraction: number; currentWindowS: number }
-	| { type: 'voice-cleanup-analysis-result'; measuredLufs: number; normalisationGainDb: number }
+	| {
+			type: 'voice-cleanup-analysis-result';
+			measuredLufs: number;
+			normalisationGainDb: number;
+			normalisedLufs: number;
+	  }
 	| { type: 'voice-cleanup-analysis-cancelled' }
 	| { type: 'voice-cleanup-analysis-error'; message: string }
 	| { type: 'voice-cleanup-applied'; normalisationGainDb: number }
@@ -2180,8 +2185,10 @@ export const LIVE_CHAIN_METER_OFFSET = 4; // After Phase 16 meters [0..3]
 // Read via Math.round(sab[index]) + bitwise extract. Avoids NaN canonicalization.
 export const DENOISER_BYPASS_TRACKS_0_15 = 35;
 export const DENOISER_BYPASS_TRACKS_16_31 = 36;
+export const VOICE_CLEANUP_NORMALISE_GAIN_DB = 37;
 // Indices 4..34 are assigned below; 35..47 (13 slots) are allocated for
-// Phase 36 denoiser parameters. 35-36 used for bypass bitmasks; 37..47 spare.
+// Phase 36 denoiser parameters. 35-36 used for bypass bitmasks; 37 for
+// normalisation gain; 38..47 spare.
 export const LIVE_CHAIN_METER_FIELD_COUNT = 44; // Indices 4..47
 export const LIVE_CHAIN_TOTAL_FIELDS = METER_FIELD_COUNT + LIVE_CHAIN_METER_FIELD_COUNT;
 

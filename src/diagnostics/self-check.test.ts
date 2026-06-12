@@ -32,6 +32,18 @@ function acceleratedSnapshot(): DiagnosticSnapshot {
 			estimatedBytes: 0,
 			message: 'No proxies'
 		},
+		voiceCleanup: {
+			denoiserEnabledTrackCount: 0,
+			wasmProvenance: '@jitsi/rnnoise-wasm@0.2.1 prebuilt artifact',
+			wasmSha256: null,
+			wasmLoadStatus: 'not-loaded',
+			wasmLoadTimeMs: null,
+			workletLatencyMs: 17.67,
+			normalisationTargetLufs: -14,
+			normaliseGainDb: 0,
+			limiterCeilingDbtp: -1,
+			findings: []
+		},
 		activeExportSettings: {
 			codec: 'h264',
 			container: 'mp4',

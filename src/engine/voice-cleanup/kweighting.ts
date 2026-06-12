@@ -43,11 +43,12 @@ const S2_A1 = -1.99004745483398;
 const S2_A2 = 0.99007225036616;
 
 /**
- * Apply K-weighting to a mono block in place. State carries across calls
- * (never reset between windows). Returns the same buffer for chaining.
+ * Apply K-weighting to a mono block. State carries across calls (never reset
+ * between windows). Returns a new buffer and does not mutate the input.
  */
 export function kWeightBlock(input: Float32Array, state: KWeightState): Float32Array {
 	let { x1, x2, y1, y2, x1b, x2b, y1b, y2b } = state;
+	const output = new Float32Array(input.length);
 
 	for (let i = 0; i < input.length; i++) {
 		const x0 = input[i];
@@ -66,7 +67,7 @@ export function kWeightBlock(input: Float32Array, state: KWeightState): Float32A
 		y2b = y1b;
 		y1b = y0b;
 
-		input[i] = y0b;
+		output[i] = y0b;
 	}
 
 	// Write back mutated state
@@ -79,5 +80,5 @@ export function kWeightBlock(input: Float32Array, state: KWeightState): Float32A
 	state.y1b = y1b;
 	state.y2b = y2b;
 
-	return input;
+	return output;
 }

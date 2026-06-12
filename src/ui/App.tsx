@@ -44,7 +44,8 @@ import {
 	type CaptureSessionState,
 	type LiveAudioChainConfig,
 	type RingBufferState,
-	type VoiceCleanupSettings
+	type VoiceCleanupSettings,
+	VOICE_CLEANUP_NORMALISE_GAIN_DB
 } from '../protocol';
 import type { DiagnosticSnapshot, DiagnosticSourceInput } from '../diagnostics/types';
 import {
@@ -65,11 +66,12 @@ import { MediaBin } from './MediaBin';
 import { TranscriptPanel } from './TranscriptPanel';
 import { ThumbnailStore } from './thumbnail-store';
 import { AudioEngine } from './audio-engine';
+import { writeChainParamsToSab, writeDenoiserBypassToSab } from '../engine/live-audio/live-chain';
 import { ExportDialog } from './ExportDialog';
 import { RenderQueuePanel } from './RenderQueuePanel';
 import { ReplayBufferPanel } from './ReplayBufferPanel';
 import { LiveAudioChainPanel } from './LiveAudioChainPanel';
-import { VoiceCleanupPanel } from './VoiceCleanupPanel';
+import { VoiceCleanupPanel, voiceCleanupLatencyMs } from './VoiceCleanupPanel';
 import { probeMediaStreamTrackProcessor, startCapture, stopCaptureStreams } from './capture-bridge';
 import { BundleDialog } from './BundleDialog';
 import { InterchangeMenu } from './InterchangeMenu';
@@ -397,7 +399,21 @@ export function App() {
 	const [voiceCleanupAnalysisProgress, setVoiceCleanupAnalysisProgress] = createSignal(0);
 	const [voiceCleanupMeasuredLufs, setVoiceCleanupMeasuredLufs] = createSignal(0);
 	const [voiceCleanupProposedGainDb, setVoiceCleanupProposedGainDb] = createSignal(0);
+	const [voiceCleanupNormalisedLufs, setVoiceCleanupNormalisedLufs] = createSignal(0);
 	const [voiceCleanupAnalysisError, setVoiceCleanupAnalysisError] = createSignal('');
+	const [voiceCleanupDenoiserStatus, setVoiceCleanupDenoiserStatus] = createSignal<
+		'idle' | 'loading' | 'ready' | 'unavailable'
+	>('idle');
+	const [voiceCleanupDenoiserUnavailableReason, setVoiceCleanupDenoiserUnavailableReason] =
+		createSignal('');
+	const [voiceCleanupWasmSha256, setVoiceCleanupWasmSha256] = createSignal<string | null>(null);
+	const [voiceCleanupWasmLoadTimeMs, setVoiceCleanupWasmLoadTimeMs] = createSignal<number | null>(
+		null
+	);
+	const [voiceCleanupMonitorSampleRate, setVoiceCleanupMonitorSampleRate] = createSignal(48_000);
+	const [voiceCleanupMonitorLatencyMs, setVoiceCleanupMonitorLatencyMs] = createSignal(
+		voiceCleanupLatencyMs(48_000)
+	);
 	const [isOffline, setIsOffline] = createSignal(!initialOnlineStatus());
 	const [hasActiveSW, setHasActiveSW] = createSignal(false);
 	const [audioWarning, setAudioWarning] = createSignal<string | null>(null);
@@ -485,7 +501,57 @@ export function App() {
 	let compatibilityImportGeneration = 0;
 	let relinkInput: HTMLInputElement | undefined;
 	let pendingRelinkSourceId: string | null = null;
-	const audioEngine = new AudioEngine();
+	const audioEngine = new AudioEngine({
+		onVoiceCleanupStatus(status) {
+			if (status.status === 'ready') {
+				setVoiceCleanupDenoiserStatus('ready');
+				setVoiceCleanupDenoiserUnavailableReason('');
+			} else {
+				setVoiceCleanupDenoiserStatus('unavailable');
+				setVoiceCleanupDenoiserUnavailableReason(status.reason);
+			}
+		}
+	});
+	let voiceCleanupWasmLoad: Promise<ArrayBuffer> | null = null;
+	function loadVoiceCleanupWasm(): Promise<ArrayBuffer> {
+		voiceCleanupWasmLoad ??= loadVerifiedVoiceCleanupWasm();
+		return voiceCleanupWasmLoad;
+	}
+	async function loadVerifiedVoiceCleanupWasm(): Promise<ArrayBuffer> {
+		const startedAt = performance.now();
+		const assetBase = new URL(
+			'rnnoise/',
+			new URL(import.meta.env.BASE_URL, globalThis.location.href)
+		);
+		const [manifestResponse, wasmResponse] = await Promise.all([
+			fetch(new URL('manifest.json', assetBase)),
+			fetch(new URL('rnnoise.wasm', assetBase))
+		]);
+		if (!manifestResponse.ok) {
+			throw new Error(`RNNoise manifest fetch failed with HTTP ${manifestResponse.status}`);
+		}
+		if (!wasmResponse.ok) {
+			throw new Error(`RNNoise WASM fetch failed with HTTP ${wasmResponse.status}`);
+		}
+		const manifest = (await manifestResponse.json()) as { sizeBytes: number; checksum: string };
+		setVoiceCleanupWasmSha256(manifest.checksum);
+		const buffer = await wasmResponse.arrayBuffer();
+		if (buffer.byteLength !== manifest.sizeBytes) {
+			throw new Error(
+				`RNNoise WASM size mismatch: expected ${manifest.sizeBytes} bytes, got ${buffer.byteLength}`
+			);
+		}
+		const digest = await crypto.subtle.digest('SHA-256', buffer);
+		const actual = Array.from(new Uint8Array(digest))
+			.map((byte) => byte.toString(16).padStart(2, '0'))
+			.join('');
+		const expected = manifest.checksum.replace('sha256-', '');
+		if (actual !== expected) {
+			throw new Error(`RNNoise WASM checksum mismatch: expected sha256-${expected}`);
+		}
+		setVoiceCleanupWasmLoadTimeMs(performance.now() - startedAt);
+		return buffer;
+	}
 	let audioReady: Promise<{
 		audioSab: SharedArrayBuffer | null;
 		meterSab: SharedArrayBuffer | null;
@@ -506,6 +572,48 @@ export function App() {
 		const phase = publishState().phase;
 		return phase === 'connecting' || phase === 'live' || phase === 'reconnecting';
 	});
+
+	createEffect(() => {
+		const meterBuffer = meterSab();
+		const settings = voiceCleanupSettings();
+		const audioTrackIds = timeline()
+			.filter((track) => track.type === 'audio')
+			.map((track) => track.id);
+		if (meterBuffer) {
+			const sab = new Float32Array(meterBuffer);
+			writeChainParamsToSab(sab, {
+				...DEFAULT_LIVE_AUDIO_CHAIN_CONFIG,
+				gate: settings.gateParams,
+				limiter: { ...settings.limiterParams, ceilingDb: settings.limiterCeilingDbtp },
+				denoiserBypass: settings.denoiserEnabledTracks.length === 0
+			});
+			sab[VOICE_CLEANUP_NORMALISE_GAIN_DB] = settings.normaliseGainDb;
+			writeDenoiserBypassToSab(sab, audioTrackIds, settings.denoiserEnabledTracks);
+		}
+		if (settings.denoiserEnabledTracks.length === 0) {
+			audioEngine.configureVoiceCleanup(false);
+			setVoiceCleanupDenoiserStatus((status) => (status === 'unavailable' ? status : 'idle'));
+			return;
+		}
+		if (voiceCleanupDenoiserStatus() !== 'ready') {
+			setVoiceCleanupDenoiserStatus('loading');
+			setVoiceCleanupDenoiserUnavailableReason('');
+		}
+		void loadVoiceCleanupWasm().then(
+			(wasmBytes) => {
+				if (voiceCleanupSettings().denoiserEnabledTracks.length > 0) {
+					audioEngine.configureVoiceCleanup(true, wasmBytes);
+				}
+			},
+			(error) => {
+				setVoiceCleanupDenoiserStatus('unavailable');
+				setVoiceCleanupDenoiserUnavailableReason(
+					error instanceof Error ? error.message : String(error)
+				);
+			}
+		);
+	});
+
 	// Re-evaluated on publish transitions: the lease count changes at go-live/stop.
 	const recordWhileStreaming = createMemo(() => {
 		publishState();
@@ -857,7 +965,25 @@ export function App() {
 			exportSettings: exportSettings(),
 			assets: assets(),
 			recentErrors: workerSnapshot?.recentErrors ?? recentErrorLog(),
-			workerSnapshot
+			workerSnapshot,
+			voiceCleanup: {
+				denoiserEnabledTrackCount: voiceCleanupSettings().denoiserEnabledTracks.length,
+				wasmLoadStatus:
+					voiceCleanupDenoiserStatus() === 'ready'
+						? 'loaded'
+						: voiceCleanupDenoiserStatus() === 'loading'
+							? 'loading'
+							: voiceCleanupDenoiserStatus() === 'unavailable'
+								? 'error'
+								: 'not-loaded',
+				wasmLoadTimeMs: voiceCleanupWasmLoadTimeMs(),
+				wasmSha256: voiceCleanupWasmSha256(),
+				unavailableReason: voiceCleanupDenoiserUnavailableReason(),
+				workletLatencyMs: voiceCleanupMonitorLatencyMs(),
+				normalisationTargetLufs: voiceCleanupSettings().normalisationTargetLufs,
+				normaliseGainDb: voiceCleanupSettings().normaliseGainDb,
+				limiterCeilingDbtp: voiceCleanupSettings().limiterCeilingDbtp
+			}
 		});
 		setDiagnosticSnapshot(snapshot);
 	}
@@ -1426,6 +1552,7 @@ export function App() {
 				setVoiceCleanupAnalysisState('done');
 				setVoiceCleanupMeasuredLufs(msg.measuredLufs);
 				setVoiceCleanupProposedGainDb(msg.normalisationGainDb);
+				setVoiceCleanupNormalisedLufs(msg.normalisedLufs);
 				break;
 			case 'voice-cleanup-analysis-cancelled':
 				setVoiceCleanupAnalysisState('idle');
@@ -1564,6 +1691,8 @@ export function App() {
 				meterBuffer = audioInit.meterSab;
 				setMeterSab(meterBuffer);
 				setAudioSabReady(audioSab !== null);
+				setVoiceCleanupMonitorSampleRate(audioEngine.getSampleRate());
+				setVoiceCleanupMonitorLatencyMs(voiceCleanupLatencyMs(audioEngine.getSampleRate()));
 				setAudioWarning(null);
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
@@ -3325,6 +3454,10 @@ export function App() {
 										audioReady.then(
 											(result) => {
 												setMeterSab(result.meterSab);
+												setVoiceCleanupMonitorSampleRate(audioEngine.getSampleRate());
+												setVoiceCleanupMonitorLatencyMs(
+													voiceCleanupLatencyMs(audioEngine.getSampleRate())
+												);
 												setAudioWarning(null);
 											},
 											(err) => {

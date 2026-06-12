@@ -1,4 +1,4 @@
-import { createSignal, Show, For, type JSX } from 'solid-js';
+import { createEffect, createSignal, Show, For, type JSX } from 'solid-js';
 import { Power, PowerOff, Mic, BarChart3, Shield, AlertTriangle } from 'lucide-solid';
 import { Button } from './components/button';
 import type { VoiceCleanupSettings, GateParams, LimiterParams } from '../protocol';
@@ -15,8 +15,13 @@ export interface VoiceCleanupPanelProps {
 	analysisProgress: number;
 	measuredLufs: number;
 	proposedGainDb: number;
+	normalisedLufs: number;
 	analysisError: string;
 	latencyMs: number;
+	sampleRate: number;
+	timelineEmpty: boolean;
+	denoiserStatus: 'idle' | 'loading' | 'ready' | 'unavailable';
+	denoiserUnavailableReason: string;
 }
 
 function InsertRow(props: {
@@ -107,10 +112,45 @@ const LUFS_TARGETS = [
 	{ label: '−23 LUFS (broadcast)', value: -23 }
 ];
 
+export function voiceCleanupAnalysisDisabledReason(
+	analysisState: VoiceCleanupPanelProps['analysisState'],
+	timelineEmpty: boolean
+): string | null {
+	if (analysisState === 'running') return 'Analysis is already running.';
+	if (timelineEmpty) return 'Timeline is empty.';
+	return null;
+}
+
+export function voiceCleanupLatencyMs(sampleRate: number): number {
+	const safeSampleRate = Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 48_000;
+	return ((128 + 480 + 240) / safeSampleRate) * 1000;
+}
+
+export function voiceCleanupLatencyBudget(sampleRate: number): ReadonlyArray<{
+	readonly label: string;
+	readonly samples: number;
+	readonly ms: number;
+}> {
+	const safeSampleRate = Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 48_000;
+	return [
+		{ label: 'Quantum', samples: 128, ms: (128 / safeSampleRate) * 1000 },
+		{ label: 'Denoiser ring', samples: 480, ms: (480 / safeSampleRate) * 1000 },
+		{ label: 'Limiter lookahead', samples: 240, ms: (240 / safeSampleRate) * 1000 },
+		{ label: 'Gate', samples: 0, ms: 0 }
+	];
+}
+
 export function VoiceCleanupPanel(props: VoiceCleanupPanelProps) {
 	const [expanded, setExpanded] = createSignal(false);
 	const [customTargetLufs, setCustomTargetLufs] = createSignal(-14);
 	const [useCustomTarget, setUseCustomTarget] = createSignal(false);
+
+	createEffect(() => {
+		const target = props.settings.normalisationTargetLufs;
+		const preset = LUFS_TARGETS.some((item) => item.value === target);
+		setUseCustomTarget(!preset);
+		if (!preset) setCustomTargetLufs(target);
+	});
 
 	const currentTarget = () =>
 		useCustomTarget() ? customTargetLufs() : props.settings.normalisationTargetLufs;
@@ -131,6 +171,7 @@ export function VoiceCleanupPanel(props: VoiceCleanupPanelProps) {
 	}
 
 	function toggleTrackDenoiser(trackId: string) {
+		if (props.denoiserStatus === 'unavailable') return;
 		const current = props.settings.denoiserEnabledTracks;
 		const next = current.includes(trackId)
 			? current.filter((id) => id !== trackId)
@@ -177,12 +218,54 @@ export function VoiceCleanupPanel(props: VoiceCleanupPanelProps) {
 								Enable per-track denoising. The WASM RNNoise denoiser runs on the monitor bus and
 								export chain.
 							</p>
+							<Show when={props.denoiserStatus === 'unavailable'}>
+								<div class="analysis-error" role="alert">
+									<AlertTriangle size={14} />
+									<span>Denoiser unavailable: {props.denoiserUnavailableReason}</span>
+								</div>
+							</Show>
+							<Show when={props.denoiserStatus === 'loading'}>
+								<p class="insert-hint" role="status">
+									Loading RNNoise WASM…
+								</p>
+							</Show>
+							<Show when={props.denoiserStatus === 'ready'}>
+								<p class="insert-hint" role="status">
+									RNNoise WASM ready.
+								</p>
+							</Show>
+							<table class="latency-budget-table">
+								<thead>
+									<tr>
+										<th scope="col">Stage</th>
+										<th scope="col">Samples</th>
+										<th scope="col">ms</th>
+									</tr>
+								</thead>
+								<tbody>
+									<For each={voiceCleanupLatencyBudget(props.sampleRate)}>
+										{(row) => (
+											<tr>
+												<th scope="row">{row.label}</th>
+												<td>{row.samples}</td>
+												<td>{row.ms.toFixed(2)}</td>
+											</tr>
+										)}
+									</For>
+									<tr>
+										<th scope="row">Total</th>
+										<td>848</td>
+										<td>{props.latencyMs.toFixed(2)}</td>
+									</tr>
+								</tbody>
+							</table>
 							<For each={[...props.trackNames.entries()]}>
 								{([trackId, name]) => (
 									<label class="track-toggle">
 										<input
 											type="checkbox"
 											checked={props.settings.denoiserEnabledTracks.includes(trackId)}
+											disabled={props.denoiserStatus === 'unavailable'}
 											onChange={() => toggleTrackDenoiser(trackId)}
 										/>
 										<span>{name}</span>
@@ -264,6 +347,18 @@ export function VoiceCleanupPanel(props: VoiceCleanupPanelProps) {
 									<Button
 										variant="default"
 										size="sm"
+										disabled={
+											voiceCleanupAnalysisDisabledReason(
+												props.analysisState,
+												props.timelineEmpty
+											) !== null
+										}
+										title={
+											voiceCleanupAnalysisDisabledReason(
+												props.analysisState,
+												props.timelineEmpty
+											) ?? undefined
+										}
 										onClick={() => props.onAnalyseLoudness(currentTarget())}
 									>
 										Analyse &amp; Normalise
@@ -283,6 +378,12 @@ export function VoiceCleanupPanel(props: VoiceCleanupPanelProps) {
 										<dd>
 											{props.proposedGainDb >= 0 ? '+' : ''}
 											{props.proposedGainDb.toFixed(1)} dB
+										</dd>
+										<dt>Result</dt>
+										<dd>
+											{Number.isFinite(props.normalisedLufs)
+												? `${props.normalisedLufs.toFixed(1)} LUFS`
+												: '−∞ LUFS'}
 										</dd>
 									</dl>
 									<Button

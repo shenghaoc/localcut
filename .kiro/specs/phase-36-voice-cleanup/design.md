@@ -1,6 +1,6 @@
 # Design: Phase 36 — Voice Cleanup
 
-> Status: **Proposed** — spec only, not yet implemented.
+> Status: **Implemented** — PR 72 phase implementation with verified WASM provenance and browser smoke coverage.
 
 ## Goal
 
@@ -43,39 +43,35 @@ This distinction must be communicated clearly in the UI and docs:
 | User workflow | Load model → Preview → Apply | Enable toggle per track |
 | Processing scope | Selected clip | All enabled tracks simultaneously |
 
-## Why compile xiph/rnnoise ourselves
+## WASM provenance
 
-Two options were evaluated:
+PR #57 established the local precedent for checked-in WASM artifacts generated
+by a narrow, reproducible script (`npm run build:wasm`) rather than a general C
+toolchain in the repo. That exact WAT/wabt approach does not transfer to
+RNNoise: the denoiser is several thousand lines of C plus trained weights.
 
-1. **`@jitsi/rnnoise-wasm`** — an npm package containing a pre-built WASM
-   artifact of RNNoise, previously published by Jitsi/8x8.
-2. **In-repo Emscripten build of `xiph/rnnoise`** — our own pinned build
-   script (`scripts/build-rnnoise-wasm.mjs`) targeting the upstream C source.
+Phase 36 chooses the closest matching route: `scripts/build-rnnoise-wasm.mjs`
+vendors the pinned, org-backed `@jitsi/rnnoise-wasm@0.2.1` artifact, verifies
+the npm tarball SHA-256, extracts `dist/rnnoise.wasm`, and generates:
 
-Option 1 is disqualified because the `@jitsi/rnnoise-wasm` package has
-received no npm releases since 2022, has no active maintainer with
-organisational backing (Jitsi's priorities have shifted), and ships no typed
-wrapper — violating the AGENTS.md criteria for third-party runtime additions
-(active development, organisational backing). A package whose last publish
-predates our Safari WebGPU support cannot be considered maintained.
-
-Option 2 is chosen. The build script pins the Emscripten version (e.g.,
-3.1.x, same major as the one tested), compiles rnnoise with SIMD-128 enabled
-(`-msimd128`), outputs a plain WASM module with the minimal C API
-(`rnnoise_create`, `rnnoise_process_frame`, `rnnoise_destroy`), and produces:
-
-- `src/engine/voice-cleanup/rnnoise.wasm` — checked into the repo (≈50 kB),
-  same pattern as `src/engine/resampler-simd.wasm`.
+- `src/engine/voice-cleanup/rnnoise.wasm` — checked into the repo (112,141
+  bytes), same artifact pattern as `src/engine/resampler-simd.wasm`.
 - `src/engine/voice-cleanup/rnnoise-wasm-b64.ts` — base-64 encoded, imported
-  by the runtime module without a separate fetch, same pattern as
+  only as a source-tree provenance artifact, same pattern as
   `src/engine/resampler-simd-wasm-b64.ts`.
 - `src/engine/voice-cleanup/rnnoise-wasm-manifest.json` — declares the
-  Emscripten version, `xiph/rnnoise` commit hash, SIMD flag, exact byte size,
-  and `sha256-<hex>` checksum; validated at load time.
+  npm package/version, package tarball hash, source repository, license, exact
+  byte size, and `sha256-<hex>` checksum; validated at load time.
+- `public/rnnoise/rnnoise.wasm` and `public/rnnoise/manifest.json` — runtime
+  copies loaded as bytes and passed into the AudioWorklet port. This avoids
+  source-module fetch/import behavior and keeps the worklet independent of
+  Emscripten JS glue.
 
-This gives us full control over compilation flags, SIMD enablement, and
-licensing. RNNoise is BSD-3-Clause (Xiph.Org Foundation), compatible with
-the project's licensing approach.
+Emscripten is only an upstream build detail of the vendored package. The repo
+does not require an Emscripten install for development or CI. A future switch to
+a pinned wasi-sdk/zig build or Rust port is allowed, but it must keep the same
+checked-in artifact and checksum contract and justify replacing the current
+Jitsi-provenance route.
 
 ## EBU R128 / ITU-R BS.1770-4 algorithm
 
@@ -142,7 +138,7 @@ This approach ensures:
   │                                                           │
   │  AudioEngine (src/ui/audio-engine.ts)                     │
   │    └─ AudioWorklet: audio-playback.worklet.js             │
-  │         ├─ reads SAB[34..35] denoiser bypass bitmask      │
+  │         ├─ reads SAB[35..36] denoiser bypass bitmask      │
   │         ├─ RNNoise WASM (voice-cleanup wasm, loaded once) │
   │         ├─ 480-sample ring per active track               │
   │         └─ existing gate/limiter (SAB[17..22, 30..33])    │
@@ -203,21 +199,29 @@ see R1.2).
 
 ```json
 {
-  "emscriptenVersion": "3.1.x",
-  "rnnoiseCommit": "<sha>",
-  "simd": true,
+  "provenance": "@jitsi/rnnoise-wasm@0.2.1",
+  "npmPackage": "@jitsi/rnnoise-wasm",
+  "npmVersion": "0.2.1",
+  "npmTarballSha256": "<sha256>",
+  "sourceRepository": "https://github.com/jitsi/rnnoise-wasm",
+  "license": "Apache-2.0 wrapper, BSD-3-Clause RNNoise core",
+  "emscriptenVersion": "upstream-prebuilt",
+  "rnnoiseCommit": "upstream-package",
+  "simd": false,
   "sizeBytes": 0,
   "checksum": "sha256-<hex>"
 }
 ```
 
 `sizeBytes` and `checksum` are filled in by `scripts/build-rnnoise-wasm.mjs`
-after compilation.
+after vendoring.
 
 ### `src/engine/voice-cleanup/rnnoise-wasm-b64.ts`
 
 Auto-generated by the build script. Exports `RNNOISE_WASM_B64: string`.
-Consumed by `src/engine/voice-cleanup/rnnoise-processor.ts`.
+Kept as a checked-in source artifact for provenance parity with PR #57; the
+browser runtime loads the public `.wasm` bytes and verifies them against the
+public manifest before worker/worklet use.
 
 ### `src/engine/voice-cleanup/rnnoise-processor.ts`
 
@@ -230,21 +234,18 @@ interface RnnoiseInstance {
   destroy(): void;
 }
 
-/** Load the WASM module from the checked-in base-64, verify checksum. */
+/** Load the WASM module from the public asset copy, verify checksum. */
 export async function loadRnnoise(): Promise<{ createInstance(): RnnoiseInstance }>;
 
 /**
- * Frame-adaptation ring: buffers input chunks until 480 samples are available,
- * then calls processFrame and emits 480 samples. Processes ALL complete
- * 480-sample frames in a single push() call to prevent accumulator growth
- * when input blocks are larger than 480 samples (e.g. 1024-sample export
- * blocks). Stateful.
+ * Frame-adaptation ring with fixed-size I/O: push(N) always returns exactly
+ * N denoised samples. It buffers input until 480 samples are available,
+ * processes all complete RNNoise frames in the call, and reads from a
+ * pre-primed output ring to compensate for one-frame denoiser latency.
  */
 export class RnnoiseRing {
   constructor(instance: RnnoiseInstance);
-  /** Push a mono block of any size; returns all denoised 480-sample frames
-   *  produced (may be empty, 480, 960, etc. samples). Caller must not modify
-   *  returned buffer. */
+  /** Push a mono block of any size; returns exactly input.length samples. */
   push(input: Float32Array): Float32Array;
   /** Drain remaining buffered samples (call at end of stream). */
   drain(): Float32Array;
@@ -254,13 +255,13 @@ export class RnnoiseRing {
 The WASM memory layout follows the RNNoise C API:
 `rnnoise_create() → DenoiseState*`;
 `rnnoise_process_frame(state, out, in)` operates on 480 `float` samples
-in the WASM heap. `RnnoiseRing` manages the 480-sample input accumulator and
-the 480-sample output window. `push(block)` loops internally: it appends the
-input to the accumulator, then drains all complete 480-sample frames
-(concatenating their outputs) until fewer than 480 samples remain. This
-prevents accumulator growth when input blocks exceed 480 samples (e.g. the
-1024-sample blocks used in the offline export render chain). At most 479
-samples remain in the accumulator between calls.
+in the WASM heap. `RnnoiseRing` manages the 480-sample input accumulator and a
+pre-primed output ring. `push(block)` loops internally: it appends input to the
+accumulator, processes all complete 480-sample frames until fewer than 480
+samples remain, and returns exactly `block.length` samples from the output
+ring. This prevents accumulator growth when input blocks exceed 480 samples
+(e.g. the 1024-sample blocks used in the offline export render chain) while
+keeping AudioWorklet and export block sizes stable.
 
 ### `src/engine/voice-cleanup/kweighting.ts`
 
@@ -421,17 +422,20 @@ path in `src/ui/audio-engine.ts`). No media objects or WebGPU handles.
 
 ## SAB layout for denoiser bypass (Phase 46 extension)
 
-The Phase 46 SAB layout reserves `SAB[34]` and `SAB[35]` for the denoiser
-bypass bitmask. To avoid IEEE 754 NaN canonicalization risks when storing
+The Phase 46 SAB layout uses `SAB[34]` for the insert-level denoiser bypass
+flag and reserves `SAB[35..47]` for Phase 36 parameters. Phase 36 uses
+`SAB[35]` and `SAB[36]` for the per-track denoiser bypass bitmask and
+`SAB[37]` for the normalisation gain in dB. To avoid IEEE 754 NaN
+canonicalization risks when storing
 raw 32-bit integers in `Float32Array` slots, each SAB word stores a
 **16-bit float-safe integer** (max value 65,535):
 
-- `SAB[34]`: bypass bitmask for tracks 0–15 (standard float, read via
-  `Math.round(sab[34])`, then bitwise extract).
-- `SAB[35]`: bypass bitmask for tracks 16–31 (same encoding).
+- `SAB[35]`: bypass bitmask for tracks 0–15 (standard float, read via
+  `Math.round(sab[35])`, then bitwise extract).
+- `SAB[36]`: bypass bitmask for tracks 16–31 (same encoding).
 
 This supports up to 32 tracks without precision loss or NaN corruption.
-The AudioWorklet reads `Math.round(sab[34])` and `Math.round(sab[35])` and
+The AudioWorklet reads `Math.round(sab[35])` and `Math.round(sab[36])` and
 extracts the bit at position `trackIndex % 16` (word 0) or
 `(trackIndex - 16) % 16` (word 1) to determine bypass state per track.
 This does not add or remove SAB slots — it uses the pre-reserved space.
@@ -471,11 +475,10 @@ after v11. Migration function: if `schemaVersion < new_version`, default
 
 ## Third-party additions
 
-- **No new runtime npm dependencies.** The RNNoise WASM artifact is built from
-  upstream C source using Emscripten and checked in, following the existing
-  `build:wasm` script pattern. The build script is a devDependency concern
-  (Emscripten is a build-time tool, not a runtime package); it does not appear
-  in `package.json` at runtime.
+- **No new runtime npm dependencies.** The RNNoise WASM artifact is vendored
+  from pinned `@jitsi/rnnoise-wasm` package contents and checked in, following
+  the existing `build:wasm` artifact pattern. The package manager is only used
+  by the reproducibility script; the app runtime imports the checked-in bytes.
 
 ## Validation
 
@@ -489,6 +492,6 @@ after v11. Migration function: if `schemaVersion < new_version`, default
 | Gate: signal below threshold | Gain reduction applied; insert input/output meters show reduction |
 | Limiter: peak above ceiling | Peak clamped to ceiling; 5 ms lookahead delay heard on monitor |
 | WASM checksum mismatch | Hard user-visible error in panel; denoiser disabled; pipeline unaffected |
-| Browser without WASM SIMD | SIMD fallback (Emscripten non-SIMD path); note in diagnostics |
+| Browser without WebNN | Phase 36 still works; Phase 28 WebNN cleaned-asset workflow remains unavailable/experimental |
 | Phase 28 WebNN cleanup active | Both paths coexist; Phase 36 acts on the already-cleaned audio from Phase 28 |
 | `npm run build` + `npm test` | Both green; test count grows |

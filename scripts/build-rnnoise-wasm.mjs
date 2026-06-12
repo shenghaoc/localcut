@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 /**
- * Build script for RNNoise WASM module.
+ * Vendors the pinned RNNoise WASM artifact used by Phase 36.
  *
- * Compiles xiph/rnnoise from C source using Emscripten with SIMD-128 enabled.
+ * The repo intentionally does not require Emscripten for normal development.
+ * PR #57 established the local precedent for checked-in WASM artifacts built by
+ * a narrow script; RNNoise is too large to hand-write in WAT, so this script
+ * pins and verifies the org-backed @jitsi/rnnoise-wasm prebuilt artifact.
+ *
  * Produces:
  *   - src/engine/voice-cleanup/rnnoise.wasm
  *   - src/engine/voice-cleanup/rnnoise-wasm-b64.ts
  *   - src/engine/voice-cleanup/rnnoise-wasm-manifest.json
- *
- * Prerequisites:
- *   - Emscripten SDK (emsdk) installed and activated
- *   - git (to clone xiph/rnnoise)
  *
  * Usage:
  *   node scripts/build-rnnoise-wasm.mjs
@@ -20,87 +20,63 @@
 
 /* eslint-env node */
 import console from 'node:console';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+	cpSync,
+	existsSync,
+	chmodSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = fileURLToPath(new globalThis.URL('.', import.meta.url));
 const ROOT = resolve(__dirname, '..');
 const OUT_DIR = join(ROOT, 'src', 'engine', 'voice-cleanup');
-const BUILD_DIR = join(ROOT, '.build-rnnoise');
-
-// Pinned versions
-const EMSCRIPTEN_VERSION = '3.1.51';
-const RNNOISE_COMMIT = 'a15bc22'; // xiph/rnnoise master tip as of 2024
-const RNNOISE_REPO = 'https://github.com/xiph/rnnoise.git';
+const PUBLIC_OUT_DIR = join(ROOT, 'public', 'rnnoise');
+const PACKAGE = '@jitsi/rnnoise-wasm';
+const PACKAGE_VERSION = '0.2.1';
+const PACKAGE_TARBALL_SHA256 = 'c80b015b69701699868086a30015e5e680bee41a68df4c8ad2daed8b1bbc1173';
 
 function main() {
-	console.log('[build-rnnoise] Starting RNNoise WASM build...');
-
-	// Verify Emscripten
+	console.log(`[build-rnnoise] Vendoring ${PACKAGE}@${PACKAGE_VERSION}...`);
+	const tempDir = mkdtempSync(join(tmpdir(), 'localcut-rnnoise-'));
+	const tarballName = `jitsi-rnnoise-wasm-${PACKAGE_VERSION}.tgz`;
+	const tarballPath = join(tempDir, tarballName);
 	try {
-		const version = execSync('emcc --version', { encoding: 'utf-8' });
-		console.log(`[build-rnnoise] Emscripten: ${version.split('\n')[0]}`);
-	} catch {
-		console.error('[build-rnnoise] ERROR: emcc not found. Install and activate emsdk first.');
-		process.exit(1);
-	}
-
-	// Clone or update rnnoise
-	if (!existsSync(join(BUILD_DIR, 'rnnoise', '.git'))) {
-		mkdirSync(BUILD_DIR, { recursive: true });
-		console.log(`[build-rnnoise] Cloning xiph/rnnoise at ${RNNOISE_COMMIT}...`);
-		execSync(`git clone ${RNNOISE_REPO} ${join(BUILD_DIR, 'rnnoise')}`, {
+		execFileSync('npm', ['pack', `${PACKAGE}@${PACKAGE_VERSION}`, '--pack-destination', tempDir], {
 			stdio: 'inherit'
 		});
-	}
-	execSync(`git checkout ${RNNOISE_COMMIT}`, {
-		cwd: join(BUILD_DIR, 'rnnoise'),
-		stdio: 'inherit'
-	});
-
-	// Compile with Emscripten
-	console.log('[build-rnnoise] Compiling with emcc (-msimd128)...');
-	const rnnoiseSrc = join(BUILD_DIR, 'rnnoise', 'src');
-	const sources = ['denoise.c', 'fft.c', 'pitch.c', 'kiss_fft.c', 'rnnoise_data.c']
-		.map((f) => join(rnnoiseSrc, f))
-		.filter(existsSync);
-
-	// If sources aren't in src/, try the root
-	if (sources.length === 0) {
-		const altSrc = join(BUILD_DIR, 'rnnoise');
-		sources.push(
-			...['denoise.c', 'fft.c', 'pitch.c', 'kiss_fft.c', 'rnnoise_data.c']
-				.map((f) => join(altSrc, f))
-				.filter(existsSync)
-		);
+		const tarballBytes = readFileSync(tarballPath);
+		const tarballHash = createHash('sha256').update(tarballBytes).digest('hex');
+		if (tarballHash !== PACKAGE_TARBALL_SHA256) {
+			throw new Error(
+				`npm tarball checksum mismatch: expected ${PACKAGE_TARBALL_SHA256}, got ${tarballHash}`
+			);
+		}
+		execFileSync('tar', ['-xzf', tarballPath, '-C', tempDir], { stdio: 'inherit' });
+		const packageDir = join(tempDir, 'package');
+		const sourceWasm = join(packageDir, 'dist', 'rnnoise.wasm');
+		if (!existsSync(sourceWasm)) {
+			throw new Error(`${PACKAGE}@${PACKAGE_VERSION} did not contain dist/rnnoise.wasm`);
+		}
+		mkdirSync(OUT_DIR, { recursive: true });
+		mkdirSync(PUBLIC_OUT_DIR, { recursive: true });
+		const outputWasm = join(OUT_DIR, 'rnnoise.wasm');
+		cpSync(sourceWasm, outputWasm);
+		chmodSync(outputWasm, 0o644);
+		cpSync(outputWasm, join(PUBLIC_OUT_DIR, 'rnnoise.wasm'));
+	} finally {
+		rmSync(tempDir, { recursive: true, force: true });
 	}
 
 	const outWasm = join(OUT_DIR, 'rnnoise.wasm');
-	const cmd = [
-		'emcc',
-		'-O3',
-		'-msimd128',
-		'-s',
-		'WASM=1',
-		'-s',
-		'SIDE_MODULE=0',
-		'-s',
-		'EXPORTED_FUNCTIONS=["_rnnoise_create","_rnnoise_process_frame","_rnnoise_destroy","_rnnoise_get_size","_malloc","_free"]',
-		'-s',
-		'EXPORTED_RUNTIME_METHODS=[]',
-		'--no-entry',
-		...sources,
-		'-o',
-		outWasm
-	].join(' ');
-
-	execSync(cmd, { stdio: 'inherit', cwd: join(BUILD_DIR, 'rnnoise') });
-
-	// Generate base-64 wrapper
 	console.log('[build-rnnoise] Generating base-64 wrapper...');
 	const wasmBytes = readFileSync(outWasm);
 	const b64 = wasmBytes.toString('base64');
@@ -114,9 +90,15 @@ function main() {
 	// Generate manifest
 	const hash = createHash('sha256').update(wasmBytes).digest('hex');
 	const manifest = {
-		emscriptenVersion: EMSCRIPTEN_VERSION,
-		rnnoiseCommit: RNNOISE_COMMIT,
-		simd: true,
+		provenance: `${PACKAGE}@${PACKAGE_VERSION}`,
+		npmPackage: PACKAGE,
+		npmVersion: PACKAGE_VERSION,
+		npmTarballSha256: PACKAGE_TARBALL_SHA256,
+		sourceRepository: 'https://github.com/jitsi/rnnoise-wasm',
+		license: 'Apache-2.0 wrapper, BSD-3-Clause RNNoise core',
+		emscriptenVersion: 'upstream-prebuilt',
+		rnnoiseCommit: 'upstream-package',
+		simd: false,
 		sizeBytes: wasmBytes.length,
 		checksum: `sha256-${hash}`
 	};
@@ -124,6 +106,7 @@ function main() {
 		join(OUT_DIR, 'rnnoise-wasm-manifest.json'),
 		JSON.stringify(manifest, null, 2) + '\n'
 	);
+	writeFileSync(join(PUBLIC_OUT_DIR, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
 
 	console.log(
 		`[build-rnnoise] Done. WASM: ${wasmBytes.length} bytes, sha256-${hash.slice(0, 16)}...`

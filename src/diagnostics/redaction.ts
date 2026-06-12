@@ -119,6 +119,7 @@ export function buildCopyableDiagnosticReport(
 		capability: snapshot.capability,
 		storage: snapshot.storage,
 		proxyCache: snapshot.proxyCache,
+		voiceCleanup: snapshot.voiceCleanup,
 		activeExportSettings: snapshot.activeExportSettings,
 		performanceBudgets: snapshot.performanceBudgets,
 		recentErrors: redactRecentErrorLog(snapshot.recentErrors),

@@ -30,10 +30,8 @@ describe('voice-cleanup integration', () => {
 		}
 		const lufs = analyser.integratedLoudness();
 		expect(Number.isFinite(lufs)).toBe(true);
-		// The exact value depends on K-weighting, but should be around -23 LUFS
-		// for amplitude 0.1 (since full-scale sine ≈ -3 LUFS)
-		expect(lufs).toBeGreaterThan(-30);
-		expect(lufs).toBeLessThan(-10);
+		expect(lufs).toBeGreaterThan(-23.5);
+		expect(lufs).toBeLessThan(-22.5);
 	});
 
 	it('normalisationGainDb equals target − measured within ±0.01 dB', () => {
@@ -46,6 +44,7 @@ describe('voice-cleanup integration', () => {
 	it('applyMasterCleanupChain processes without error', () => {
 		const state = createVoiceCleanupChainState();
 		const params: MasterCleanupChainParams = {
+			denoiserEnabledTracks: [],
 			normaliseGainDb: 0,
 			limiterCeilingDbtp: -1,
 			gateParams: { ...DEFAULT_GATE_PARAMS, bypass: true },
@@ -65,6 +64,7 @@ describe('voice-cleanup integration', () => {
 	it('applyMasterCleanupChain with gate active modifies signal', () => {
 		const state = createVoiceCleanupChainState();
 		const params: MasterCleanupChainParams = {
+			denoiserEnabledTracks: [],
 			normaliseGainDb: 0,
 			limiterCeilingDbtp: -1,
 			gateParams: { ...DEFAULT_GATE_PARAMS, bypass: false, thresholdDb: -20 },
