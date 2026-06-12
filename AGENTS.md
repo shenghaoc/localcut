@@ -89,7 +89,9 @@ pnpm install       # Install dependencies (updates the lockfile if needed)
 pnpm run dev       # Vite dev server (COOP/COEP headers enabled)
 pnpm run check     # Full quality gate: format:check + lint + typecheck + test + build
 pnpm run build     # Production build
-pnpm run test      # Vitest
+pnpm run test      # Vitest unit tests (node environment)
+pnpm run test:browser   # Vitest Browser Mode (real Chromium, component/integration tests)
+pnpm run test:e2e       # Playwright E2E (full user-flow tests)
 pnpm run lint      # vp lint
 pnpm run format    # vp fmt
 pnpm run typecheck # tsc --noEmit

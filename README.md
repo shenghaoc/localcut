@@ -52,6 +52,20 @@ pnpm run lint
 pnpm run format
 ```
 
+### Testing
+
+Three test layers serve different purposes:
+
+```bash
+pnpm run test           # Vitest unit tests (node environment, ~1050 tests)
+pnpm run test:browser   # Vitest Browser Mode (real Chromium, component/integration tests)
+pnpm run test:e2e       # Playwright E2E (full user-flow tests, requires dev server)
+```
+
+- **Unit tests** (`pnpm run test`): fast logic tests running in Node. These run as part of `pnpm run check` and CI.
+- **Browser tests** (`pnpm run test:browser`): component and integration tests that render SolidJS components in a real Chromium browser via Vitest Browser Mode. Use these for behavior that depends on real DOM, browser APIs, or user interaction. Not included in the default `check` gate yet — run explicitly.
+- **E2E tests** (`pnpm run test:e2e`): full Playwright user-flow tests (e.g., WHIP publish integration). Requires a running dev server and, for some tests, external services.
+
 ## PWA & Deployment
 
 This project is configured as an installable Progressive Web App (PWA) and is designed to be deployed to **Cloudflare Workers with Static Assets**.
