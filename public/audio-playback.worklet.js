@@ -66,7 +66,9 @@ class WorkletRnnoiseRing {
 		this.pending = new Float32Array(RNNOISE_FRAME_SIZE * 2);
 		this.inputFill = 0;
 		this.pendingRead = 0;
-		this.pendingWrite = 0;
+		// Match the export RnnoiseRing contract: every ring starts with one
+		// frame of queued silence so live monitor and export latency agree.
+		this.pendingWrite = RNNOISE_FRAME_SIZE;
 	}
 
 	destroy() {

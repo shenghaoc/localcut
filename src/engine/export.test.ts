@@ -604,6 +604,60 @@ describe('mixAudioWindow', () => {
 		expect([...mixed]).toEqual([0.25, -0.125]);
 	});
 
+	it('preserves anti-phase stereo when the mono denoiser input cancels out', async () => {
+		const stereoSource = {
+			pcmWindowAt: vi.fn(async (_time: number, frames: number, channels: number) => {
+				const pcm = new Float32Array(frames * channels);
+				for (let frame = 0; frame < frames; frame += 1) {
+					const base = frame * channels;
+					pcm[base] = 0.5;
+					pcm[base + 1] = -0.5;
+				}
+				return pcm;
+			})
+		};
+		const sources = new Map<string, MediaInputHandle>([
+			[
+				'voice',
+				mediaHandle({
+					sourceId: 'voice',
+					audioSource: stereoSource as unknown as MediaInputHandle['audioSource']
+				})
+			]
+		]);
+		const edit: Timeline = [
+			audioTrack({
+				id: 'voice-track',
+				clips: [
+					defaultTimelineClip({ id: 'voice', sourceId: 'voice', start: 0, duration: 1, inPoint: 0 })
+				]
+			})
+		];
+		const cleanupState = createVoiceCleanupChainState();
+		cleanupState.denoiserRings.set('voice-track', {
+			push(input: Float32Array): Float32Array {
+				return input.map(() => 0);
+			},
+			drain(): Float32Array {
+				return new Float32Array();
+			},
+			destroy(): void {}
+		} as unknown as RnnoiseRing);
+
+		const mixed = await mixAudioWindow(edit, sources, 0, 1, 4, 2, {
+			voiceCleanup: {
+				denoiserEnabledTracks: ['voice-track'],
+				normaliseGainDb: 0,
+				limiterCeilingDbtp: -1,
+				gateParams: { ...DEFAULT_GATE_PARAMS, bypass: true },
+				limiterParams: { ...DEFAULT_LIMITER_PARAMS, bypass: true }
+			},
+			cleanupState
+		});
+
+		expect([...mixed]).toEqual([0.5, -0.5]);
+	});
+
 	it('routes a clip with applied cleanup through its derived asset (Phase 27)', async () => {
 		const original = sourceWith(1);
 		const cleaned = sourceWith(0.25);

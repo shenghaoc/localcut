@@ -601,7 +601,10 @@ export function App() {
 		}
 		void loadVoiceCleanupWasm().then(
 			(wasmBytes) => {
-				if (voiceCleanupSettings().denoiserEnabledTracks.length > 0) {
+				if (
+					voiceCleanupSettings().denoiserEnabledTracks.length > 0 &&
+					voiceCleanupDenoiserStatus() !== 'ready'
+				) {
 					audioEngine.configureVoiceCleanup(true, wasmBytes);
 				}
 			},

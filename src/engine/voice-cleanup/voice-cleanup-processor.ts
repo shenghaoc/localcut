@@ -113,6 +113,11 @@ export function denoiseInterleavedTrackPcm(
 		for (let channel = 0; channel < channels; channel += 1) {
 			absSum += Math.abs(pcm[base + channel] ?? 0);
 		}
+		if (Math.abs(dryMono) <= 1e-9 && absSum > 1e-9) {
+			// A mid-only RNNoise pass has no speech signal for side-only/anti-phase frames.
+			// Preserve the dry channels instead of collapsing valid stereo content to silence.
+			continue;
+		}
 		for (let channel = 0; channel < channels; channel += 1) {
 			const drySample = pcm[base + channel] ?? 0;
 			const ratio =
