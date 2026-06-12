@@ -4,44 +4,31 @@ This document maps each bug in `bugfix.md` to the concrete change and the
 invariant the change protects. All edits stay within one file; no new worker,
 message type, or rendering pass is introduced.
 
-## D1 — Remove `canDecode` guard on frame source creation (B1)
+## D1 — Remove `canDecode` guard + normalize codec strings (B1)
 
 `src/engine/media-adapters/mediabunny-adapter.ts`
 
-The condition at line 554 changes from:
+The condition at line 554 changes from `if (primaryVideo && primaryVideoInspection?.canDecode)` to `if (primaryVideo)`.
 
-```ts
-if (primaryVideo && primaryVideoInspection?.canDecode) {
-```
+Additionally, `normalizeVideoCodecString()` maps H.264 codec strings with
+unsupported level suffixes to a known-supported level (L4.0 = 0x28). This is
+needed because `VideoDecoder.isConfigSupported()` does exact string matching —
+`avc1.64000d` (High@L1.3) is rejected while `avc1.640028` (High@L4.0) passes.
 
-to:
+The normalization is applied in three places:
+1. `tryCreateWebCodecsVideoSource()` — before `isConfigSupported`
+2. `WebCodecsVideoDecoder.samples()` — before `decoder.configure()`
+3. Monkey-patched `canDecode`/`getDecoderConfig` on the track — so Mediabunny's `VideoSampleSink` also works
 
-```ts
-if (primaryVideo) {
-```
+The monkey-patch is necessary because `VideoSampleSink._createDecoder()` calls
+`track.canDecode()` (which uses the original codec string) and
+`track.getDecoderConfig()` (which returns the original codec string). By
+overriding these methods on the track instance, the normalized codec string
+flows through to the WebCodecs `VideoDecoder.configure()` call.
 
-The `canDecode` flag is still computed during inspection (line 139) and stored
-on the `SourceVideoTrackInspection` record (line 160). It is still used by the
-source-health warning system (`source-health.ts`) to emit an
-`unsupported-video-codec` warning. But it no longer gates frame source creation.
-
-Why this is safe:
-
-- `tryCreateWebCodecsVideoSource()` (lines 387–401) already calls
-  `VideoDecoder.isConfigSupported()` and returns `null` gracefully if the codec
-  is unsupported. No exception propagates.
-- `VideoSampleSink` constructor (the fallback) just stores the track reference;
-  it does not attempt to decode at construction time.
-- `SequentialFrameSource` constructor stores the sink and the min frame
-  duration; it does not iterate samples at construction time.
-- If the fallback decoder also fails to decode the codec, the error surfaces
-  during playback iteration — which is already handled by the playback error
-  reporting system (the "Playback error: ..." status line).
-
-The `primaryVideoInspection?.` optional chaining on `frameRateMode` (line 558)
-handles the case where `primaryVideoInspection` is null (which can't happen in
-practice since `primaryVideo` existing implies the inspection succeeded, but
-the optional chaining is defensive).
+Additionally, `isConfigSupported` is retried without `hardwareAcceleration`
+when the first attempt fails, since environments without hardware codec support
+(like headless Linux) reject `prefer-hardware` even when software decode works.
 
 ## D2 — No change needed in worker.ts (B2)
 
