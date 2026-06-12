@@ -98,10 +98,21 @@ COOP/COEP headers still apply.
 
 ## D8 — CSS (R4, R5)
 
-`src/global.css` — new `.docs-page`, `.docs-header`, `.docs-nav`,
-`.docs-article` classes. The guide is a full-screen overlay with a fixed
-header (back button + title) and a body split into nav sidebar + article
-content area. Dark professional-tool aesthetic matches the editor.
+`src/global.css` — new classes for the guide layout and typography:
+
+| Class | Purpose |
+|---|---|
+| `.docs-page` | Full-screen overlay container; fixed position, z-index above editor |
+| `.docs-header` | Fixed top bar with back button and title |
+| `.docs-header-title` | "User Guide" label in the header |
+| `.docs-body` | Flex container splitting nav sidebar and article content |
+| `.docs-nav` | Sidebar navigation with ordered section links |
+| `.docs-nav-item` | Individual nav link; `.is-active` highlights the current section |
+| `.docs-article` | Content area with `innerHTML` rendering; typography rules for `h1`–`h3`, `p`, `ul`/`ol`/`li`, `strong`, `a`, `code`, `pre`, `hr`, `table`/`th`/`td` |
+
+Responsive `@media (max-width: 720px)` rules collapse `.docs-body` to a
+single column and hide the nav sidebar. Dark professional-tool aesthetic
+matches the editor's design tokens.
 
 ## D9 — Removed
 

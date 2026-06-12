@@ -51,8 +51,10 @@
 
 ## T8 — CSS (R4, R5)
 
-- [x] **T8.1** Add `.docs-page`, `.docs-header`, `.docs-nav`, `.docs-article` styles in `global.css`.
-- [x] **T8.2** Dark professional-tool aesthetic matching the editor.
+- [x] **T8.1** Add `.docs-page`, `.docs-header`, `.docs-header-title`, `.docs-body`, `.docs-nav`, `.docs-nav-item` (+ `.is-active`), and `.docs-article` styles in `global.css`.
+- [x] **T8.2** Add `.docs-article` typography rules for `h1`–`h3`, `p`, `ul`/`ol`/`li`, `strong`, `a`, `code`, `pre`, `hr`, `table`/`th`/`td`.
+- [x] **T8.3** Add responsive `@media (max-width: 720px)` rules for single-column layout.
+- [x] **T8.4** Dark professional-tool aesthetic matching the editor.
 
 ## T9 — Remove legacy HelpPanel (D9)
 

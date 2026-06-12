@@ -2627,7 +2627,7 @@ export function App() {
 											title={importHint() ?? undefined}
 										/>
 									</label>
-									<p class="preview-empty-docs">
+									<p>
 										<Show
 											when={pipelineMode() === 'limited' || pipelineMode() === 'blocked'}
 											fallback={

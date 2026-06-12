@@ -49,5 +49,5 @@
 
 ## R6 — Testing
 
-- **R6.1** Manifest and route unit tests cover `findDocSection`, `docsPath`, and `parseDocsPath`.
-- **R6.2** The backend-readiness source assertion is made whitespace-tolerant.
+- **R6.1** Manifest and route unit tests cover `findDocSection`, `docsPath`, and `parseDocsPath` (`docsManifest.test.ts`).
+- **R6.2** The backend-readiness source assertion in `src/ui/backend-readiness-gating.test.ts` is made whitespace-tolerant to accommodate the restructured App source.
