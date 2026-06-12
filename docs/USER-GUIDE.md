@@ -122,6 +122,10 @@ The preview panel shows your video at the playhead position:
 - **Transform Gizmo**: When a video clip is selected, drag the gizmo handles to adjust position, scale, and rotation. Hold **Shift** to constrain proportions.
 - **Adaptive Resolution**: Preview resolution adapts to your machine's performance — the current resolution is shown in the toolbar.
 
+## Side Panel
+
+The right sidebar hosts four tabs — **Inspector**, **Captions**, **Replay**, and **Audio** (Live Audio Chain) — with one panel visible at a time so each gets the full sidebar height, even on smaller laptop screens. The panel switches to Inspector automatically when you select a clip or transition, and to Captions after a caption import. Use the **›** button at the right end of the tab bar to collapse the whole sidebar (handy on small screens — the preview and timeline get the extra width) and the **‹** strip to bring it back; the choice is remembered between sessions.
+
 ## Inspector Panel
 
 When you select a clip on the timeline, the **Inspector** (right sidebar) shows its properties:

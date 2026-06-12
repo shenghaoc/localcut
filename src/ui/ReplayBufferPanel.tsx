@@ -13,10 +13,11 @@ export interface ReplayBufferPanelProps {
 	isSupported: boolean;
 	supportedReason: string | null;
 	crossOriginIsolated: boolean;
+	initiallyExpanded?: boolean;
 }
 
 export function ReplayBufferPanel(props: ReplayBufferPanelProps) {
-	const [expanded, setExpanded] = createSignal(false);
+	const [expanded, setExpanded] = createSignal(props.initiallyExpanded ?? false);
 
 	const isCapturing = () => props.captureState?.active ?? false;
 	const elapsed = () => {
@@ -85,7 +86,7 @@ export function ReplayBufferPanel(props: ReplayBufferPanelProps) {
 							<div class="capture-status">
 								<div class="elapsed-time" aria-label="Elapsed time">
 									<Clock size={14} />
-									<span style="font-variant-numeric: tabular-nums">{elapsed()}</span>
+									<span style={{ 'font-variant-numeric': 'tabular-nums' }}>{elapsed()}</span>
 								</div>
 								<div class="buffer-indicator">
 									<div class="buffer-bar-bg">
@@ -109,9 +110,7 @@ export function ReplayBufferPanel(props: ReplayBufferPanelProps) {
 						</Show>
 
 						<Show when={!props.crossOriginIsolated}>
-							<div class="capability-note">
-								Live audio chain requires cross-origin isolation.
-							</div>
+							<div class="capability-note">Live audio chain requires cross-origin isolation.</div>
 						</Show>
 					</Show>
 				</div>
