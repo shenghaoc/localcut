@@ -597,6 +597,7 @@ function postTimelineState() {
 			transform: { ...clip.transform },
 			keyframes: clip.keyframes,
 			lut: lutSnapshot(clip.lut),
+			matte: clip.matte ? { ...clip.matte } : undefined,
 			audioFadeIn: clip.audioFadeIn,
 			audioFadeOut: clip.audioFadeOut,
 			offline: clip.kind === 'title' || sourceInputs.has(clip.sourceId) ? undefined : true,
