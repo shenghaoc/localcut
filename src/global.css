@@ -2440,6 +2440,8 @@ body {
 	position: absolute;
 	top: 0;
 	bottom: 0;
+	/* Anchor at the track's left edge; the inline `translate` provides the offset. */
+	left: 0;
 	border-radius: var(--radius-sm);
 	background: linear-gradient(
 		180deg,
