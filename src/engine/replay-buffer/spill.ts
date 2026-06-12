@@ -129,7 +129,7 @@ export async function cleanupSpills(): Promise<void> {
 				try {
 					await dir.removeEntry(name);
 				} catch {
-					/* Ignore */
+					// best-effort cleanup — a file already gone needs no removal
 				}
 			}
 		}

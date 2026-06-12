@@ -261,7 +261,8 @@ export class WasmAudioResampler {
 		this.usedFallback = false;
 		this.jsFallback.reset();
 		if (this.instance) {
-			(this.instance.exports as unknown as ResamplerWasmExports).reset();
+			const exports = this.instance.exports as unknown as ResamplerWasmExports;
+			exports.reset();
 		}
 	}
 
