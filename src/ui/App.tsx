@@ -397,6 +397,15 @@ export function App() {
 		} catch {
 			// Persistence is best-effort; private browsing may block storage.
 		}
+		// Toggling unmounts the focused button; move focus to its counterpart
+		// so keyboard and screen reader users are not dropped onto <body>.
+		queueMicrotask(() => {
+			if (collapsed) {
+				document.getElementById('side-rail-expand-btn')?.focus();
+			} else {
+				document.getElementById(`tab-${activeSideRailTab()}`)?.focus();
+			}
+		});
 	};
 	const handleSideRailTabKeyDown = (event: KeyboardEvent) => {
 		if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
@@ -2568,6 +2577,7 @@ export function App() {
 							when={!sideRailCollapsed()}
 							fallback={
 								<button
+									id="side-rail-expand-btn"
 									class="side-rail-expand"
 									aria-label="Expand side panel"
 									title="Expand side panel"
