@@ -1777,10 +1777,15 @@ body {
 
 .side-rail {
 	display: grid;
-	grid-template-rows: minmax(170px, 1fr) minmax(180px, 0.8fr) minmax(0, 1fr);
+	/* The tab row needs a guaranteed minimum so its content stays usable on
+	   short viewports (13" laptops); Inspector and Captions scroll internally,
+	   so they absorb the squeeze instead. If everything can't fit, the rail
+	   itself scrolls rather than crushing rows. */
+	grid-template-rows: minmax(140px, 1fr) minmax(130px, 0.8fr) minmax(220px, 1fr);
 	min-width: 0;
 	min-height: 0;
 	gap: 0.65rem;
+	overflow-y: auto;
 }
 
 .side-rail-tabs {
@@ -3066,8 +3071,16 @@ button.status-badge:hover {
 	}
 
 	.side-rail {
-		grid-template-rows: auto auto minmax(0, 1fr);
+		grid-template-rows: auto auto auto;
 		height: auto;
+		overflow-y: visible;
+	}
+
+	/* In the stacked single-column layout the rail has no fixed height, so
+	   `1fr` would collapse the tab section to its tab bar. Pin a usable
+	   height instead; the tab content scrolls internally. */
+	.side-rail-tabs {
+		height: 320px;
 	}
 
 	.inspector {
