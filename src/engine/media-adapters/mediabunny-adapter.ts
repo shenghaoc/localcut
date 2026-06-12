@@ -425,7 +425,11 @@ async function tryCreateWebCodecsVideoSource(
 		const config = await primaryVideo.getDecoderConfig();
 		if (!config) return null;
 		const normalized = { ...config, codec: normalizeVideoCodecString(config.codec) };
-		const support = await VideoDecoder.isConfigSupported(normalized);
+		let support = await VideoDecoder.isConfigSupported(normalized);
+		if (!support.supported && normalized.hardwareAcceleration) {
+			delete normalized.hardwareAcceleration;
+			support = await VideoDecoder.isConfigSupported(normalized);
+		}
 		if (!support.supported) return null;
 		const decoder = new WebCodecsVideoDecoder(primaryVideo);
 		return new SequentialFrameSource(decoder, minFrameDuration);
@@ -612,7 +616,11 @@ export const mediabunnyAdapter: MediaAdapter = {
 						if (!config) return false;
 						const normalized = { ...config, codec: normalizeVideoCodecString(config.codec) };
 						if (typeof VideoDecoder === 'undefined') return false;
-						const support = await VideoDecoder.isConfigSupported(normalized);
+						let support = await VideoDecoder.isConfigSupported(normalized);
+						if (!support.supported && normalized.hardwareAcceleration) {
+							delete normalized.hardwareAcceleration;
+							support = await VideoDecoder.isConfigSupported(normalized);
+						}
 						return support.supported === true;
 					};
 					(

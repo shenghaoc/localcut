@@ -72,7 +72,12 @@ export class WebCodecsVideoDecoder implements SequentialVideoSource {
 		if (typeof VideoDecoder === 'undefined') {
 			throw new Error('WebCodecs VideoDecoder is not supported in this environment.');
 		}
-		const support = await VideoDecoder.isConfigSupported(decoderConfig);
+		let support = await VideoDecoder.isConfigSupported(decoderConfig);
+		if (!support.supported && decoderConfig.hardwareAcceleration) {
+			// Retry without hardware acceleration preference
+			delete decoderConfig.hardwareAcceleration;
+			support = await VideoDecoder.isConfigSupported(decoderConfig);
+		}
 		if (!support.supported) {
 			throw new Error(`WebCodecs VideoDecoder does not support codec "${decoderConfig.codec}".`);
 		}
