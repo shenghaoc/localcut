@@ -854,13 +854,9 @@ export function App() {
 
 	// The user guide is a history-backed view layered over the editor; the
 	// editor stays mounted (worker, timeline, autosave all keep running) and is
-	// made inert while the docs cover it.
-	let appShellRef: HTMLDivElement | undefined;
+	// made inert while the docs cover it (via the declarative `inert` attribute
+	// on the app shell div below).
 	let docsReturnFocus: HTMLElement | null = null;
-
-	createEffect(() => {
-		if (appShellRef) appShellRef.inert = docsSlug() !== null;
-	});
 
 	function openDocs(slug: string = DOCS_INDEX_SLUG) {
 		if (docsSlug() === null) {
@@ -2303,10 +2299,11 @@ export function App() {
 	return (
 		<>
 			<div
-				class={`app${isDraggingFile() ? ' is-dragging-file' : ''}`}
-				ref={(el) => {
-					appShellRef = el;
+				classList={{
+					app: true,
+					'is-dragging-file': isDraggingFile()
 				}}
+				inert={docsSlug() !== null}
 			>
 				<Toolbar
 					metadata={metadata()}

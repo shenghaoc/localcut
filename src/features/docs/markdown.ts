@@ -12,28 +12,27 @@ const parser = new Marked({ gfm: true, async: false });
 
 const EXTERNAL_LINK_PATTERN = /^(https?:)?\/\//i;
 
-let linkHookInstalled = false;
+/**
+ * Isolated DOMPurify instance — hooks added here do not leak into other
+ * features that may use the global DOMPurify singleton.
+ */
+const purify = DOMPurify();
+
+purify.addHook('afterSanitizeAttributes', (node: Element) => {
+	if (node.tagName !== 'A') return;
+	const href = node.getAttribute('href') ?? '';
+	if (EXTERNAL_LINK_PATTERN.test(href)) {
+		node.setAttribute('target', '_blank');
+		node.setAttribute('rel', 'noopener noreferrer');
+	}
+});
 
 /**
  * External links must open outside the SPA without handing the opener to the
  * target page; in-app `/docs/...` links keep their plain href so DocsArticle
  * can intercept them for history-based navigation.
  */
-function installLinkHook(): void {
-	if (linkHookInstalled) return;
-	linkHookInstalled = true;
-	DOMPurify.addHook('afterSanitizeAttributes', (node) => {
-		if (node.tagName !== 'A') return;
-		const href = node.getAttribute('href') ?? '';
-		if (EXTERNAL_LINK_PATTERN.test(href)) {
-			node.setAttribute('target', '_blank');
-			node.setAttribute('rel', 'noopener noreferrer');
-		}
-	});
-}
-
 export function renderDocHtml(markdown: string): string {
-	installLinkHook();
 	const rawHtml = parser.parse(markdown, { async: false });
-	return DOMPurify.sanitize(rawHtml, { USE_PROFILES: { html: true } });
+	return purify.sanitize(rawHtml, { USE_PROFILES: { html: true } });
 }

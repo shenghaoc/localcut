@@ -19,6 +19,10 @@ interface DocsPageProps {
 export function DocsPage(props: DocsPageProps) {
 	let pageRef: HTMLElement | undefined;
 
+	// Capture the original title synchronously so cleanup restores whatever the
+	// editor had set (e.g. an active project name), not a hardcoded default.
+	const originalTitle = typeof document !== 'undefined' ? document.title : '';
+
 	// Index 0 is the guide overview — the manifest is never empty.
 	const section = createMemo(() => findDocSection(props.slug) ?? DOC_SECTIONS[0]!);
 
@@ -30,7 +34,7 @@ export function DocsPage(props: DocsPageProps) {
 		document.title = `${section().title} · LocalCut Studio User Guide`;
 	});
 	onCleanup(() => {
-		document.title = 'LocalCut Studio';
+		document.title = originalTitle || 'LocalCut Studio';
 	});
 
 	return (
