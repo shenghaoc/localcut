@@ -56,12 +56,14 @@
 ## T4 — EBU R128 analyser (R2.1, R2.2)
 
 - [x] **T4.1** `src/engine/voice-cleanup/ebu-r128.ts`: implement
-  `LoudnessAnalyser` class. `feedWindow(leftOrMono, right?)`:
-  (a) applies K-weighting to each channel using `kWeightBlock` with per-channel
-  state carried across windows;
-  (b) computes per-channel mean-square over the 400 ms window;
-  (c) computes window loudness `l_i = −0.691 + 10 * log10(sumChannelGain)`;
-  (d) stores `l_i` in an internal array for gating.
+  `LoudnessAnalyser` class. `feedBlock(leftOrMono, right?)`:
+  (a) applies K-weighting to each non-overlapping 100 ms block using
+  `kWeightBlock` with per-channel state carried forward monotonically;
+  (b) appends K-weighted samples to a 400 ms per-channel ring buffer;
+  (c) once the ring is primed, computes per-channel mean-square over the full
+  400 ms window;
+  (d) computes window loudness `l_i = −0.691 + 10 * log10(sumChannelGain)`;
+  (e) stores `l_i` in an internal array for gating.
   `integratedLoudness()`: applies absolute gate (−70 LUFS), computes ungated
   loudness, applies relative gate (ungated − 10 LU), returns doubly-gated
   integrated loudness; returns `−Infinity` if no windows survive both gates.
