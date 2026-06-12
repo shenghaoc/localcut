@@ -589,17 +589,21 @@ export const mediabunnyAdapter: MediaAdapter = {
 					const origCanDecode = primaryVideo.canDecode.bind(primaryVideo);
 					const origGetDecoderConfig = primaryVideo.getDecoderConfig.bind(primaryVideo);
 					(primaryVideo as { canDecode: () => Promise<boolean> }).canDecode = async () => {
-						if (await origCanDecode()) return true;
-						const config = await origGetDecoderConfig();
-						if (!config) return false;
-						const normalized = { ...config, codec: normalizeH264CodecString(config.codec) };
-						if (typeof VideoDecoder === 'undefined') return false;
-						let support = await VideoDecoder.isConfigSupported(normalized);
-						if (!support.supported && normalized.hardwareAcceleration) {
-							delete normalized.hardwareAcceleration;
-							support = await VideoDecoder.isConfigSupported(normalized);
+						try {
+							if (await origCanDecode()) return true;
+							const config = await origGetDecoderConfig();
+							if (!config) return false;
+							const normalized = { ...config, codec: normalizeH264CodecString(config.codec) };
+							if (typeof VideoDecoder === 'undefined') return false;
+							let support = await VideoDecoder.isConfigSupported(normalized);
+							if (!support.supported && normalized.hardwareAcceleration) {
+								delete normalized.hardwareAcceleration;
+								support = await VideoDecoder.isConfigSupported(normalized);
+							}
+							return support.supported === true;
+						} catch {
+							return false;
 						}
-						return support.supported === true;
 					};
 					(
 						primaryVideo as { getDecoderConfig: () => Promise<VideoDecoderConfig | null> }
