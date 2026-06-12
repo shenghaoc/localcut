@@ -94,15 +94,14 @@ warning's `blocking` flag is `false` when a frame source was created, so
 `conformance.health` is `'warnings'` (not `'blocked'`). The user sees the
 warning in the Media Bin but the clip is still usable.
 
-## D4 — Tests
+## D5 — Tests
+
+`src/engine/webcodecs-decoder.test.ts` — unit tests for `normalizeH264CodecString`:
+- Non-H.264 passthrough, invalid hex passthrough, unrecognized profile passthrough
+- Known-level passthrough, unknown-level normalization to L4.0
+- Baseline/Main/High profile coverage, case insensitivity
 
 Existing tests cover:
 - `canDecode` flag on inspection records
 - Source-health warning emission for unsupported codecs
 - Frame source creation with WebCodecs and Mediabunny fallback
-
-No new tests are needed for this one-line change because:
-- The existing `frame-source.test.ts` tests cover `SequentialFrameSource`
-  creation with `VideoSampleSink`.
-- The existing `source-health.test.ts` tests cover the warning emission.
-- The fix is a guard removal, not a new code path.

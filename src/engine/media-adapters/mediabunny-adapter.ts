@@ -576,6 +576,12 @@ export const mediabunnyAdapter: MediaAdapter = {
 				// browsers support H.264 High but reject specific level strings like
 				// avc1.64000d (High@L1.3). Since we normalize the codec string before
 				// passing to WebCodecs, tell Mediabunny the track is decodable.
+				//
+				// CONTRACT: This relies on Mediabunny's VideoSampleSink calling
+				// track.canDecode() and track.getDecoderConfig() via instance-property
+				// lookup (not cached references). If Mediabunny ever caches these
+				// methods during construction, this patch will silently stop working.
+				// Verify after Mediabunny upgrades.
 				if (
 					primaryVideoInspection?.codec?.startsWith('avc1.') &&
 					!primaryVideoInspection?.canDecode

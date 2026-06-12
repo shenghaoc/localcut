@@ -15,6 +15,21 @@ import type { AudioSampleLike, AudioSampleStream } from './audio-source';
 
 const DEFAULT_MAX_QUEUE_DEPTH = 8;
 
+/** H.264 level bytes (hex, uppercase) that VideoDecoder.isConfigSupported is known to accept. */
+const KNOWN_H264_LEVELS = new Set([
+	'1E',
+	'1F',
+	'28',
+	'29',
+	'2A',
+	'2B',
+	'2C',
+	'32',
+	'33',
+	'34',
+	'3C'
+]);
+
 /**
  * Normalize H.264 codec strings so VideoDecoder.isConfigSupported() accepts them.
  * Browsers report support for H.264 High profile but reject specific level suffixes
@@ -27,8 +42,7 @@ export function normalizeH264CodecString(codec: string): string {
 	const profile = hex.slice(0, 2).toUpperCase();
 	if (profile !== '42' && profile !== '4D' && profile !== '64') return codec;
 	const level = hex.slice(4, 6).toUpperCase();
-	const KNOWN = new Set(['1E', '1F', '28', '29', '2A', '2B', '2C', '32', '33', '34', '3C']);
-	if (KNOWN.has(level)) return codec;
+	if (KNOWN_H264_LEVELS.has(level)) return codec;
 	return `avc1.${profile}0028`;
 }
 

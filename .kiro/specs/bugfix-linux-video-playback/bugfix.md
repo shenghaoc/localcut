@@ -67,7 +67,8 @@ placed.
   chain → queue.submit` pipeline.
 - Not fixing `VideoDecoder.isConfigSupported()` browser behavior (this is a
   browser-level decision).
-- Not adding codec string normalization/parsing (too complex, too fragile).
+- Not addressing HEVC — truly unsupported codecs still fail at playback time
+  (the source-health warning is informational, not blocking).
 
 ## Acceptance criteria
 
@@ -76,7 +77,9 @@ placed.
 - The source-health warning for unsupported video codec is still emitted when
   `canDecode` is false (the warning is informational, not blocking).
 - Audio-only files continue to work as before.
-- Files with truly unsupported codecs (e.g. HEVC) still produce a blocking
-  warning and are rejected from the timeline.
+- Files with truly unsupported codecs (e.g. HEVC) are accepted onto the
+  timeline (frameSource is non-null via Mediabunny fallback) but produce a
+  playback error when the decoder fails. The source-health warning is
+  informational (non-blocking).
 - `vp build` passes (strict TypeScript).
 - `vp test run` passes (test count does not decrease).
