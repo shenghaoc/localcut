@@ -15,6 +15,37 @@ import type { AudioSampleLike, AudioSampleStream } from './audio-source';
 
 const DEFAULT_MAX_QUEUE_DEPTH = 8;
 
+/** H.264 level bytes (hex, uppercase) that VideoDecoder.isConfigSupported is known to accept. */
+const KNOWN_H264_LEVELS = new Set([
+	'1E',
+	'1F',
+	'28',
+	'29',
+	'2A',
+	'2B',
+	'2C',
+	'32',
+	'33',
+	'34',
+	'3C'
+]);
+
+/**
+ * Normalize H.264 codec strings so VideoDecoder.isConfigSupported() accepts them.
+ * Browsers report support for H.264 High profile but reject specific level suffixes
+ * via exact string matching. Mapping to a known-supported level (4.0 = 0x28) is safe.
+ */
+export function normalizeH264CodecString(codec: string): string {
+	if (!codec.startsWith('avc1.')) return codec;
+	const hex = codec.slice(5);
+	if (!/^[0-9a-fA-F]{6}$/.test(hex)) return codec;
+	const profile = hex.slice(0, 2).toUpperCase();
+	if (profile !== '42' && profile !== '4D' && profile !== '64') return codec;
+	const level = hex.slice(4, 6).toUpperCase();
+	if (KNOWN_H264_LEVELS.has(level)) return codec;
+	return `avc1.${profile}0028`;
+}
+
 export interface WebCodecsDecoderConfig {
 	maxQueueDepth?: number;
 	hardwareAcceleration?: HardwarePreference;
@@ -44,7 +75,10 @@ export class WebCodecsVideoDecoder implements SequentialVideoSource {
 	): AsyncGenerator<VideoSampleLike, void, unknown> {
 		const trackConfig = await this.track.getDecoderConfig();
 		if (!trackConfig) throw new Error('No decoder config available for video track.');
-		const decoderConfig = { ...trackConfig };
+		const decoderConfig = {
+			...trackConfig,
+			codec: normalizeH264CodecString(trackConfig.codec)
+		};
 		if (this.hardwareAcceleration !== 'no-preference') {
 			decoderConfig.hardwareAcceleration = this.hardwareAcceleration;
 		}
@@ -52,7 +86,12 @@ export class WebCodecsVideoDecoder implements SequentialVideoSource {
 		if (typeof VideoDecoder === 'undefined') {
 			throw new Error('WebCodecs VideoDecoder is not supported in this environment.');
 		}
-		const support = await VideoDecoder.isConfigSupported(decoderConfig);
+		let support = await VideoDecoder.isConfigSupported(decoderConfig);
+		if (!support.supported && decoderConfig.hardwareAcceleration) {
+			// Retry without hardware acceleration preference
+			delete decoderConfig.hardwareAcceleration;
+			support = await VideoDecoder.isConfigSupported(decoderConfig);
+		}
 		if (!support.supported) {
 			throw new Error(`WebCodecs VideoDecoder does not support codec "${decoderConfig.codec}".`);
 		}

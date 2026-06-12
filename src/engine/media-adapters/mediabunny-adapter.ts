@@ -18,7 +18,11 @@ import type { MediaKind, MediaMetadata } from '../../protocol';
 import { SequentialAudioSource } from '../audio-source';
 import { SequentialFrameSource } from '../frame-source';
 import { StillFrameSource } from '../still-source';
-import { WebCodecsVideoDecoder, WebCodecsAudioDecoder } from '../webcodecs-decoder';
+import {
+	WebCodecsVideoDecoder,
+	WebCodecsAudioDecoder,
+	normalizeH264CodecString
+} from '../webcodecs-decoder';
 import { buildNormalizedSourceTiming, resolveNormalizedSourceTimestamp } from './source-timing';
 import { generateSourceHealthWarnings, reportFromWarnings } from './source-health';
 import type {
@@ -392,7 +396,12 @@ async function tryCreateWebCodecsVideoSource(
 	try {
 		const config = await primaryVideo.getDecoderConfig();
 		if (!config) return null;
-		const support = await VideoDecoder.isConfigSupported(config);
+		const normalized = { ...config, codec: normalizeH264CodecString(config.codec) };
+		let support = await VideoDecoder.isConfigSupported(normalized);
+		if (!support.supported && normalized.hardwareAcceleration) {
+			delete normalized.hardwareAcceleration;
+			support = await VideoDecoder.isConfigSupported(normalized);
+		}
 		if (!support.supported) return null;
 		const decoder = new WebCodecsVideoDecoder(primaryVideo);
 		return new SequentialFrameSource(decoder, minFrameDuration);
@@ -528,14 +537,14 @@ export const mediabunnyAdapter: MediaAdapter = {
 				primaryVideoInspection,
 				primaryAudioInspection
 			} = await inspectMediabunnyInput(mediaInput, input.file, input.sourceId);
-			const { conformance, warnings } = deriveConformance(
+			const { conformance: initialConformance, warnings: initialWarnings } = deriveConformance(
 				inspection,
 				primaryVideoInspection,
 				primaryAudioInspection
 			);
 			const metadata = createMetadata(
 				input.file,
-				conformance.durationS,
+				initialConformance.durationS,
 				inspection.mimeType,
 				inspection.tracks,
 				primaryVideoInspection,
@@ -551,16 +560,59 @@ export const mediabunnyAdapter: MediaAdapter = {
 					? primaryVideoInspection.frameRate
 					: DEFAULT_FRAME_RATE;
 
-			if (primaryVideo && primaryVideoInspection?.canDecode) {
+			if (primaryVideo) {
 				// VFR: use a tiny floor (guards zero-duration frames only) so each frame
 				// advances at its actual Mediabunny-reported duration rather than being
 				// held for a full nominal-rate interval.
 				const minFrameDuration =
-					primaryVideoInspection.frameRateMode === 'variable'
+					primaryVideoInspection?.frameRateMode === 'variable'
 						? 1e-4
 						: frameRate > 0
 							? 1 / frameRate
 							: 0;
+
+				// Monkey-patch canDecode for H.264 tracks with unsupported level
+				// suffixes. VideoDecoder.isConfigSupported() does exact string matching;
+				// browsers support H.264 High but reject specific level strings like
+				// avc1.64000d (High@L1.3). Since we normalize the codec string before
+				// passing to WebCodecs, tell Mediabunny the track is decodable.
+				//
+				// CONTRACT: This relies on Mediabunny's VideoSampleSink calling
+				// track.canDecode() and track.getDecoderConfig() via instance-property
+				// lookup (not cached references). If Mediabunny ever caches these
+				// methods during construction, this patch will silently stop working.
+				// Verify after Mediabunny upgrades.
+				if (
+					primaryVideoInspection?.codec?.startsWith('avc1.') &&
+					!primaryVideoInspection?.canDecode
+				) {
+					const origCanDecode = primaryVideo.canDecode.bind(primaryVideo);
+					const origGetDecoderConfig = primaryVideo.getDecoderConfig.bind(primaryVideo);
+					(primaryVideo as { canDecode: () => Promise<boolean> }).canDecode = async () => {
+						try {
+							if (await origCanDecode()) return true;
+							const config = await origGetDecoderConfig();
+							if (!config) return false;
+							const normalized = { ...config, codec: normalizeH264CodecString(config.codec) };
+							if (typeof VideoDecoder === 'undefined') return false;
+							let support = await VideoDecoder.isConfigSupported(normalized);
+							if (!support.supported && normalized.hardwareAcceleration) {
+								delete normalized.hardwareAcceleration;
+								support = await VideoDecoder.isConfigSupported(normalized);
+							}
+							return support.supported === true;
+						} catch {
+							return false;
+						}
+					};
+					(
+						primaryVideo as { getDecoderConfig: () => Promise<VideoDecoderConfig | null> }
+					).getDecoderConfig = async () => {
+						const config = await origGetDecoderConfig();
+						if (!config) return null;
+						return { ...config, codec: normalizeH264CodecString(config.codec) };
+					};
+				}
 
 				// Always create a Mediabunny sink for thumbnails (sparse access).
 				thumbnailSink = new VideoSampleSink(primaryVideo);
@@ -573,6 +625,25 @@ export const mediabunnyAdapter: MediaAdapter = {
 					frameSource = new SequentialFrameSource(sink, minFrameDuration);
 				}
 			}
+
+			// Since we always attempt Mediabunny fallback for video, the
+			// unsupported-video-codec warning is informational when a frame source
+			// was successfully created.
+			const warnings = frameSource
+				? initialWarnings.map((w) =>
+						w.code === 'unsupported-video-codec' ? { ...w, blocking: false } : w
+					)
+				: initialWarnings;
+			const conformance: SourceConformance = frameSource
+				? {
+						...initialConformance,
+						health: warnings.some((w) => w.blocking)
+							? 'blocked'
+							: warnings.length > 0
+								? 'warnings'
+								: 'ok'
+					}
+				: initialConformance;
 
 			let audioSource: SequentialAudioSource | null = null;
 			const audioChannels = primaryAudioInspection?.channels ?? 2;
