@@ -2225,15 +2225,28 @@ function makeGetLayers() {
 				if (matte?.enabled) {
 					const engine = ensureMatteEngine();
 					if (engine) {
-						matteView =
-							(await engine.matteViewFor({
-								clipId: layer.clip.id,
-								modelKey: matte.modelKey,
-								frame: decoded.toVideoFrame(),
-								sourceTimeS: sourceTimestamp.adapterTimestampS,
-								frameStepS: handle.frameRate > 0 ? 1 / handle.frameRate : 1 / 30,
-								quality: 'preview'
-							})) ?? undefined;
+						// A matte inference failure must NEVER blank the video — degrade
+						// to the unmatted frame and report once. Keeping this catch local
+						// (not in makeGetLayers' outer try) is what preserves the frame.
+						try {
+							matteView =
+								(await engine.matteViewFor({
+									clipId: layer.clip.id,
+									modelKey: matte.modelKey,
+									frame: decoded.toVideoFrame(),
+									sourceTimeS: sourceTimestamp.adapterTimestampS,
+									frameStepS: handle.frameRate > 0 ? 1 / handle.frameRate : 1 / 30,
+									quality: 'preview'
+								})) ?? undefined;
+						} catch (error) {
+							matteView = undefined;
+							recordRecentError({
+								code: 'matte.inference_failed',
+								subsystem: 'matte',
+								severity: 'warning',
+								message: `Portrait matte inference failed; showing the clip without the matte. ${errorMessage(error)}`
+							});
+						}
 					}
 				}
 				decodedCount += 1;

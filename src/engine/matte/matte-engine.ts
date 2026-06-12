@@ -87,7 +87,13 @@ type Ort = typeof import('onnxruntime-web');
 /** Imports onnxruntime-web and points its WASM loader at the deployed path. */
 async function loadOrt(): Promise<Ort> {
 	const ortModule = await import('onnxruntime-web');
-	if (ortModule.env?.wasm) {
+	// Only override the WASM location in production. In production builds the ORT
+	// binaries are stripped from the bundle (Cloudflare's 25 MiB asset cap) and
+	// served from /models/ort/. In dev they are NOT stripped, so ORT must load
+	// them from its own bundled (node_modules) location — pointing it at
+	// /models/ort/ would make Vite try to ES-import a /public file, which it
+	// forbids ("can only be referenced via HTML tags").
+	if (import.meta.env.PROD && ortModule.env?.wasm) {
 		ortModule.env.wasm.wasmPaths = ORT_WASM_BASE_PATH;
 	}
 	return ortModule;

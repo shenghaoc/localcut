@@ -27,11 +27,28 @@
 
 ## T1 — Shared-device ORT session (gate for everything below)
 
-- [x] **T1.1** Shared-device contract implemented against ORT 1.26
-      (`env.webgpu.device` is settable before the first session per the 1.26
-      typings; `Tensor.fromGpuBuffer` + `preferredOutputLocation: 'gpu-buffer'`
-      wired in `matte-engine.ts`). ⚠ Needs a manual hardware-WebGPU browser run
-      with a deployed MODNet model to confirm end-to-end — not verifiable in CI.
+- [!] **T1.1 — BLOCKED (verified broken in-browser).** Hardware-WebGPU run with a
+      deployed model (synthetic luma-matte ONNX + ORT WASM served under `/models/`)
+      confirms the model loads (no "Failed"), but **the zero-copy GPU IO-binding
+      path does not work**: a buffer-readback diagnostic shows
+      `sameDevice=false` — ORT 1.26's WebGPU EP does **not** adopt the compositor
+      `GPUDevice` injected via `ort.env.webgpu.device`; it creates its own. The
+      preprocess pass fills the input buffer correctly (range `[-1, 0.94]`), but
+      `Tensor.fromGpuBuffer(inputBuffer)` references a buffer on the *compositor*
+      device while the session runs on *ORT's* device, so the model never sees the
+      input and the alpha output is all zeros. matte-apply then multiplies the
+      layer to full transparency → **enabling matte blanks the clip**.
+
+      Root question to resolve before this feature can work: why does ORT ignore
+      the injected device? Likely ORT requires a device created with specific
+      features/limits, so it spins up its own. Options:
+      (a) create/obtain the device ORT needs and use it for the renderer too
+          (true zero-copy, intended design — needs ORT-version research);
+      (b) run the matte passes on ORT's device and bridge the ~64 KB alpha to the
+          renderer device via a CPU round-trip (functional, but a documented
+          compatibility deviation from the zero-copy gate — needs sign-off).
+      Until resolved, the feature is gated behind absent weights (fails gracefully
+      to unmatted), so no user hits the blank-clip path by default.
 - [x] **T1.2** `matte-session.ts` in the pipeline worker: per-clip session lifecycle
       (create on first matted frame, key by `clipId`, release on delete/disable/dispose),
       MODNet manifest loading via the existing checksum path.
