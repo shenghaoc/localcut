@@ -112,6 +112,10 @@ const LUFS_TARGETS = [
 	{ label: '−23 LUFS (broadcast)', value: -23 }
 ];
 
+export function isCustomLufsTarget(targetLufs: number): boolean {
+	return !LUFS_TARGETS.some((item) => item.value === targetLufs);
+}
+
 export function voiceCleanupAnalysisDisabledReason(
 	analysisState: VoiceCleanupPanelProps['analysisState'],
 	timelineEmpty: boolean
@@ -147,9 +151,9 @@ export function VoiceCleanupPanel(props: VoiceCleanupPanelProps) {
 
 	createEffect(() => {
 		const target = props.settings.normalisationTargetLufs;
-		const preset = LUFS_TARGETS.some((item) => item.value === target);
-		setUseCustomTarget(!preset);
-		if (!preset) setCustomTargetLufs(target);
+		const custom = isCustomLufsTarget(target);
+		setUseCustomTarget(custom);
+		if (custom) setCustomTargetLufs(target);
 	});
 
 	const currentTarget = () =>

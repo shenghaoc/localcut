@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 import {
+	isCustomLufsTarget,
 	voiceCleanupAnalysisDisabledReason,
 	voiceCleanupLatencyBudget,
 	voiceCleanupLatencyMs
@@ -19,5 +20,13 @@ describe('VoiceCleanupPanel helpers', () => {
 			'Analysis is already running.'
 		);
 		expect(voiceCleanupAnalysisDisabledReason('idle', true)).toBe('Timeline is empty.');
+	});
+
+	it('detects custom loudness targets from restored project settings', () => {
+		expect(isCustomLufsTarget(-14)).toBe(false);
+		expect(isCustomLufsTarget(-16)).toBe(false);
+		expect(isCustomLufsTarget(-23)).toBe(false);
+		expect(isCustomLufsTarget(-15)).toBe(true);
+		expect(isCustomLufsTarget(-18.5)).toBe(true);
 	});
 });
