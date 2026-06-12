@@ -32,6 +32,8 @@ interface ExportDialogProps {
 	onStart: (settings: ExportSettings) => void;
 	onCancel: () => void;
 	onWhyConstraints: () => void;
+	/** Opens the in-app user guide on the Exporting section. */
+	onOpenGuide?: () => void;
 	onSavePreset: (preset: ExportPresetDoc) => void;
 	onDeletePreset: (presetId: string) => void;
 	onEnqueue: (
@@ -751,6 +753,19 @@ export function ExportDialog(props: ExportDialogProps) {
 							Close
 						</Popover.CloseButton>
 					</div>
+					<Show when={props.onOpenGuide}>
+						{/* The popover portals outside the app shell, so close it before the guide covers the editor. */}
+						<button
+							type="button"
+							class="export-why-link"
+							onClick={() => {
+								setOpen(false);
+								props.onOpenGuide?.();
+							}}
+						>
+							Export guide: codecs, presets, and the render queue
+						</button>
+					</Show>
 				</Popover.Content>
 			</Popover.Portal>
 		</Popover>

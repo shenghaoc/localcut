@@ -393,7 +393,7 @@ LocalCut Studio is a Progressive Web App. After the first visit:
 
 ## Help
 
-Click **Help** in the toolbar to open the in-app Help panel. It displays the full user guide so you can look up features without leaving the editor.
+Click **Help** in the toolbar (or browse to `/docs`) to open the in-app User Guide — a set of user-facing pages covering getting started, importing, timeline editing, exporting, live streaming, browser limitations, performance, troubleshooting, and an FAQ. Sections are in-app routes (`/docs/getting-started`, `/docs/exporting`, …) so they can be deep-linked, and **Back to editor** returns to the editor exactly as you left it. The guide's source lives in `src/features/docs/content/` and is bundled with the app, so it works offline.
 
 ## Keyboard Shortcuts Reference
 

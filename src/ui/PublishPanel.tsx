@@ -30,7 +30,7 @@ interface PublishPanelProps {
 	onGoLive: (settings: PublishSettingsDoc) => void;
 	onStop: () => void;
 	onClose: () => void;
-	/** Opens the in-app Help panel on the Live Streaming guide. */
+	/** Opens the in-app user guide on the Live streaming section. */
 	onOpenGuide: () => void;
 }
 

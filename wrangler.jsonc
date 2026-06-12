@@ -6,7 +6,9 @@
 		"enabled": true
 	},
 	"assets": {
-		"directory": "dist"
+		"directory": "dist",
+		// SPA fallback so in-app routes (/docs and subsections) survive refresh and deep links.
+		"not_found_handling": "single-page-application"
 	},
 	"compatibility_flags": ["nodejs_compat"]
 }

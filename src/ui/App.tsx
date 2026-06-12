@@ -73,7 +73,8 @@ import { InterchangeMenu } from './InterchangeMenu';
 import { Button, buttonVariants } from './components/button';
 import { cn } from '../lib/utils';
 import { CapabilityPanel } from './CapabilityPanel';
-import { HelpPanel } from './HelpPanel';
+import { DocsPage } from '../features/docs/DocsPage';
+import { DOCS_INDEX_SLUG, docsPath, parseDocsPath } from '../features/docs/docsManifest';
 import { PublishPanel } from './PublishPanel';
 import { createPublishController, type PublishTapStats } from './publish-controller';
 import { LimitedPreview } from './LimitedPreview';
@@ -288,8 +289,10 @@ export function App() {
 	const [previewReady, setPreviewReady] = createSignal(false);
 	const [exportReady, setExportReady] = createSignal(false);
 	const [capabilityPanelOpen, setCapabilityPanelOpen] = createSignal(false);
-	const [helpPanelOpen, setHelpPanelOpen] = createSignal(false);
-	const [helpInitialDoc, setHelpInitialDoc] = createSignal<string | null>(null);
+	// In-app user guide route (/docs[/section]); null means the editor view.
+	const [docsSlug, setDocsSlug] = createSignal<string | null>(
+		typeof window === 'undefined' ? null : parseDocsPath(window.location.pathname)
+	);
 	const [publishPanelOpen, setPublishPanelOpen] = createSignal(false);
 	const [publishState, setPublishState] = createSignal<PublishState>({ phase: 'idle' });
 	const [publishTapStats, setPublishTapStats] = createSignal<PublishTapStats | null>(null);
@@ -847,6 +850,34 @@ export function App() {
 					: `diag-${Date.now()}`;
 			bridge.send({ type: 'request-diagnostic-snapshot', requestId });
 		}
+	}
+
+	// The user guide is a history-backed view layered over the editor; the
+	// editor stays mounted (worker, timeline, autosave all keep running) and is
+	// made inert while the docs cover it (via the declarative `inert` attribute
+	// on the app shell div below).
+	let docsReturnFocus: HTMLElement | null = null;
+
+	function openDocs(slug: string = DOCS_INDEX_SLUG) {
+		if (docsSlug() === null) {
+			docsReturnFocus =
+				document.activeElement instanceof HTMLElement ? document.activeElement : null;
+		}
+		const path = docsPath(slug);
+		if (window.location.pathname !== path) window.history.pushState(null, '', path);
+		setDocsSlug(slug);
+	}
+
+	function closeDocs() {
+		if (parseDocsPath(window.location.pathname) !== null) {
+			window.history.pushState(null, '', '/');
+		}
+		setDocsSlug(null);
+		const target = docsReturnFocus;
+		docsReturnFocus = null;
+		// `setDocsSlug(null)` triggers a synchronous Solid update that removes
+		// `inert` from the editor shell; queue the focus so it runs after that flush.
+		queueMicrotask(() => target?.focus());
 	}
 
 	function clearCompatibilityPreview() {
@@ -2152,7 +2183,11 @@ export function App() {
 			}
 		})();
 
+		const handlePopState = () => setDocsSlug(parseDocsPath(window.location.pathname));
+		window.addEventListener('popstate', handlePopState);
+
 		const unregisterKeyboard = registerKeyboardShortcuts({
+			enabled: () => docsSlug() === null,
 			onUndo: () => bridge?.send({ type: 'undo' }),
 			onRedo: () => bridge?.send({ type: 'redo' }),
 			onSplit: splitSelectedClip,
@@ -2222,6 +2257,7 @@ export function App() {
 			releaseReplayCaptureStream();
 			unsubscribePublish();
 			publishController.dispose();
+			window.removeEventListener('popstate', handlePopState);
 			window.removeEventListener('offline', handleOffline);
 			window.removeEventListener('online', handleOnline);
 			window.removeEventListener('dragenter', onDragEnter);
@@ -2262,853 +2298,912 @@ export function App() {
 	});
 
 	return (
-		<div class={`app${isDraggingFile() ? ' is-dragging-file' : ''}`}>
-			<Toolbar
-				metadata={metadata()}
-				playing={clock.playing}
-				importAccept={VIDEO_ACCEPT}
-				onImportFile={importMedia}
-				onPickImport={pickImportMedia}
-				onPlay={() => {
-					const t = clock.currentTime();
-					if (audioSabReady()) void audioEngine.play(t);
-					bridge?.send({ type: 'play' });
+		<>
+			<div
+				classList={{
+					app: true,
+					'is-dragging-file': isDraggingFile()
 				}}
-				onPause={() => {
-					bridge?.send({ type: 'pause' });
-					audioEngine.pause();
-				}}
-				onStep={(direction) => bridge?.send({ type: 'step', direction })}
-				canUndo={historyState().canUndo}
-				canRedo={historyState().canRedo}
-				onUndo={() => bridge?.send({ type: 'undo' })}
-				onRedo={() => bridge?.send({ type: 'redo' })}
-				transportDisabled={!previewSurfaceAvailable()}
-				importBlocked={importBlocked()}
-				importHint={importHint()}
-				crossOriginIsolated={isIsolated()}
-				pipelineMode={pipelineMode()}
-				pipelineLabel={pipelineLabel()}
-				previewLabel={previewLabel()}
-				encodeFps={encodeFps()}
-				onOpenCapabilities={() => setCapabilityPanelOpen(true)}
-				onOpenHelp={() => {
-					setHelpInitialDoc(null);
-					setHelpPanelOpen(true);
-				}}
-				onOpenAudioCleanup={() => setAudioCleanupOpen(true)}
-				onOpenAutoCaptions={() => setAsrPanelOpen(true)}
-				onOpenPublish={() => setPublishPanelOpen(true)}
-				publishLive={publishBusy()}
-				masterGain={masterGain()}
-				meterSab={meterSab()}
-				onMasterGain={(gain) => {
-					audioEngine.setMasterGain(gain);
-					bridge?.send({ type: 'set-master-gain', gain });
-				}}
-				exportControl={
-					<>
-						<InterchangeMenu
-							hasTimeline={hasTimeline()}
-							videoTracks={timeline()
-								.filter((track) => track.type === 'video')
-								.map((track, index) => ({
-									id: track.id,
-									name: `V${index + 1}`,
-									clipCount: track.clips.length
-								}))}
-							warnings={interchangeWarnings()}
-							lastMessage={interchangeMessage()}
-							onExport={(format, trackId) => {
-								// Clear the previous export's outcome so stale warnings don't
-								// show against the in-flight one.
-								setInterchangeWarnings([]);
-								setInterchangeMessage(null);
-								bridge?.send({ type: 'export-interchange', format, trackId });
-							}}
-						/>
-						<BundleDialog
-							disabled={!accelerated()}
-							directoryPickerAvailable={'showDirectoryPicker' in window}
-							busy={bundleBusy()}
-							progressPhase={bundlePhase()}
-							integrityReport={bundleReport()}
-							lastMessage={bundleMessage()}
-							onExport={startBundleExport}
-							onImport={startBundleImport}
-							onCollect={startCollectMedia}
-							onCancelJob={cancelBundleJob}
-						/>
-						<ExportDialog
-							hasMedia={(metadata() !== null || hasTimeline()) && exportSurfaceAvailable()}
-							exporting={exporting()}
-							progress={exportProgress()}
-							lastResult={exportResult()}
-							error={exportError()}
-							warnings={exportWarnings()}
-							timelineDuration={clock.duration()}
-							supportedCodecs={exportCodecs()}
-							capabilityProbeV2={capabilityProbeV2()}
-							initialSettings={exportSettings()}
-							presets={exportPresets()}
-							markers={markers()}
-							onProbe={probeExportCodecs}
-							onStart={startExport}
-							onCancel={() => bridge?.send({ type: 'export-cancel' })}
-							onWhyConstraints={() => setCapabilityPanelOpen(true)}
-							onSavePreset={handleSavePreset}
-							onDeletePreset={handleDeletePreset}
-							onEnqueue={handleEnqueue}
-						/>
-					</>
-				}
-			/>
-			<Show when={restoreOffer() || unresolvedSources().length > 0}>
-				<section class="restore-banner" role={unresolvedSources().length > 0 ? 'alert' : undefined}>
-					<div class="restore-banner-copy">
-						<Show
-							when={restoreOffer()}
-							fallback={
-								<>
-									<p class="restore-banner-title">Offline media</p>
-									<p class="restore-banner-detail">
-										{unresolvedSources().length} source{unresolvedSources().length === 1 ? '' : 's'}{' '}
-										need re-linking.
-									</p>
-								</>
-							}
-						>
-							{(offer) => (
-								<>
-									<p class="restore-banner-title">Autosave from {formatSavedAt(offer().savedAt)}</p>
-									<p class="restore-banner-detail">
-										{offer().sources.length} source{offer().sources.length === 1 ? '' : 's'} in the
-										saved project.
-									</p>
-								</>
-							)}
-						</Show>
-					</div>
-					<Show when={unresolvedSources().length > 0}>
-						<ul class="restore-source-list">
-							<For each={unresolvedSources()}>
-								{(source) => (
-									<li class="restore-source-item">
-										<span title={formatSourceSummary(source)}>{formatSourceSummary(source)}</span>
-										<Button
-											size="sm"
-											onClick={() => void pickRelinkFile(source.sourceId)}
-											title={`Re-link ${source.fileName}`}
-										>
-											<Link2 size={13} aria-hidden="true" />
-											Re-link
-										</Button>
-									</li>
-								)}
-							</For>
-						</ul>
-					</Show>
-					<Show when={restoreOffer()}>
-						<div class="restore-actions">
-							<Button onClick={() => bridge?.send({ type: 'restore-project' })}>
-								<RotateCcw size={14} aria-hidden="true" />
-								Restore
-							</Button>
-							<Button variant="outline" onClick={startNewProject}>
-								<Plus size={14} aria-hidden="true" />
-								New
-							</Button>
-						</div>
-					</Show>
-					<input
-						ref={(el) => {
-							relinkInput = el;
-						}}
-						type="file"
-						accept={VIDEO_ACCEPT}
-						onChange={handleRelinkInput}
-						hidden
-					/>
-				</section>
-			</Show>
-			<Show when={latestHealthReport()}>
-				{(report) => (
-					<section
-						class="source-health-banner"
-						role={report().status === 'blocked' ? 'alert' : undefined}
-					>
-						<div class="restore-banner-copy">
-							<p class="restore-banner-title">Media health · {report().fileName}</p>
-							<p class="restore-banner-detail">
-								{report().warnings.length} issue{report().warnings.length === 1 ? '' : 's'}{' '}
-								detected.
-							</p>
-						</div>
-						<ul class="source-health-list">
-							<For each={report().warnings}>
-								{(warning) => (
-									<li class={`source-health-item is-${warning.severity}`}>
-										<span>{warning.message}</span>
-									</li>
-								)}
-							</For>
-						</ul>
-					</section>
-				)}
-			</Show>
-			<AppErrorBoundary>
-				<main
-					class={`workspace${previewSurfaceAvailable() ? ' has-bin' : ''}${sideRailCollapsed() ? ' rail-collapsed' : ''}`}
-				>
-					<Show when={previewSurfaceAvailable()}>
-						<MediaBin
-							assets={assets}
-							unresolvedIds={unresolvedIds}
-							getThumbnail={(sourceId, timestamp) => thumbnailStore.get(sourceId, timestamp)}
-							thumbnailVersion={thumbnailVersion}
-							requestThumbnails={(sourceId, timestamps) =>
-								bridge?.send({ type: 'request-thumbnails', sourceId, timestamps })
-							}
-							onPlace={(sourceId) => bridge?.send({ type: 'place-clip', sourceId })}
-							onRemove={(sourceId) => bridge?.send({ type: 'remove-asset', sourceId })}
-						/>
-					</Show>
-					<section class="preview panel">
-						<Show when={previewKey() + 1} keyed>
-							{(_k) => (
-								<PreviewCanvas onOffscreenReady={sendInit} onCanvasEl={setPreviewCanvasEl} />
-							)}
-						</Show>
-						<Show when={previewSurfaceAvailable() && selectedClipTransform() && previewSize()}>
-							<PreviewGizmo
-								transform={selectedClipTransform()!.transform}
-								sourceWidth={selectedClipTransform()!.sourceWidth}
-								sourceHeight={selectedClipTransform()!.sourceHeight}
-								outputWidth={previewSize()!.width}
-								outputHeight={previewSize()!.height}
-								canvasEl={previewCanvasEl}
-								onChange={(transform) => {
-									const sel = selectedClipTransform();
-									if (!sel) return;
-									const staticPatch = splitKeyframedTransformChange(transform);
-									if (Object.keys(staticPatch).length > 0) {
-										bridge?.send({
-											type: 'set-transform',
-											trackId: sel.trackId,
-											clipId: sel.clipId,
-											transform: staticPatch
-										});
-									}
+				inert={docsSlug() !== null}
+			>
+				<Toolbar
+					metadata={metadata()}
+					playing={clock.playing}
+					importAccept={VIDEO_ACCEPT}
+					onImportFile={importMedia}
+					onPickImport={pickImportMedia}
+					onPlay={() => {
+						const t = clock.currentTime();
+						if (audioSabReady()) void audioEngine.play(t);
+						bridge?.send({ type: 'play' });
+					}}
+					onPause={() => {
+						bridge?.send({ type: 'pause' });
+						audioEngine.pause();
+					}}
+					onStep={(direction) => bridge?.send({ type: 'step', direction })}
+					canUndo={historyState().canUndo}
+					canRedo={historyState().canRedo}
+					onUndo={() => bridge?.send({ type: 'undo' })}
+					onRedo={() => bridge?.send({ type: 'redo' })}
+					transportDisabled={!previewSurfaceAvailable()}
+					importBlocked={importBlocked()}
+					importHint={importHint()}
+					crossOriginIsolated={isIsolated()}
+					pipelineMode={pipelineMode()}
+					pipelineLabel={pipelineLabel()}
+					previewLabel={previewLabel()}
+					encodeFps={encodeFps()}
+					onOpenCapabilities={() => setCapabilityPanelOpen(true)}
+					onOpenHelp={() => openDocs()}
+					onOpenAudioCleanup={() => setAudioCleanupOpen(true)}
+					onOpenAutoCaptions={() => setAsrPanelOpen(true)}
+					onOpenPublish={() => setPublishPanelOpen(true)}
+					publishLive={publishBusy()}
+					masterGain={masterGain()}
+					meterSab={meterSab()}
+					onMasterGain={(gain) => {
+						audioEngine.setMasterGain(gain);
+						bridge?.send({ type: 'set-master-gain', gain });
+					}}
+					exportControl={
+						<>
+							<InterchangeMenu
+								hasTimeline={hasTimeline()}
+								videoTracks={timeline()
+									.filter((track) => track.type === 'video')
+									.map((track, index) => ({
+										id: track.id,
+										name: `V${index + 1}`,
+										clipCount: track.clips.length
+									}))}
+								warnings={interchangeWarnings()}
+								lastMessage={interchangeMessage()}
+								onExport={(format, trackId) => {
+									// Clear the previous export's outcome so stale warnings don't
+									// show against the in-flight one.
+									setInterchangeWarnings([]);
+									setInterchangeMessage(null);
+									bridge?.send({ type: 'export-interchange', format, trackId });
 								}}
 							/>
+							<BundleDialog
+								disabled={!accelerated()}
+								directoryPickerAvailable={'showDirectoryPicker' in window}
+								busy={bundleBusy()}
+								progressPhase={bundlePhase()}
+								integrityReport={bundleReport()}
+								lastMessage={bundleMessage()}
+								onExport={startBundleExport}
+								onImport={startBundleImport}
+								onCollect={startCollectMedia}
+								onCancelJob={cancelBundleJob}
+							/>
+							<ExportDialog
+								hasMedia={(metadata() !== null || hasTimeline()) && exportSurfaceAvailable()}
+								exporting={exporting()}
+								progress={exportProgress()}
+								lastResult={exportResult()}
+								error={exportError()}
+								warnings={exportWarnings()}
+								timelineDuration={clock.duration()}
+								supportedCodecs={exportCodecs()}
+								capabilityProbeV2={capabilityProbeV2()}
+								initialSettings={exportSettings()}
+								presets={exportPresets()}
+								markers={markers()}
+								onProbe={probeExportCodecs}
+								onStart={startExport}
+								onCancel={() => bridge?.send({ type: 'export-cancel' })}
+								onWhyConstraints={() => setCapabilityPanelOpen(true)}
+								onOpenGuide={() => openDocs('exporting')}
+								onSavePreset={handleSavePreset}
+								onDeletePreset={handleDeletePreset}
+								onEnqueue={handleEnqueue}
+							/>
+						</>
+					}
+				/>
+				<Show when={restoreOffer() || unresolvedSources().length > 0}>
+					<section
+						class="restore-banner"
+						role={unresolvedSources().length > 0 ? 'alert' : undefined}
+					>
+						<div class="restore-banner-copy">
+							<Show
+								when={restoreOffer()}
+								fallback={
+									<>
+										<p class="restore-banner-title">Offline media</p>
+										<p class="restore-banner-detail">
+											{unresolvedSources().length} source
+											{unresolvedSources().length === 1 ? '' : 's'} need re-linking.
+										</p>
+									</>
+								}
+							>
+								{(offer) => (
+									<>
+										<p class="restore-banner-title">
+											Autosave from {formatSavedAt(offer().savedAt)}
+										</p>
+										<p class="restore-banner-detail">
+											{offer().sources.length} source{offer().sources.length === 1 ? '' : 's'} in
+											the saved project.
+										</p>
+									</>
+								)}
+							</Show>
+						</div>
+						<Show when={unresolvedSources().length > 0}>
+							<ul class="restore-source-list">
+								<For each={unresolvedSources()}>
+									{(source) => (
+										<li class="restore-source-item">
+											<span title={formatSourceSummary(source)}>{formatSourceSummary(source)}</span>
+											<Button
+												size="sm"
+												onClick={() => void pickRelinkFile(source.sourceId)}
+												title={`Re-link ${source.fileName}`}
+											>
+												<Link2 size={13} aria-hidden="true" />
+												Re-link
+											</Button>
+										</li>
+									)}
+								</For>
+							</ul>
 						</Show>
-						<Show when={previewSurfaceAvailable() && safeAreaGuides()}>
-							<div class="safe-area-overlay" aria-hidden="true">
-								<div class="safe-area-rect safe-area-action" />
-								<div class="safe-area-rect safe-area-title" />
+						<Show when={restoreOffer()}>
+							<div class="restore-actions">
+								<Button onClick={() => bridge?.send({ type: 'restore-project' })}>
+									<RotateCcw size={14} aria-hidden="true" />
+									Restore
+								</Button>
+								<Button variant="outline" onClick={startNewProject}>
+									<Plus size={14} aria-hidden="true" />
+									New
+								</Button>
 							</div>
 						</Show>
-						<Show when={previewSurfaceAvailable()}>
+						<input
+							ref={(el) => {
+								relinkInput = el;
+							}}
+							type="file"
+							accept={VIDEO_ACCEPT}
+							onChange={handleRelinkInput}
+							hidden
+						/>
+					</section>
+				</Show>
+				<Show when={latestHealthReport()}>
+					{(report) => (
+						<section
+							class="source-health-banner"
+							role={report().status === 'blocked' ? 'alert' : undefined}
+						>
+							<div class="restore-banner-copy">
+								<p class="restore-banner-title">Media health · {report().fileName}</p>
+								<p class="restore-banner-detail">
+									{report().warnings.length} issue{report().warnings.length === 1 ? '' : 's'}{' '}
+									detected.
+								</p>
+							</div>
+							<ul class="source-health-list">
+								<For each={report().warnings}>
+									{(warning) => (
+										<li class={`source-health-item is-${warning.severity}`}>
+											<span>{warning.message}</span>
+										</li>
+									)}
+								</For>
+							</ul>
 							<button
 								type="button"
-								class={`safe-area-toggle${safeAreaGuides() ? ' is-active' : ''}`}
-								aria-pressed={safeAreaGuides()}
-								onClick={() => setSafeAreaGuides((on) => !on)}
-								title="Toggle title/action safe-area guides"
+								class="export-why-link"
+								onClick={() => openDocs('importing-media')}
 							>
-								Safe areas
+								What these warnings mean
 							</button>
-						</Show>
-						<Show when={compatibilityPreview() !== null}>
-							<LimitedPreview
-								thumbnailUrl={compatibilityPreview()!.url}
-								fileName={compatibilityPreview()!.fileName}
-								width={compatibilityPreview()!.width}
-								height={compatibilityPreview()!.height}
-								duration={compatibilityPreview()!.duration}
+						</section>
+					)}
+				</Show>
+				<AppErrorBoundary>
+					<main
+						class={`workspace${previewSurfaceAvailable() ? ' has-bin' : ''}${sideRailCollapsed() ? ' rail-collapsed' : ''}`}
+					>
+						<Show when={previewSurfaceAvailable()}>
+							<MediaBin
+								assets={assets}
+								unresolvedIds={unresolvedIds}
+								getThumbnail={(sourceId, timestamp) => thumbnailStore.get(sourceId, timestamp)}
+								thumbnailVersion={thumbnailVersion}
+								requestThumbnails={(sourceId, timestamps) =>
+									bridge?.send({ type: 'request-thumbnails', sourceId, timestamps })
+								}
+								onPlace={(sourceId) => bridge?.send({ type: 'place-clip', sourceId })}
+								onRemove={(sourceId) => bridge?.send({ type: 'remove-asset', sourceId })}
 							/>
 						</Show>
-						<Show when={!metadata() && !importing() && !hasTimeline()}>
-							<div class="preview-empty">
-								<div>
-									<p class="preview-empty-eyebrow">
-										{pipelineMode() === 'limited' || pipelineMode() === 'blocked'
-											? 'Compatibility'
-											: 'Preview'}
-									</p>
-									<p class="preview-empty-title">
-										{previewSurfaceAvailable()
-											? 'No source loaded'
-											: pipelineMode() === 'limited' || pipelineMode() === 'blocked'
-												? 'Preview unavailable'
-												: 'No source loaded'}
-									</p>
-									<p class="preview-empty-copy">
-										{previewSurfaceAvailable()
-											? 'Drop an MP4, MOV, or WebM here.'
-											: pipelineMode() === 'limited' || pipelineMode() === 'blocked'
-												? (limitedIssue() ??
-													(compatibilityImportEnabled()
-														? 'Import still loads a reduced compatibility thumbnail so you can inspect a local clip.'
-														: 'This browser cannot run the accelerated pipeline yet.'))
-												: 'Drop an MP4, MOV, or WebM here.'}
-									</p>
+						<section class="preview panel">
+							<Show when={previewKey() + 1} keyed>
+								{(_k) => (
+									<PreviewCanvas onOffscreenReady={sendInit} onCanvasEl={setPreviewCanvasEl} />
+								)}
+							</Show>
+							<Show when={previewSurfaceAvailable() && selectedClipTransform() && previewSize()}>
+								<PreviewGizmo
+									transform={selectedClipTransform()!.transform}
+									sourceWidth={selectedClipTransform()!.sourceWidth}
+									sourceHeight={selectedClipTransform()!.sourceHeight}
+									outputWidth={previewSize()!.width}
+									outputHeight={previewSize()!.height}
+									canvasEl={previewCanvasEl}
+									onChange={(transform) => {
+										const sel = selectedClipTransform();
+										if (!sel) return;
+										const staticPatch = splitKeyframedTransformChange(transform);
+										if (Object.keys(staticPatch).length > 0) {
+											bridge?.send({
+												type: 'set-transform',
+												trackId: sel.trackId,
+												clipId: sel.clipId,
+												transform: staticPatch
+											});
+										}
+									}}
+								/>
+							</Show>
+							<Show when={previewSurfaceAvailable() && safeAreaGuides()}>
+								<div class="safe-area-overlay" aria-hidden="true">
+									<div class="safe-area-rect safe-area-action" />
+									<div class="safe-area-rect safe-area-title" />
 								</div>
-								<label
-									class={cn(
-										buttonVariants({ variant: 'default' }),
-										'import-picker',
-										importBlocked() && 'is-disabled pointer-events-none'
-									)}
-									title={importHint() ?? undefined}
-								>
-									Import
-									<input
-										class="import-picker-overlay-input"
-										type="file"
-										accept={VIDEO_ACCEPT}
-										multiple
-										onChange={handleImportInput}
-										disabled={importBlocked()}
-										aria-label="Import media"
-										title={importHint() ?? undefined}
-									/>
-								</label>
-							</div>
-						</Show>
-						<Show when={importing()}>
-							<div class="preview-overlay">Importing…</div>
-						</Show>
-					</section>
-					<div class="side-rail">
-						<Show
-							when={!sideRailCollapsed()}
-							fallback={
+							</Show>
+							<Show when={previewSurfaceAvailable()}>
 								<button
-									id="side-rail-expand-btn"
-									class="side-rail-expand"
-									aria-label="Expand side panel"
-									title="Expand side panel"
-									onClick={() => toggleSideRail(false)}
+									type="button"
+									class={`safe-area-toggle${safeAreaGuides() ? ' is-active' : ''}`}
+									aria-pressed={safeAreaGuides()}
+									onClick={() => setSafeAreaGuides((on) => !on)}
+									title="Toggle title/action safe-area guides"
 								>
-									‹
+									Safe areas
 								</button>
-							}
-						>
-							<div class="side-rail-tabs">
-								<div class="side-rail-tab-bar" role="tablist" aria-label="Side panel">
-									<For each={SIDE_RAIL_TABS}>
-										{(tab) => (
-											<button
-												id={`tab-${tab.id}`}
-												classList={{
-													'side-rail-tab': true,
-													active: activeSideRailTab() === tab.id
-												}}
-												role="tab"
-												tabIndex={activeSideRailTab() === tab.id ? 0 : -1}
-												aria-selected={activeSideRailTab() === tab.id}
-												aria-controls={`panel-${tab.id}`}
-												onClick={() => setActiveSideRailTab(tab.id)}
-												onKeyDown={handleSideRailTabKeyDown}
-											>
-												{tab.label}
-											</button>
+							</Show>
+							<Show when={compatibilityPreview() !== null}>
+								<LimitedPreview
+									thumbnailUrl={compatibilityPreview()!.url}
+									fileName={compatibilityPreview()!.fileName}
+									width={compatibilityPreview()!.width}
+									height={compatibilityPreview()!.height}
+									duration={compatibilityPreview()!.duration}
+								/>
+							</Show>
+							<Show when={!metadata() && !importing() && !hasTimeline()}>
+								<div class="preview-empty">
+									<div>
+										<p class="preview-empty-eyebrow">
+											{pipelineMode() === 'limited' || pipelineMode() === 'blocked'
+												? 'Compatibility'
+												: 'Preview'}
+										</p>
+										<p class="preview-empty-title">
+											{previewSurfaceAvailable()
+												? 'No source loaded'
+												: pipelineMode() === 'limited' || pipelineMode() === 'blocked'
+													? 'Preview unavailable'
+													: 'No source loaded'}
+										</p>
+										<p class="preview-empty-copy">
+											{previewSurfaceAvailable()
+												? 'Drop an MP4, MOV, or WebM here.'
+												: pipelineMode() === 'limited' || pipelineMode() === 'blocked'
+													? (limitedIssue() ??
+														(compatibilityImportEnabled()
+															? 'Import still loads a reduced compatibility thumbnail so you can inspect a local clip.'
+															: 'This browser cannot run the accelerated pipeline yet.'))
+													: 'Drop an MP4, MOV, or WebM here.'}
+										</p>
+									</div>
+									<label
+										class={cn(
+											buttonVariants({ variant: 'default' }),
+											'import-picker',
+											importBlocked() && 'is-disabled pointer-events-none'
 										)}
-									</For>
-									<button
-										class="side-rail-collapse"
-										aria-label="Collapse side panel"
-										title="Collapse side panel"
-										onClick={() => toggleSideRail(true)}
+										title={importHint() ?? undefined}
 									>
-										›
+										Import
+										<input
+											class="import-picker-overlay-input"
+											type="file"
+											accept={VIDEO_ACCEPT}
+											multiple
+											onChange={handleImportInput}
+											disabled={importBlocked()}
+											aria-label="Import media"
+											title={importHint() ?? undefined}
+										/>
+									</label>
+									<p>
+										<Show
+											when={pipelineMode() === 'limited' || pipelineMode() === 'blocked'}
+											fallback={
+												<button
+													type="button"
+													class="export-why-link"
+													onClick={() => openDocs('getting-started')}
+												>
+													New here? Read the getting started guide
+												</button>
+											}
+										>
+											<button
+												type="button"
+												class="export-why-link"
+												onClick={() => openDocs('browser-limitations')}
+											>
+												Why is this browser limited?
+											</button>
+										</Show>
+									</p>
+								</div>
+							</Show>
+							<Show when={importing()}>
+								<div class="preview-overlay">Importing…</div>
+							</Show>
+						</section>
+						<div class="side-rail">
+							<Show
+								when={!sideRailCollapsed()}
+								fallback={
+									<button
+										id="side-rail-expand-btn"
+										class="side-rail-expand"
+										aria-label="Expand side panel"
+										title="Expand side panel"
+										onClick={() => toggleSideRail(false)}
+									>
+										‹
 									</button>
+								}
+							>
+								<div class="side-rail-tabs">
+									<div class="side-rail-tab-bar" role="tablist" aria-label="Side panel">
+										<For each={SIDE_RAIL_TABS}>
+											{(tab) => (
+												<button
+													id={`tab-${tab.id}`}
+													classList={{
+														'side-rail-tab': true,
+														active: activeSideRailTab() === tab.id
+													}}
+													role="tab"
+													tabIndex={activeSideRailTab() === tab.id ? 0 : -1}
+													aria-selected={activeSideRailTab() === tab.id}
+													aria-controls={`panel-${tab.id}`}
+													onClick={() => setActiveSideRailTab(tab.id)}
+													onKeyDown={handleSideRailTabKeyDown}
+												>
+													{tab.label}
+												</button>
+											)}
+										</For>
+										<button
+											class="side-rail-collapse"
+											aria-label="Collapse side panel"
+											title="Collapse side panel"
+											onClick={() => toggleSideRail(true)}
+										>
+											›
+										</button>
+									</div>
+									<div class="side-rail-tab-content">
+										<Show when={activeSideRailTab() === 'inspector'}>
+											<div
+												id="panel-inspector"
+												class="side-rail-tab-panel"
+												role="tabpanel"
+												aria-labelledby="tab-inspector"
+											>
+												<Inspector
+													metadata={metadata()}
+													selectedClip={selectedClip()}
+													selectedTrackMix={selectedTrackMix()}
+													selectedClipFades={selectedClipFades()}
+													selectedClipTransform={selectedClipTransform()}
+													selectedTitle={selectedTitle()}
+													selectedTransition={selectedTransition()}
+													onSetTitle={(trackId, clipId, patch) =>
+														bridge?.send({ type: 'set-title', trackId, clipId, ...patch })
+													}
+													onEffectParam={(trackId, clipId, key, value) =>
+														bridge?.send({ type: 'set-effect-param', trackId, clipId, key, value })
+													}
+													onTransform={(trackId, clipId, transform) =>
+														bridge?.send({ type: 'set-transform', trackId, clipId, transform })
+													}
+													playheadTime={clock.currentTime()}
+													onSeek={(time) => bridge?.send({ type: 'seek', time })}
+													onSetKeyframe={(trackId, clipId, key, t, value, easing) =>
+														bridge?.send({
+															type: 'set-keyframe',
+															trackId,
+															clipId,
+															key,
+															t,
+															value,
+															easing
+														})
+													}
+													onDeleteKeyframe={(trackId, clipId, key, t) =>
+														bridge?.send({ type: 'delete-keyframe', trackId, clipId, key, t })
+													}
+													onImportLut={(trackId, clipId, file) =>
+														bridge?.send({ type: 'import-lut', trackId, clipId, file })
+													}
+													onLutStrength={(trackId, clipId, strength) =>
+														bridge?.send({ type: 'set-lut-strength', trackId, clipId, strength })
+													}
+													onTrackGain={(trackId, gain) => {
+														bridge?.send({ type: 'set-track-gain', trackId, gain });
+													}}
+													onTrackMute={(trackId, muted) => {
+														bridge?.send({ type: 'set-track-mute', trackId, muted });
+													}}
+													onTrackSolo={(trackId, solo) => {
+														bridge?.send({ type: 'set-track-solo', trackId, solo });
+													}}
+													onTrackPan={(trackId, pan) => {
+														bridge?.send({ type: 'set-track-pan', trackId, pan });
+													}}
+													onClipFade={(trackId, clipId, edge, durationS) => {
+														bridge?.send({
+															type: 'set-clip-fade',
+															trackId,
+															clipId,
+															edge,
+															durationS
+														});
+													}}
+													onTransitionKind={(transitionId, kind) => {
+														bridge?.send({ type: 'set-transition', transitionId, kind });
+													}}
+													onTransitionDuration={(transitionId, durationS) => {
+														bridge?.send({ type: 'set-transition', transitionId, durationS });
+													}}
+													onRemoveTransition={(transitionId) => {
+														bridge?.send({ type: 'remove-transition', transitionId });
+														transitionMeta.delete(transitionId);
+														setSelectedTransitionId(null);
+													}}
+												/>
+											</div>
+										</Show>
+										<Show when={activeSideRailTab() === 'captions'}>
+											<div
+												id="panel-captions"
+												class="side-rail-tab-panel"
+												role="tabpanel"
+												aria-labelledby="tab-captions"
+											>
+												<TranscriptPanel
+													captionTracks={captionTracks()}
+													diagnostics={captionDiagnostics()}
+													playheadTime={clock.currentTime()}
+													selectedTrackId={selectedCaptionTrackId()}
+													selectedSegmentIds={selectedCaptionSegmentIds()}
+													onSelectTrack={setSelectedCaptionTrackId}
+													onSelectSegmentIds={setSelectedCaptionSegmentIds}
+													onImport={(file, trackId) =>
+														captionBridge().send(
+															trackId
+																? { type: 'import-captions', file, trackId }
+																: { type: 'import-captions', file }
+														)
+													}
+													onExport={(settings: CaptionExportSettingsSnapshot) =>
+														captionBridge().send({ type: 'export-captions', settings })
+													}
+													onSetTrack={(trackId, patch) =>
+														captionBridge().send({ type: 'set-caption-track', trackId, ...patch })
+													}
+													onSetSegmentText={(trackId, segmentId, text) =>
+														captionBridge().send({
+															type: 'set-caption-segment-text',
+															trackId,
+															segmentId,
+															text
+														})
+													}
+													onSetSegmentTiming={(trackId, segmentId, start, end) =>
+														captionBridge().send({
+															type: 'set-caption-segment-timing',
+															trackId,
+															segmentId,
+															start,
+															end
+														})
+													}
+													onSetSegmentStyle={(trackId, segmentId, style) =>
+														captionBridge().send({
+															type: 'set-caption-segment-style',
+															trackId,
+															segmentId,
+															style
+														})
+													}
+													onSplit={(trackId, segmentId, time) =>
+														captionBridge().send({
+															type: 'split-caption-segment',
+															trackId,
+															segmentId,
+															time
+														})
+													}
+													onMerge={(trackId, segmentIds) =>
+														captionBridge().send({
+															type: 'merge-caption-segments',
+															trackId,
+															segmentIds
+														})
+													}
+													onDelete={(trackId, segmentIds) =>
+														captionBridge().send({
+															type: 'delete-caption-segments',
+															trackId,
+															segmentIds
+														})
+													}
+													onSnap={(trackId, segmentId, edge) =>
+														captionBridge().send({
+															type: 'snap-caption-segment',
+															trackId,
+															segmentId,
+															edge
+														})
+													}
+												/>
+											</div>
+										</Show>
+										<Show when={activeSideRailTab() === 'replay'}>
+											<div
+												id="panel-replay"
+												class="side-rail-tab-panel"
+												role="tabpanel"
+												aria-labelledby="tab-replay"
+											>
+												<ReplayBufferPanel
+													captureState={captureSession()}
+													ringBufferState={replayBufferState()}
+													onStartCapture={() => void startReplayCapture()}
+													onStopCapture={stopReplayCapture}
+													onSaveLastN={(nSeconds) => {
+														if (!bridge) return;
+														setReplaySaveInProgress(true);
+														bridge.send({ type: 'replay-save-last-n', nSeconds });
+													}}
+													saveInProgress={replaySaveInProgress()}
+													isSupported={replayCaptureSupported()}
+													supportedReason={replayCaptureUnsupportedReason()}
+													crossOriginIsolated={capabilities().crossOriginIsolated}
+													initiallyExpanded={true}
+												/>
+											</div>
+										</Show>
+										<Show when={activeSideRailTab() === 'live-audio'}>
+											<div
+												id="panel-live-audio"
+												class="side-rail-tab-panel"
+												role="tabpanel"
+												aria-labelledby="tab-live-audio"
+											>
+												<LiveAudioChainPanel
+													config={liveChainConfig()}
+													onConfigChange={(partial) =>
+														bridge?.send({ type: 'update-live-chain-config', config: partial })
+													}
+													latencyMs={liveChainLatencyMs()}
+													crossOriginIsolated={capabilities().crossOriginIsolated}
+													isCapturing={captureSession()?.active ?? false}
+													initiallyExpanded={true}
+												/>
+											</div>
+										</Show>
+									</div>
 								</div>
-								<div class="side-rail-tab-content">
-									<Show when={activeSideRailTab() === 'inspector'}>
-										<div
-											id="panel-inspector"
-											class="side-rail-tab-panel"
-											role="tabpanel"
-											aria-labelledby="tab-inspector"
-										>
-											<Inspector
-												metadata={metadata()}
-												selectedClip={selectedClip()}
-												selectedTrackMix={selectedTrackMix()}
-												selectedClipFades={selectedClipFades()}
-												selectedClipTransform={selectedClipTransform()}
-												selectedTitle={selectedTitle()}
-												selectedTransition={selectedTransition()}
-												onSetTitle={(trackId, clipId, patch) =>
-													bridge?.send({ type: 'set-title', trackId, clipId, ...patch })
-												}
-												onEffectParam={(trackId, clipId, key, value) =>
-													bridge?.send({ type: 'set-effect-param', trackId, clipId, key, value })
-												}
-												onTransform={(trackId, clipId, transform) =>
-													bridge?.send({ type: 'set-transform', trackId, clipId, transform })
-												}
-												playheadTime={clock.currentTime()}
-												onSeek={(time) => bridge?.send({ type: 'seek', time })}
-												onSetKeyframe={(trackId, clipId, key, t, value, easing) =>
-													bridge?.send({
-														type: 'set-keyframe',
-														trackId,
-														clipId,
-														key,
-														t,
-														value,
-														easing
-													})
-												}
-												onDeleteKeyframe={(trackId, clipId, key, t) =>
-													bridge?.send({ type: 'delete-keyframe', trackId, clipId, key, t })
-												}
-												onImportLut={(trackId, clipId, file) =>
-													bridge?.send({ type: 'import-lut', trackId, clipId, file })
-												}
-												onLutStrength={(trackId, clipId, strength) =>
-													bridge?.send({ type: 'set-lut-strength', trackId, clipId, strength })
-												}
-												onTrackGain={(trackId, gain) => {
-													bridge?.send({ type: 'set-track-gain', trackId, gain });
-												}}
-												onTrackMute={(trackId, muted) => {
-													bridge?.send({ type: 'set-track-mute', trackId, muted });
-												}}
-												onTrackSolo={(trackId, solo) => {
-													bridge?.send({ type: 'set-track-solo', trackId, solo });
-												}}
-												onTrackPan={(trackId, pan) => {
-													bridge?.send({ type: 'set-track-pan', trackId, pan });
-												}}
-												onClipFade={(trackId, clipId, edge, durationS) => {
-													bridge?.send({ type: 'set-clip-fade', trackId, clipId, edge, durationS });
-												}}
-												onTransitionKind={(transitionId, kind) => {
-													bridge?.send({ type: 'set-transition', transitionId, kind });
-												}}
-												onTransitionDuration={(transitionId, durationS) => {
-													bridge?.send({ type: 'set-transition', transitionId, durationS });
-												}}
-												onRemoveTransition={(transitionId) => {
-													bridge?.send({ type: 'remove-transition', transitionId });
-													transitionMeta.delete(transitionId);
-													setSelectedTransitionId(null);
-												}}
-											/>
-										</div>
-									</Show>
-									<Show when={activeSideRailTab() === 'captions'}>
-										<div
-											id="panel-captions"
-											class="side-rail-tab-panel"
-											role="tabpanel"
-											aria-labelledby="tab-captions"
-										>
-											<TranscriptPanel
-												captionTracks={captionTracks()}
-												diagnostics={captionDiagnostics()}
-												playheadTime={clock.currentTime()}
-												selectedTrackId={selectedCaptionTrackId()}
-												selectedSegmentIds={selectedCaptionSegmentIds()}
-												onSelectTrack={setSelectedCaptionTrackId}
-												onSelectSegmentIds={setSelectedCaptionSegmentIds}
-												onImport={(file, trackId) =>
-													captionBridge().send(
-														trackId
-															? { type: 'import-captions', file, trackId }
-															: { type: 'import-captions', file }
-													)
-												}
-												onExport={(settings: CaptionExportSettingsSnapshot) =>
-													captionBridge().send({ type: 'export-captions', settings })
-												}
-												onSetTrack={(trackId, patch) =>
-													captionBridge().send({ type: 'set-caption-track', trackId, ...patch })
-												}
-												onSetSegmentText={(trackId, segmentId, text) =>
-													captionBridge().send({
-														type: 'set-caption-segment-text',
-														trackId,
-														segmentId,
-														text
-													})
-												}
-												onSetSegmentTiming={(trackId, segmentId, start, end) =>
-													captionBridge().send({
-														type: 'set-caption-segment-timing',
-														trackId,
-														segmentId,
-														start,
-														end
-													})
-												}
-												onSetSegmentStyle={(trackId, segmentId, style) =>
-													captionBridge().send({
-														type: 'set-caption-segment-style',
-														trackId,
-														segmentId,
-														style
-													})
-												}
-												onSplit={(trackId, segmentId, time) =>
-													captionBridge().send({
-														type: 'split-caption-segment',
-														trackId,
-														segmentId,
-														time
-													})
-												}
-												onMerge={(trackId, segmentIds) =>
-													captionBridge().send({
-														type: 'merge-caption-segments',
-														trackId,
-														segmentIds
-													})
-												}
-												onDelete={(trackId, segmentIds) =>
-													captionBridge().send({
-														type: 'delete-caption-segments',
-														trackId,
-														segmentIds
-													})
-												}
-												onSnap={(trackId, segmentId, edge) =>
-													captionBridge().send({
-														type: 'snap-caption-segment',
-														trackId,
-														segmentId,
-														edge
-													})
-												}
-											/>
-										</div>
-									</Show>
-									<Show when={activeSideRailTab() === 'replay'}>
-										<div
-											id="panel-replay"
-											class="side-rail-tab-panel"
-											role="tabpanel"
-											aria-labelledby="tab-replay"
-										>
-											<ReplayBufferPanel
-												captureState={captureSession()}
-												ringBufferState={replayBufferState()}
-												onStartCapture={() => void startReplayCapture()}
-												onStopCapture={stopReplayCapture}
-												onSaveLastN={(nSeconds) => {
-													if (!bridge) return;
-													setReplaySaveInProgress(true);
-													bridge.send({ type: 'replay-save-last-n', nSeconds });
-												}}
-												saveInProgress={replaySaveInProgress()}
-												isSupported={replayCaptureSupported()}
-												supportedReason={replayCaptureUnsupportedReason()}
-												crossOriginIsolated={capabilities().crossOriginIsolated}
-												initiallyExpanded={true}
-											/>
-										</div>
-									</Show>
-									<Show when={activeSideRailTab() === 'live-audio'}>
-										<div
-											id="panel-live-audio"
-											class="side-rail-tab-panel"
-											role="tabpanel"
-											aria-labelledby="tab-live-audio"
-										>
-											<LiveAudioChainPanel
-												config={liveChainConfig()}
-												onConfigChange={(partial) =>
-													bridge?.send({ type: 'update-live-chain-config', config: partial })
-												}
-												latencyMs={liveChainLatencyMs()}
-												crossOriginIsolated={capabilities().crossOriginIsolated}
-												isCapturing={captureSession()?.active ?? false}
-												initiallyExpanded={true}
-											/>
-										</div>
-									</Show>
-								</div>
-							</div>
-						</Show>
-					</div>
-				</main>
-				<Timeline
-					currentTime={clock.currentTime}
-					duration={clock.duration}
-					frameRate={() => metadata()?.video?.frameRate ?? null}
-					hasMedia={
-						(metadata() !== null ||
-							hasTimeline() ||
-							transitions().length > 0 ||
-							markers().length > 0 ||
-							assets().length > 0) &&
-						previewSurfaceAvailable()
-					}
-					timeline={timeline}
-					markers={markers}
-					selectedClipRefs={selectedClipRefs}
-					waveformPeaks={() => waveformPeaks()}
-					transitions={transitions}
-					selectedTransition={selectedTransition}
-					onSelectTransition={(transitionId, fromClipId, toClipId, trackId) => {
-						const transition = transitions().find((t) => t.id === transitionId);
-						if (transition) {
-							transitionMeta.set(transitionId, { trackId, fromClipId, toClipId });
-							setSelectedTransitionId(transitionId);
+							</Show>
+						</div>
+					</main>
+					<Timeline
+						currentTime={clock.currentTime}
+						duration={clock.duration}
+						frameRate={() => metadata()?.video?.frameRate ?? null}
+						hasMedia={
+							(metadata() !== null ||
+								hasTimeline() ||
+								transitions().length > 0 ||
+								markers().length > 0 ||
+								assets().length > 0) &&
+							previewSurfaceAvailable()
 						}
-					}}
-					onTransitionDuration={(transitionId, durationS) => {
-						bridge?.send({ type: 'set-transition', transitionId, durationS });
-					}}
-					onSeek={(t) => {
-						if (audioSabReady()) void audioEngine.seek(t);
-						bridge?.send({ type: 'seek', time: t });
-					}}
-					onSplit={(trackId, _clipId, time) => bridge?.send({ type: 'split', trackId, time })}
-					onDelete={(trackId, clipId) => bridge?.send({ type: 'delete-clip', trackId, clipId })}
-					onTrim={(trackId, clipId, edge, time) =>
-						bridge?.send({ type: 'trim-clip', trackId, clipId, edge, time })
-					}
-					onMoveClips={(moves) => bridge?.send({ type: 'move-clips', moves })}
-					onSelectClip={selectClip}
-					onSelectClips={(clips) => setSelectedClipRefs(clips)}
-					onAddTitle={(start) => bridge?.send({ type: 'add-title', start })}
-					onAddMarker={(time, label) => bridge?.send({ type: 'add-marker', time, label })}
-					onDeleteMarker={(markerId) => bridge?.send({ type: 'delete-marker', markerId })}
-					onCloseGaps={(trackId) =>
-						bridge?.send(trackId ? { type: 'close-gaps', trackId } : { type: 'close-gaps' })
-					}
-					onPlaceAsset={(sourceId, trackId, start) =>
-						bridge?.send({ type: 'place-clip', sourceId, trackId, start })
-					}
-					onAddTrack={(trackType) => bridge?.send({ type: 'add-track', trackType })}
-					onRemoveTrack={(trackId) => bridge?.send({ type: 'remove-track', trackId })}
-					onReorderTrack={(trackId, toIndex) =>
-						bridge?.send({ type: 'reorder-track', trackId, toIndex })
-					}
-					onSetTrackLock={(trackId, locked) =>
-						bridge?.send({ type: 'set-track-lock', trackId, locked })
-					}
-					onSetTrackVisible={(trackId, visible) =>
-						bridge?.send({ type: 'set-track-visible', trackId, visible })
-					}
-					onSetTrackSyncLock={(trackId, syncLocked) =>
-						bridge?.send({ type: 'set-track-sync-lock', trackId, syncLocked })
-					}
-					onSetTrackEditTarget={(trackId, editTarget) =>
-						bridge?.send({ type: 'set-track-edit-target', trackId, editTarget })
-					}
-					getThumbnail={(sourceId, timestamp) => thumbnailStore.get(sourceId, timestamp)}
-					thumbnailVersion={thumbnailVersion}
-					onRequestThumbnails={(sourceId, timestamps) =>
-						bridge?.send({ type: 'request-thumbnails', sourceId, timestamps })
-					}
-				/>
-				<RenderQueuePanel
-					queue={renderQueue()}
-					onStart={startRenderQueue}
-					onCancelJob={(jobId) => bridge?.send({ type: 'queue-cancel-job', jobId })}
-					onCancelAll={() => bridge?.send({ type: 'queue-cancel-all' })}
-					onRetry={(jobId) => bridge?.send({ type: 'queue-retry', jobId })}
-					onRemove={(jobId) => bridge?.send({ type: 'queue-remove', jobId })}
-					onSetStopOnError={(stopOnError) =>
-						bridge?.send({ type: 'queue-set-stop-on-error', stopOnError })
-					}
-				/>
-				<footer class="status-bar">
-					<span
-						role="status"
-						aria-live={exporting() ? 'off' : 'polite'}
-						aria-atomic={exporting() ? 'false' : 'true'}
-					>
-						{statusLine()}
-					</span>
-					<span class="status-meta">
-						<Show when={needRefresh()}>
+						timeline={timeline}
+						markers={markers}
+						selectedClipRefs={selectedClipRefs}
+						waveformPeaks={() => waveformPeaks()}
+						transitions={transitions}
+						selectedTransition={selectedTransition}
+						onSelectTransition={(transitionId, fromClipId, toClipId, trackId) => {
+							const transition = transitions().find((t) => t.id === transitionId);
+							if (transition) {
+								transitionMeta.set(transitionId, { trackId, fromClipId, toClipId });
+								setSelectedTransitionId(transitionId);
+							}
+						}}
+						onTransitionDuration={(transitionId, durationS) => {
+							bridge?.send({ type: 'set-transition', transitionId, durationS });
+						}}
+						onSeek={(t) => {
+							if (audioSabReady()) void audioEngine.seek(t);
+							bridge?.send({ type: 'seek', time: t });
+						}}
+						onSplit={(trackId, _clipId, time) => bridge?.send({ type: 'split', trackId, time })}
+						onDelete={(trackId, clipId) => bridge?.send({ type: 'delete-clip', trackId, clipId })}
+						onTrim={(trackId, clipId, edge, time) =>
+							bridge?.send({ type: 'trim-clip', trackId, clipId, edge, time })
+						}
+						onMoveClips={(moves) => bridge?.send({ type: 'move-clips', moves })}
+						onSelectClip={selectClip}
+						onSelectClips={(clips) => setSelectedClipRefs(clips)}
+						onAddTitle={(start) => bridge?.send({ type: 'add-title', start })}
+						onAddMarker={(time, label) => bridge?.send({ type: 'add-marker', time, label })}
+						onDeleteMarker={(markerId) => bridge?.send({ type: 'delete-marker', markerId })}
+						onCloseGaps={(trackId) =>
+							bridge?.send(trackId ? { type: 'close-gaps', trackId } : { type: 'close-gaps' })
+						}
+						onPlaceAsset={(sourceId, trackId, start) =>
+							bridge?.send({ type: 'place-clip', sourceId, trackId, start })
+						}
+						onAddTrack={(trackType) => bridge?.send({ type: 'add-track', trackType })}
+						onRemoveTrack={(trackId) => bridge?.send({ type: 'remove-track', trackId })}
+						onReorderTrack={(trackId, toIndex) =>
+							bridge?.send({ type: 'reorder-track', trackId, toIndex })
+						}
+						onSetTrackLock={(trackId, locked) =>
+							bridge?.send({ type: 'set-track-lock', trackId, locked })
+						}
+						onSetTrackVisible={(trackId, visible) =>
+							bridge?.send({ type: 'set-track-visible', trackId, visible })
+						}
+						onSetTrackSyncLock={(trackId, syncLocked) =>
+							bridge?.send({ type: 'set-track-sync-lock', trackId, syncLocked })
+						}
+						onSetTrackEditTarget={(trackId, editTarget) =>
+							bridge?.send({ type: 'set-track-edit-target', trackId, editTarget })
+						}
+						getThumbnail={(sourceId, timestamp) => thumbnailStore.get(sourceId, timestamp)}
+						thumbnailVersion={thumbnailVersion}
+						onRequestThumbnails={(sourceId, timestamps) =>
+							bridge?.send({ type: 'request-thumbnails', sourceId, timestamps })
+						}
+					/>
+					<RenderQueuePanel
+						queue={renderQueue()}
+						onStart={startRenderQueue}
+						onCancelJob={(jobId) => bridge?.send({ type: 'queue-cancel-job', jobId })}
+						onCancelAll={() => bridge?.send({ type: 'queue-cancel-all' })}
+						onRetry={(jobId) => bridge?.send({ type: 'queue-retry', jobId })}
+						onRemove={(jobId) => bridge?.send({ type: 'queue-remove', jobId })}
+						onSetStopOnError={(stopOnError) =>
+							bridge?.send({ type: 'queue-set-stop-on-error', stopOnError })
+						}
+					/>
+					<footer class="status-bar">
+						<span
+							role="status"
+							aria-live={exporting() ? 'off' : 'polite'}
+							aria-atomic={exporting() ? 'false' : 'true'}
+						>
+							{statusLine()}
+						</span>
+						<span class="status-meta">
+							<Show when={needRefresh()}>
+								<button
+									type="button"
+									class="status-badge"
+									onClick={() => updateServiceWorker(true)}
+									title="Click to update app"
+								>
+									Update Available
+								</button>
+							</Show>
+							<Show when={(offlineReady() || hasActiveSW()) && !isOffline()}>
+								<span class="status-badge" title="App ready to work offline">
+									Ready Offline
+								</span>
+							</Show>
+							<Show when={isOffline()}>
+								<span class="status-badge status-warn" title="No internet connection">
+									Offline
+								</span>
+							</Show>
+							<Show when={workerRecoveryState() !== 'running'}>
+								<span class="status-badge status-warn" title={`Worker: ${workerRecoveryState()}`}>
+									{workerRecoveryState() === 'throttled' ? 'Worker Failed' : 'Worker Recovering'}
+								</span>
+							</Show>
+							<Show when={audioWarning()}>
+								<span class="status-badge status-warn" title={audioWarning()!}>
+									Audio Disabled
+								</span>
+							</Show>
+							<Show when={capabilityTierV2Label(capabilityProbeV2())}>
+								{(label) => (
+									<span
+										class={`status-badge${capabilityProbeV2()?.tier === 'core-webgpu' ? '' : ' status-warn'}`}
+										title={
+											capabilityProbeV2()
+												? (compatibilityReadiness(capabilityProbeV2()!.tier).note ??
+													'CapabilityTierV2')
+												: 'CapabilityTierV2'
+										}
+									>
+										{label()}
+									</span>
+								)}
+							</Show>
 							<button
 								type="button"
 								class="status-badge"
-								onClick={() => updateServiceWorker(true)}
-								title="Click to update app"
+								onClick={openDiagnostics}
+								title="Open diagnostics"
 							>
-								Update Available
+								Diagnostics
 							</button>
-						</Show>
-						<Show when={(offlineReady() || hasActiveSW()) && !isOffline()}>
-							<span class="status-badge" title="App ready to work offline">
-								Ready Offline
-							</span>
-						</Show>
-						<Show when={isOffline()}>
-							<span class="status-badge status-warn" title="No internet connection">
-								Offline
-							</span>
-						</Show>
-						<Show when={workerRecoveryState() !== 'running'}>
-							<span class="status-badge status-warn" title={`Worker: ${workerRecoveryState()}`}>
-								{workerRecoveryState() === 'throttled' ? 'Worker Failed' : 'Worker Recovering'}
-							</span>
-						</Show>
-						<Show when={audioWarning()}>
-							<span class="status-badge status-warn" title={audioWarning()!}>
-								Audio Disabled
-							</span>
-						</Show>
-						<Show when={capabilityTierV2Label(capabilityProbeV2())}>
-							{(label) => (
-								<span
-									class={`status-badge${capabilityProbeV2()?.tier === 'core-webgpu' ? '' : ' status-warn'}`}
-									title={
-										capabilityProbeV2()
-											? (compatibilityReadiness(capabilityProbeV2()!.tier).note ??
-												'CapabilityTierV2')
-											: 'CapabilityTierV2'
+							<Show when={isIsolated()}>
+								<span class="status-ok">COOP/COEP OK</span>
+							</Show>
+						</span>
+					</footer>
+					<AudioCleanupPanel
+						open={audioCleanupOpen()}
+						state={cleanupState()}
+						selectedClip={selectedAudioCleanupClip()}
+						appliedCleanup={appliedCleanupInfo()}
+						onLoadModel={() => void cleanupController.loadModel()}
+						onPreview={() => {
+							const clip = selectedAudioCleanupClip();
+							if (!clip) return;
+							pauseFromKeyboard();
+							void cleanupController.previewCleanup(clip);
+						}}
+						onApply={() => {
+							const clip = selectedAudioCleanupClip();
+							if (!clip) return;
+							pauseFromKeyboard();
+							void cleanupController.applyCleanup(clip);
+						}}
+						onCancel={() => cleanupController.cancel()}
+						onRemoveCleanup={() => {
+							const applied = appliedCleanupInfo();
+							if (!applied) return;
+							bridge?.send({
+								type: 'remove-audio-cleanup',
+								trackId: applied.trackId,
+								clipId: applied.clipId
+							});
+						}}
+						onClose={() => setAudioCleanupOpen(false)}
+					/>
+					<AutoCaptionsPanel
+						open={asrPanelOpen()}
+						state={asrState()}
+						selectedClip={selectedAsrClip()}
+						onLoadModel={() => void asrController.loadModel()}
+						onTranscribeClip={(language) => {
+							const clip = selectedAsrClip();
+							if (!clip) return;
+							pauseFromKeyboard();
+							void asrController.transcribeClip(clip, language);
+						}}
+						onTranscribeRange={(language) => {
+							pauseFromKeyboard();
+							const startS = clock.currentTime();
+							const durationS = Math.min(
+								ASR_PREVIEW_SECONDS,
+								Math.max(0, clock.duration() - startS)
+							);
+							if (durationS <= 0) return;
+							void asrController.transcribeRange({ startS, durationS }, language);
+						}}
+						onCancel={() => asrController.cancel()}
+						onClose={() => setAsrPanelOpen(false)}
+					/>
+					<PublishPanel
+						open={publishPanelOpen()}
+						probe={capabilityProbeV2()}
+						state={publishState()}
+						tapStats={publishTapStats()}
+						errorDetail={publishErrorDetail()}
+						recordWhileStreamingAvailable={recordWhileStreaming()}
+						onGoLive={(settings) => void publishController.goLive(settings)}
+						onStop={() => void publishController.stop()}
+						onClose={() => setPublishPanelOpen(false)}
+						onOpenGuide={() => {
+							setPublishPanelOpen(false);
+							openDocs('live-streaming');
+						}}
+					/>
+					<CapabilityPanel
+						open={capabilityPanelOpen()}
+						tier={pipelineMode()}
+						tierLabel={pipelineLabel()}
+						features={listCapabilityFeatures(capabilities())}
+						primaryIssue={limitedIssue()}
+						compatibilityPreviewAvailable={canCompatibilityPreview(capabilities())}
+						previewReady={previewReady()}
+						exportReady={exportReady()}
+						capabilityProbeV2={capabilityProbeV2()}
+						onOpenGuide={() => {
+							setCapabilityPanelOpen(false);
+							openDocs('browser-limitations');
+						}}
+						onClose={() => setCapabilityPanelOpen(false)}
+					/>
+					<DiagnosticsPanel
+						open={diagnosticsPanelOpen()}
+						snapshot={diagnosticSnapshot()}
+						sources={diagnosticSources()}
+						onRefresh={openDiagnostics}
+						onOpenGuide={() => {
+							setDiagnosticsPanelOpen(false);
+							openDocs('performance');
+						}}
+						onClose={() => setDiagnosticsPanelOpen(false)}
+						onRecoveryAction={(actionId) => {
+							switch (actionId) {
+								case 'restart-worker':
+									void restartWorker();
+									break;
+								case 'reload-app':
+									window.location.reload();
+									break;
+								case 'retry-audio':
+									audioReady = null;
+									setAudioWarning(null);
+									if (sab) {
+										audioReady = audioEngine.init(sab);
+										audioReady.then(
+											(result) => {
+												setMeterSab(result.meterSab);
+												setAudioWarning(null);
+											},
+											(err) => {
+												setAudioWarning(
+													`Audio disabled: ${err instanceof Error ? err.message : String(err)}`
+												);
+											}
+										);
 									}
-								>
-									{label()}
-								</span>
-							)}
-						</Show>
-						<button
-							type="button"
-							class="status-badge"
-							onClick={openDiagnostics}
-							title="Open diagnostics"
-						>
-							Diagnostics
-						</button>
-						<Show when={isIsolated()}>
-							<span class="status-ok">COOP/COEP OK</span>
-						</Show>
-					</span>
-				</footer>
-				<HelpPanel
-					open={helpPanelOpen()}
-					initialDocFileName={helpInitialDoc()}
-					onClose={() => setHelpPanelOpen(false)}
+									break;
+								default:
+									bridge?.send({ type: 'run-recovery-action', actionId });
+									break;
+							}
+						}}
+					/>
+				</AppErrorBoundary>
+			</div>
+			<Show when={docsSlug() !== null}>
+				<DocsPage
+					// Guarded by the Show: docsSlug is non-null while the guide is open.
+					slug={docsSlug()!}
+					onNavigate={openDocs}
+					onClose={closeDocs}
 				/>
-				<AudioCleanupPanel
-					open={audioCleanupOpen()}
-					state={cleanupState()}
-					selectedClip={selectedAudioCleanupClip()}
-					appliedCleanup={appliedCleanupInfo()}
-					onLoadModel={() => void cleanupController.loadModel()}
-					onPreview={() => {
-						const clip = selectedAudioCleanupClip();
-						if (!clip) return;
-						pauseFromKeyboard();
-						void cleanupController.previewCleanup(clip);
-					}}
-					onApply={() => {
-						const clip = selectedAudioCleanupClip();
-						if (!clip) return;
-						pauseFromKeyboard();
-						void cleanupController.applyCleanup(clip);
-					}}
-					onCancel={() => cleanupController.cancel()}
-					onRemoveCleanup={() => {
-						const applied = appliedCleanupInfo();
-						if (!applied) return;
-						bridge?.send({
-							type: 'remove-audio-cleanup',
-							trackId: applied.trackId,
-							clipId: applied.clipId
-						});
-					}}
-					onClose={() => setAudioCleanupOpen(false)}
-				/>
-				<AutoCaptionsPanel
-					open={asrPanelOpen()}
-					state={asrState()}
-					selectedClip={selectedAsrClip()}
-					onLoadModel={() => void asrController.loadModel()}
-					onTranscribeClip={(language) => {
-						const clip = selectedAsrClip();
-						if (!clip) return;
-						pauseFromKeyboard();
-						void asrController.transcribeClip(clip, language);
-					}}
-					onTranscribeRange={(language) => {
-						pauseFromKeyboard();
-						const startS = clock.currentTime();
-						const durationS = Math.min(ASR_PREVIEW_SECONDS, Math.max(0, clock.duration() - startS));
-						if (durationS <= 0) return;
-						void asrController.transcribeRange({ startS, durationS }, language);
-					}}
-					onCancel={() => asrController.cancel()}
-					onClose={() => setAsrPanelOpen(false)}
-				/>
-				<PublishPanel
-					open={publishPanelOpen()}
-					probe={capabilityProbeV2()}
-					state={publishState()}
-					tapStats={publishTapStats()}
-					errorDetail={publishErrorDetail()}
-					recordWhileStreamingAvailable={recordWhileStreaming()}
-					onGoLive={(settings) => void publishController.goLive(settings)}
-					onStop={() => void publishController.stop()}
-					onClose={() => setPublishPanelOpen(false)}
-					onOpenGuide={() => {
-						setPublishPanelOpen(false);
-						setHelpInitialDoc('LIVE-STREAMING.md');
-						setHelpPanelOpen(true);
-					}}
-				/>
-				<CapabilityPanel
-					open={capabilityPanelOpen()}
-					tier={pipelineMode()}
-					tierLabel={pipelineLabel()}
-					features={listCapabilityFeatures(capabilities())}
-					primaryIssue={limitedIssue()}
-					compatibilityPreviewAvailable={canCompatibilityPreview(capabilities())}
-					previewReady={previewReady()}
-					exportReady={exportReady()}
-					capabilityProbeV2={capabilityProbeV2()}
-					onClose={() => setCapabilityPanelOpen(false)}
-				/>
-				<DiagnosticsPanel
-					open={diagnosticsPanelOpen()}
-					snapshot={diagnosticSnapshot()}
-					sources={diagnosticSources()}
-					onRefresh={openDiagnostics}
-					onClose={() => setDiagnosticsPanelOpen(false)}
-					onRecoveryAction={(actionId) => {
-						switch (actionId) {
-							case 'restart-worker':
-								void restartWorker();
-								break;
-							case 'reload-app':
-								window.location.reload();
-								break;
-							case 'retry-audio':
-								audioReady = null;
-								setAudioWarning(null);
-								if (sab) {
-									audioReady = audioEngine.init(sab);
-									audioReady.then(
-										(result) => {
-											setMeterSab(result.meterSab);
-											setAudioWarning(null);
-										},
-										(err) => {
-											setAudioWarning(
-												`Audio disabled: ${err instanceof Error ? err.message : String(err)}`
-											);
-										}
-									);
-								}
-								break;
-							default:
-								bridge?.send({ type: 'run-recovery-action', actionId });
-								break;
-						}
-					}}
-				/>
-			</AppErrorBoundary>
-		</div>
+			</Show>
+		</>
 	);
 }

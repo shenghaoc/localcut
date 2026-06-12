@@ -15,6 +15,8 @@ interface CapabilityPanelProps {
 	previewReady: boolean;
 	exportReady: boolean;
 	capabilityProbeV2: CapabilityProbeResult | null;
+	/** Opens the in-app user guide on the Browser limitations section. */
+	onOpenGuide?: () => void;
 	onClose: () => void;
 }
 
@@ -86,6 +88,12 @@ export function CapabilityPanel(props: CapabilityPanelProps) {
 
 				<Show when={props.primaryIssue}>
 					<p class="capability-panel-issue">{props.primaryIssue}</p>
+				</Show>
+
+				<Show when={props.onOpenGuide}>
+					<button type="button" class="export-why-link" onClick={() => props.onOpenGuide?.()}>
+						Read about browser limitations in the user guide
+					</button>
 				</Show>
 
 				<Show when={props.compatibilityPreviewAvailable && props.tier === 'limited'}>

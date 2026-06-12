@@ -48,6 +48,8 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 
 - [**Phase 41: Capture Engine**](.kiro/specs/phase-41-capture-engine/tasks.md) — recording as a first-class source: `getDisplayMedia`/`getUserMedia` acquisition; MSTP → WebCodecs realtime encode in the worker; crash-safe fragmented-MP4 chunks to OPFS via `SyncAccessHandle` + chunk manifest; boot recovery scan; screen/webcam/mic/system-audio as separate VFR-honest tracks; quota preflight + graceful stop; accelerated-tier gated.
 
+- [**In-app User Guide**](.kiro/specs/feature-in-app-user-guide/tasks.md) — routed, user-facing guide at `/docs` replacing the modal HelpPanel; ten bundled markdown sections with `marked` + isolated DOMPurify sanitisation; lightweight `pushState`/`popstate` routing in App; declarative `inert` on editor shell while guide is open; contextual links from Toolbar, Export, Capability, Diagnostics, source-health, empty preview, and Publish panels; `wrangler.jsonc` SPA fallback for deep links.
+
 **Completed:**
 
 - [**Phase 27: WebCodecs decode bridge**](.kiro/specs/phase-27-webcodecs-decode-bridge/tasks.md) — direct `VideoDecoder`/`AudioDecoder` over Mediabunny demux; bounded backpressure; key-packet seek; `getDecoderConfig` extradata; codec support matrix; worker integration; DualStreamFrameSource; diagnostics surface.
@@ -146,7 +148,7 @@ These guidelines drive **Codex** PR reviews (`@codex review`, or automatic revie
 - Silent failures: swallowed errors, empty catch blocks, missing handling on critical paths.
 - Missing tests for timeline model, seek logic, or protocol types on non-trivial changes; tests that mock away the invariant under test.
 - Inaccurate/outdated comments, weak types that fail to encode invariants, and dead code.
-- Missing or outdated user-facing documentation in `docs/` for user-visible changes. Docs live in the repo as the single source of truth and are rendered both on GitHub and in the in-app Help panel.
+- Missing or outdated user-facing documentation for user-visible changes. Reference docs in `docs/` and the in-app User Guide content in `src/features/docs/content/` live in the repo as the single source of truth; both render on GitHub, and the User Guide is bundled into the app at `/docs`.
 
 Be thorough but not noisy: surface every P0/P1 you can substantiate, and skip pedantic nits, pre-existing issues the PR didn't touch, and anything a linter already catches.
 
