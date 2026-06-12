@@ -71,7 +71,9 @@ export function TimelineClip(props: TimelineClipProps) {
 	// so reading props.* here directly would freeze position/size at first render and
 	// never reflect a move/trim/duration change. Evaluate inside the tracking context.
 	const [dragPreviewStart, setDragPreviewStart] = createSignal<number | null>(null);
-	const left = () => `${(dragPreviewStart() ?? props.clip.start) * props.pxPerSecond}px`;
+	// Bolt ⚡: Hardware-accelerated transform instead of `left` to avoid layout thrashing
+	// and main-thread reflows during high-frequency pointermove dragging events.
+	const transform = () => `translateX(${(dragPreviewStart() ?? props.clip.start) * props.pxPerSecond}px)`;
 	const width = () => `${Math.max(10, props.clip.duration * props.pxPerSecond)}px`;
 	const waveformWidth = () => Math.max(24, Math.floor(props.clip.duration * props.pxPerSecond));
 	const clipTitle = () => `${props.clip.id} (${props.clip.sourceId})`;
@@ -319,7 +321,12 @@ export function TimelineClip(props: TimelineClipProps) {
 	return (
 		<div
 			class={`timeline-clip${props.isAudio ? ' is-audio' : ''}${props.selected ? ' is-selected' : ''}${dragPreviewStart() !== null ? ' is-dragging' : ''}${props.clip.offline ? ' is-offline' : ''}`}
-			style={{ left: left(), width: width() }}
+			style={{
+				left: 0,
+				transform: transform(),
+				width: width(),
+				...(dragPreviewStart() !== null ? { 'will-change': 'transform' } : {})
+			}}
 			title={clipTitle()}
 			role="button"
 			aria-pressed={!!props.selected}

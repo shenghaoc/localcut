@@ -11,3 +11,8 @@
 ## 2024-08-20 - CSS Layout Thrashing on Audio Meters
 **Learning:** Animating a DOM element's `height` property inline (e.g. `style={{ height: \`${percent}%\` }}`) during high-frequency events like a 60fps audio meter reader forces main-thread layout recalculations (reflows) on every frame. This thrashes performance.
 **Action:** Use hardware-accelerated CSS `transform: scaleY(...)` combined with `transform-origin: bottom` and `height: 100%` on the base class. The browser can offload this to the compositor thread (GPU), bypassing the layout phase entirely.
+
+## 2026-06-12 - CSS Layout Thrashing on Timeline Clip Dragging
+
+**Learning:** Animating a timeline clip's position using the CSS `left` property inline during dragging forces main-thread layout recalculations (reflows) on every pointermove event. This causes layout thrashing and stuttering.
+**Action:** Use hardware-accelerated CSS `transform: translateX(...)` combined with conditionally applying `will-change: transform` during active drags. The browser can offload this to the compositor thread (GPU), bypassing the layout phase entirely for much smoother animation.
