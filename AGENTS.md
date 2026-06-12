@@ -48,6 +48,8 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 
 - [**Phase 41: Capture Engine**](.kiro/specs/phase-41-capture-engine/tasks.md) — recording as a first-class source: `getDisplayMedia`/`getUserMedia` acquisition; MSTP → WebCodecs realtime encode in the worker; crash-safe fragmented-MP4 chunks to OPFS via `SyncAccessHandle` + chunk manifest; boot recovery scan; screen/webcam/mic/system-audio as separate VFR-honest tracks; quota preflight + graceful stop; accelerated-tier gated.
 
+- [**In-app User Guide**](.kiro/specs/feature-in-app-user-guide/tasks.md) — routed, user-facing guide at `/docs` replacing the modal HelpPanel; ten bundled markdown sections with `marked` + isolated DOMPurify sanitisation; lightweight `pushState`/`popstate` routing in App; declarative `inert` on editor shell while guide is open; contextual links from Toolbar, Export, Capability, Diagnostics, source-health, empty preview, and Publish panels; `wrangler.jsonc` SPA fallback for deep links.
+
 **Completed:**
 
 - [**Phase 27: WebCodecs decode bridge**](.kiro/specs/phase-27-webcodecs-decode-bridge/tasks.md) — direct `VideoDecoder`/`AudioDecoder` over Mediabunny demux; bounded backpressure; key-packet seek; `getDecoderConfig` extradata; codec support matrix; worker integration; DualStreamFrameSource; diagnostics surface.
