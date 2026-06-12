@@ -841,6 +841,61 @@ describe('mixAudioWindow', () => {
 		expect(incoming.pcmWindowAt).toHaveBeenCalledWith(0.25, 3, 1, 4);
 	});
 
+	it('denoises the crossfaded transition track once instead of feeding outgoing and incoming sequentially', async () => {
+		const outgoing = sourceWith(0.25);
+		const incoming = sourceWith(0.75);
+		const sources = new Map<string, MediaInputHandle>([
+			[
+				'out',
+				mediaHandle({
+					sourceId: 'out',
+					audioSource: outgoing as unknown as MediaInputHandle['audioSource']
+				})
+			],
+			[
+				'in',
+				mediaHandle({
+					sourceId: 'in',
+					audioSource: incoming as unknown as MediaInputHandle['audioSource']
+				})
+			]
+		]);
+		const edit: Timeline = [
+			audioTrack({
+				id: 'a-track',
+				clips: [
+					defaultTimelineClip({ id: 'out', sourceId: 'out', start: 0, duration: 1, inPoint: 0 }),
+					defaultTimelineClip({ id: 'in', sourceId: 'in', start: 1, duration: 1, inPoint: 0.5 })
+				]
+			})
+		];
+		const push = vi.fn((input: Float32Array) => input);
+		const cleanupState = createVoiceCleanupChainState();
+		cleanupState.denoiserRings.set('a-track', {
+			push,
+			drain(): Float32Array {
+				return new Float32Array();
+			},
+			destroy(): void {}
+		} as unknown as RnnoiseRing);
+
+		const mixed = await mixAudioWindow(edit, sources, 0.5, 4, 4, 1, {
+			transitions: [{ trackId: 'a-track', fromClipId: 'out', toClipId: 'in', durationS: 1 }],
+			voiceCleanup: {
+				denoiserEnabledTracks: ['a-track'],
+				normaliseGainDb: 0,
+				limiterCeilingDbtp: -1,
+				gateParams: { ...DEFAULT_GATE_PARAMS, bypass: true },
+				limiterParams: { ...DEFAULT_LIMITER_PARAMS, bypass: true }
+			},
+			cleanupState
+		});
+
+		expect(push).toHaveBeenCalledOnce();
+		expect(push.mock.calls[0]?.[0]).toHaveLength(4);
+		expect(mixed.every((sample) => Number.isFinite(sample))).toBe(true);
+	});
+
 	it('clamps mixed audio to the valid sample range', async () => {
 		const a = sourceWith(0.8);
 		const b = sourceWith(0.8);
