@@ -158,21 +158,11 @@ class CaptureWriter {
 
 	private async getOrCreateCaptureDir(): Promise<FileSystemDirectoryHandle> {
 		const root = await navigator.storage.getDirectory();
-		try {
-			return await root.getDirectoryHandle('capture');
-		} catch {
-			// missing directory — fall through and create it
-		}
 		return await root.getDirectoryHandle('capture', { create: true });
 	}
 
 	private async getOrCreateSessionDir(sessionId: string): Promise<FileSystemDirectoryHandle> {
 		const captureDir = await this.getOrCreateCaptureDir();
-		try {
-			return await captureDir.getDirectoryHandle(sessionId);
-		} catch {
-			// missing directory — fall through and create it
-		}
 		return await captureDir.getDirectoryHandle(sessionId, { create: true });
 	}
 
