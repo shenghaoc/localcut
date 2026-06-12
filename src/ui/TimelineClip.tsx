@@ -324,7 +324,6 @@ export function TimelineClip(props: TimelineClipProps) {
 		<div
 			class={`timeline-clip${props.isAudio ? ' is-audio' : ''}${props.selected ? ' is-selected' : ''}${dragPreviewStart() !== null ? ' is-dragging' : ''}${props.clip.offline ? ' is-offline' : ''}`}
 			style={{
-				left: '0',
 				translate: translate(),
 				width: width(),
 				'will-change': dragPreviewStart() !== null ? 'translate' : undefined
