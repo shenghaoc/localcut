@@ -18,6 +18,8 @@ interface DiagnosticsPanelProps {
 	onRefresh: () => void;
 	onClose: () => void;
 	onRecoveryAction?: (actionId: string) => void;
+	/** Opens the in-app user guide on the Performance section. */
+	onOpenGuide?: () => void;
 }
 
 function formatBytes(value: number | null): string {
@@ -345,6 +347,15 @@ export function DiagnosticsPanel(props: DiagnosticsPanelProps) {
 										)}
 									</For>
 								</ul>
+								<Show when={props.onOpenGuide}>
+									<button
+										type="button"
+										class="export-why-link"
+										onClick={() => props.onOpenGuide?.()}
+									>
+										Performance tips in the user guide
+									</button>
+								</Show>
 							</section>
 
 							<section class="diagnostics-section">

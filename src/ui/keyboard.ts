@@ -1,4 +1,6 @@
 interface KeyboardShortcutHandlers {
+	/** When provided and false, editor shortcuts are suspended (e.g. while the user guide covers the editor). */
+	enabled?: () => boolean;
 	onUndo: () => void;
 	onRedo: () => void;
 	onSplit: () => void;
@@ -21,6 +23,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
 
 export function registerKeyboardShortcuts(handlers: KeyboardShortcutHandlers): () => void {
 	const onKeyDown = (event: KeyboardEvent) => {
+		if (handlers.enabled && !handlers.enabled()) return;
 		if (event.defaultPrevented || isEditableTarget(event.target)) return;
 		const key = event.key.toLowerCase();
 		const mod = event.metaKey || event.ctrlKey;
