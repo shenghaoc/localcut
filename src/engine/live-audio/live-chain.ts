@@ -1,8 +1,5 @@
 import type { LiveAudioChainConfig } from '../../protocol';
-import {
-	LiveChainMeterIndex,
-	DEFAULT_LIVE_AUDIO_CHAIN_CONFIG,
-} from '../../protocol';
+import { LiveChainMeterIndex, DEFAULT_LIVE_AUDIO_CHAIN_CONFIG } from '../../protocol';
 import { createGateState, processGate, type GateState } from './gate';
 import { createCompressorState, processCompressor, type CompressorState } from './compressor';
 import { createLimiterState, processLimiter, type LimiterState } from './limiter';
@@ -23,10 +20,7 @@ export const LIMITER_LOOKAHEAD_S = 0.005;
  * If a future consumer needs a consistent snapshot, switch to a seqlock or
  * double-buffered layout rather than per-field Atomics.
  */
-export function writeChainParamsToSab(
-	sab: Float32Array,
-	config: LiveAudioChainConfig,
-): void {
+export function writeChainParamsToSab(sab: Float32Array, config: LiveAudioChainConfig): void {
 	sab[LiveChainMeterIndex.GATE_BYPASS] = config.gate.bypass ? 1 : 0;
 	sab[LiveChainMeterIndex.GATE_THRESHOLD] = config.gate.thresholdDb;
 	sab[LiveChainMeterIndex.GATE_RANGE] = config.gate.rangeDb;
@@ -81,7 +75,7 @@ export function pcmPlaneToF32(raw: PcmPlane): Float32Array {
 export function interleavedPcmToF32Planes(
 	raw: PcmPlane,
 	channels: number,
-	frames: number,
+	frames: number
 ): Float32Array[] {
 	const planes: Float32Array[] = [];
 	for (let c = 0; c < channels; c++) {
@@ -115,7 +109,7 @@ export interface LiveChainProcessor {
 
 export function createLiveChainProcessor(
 	initialConfig: LiveAudioChainConfig,
-	sampleRate: number,
+	sampleRate: number
 ): LiveChainProcessor {
 	let config = initialConfig;
 	let states: ChannelStates[] = [];
@@ -125,7 +119,7 @@ export function createLiveChainProcessor(
 			states.push({
 				gate: createGateState(),
 				compressor: createCompressorState(),
-				limiter: createLimiterState(LIMITER_LOOKAHEAD_S * sampleRate),
+				limiter: createLimiterState(LIMITER_LOOKAHEAD_S * sampleRate)
 			});
 		}
 		return states[channel];
@@ -144,6 +138,6 @@ export function createLiveChainProcessor(
 				const compressed = processCompressor(gated, config.compressor, s.compressor, sampleRate);
 				return processLimiter(compressed, config.limiter, s.limiter, sampleRate);
 			});
-		},
+		}
 	};
 }

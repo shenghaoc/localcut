@@ -1545,13 +1545,13 @@ export type WorkerCommand =
 	// prefixed to stay clear of the Phase 41 capture engine's namespace.
 	| { type: 'replay-capture-stop' }
 	| {
-		// At least one stream is present; an audio-only capture (R1.2) omits
-		// videoStream entirely.
-		type: 'replay-capture-transfer-streams';
-		videoStream?: ReadableStream<VideoFrame>;
-		audioStream?: ReadableStream<AudioData>;
-		settings?: CaptureStreamSettings;
-	}
+			// At least one stream is present; an audio-only capture (R1.2) omits
+			// videoStream entirely.
+			type: 'replay-capture-transfer-streams';
+			videoStream?: ReadableStream<VideoFrame>;
+			audioStream?: ReadableStream<AudioData>;
+			settings?: CaptureStreamSettings;
+	  }
 	| { type: 'replay-save-last-n'; nSeconds?: number }
 	| { type: 'replay-save-cancel' }
 	| { type: 'update-replay-buffer-config'; config: Partial<RingBufferConfig> }
@@ -1910,7 +1910,7 @@ export const DEFAULT_GATE_PARAMS: GateParams = {
 	rangeDb: -80,
 	attackMs: 0.1,
 	holdMs: 20,
-	releaseMs: 50,
+	releaseMs: 50
 };
 
 export const DEFAULT_COMPRESSOR_PARAMS: CompressorParams = {
@@ -1920,14 +1920,14 @@ export const DEFAULT_COMPRESSOR_PARAMS: CompressorParams = {
 	attackMs: 5,
 	releaseMs: 100,
 	kneeDb: 6,
-	makeupGainDb: 0,
+	makeupGainDb: 0
 };
 
 export const DEFAULT_LIMITER_PARAMS: LimiterParams = {
 	bypass: true,
 	ceilingDb: -1,
 	attackUs: 100,
-	releaseMs: 50,
+	releaseMs: 50
 };
 
 export const DEFAULT_LIVE_AUDIO_CHAIN_CONFIG: LiveAudioChainConfig = {
@@ -1935,7 +1935,7 @@ export const DEFAULT_LIVE_AUDIO_CHAIN_CONFIG: LiveAudioChainConfig = {
 	compressor: DEFAULT_COMPRESSOR_PARAMS,
 	limiter: DEFAULT_LIMITER_PARAMS,
 	denoiserBypass: true,
-	printToRecording: false,
+	printToRecording: false
 };
 
 // Extended SAB layout for live audio chain (appended to Phase 16 meter SAB).
@@ -1984,7 +1984,7 @@ export const LiveChainMeterIndex = {
 	LIMITER_ATTACK: 32,
 	LIMITER_RELEASE: 33,
 	// Reserved denoiser (34); params 35..47 reserved for Phase 36
-	DENOISER_BYPASS: 34,
+	DENOISER_BYPASS: 34
 } as const;
 
 export function assertCrossOriginIsolated(context: string): void {

@@ -9,6 +9,13 @@
 
 import { execSync } from 'node:child_process';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import type { WhipHarness } from '../../src/testing/whip-harness';
+
+declare global {
+	interface Window {
+		__whipHarness: WhipHarness;
+	}
+}
 
 const STREAM_PATH = 'live';
 const WHIP_URL = `http://127.0.0.1:8889/${STREAM_PATH}/whip`;

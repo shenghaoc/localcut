@@ -15,7 +15,7 @@ export function processGate(
 	input: Float32Array,
 	params: GateParams,
 	state: GateState,
-	sampleRate: number,
+	sampleRate: number
 ): Float32Array {
 	const output = new Float32Array(input.length);
 	if (params.bypass) {

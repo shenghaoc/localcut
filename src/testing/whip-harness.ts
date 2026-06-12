@@ -10,7 +10,7 @@ import { createWhipSession, type WhipSession } from '../engine/whip-session';
 import { defaultPublishSettings } from '../engine/publish-settings';
 import type { PublishState } from '../protocol';
 
-interface WhipHarness {
+export interface WhipHarness {
 	start(endpointUrl: string, bearerToken?: string): Promise<void>;
 	stop(): Promise<void>;
 	state(): PublishState['phase'];

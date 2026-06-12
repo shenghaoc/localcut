@@ -1,45 +1,35 @@
 name: CI
 
 on:
+  pull_request:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build-and-test:
+  ci:
+    name: pnpm ci + check
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.12.1
-
-      - uses: actions/setup-node@v6
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+      - name: Setup Node
+        uses: actions/setup-node@v6
         with:
           node-version-file: .node-version
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: pnpm test
-
-      # Phase 48: parse the golden .otio fixtures with the reference Python
-      # implementation (CI-only — the app never ships or requires Python).
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
-      # Pinned to the release the golden fixtures were verified against;
-      # bump deliberately alongside a fixture re-check.
-      - run: pip install opentimelineio==0.18.1
-      - run: python scripts/validate-otio-fixtures.py
+      - name: Install dependencies
+        run: pnpm ci
+      - name: Run checks
+        run: pnpm run check

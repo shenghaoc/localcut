@@ -165,7 +165,9 @@ export class CaptureSession {
 		for (const [, entry] of this.sources) {
 			try {
 				await entry.pipeline.stop();
-			} catch {}
+			} catch {
+				// best-effort stop — keep stopping the remaining sources
+			}
 		}
 		if (this.writerPort) {
 			this.writerPort.postMessage({

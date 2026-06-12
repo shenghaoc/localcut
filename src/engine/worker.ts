@@ -36,7 +36,11 @@ import {
 	StreamTarget,
 	type StreamTargetChunk
 } from 'mediabunny';
-import { createRingBuffer, type RingBuffer, type RingBufferEntry } from './replay-buffer/ring-buffer';
+import {
+	createRingBuffer,
+	type RingBuffer,
+	type RingBufferEntry
+} from './replay-buffer/ring-buffer';
 import {
 	cleanupSpills,
 	createReplaySaveFile,
@@ -417,8 +421,6 @@ function makeProjectId(): string {
 	return `project-${Math.random().toString(36).slice(2)}`;
 }
 
-let checkpointRevision = 0;
-
 function post(msg: WorkerStateMessage) {
 	self.postMessage(msg);
 }
@@ -531,7 +533,6 @@ function tapProgramFrame(timestampS: number) {
 }
 
 function postRecoveryCheckpoint(): void {
-	checkpointRevision++;
 	scheduleAutosave();
 }
 
@@ -1124,8 +1125,7 @@ async function persistCurrentProject(): Promise<void> {
 }
 
 function runAutosave(): Promise<void> {
-	let save: Promise<void>;
-	save = persistCurrentProject()
+	const save: Promise<void> = persistCurrentProject()
 		.catch((error) => {
 			const message = error instanceof Error ? error.message : String(error);
 			postProjectWarning(`Autosave failed: ${message}`);
@@ -4564,7 +4564,9 @@ function postLiveChainState(): void {
 function applyProjectPhase46Config(doc: ProjectDoc): void {
 	if (capture) requestCaptureStop();
 	replayRing.updateConfig(doc.replayBufferConfig ?? { ...DEFAULT_RING_BUFFER_CONFIG });
-	liveChainConfig = cloneLiveChainConfig(doc.liveAudioChainConfig ?? DEFAULT_LIVE_AUDIO_CHAIN_CONFIG);
+	liveChainConfig = cloneLiveChainConfig(
+		doc.liveAudioChainConfig ?? DEFAULT_LIVE_AUDIO_CHAIN_CONFIG
+	);
 	postReplayBufferState();
 	postLiveChainState();
 }
@@ -4611,7 +4613,10 @@ function failCapture(rt: CaptureRuntime, error: unknown): void {
 	requestCaptureStop();
 }
 
-async function ensureCaptureVideoEncoder(rt: CaptureRuntime, frame: VideoFrame): Promise<VideoEncoder> {
+async function ensureCaptureVideoEncoder(
+	rt: CaptureRuntime,
+	frame: VideoFrame
+): Promise<VideoEncoder> {
 	if (rt.videoEncoder) return rt.videoEncoder;
 	const defaults = getDefaultCaptureConfig();
 	const width = frame.displayWidth || frame.codedWidth;
@@ -4700,18 +4705,26 @@ function captureAudioToPlanes(data: AudioData): Float32Array[] {
 	const format = data.format;
 	const planarBuffer = (): PcmPlane => {
 		switch (format) {
-			case 's16-planar': return new Int16Array(frames);
-			case 's32-planar': return new Int32Array(frames);
-			case 'u8-planar': return new Uint8Array(frames);
-			default: return new Float32Array(frames);
+			case 's16-planar':
+				return new Int16Array(frames);
+			case 's32-planar':
+				return new Int32Array(frames);
+			case 'u8-planar':
+				return new Uint8Array(frames);
+			default:
+				return new Float32Array(frames);
 		}
 	};
 	const interleavedBuffer = (): PcmPlane => {
 		switch (format) {
-			case 's16': return new Int16Array(frames * channels);
-			case 's32': return new Int32Array(frames * channels);
-			case 'u8': return new Uint8Array(frames * channels);
-			default: return new Float32Array(frames * channels);
+			case 's16':
+				return new Int16Array(frames * channels);
+			case 's32':
+				return new Int32Array(frames * channels);
+			case 'u8':
+				return new Uint8Array(frames * channels);
+			default:
+				return new Float32Array(frames * channels);
 		}
 	};
 	switch (format) {
@@ -4866,7 +4879,10 @@ function handleCaptureTransferStreams(
 		return;
 	}
 	if (!videoStream && !audioStream) {
-		post({ type: 'replay-capture-error', message: 'The captured stream has no video or audio tracks.' });
+		post({
+			type: 'replay-capture-error',
+			message: 'The captured stream has no video or audio tracks.'
+		});
 		return;
 	}
 	// A new session owns the buffer: discard the previous session's chunks and
@@ -4931,12 +4947,24 @@ function handleCaptureTransferStreams(
 		if (rt.statsTimer) clearInterval(rt.statsTimer);
 		try {
 			if (rt.videoEncoder && rt.videoEncoder.state === 'configured') await rt.videoEncoder.flush();
-		} catch { /* flush after an encoder error is expected to fail */ }
+		} catch {
+			/* flush after an encoder error is expected to fail */
+		}
 		try {
 			if (rt.audioEncoder && rt.audioEncoder.state === 'configured') await rt.audioEncoder.flush();
-		} catch { /* ditto */ }
-		try { if (rt.videoEncoder && rt.videoEncoder.state !== 'closed') rt.videoEncoder.close(); } catch { /* already closed */ }
-		try { if (rt.audioEncoder && rt.audioEncoder.state !== 'closed') rt.audioEncoder.close(); } catch { /* already closed */ }
+		} catch {
+			/* ditto */
+		}
+		try {
+			if (rt.videoEncoder && rt.videoEncoder.state !== 'closed') rt.videoEncoder.close();
+		} catch {
+			/* already closed */
+		}
+		try {
+			if (rt.audioEncoder && rt.audioEncoder.state !== 'closed') rt.audioEncoder.close();
+		} catch {
+			/* already closed */
+		}
 		rt.state.active = false;
 		rt.state.elapsedS = (performance.now() - rt.startedAtMs) / 1000;
 		capture = null;

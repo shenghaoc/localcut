@@ -16,8 +16,12 @@ export function renderMarkdown(source: string): string {
 		const line = lines[i]!;
 
 		// Fenced code block
-		if (/^```/.test(line)) {
-			const lang = line.slice(3).trim().match(/^[a-zA-Z0-9_\-+#.]+/)?.[0] ?? '';
+		if (line.startsWith('```')) {
+			const lang =
+				line
+					.slice(3)
+					.trim()
+					.match(/^[a-zA-Z0-9_\-+#.]+/)?.[0] ?? '';
 			html.push(`<pre><code class="${lang ? `language-${lang}` : ''}">`);
 			i++;
 			while (i < lines.length && !/^```/.test(lines[i]!)) {
@@ -86,10 +90,10 @@ export function renderMarkdown(source: string): string {
 		}
 
 		// Unordered list
-		if (/^[-\*+]\s+/.test(line)) {
+		if (/^[-*+]\s+/.test(line)) {
 			html.push('<ul>');
-			while (i < lines.length && /^[-\*+]\s+/.test(lines[i]!)) {
-				const content = lines[i]!.replace(/^[-\*+]\s+/, '');
+			while (i < lines.length && /^[-*+]\s+/.test(lines[i]!)) {
+				const content = lines[i]!.replace(/^[-*+]\s+/, '');
 				html.push(`<li>${renderInline(content)}</li>`);
 				i++;
 			}
@@ -134,7 +138,7 @@ function isSpecialLine(line: string): boolean {
 		/^\s*$/.test(line) ||
 		line.startsWith('```') ||
 		/^(#{1,3})\s+/.test(line) ||
-		/^[-\*+]\s+/.test(line) ||
+		/^[-*+]\s+/.test(line) ||
 		/^\d+\.\s+/.test(line) ||
 		/^(---|\*\*\*|___)\s*$/.test(line) ||
 		/^\|.+\|$/.test(line)
@@ -168,7 +172,10 @@ function renderInline(text: string): string {
 		return `<a href="${safeUrl}" target="_blank" rel="noopener">${linkText}</a>`;
 	});
 
-	// Restore code span placeholders
+	// Restore code span placeholders. NUL is used as the sentinel precisely
+	// because it cannot survive normal text input, so it can never collide
+	// with user content.
+	// oxlint-disable-next-line no-control-regex
 	out = out.replace(/\x00C(\d+)\x00/g, (_full, idx: string) => codePlaceholders[Number(idx)] ?? '');
 
 	return out;

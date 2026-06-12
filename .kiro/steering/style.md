@@ -39,7 +39,7 @@ Write comments only when the **why** is non-obvious — a hidden constraint, a b
 
 ## Formatting
 
-Project is formatted with **Prettier** (defaults). Run `npx prettier --write` or rely on editor integration. Do not add blank lines that Prettier would remove; do not fight the formatter.
+Project is formatted with **`vp fmt`** (Vite+ formatter; tabs, single quotes — see the `fmt` block in `vite.config.ts`). Run `pnpm run format` or rely on editor integration. Do not add blank lines that the formatter would remove; do not fight the formatter.
 
 ## CSS
 

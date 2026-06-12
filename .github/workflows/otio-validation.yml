@@ -1,0 +1,31 @@
+# Phase 48: parse the golden .otio fixtures with the reference Python
+# implementation (CI-only — the app never ships or requires Python). Kept
+# separate from ci.yml so the base CI contract stays framework-agnostic.
+name: OTIO validation
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-otio:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      # Pinned to the release the golden fixtures were verified against;
+      # bump deliberately alongside a fixture re-check.
+      - run: pip install opentimelineio==0.18.1
+      - run: python scripts/validate-otio-fixtures.py

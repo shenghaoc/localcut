@@ -158,17 +158,11 @@ class CaptureWriter {
 
 	private async getOrCreateCaptureDir(): Promise<FileSystemDirectoryHandle> {
 		const root = await navigator.storage.getDirectory();
-		try {
-			return await root.getDirectoryHandle('capture');
-		} catch {}
 		return await root.getDirectoryHandle('capture', { create: true });
 	}
 
 	private async getOrCreateSessionDir(sessionId: string): Promise<FileSystemDirectoryHandle> {
 		const captureDir = await this.getOrCreateCaptureDir();
-		try {
-			return await captureDir.getDirectoryHandle(sessionId);
-		} catch {}
 		return await captureDir.getDirectoryHandle(sessionId, { create: true });
 	}
 
@@ -216,12 +210,16 @@ class CaptureWriter {
 			for (const openFile of openFiles) {
 				try {
 					openFile.handle.close();
-				} catch {}
+				} catch {
+					// best-effort cleanup on the error path; the original error is rethrown
+				}
 			}
 			if (manifestAccess) {
 				try {
 					manifestAccess.close();
-				} catch {}
+				} catch {
+					// best-effort cleanup on the error path; the original error is rethrown
+				}
 			}
 			this.sessions.delete(sessionId);
 			this.manifestHandles.delete(sessionId);
@@ -278,7 +276,9 @@ class CaptureWriter {
 			for (const [, openFile] of fileMap) {
 				try {
 					openFile.handle.close();
-				} catch {}
+				} catch {
+					// best-effort close — finalize must release every handle it can
+				}
 			}
 		}
 
@@ -326,9 +326,13 @@ class CaptureWriter {
 								sourceCount = (record.sources ?? []).length;
 								startedAtIso = record.startedAtIso ?? '';
 							}
-						} catch {}
+						} catch {
+							// skip malformed manifest records; recovery uses what parses
+						}
 					}
-				} catch {}
+				} catch {
+					// unreadable manifest — treat the session as having no records
+				}
 
 				if (!hasFinalize) {
 					const recoveredDurationS =
@@ -353,7 +357,9 @@ class CaptureWriter {
 		try {
 			const captureDir = await this.getOrCreateCaptureDir();
 			await captureDir.removeEntry(sessionId, { recursive: true });
-		} catch {}
+		} catch {
+			// discard is best-effort; a missing session needs no cleanup
+		}
 	}
 
 	private async appendManifest(sessionId: string, record: Record<string, unknown>): Promise<void> {

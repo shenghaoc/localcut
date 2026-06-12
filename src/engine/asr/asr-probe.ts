@@ -22,7 +22,11 @@ function probeSpeechRecognition(): FeatureSupport {
 function defaultWebNNProbe(): WebNNProbeResult {
 	return {
 		mlPresent: false,
-		backends: { cpu: 'unknown' as FeatureSupport, gpu: 'unknown' as FeatureSupport, npu: 'unknown' as FeatureSupport },
+		backends: {
+			cpu: 'unknown' as FeatureSupport,
+			gpu: 'unknown' as FeatureSupport,
+			npu: 'unknown' as FeatureSupport
+		},
 		modelSupport: 'unknown' as FeatureSupport
 	};
 }

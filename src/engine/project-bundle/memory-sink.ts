@@ -2,9 +2,9 @@ import type { BundleDirectorySink } from './sinks';
 
 /** In-memory bundle directory for unit/integration tests. */
 export function createMemoryDirectorySink(): BundleDirectorySink & {
-	files: Map<string, Uint8Array>;
+	files: Map<string, Uint8Array<ArrayBuffer>>;
 } {
-	const files = new Map<string, Uint8Array>();
+	const files = new Map<string, Uint8Array<ArrayBuffer>>();
 
 	function keyOf(relativePath: string): string {
 		return relativePath.replace(/\\/g, '/').replace(/^\/+/, '');
@@ -13,7 +13,9 @@ export function createMemoryDirectorySink(): BundleDirectorySink & {
 	return {
 		files,
 		async writeText(relativePath, text) {
-			const encoded = new TextEncoder().encode(text);
+			// TS 5.8's lib types encode() as Uint8Array<ArrayBufferLike>, but
+			// TextEncoder always allocates a plain ArrayBuffer, never a SAB.
+			const encoded = new TextEncoder().encode(text) as Uint8Array<ArrayBuffer>;
 			files.set(keyOf(relativePath), encoded);
 		},
 		async writeBlob(relativePath, blob, onProgress) {

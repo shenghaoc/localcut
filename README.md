@@ -43,11 +43,13 @@ See [docs/ALPHA.md](docs/ALPHA.md) for the alpha support boundary — what is su
 ## Development
 
 ```bash
-pnpm install
-pnpm dev         # http://localhost:5173 — check status bar for COOP/COEP OK
-pnpm build
-pnpm preview
-pnpm test
+pnpm ci            # Clean install from the lockfile (or pnpm install)
+pnpm run dev       # http://localhost:5173 — check status bar for COOP/COEP OK
+pnpm run check     # Full quality gate: format:check + lint + typecheck + test + build
+pnpm run build
+pnpm run test
+pnpm run lint
+pnpm run format
 ```
 
 ## PWA & Deployment

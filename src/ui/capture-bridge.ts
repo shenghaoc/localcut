@@ -27,12 +27,12 @@ export async function startCapture(source: CaptureSource): Promise<CaptureStream
 	if (source === 'display') {
 		mediaStream = await navigator.mediaDevices.getDisplayMedia({
 			video: true,
-			audio: true,
+			audio: true
 		});
 	} else {
 		mediaStream = await navigator.mediaDevices.getUserMedia({
 			video: true,
-			audio: true,
+			audio: true
 		});
 	}
 
@@ -66,7 +66,7 @@ export async function startCapture(source: CaptureSource): Promise<CaptureStream
 		sourceLabel: source === 'display' ? 'Screen Capture' : 'Camera',
 		hasVideo: videoTrack !== null,
 		hasAudio: audioTrack !== null,
-		videoTrackSettings: videoTrack?.getSettings(),
+		videoTrackSettings: videoTrack?.getSettings()
 	};
 }
 
@@ -74,10 +74,7 @@ export function stopCaptureStreams(stream: MediaStream): void {
 	stream.getTracks().forEach((t) => t.stop());
 }
 
-export function attachStreamToVideoElement(
-	stream: MediaStream,
-	element: HTMLVideoElement,
-): void {
+export function attachStreamToVideoElement(stream: MediaStream, element: HTMLVideoElement): void {
 	element.srcObject = stream;
 	element.muted = true;
 	element.play().catch(() => {

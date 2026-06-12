@@ -41,7 +41,12 @@ async function handleCommand(cmd: AsrWorkerCommand): Promise<void> {
 
 		case 'asr-load-model': {
 			if (state.status === 'loaded') {
-				post({ type: 'asr-model-status', status: 'loaded', engine: state.engine, sizeBytes: cmd.manifest.sizeBytes });
+				post({
+					type: 'asr-model-status',
+					status: 'loaded',
+					engine: state.engine,
+					sizeBytes: cmd.manifest.sizeBytes
+				});
 				return;
 			}
 			state.status = 'loading';
@@ -49,8 +54,7 @@ async function handleCommand(cmd: AsrWorkerCommand): Promise<void> {
 
 			try {
 				const manifestOk =
-					cmd.manifest.id === 'whisper-tiny-bilingual' &&
-					cmd.manifest.sizeBytes > 0;
+					cmd.manifest.id === 'whisper-tiny-bilingual' && cmd.manifest.sizeBytes > 0;
 				if (!manifestOk) {
 					throw new Error('Invalid model manifest.');
 				}
@@ -88,7 +92,7 @@ async function handleCommand(cmd: AsrWorkerCommand): Promise<void> {
 
 				throw new Error(
 					'WebNN Whisper inference is not yet available. ' +
-					'Please use Chrome Speech fallback or install the Whisper model weights.'
+						'Please use Chrome Speech fallback or install the Whisper model weights.'
 				);
 			} catch (error) {
 				if (job.cancelled) return;

@@ -10,8 +10,10 @@ import { downmixToMono } from './whisper-dsp';
 
 function createSpeechRecognition(lang?: string): SpeechRecognition {
 	const ctor: typeof SpeechRecognition | undefined =
-		(globalThis as Record<string, unknown>)['SpeechRecognition'] as typeof SpeechRecognition
-		|| (globalThis as Record<string, unknown>)['webkitSpeechRecognition'] as typeof SpeechRecognition;
+		((globalThis as Record<string, unknown>)['SpeechRecognition'] as typeof SpeechRecognition) ||
+		((globalThis as Record<string, unknown>)[
+			'webkitSpeechRecognition'
+		] as typeof SpeechRecognition);
 	if (!ctor) {
 		throw new Error('SpeechRecognition not available in this browser.');
 	}
@@ -117,11 +119,15 @@ export function transcribeWithWebSpeech(
 			};
 
 			if (signal) {
-				signal.addEventListener('abort', () => {
-					recognition.abort();
-					cleanup();
-					reject(new DOMException('Aborted', 'AbortError'));
-				}, { once: true });
+				signal.addEventListener(
+					'abort',
+					() => {
+						recognition.abort();
+						cleanup();
+						reject(new DOMException('Aborted', 'AbortError'));
+					},
+					{ once: true }
+				);
 			}
 
 			// Start recognition and playback simultaneously

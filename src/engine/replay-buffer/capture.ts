@@ -9,7 +9,7 @@ export function createCaptureSession(
 	source: CaptureSource,
 	hasVideo: boolean,
 	hasAudio: boolean,
-	config: CaptureConfig,
+	config: CaptureConfig
 ): CaptureSession {
 	return {
 		state: {
@@ -20,9 +20,9 @@ export function createCaptureSession(
 			hasAudio,
 			resolution: hasVideo ? { width: config.width, height: config.height } : null,
 			frameRate: hasVideo ? config.framerate : null,
-			elapsedS: 0,
+			elapsedS: 0
 		},
-		config,
+		config
 	};
 }
 
@@ -39,7 +39,7 @@ export function getDefaultCaptureConfig(): CaptureConfig {
 		height: 1080,
 		framerate: 30,
 		sampleRate: 48000,
-		numberOfChannels: 2,
+		numberOfChannels: 2
 	};
 }
 
