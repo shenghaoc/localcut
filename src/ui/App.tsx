@@ -408,11 +408,19 @@ export function App() {
 		});
 	};
 	const handleSideRailTabKeyDown = (event: KeyboardEvent) => {
-		if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
-		const index = SIDE_RAIL_TABS.findIndex((tab) => tab.id === activeSideRailTab());
-		const direction = event.key === 'ArrowRight' ? 1 : -1;
-		const next =
-			SIDE_RAIL_TABS[(index + direction + SIDE_RAIL_TABS.length) % SIDE_RAIL_TABS.length];
+		// WAI-ARIA APG tabs pattern: Arrow keys wrap, Home/End jump to ends.
+		let next: (typeof SIDE_RAIL_TABS)[number] | undefined;
+		if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+			const index = SIDE_RAIL_TABS.findIndex((tab) => tab.id === activeSideRailTab());
+			const direction = event.key === 'ArrowRight' ? 1 : -1;
+			next = SIDE_RAIL_TABS[(index + direction + SIDE_RAIL_TABS.length) % SIDE_RAIL_TABS.length];
+		} else if (event.key === 'Home') {
+			next = SIDE_RAIL_TABS[0];
+		} else if (event.key === 'End') {
+			next = SIDE_RAIL_TABS[SIDE_RAIL_TABS.length - 1];
+		} else {
+			return;
+		}
 		setActiveSideRailTab(next.id);
 		queueMicrotask(() => document.getElementById(`tab-${next.id}`)?.focus());
 		event.preventDefault();
@@ -2572,7 +2580,7 @@ export function App() {
 							<div class="preview-overlay">Importing…</div>
 						</Show>
 					</section>
-					<div class="side-rail" classList={{ collapsed: sideRailCollapsed() }}>
+					<div class="side-rail">
 						<Show
 							when={!sideRailCollapsed()}
 							fallback={
