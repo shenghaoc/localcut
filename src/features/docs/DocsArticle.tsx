@@ -44,6 +44,7 @@ export function DocsArticle(props: DocsArticleProps) {
 				articleRef = el;
 			}}
 			class="docs-article"
+			aria-label={props.section.title}
 			tabIndex={-1}
 			onClick={handleClick}
 			// Sanitised in renderDocHtml: marked output passes through DOMPurify,

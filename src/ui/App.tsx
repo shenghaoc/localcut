@@ -875,7 +875,8 @@ export function App() {
 		setDocsSlug(null);
 		const target = docsReturnFocus;
 		docsReturnFocus = null;
-		// The editor shell drops `inert` in the effect above; refocus afterwards.
+		// `setDocsSlug(null)` triggers a synchronous Solid update that removes
+		// `inert` from the editor shell; queue the focus so it runs after that flush.
 		queueMicrotask(() => target?.focus());
 	}
 
