@@ -1,4 +1,13 @@
-import { createMemo, createSignal, For, Show, onMount, onCleanup } from 'solid-js';
+import {
+	createEffect,
+	createMemo,
+	createSignal,
+	For,
+	Show,
+	on,
+	onMount,
+	onCleanup
+} from 'solid-js';
 import { useRegisterSW } from 'virtual:pwa-register/solid';
 import { Link2, RotateCcw, Plus } from 'lucide-solid';
 import {
@@ -245,6 +254,24 @@ function capabilityTierV2Label(probe: CapabilityProbeResult | null): string | nu
 	}
 }
 
+const SIDE_RAIL_TABS = [
+	{ id: 'inspector', label: 'Inspector' },
+	{ id: 'captions', label: 'Captions' },
+	{ id: 'replay', label: 'Replay' },
+	{ id: 'live-audio', label: 'Audio' }
+] as const;
+type SideRailTab = (typeof SIDE_RAIL_TABS)[number]['id'];
+
+const SIDE_RAIL_COLLAPSED_KEY = 'side-rail-collapsed';
+
+function readSideRailCollapsed(): boolean {
+	try {
+		return localStorage.getItem(SIDE_RAIL_COLLAPSED_KEY) === '1';
+	} catch {
+		return false;
+	}
+}
+
 export function App() {
 	const [capabilities, setCapabilities] = createSignal<CapabilitySnapshot>(probeCapabilities());
 	const [capabilityProbeV2, setCapabilityProbeV2] = createSignal<CapabilityProbeResult | null>(
@@ -361,7 +388,26 @@ export function App() {
 	const [bundleJobId, setBundleJobId] = createSignal<string | null>(null);
 	const [bundlePhase, setBundlePhase] = createSignal<string | null>(null);
 	const [bundleReport, setBundleReport] = createSignal<BundleIntegrityReportSnapshot | null>(null);
-	const [activeSideRailTab, setActiveSideRailTab] = createSignal<'replay' | 'live-audio'>('replay');
+	const [activeSideRailTab, setActiveSideRailTab] = createSignal<SideRailTab>('inspector');
+	const [sideRailCollapsed, setSideRailCollapsed] = createSignal(readSideRailCollapsed());
+	const toggleSideRail = (collapsed: boolean) => {
+		setSideRailCollapsed(collapsed);
+		try {
+			localStorage.setItem(SIDE_RAIL_COLLAPSED_KEY, collapsed ? '1' : '0');
+		} catch {
+			// Persistence is best-effort; private browsing may block storage.
+		}
+	};
+	const handleSideRailTabKeyDown = (event: KeyboardEvent) => {
+		if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+		const index = SIDE_RAIL_TABS.findIndex((tab) => tab.id === activeSideRailTab());
+		const direction = event.key === 'ArrowRight' ? 1 : -1;
+		const next =
+			SIDE_RAIL_TABS[(index + direction + SIDE_RAIL_TABS.length) % SIDE_RAIL_TABS.length];
+		setActiveSideRailTab(next.id);
+		queueMicrotask(() => document.getElementById(`tab-${next.id}`)?.focus());
+		event.preventDefault();
+	};
 	const [bundleMessage, setBundleMessage] = createSignal<string | null>(null);
 	const [interchangeWarnings, setInterchangeWarnings] = createSignal<readonly string[]>([]);
 	const [interchangeMessage, setInterchangeMessage] = createSignal<string | null>(null);
@@ -580,6 +626,20 @@ export function App() {
 		}
 		return null;
 	});
+
+	// Selecting a clip or transition is an edit intent: bring the Inspector tab
+	// to the front. Keyed on identity (not the memo object, which is recreated
+	// every timeline-state/playhead update) so the tab only switches on a new
+	// selection, never while the user is browsing another tab.
+	createEffect(
+		on(
+			() => selectedClip()?.clipId ?? selectedTransitionId(),
+			(selectionId) => {
+				if (selectionId) setActiveSideRailTab('inspector');
+			},
+			{ defer: true }
+		)
+	);
 
 	const selectedClipFades = createMemo(() => {
 		const clip = selectedClip();
@@ -959,6 +1019,7 @@ export function App() {
 			case 'caption-import-result':
 				setCaptionDiagnostics([...msg.result.diagnostics]);
 				setSelectedCaptionTrackId(msg.result.track.id);
+				setActiveSideRailTab('captions');
 				setSelectedCaptionSegmentIds(
 					msg.result.track.segments[0] ? [msg.result.track.segments[0].id] : []
 				);
@@ -2379,7 +2440,9 @@ export function App() {
 				)}
 			</Show>
 			<AppErrorBoundary>
-				<main class={`workspace${previewSurfaceAvailable() ? ' has-bin' : ''}`}>
+				<main
+					class={`workspace${previewSurfaceAvailable() ? ' has-bin' : ''}${sideRailCollapsed() ? ' rail-collapsed' : ''}`}
+				>
 					<Show when={previewSurfaceAvailable()}>
 						<MediaBin
 							assets={assets}
@@ -2500,208 +2563,259 @@ export function App() {
 							<div class="preview-overlay">Importing…</div>
 						</Show>
 					</section>
-					<div class="side-rail">
-						<Inspector
-							metadata={metadata()}
-							selectedClip={selectedClip()}
-							selectedTrackMix={selectedTrackMix()}
-							selectedClipFades={selectedClipFades()}
-							selectedClipTransform={selectedClipTransform()}
-							selectedTitle={selectedTitle()}
-							selectedTransition={selectedTransition()}
-							onSetTitle={(trackId, clipId, patch) =>
-								bridge?.send({ type: 'set-title', trackId, clipId, ...patch })
-							}
-							onEffectParam={(trackId, clipId, key, value) =>
-								bridge?.send({ type: 'set-effect-param', trackId, clipId, key, value })
-							}
-							onTransform={(trackId, clipId, transform) =>
-								bridge?.send({ type: 'set-transform', trackId, clipId, transform })
-							}
-							playheadTime={clock.currentTime()}
-							onSeek={(time) => bridge?.send({ type: 'seek', time })}
-							onSetKeyframe={(trackId, clipId, key, t, value, easing) =>
-								bridge?.send({ type: 'set-keyframe', trackId, clipId, key, t, value, easing })
-							}
-							onDeleteKeyframe={(trackId, clipId, key, t) =>
-								bridge?.send({ type: 'delete-keyframe', trackId, clipId, key, t })
-							}
-							onImportLut={(trackId, clipId, file) =>
-								bridge?.send({ type: 'import-lut', trackId, clipId, file })
-							}
-							onLutStrength={(trackId, clipId, strength) =>
-								bridge?.send({ type: 'set-lut-strength', trackId, clipId, strength })
-							}
-							onTrackGain={(trackId, gain) => {
-								bridge?.send({ type: 'set-track-gain', trackId, gain });
-							}}
-							onTrackMute={(trackId, muted) => {
-								bridge?.send({ type: 'set-track-mute', trackId, muted });
-							}}
-							onTrackSolo={(trackId, solo) => {
-								bridge?.send({ type: 'set-track-solo', trackId, solo });
-							}}
-							onTrackPan={(trackId, pan) => {
-								bridge?.send({ type: 'set-track-pan', trackId, pan });
-							}}
-							onClipFade={(trackId, clipId, edge, durationS) => {
-								bridge?.send({ type: 'set-clip-fade', trackId, clipId, edge, durationS });
-							}}
-							onTransitionKind={(transitionId, kind) => {
-								bridge?.send({ type: 'set-transition', transitionId, kind });
-							}}
-							onTransitionDuration={(transitionId, durationS) => {
-								bridge?.send({ type: 'set-transition', transitionId, durationS });
-							}}
-							onRemoveTransition={(transitionId) => {
-								bridge?.send({ type: 'remove-transition', transitionId });
-								transitionMeta.delete(transitionId);
-								setSelectedTransitionId(null);
-							}}
-						/>
-						<TranscriptPanel
-							captionTracks={captionTracks()}
-							diagnostics={captionDiagnostics()}
-							playheadTime={clock.currentTime()}
-							selectedTrackId={selectedCaptionTrackId()}
-							selectedSegmentIds={selectedCaptionSegmentIds()}
-							onSelectTrack={setSelectedCaptionTrackId}
-							onSelectSegmentIds={setSelectedCaptionSegmentIds}
-							onImport={(file, trackId) =>
-								captionBridge().send(
-									trackId
-										? { type: 'import-captions', file, trackId }
-										: { type: 'import-captions', file }
-								)
-							}
-							onExport={(settings: CaptionExportSettingsSnapshot) =>
-								captionBridge().send({ type: 'export-captions', settings })
-							}
-							onSetTrack={(trackId, patch) =>
-								captionBridge().send({ type: 'set-caption-track', trackId, ...patch })
-							}
-							onSetSegmentText={(trackId, segmentId, text) =>
-								captionBridge().send({ type: 'set-caption-segment-text', trackId, segmentId, text })
-							}
-							onSetSegmentTiming={(trackId, segmentId, start, end) =>
-								captionBridge().send({
-									type: 'set-caption-segment-timing',
-									trackId,
-									segmentId,
-									start,
-									end
-								})
-							}
-							onSetSegmentStyle={(trackId, segmentId, style) =>
-								captionBridge().send({
-									type: 'set-caption-segment-style',
-									trackId,
-									segmentId,
-									style
-								})
-							}
-							onSplit={(trackId, segmentId, time) =>
-								captionBridge().send({ type: 'split-caption-segment', trackId, segmentId, time })
-							}
-							onMerge={(trackId, segmentIds) =>
-								captionBridge().send({ type: 'merge-caption-segments', trackId, segmentIds })
-							}
-							onDelete={(trackId, segmentIds) =>
-								captionBridge().send({ type: 'delete-caption-segments', trackId, segmentIds })
-							}
-							onSnap={(trackId, segmentId, edge) =>
-								captionBridge().send({ type: 'snap-caption-segment', trackId, segmentId, edge })
-							}
-						/>
-						<div class="side-rail-tabs">
-							<div class="side-rail-tab-bar" role="tablist">
+					<div class="side-rail" classList={{ collapsed: sideRailCollapsed() }}>
+						<Show
+							when={!sideRailCollapsed()}
+							fallback={
 								<button
-									id="tab-replay"
-									classList={{ 'side-rail-tab': true, active: activeSideRailTab() === 'replay' }}
-									role="tab"
-									tabIndex={activeSideRailTab() === 'replay' ? 0 : -1}
-									aria-selected={activeSideRailTab() === 'replay'}
-									aria-controls="panel-replay"
-									onClick={() => setActiveSideRailTab('replay')}
-									onKeyDown={(e) => {
-										if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-											setActiveSideRailTab('live-audio');
-											queueMicrotask(() => document.getElementById('tab-live-audio')?.focus());
-											e.preventDefault();
-										}
-									}}
+									class="side-rail-expand"
+									aria-label="Expand side panel"
+									title="Expand side panel"
+									onClick={() => toggleSideRail(false)}
 								>
-									Replay Buffer
+									‹
 								</button>
-								<button
-									id="tab-live-audio"
-									classList={{
-										'side-rail-tab': true,
-										active: activeSideRailTab() === 'live-audio'
-									}}
-									role="tab"
-									tabIndex={activeSideRailTab() === 'live-audio' ? 0 : -1}
-									aria-selected={activeSideRailTab() === 'live-audio'}
-									aria-controls="panel-live-audio"
-									onClick={() => setActiveSideRailTab('live-audio')}
-									onKeyDown={(e) => {
-										if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-											setActiveSideRailTab('replay');
-											queueMicrotask(() => document.getElementById('tab-replay')?.focus());
-											e.preventDefault();
-										}
-									}}
-								>
-									Live Audio Chain
-								</button>
-							</div>
-							<div class="side-rail-tab-content">
-								<Show when={activeSideRailTab() === 'replay'}>
-									<div
-										id="panel-replay"
-										class="side-rail-tab-panel"
-										role="tabpanel"
-										aria-labelledby="tab-replay"
+							}
+						>
+							<div class="side-rail-tabs">
+								<div class="side-rail-tab-bar" role="tablist" aria-label="Side panel">
+									<For each={SIDE_RAIL_TABS}>
+										{(tab) => (
+											<button
+												id={`tab-${tab.id}`}
+												classList={{
+													'side-rail-tab': true,
+													active: activeSideRailTab() === tab.id
+												}}
+												role="tab"
+												tabIndex={activeSideRailTab() === tab.id ? 0 : -1}
+												aria-selected={activeSideRailTab() === tab.id}
+												aria-controls={`panel-${tab.id}`}
+												onClick={() => setActiveSideRailTab(tab.id)}
+												onKeyDown={handleSideRailTabKeyDown}
+											>
+												{tab.label}
+											</button>
+										)}
+									</For>
+									<button
+										class="side-rail-collapse"
+										aria-label="Collapse side panel"
+										title="Collapse side panel"
+										onClick={() => toggleSideRail(true)}
 									>
-										<ReplayBufferPanel
-											captureState={captureSession()}
-											ringBufferState={replayBufferState()}
-											onStartCapture={() => void startReplayCapture()}
-											onStopCapture={stopReplayCapture}
-											onSaveLastN={(nSeconds) => {
-												if (!bridge) return;
-												setReplaySaveInProgress(true);
-												bridge.send({ type: 'replay-save-last-n', nSeconds });
-											}}
-											saveInProgress={replaySaveInProgress()}
-											isSupported={replayCaptureSupported()}
-											supportedReason={replayCaptureUnsupportedReason()}
-											crossOriginIsolated={capabilities().crossOriginIsolated}
-											initiallyExpanded={true}
-										/>
-									</div>
-								</Show>
-								<Show when={activeSideRailTab() === 'live-audio'}>
-									<div
-										id="panel-live-audio"
-										class="side-rail-tab-panel"
-										role="tabpanel"
-										aria-labelledby="tab-live-audio"
-									>
-										<LiveAudioChainPanel
-											config={liveChainConfig()}
-											onConfigChange={(partial) =>
-												bridge?.send({ type: 'update-live-chain-config', config: partial })
-											}
-											latencyMs={liveChainLatencyMs()}
-											crossOriginIsolated={capabilities().crossOriginIsolated}
-											isCapturing={captureSession()?.active ?? false}
-											initiallyExpanded={true}
-										/>
-									</div>
-								</Show>
+										›
+									</button>
+								</div>
+								<div class="side-rail-tab-content">
+									<Show when={activeSideRailTab() === 'inspector'}>
+										<div
+											id="panel-inspector"
+											class="side-rail-tab-panel"
+											role="tabpanel"
+											aria-labelledby="tab-inspector"
+										>
+											<Inspector
+												metadata={metadata()}
+												selectedClip={selectedClip()}
+												selectedTrackMix={selectedTrackMix()}
+												selectedClipFades={selectedClipFades()}
+												selectedClipTransform={selectedClipTransform()}
+												selectedTitle={selectedTitle()}
+												selectedTransition={selectedTransition()}
+												onSetTitle={(trackId, clipId, patch) =>
+													bridge?.send({ type: 'set-title', trackId, clipId, ...patch })
+												}
+												onEffectParam={(trackId, clipId, key, value) =>
+													bridge?.send({ type: 'set-effect-param', trackId, clipId, key, value })
+												}
+												onTransform={(trackId, clipId, transform) =>
+													bridge?.send({ type: 'set-transform', trackId, clipId, transform })
+												}
+												playheadTime={clock.currentTime()}
+												onSeek={(time) => bridge?.send({ type: 'seek', time })}
+												onSetKeyframe={(trackId, clipId, key, t, value, easing) =>
+													bridge?.send({
+														type: 'set-keyframe',
+														trackId,
+														clipId,
+														key,
+														t,
+														value,
+														easing
+													})
+												}
+												onDeleteKeyframe={(trackId, clipId, key, t) =>
+													bridge?.send({ type: 'delete-keyframe', trackId, clipId, key, t })
+												}
+												onImportLut={(trackId, clipId, file) =>
+													bridge?.send({ type: 'import-lut', trackId, clipId, file })
+												}
+												onLutStrength={(trackId, clipId, strength) =>
+													bridge?.send({ type: 'set-lut-strength', trackId, clipId, strength })
+												}
+												onTrackGain={(trackId, gain) => {
+													bridge?.send({ type: 'set-track-gain', trackId, gain });
+												}}
+												onTrackMute={(trackId, muted) => {
+													bridge?.send({ type: 'set-track-mute', trackId, muted });
+												}}
+												onTrackSolo={(trackId, solo) => {
+													bridge?.send({ type: 'set-track-solo', trackId, solo });
+												}}
+												onTrackPan={(trackId, pan) => {
+													bridge?.send({ type: 'set-track-pan', trackId, pan });
+												}}
+												onClipFade={(trackId, clipId, edge, durationS) => {
+													bridge?.send({ type: 'set-clip-fade', trackId, clipId, edge, durationS });
+												}}
+												onTransitionKind={(transitionId, kind) => {
+													bridge?.send({ type: 'set-transition', transitionId, kind });
+												}}
+												onTransitionDuration={(transitionId, durationS) => {
+													bridge?.send({ type: 'set-transition', transitionId, durationS });
+												}}
+												onRemoveTransition={(transitionId) => {
+													bridge?.send({ type: 'remove-transition', transitionId });
+													transitionMeta.delete(transitionId);
+													setSelectedTransitionId(null);
+												}}
+											/>
+										</div>
+									</Show>
+									<Show when={activeSideRailTab() === 'captions'}>
+										<div
+											id="panel-captions"
+											class="side-rail-tab-panel"
+											role="tabpanel"
+											aria-labelledby="tab-captions"
+										>
+											<TranscriptPanel
+												captionTracks={captionTracks()}
+												diagnostics={captionDiagnostics()}
+												playheadTime={clock.currentTime()}
+												selectedTrackId={selectedCaptionTrackId()}
+												selectedSegmentIds={selectedCaptionSegmentIds()}
+												onSelectTrack={setSelectedCaptionTrackId}
+												onSelectSegmentIds={setSelectedCaptionSegmentIds}
+												onImport={(file, trackId) =>
+													captionBridge().send(
+														trackId
+															? { type: 'import-captions', file, trackId }
+															: { type: 'import-captions', file }
+													)
+												}
+												onExport={(settings: CaptionExportSettingsSnapshot) =>
+													captionBridge().send({ type: 'export-captions', settings })
+												}
+												onSetTrack={(trackId, patch) =>
+													captionBridge().send({ type: 'set-caption-track', trackId, ...patch })
+												}
+												onSetSegmentText={(trackId, segmentId, text) =>
+													captionBridge().send({
+														type: 'set-caption-segment-text',
+														trackId,
+														segmentId,
+														text
+													})
+												}
+												onSetSegmentTiming={(trackId, segmentId, start, end) =>
+													captionBridge().send({
+														type: 'set-caption-segment-timing',
+														trackId,
+														segmentId,
+														start,
+														end
+													})
+												}
+												onSetSegmentStyle={(trackId, segmentId, style) =>
+													captionBridge().send({
+														type: 'set-caption-segment-style',
+														trackId,
+														segmentId,
+														style
+													})
+												}
+												onSplit={(trackId, segmentId, time) =>
+													captionBridge().send({
+														type: 'split-caption-segment',
+														trackId,
+														segmentId,
+														time
+													})
+												}
+												onMerge={(trackId, segmentIds) =>
+													captionBridge().send({
+														type: 'merge-caption-segments',
+														trackId,
+														segmentIds
+													})
+												}
+												onDelete={(trackId, segmentIds) =>
+													captionBridge().send({
+														type: 'delete-caption-segments',
+														trackId,
+														segmentIds
+													})
+												}
+												onSnap={(trackId, segmentId, edge) =>
+													captionBridge().send({
+														type: 'snap-caption-segment',
+														trackId,
+														segmentId,
+														edge
+													})
+												}
+											/>
+										</div>
+									</Show>
+									<Show when={activeSideRailTab() === 'replay'}>
+										<div
+											id="panel-replay"
+											class="side-rail-tab-panel"
+											role="tabpanel"
+											aria-labelledby="tab-replay"
+										>
+											<ReplayBufferPanel
+												captureState={captureSession()}
+												ringBufferState={replayBufferState()}
+												onStartCapture={() => void startReplayCapture()}
+												onStopCapture={stopReplayCapture}
+												onSaveLastN={(nSeconds) => {
+													if (!bridge) return;
+													setReplaySaveInProgress(true);
+													bridge.send({ type: 'replay-save-last-n', nSeconds });
+												}}
+												saveInProgress={replaySaveInProgress()}
+												isSupported={replayCaptureSupported()}
+												supportedReason={replayCaptureUnsupportedReason()}
+												crossOriginIsolated={capabilities().crossOriginIsolated}
+												initiallyExpanded={true}
+											/>
+										</div>
+									</Show>
+									<Show when={activeSideRailTab() === 'live-audio'}>
+										<div
+											id="panel-live-audio"
+											class="side-rail-tab-panel"
+											role="tabpanel"
+											aria-labelledby="tab-live-audio"
+										>
+											<LiveAudioChainPanel
+												config={liveChainConfig()}
+												onConfigChange={(partial) =>
+													bridge?.send({ type: 'update-live-chain-config', config: partial })
+												}
+												latencyMs={liveChainLatencyMs()}
+												crossOriginIsolated={capabilities().crossOriginIsolated}
+												isCapturing={captureSession()?.active ?? false}
+												initiallyExpanded={true}
+											/>
+										</div>
+									</Show>
+								</div>
 							</div>
-						</div>
+						</Show>
 					</div>
 				</main>
 				<Timeline

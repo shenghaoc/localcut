@@ -101,3 +101,26 @@
   focus indicators.
 - [ ] **T8.5** On the Phase 36 branch, rebase and add Voice Cleanup as a third
   tab — verify all 3 tabs switch correctly.
+
+## T9 — Full-rail tab model (short-viewport follow-up)
+
+The partial-tab layout still squeezed the tab row below usability on ~790px-tall
+viewports (13" laptops). Promote the tab model to the entire rail.
+
+- [x] **T9.1** All four panels (Inspector, Captions, Replay, Audio) are tabs;
+  one visible at a time, each gets the full rail height.
+- [x] **T9.2** Auto-switch: selecting a clip/transition fronts Inspector
+  (keyed on selection identity, not the recreated memo object); caption import
+  fronts Captions.
+- [x] **T9.3** Rail collapse toggle (`›`/`‹`) reclaims the 320px column for
+  preview/timeline; state persists via `localStorage`.
+- [x] **T9.4** Panels inside the tab container drop their card chrome
+  (border/radius/shadow) to avoid double borders.
+- [x] **T9.5** Stacked (≤900px) layout pins the tab container to 380px; the
+  collapsed-rail expand strip renders as a full-width bar.
+- [x] **T9.6** Roving tabindex generalized to N tabs with wrap-around
+  ArrowLeft/ArrowRight.
+- [x] **T9.7** `docs/USER-GUIDE.md` Side Panel section documents tabs,
+  auto-switch, and collapse.
+- [x] **T9.8** Build + 1032 tests green; verified in-browser at 1440×790 and
+  375×812.

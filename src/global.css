@@ -1776,26 +1776,72 @@ body {
 }
 
 .side-rail {
-	display: grid;
-	/* The tab row needs a guaranteed minimum so its content stays usable on
-	   short viewports (13" laptops); Inspector and Captions scroll internally,
-	   so they absorb the squeeze instead. If everything can't fit, the rail
-	   itself scrolls rather than crushing rows. */
-	grid-template-rows: minmax(140px, 1fr) minmax(130px, 0.8fr) minmax(220px, 1fr);
+	/* One panel at a time: every tab gets the full rail height, so the layout
+	   stays usable at any viewport height. */
+	display: flex;
+	flex-direction: column;
 	min-width: 0;
 	min-height: 0;
-	gap: 0.65rem;
-	overflow-y: auto;
+}
+
+.workspace.rail-collapsed {
+	grid-template-columns: minmax(0, 1fr) 34px;
+}
+
+.workspace.has-bin.rail-collapsed {
+	grid-template-columns: 232px minmax(0, 1fr) 34px;
+}
+
+.side-rail-expand {
+	flex: 1;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-lg);
+	background: var(--bg-control);
+	color: var(--text-muted);
+	font-size: var(--text-sm);
+	cursor: pointer;
+}
+
+.side-rail-expand:hover {
+	color: var(--text);
+}
+
+.side-rail-expand:focus-visible {
+	outline: 2px solid var(--ring);
+	outline-offset: -2px;
 }
 
 .side-rail-tabs {
 	display: flex;
+	flex: 1;
 	flex-direction: column;
 	min-height: 0;
 	min-width: 0;
 	border: 1px solid var(--border);
 	border-radius: var(--radius-lg);
 	overflow: hidden;
+}
+
+.side-rail-collapse {
+	flex: 0 0 auto;
+	padding: 0.45rem 0.55rem;
+	border: none;
+	border-left: 1px solid var(--border);
+	background: transparent;
+	color: var(--text-muted);
+	font-size: var(--text-sm);
+	line-height: 1;
+	cursor: pointer;
+}
+
+.side-rail-collapse:hover {
+	color: var(--text);
+	background: rgb(255 255 255 / 4%);
+}
+
+.side-rail-collapse:focus-visible {
+	outline: 2px solid var(--ring);
+	outline-offset: -2px;
 }
 
 .side-rail-tab-bar {
@@ -1855,6 +1901,15 @@ body {
 	display: flex;
 	flex-direction: column;
 	height: 100%;
+}
+
+/* Panels inside the tab container drop their own card chrome — the tab
+   container already draws the border — and fill the tab height. */
+.side-rail-tab-content .panel {
+	height: 100%;
+	border: none;
+	border-radius: 0;
+	box-shadow: none;
 }
 
 .button {
@@ -3071,24 +3126,22 @@ button.status-badge:hover {
 	}
 
 	.side-rail {
-		grid-template-rows: auto auto auto;
 		height: auto;
-		overflow-y: visible;
 	}
 
 	/* In the stacked single-column layout the rail has no fixed height, so
-	   `1fr` would collapse the tab section to its tab bar. Pin a usable
+	   `flex: 1` would collapse the tab section to its tab bar. Pin a usable
 	   height instead; the tab content scrolls internally. */
 	.side-rail-tabs {
-		height: 320px;
+		flex: none;
+		height: 380px;
 	}
 
-	.inspector {
-		min-height: 150px;
-	}
-
-	.transcript-panel {
-		min-height: 170px;
+	/* In the stacked layout the collapsed rail's expand strip becomes a
+	   full-width horizontal bar instead of a 34px sliver. */
+	.side-rail-expand {
+		flex: none;
+		padding: 0.55rem;
 	}
 
 	.timeline {
