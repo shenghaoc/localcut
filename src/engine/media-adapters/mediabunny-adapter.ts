@@ -384,6 +384,38 @@ async function openImageFile(file: File, sourceId: string): Promise<PrimaryMedia
 
 const WEBCODECS_PREFERRED_WHEN_SUPPORTED = true;
 
+/**
+ * Normalize H.264 codec strings so VideoDecoder.isConfigSupported() accepts them.
+ *
+ * Browsers report support for H.264 High profile (avc1.64XXXX) but reject
+ * specific level suffixes via exact string matching. Since H.264 High is
+ * backwards-compatible across levels, mapping to a known-supported level
+ * (4.0 = 0x28) is safe for decode.
+ */
+function normalizeVideoCodecString(codec: string): string {
+	if (!codec.startsWith('avc1.')) return codec;
+	const hex = codec.slice(5);
+	if (!/^[0-9a-fA-F]{6}$/.test(hex)) return codec;
+	const profile = hex.slice(0, 2).toUpperCase();
+	if (profile !== '42' && profile !== '4D' && profile !== '64') return codec;
+	const level = hex.slice(4, 6).toUpperCase();
+	const KNOWN_SUPPORTED_LEVELS = new Set([
+		'1E',
+		'1F',
+		'28',
+		'29',
+		'2A',
+		'2B',
+		'2C',
+		'32',
+		'33',
+		'34',
+		'3C'
+	]);
+	if (KNOWN_SUPPORTED_LEVELS.has(level)) return codec;
+	return `avc1.${profile}0028`;
+}
+
 async function tryCreateWebCodecsVideoSource(
 	primaryVideo: InputVideoTrack,
 	minFrameDuration: number
@@ -392,7 +424,8 @@ async function tryCreateWebCodecsVideoSource(
 	try {
 		const config = await primaryVideo.getDecoderConfig();
 		if (!config) return null;
-		const support = await VideoDecoder.isConfigSupported(config);
+		const normalized = { ...config, codec: normalizeVideoCodecString(config.codec) };
+		const support = await VideoDecoder.isConfigSupported(normalized);
 		if (!support.supported) return null;
 		const decoder = new WebCodecsVideoDecoder(primaryVideo);
 		return new SequentialFrameSource(decoder, minFrameDuration);
@@ -561,6 +594,35 @@ export const mediabunnyAdapter: MediaAdapter = {
 						: frameRate > 0
 							? 1 / frameRate
 							: 0;
+
+				// Monkey-patch canDecode for H.264 tracks with unsupported level
+				// suffixes. VideoDecoder.isConfigSupported() does exact string matching;
+				// browsers support H.264 High but reject specific level strings like
+				// avc1.64000d (High@L1.3). Since we normalize the codec string before
+				// passing to WebCodecs, tell Mediabunny the track is decodable.
+				if (
+					primaryVideoInspection?.codec?.startsWith('avc1.') &&
+					!primaryVideoInspection.canDecode
+				) {
+					const origCanDecode = primaryVideo.canDecode.bind(primaryVideo);
+					const origGetDecoderConfig = primaryVideo.getDecoderConfig.bind(primaryVideo);
+					(primaryVideo as { canDecode: () => Promise<boolean> }).canDecode = async () => {
+						if (await origCanDecode()) return true;
+						const config = await origGetDecoderConfig();
+						if (!config) return false;
+						const normalized = { ...config, codec: normalizeVideoCodecString(config.codec) };
+						if (typeof VideoDecoder === 'undefined') return false;
+						const support = await VideoDecoder.isConfigSupported(normalized);
+						return support.supported === true;
+					};
+					(
+						primaryVideo as { getDecoderConfig: () => Promise<VideoDecoderConfig | null> }
+					).getDecoderConfig = async () => {
+						const config = await origGetDecoderConfig();
+						if (!config) return null;
+						return { ...config, codec: normalizeVideoCodecString(config.codec) };
+					};
+				}
 
 				// Always create a Mediabunny sink for thumbnails (sparse access).
 				thumbnailSink = new VideoSampleSink(primaryVideo);

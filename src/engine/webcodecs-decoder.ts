@@ -15,6 +15,23 @@ import type { AudioSampleLike, AudioSampleStream } from './audio-source';
 
 const DEFAULT_MAX_QUEUE_DEPTH = 8;
 
+/**
+ * Normalize H.264 codec strings so VideoDecoder.isConfigSupported() accepts them.
+ * Browsers report support for H.264 High profile but reject specific level suffixes
+ * via exact string matching. Mapping to a known-supported level (4.0 = 0x28) is safe.
+ */
+function normalizeH264CodecString(codec: string): string {
+	if (!codec.startsWith('avc1.')) return codec;
+	const hex = codec.slice(5);
+	if (!/^[0-9a-fA-F]{6}$/.test(hex)) return codec;
+	const profile = hex.slice(0, 2).toUpperCase();
+	if (profile !== '42' && profile !== '4D' && profile !== '64') return codec;
+	const level = hex.slice(4, 6).toUpperCase();
+	const KNOWN = new Set(['1E', '1F', '28', '29', '2A', '2B', '2C', '32', '33', '34', '3C']);
+	if (KNOWN.has(level)) return codec;
+	return `avc1.${profile}0028`;
+}
+
 export interface WebCodecsDecoderConfig {
 	maxQueueDepth?: number;
 	hardwareAcceleration?: HardwarePreference;
@@ -44,7 +61,10 @@ export class WebCodecsVideoDecoder implements SequentialVideoSource {
 	): AsyncGenerator<VideoSampleLike, void, unknown> {
 		const trackConfig = await this.track.getDecoderConfig();
 		if (!trackConfig) throw new Error('No decoder config available for video track.');
-		const decoderConfig = { ...trackConfig };
+		const decoderConfig = {
+			...trackConfig,
+			codec: normalizeH264CodecString(trackConfig.codec)
+		};
 		if (this.hardwareAcceleration !== 'no-preference') {
 			decoderConfig.hardwareAcceleration = this.hardwareAcceleration;
 		}
