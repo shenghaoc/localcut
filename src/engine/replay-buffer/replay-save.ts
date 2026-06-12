@@ -14,10 +14,7 @@ export interface ReplaySaveResult {
 	totalDurationS: number;
 }
 
-export function computeSaveRange(
-	ringBuffer: RingBuffer,
-	nSeconds: number,
-): ReplaySaveRange | null {
+export function computeSaveRange(ringBuffer: RingBuffer, nSeconds: number): ReplaySaveRange | null {
 	const stats = ringBuffer.getStats();
 	if (stats.newestTimestamp === null) return null;
 
@@ -31,14 +28,11 @@ export function computeSaveRange(
 	return {
 		startTimestamp: snapshot.startTimestamp,
 		endTimestamp: snapshot.endTimestamp,
-		snapshot,
+		snapshot
 	};
 }
 
-export function saveLastN(
-	ringBuffer: RingBuffer,
-	nSeconds: number,
-): ReplaySaveResult | null {
+export function saveLastN(ringBuffer: RingBuffer, nSeconds: number): ReplaySaveResult | null {
 	const range = computeSaveRange(ringBuffer, nSeconds);
 	if (!range) return null;
 
@@ -47,7 +41,7 @@ export function saveLastN(
 		entries: snapshot.entries,
 		startTimestamp: snapshot.startTimestamp,
 		endTimestamp: snapshot.endTimestamp,
-		totalDurationS: snapshot.endTimestamp - snapshot.startTimestamp,
+		totalDurationS: snapshot.endTimestamp - snapshot.startTimestamp
 	};
 }
 
@@ -64,7 +58,7 @@ export function saveLastN(
 export function assembleSaveEntries(
 	combined: readonly RingBufferEntry[],
 	rawStart: number,
-	endTimestamp: number,
+	endTimestamp: number
 ): RingBufferEntry[] {
 	const hasVideo = combined.some((e) => e.type === 'video');
 	if (!hasVideo) {
@@ -79,7 +73,7 @@ export function assembleSaveEntries(
 	}
 	if (startIdx === -1) {
 		startIdx = combined.findIndex(
-			(e) => e.type === 'video' && e.isKeyframe && e.timestamp <= endTimestamp,
+			(e) => e.type === 'video' && e.isKeyframe && e.timestamp <= endTimestamp
 		);
 	}
 	if (startIdx === -1) return [];

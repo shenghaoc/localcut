@@ -31,19 +31,24 @@ export function validateAsrManifest(value: unknown): AsrModelManifestSnapshot {
 	if (!isObject(value)) throw new AsrManifestError('manifest must be an object');
 
 	const id = value['id'];
-	if (id !== 'whisper-tiny-bilingual') throw new AsrManifestError('id must be "whisper-tiny-bilingual"');
+	if (id !== 'whisper-tiny-bilingual')
+		throw new AsrManifestError('id must be "whisper-tiny-bilingual"');
 
 	const version = value['version'];
-	if (!isString(version) || version.length === 0) throw new AsrManifestError('version must be a non-empty string');
+	if (!isString(version) || version.length === 0)
+		throw new AsrManifestError('version must be a non-empty string');
 
 	const license = value['license'];
-	if (!isString(license) || license.length === 0) throw new AsrManifestError('license must be a non-empty string');
+	if (!isString(license) || license.length === 0)
+		throw new AsrManifestError('license must be a non-empty string');
 
 	const source = value['source'];
-	if (!isString(source) || source.length === 0) throw new AsrManifestError('source must be a non-empty URL string');
+	if (!isString(source) || source.length === 0)
+		throw new AsrManifestError('source must be a non-empty URL string');
 
 	const sizeBytes = value['sizeBytes'];
-	if (!isNumber(sizeBytes) || sizeBytes <= 0) throw new AsrManifestError('sizeBytes must be a positive number');
+	if (!isNumber(sizeBytes) || sizeBytes <= 0)
+		throw new AsrManifestError('sizeBytes must be a positive number');
 
 	const checksum = value['checksum'];
 	if (!isString(checksum) || !checksum.startsWith('sha256-') || checksum.length !== 71)
@@ -59,7 +64,8 @@ export function validateAsrManifest(value: unknown): AsrModelManifestSnapshot {
 		throw new AsrManifestError('audio.nMel must be a positive number');
 
 	const vocabSize = value['vocabSize'];
-	if (!isNumber(vocabSize) || vocabSize <= 0) throw new AsrManifestError('vocabSize must be a positive number');
+	if (!isNumber(vocabSize) || vocabSize <= 0)
+		throw new AsrManifestError('vocabSize must be a positive number');
 
 	const encoderFps = value['encoderFramesPerSecond'];
 	if (!isNumber(encoderFps) || encoderFps <= 0)

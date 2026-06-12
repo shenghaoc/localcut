@@ -95,10 +95,7 @@ function isSpecialToken(token: string): boolean {
 }
 
 /** Detect language from decoder start-of-sequence tokens. */
-export function detectLanguageFromTokens(
-	vocab: TokenizerVocab,
-	tokenIds: number[]
-): string | null {
+export function detectLanguageFromTokens(vocab: TokenizerVocab, tokenIds: number[]): string | null {
 	for (const id of tokenIds.slice(0, 5)) {
 		const token = vocab.idToToken[id] ?? '';
 		if (token === '<|zh|>') return 'zh';

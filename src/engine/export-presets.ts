@@ -202,6 +202,9 @@ export function expandOutputTemplate(template: string, context: OutputNameTempla
 
 export function sanitizeOutputFileNameBase(name: string): string {
 	const sanitized = name
+		// Matching control characters is the point: they must never reach a
+		// downloaded filename.
+		// oxlint-disable-next-line no-control-regex
 		.replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_')
 		.replace(/\s+/g, ' ')
 		.trim()

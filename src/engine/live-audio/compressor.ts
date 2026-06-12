@@ -14,7 +14,7 @@ export function processCompressor(
 	input: Float32Array,
 	params: CompressorParams,
 	state: CompressorState,
-	sampleRate: number,
+	sampleRate: number
 ): Float32Array {
 	const output = new Float32Array(input.length);
 	if (params.bypass) {

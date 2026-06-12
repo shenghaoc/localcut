@@ -37,7 +37,9 @@ export interface RingBuffer {
 	 * OPFS spill. Audio-only buffers have no GOP constraint and split anywhere.
 	 * Returns null when the buffer can't spill without splitting the only GOP.
 	 */
-	spillOldest(targetByteReduction: number): { entries: RingBufferEntry[]; range: SpillRange } | null;
+	spillOldest(
+		targetByteReduction: number
+	): { entries: RingBufferEntry[]; range: SpillRange } | null;
 	getSpilledRanges(): SpillRange[];
 	removeSpilledRange(opfsFileName: string): void;
 	evictSpilledBefore(timestamp: number): SpillRange[];
@@ -92,7 +94,10 @@ export function createRingBuffer(config: RingBufferConfig): RingBuffer {
 		if (videoEntryCount === 0) {
 			// Audio-only buffer: no GOP constraint, evict purely by timestamp.
 			for (let i = 0; i < entries.length; i++) {
-				if (newestEnd - entries[i].timestamp <= maxDur) { cutoffIdx = i; break; }
+				if (newestEnd - entries[i].timestamp <= maxDur) {
+					cutoffIdx = i;
+					break;
+				}
 			}
 		} else {
 			for (let i = 0; i < entries.length; i++) {
@@ -108,7 +113,9 @@ export function createRingBuffer(config: RingBufferConfig): RingBuffer {
 				// guaranteed-first keyframe doesn't satisfy the scan immediately.
 				for (let i = 1; i < entries.length; i++) {
 					if (entries[i].type === 'video' && entries[i].isKeyframe) {
-						cutoffIdx = i; droppedFrameCount++; break;
+						cutoffIdx = i;
+						droppedFrameCount++;
+						break;
 					}
 				}
 			}
@@ -123,7 +130,12 @@ export function createRingBuffer(config: RingBufferConfig): RingBuffer {
 	return {
 		pushVideo(timestamp: number, duration: number, data: Uint8Array, isKeyframe: boolean): void {
 			const entry: RingBufferEntry = {
-				type: 'video', timestamp, duration, byteSize: data.byteLength, isKeyframe, data
+				type: 'video',
+				timestamp,
+				duration,
+				byteSize: data.byteLength,
+				isKeyframe,
+				data
 			};
 			entries.push(entry);
 			trackPush(entry);
@@ -132,7 +144,12 @@ export function createRingBuffer(config: RingBufferConfig): RingBuffer {
 
 		pushAudio(timestamp: number, duration: number, data: Uint8Array): void {
 			const entry: RingBufferEntry = {
-				type: 'audio', timestamp, duration, byteSize: data.byteLength, isKeyframe: false, data
+				type: 'audio',
+				timestamp,
+				duration,
+				byteSize: data.byteLength,
+				isKeyframe: false,
+				data
 			};
 			entries.push(entry);
 			trackPush(entry);
@@ -149,20 +166,26 @@ export function createRingBuffer(config: RingBufferConfig): RingBuffer {
 			}
 			let startIdx = 0;
 			for (let i = 0; i < entries.length; i++) {
-				if (entries[i].type === 'video' && entries[i].isKeyframe && entries[i].timestamp <= startTimestamp) {
+				if (
+					entries[i].type === 'video' &&
+					entries[i].isKeyframe &&
+					entries[i].timestamp <= startTimestamp
+				) {
 					startIdx = i;
 				}
 				if (entries[i].timestamp > startTimestamp) break;
 			}
 			const snapshotEntries = entries.filter(
-				(e) => e.timestamp >= entries[startIdx].timestamp && e.timestamp <= endTimestamp,
+				(e) => e.timestamp >= entries[startIdx].timestamp && e.timestamp <= endTimestamp
 			);
 			return {
 				entries: snapshotEntries,
 				startTimestamp: snapshotEntries.length > 0 ? snapshotEntries[0].timestamp : startTimestamp,
-				endTimestamp: snapshotEntries.length > 0
-					? snapshotEntries[snapshotEntries.length - 1].timestamp + snapshotEntries[snapshotEntries.length - 1].duration
-					: endTimestamp,
+				endTimestamp:
+					snapshotEntries.length > 0
+						? snapshotEntries[snapshotEntries.length - 1].timestamp +
+							snapshotEntries[snapshotEntries.length - 1].duration
+						: endTimestamp
 			};
 		},
 
@@ -172,28 +195,41 @@ export function createRingBuffer(config: RingBufferConfig): RingBuffer {
 				memoryBytes: memoryBytesCount,
 				spilledBytes: spilledRanges.reduce((sum, r) => sum + r.byteCount, 0),
 				oldestTimestamp: entries.length > 0 ? entries[0].timestamp : null,
-				newestTimestamp: entries.length > 0
-					? entries[entries.length - 1].timestamp + entries[entries.length - 1].duration : null,
+				newestTimestamp:
+					entries.length > 0
+						? entries[entries.length - 1].timestamp + entries[entries.length - 1].duration
+						: null,
 				keyframeCount,
-				droppedFrameCount,
+				droppedFrameCount
 			};
 		},
 
-		getConfig(): RingBufferConfig { return { ...cfg }; },
+		getConfig(): RingBufferConfig {
+			return { ...cfg };
+		},
 
 		updateConfig(partial: Partial<RingBufferConfig>): void {
 			cfg = { ...cfg, ...partial };
-			cfg.maxDurationS = Math.min(MAX_RING_DURATION_S, Math.max(MIN_RING_DURATION_S, cfg.maxDurationS));
-			cfg.saveDurationS = Math.min(cfg.maxDurationS, Math.max(MIN_RING_DURATION_S, cfg.saveDurationS));
+			cfg.maxDurationS = Math.min(
+				MAX_RING_DURATION_S,
+				Math.max(MIN_RING_DURATION_S, cfg.maxDurationS)
+			);
+			cfg.saveDurationS = Math.min(
+				cfg.maxDurationS,
+				Math.max(MIN_RING_DURATION_S, cfg.saveDurationS)
+			);
 			if (totalDuration() > cfg.maxDurationS) evictToFitDuration();
 		},
 
-		spillOldest(targetByteReduction: number): { entries: RingBufferEntry[]; range: SpillRange } | null {
+		spillOldest(
+			targetByteReduction: number
+		): { entries: RingBufferEntry[]; range: SpillRange } | null {
 			if (entries.length === 0 || targetByteReduction <= 0) return null;
 			let bytesToSpill = 0;
 			let spillCount = 0;
 			for (const e of entries) {
-				bytesToSpill += e.byteSize; spillCount++;
+				bytesToSpill += e.byteSize;
+				spillCount++;
 				if (bytesToSpill >= targetByteReduction) break;
 			}
 			if (videoEntryCount > 0) {
@@ -202,7 +238,10 @@ export function createRingBuffer(config: RingBufferConfig): RingBuffer {
 				// decline and let duration eviction handle it.
 				let aligned = -1;
 				for (let i = spillCount; i < entries.length; i++) {
-					if (entries[i].type === 'video' && entries[i].isKeyframe) { aligned = i; break; }
+					if (entries[i].type === 'video' && entries[i].isKeyframe) {
+						aligned = i;
+						break;
+					}
 				}
 				if (aligned === -1) return null;
 				for (let i = spillCount; i < aligned; i++) bytesToSpill += entries[i].byteSize;
@@ -224,13 +263,15 @@ export function createRingBuffer(config: RingBufferConfig): RingBuffer {
 				opfsFileName: `replay-spill-${seq}-${startTs.toFixed(3)}.bin`,
 				byteCount: bytesToSpill,
 				entryCount: spillCount,
-				hasKeyframe: spilled.some((e) => e.isKeyframe),
+				hasKeyframe: spilled.some((e) => e.isKeyframe)
 			};
 			spilledRanges.push(range);
 			return { entries: spilled, range };
 		},
 
-		getSpilledRanges(): SpillRange[] { return [...spilledRanges]; },
+		getSpilledRanges(): SpillRange[] {
+			return [...spilledRanges];
+		},
 
 		removeSpilledRange(opfsFileName: string): void {
 			spilledRanges = spilledRanges.filter((r) => r.opfsFileName !== opfsFileName);
@@ -239,7 +280,10 @@ export function createRingBuffer(config: RingBufferConfig): RingBuffer {
 		evictSpilledBefore(timestamp: number): SpillRange[] {
 			const evicted: SpillRange[] = [];
 			spilledRanges = spilledRanges.filter((r) => {
-				if (r.endTimestamp <= timestamp) { evicted.push(r); return false; }
+				if (r.endTimestamp <= timestamp) {
+					evicted.push(r);
+					return false;
+				}
 				return true;
 			});
 			return evicted;
@@ -253,6 +297,6 @@ export function createRingBuffer(config: RingBufferConfig): RingBuffer {
 			memoryBytesCount = 0;
 			keyframeCount = 0;
 			videoEntryCount = 0;
-		},
+		}
 	};
 }

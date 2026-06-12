@@ -1,16 +1,18 @@
 /**
  * Build script: WAT → WASM + base64 TypeScript.
  *
- * Usage:  npm run build:wasm
+ * Usage:  pnpm run build:wasm
  *
  * Reads   src/engine/resampler-simd.wat
  * Writes  src/engine/resampler-simd.wasm
  *         src/engine/resampler-simd-wasm-b64.ts
  */
 
-import { readFileSync, writeFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { Buffer } from 'node:buffer';
+import console from 'node:console';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import wabtFactory from 'wabt';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

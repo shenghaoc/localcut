@@ -1,6 +1,6 @@
 /**
  * Performance benchmark for WASM SIMD vs JS AudioResampler.
- * Run with: npx vitest run src/engine/audio-resampler-bench.test.ts
+ * Run with: pnpm run test src/engine/audio-resampler-bench.test.ts
  *
  * Measures samples/sec for 44.1 kHz → 48 kHz stereo resampling.
  * Requirement R4.1: ≥2x throughput improvement.

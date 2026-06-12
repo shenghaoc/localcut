@@ -130,6 +130,23 @@ function buildFilterTableF32(
 	return table;
 }
 
+/** Typed view of the hand-written WAT module's exports (resampler-simd.wat). */
+interface ResamplerWasmExports {
+	memory: WebAssembly.Memory;
+	historyFilled: WebAssembly.Global;
+	init(
+		filterTableOffset: number,
+		filterSize: number,
+		tablePoints: number,
+		inputRate: number,
+		outputRate: number,
+		channels: number
+	): void;
+	reset(): void;
+	process(inputOffset: number, inputFrames: number, outputOffset: number): number;
+	flush(inputOffset: number, outputOffset: number): number;
+}
+
 export class WasmAudioResampler {
 	// Static async init — call once during startup
 	static async init(): Promise<void> {
@@ -194,8 +211,9 @@ export class WasmAudioResampler {
 
 		try {
 			const instance = new WebAssembly.Instance(wasmModule, {});
+			const exports = instance.exports as unknown as ResamplerWasmExports;
 			this.instance = instance;
-			this.memory = instance.exports['memory'] as WebAssembly.Memory;
+			this.memory = exports.memory;
 
 			const filterSize = config.filterSize ?? DEFAULT_FILTER_SIZE;
 			const tablePoints = TABLE_POINTS;
@@ -222,7 +240,7 @@ export class WasmAudioResampler {
 			this.workingOffset = filterTableBytes;
 
 			// Call WASM init
-			(instance.exports['init'] as Function)(
+			exports.init(
 				this.filterTableOffset,
 				filterSize,
 				tablePoints,
@@ -243,7 +261,7 @@ export class WasmAudioResampler {
 		this.usedFallback = false;
 		this.jsFallback.reset();
 		if (this.instance) {
-			(this.instance.exports['reset'] as Function)();
+			(this.instance.exports as unknown as ResamplerWasmExports).reset();
 		}
 	}
 
@@ -301,12 +319,8 @@ export class WasmAudioResampler {
 			// total from its own $historyFilled global, which must stay in sync
 			// with JS this.historyFilled — JS reads the global back after every
 			// call. A mismatch would silently corrupt the convolution window.
-			const exports = this.instance.exports;
-			const outputFrames = (exports['process'] as Function)(
-				this.workingOffset,
-				inputFrames,
-				this.outputOffset
-			) as number;
+			const exports = this.instance.exports as unknown as ResamplerWasmExports;
+			const outputFrames = exports.process(this.workingOffset, inputFrames, this.outputOffset);
 
 			// Read output from WASM memory
 			const outputSamples = outputFrames * ch;
@@ -315,7 +329,7 @@ export class WasmAudioResampler {
 			output.set(memF32.subarray(outputStart, outputStart + outputSamples));
 
 			// Read updated state from WASM globals
-			this.historyFilled = (exports['historyFilled'] as WebAssembly.Global).value as number;
+			this.historyFilled = exports.historyFilled.value as number;
 
 			// Copy leftover history from the combined buffer.
 			// totalInputFrames was calculated before historyFilled was overwritten
@@ -380,10 +394,8 @@ export class WasmAudioResampler {
 			memF32.set(this.history.subarray(0, this.historyFilled * ch), this.workingOffset / 4);
 
 			// Call WASM flush
-			const outputFrames = (this.instance.exports['flush'] as Function)(
-				this.workingOffset,
-				this.outputOffset
-			) as number;
+			const exports = this.instance.exports as unknown as ResamplerWasmExports;
+			const outputFrames = exports.flush(this.workingOffset, this.outputOffset);
 
 			// Read output
 			const outputSamples = outputFrames * ch;
@@ -392,8 +404,7 @@ export class WasmAudioResampler {
 			output.set(memF32.subarray(outputStart, outputStart + outputSamples));
 
 			// Read updated state from WASM globals
-			const keepFrames = (this.instance.exports['historyFilled'] as WebAssembly.Global)
-				.value as number;
+			const keepFrames = exports.historyFilled.value as number;
 			this.historyFilled = keepFrames;
 
 			// Copy leftover history from WASM memory back to JS history

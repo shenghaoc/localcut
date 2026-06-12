@@ -185,7 +185,7 @@ export default defineConfig({
 		trailingComma: 'none',
 		printWidth: 100,
 		sortPackageJson: false,
-		ignorePatterns: ['dist', 'dev-dist', 'coverage', 'package-lock.json', '.kiro/', '.claude/']
+		ignorePatterns: ['dist', 'dev-dist', 'coverage', '.kiro/', '.claude/', '.jules/']
 	},
 	define: {
 		__BUILD_SHA__: JSON.stringify(gitSha())

@@ -85,7 +85,11 @@ function hzToMel(hz: number): number {
 }
 
 /** Compute power spectrum from real-valued PCM frame. */
-export function powerSpectrum(frame: Float32Array, window: Float32Array, nFft: number): Float32Array {
+export function powerSpectrum(
+	frame: Float32Array,
+	window: Float32Array,
+	nFft: number
+): Float32Array {
 	const n = frame.length;
 	const real = new Float32Array(nFft);
 	const imag = new Float32Array(nFft);
@@ -124,7 +128,10 @@ function dftTrigTables(n: number): { cos: Float32Array; sin: Float32Array } {
 
 const melStaticCache = new Map<string, { window: Float32Array; filterbank: Float32Array }>();
 
-function getMelStatics(config: MelSpectrogramConfig): { window: Float32Array; filterbank: Float32Array } {
+function getMelStatics(config: MelSpectrogramConfig): {
+	window: Float32Array;
+	filterbank: Float32Array;
+} {
 	const key = `${config.nFft}-${config.nMel}-${config.sampleRate}`;
 	let statics = melStaticCache.get(key);
 	if (!statics) {
@@ -246,7 +253,7 @@ export function chunkAndExtractMel(
 		chunks.push({
 			data: normalised,
 			nFrames: mel.nFrames,
-			startFrame: Math.floor(chunkIndex * (maxChunkSamples - overlapSamples) / config.hopLength)
+			startFrame: Math.floor((chunkIndex * (maxChunkSamples - overlapSamples)) / config.hopLength)
 		});
 		const advance = maxChunkSamples - overlapSamples;
 		if (advance <= 0 || end >= pcm.length) break;

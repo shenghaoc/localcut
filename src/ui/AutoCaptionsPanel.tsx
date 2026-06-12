@@ -67,12 +67,9 @@ export const AutoCaptionsPanel: Component<AutoCaptionsPanelProps> = (props) => {
 	});
 
 	const availability = () => asrActionAvailability(props.state, props.selectedClip);
-	const engineLabel = () => formatEngine(
-		props.state.recommendedEngine,
-		props.state.probe?.speechRecognition ?? 'unknown'
-	);
-	const showChromeSpeechTooltip = () =>
-		props.state.recommendedEngine === 'chrome-speech';
+	const engineLabel = () =>
+		formatEngine(props.state.recommendedEngine, props.state.probe?.speechRecognition ?? 'unknown');
+	const showChromeSpeechTooltip = () => props.state.recommendedEngine === 'chrome-speech';
 
 	return (
 		<Show when={props.open}>
@@ -140,9 +137,15 @@ export const AutoCaptionsPanel: Component<AutoCaptionsPanelProps> = (props) => {
 								{props.state.error}
 							</p>
 						</Show>
-						<Show when={props.state.recommendedEngine === 'webnn-whisper' && props.state.modelStatus === 'loaded'}>
+						<Show
+							when={
+								props.state.recommendedEngine === 'webnn-whisper' &&
+								props.state.modelStatus === 'loaded'
+							}
+						>
 							<p class="capability-panel-note" style={{ 'font-style': 'italic' }}>
-								Model loaded — WebNN Whisper inference is not yet available. Transcription will use a stub; install Whisper model weights for full word-level ASR.
+								Model loaded — WebNN Whisper inference is not yet available. Transcription will use
+								a stub; install Whisper model weights for full word-level ASR.
 							</p>
 						</Show>
 					</section>
@@ -188,9 +191,7 @@ export const AutoCaptionsPanel: Component<AutoCaptionsPanelProps> = (props) => {
 						<Show
 							when={props.selectedClip}
 							fallback={
-								<p class="capability-panel-note">
-									Select a clip on the timeline to transcribe.
-								</p>
+								<p class="capability-panel-note">Select a clip on the timeline to transcribe.</p>
 							}
 						>
 							{(clip) => (
@@ -280,8 +281,8 @@ export const AutoCaptionsPanel: Component<AutoCaptionsPanelProps> = (props) => {
 				</Show>
 
 				<footer class="capability-panel-note">
-					Models: Whisper (MIT, OpenAI) via WebNN / Chrome on-device speech recognition.
-					Weights load from this app's own origin only after you click "Load model".
+					Models: Whisper (MIT, OpenAI) via WebNN / Chrome on-device speech recognition. Weights
+					load from this app's own origin only after you click "Load model".
 				</footer>
 			</aside>
 		</Show>

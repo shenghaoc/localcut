@@ -595,7 +595,14 @@ describe('source descriptor matching', () => {
 describe('Phase 46 config persistence (schema v11)', () => {
 	const ringConfig = { maxDurationS: 60, maxMemoryBytes: 128 * 1024 * 1024, saveDurationS: 20 };
 	const chainConfig = {
-		gate: { bypass: false, thresholdDb: -42, rangeDb: -70, attackMs: 0.5, holdMs: 25, releaseMs: 80 },
+		gate: {
+			bypass: false,
+			thresholdDb: -42,
+			rangeDb: -70,
+			attackMs: 0.5,
+			holdMs: 25,
+			releaseMs: 80
+		},
 		compressor: {
 			bypass: true,
 			thresholdDb: -18,

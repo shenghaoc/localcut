@@ -1,3 +1,9 @@
+# Postinstall scripts stay disabled: all three ship prebuilt binaries via
+# optionalDependencies, and CI has always run with their builds ignored.
+allowBuilds:
+  esbuild: false
+  sharp: false
+  workerd: false
 catalog:
   vite: npm:@voidzero-dev/vite-plus-core@latest
   vitest: npm:@voidzero-dev/vite-plus-test@latest

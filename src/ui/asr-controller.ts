@@ -366,7 +366,10 @@ export class AsrController {
 		language: string | undefined
 	): Promise<boolean> {
 		if (kind === 'timeline-range') {
-			this.update({ error: 'Timeline range transcription requires WebNN Whisper. Chrome Speech only supports selected clips.' });
+			this.update({
+				error:
+					'Timeline range transcription requires WebNN Whisper. Chrome Speech only supports selected clips.'
+			});
 			return false;
 		}
 		const { transcribeWithWebSpeech } = await import('../engine/asr/chrome-speech');
@@ -387,7 +390,14 @@ export class AsrController {
 		this.activeJob = job;
 
 		this.update({
-			job: { kind, phase: 'extracting', fraction: 0, processedSeconds: 0, totalSeconds: durationS, clip },
+			job: {
+				kind,
+				phase: 'extracting',
+				fraction: 0,
+				processedSeconds: 0,
+				totalSeconds: durationS,
+				clip
+			},
 			error: null
 		});
 
@@ -398,13 +408,14 @@ export class AsrController {
 				if (job.cancelled) throw new AsrCancelled();
 				const windowS = Math.min(ASR_EXTRACT_WINDOW_SECONDS, durationS - offsetS);
 				if (!clip) throw new AsrCancelled();
-				const window = await this.requestExtraction(
-					clip, offsetS, windowS
-				);
+				const window = await this.requestExtraction(clip, offsetS, windowS);
 				if (job.cancelled) throw new AsrCancelled();
 
 				const segments = await transcribeWithWebSpeech(
-					window.pcm, window.sampleRate, window.channels, language,
+					window.pcm,
+					window.sampleRate,
+					window.channels,
+					language,
 					job.abortController.signal
 				);
 
@@ -415,7 +426,8 @@ export class AsrController {
 
 				this.update({
 					job: {
-						kind, phase: 'transcribing',
+						kind,
+						phase: 'transcribing',
 						fraction: Math.min(offsetS / durationS, 1),
 						processedSeconds: offsetS,
 						totalSeconds: durationS,
@@ -435,8 +447,12 @@ export class AsrController {
 
 			this.update({
 				job: {
-					kind, phase: 'creating-track',
-					fraction: 1, processedSeconds: durationS, totalSeconds: durationS, clip
+					kind,
+					phase: 'creating-track',
+					fraction: 1,
+					processedSeconds: durationS,
+					totalSeconds: durationS,
+					clip
 				}
 			});
 
@@ -451,7 +467,10 @@ export class AsrController {
 			return true;
 		} catch (error) {
 			this.finishJob();
-			if (error instanceof AsrCancelled) { this.update({ job: null }); return false; }
+			if (error instanceof AsrCancelled) {
+				this.update({ job: null });
+				return false;
+			}
 			this.update({ job: null, error: error instanceof Error ? error.message : String(error) });
 			return false;
 		}
@@ -482,7 +501,14 @@ export class AsrController {
 		this.activeJob = job;
 
 		this.update({
-			job: { kind, phase: 'extracting', fraction: 0, processedSeconds: 0, totalSeconds: durationS, clip },
+			job: {
+				kind,
+				phase: 'extracting',
+				fraction: 0,
+				processedSeconds: 0,
+				totalSeconds: durationS,
+				clip
+			},
 			error: null
 		});
 
@@ -500,9 +526,7 @@ export class AsrController {
 				if (job.cancelled) throw new AsrCancelled();
 				const windowS = Math.min(ASR_EXTRACT_WINDOW_SECONDS, durationS - offsetS);
 				if (!clip) throw new AsrCancelled();
-				const window = await this.requestExtraction(
-					clip, offsetS, windowS
-				);
+				const window = await this.requestExtraction(clip, offsetS, windowS);
 				if (job.cancelled) throw new AsrCancelled();
 
 				worker.send(
@@ -554,7 +578,10 @@ export class AsrController {
 			return true;
 		} catch (error) {
 			this.finishJob();
-			if (error instanceof AsrCancelled) { this.update({ job: null }); return false; }
+			if (error instanceof AsrCancelled) {
+				this.update({ job: null });
+				return false;
+			}
 			this.update({ job: null, error: error instanceof Error ? error.message : String(error) });
 			return false;
 		}

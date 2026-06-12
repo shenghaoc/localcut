@@ -15,7 +15,10 @@ export interface CacheDeleteResult {
 export interface CacheStore {
 	readManifest(projectId: string): Promise<ProxyManifest | null>;
 	writeManifest(manifest: ProxyManifest): Promise<void>;
-	writeChunk(path: string, data: ReadableStream<Uint8Array> | Blob): Promise<CacheWriteResult>;
+	writeChunk(
+		path: string,
+		data: ReadableStream<Uint8Array<ArrayBuffer>> | Blob
+	): Promise<CacheWriteResult>;
 	readChunk(path: string): Promise<Blob | null>;
 	deletePaths(paths: readonly string[]): Promise<CacheDeleteResult>;
 	estimate(): Promise<CacheStorageEstimate>;
@@ -57,14 +60,14 @@ function manifestPath(projectId: string): string {
 	return `manifests/${projectId}.json`;
 }
 
-async function blobFromData(data: ReadableStream<Uint8Array> | Blob): Promise<Blob> {
+async function blobFromData(data: ReadableStream<Uint8Array<ArrayBuffer>> | Blob): Promise<Blob> {
 	if (data instanceof Blob) return data;
 	return new Response(data).blob();
 }
 
 async function writeDataToFile(
 	file: FileSystemFileHandle,
-	data: ReadableStream<Uint8Array> | Blob
+	data: ReadableStream<Uint8Array<ArrayBuffer>> | Blob
 ): Promise<number> {
 	const writable = await file.createWritable();
 	let byteSize = 0;
@@ -113,7 +116,7 @@ class OpfsCacheStore implements CacheStore {
 
 	async writeChunk(
 		path: string,
-		data: ReadableStream<Uint8Array> | Blob
+		data: ReadableStream<Uint8Array<ArrayBuffer>> | Blob
 	): Promise<CacheWriteResult> {
 		const file = await this.fileHandle(path, true);
 		const byteSize = await writeDataToFile(file, data);
@@ -223,7 +226,7 @@ class IndexedDbCacheStore implements CacheStore {
 
 	async writeChunk(
 		path: string,
-		data: ReadableStream<Uint8Array> | Blob
+		data: ReadableStream<Uint8Array<ArrayBuffer>> | Blob
 	): Promise<CacheWriteResult> {
 		const blob = await blobFromData(data);
 		const db = await this.db();

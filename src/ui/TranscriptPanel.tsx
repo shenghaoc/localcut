@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, Show } from 'solid-js';
+import { createEffect, createMemo, createSignal, For, on, Show } from 'solid-js';
 import { TRANSCRIPT_WINDOW_RADIUS, computeSegmentWindow } from './transcript-window';
 import type {
 	CaptionDiagnosticSnapshot,
@@ -117,11 +117,9 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
 	// rows unreachable in a long SRT/WebVTT import). Cleared whenever the selection
 	// or active track changes so selecting a segment recenters the view.
 	const [viewAnchor, setViewAnchor] = createSignal<number | null>(null);
-	createEffect(() => {
-		props.selectedSegmentIds[0];
-		activeTrack()?.id;
-		setViewAnchor(null);
-	});
+	createEffect(
+		on([() => props.selectedSegmentIds[0], () => activeTrack()?.id], () => setViewAnchor(null))
+	);
 	const windowCenter = createMemo(() => viewAnchor() ?? activeSegmentIndex());
 	const segmentWindow = createMemo(() =>
 		computeSegmentWindow(activeTrack()?.segments.length ?? 0, windowCenter())

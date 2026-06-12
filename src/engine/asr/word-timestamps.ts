@@ -20,10 +20,7 @@ export interface WordTimestamp {
  * timestamp token. Words are formed by grouping text tokens between
  * timestamp boundaries.
  */
-export function tokensToWordTimestamps(
-	tokenIds: number[],
-	idToToken: string[]
-): WordTimestamp[] {
+export function tokensToWordTimestamps(tokenIds: number[], idToToken: string[]): WordTimestamp[] {
 	const words: WordTimestamp[] = [];
 	let currentStart = 0;
 	let currentText: string[] = [];

@@ -192,18 +192,26 @@ export class TrackPipeline {
 		} finally {
 			try {
 				await reader.cancel();
-			} catch {}
+			} catch {
+				// best-effort teardown — the pipeline is already stopping
+			}
 			try {
 				reader.releaseLock();
-			} catch {}
+			} catch {
+				// best-effort teardown — the pipeline is already stopping
+			}
 			this.reader = null;
 			this.clearChunkWaiters();
 			try {
 				await encoder.flush();
-			} catch {}
+			} catch {
+				// best-effort teardown — the pipeline is already stopping
+			}
 			try {
 				encoder.close();
-			} catch {}
+			} catch {
+				// best-effort teardown — the pipeline is already stopping
+			}
 			this.encoder = null;
 			this.running = false;
 			this.emitEnded();
@@ -272,23 +280,33 @@ export class TrackPipeline {
 					} finally {
 						data.close();
 					}
-				} catch {}
+				} catch {
+					// encode after close throws; real errors surface via the encoder error callback
+				}
 			}
 		} finally {
 			try {
 				await reader.cancel();
-			} catch {}
+			} catch {
+				// best-effort teardown — the pipeline is already stopping
+			}
 			try {
 				reader.releaseLock();
-			} catch {}
+			} catch {
+				// best-effort teardown — the pipeline is already stopping
+			}
 			this.reader = null;
 			this.clearChunkWaiters();
 			try {
 				await encoder.flush();
-			} catch {}
+			} catch {
+				// best-effort teardown — the pipeline is already stopping
+			}
 			try {
 				encoder.close();
-			} catch {}
+			} catch {
+				// best-effort teardown — the pipeline is already stopping
+			}
 			this.encoder = null;
 			this.running = false;
 			this.emitEnded();
@@ -301,7 +319,9 @@ export class TrackPipeline {
 		if (this.reader) {
 			try {
 				await this.reader.cancel();
-			} catch {}
+			} catch {
+				// best-effort cancel — the read loop is already winding down
+			}
 		}
 	}
 
@@ -312,12 +332,16 @@ export class TrackPipeline {
 		if (this.reader) {
 			try {
 				this.reader.cancel();
-			} catch {}
+			} catch {
+				// best-effort cancel during dispose
+			}
 		}
 		if (this.encoder) {
 			try {
 				this.encoder.close();
-			} catch {}
+			} catch {
+				// best-effort close during dispose
+			}
 			this.encoder = null;
 		}
 	}
