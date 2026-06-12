@@ -9,10 +9,11 @@
 **Action:** Use hardware-accelerated CSS `transform: translateX(...)` instead. The browser can offload this to the compositor thread (GPU), bypassing the layout phase entirely for much smoother animation.
 
 ## 2024-08-20 - CSS Layout Thrashing on Audio Meters
+
 **Learning:** Animating a DOM element's `height` property inline (e.g. `style={{ height: \`${percent}%\` }}`) during high-frequency events like a 60fps audio meter reader forces main-thread layout recalculations (reflows) on every frame. This thrashes performance.
-**Action:** Use hardware-accelerated CSS `transform: scaleY(...)` combined with `transform-origin: bottom` and `height: 100%` on the base class. The browser can offload this to the compositor thread (GPU), bypassing the layout phase entirely.
+**Action:** Use hardware-accelerated CSS `transform: scaleY(...)`combined with`transform-origin: bottom`and`height: 100%` on the base class. The browser can offload this to the compositor thread (GPU), bypassing the layout phase entirely.
 
 ## 2026-06-12 - CSS Layout Thrashing on Timeline Clip Dragging
 
-**Learning:** Animating a timeline clip's position using the CSS `left` property inline during dragging forces main-thread layout recalculations (reflows) on every pointermove event. This causes layout thrashing and stuttering.
-**Action:** Use hardware-accelerated CSS `transform: translateX(...)` combined with conditionally applying `will-change: transform` during active drags. The browser can offload this to the compositor thread (GPU), bypassing the layout phase entirely for much smoother animation.
+**Learning:** Animating a timeline clip's position using the CSS `left` property inline during dragging forces main-thread layout recalculations (reflows) on every pointermove event. This causes layout thrashing and stuttering. An inline `transform: translateX(...)` is not a drop-in replacement here: inline `transform` permanently overrides the `.timeline-clip:hover { transform: translateY(-1px) }` lift, and the base class's `transition: transform 80ms ease` eases every drag update so the clip lags the cursor.
+**Action:** Use the standalone hardware-accelerated CSS `translate` property (Baseline 2022) for positioning, with `will-change: translate` applied only during active drags. `translate` composes with the hover `transform` instead of overriding it, is not covered by `transition: transform`, and still bypasses the layout phase via the compositor thread (GPU).

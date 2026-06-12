@@ -71,9 +71,11 @@ export function TimelineClip(props: TimelineClipProps) {
 	// so reading props.* here directly would freeze position/size at first render and
 	// never reflect a move/trim/duration change. Evaluate inside the tracking context.
 	const [dragPreviewStart, setDragPreviewStart] = createSignal<number | null>(null);
-	// Bolt ⚡: Hardware-accelerated transform instead of `left` to avoid layout thrashing
-	// and main-thread reflows during high-frequency pointermove dragging events.
-	const transform = () => `translateX(${(dragPreviewStart() ?? props.clip.start) * props.pxPerSecond}px)`;
+	// Position via the standalone CSS `translate` property rather than `left`
+	// (avoids per-pointermove reflows) or `transform` (an inline transform would
+	// override the .timeline-clip:hover lift and get eased by the base class's
+	// `transition: transform`, making drags lag the cursor).
+	const translate = () => `${(dragPreviewStart() ?? props.clip.start) * props.pxPerSecond}px 0`;
 	const width = () => `${Math.max(10, props.clip.duration * props.pxPerSecond)}px`;
 	const waveformWidth = () => Math.max(24, Math.floor(props.clip.duration * props.pxPerSecond));
 	const clipTitle = () => `${props.clip.id} (${props.clip.sourceId})`;
@@ -322,10 +324,10 @@ export function TimelineClip(props: TimelineClipProps) {
 		<div
 			class={`timeline-clip${props.isAudio ? ' is-audio' : ''}${props.selected ? ' is-selected' : ''}${dragPreviewStart() !== null ? ' is-dragging' : ''}${props.clip.offline ? ' is-offline' : ''}`}
 			style={{
-				left: 0,
-				transform: transform(),
+				left: '0',
+				translate: translate(),
 				width: width(),
-				...(dragPreviewStart() !== null ? { 'will-change': 'transform' } : {})
+				'will-change': dragPreviewStart() !== null ? 'translate' : undefined
 			}}
 			title={clipTitle()}
 			role="button"
