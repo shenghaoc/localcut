@@ -528,14 +528,14 @@ export const mediabunnyAdapter: MediaAdapter = {
 				primaryVideoInspection,
 				primaryAudioInspection
 			} = await inspectMediabunnyInput(mediaInput, input.file, input.sourceId);
-			const { conformance, warnings } = deriveConformance(
+			const { conformance: initialConformance, warnings: initialWarnings } = deriveConformance(
 				inspection,
 				primaryVideoInspection,
 				primaryAudioInspection
 			);
 			const metadata = createMetadata(
 				input.file,
-				conformance.durationS,
+				initialConformance.durationS,
 				inspection.mimeType,
 				inspection.tracks,
 				primaryVideoInspection,
@@ -573,6 +573,25 @@ export const mediabunnyAdapter: MediaAdapter = {
 					frameSource = new SequentialFrameSource(sink, minFrameDuration);
 				}
 			}
+
+			// Since we always attempt Mediabunny fallback for video, the
+			// unsupported-video-codec warning is informational when a frame source
+			// was successfully created.
+			const warnings = frameSource
+				? initialWarnings.map((w) =>
+						w.code === 'unsupported-video-codec' ? { ...w, blocking: false } : w
+					)
+				: initialWarnings;
+			const conformance: SourceConformance = frameSource
+				? {
+						...initialConformance,
+						health: warnings.some((w) => w.blocking)
+							? 'blocked'
+							: warnings.length > 0
+								? 'warnings'
+								: 'ok'
+					}
+				: initialConformance;
 
 			let audioSource: SequentialAudioSource | null = null;
 			const audioChannels = primaryAudioInspection?.channels ?? 2;

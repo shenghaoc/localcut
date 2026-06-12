@@ -46,33 +46,66 @@ the optional chaining is defensive).
 ## D2 — No change needed in worker.ts (B2)
 
 With D1 applied, `frameSource` is always created for video tracks (the
-Mediabunny fallback succeeds for all codecs that ffmpeg can decode, which
-includes `avc1.64000d`). The guard at `worker.ts:709`
+Mediabunny fallback constructs a `SequentialFrameSource` unconditionally when
+`primaryVideo` exists). The guard at `worker.ts:709`
 
 ```ts
 if (handle.kind !== 'audio' && !handle.frameSource) return tl;
 ```
 
-becomes a safety net for truly undecodable video (e.g. HEVC on browsers without
-HEVC support). In that case, `frameSource` is null, the clip is rejected, and
-the source-health warning already tells the user why. This is the correct
-behavior — HEVC video genuinely can't be displayed, and placing an audio-only
-clip from a video file would be confusing.
+is now unreachable for video files. It remains a safety net for hypothetical
+edge cases where `primaryVideo` is null (which shouldn't happen for video
+files).
 
-For the `avc1.64000d` case that motivated this bugfix, the Mediabunny fallback
-creates a `SequentialFrameSource` successfully, `frameSource` is non-null,
-`kind` is `'video'`, and the clip is placed on the timeline with both video and
-audio.
+For truly undecodable codecs (e.g. HEVC on browsers without HEVC support),
+`frameSource` is non-null (the `VideoSampleSink` → `SequentialFrameSource`
+fallback is always constructed), but decode will fail at playback time. The
+playback error surfaces in the status bar. This is acceptable because the
+source-health warning already tells the user the codec is unsupported.
 
-## D3 — Source-health warning preserved
+## D3 — Conformance post-processing (B1)
+
+`src/engine/media-adapters/mediabunny-adapter.ts`
+
+After frame source creation, the `unsupported-video-codec` warnings are
+post-processed to be non-blocking when `frameSource` was successfully created.
+The conformance health is recomputed from the updated warnings:
+
+```ts
+const warnings = frameSource
+    ? initialWarnings.map((w) =>
+            w.code === 'unsupported-video-codec' ? { ...w, blocking: false } : w
+        )
+    : initialWarnings;
+const conformance: SourceConformance = frameSource
+    ? {
+            ...initialConformance,
+            health: warnings.some((w) => w.blocking)
+                ? 'blocked'
+                : warnings.length > 0
+                    ? 'warnings'
+                    : 'ok'
+        }
+    : initialConformance;
+```
+
+Why post-process instead of changing `deriveConformance`: the `inspect` path
+(line 502) does not create a frame source, so it cannot know whether the
+fallback will succeed. The `open` path (line 531) creates the frame source
+first, then adjusts the warnings. This keeps the `inspect` path honest (it
+reports the warning as blocking since it doesn't know about the fallback) while
+the `open` path (which actually imports the file) correctly marks it as
+non-blocking.
+
+## D4 — Source-health warning preserved
 
 `src/engine/media-adapters/source-health.ts`
 
 No changes. The `unsupported-video-codec` warning is still emitted when
-`track.canDecode` is false (line 83). The warning is `blocking: false` when
-there's a fallback frame source (the conformance health is not `'blocked'`
-because `frameSource` is non-null). The user sees the warning in the Media Bin
-but the clip is still usable.
+`track.canDecode` is false (line 83). After the D3 post-processing, the
+warning's `blocking` flag is `false` when a frame source was created, so
+`conformance.health` is `'warnings'` (not `'blocked'`). The user sees the
+warning in the Media Bin but the clip is still usable.
 
 ## D4 — Tests
 
