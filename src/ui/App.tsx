@@ -39,6 +39,7 @@ import {
 	type PublishState,
 	type WorkerStateMessage,
 	type WaveformPeaks,
+	type MatteEngineStatusSnapshot,
 	DEFAULT_LIVE_AUDIO_CHAIN_CONFIG,
 	type CaptureSessionState,
 	type LiveAudioChainConfig,
@@ -542,6 +543,15 @@ export function App() {
 	);
 	cleanupController.subscribe(setCleanupState);
 
+	// Phase 31: matte status comes from the pipeline worker — the matte engine
+	// lives there (per-frame zero-copy inference on the compositor's device);
+	// there is no separate inference worker or UI-side orchestration.
+	const [matteStatus, setMatteStatus] = createSignal<MatteEngineStatusSnapshot>({
+		probe: null,
+		modelStatus: 'not-loaded',
+		backend: null
+	});
+
 	const selectedAudioCleanupClip = createMemo<CleanupClipTarget | null>(() => {
 		for (const ref of selectedClipRefs()) {
 			const track = timeline().find((item) => item.id === ref.trackId);
@@ -640,7 +650,8 @@ export function App() {
 					effects: sampleEffectsAt(clip.effects, clip.keyframes, localTime),
 					transform: sampleTransformAt(clip.transform, clip.keyframes, localTime),
 					keyframes: clip.keyframes,
-					lut: clip.lut
+					lut: clip.lut,
+					matte: clip.matte
 				};
 			}
 		}
@@ -964,6 +975,9 @@ export function App() {
 						? 'Cleaned audio asset applied'
 						: `Audio cleanup failed: ${msg.message ?? 'unknown error'}`
 				);
+				break;
+			case 'matte-status':
+				setMatteStatus(msg.status);
 				break;
 			case 'asr-caption-track-created':
 				asrController.handlePipelineMessage(msg);
@@ -2092,6 +2106,8 @@ export function App() {
 	function deleteSelectedClips() {
 		const clips = selectedClipRefs();
 		if (clips.length === 0) return;
+		// Matte sessions/caches are owned by the pipeline worker's matte engine,
+		// which releases them inside the delete handlers.
 		if (clips.length === 1) {
 			const clip = clips[0]!;
 			bridge?.send({ type: 'delete-clip', trackId: clip.trackId, clipId: clip.clipId });
@@ -2779,6 +2795,39 @@ export function App() {
 														transitionMeta.delete(transitionId);
 														setSelectedTransitionId(null);
 													}}
+													onSetMatteEnabled={(enabled) =>
+														bridge?.send({
+															type: 'set-matte-enabled',
+															trackId: selectedClip()!.trackId,
+															clipId: selectedClip()!.clipId,
+															enabled
+														})
+													}
+													onSetMatteStrength={(strength) =>
+														bridge?.send({
+															type: 'set-matte-strength',
+															trackId: selectedClip()!.trackId,
+															clipId: selectedClip()!.clipId,
+															strength
+														})
+													}
+													onSetMatteMode={(mode) =>
+														bridge?.send({
+															type: 'set-matte-mode',
+															trackId: selectedClip()!.trackId,
+															clipId: selectedClip()!.clipId,
+															mode
+														})
+													}
+													onSetMatteBlurRadius={(blurRadius) =>
+														bridge?.send({
+															type: 'set-matte-blur-radius',
+															trackId: selectedClip()!.trackId,
+															clipId: selectedClip()!.clipId,
+															blurRadius
+														})
+													}
+													matteStatus={matteStatus()}
 												/>
 											</div>
 										</Show>
@@ -3140,7 +3189,7 @@ export function App() {
 						open={capabilityPanelOpen()}
 						tier={pipelineMode()}
 						tierLabel={pipelineLabel()}
-						features={listCapabilityFeatures(capabilities())}
+						features={listCapabilityFeatures(capabilities(), matteStatus().probe)}
 						primaryIssue={limitedIssue()}
 						compatibilityPreviewAvailable={canCompatibilityPreview(capabilities())}
 						previewReady={previewReady()}

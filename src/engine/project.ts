@@ -44,7 +44,7 @@ import { cloneClipKeyframes, parseClipKeyframes } from './keyframes';
 import { cloneClipLut, parsePersistedClipLut } from './lut';
 import { parseExportPresetDoc } from './export-presets';
 
-export const PROJECT_SCHEMA_VERSION = 11;
+export const PROJECT_SCHEMA_VERSION = 12;
 const DURATION_MATCH_TOLERANCE_S = 0.25;
 const TIMING_MATCH_TOLERANCE_S = 0.05;
 
@@ -198,6 +198,7 @@ function cloneClip(clip: TimelineClip): TimelineClip {
 	}
 	if (clip.linkedGroupId) cloned.linkedGroupId = clip.linkedGroupId;
 	if (clip.cleanedAudio) cloned.cleanedAudio = { ...clip.cleanedAudio };
+	if (clip.matte) cloned.matte = { ...clip.matte };
 	const keyframes = cloneClipKeyframes(clip.keyframes);
 	if (keyframes) cloned.keyframes = keyframes;
 	const lut = cloneClipLut(clip.lut);
@@ -478,6 +479,23 @@ function parseClip(value: unknown): TimelineClip | null {
 	if (linkedGroupId) clip.linkedGroupId = linkedGroupId;
 	if (keyframes) clip.keyframes = keyframes;
 	if (lut) clip.lut = lut;
+	if (isRecord(value.matte)) {
+		const enabled = typeof value.matte.enabled === 'boolean' ? value.matte.enabled : true;
+		const mode =
+			value.matte.mode === 'replace' || value.matte.mode === 'blur' ? value.matte.mode : 'remove';
+		// Model pin survives round-trip verbatim (P23); mismatches against the
+		// deployed model surface a warning at load, never a silent switch.
+		const modelKey = typeof value.matte.modelKey === 'string' ? value.matte.modelKey : 'modnet-v1';
+		const strength = finiteNumber(value.matte.strength);
+		const blurRadius = finiteNumber(value.matte.blurRadius);
+		clip.matte = {
+			enabled,
+			mode,
+			modelKey,
+			strength: strength !== null && strength >= 0 && strength <= 1 ? strength : 1.0,
+			...(blurRadius !== null && blurRadius >= 0 ? { blurRadius: Math.min(64, blurRadius) } : {})
+		};
+	}
 	const cleanedAudio = isTitle ? undefined : parseCleanedAudio(value.cleanedAudio);
 	if (cleanedAudio) clip.cleanedAudio = cleanedAudio;
 	return clip;
@@ -1297,8 +1315,10 @@ export function deserializeProject(value: unknown): DeserializeProjectResult {
 			return deserializeV9(value);
 		case 10:
 		case 11:
+		case 12:
 			// v11 adds replayBufferConfig + liveAudioChainConfig (Phase 46).
-			// Both fields are optional with factory defaults; v10 docs deserialize fine.
+			// v12 adds matte mode/blurRadius (Phase 31); the matte field is optional
+			// with mode defaulting to 'remove', so v10/v11 docs deserialize fine.
 			return deserializeV10(value);
 		default:
 			return { ok: false, reason: `Unsupported project schemaVersion ${schemaVersion}.` };

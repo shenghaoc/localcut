@@ -30,6 +30,8 @@ export interface SelectedClip {
 	transform: TransformParamsSnapshot;
 	keyframes?: ClipKeyframesSnapshot;
 	lut?: ClipLutSnapshot;
+	/** Phase 31: optional portrait matte configuration. */
+	matte?: import('../protocol').ClipMatteSnapshot;
 }
 
 export interface SelectedClipTransform {
@@ -109,6 +111,13 @@ interface InspectorProps {
 	) => void;
 	onImportLut: (trackId: string, clipId: string, file: File) => void;
 	onLutStrength: (trackId: string, clipId: string, strength: number) => void;
+	/** Phase 31: portrait matte callbacks. */
+	onSetMatteEnabled?: (enabled: boolean) => void;
+	onSetMatteStrength?: (strength: number) => void;
+	onSetMatteMode?: (mode: import('../protocol').MatteMode) => void;
+	onSetMatteBlurRadius?: (blurRadius: number) => void;
+	/** Phase 31: matte engine status (posted by the pipeline worker). */
+	matteStatus?: import('../protocol').MatteEngineStatusSnapshot | null;
 	onTrackGain: (trackId: string, gain: number) => void;
 	onTrackMute: (trackId: string, muted: boolean) => void;
 	onTrackSolo: (trackId: string, solo: boolean) => void;
@@ -1215,6 +1224,103 @@ export function Inspector(props: InspectorProps) {
 											</div>
 										</div>
 									</div>
+									{/* Phase 31: Portrait Matte controls — shown only when wired */}
+									<Show when={props.onSetMatteEnabled}>
+										<div class="matte-controls">
+											<div class="matte-header">
+												<span class="effect-slider-label">
+													Portrait Matte{' '}
+													<span class="text-xs text-muted-foreground font-normal">
+														(Experimental)
+													</span>
+												</span>
+												<Show when={props.matteStatus?.modelStatus === 'loading'}>
+													<span class="text-xs text-muted-foreground">Loading...</span>
+												</Show>
+												<Show when={props.matteStatus?.modelStatus === 'failed'}>
+													<span class="text-xs text-destructive">Failed</span>
+												</Show>
+											</div>
+											<div class="matte-toggle-row">
+												<label class="matte-toggle-label">
+													<input
+														type="checkbox"
+														checked={props.selectedClip?.matte?.enabled ?? false}
+														onChange={(e) => props.onSetMatteEnabled?.(e.currentTarget.checked)}
+													/>
+													<span>Enable</span>
+												</label>
+											</div>
+											<Show when={props.selectedClip?.matte?.enabled}>
+												<div class="matte-toggle-row">
+													<label class="matte-toggle-label" for="matte-mode-select">
+														Mode
+													</label>
+													<select
+														id="matte-mode-select"
+														value={props.selectedClip?.matte?.mode ?? 'remove'}
+														onChange={(e) =>
+															props.onSetMatteMode?.(
+																e.currentTarget.value as import('../protocol').MatteMode
+															)
+														}
+													>
+														<option value="remove">Remove background</option>
+														<option value="replace">Replace background</option>
+														<option value="blur">Blur background</option>
+													</select>
+												</div>
+												<Show when={props.selectedClip?.matte?.mode === 'replace'}>
+													<p class="text-xs text-muted-foreground">
+														Place the background source on the track directly below this clip — the
+														removed background reveals it.
+													</p>
+												</Show>
+												<div class="effect-slider">
+													<div class="effect-slider-label">
+														<span>Strength</span>
+														<span class="effect-slider-value tabular-nums">
+															{Math.round((props.selectedClip?.matte?.strength ?? 1) * 100)}%
+														</span>
+													</div>
+													<input
+														type="range"
+														min={0}
+														max={100}
+														step={1}
+														value={Math.round((props.selectedClip?.matte?.strength ?? 1) * 100)}
+														onInput={(e) =>
+															props.onSetMatteStrength?.(
+																Number((e.currentTarget as HTMLInputElement).value) / 100
+															)
+														}
+													/>
+												</div>
+												<Show when={props.selectedClip?.matte?.mode === 'blur'}>
+													<div class="effect-slider">
+														<div class="effect-slider-label">
+															<span>Blur radius</span>
+															<span class="effect-slider-value tabular-nums">
+																{Math.round(props.selectedClip?.matte?.blurRadius ?? 16)}px
+															</span>
+														</div>
+														<input
+															type="range"
+															min={0}
+															max={64}
+															step={1}
+															value={Math.round(props.selectedClip?.matte?.blurRadius ?? 16)}
+															onInput={(e) =>
+																props.onSetMatteBlurRadius?.(
+																	Number((e.currentTarget as HTMLInputElement).value)
+																)
+															}
+														/>
+													</div>
+												</Show>
+											</Show>
+										</div>
+									</Show>
 								</div>
 							)}
 						</Show>

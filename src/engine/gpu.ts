@@ -14,6 +14,10 @@ import outputConvertF32 from './shaders/output-convert.wgsl?raw';
 import outputConvertF16 from './shaders/output-convert.f16.wgsl?raw';
 import opacityF32 from './shaders/opacity.wgsl?raw';
 import opacityF16 from './shaders/opacity.f16.wgsl?raw';
+import matteApplyF32 from './shaders/matte-apply.wgsl?raw';
+import matteApplyF16 from './shaders/matte-apply.f16.wgsl?raw';
+import matteBlurF32 from './shaders/matte-blur.wgsl?raw';
+import matteBlurF16 from './shaders/matte-blur.f16.wgsl?raw';
 import clippingOverlaySource from './shaders/clipping-overlay.wgsl?raw';
 import { EffectChain, type ClipEffectParams } from './effects';
 import type { ClipLut } from './lut';
@@ -70,6 +74,17 @@ export interface FrameCompositeLayer {
 	effects: ClipEffectParams;
 	transform: TransformParams;
 	lut?: ClipLut;
+	/** Phase 31: optional portrait matte texture view (alpha mask). */
+	matteView?: GPUTextureView;
+	/** Phase 31: matte strength (0..1). Only meaningful when matteView is set. */
+	matteStrength?: number;
+	/** Phase 31: matte mode — remove/replace share the apply pass; blur defocuses
+	 *  the background. Defaults to 'remove' when matteView is set. */
+	matteMode?: 'remove' | 'replace' | 'blur';
+	/** Phase 31: blur-mode background radius (px at compositor resolution). */
+	matteBlurRadius?: number;
+	/** Phase 31: export path — guided-upsample refinement of the matte sample. */
+	matteRefine?: boolean;
 	/** Phase 13: present when this layer participates in a transition blend. */
 	transition?: import('./timeline').TransitionResolveMeta;
 }
@@ -136,6 +151,10 @@ export class PreviewRenderer {
 	private readonly sourceNormalizePipeline: GPUComputePipeline;
 	private readonly outputConvertPipeline: GPUComputePipeline;
 	private readonly opacityPipeline: GPUComputePipeline;
+	// Phase 31: matte-apply pipeline (alpha mask multiplication).
+	private readonly mattePipeline: GPUComputePipeline;
+	// Phase 31: matte-blur pipeline (mask-driven background blur).
+	private readonly matteBlurPipeline: GPUComputePipeline;
 	private readonly clippingOverlayPipeline: GPUComputePipeline | null;
 	private readonly sampler: GPUSampler;
 
@@ -173,6 +192,10 @@ export class PreviewRenderer {
 	// Per-layer opacity uniform buffers.
 	private readonly opacityBuffers: GPUBuffer[] = [];
 	private readonly opacityGroupLayout: GPUBindGroupLayout;
+	// Phase 31: per-layer matte uniform buffers.
+	private readonly matteBuffers: GPUBuffer[] = [];
+	private readonly matteGroupLayout: GPUBindGroupLayout;
+	private readonly matteBlurGroupLayout: GPUBindGroupLayout;
 	// Phase 13: transition-mix uniform buffers.
 	private readonly transitionUniformBuffers: GPUBuffer[] = [];
 	private readonly transitionGroupLayout: GPUBindGroupLayout;
@@ -268,6 +291,13 @@ export class PreviewRenderer {
 				entryPoint: 'main'
 			}
 		});
+		this.mattePipeline = device.createComputePipeline({
+			layout: 'auto',
+			compute: {
+				module: device.createShaderModule({ code: useF16 ? matteApplyF16 : matteApplyF32 }),
+				entryPoint: 'main'
+			}
+		});
 		this.clippingOverlayPipeline = (() => {
 			try {
 				return device.createComputePipeline({
@@ -285,6 +315,15 @@ export class PreviewRenderer {
 		this.normalizeGroupLayout = this.sourceNormalizePipeline.getBindGroupLayout(0);
 		this.outConvGroupLayout = this.outputConvertPipeline.getBindGroupLayout(0);
 		this.opacityGroupLayout = this.opacityPipeline.getBindGroupLayout(0);
+		this.matteGroupLayout = this.mattePipeline.getBindGroupLayout(0);
+		this.matteBlurPipeline = device.createComputePipeline({
+			layout: 'auto',
+			compute: {
+				module: device.createShaderModule({ code: useF16 ? matteBlurF16 : matteBlurF32 }),
+				entryPoint: 'main'
+			}
+		});
+		this.matteBlurGroupLayout = this.matteBlurPipeline.getBindGroupLayout(0);
 		this.transitionGroupLayout = this.transitionMixPipeline.getBindGroupLayout(0);
 
 		this.sampler = device.createSampler({
@@ -539,9 +578,35 @@ export class PreviewRenderer {
 					wgY
 				);
 			}
-			const opaqueView = this.encodeOpacity(encoder, lutView, layer.transform, slot, wgX, wgY);
+			// Phase 31: matte-apply (between LUT and opacity).
+			let matteApplied = lutView;
+			if (
+				layer.kind === 'frame' &&
+				layer.matteView &&
+				layer.matteStrength !== undefined &&
+				layer.matteStrength > 0
+			) {
+				const matteDst =
+					lutView === storage.a ? storage.b : lutView === storage.b ? storage.c : storage.a;
+				matteApplied = this.encodeMatte(
+					encoder,
+					lutView,
+					layer.matteView,
+					{
+						strength: layer.matteStrength,
+						mode: layer.matteMode ?? 'remove',
+						blurRadius: layer.matteBlurRadius ?? 0,
+						refine: layer.matteRefine ?? false
+					},
+					matteDst,
+					slot,
+					wgX,
+					wgY
+				);
+			}
+			const opaqueView = this.encodeOpacity(encoder, matteApplied, layer.transform, slot, wgX, wgY);
 			const xfParams =
-				layer.transform.opacity < 1.0 && opaqueView !== lutView
+				layer.transform.opacity < 1.0 && opaqueView !== matteApplied
 					? { ...layer.transform, opacity: 1.0 }
 					: layer.transform;
 			this.encodeTransformDirect(
@@ -765,6 +830,64 @@ export class PreviewRenderer {
 		return dstView;
 	}
 
+	/**
+	 * Stage 4b: matte pass. remove/replace multiply layer alpha by the matte
+	 * (replace's background source is a UI composition recipe beneath the
+	 * layer); blur defocuses the background where the matte is low. Rides the
+	 * same per-frame encoder — no extra submission.
+	 */
+	private encodeMatte(
+		encoder: GPUCommandEncoder,
+		srcView: GPUTextureView,
+		matteTexView: GPUTextureView,
+		params: {
+			strength: number;
+			mode: 'remove' | 'replace' | 'blur';
+			blurRadius: number;
+			refine: boolean;
+		},
+		dstView: GPUTextureView,
+		slot: number,
+		wgX: number,
+		wgY: number
+	): GPUTextureView {
+		let buffer = this.matteBuffers[slot];
+		if (!buffer) {
+			buffer = this.device.createBuffer({
+				size: 8, // {strength: f32, refine: u32} | {strength: f32, radius: f32}
+				usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+			});
+			this.matteBuffers[slot] = buffer;
+		}
+		const isBlur = params.mode === 'blur';
+		const uniform = new ArrayBuffer(8);
+		new Float32Array(uniform, 0, 1)[0] = params.strength;
+		if (isBlur) {
+			new Float32Array(uniform, 4, 1)[0] = params.blurRadius;
+		} else {
+			new Uint32Array(uniform, 4, 1)[0] = params.refine ? 1 : 0;
+		}
+		this.device.queue.writeBuffer(buffer, 0, uniform);
+
+		const bindGroup = this.device.createBindGroup({
+			layout: isBlur ? this.matteBlurGroupLayout : this.matteGroupLayout,
+			entries: [
+				{ binding: 0, resource: { buffer } },
+				{ binding: 1, resource: srcView },
+				{ binding: 2, resource: dstView },
+				{ binding: 3, resource: matteTexView },
+				{ binding: 4, resource: this.sampler }
+			]
+		});
+		const pass = encoder.beginComputePass();
+		pass.setPipeline(isBlur ? this.matteBlurPipeline : this.mattePipeline);
+		pass.setBindGroup(0, bindGroup);
+		pass.dispatchWorkgroups(wgX, wgY);
+		pass.end();
+
+		return dstView;
+	}
+
 	/** Stage 7: output-conversion — working linear → sRGB OETF for display/export. */
 	private encodeOutputConvert(
 		encoder: GPUCommandEncoder,
@@ -929,9 +1052,13 @@ export class PreviewRenderer {
 		this.transformBuffers.length = 0;
 		for (const buffer of this.normalizeBuffers) buffer.destroy();
 		this.normalizeBuffers.length = 0;
-		for (const buffer of this.opacityBuffers) buffer.destroy();
+		// Slot arrays are sparse (a slot is only filled when that layer needed
+		// the pass), so skip holes to avoid destroying undefined.
+		for (const buffer of this.opacityBuffers) buffer?.destroy();
 		this.opacityBuffers.length = 0;
-		for (const buffer of this.transitionUniformBuffers) buffer.destroy();
+		for (const buffer of this.matteBuffers) buffer?.destroy();
+		this.matteBuffers.length = 0;
+		for (const buffer of this.transitionUniformBuffers) buffer?.destroy();
 		this.transitionUniformBuffers.length = 0;
 		this.outConvUniform?.destroy();
 		this.outConvUniform = null;

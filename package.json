@@ -31,6 +31,7 @@
 		"lucide-solid": "^1.17.0",
 		"marked": "^18.0.5",
 		"mediabunny": "^1.46.0",
+		"onnxruntime-web": "^1.26.0",
 		"solid-js": "^1.9.7",
 		"tailwind-merge": "^3.6.0"
 	},

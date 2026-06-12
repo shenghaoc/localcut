@@ -193,6 +193,21 @@ export default defineConfig({
 	plugins: [
 		tailwindcss(),
 		solid(),
+		{
+			// onnxruntime-web references its WASM binaries via `new URL(...,
+			// import.meta.url)`, so Vite emits them into dist/assets — the
+			// threaded JSEP binary alone is ~26 MB, over Cloudflare Workers'
+			// 25 MiB per-asset limit. Like the matte model weights, the ORT
+			// runtime binaries are deployed separately under /models/ort/
+			// (see env.wasm.wasmPaths in src/engine/matte/matte-engine.ts),
+			// so strip the bundled copies from the build output.
+			name: 'strip-ort-wasm-assets',
+			generateBundle(_options: unknown, bundle: Record<string, unknown>) {
+				for (const key of Object.keys(bundle)) {
+					if (/ort-.*\.wasm$/.test(key)) delete bundle[key];
+				}
+			}
+		},
 		VitePWA({
 			registerType: 'prompt',
 			manifest: {
@@ -212,7 +227,7 @@ export default defineConfig({
 				// Phase 27: model weights must never precache at install — startup
 				// stays model-free. They enter the runtime cache only after the user
 				// explicitly loads the model, so later loads work offline.
-				globIgnores: ['**/models/**'],
+				globIgnores: ['**/models/**', '**/ort-*.wasm'],
 				runtimeCaching: [
 					{
 						urlPattern: /\/models\/rnnoise\//,

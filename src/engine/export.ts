@@ -135,6 +135,16 @@ export interface TimelineExportOptions {
 		sourceHeight: number;
 		transform: import('./transform').TransformParams;
 	}>;
+	/**
+	 * Phase 31: per-frame matte resolver (the worker's matte engine). Export
+	 * runs the same zero-copy inference path as preview, so there is no
+	 * "missing matte" state. The callback owns the passed frame clone.
+	 */
+	matteViewFor?: (
+		clip: TimelineClip,
+		frame: VideoFrame,
+		sourceTimeS: number
+	) => Promise<GPUTextureView | null>;
 }
 
 export interface TimelineExportResult {
@@ -829,7 +839,8 @@ async function encodeVideoRange(
 		throughputProbe,
 		onProgress,
 		titleTextureFor,
-		overlayTextureLayersAt
+		overlayTextureLayersAt,
+		matteViewFor
 	} = options;
 	renderer.setPreviewSize(plan.width, plan.height);
 
@@ -910,6 +921,17 @@ async function encodeVideoRange(
 						decoded.close();
 					}
 					const sampled = sampleClipParamsAt(layer.clip, timelineTime);
+					// Phase 31: export awaits the per-frame matte (quality path with
+					// guided-upsample refinement); the resolver owns the frame clone.
+					const matte = layer.clip.matte;
+					const matteView =
+						matte?.enabled && matteViewFor
+							? ((await matteViewFor(
+									layer.clip,
+									videoFrame.clone(),
+									sourceTimestamp.adapterTimestampS
+								)) ?? undefined)
+							: undefined;
 					decodedFrames.push(videoFrame);
 					layers.push({
 						kind: 'frame',
@@ -917,7 +939,12 @@ async function encodeVideoRange(
 						effects: sampled.effects,
 						transform: sampled.transform,
 						lut: layer.clip.lut,
-						transition: layer.transition
+						transition: layer.transition,
+						matteView,
+						matteStrength: matte?.enabled ? matte.strength : undefined,
+						matteMode: matte?.enabled ? matte.mode : undefined,
+						matteBlurRadius: matte?.enabled ? matte.blurRadius : undefined,
+						matteRefine: matteView !== undefined
 					});
 				}
 				for (const overlay of overlayTextureLayersAt?.(timelineTime) ?? []) {

@@ -6,7 +6,10 @@ export type CapabilityFeature =
 	| 'offscreenCanvas'
 	| 'fileSystemAccess'
 	| 'audioWorklet'
-	| 'fileApi';
+	| 'fileApi'
+	| 'matte';
+
+import type { MatteProbeResult } from '../protocol';
 
 export type CapabilityTier = 'accelerated' | 'limited' | 'starting' | 'blocked';
 
@@ -88,7 +91,7 @@ export function probeCapabilities(env: Partial<CapabilitySnapshot> = {}): Capabi
 }
 
 function hasAcceleratedFeatures(snapshot: CapabilitySnapshot): boolean {
-	return ACCELERATED_FEATURES.every((feature) => snapshot[feature]);
+	return ACCELERATED_FEATURES.every((feature) => snapshot[feature as keyof CapabilitySnapshot]);
 }
 
 export function deriveCapabilityTier(
@@ -113,14 +116,18 @@ export function deriveCapabilityTier(
 }
 
 export function missingAcceleratedFeatures(snapshot: CapabilitySnapshot): CapabilityFeature[] {
-	return ACCELERATED_FEATURES.filter((feature) => !snapshot[feature]);
+	return ACCELERATED_FEATURES.filter((feature) => !snapshot[feature as keyof CapabilitySnapshot]);
 }
 
 export function describeFeature(
 	feature: CapabilityFeature,
-	snapshot: CapabilitySnapshot
+	snapshot: CapabilitySnapshot,
+	matteProbe?: MatteProbeResult | null
 ): CapabilityFeatureInfo {
-	const available = snapshot[feature];
+	const available =
+		feature === 'matte'
+			? matteProbe?.backend === 'webgpu' || matteProbe?.backend === 'wasm'
+			: snapshot[feature];
 	switch (feature) {
 		case 'fileApi':
 			return {
@@ -204,10 +211,28 @@ export function describeFeature(
 					: 'AudioWorklet is unavailable; audio sync may be disabled.',
 				action: available ? null : 'Use a browser with AudioWorklet support.'
 			};
+		case 'matte':
+			return {
+				id: feature,
+				label: 'Portrait Matte',
+				available,
+				detail:
+					matteProbe?.backend === 'webgpu'
+						? 'WebGPU backend'
+						: matteProbe?.backend === 'wasm'
+							? 'WASM fallback'
+							: 'Not available',
+				action: available
+					? null
+					: 'On-device ML portrait segmentation is not available in this browser.'
+			};
 	}
 }
 
-export function listCapabilityFeatures(snapshot: CapabilitySnapshot): CapabilityFeatureInfo[] {
+export function listCapabilityFeatures(
+	snapshot: CapabilitySnapshot,
+	matteProbe?: MatteProbeResult | null
+): CapabilityFeatureInfo[] {
 	const order: CapabilityFeature[] = [
 		'fileApi',
 		'crossOriginIsolated',
@@ -216,9 +241,10 @@ export function listCapabilityFeatures(snapshot: CapabilitySnapshot): Capability
 		'webCodecs',
 		'offscreenCanvas',
 		'fileSystemAccess',
-		'audioWorklet'
+		'audioWorklet',
+		'matte'
 	];
-	return order.map((feature) => describeFeature(feature, snapshot));
+	return order.map((feature) => describeFeature(feature, snapshot, matteProbe));
 }
 
 /** Decode-only thumbnail fallback is available when local files can be opened. */

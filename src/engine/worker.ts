@@ -113,6 +113,10 @@ import {
 	setClipTransform,
 	setClipLut,
 	setClipLutStrength,
+	setClipMatteEnabled,
+	setClipMatteStrength,
+	setClipMatteMode,
+	setClipMatteBlurRadius,
 	setTrackGain,
 	setTrackMute,
 	setTrackSolo,
@@ -189,6 +193,7 @@ import {
 } from './playback';
 import { probeEncodeThroughput } from './hardware-probe';
 import { FrameCache, makeFrameCacheKey } from './frame-cache';
+import { MatteEngine } from './matte/matte-engine';
 import { SecondaryFrameSourcePool, type VideoFrameProvider } from './frame-source';
 import {
 	ExportCancelledError,
@@ -280,6 +285,20 @@ let previewBackend: PreviewBackend = 'none';
 let exportBackend: ExportBackend = 'none';
 /** Phase 14 title raster cache; created once the GPU device is ready. */
 let titleCache: TitleTextureCache | null = null;
+/** Phase 31 matte engine — per-frame zero-copy inference on the renderer's
+ *  device; created lazily on the first matted frame. */
+let matteEngine: MatteEngine | null = null;
+
+function ensureMatteEngine(): MatteEngine | null {
+	if (!renderer) return null;
+	if (!matteEngine) {
+		matteEngine = new MatteEngine({
+			device: renderer.gpuDevice,
+			onStatus: (status) => post({ type: 'matte-status', status })
+		});
+	}
+	return matteEngine;
+}
 /** Shared empty set for dropping every cached title texture via `retain`. */
 const EMPTY_CLIP_IDS: ReadonlySet<string> = new Set<string>();
 /** Default preview/export geometry for title-only timelines (no video source). */
@@ -2118,6 +2137,14 @@ type LayerMeta =
 			transform: TransformParams;
 			lut?: ClipLut;
 			transition?: import('./timeline').TransitionResolveMeta;
+			/** Phase 31: smoothed alpha view from the matte engine, if enabled. */
+			matteView?: GPUTextureView;
+			/** Phase 31: matte strength (0..1). */
+			matteStrength?: number;
+			/** Phase 31: matte mode (remove/replace/blur). */
+			matteMode?: 'remove' | 'replace' | 'blur';
+			/** Phase 31: blur-mode background radius (px). */
+			matteBlurRadius?: number;
 	  }
 	| {
 			kind: 'title';
@@ -2190,6 +2217,24 @@ function makeGetLayers() {
 				);
 				if (!decoded) continue;
 				const sampled = sampleClipParamsAt(layer.clip, timestamp);
+				// Phase 31: per-frame zero-copy matte inference. Preview never stalls —
+				// the engine returns the previous alpha (or null) while busy/loading.
+				let matteView: GPUTextureView | undefined;
+				const matte = layer.clip.matte;
+				if (matte?.enabled) {
+					const engine = ensureMatteEngine();
+					if (engine) {
+						matteView =
+							(await engine.matteViewFor({
+								clipId: layer.clip.id,
+								modelKey: matte.modelKey,
+								frame: decoded.toVideoFrame(),
+								sourceTimeS: sourceTimestamp.adapterTimestampS,
+								frameStepS: handle.frameRate > 0 ? 1 / handle.frameRate : 1 / 30,
+								quality: 'preview'
+							})) ?? undefined;
+					}
+				}
 				decodedCount += 1;
 				decodedLayers.push({
 					decoded,
@@ -2198,7 +2243,11 @@ function makeGetLayers() {
 						effects: sampled.effects,
 						transform: sampled.transform,
 						lut: layer.clip.lut,
-						transition: layer.transition
+						transition: layer.transition,
+						matteView,
+						matteStrength: matte?.enabled ? matte.strength : undefined,
+						matteMode: matte?.enabled ? matte.mode : undefined,
+						matteBlurRadius: matte?.enabled ? matte.blurRadius : undefined
 					}
 				});
 			}
@@ -2380,6 +2429,9 @@ function handleDelete(cmd: Extract<WorkerCommand, { type: 'delete-clip' }>) {
 		}
 		return next;
 	});
+	for (const ref of expanded) {
+		matteEngine?.deleteClip(ref.clipId);
+	}
 }
 
 function handleDeleteBatch(cmd: Extract<WorkerCommand, { type: 'delete-clips' }>) {
@@ -2392,6 +2444,9 @@ function handleDeleteBatch(cmd: Extract<WorkerCommand, { type: 'delete-clips' }>
 		}
 		return next;
 	});
+	for (const ref of expanded) {
+		matteEngine?.deleteClip(ref.clipId);
+	}
 }
 
 function expandMovesForLinkedGroups(moves: readonly MoveClipTarget[]): MoveClipTarget[] {
@@ -2629,6 +2684,54 @@ function handleSetLutStrength(cmd: Extract<WorkerCommand, { type: 'set-lut-stren
 		() => setClipLutStrength(timeline, cmd.trackId, cmd.clipId, cmd.strength),
 		{
 			coalesceKey: { clipId: cmd.clipId, key: 'lutStrength' },
+			refreshPlayback: 'refresh',
+			prune: false,
+			syncLuts: false
+		}
+	);
+}
+
+function handleSetMatteEnabled(cmd: Extract<WorkerCommand, { type: 'set-matte-enabled' }>) {
+	commitTimelineMutation(
+		() => setClipMatteEnabled(timeline, cmd.trackId, cmd.clipId, cmd.enabled),
+		{
+			coalesceKey: { clipId: cmd.clipId, key: 'matteEnabled' },
+			refreshPlayback: 'refresh',
+			prune: false,
+			syncLuts: false
+		}
+	);
+	// Toggling either way drops temporal state and cached alpha — re-enable
+	// recomputes cleanly (R4.2).
+	matteEngine?.deleteClip(cmd.clipId);
+}
+
+function handleSetMatteMode(cmd: Extract<WorkerCommand, { type: 'set-matte-mode' }>) {
+	commitTimelineMutation(() => setClipMatteMode(timeline, cmd.trackId, cmd.clipId, cmd.mode), {
+		coalesceKey: { clipId: cmd.clipId, key: 'matteMode' },
+		refreshPlayback: 'refresh',
+		prune: false,
+		syncLuts: false
+	});
+}
+
+function handleSetMatteBlurRadius(cmd: Extract<WorkerCommand, { type: 'set-matte-blur-radius' }>) {
+	commitTimelineMutation(
+		() => setClipMatteBlurRadius(timeline, cmd.trackId, cmd.clipId, cmd.blurRadius),
+		{
+			coalesceKey: { clipId: cmd.clipId, key: 'matteBlurRadius' },
+			refreshPlayback: 'refresh',
+			prune: false,
+			syncLuts: false
+		}
+	);
+}
+
+function handleSetMatteStrength(cmd: Extract<WorkerCommand, { type: 'set-matte-strength' }>) {
+	commitTimelineMutation(
+		() => setClipMatteStrength(timeline, cmd.trackId, cmd.clipId, cmd.strength),
+		{
+			coalesceKey: { clipId: cmd.clipId, key: 'matteStrength' },
 			refreshPlayback: 'refresh',
 			prune: false,
 			syncLuts: false
@@ -3798,7 +3901,11 @@ function setupPlayback() {
 							effects: layer.meta.effects,
 							transform: layer.meta.transform,
 							lut: layer.meta.lut,
-							transition: layer.meta.transition
+							transition: layer.meta.transition,
+							matteView: layer.meta.matteView,
+							matteStrength: layer.meta.matteStrength,
+							matteMode: layer.meta.matteMode,
+							matteBlurRadius: layer.meta.matteBlurRadius
 						});
 					}
 				}
@@ -4108,7 +4215,23 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
 								sourceHeight: number;
 								transform: TransformParams;
 							} => layer !== null
-						)
+						),
+				matteViewFor: (clip, frame, sourceTimeS) => {
+					const engine = ensureMatteEngine();
+					if (!engine || !clip.matte?.enabled) {
+						frame.close();
+						return Promise.resolve(null);
+					}
+					const handle = sourceInputs.get(clip.sourceId);
+					return engine.matteViewFor({
+						clipId: clip.id,
+						modelKey: clip.matte.modelKey,
+						frame,
+						sourceTimeS,
+						frameStepS: handle && handle.frameRate > 0 ? 1 / handle.frameRate : 1 / 30,
+						quality: 'export'
+					});
+				}
 			});
 			post({ type: 'export-complete', fileName: outputHandle.name, mimeType: result.mimeType });
 		} else if (reducedRenderer) {
@@ -4425,7 +4548,23 @@ async function runQueueJob(job: RenderQueueJob): Promise<void> {
 							sourceHeight: number;
 							transform: TransformParams;
 						} => layer !== null
-					)
+					),
+			matteViewFor: (clip, frame, sourceTimeS) => {
+				const engine = ensureMatteEngine();
+				if (!engine || !clip.matte?.enabled) {
+					frame.close();
+					return Promise.resolve(null);
+				}
+				const handle = sourceInputs.get(clip.sourceId);
+				return engine.matteViewFor({
+					clipId: clip.id,
+					modelKey: clip.matte.modelKey,
+					frame,
+					sourceTimeS,
+					frameStepS: handle && handle.frameRate > 0 ? 1 / handle.frameRate : 1 / 30,
+					quality: 'export'
+				});
+			}
 		});
 
 		const elapsedSeconds = (performance.now() - startTime) / 1000;
@@ -4508,6 +4647,8 @@ async function handleDispose(): Promise<void> {
 	await handlePublishTapStop();
 	titleCache?.destroy();
 	titleCache = null;
+	matteEngine?.dispose();
+	matteEngine = null;
 	renderer?.destroy();
 	renderer = null;
 	reducedRenderer?.destroy();
@@ -5333,6 +5474,18 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			break;
 		case 'set-lut-strength':
 			handleSetLutStrength(cmd);
+			break;
+		case 'set-matte-enabled':
+			handleSetMatteEnabled(cmd);
+			break;
+		case 'set-matte-strength':
+			handleSetMatteStrength(cmd);
+			break;
+		case 'set-matte-mode':
+			handleSetMatteMode(cmd);
+			break;
+		case 'set-matte-blur-radius':
+			handleSetMatteBlurRadius(cmd);
 			break;
 		case 'set-track-gain':
 			handleSetTrackGain(cmd);

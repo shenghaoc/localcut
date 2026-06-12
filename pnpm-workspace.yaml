@@ -2,6 +2,7 @@
 # optionalDependencies, and CI has always run with their builds ignored.
 allowBuilds:
   esbuild: false
+  protobufjs: false
   sharp: false
   workerd: false
 catalog:

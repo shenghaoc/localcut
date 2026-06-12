@@ -352,6 +352,15 @@ export function TimelineClip(props: TimelineClipProps) {
 					{(peaks) => <Waveform peaks={peaks()} width={waveformWidth()} height={24} />}
 				</Show>
 				{props.clip.duration > 0.2 ? <span class="timeline-clip-id">{props.clip.id}</span> : null}
+				{props.clip.matte?.enabled ? (
+					<span
+						class="timeline-clip-badge"
+						aria-label="Portrait matte enabled"
+						title="Portrait matte"
+					>
+						M
+					</span>
+				) : null}
 				<span class="timeline-clip-left-handle" role="separator" aria-label="Trim start" />
 				<span class="timeline-clip-right-handle" role="separator" aria-label="Trim end" />
 				{props.clip.duration > 0.2 ? (
