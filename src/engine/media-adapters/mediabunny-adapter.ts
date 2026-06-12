@@ -18,7 +18,11 @@ import type { MediaKind, MediaMetadata } from '../../protocol';
 import { SequentialAudioSource } from '../audio-source';
 import { SequentialFrameSource } from '../frame-source';
 import { StillFrameSource } from '../still-source';
-import { WebCodecsVideoDecoder, WebCodecsAudioDecoder } from '../webcodecs-decoder';
+import {
+	WebCodecsVideoDecoder,
+	WebCodecsAudioDecoder,
+	normalizeH264CodecString
+} from '../webcodecs-decoder';
 import { buildNormalizedSourceTiming, resolveNormalizedSourceTimestamp } from './source-timing';
 import { generateSourceHealthWarnings, reportFromWarnings } from './source-health';
 import type {
@@ -384,38 +388,6 @@ async function openImageFile(file: File, sourceId: string): Promise<PrimaryMedia
 
 const WEBCODECS_PREFERRED_WHEN_SUPPORTED = true;
 
-/**
- * Normalize H.264 codec strings so VideoDecoder.isConfigSupported() accepts them.
- *
- * Browsers report support for H.264 High profile (avc1.64XXXX) but reject
- * specific level suffixes via exact string matching. Since H.264 High is
- * backwards-compatible across levels, mapping to a known-supported level
- * (4.0 = 0x28) is safe for decode.
- */
-function normalizeVideoCodecString(codec: string): string {
-	if (!codec.startsWith('avc1.')) return codec;
-	const hex = codec.slice(5);
-	if (!/^[0-9a-fA-F]{6}$/.test(hex)) return codec;
-	const profile = hex.slice(0, 2).toUpperCase();
-	if (profile !== '42' && profile !== '4D' && profile !== '64') return codec;
-	const level = hex.slice(4, 6).toUpperCase();
-	const KNOWN_SUPPORTED_LEVELS = new Set([
-		'1E',
-		'1F',
-		'28',
-		'29',
-		'2A',
-		'2B',
-		'2C',
-		'32',
-		'33',
-		'34',
-		'3C'
-	]);
-	if (KNOWN_SUPPORTED_LEVELS.has(level)) return codec;
-	return `avc1.${profile}0028`;
-}
-
 async function tryCreateWebCodecsVideoSource(
 	primaryVideo: InputVideoTrack,
 	minFrameDuration: number
@@ -424,7 +396,7 @@ async function tryCreateWebCodecsVideoSource(
 	try {
 		const config = await primaryVideo.getDecoderConfig();
 		if (!config) return null;
-		const normalized = { ...config, codec: normalizeVideoCodecString(config.codec) };
+		const normalized = { ...config, codec: normalizeH264CodecString(config.codec) };
 		let support = await VideoDecoder.isConfigSupported(normalized);
 		if (!support.supported && normalized.hardwareAcceleration) {
 			delete normalized.hardwareAcceleration;
@@ -606,7 +578,7 @@ export const mediabunnyAdapter: MediaAdapter = {
 				// passing to WebCodecs, tell Mediabunny the track is decodable.
 				if (
 					primaryVideoInspection?.codec?.startsWith('avc1.') &&
-					!primaryVideoInspection.canDecode
+					!primaryVideoInspection?.canDecode
 				) {
 					const origCanDecode = primaryVideo.canDecode.bind(primaryVideo);
 					const origGetDecoderConfig = primaryVideo.getDecoderConfig.bind(primaryVideo);
@@ -614,7 +586,7 @@ export const mediabunnyAdapter: MediaAdapter = {
 						if (await origCanDecode()) return true;
 						const config = await origGetDecoderConfig();
 						if (!config) return false;
-						const normalized = { ...config, codec: normalizeVideoCodecString(config.codec) };
+						const normalized = { ...config, codec: normalizeH264CodecString(config.codec) };
 						if (typeof VideoDecoder === 'undefined') return false;
 						let support = await VideoDecoder.isConfigSupported(normalized);
 						if (!support.supported && normalized.hardwareAcceleration) {
@@ -628,7 +600,7 @@ export const mediabunnyAdapter: MediaAdapter = {
 					).getDecoderConfig = async () => {
 						const config = await origGetDecoderConfig();
 						if (!config) return null;
-						return { ...config, codec: normalizeVideoCodecString(config.codec) };
+						return { ...config, codec: normalizeH264CodecString(config.codec) };
 					};
 				}
 

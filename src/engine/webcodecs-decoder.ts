@@ -20,7 +20,7 @@ const DEFAULT_MAX_QUEUE_DEPTH = 8;
  * Browsers report support for H.264 High profile but reject specific level suffixes
  * via exact string matching. Mapping to a known-supported level (4.0 = 0x28) is safe.
  */
-function normalizeH264CodecString(codec: string): string {
+export function normalizeH264CodecString(codec: string): string {
 	if (!codec.startsWith('avc1.')) return codec;
 	const hex = codec.slice(5);
 	if (!/^[0-9a-fA-F]{6}$/.test(hex)) return codec;
