@@ -33,7 +33,8 @@ function timelineFixture(): TimelineTrackSnapshot[] {
 						saturation: 1,
 						temperature: 6500,
 						temperatureStrength: 1,
-						lutStrength: 0
+						lutStrength: 0,
+						skinSmoothStrength: 0
 					},
 					transform: {
 						x: 0,
@@ -60,7 +61,8 @@ function timelineFixture(): TimelineTrackSnapshot[] {
 						saturation: 1,
 						temperature: 6500,
 						temperatureStrength: 1,
-						lutStrength: 0
+						lutStrength: 0,
+						skinSmoothStrength: 0
 					},
 					transform: {
 						x: 0,
