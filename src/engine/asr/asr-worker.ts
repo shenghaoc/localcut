@@ -2,15 +2,11 @@
  * ASR worker entry (Phase 29) — owns the WebNN Whisper graph and all
  * WebNN inference processing. Imports nothing from src/engine/worker.ts.
  * Lazy-spawned via dynamic import.
- *
- * Chrome Web Speech is handled on the main thread by the controller;
- * it never enters this worker because AudioContext and SpeechRecognition
- * are unavailable in Worker contexts.
  */
 import type { AsrWorkerCommand, AsrWorkerState } from '../../protocol';
 import { probeAsr } from './asr-probe';
 
-type AsrEngine = 'webnn-whisper' | 'chrome-speech' | null;
+type AsrEngine = 'webnn-whisper' | null;
 
 interface WorkerState {
 	engine: AsrEngine;
@@ -82,17 +78,14 @@ async function handleCommand(cmd: AsrWorkerCommand): Promise<void> {
 
 			try {
 				if (cmd.engine !== 'webnn-whisper') {
-					throw new Error(
-						'Chrome Web Speech is handled on the main thread, not in the ASR worker.'
-					);
+					throw new Error('Unsupported ASR engine.');
 				}
 
 				// WebNN Whisper path (placeholder until weights are available).
 				if (job.cancelled) return;
 
 				throw new Error(
-					'WebNN Whisper inference is not yet available. ' +
-						'Please use Chrome Speech fallback or install the Whisper model weights.'
+					'WebNN Whisper inference is not available for selected-clip transcription.'
 				);
 			} catch (error) {
 				if (job.cancelled) return;

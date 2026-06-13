@@ -271,9 +271,7 @@ function asrRow(probe: CapabilityProbeResult): CapabilityRow {
 	const engineLabel = asr
 		? asr.recommended === 'webnn-whisper'
 			? 'WebNN Whisper'
-			: asr.recommended === 'chrome-speech'
-				? 'Browser Speech (phrase-level)'
-				: 'unavailable'
+			: 'unavailable'
 		: 'unknown';
 	const supported = asr?.recommended !== 'none';
 	return {
@@ -282,7 +280,7 @@ function asrRow(probe: CapabilityProbeResult): CapabilityRow {
 		active: false,
 		action: supported
 			? `Auto Captions (Experimental) available via ${engineLabel}.`
-			: 'On-device speech recognition requires WebNN or Chrome 139+.'
+			: 'Auto Captions need a worker-backed selected-audio ASR engine.'
 	};
 }
 
