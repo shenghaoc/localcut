@@ -1,4 +1,4 @@
-# Design: Phase 30 — Animated Caption Styles (花字)
+# Design: Phase 30 — Animated Caption Styles
 
 > Status: **Proposed** — spec only, not yet implemented.
 

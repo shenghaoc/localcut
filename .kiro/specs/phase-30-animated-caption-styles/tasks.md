@@ -1,4 +1,4 @@
-# Tasks: Phase 30 — Animated Caption Styles (花字)
+# Tasks: Phase 30 — Animated Caption Styles
 
 ## T1 — Animated style model and preset library (R1, R2 built-ins)
 

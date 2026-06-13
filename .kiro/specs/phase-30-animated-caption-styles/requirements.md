@@ -1,4 +1,4 @@
-# Requirements: Phase 30 — Animated Caption Styles (花字)
+# Requirements: Phase 30 — Animated Caption Styles
 
 Phase 30 extends the Phase 22 caption tracks with a visual styling engine:
 rich fill/stroke/shadow/glow presets, per-line background pills, and enter/exit
