@@ -4,12 +4,11 @@
  *
  *   pipeline worker  ──(extract-clip-audio PCM windows)──►  controller
  *   controller       ──(transcribe, transferred)──────────►  ASR worker  (WebNN only)
- *   controller       ──(direct call, main thread)─────────►  Chrome Web Speech
  *   controller       ──(asr-create-caption-track)─────────►  pipeline worker
  *
- * Chrome Web Speech runs on the main thread because AudioContext and
- * SpeechRecognition are unavailable in Worker contexts. The ASR worker
- * is only spawned for the WebNN Whisper path.
+ * There is no browser fallback. Chrome's SpeechRecognition service was removed
+ * because it cannot consume extracted timeline PCM; the only path forward is
+ * the on-device LiteRT-over-WebNN Whisper engine (PR94).
  */
 import type {
 	AsrModelStatus,
@@ -80,7 +79,7 @@ export interface AsrControllerPorts {
 	createCaptionTrack(request: {
 		segments: CaptionSegmentSnapshot[];
 		language: string | null;
-		engine: 'webnn-whisper' | 'chrome-speech';
+		engine: 'webnn-whisper';
 		phraseLevel: boolean;
 		trackName: string;
 	}): void;
@@ -275,12 +274,6 @@ export class AsrController {
 		if (this.state.modelStatus === 'loaded') return true;
 		if (this.state.modelStatus === 'loading') return false;
 
-		// Chrome Speech doesn't need a model load step — runs on main thread.
-		if (this.state.recommendedEngine === 'chrome-speech') {
-			this.update({ modelStatus: 'loaded' });
-			return true;
-		}
-
 		this.update({ modelStatus: 'loading', error: null });
 		try {
 			const worker = await this.ensureWorker();
@@ -350,130 +343,8 @@ export class AsrController {
 			? Math.min(clip.durationS, ASR_MAX_JOB_SECONDS)
 			: Math.min(timelineRange?.durationS ?? ASR_PREVIEW_SECONDS, ASR_MAX_JOB_SECONDS);
 
-		// Chrome Web Speech runs on the main thread — bypass the ASR worker entirely.
-		if (this.state.recommendedEngine === 'chrome-speech') {
-			return this.runChromeSpeechTranscribe(kind, clip, durationS, language);
-		}
-
 		// WebNN Whisper path — uses the dedicated ASR worker.
 		return this.runWebNNTranscribe(kind, clip, durationS, language);
-	}
-
-	private async runChromeSpeechTranscribe(
-		kind: AsrJobKind,
-		clip: AsrClipTarget | null,
-		durationS: number,
-		language: string | undefined
-	): Promise<boolean> {
-		if (kind === 'timeline-range') {
-			this.update({
-				error:
-					'Timeline range transcription requires WebNN Whisper. Chrome Speech only supports selected clips.'
-			});
-			return false;
-		}
-		const { transcribeWithWebSpeech } = await import('../engine/asr/chrome-speech');
-		const engine = 'chrome-speech' as const;
-
-		const job: ActiveJob = {
-			jobId: this.nextJobId++,
-			kind,
-			clip,
-			durationS,
-			cancelled: false,
-			allSegments: [],
-			language: null,
-			phraseLevel: true,
-			startedAt: Date.now(),
-			abortController: new AbortController()
-		};
-		this.activeJob = job;
-
-		this.update({
-			job: {
-				kind,
-				phase: 'extracting',
-				fraction: 0,
-				processedSeconds: 0,
-				totalSeconds: durationS,
-				clip
-			},
-			error: null
-		});
-
-		try {
-			let offsetS = 0;
-			const allSegments: CaptionSegmentSnapshot[] = [];
-			while (offsetS < durationS) {
-				if (job.cancelled) throw new AsrCancelled();
-				const windowS = Math.min(ASR_EXTRACT_WINDOW_SECONDS, durationS - offsetS);
-				if (!clip) throw new AsrCancelled();
-				const window = await this.requestExtraction(clip, offsetS, windowS);
-				if (job.cancelled) throw new AsrCancelled();
-
-				const segments = await transcribeWithWebSpeech(
-					window.pcm,
-					window.sampleRate,
-					window.channels,
-					language,
-					job.abortController.signal
-				);
-
-				for (const seg of segments) {
-					allSegments.push({ ...seg, start: seg.start + offsetS });
-				}
-				offsetS += windowS;
-
-				this.update({
-					job: {
-						kind,
-						phase: 'transcribing',
-						fraction: Math.min(offsetS / durationS, 1),
-						processedSeconds: offsetS,
-						totalSeconds: durationS,
-						clip
-					}
-				});
-			}
-
-			this.finishJob();
-
-			const finalLanguage = language ?? null;
-			const trackName = (() => {
-				const lang = finalLanguage ?? 'auto';
-				const base = clip?.fileName ?? 'range';
-				return `Auto (${lang}) - ${base}`;
-			})();
-
-			this.update({
-				job: {
-					kind,
-					phase: 'creating-track',
-					fraction: 1,
-					processedSeconds: durationS,
-					totalSeconds: durationS,
-					clip
-				}
-			});
-
-			this.ports.createCaptionTrack({
-				segments: allSegments,
-				language: finalLanguage,
-				engine,
-				phraseLevel: true,
-				trackName
-			});
-
-			return true;
-		} catch (error) {
-			this.finishJob();
-			if (error instanceof AsrCancelled) {
-				this.update({ job: null });
-				return false;
-			}
-			this.update({ job: null, error: error instanceof Error ? error.message : String(error) });
-			return false;
-		}
 	}
 
 	private async runWebNNTranscribe(
@@ -548,6 +419,7 @@ export class AsrController {
 
 			const finalResult = await result;
 			this.finishJob();
+			assertNonEmptyTranscript(finalResult.segments);
 
 			const trackName = (() => {
 				const lang = finalResult.language ?? language ?? 'auto';
@@ -620,6 +492,14 @@ export class AsrController {
 
 export const ASR_PRIVACY_STATEMENT =
 	'All speech recognition runs on this device. No audio leaves your browser. No cloud API.';
+export const ASR_EMPTY_TRANSCRIPT_MESSAGE =
+	'No speech was recognized. Try a clearer clip or a different language.';
+
+function assertNonEmptyTranscript(segments: readonly CaptionSegmentSnapshot[]): void {
+	if (!segments.some((segment) => segment.text.trim().length > 0)) {
+		throw new Error(ASR_EMPTY_TRANSCRIPT_MESSAGE);
+	}
+}
 
 export interface AsrActionAvailability {
 	loadModel: { enabled: boolean; reason: string | null };
@@ -644,11 +524,9 @@ export function asrActionAvailability(
 	const busy = state.job !== null || state.modelStatus === 'loading';
 	const noClip = selectedClip === null;
 	const modelNeeded = state.recommendedEngine === 'webnn-whisper' && state.modelStatus !== 'loaded';
-	const engineBlocksRange = state.recommendedEngine === 'chrome-speech';
 	const clipReason = noClip ? 'Select a clip on the timeline first.' : null;
 	const modelReason = modelNeeded ? 'Load the ASR model first.' : null;
 	const busyReason = busy ? 'A transcription is in progress.' : null;
-	const rangeReason = engineBlocksRange ? 'Timeline range requires WebNN Whisper.' : null;
 	return {
 		loadModel: {
 			enabled: !busy && modelNeeded,
@@ -659,8 +537,8 @@ export function asrActionAvailability(
 			reason: busyReason ?? clipReason ?? modelReason
 		},
 		transcribeRange: {
-			enabled: !busy && !noClip && !modelNeeded && !engineBlocksRange,
-			reason: busyReason ?? clipReason ?? modelReason ?? rangeReason
+			enabled: !busy && !noClip && !modelNeeded,
+			reason: busyReason ?? clipReason ?? modelReason
 		},
 		cancel: { enabled: busy, reason: busy ? null : 'Nothing to cancel.' }
 	};

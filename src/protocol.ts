@@ -196,13 +196,15 @@ export type CleanupWorkerState =
 
 // ── Phase 29: Auto Captions (ASR) ──
 
-export type AsrRecommendedEngine = 'webnn-whisper' | 'chrome-speech' | 'none';
+export type AsrRecommendedEngine = 'webnn-whisper' | 'none';
 
-/** ASR capability probe result. Reuses the Phase 28 WebNN probe;
- *  SpeechRecognition is checked separately. */
+/** ASR capability probe result. Reuses the Phase 28 WebNN probe. Browser
+ *  SpeechRecognition was removed as a fallback: it listens to live mic/page
+ *  audio and cannot consume the PCM extracted from a selected timeline clip,
+ *  so it was never a usable path. Auto Captions stay `recommended: 'none'`
+ *  until the on-device LiteRT-over-WebNN Whisper engine (PR94) lands. */
 export interface AsrProbeResult {
 	webnn: WebNNProbeResult;
-	speechRecognition: FeatureSupport;
 	recommended: AsrRecommendedEngine;
 }
 
@@ -225,7 +227,7 @@ export interface AsrModelManifestSnapshot {
 /** Metadata marker for auto-generated caption tracks. */
 export interface AsrGeneratedCaptionMetadata {
 	generatedBy: 'auto-captions-phase-29';
-	engine: 'webnn-whisper' | 'chrome-speech';
+	engine: 'webnn-whisper';
 	language: string | null;
 	phraseLevel: boolean;
 	createdAt: string;
@@ -244,7 +246,7 @@ export type AsrWorkerCommand =
 	| {
 			type: 'asr-transcribe';
 			jobId: number;
-			engine: 'webnn-whisper' | 'chrome-speech';
+			engine: 'webnn-whisper';
 			pcm: Float32Array;
 			sampleRate: number;
 			channels: number;
@@ -261,7 +263,7 @@ export type AsrWorkerState =
 	| {
 			type: 'asr-model-status';
 			status: AsrModelStatus;
-			engine: 'webnn-whisper' | 'chrome-speech' | null;
+			engine: 'webnn-whisper' | null;
 			backend?: WebNNDeviceTypeSnapshot;
 			sizeBytes?: number;
 			error?: string;
@@ -276,7 +278,7 @@ export type AsrWorkerState =
 	| {
 			type: 'asr-result';
 			jobId: number;
-			engine: 'webnn-whisper' | 'chrome-speech';
+			engine: 'webnn-whisper';
 			segments: CaptionSegmentSnapshot[];
 			language: string | null;
 			phraseLevel: boolean;
@@ -290,7 +292,7 @@ export interface AsrCreateCaptionTrackCommand {
 	type: 'asr-create-caption-track';
 	segments: CaptionSegmentSnapshot[];
 	language: string | null;
-	engine: 'webnn-whisper' | 'chrome-speech';
+	engine: 'webnn-whisper';
 	phraseLevel: boolean;
 	/** Human-readable name for the generated track. */
 	trackName: string;

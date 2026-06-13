@@ -1,23 +1,13 @@
 /**
- * ASR capability probe (Phase 29). Reuses the Phase 28 WebNN probe for
- * WebNN availability and separately checks Chrome 139+ SpeechRecognition.
- * Side-effect free: no model load, no graph build, no AudioContext created.
+ * ASR capability probe (Phase 29). Reports WebNN as a diagnostic signal only.
+ *
+ * There is no practical fallback for selected-clip transcription: Browser
+ * SpeechRecognition listens to live mic/page audio and cannot consume the PCM
+ * extracted from a timeline clip, so the Chrome Speech service was removed
+ * rather than kept as a fake fallback. Auto Captions stay `recommended: 'none'`
+ * until the on-device LiteRT-over-WebNN Whisper engine (PR94) lands.
  */
 import type { AsrProbeResult, FeatureSupport, WebNNProbeResult } from '../../protocol';
-
-function probeSpeechRecognition(): FeatureSupport {
-	try {
-		const hasRecognition =
-			typeof SpeechRecognition !== 'undefined' || typeof webkitSpeechRecognition !== 'undefined';
-		if (!hasRecognition) return 'unsupported';
-		// Chrome 139+ has on-device speech. We can't runtime-probe whether
-		// it's truly on-device (the API surface is the same), but the
-		// presence in a Chromium browser is a strong signal.
-		return 'supported';
-	} catch {
-		return 'unknown';
-	}
-}
 
 function defaultWebNNProbe(): WebNNProbeResult {
 	return {
@@ -31,30 +21,14 @@ function defaultWebNNProbe(): WebNNProbeResult {
 	};
 }
 
-function chooseRecommended(
-	webnn: WebNNProbeResult,
-	speechRecognition: FeatureSupport
-): AsrProbeResult['recommended'] {
-	if (webnn.modelSupport === 'supported' || (webnn.mlPresent && webnn.modelSupport === 'unknown')) {
-		return 'webnn-whisper';
-	}
-	if (speechRecognition === 'supported') {
-		return 'chrome-speech';
-	}
-	return 'none';
-}
-
 export function probeAsr(webnnProbe?: WebNNProbeResult | null): AsrProbeResult {
 	const webnn = webnnProbe ?? defaultWebNNProbe();
-	const speechRecognition = probeSpeechRecognition();
-	const recommended = chooseRecommended(webnn, speechRecognition);
-	return { webnn, speechRecognition, recommended };
+	return { webnn, recommended: 'none' };
 }
 
 export function asrAvailable(result: AsrProbeResult): boolean {
 	return result.recommended !== 'none';
 }
 
-export const ASR_UNAVAILABLE_MESSAGE = 'Auto captions unavailable in this browser.';
-export const ASR_CHROME_SPEECH_TOOLTIP =
-	'Chrome on-device speech recognition — caption timings are approximate. Install a Chromium browser with WebNN for word-level accuracy.';
+export const ASR_UNAVAILABLE_MESSAGE =
+	'Auto Captions are unavailable until the on-device WebNN speech engine (LiteRT Whisper) lands. Browser speech recognition is not a usable fallback for timeline clips.';

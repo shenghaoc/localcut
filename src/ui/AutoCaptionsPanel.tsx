@@ -8,7 +8,7 @@
 import { createEffect, createSignal, Show, type Component } from 'solid-js';
 import { X } from 'lucide-solid';
 import { Button } from './components/button';
-import { ASR_CHROME_SPEECH_TOOLTIP, ASR_UNAVAILABLE_MESSAGE } from '../engine/asr/asr-probe';
+import { ASR_UNAVAILABLE_MESSAGE } from '../engine/asr/asr-probe';
 import {
 	ASR_PRIVACY_STATEMENT,
 	asrActionAvailability,
@@ -27,15 +27,8 @@ export interface AutoCaptionsPanelProps {
 	onClose: () => void;
 }
 
-function formatEngine(recommended: string, speechRecognition: string): string {
-	switch (recommended) {
-		case 'webnn-whisper':
-			return 'WebNN Whisper';
-		case 'chrome-speech':
-			return `Browser Speech${speechRecognition === 'supported' ? ' (phrase-level)' : ''}`;
-		default:
-			return 'Unavailable';
-	}
+function formatEngine(recommended: string): string {
+	return recommended === 'webnn-whisper' ? 'WebNN Whisper' : 'Unavailable';
 }
 
 function formatDuration(ms: number | null): string {
@@ -67,9 +60,7 @@ export const AutoCaptionsPanel: Component<AutoCaptionsPanelProps> = (props) => {
 	});
 
 	const availability = () => asrActionAvailability(props.state, props.selectedClip);
-	const engineLabel = () =>
-		formatEngine(props.state.recommendedEngine, props.state.probe?.speechRecognition ?? 'unknown');
-	const showChromeSpeechTooltip = () => props.state.recommendedEngine === 'chrome-speech';
+	const engineLabel = () => formatEngine(props.state.recommendedEngine);
 
 	return (
 		<Show when={props.open}>
@@ -111,17 +102,7 @@ export const AutoCaptionsPanel: Component<AutoCaptionsPanelProps> = (props) => {
 						<dl class="diagnostics-grid">
 							<div>
 								<dt>Detected engine</dt>
-								<dd>
-									{engineLabel()}
-									<Show when={showChromeSpeechTooltip()}>
-										<span
-											class="capability-panel-note"
-											style={{ display: 'block', 'margin-top': '0.3rem' }}
-										>
-											{ASR_CHROME_SPEECH_TOOLTIP}
-										</span>
-									</Show>
-								</dd>
+								<dd>{engineLabel()}</dd>
 							</div>
 							<div>
 								<dt>Model status</dt>
@@ -281,8 +262,8 @@ export const AutoCaptionsPanel: Component<AutoCaptionsPanelProps> = (props) => {
 				</Show>
 
 				<footer class="capability-panel-note">
-					Models: Whisper (MIT, OpenAI) via WebNN / Chrome on-device speech recognition. Weights
-					load from this app's own origin only after you click "Load model".
+					Selected-clip transcription requires an on-device, worker-backed ASR engine. The WebNN
+					Whisper engine is not available yet; there is no browser fallback.
 				</footer>
 			</aside>
 		</Show>

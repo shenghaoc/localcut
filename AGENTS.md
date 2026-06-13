@@ -40,6 +40,8 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 
 - [**Bugfix: Mixed-rate audio resampling**](.kiro/specs/bugfix-mixed-rate-audio/tasks.md) — streaming polyphase sinc resampler complementing Mediabunny; per-call target-rate `pcmWindowAt`/`pcmAt`; canonical playback ring rate; anti-aliased downsample; source-health + docs.
 
+- [**Bugfix: Remove Chrome Speech fallback (Phase 29)**](.kiro/specs/bugfix-phase-29-asr-availability/tasks.md) — delete the dead Chrome Speech service (adapter, ambient typings, `speechRecognition` probe field, "Browser Speech disabled" UI copy); there is no practical browser fallback for selected-clip ASR. Auto Captions stay unavailable (`recommended: 'none'`) until the on-device LiteRT-over-WebNN Whisper engine (PR #94) lands.
+
 - [**Phase 26: Cross-browser compatibility engine**](.kiro/specs/phase-26-cross-browser-compatibility-engine/tasks.md) — CapabilityTierV2 probes, reduced-tier diagnostics, optional-SAB worker init, codec/export constraints, compatibility resource-lifetime helpers.
 
 - [**Phase 27: Local Audio Cleanup with WebNN RNNoise**](.kiro/specs/phase-27-webnn-audio-cleanup/tasks.md) — optional/experimental on-device noise suppression; WebNN probe + capability row; lazy, cancellable Audio Cleanup worker separate from the pipeline worker; checksummed RNNoise weights loaded only on explicit user action; TypeScript DSP port + WebNN GRU graph; undoable cleaned-audio assets through playback/export. Foundation implemented; Inspector badge + manual browser matrix pending.
