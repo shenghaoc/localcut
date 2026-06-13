@@ -5,10 +5,10 @@ import {
 	captionSegmentEnd,
 	cloneCaptionTrack,
 	createCaptionTrack,
-	DEFAULT_CAPTION_STYLE,
 	effectiveCaptionStyle,
 	normalizeCaptionSegment,
 	sortCaptionSegments,
+	type CaptionPresetId,
 	type CaptionSegment,
 	type CaptionStyle,
 	type CaptionTrack
@@ -86,12 +86,10 @@ export function setCaptionTrackProps(
 		const stylePatch = patch.defaultStyle;
 		const presetChanged =
 			hasOwn(stylePatch, 'presetId') && stylePatch.presetId !== track.defaultStyle.presetId;
-		const nextPresetId =
-			stylePatch.presetId === 'subtitle' ||
-			stylePatch.presetId === 'lower-third' ||
-			stylePatch.presetId === 'note'
-				? stylePatch.presetId
-				: (DEFAULT_CAPTION_STYLE.presetId ?? 'subtitle');
+		const nextPresetId: CaptionPresetId =
+			typeof stylePatch.presetId === 'string' && stylePatch.presetId in CAPTION_PRESETS
+				? (stylePatch.presetId as CaptionPresetId)
+				: 'subtitle';
 		const presetDefaults = presetChanged ? CAPTION_PRESETS[nextPresetId] : null;
 		defaultStyle = {
 			...track.defaultStyle,

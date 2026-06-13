@@ -63,6 +63,8 @@ import {
 } from './live-audio/live-chain';
 import { exportCaptionSidecars } from './captions/export';
 import { activeCaptionPayloadsAt, captionTextureId } from './captions/render';
+import { CAPTION_ANIM_IDENTITY } from './captions/animation-curves';
+import type { CaptionAnimUniforms } from './captions/animation-curves';
 import type { CaptionAnimStylePreset } from './captions/anim-style';
 import { validateCaptionAnimPreset } from './captions/anim-style';
 import {
@@ -2070,10 +2072,13 @@ function syncTitleRasters(): void {
 		active.add(clip.id);
 		titleCache.rasterize(clip.id, clip.title!);
 	}
-	for (const payload of activeCaptionPayloadsAt(captionTracks, previewTime)) {
-		const clipId = captionTextureId(payload.trackId, payload.segmentId);
-		active.add(clipId);
-		titleCache.rasterize(clipId, payload.content);
+	for (const payload of activeCaptionPayloadsAt(
+		captionTracks,
+		previewTime,
+		customAnimCaptionPresets
+	)) {
+		active.add(payload.textureId);
+		titleCache.rasterize(payload.textureId, payload.content);
 	}
 	titleCache.retain(active);
 }
@@ -2102,12 +2107,31 @@ function activeCaptionLayersAt(
 	tracks: readonly CaptionTrack[],
 	timestamp: number,
 	textureIdFor: (trackId: string, segmentId: string) => string = captionTextureId
-): Array<{ clipId: string; content: TitleContent; transform: TransformParams }> {
-	const layers: Array<{ clipId: string; content: TitleContent; transform: TransformParams }> = [];
-	for (const payload of activeCaptionPayloadsAt(tracks, timestamp)) {
-		const clipId = textureIdFor(payload.trackId, payload.segmentId);
+): Array<{
+	clipId: string;
+	content: TitleContent;
+	transform: TransformParams;
+	animUniforms: CaptionAnimUniforms;
+}> {
+	const layers: Array<{
+		clipId: string;
+		content: TitleContent;
+		transform: TransformParams;
+		animUniforms: CaptionAnimUniforms;
+	}> = [];
+	for (const payload of activeCaptionPayloadsAt(tracks, timestamp, customAnimCaptionPresets)) {
+		// Use the textureId from the payload (may be 'highlight' variant for karaoke).
+		const clipId =
+			textureIdFor === captionTextureId
+				? payload.textureId
+				: textureIdFor(payload.trackId, payload.segmentId);
 		if (titleCache && !titleCache.get(clipId)) titleCache.ensure(clipId, payload.content);
-		layers.push({ clipId, content: payload.content, transform: payload.transform });
+		layers.push({
+			clipId,
+			content: payload.content,
+			transform: payload.transform,
+			animUniforms: payload.animUniforms
+		});
 	}
 	return layers;
 }
@@ -2130,6 +2154,8 @@ type LayerMeta =
 			clipId: string;
 			content: TitleContent;
 			transform: TransformParams;
+			/** Phase 30: caption animation uniforms; CAPTION_ANIM_IDENTITY for non-caption title clips. */
+			animUniforms: CaptionAnimUniforms;
 			transition?: import('./timeline').TransitionResolveMeta;
 	  };
 
@@ -2166,6 +2192,7 @@ function makeGetLayers() {
 							clipId: layer.clip.id,
 							content: layer.clip.title,
 							transform: sampled.transform,
+							animUniforms: CAPTION_ANIM_IDENTITY,
 							transition: layer.transition
 						}
 					});
@@ -2215,7 +2242,8 @@ function makeGetLayers() {
 						kind: 'title',
 						clipId: caption.clipId,
 						content: caption.content,
-						transform: caption.transform
+						transform: caption.transform,
+						animUniforms: caption.animUniforms
 					}
 				});
 			}
@@ -3863,17 +3891,37 @@ function setupPlayback() {
 			// makeGetLayers. Core/compat GPU consume GPU title textures; Canvas2D
 			// reduced preview consumes title payloads and VideoFrames synchronously.
 			if (renderer) {
+				const { width: rw, height: rh } = renderer.size;
 				const stack: CompositeLayer[] = [];
 				for (const layer of layers) {
 					if (layer.meta.kind === 'title') {
 						const texture = titleCache?.get(layer.meta.clipId);
 						if (!texture) continue;
+						const au = layer.meta.animUniforms;
+						// Phase 30: apply caption animation uniforms at composite time.
+						// Pixel translation is converted to the 0-centred normalised coord space.
+						const transform: TransformParams =
+							au.opacity === 1 &&
+							au.scaleX === 1 &&
+							au.scaleY === 1 &&
+							au.translateXPx === 0 &&
+							au.translateYPx === 0
+								? layer.meta.transform
+								: {
+										...layer.meta.transform,
+										opacity: layer.meta.transform.opacity * au.opacity,
+										scale: layer.meta.transform.scale * ((au.scaleX + au.scaleY) / 2),
+										x: layer.meta.transform.x + au.translateXPx / rw,
+										y: layer.meta.transform.y + au.translateYPx / rh
+									};
+						// single-submit invariant: caption layers included here
 						stack.push({
 							kind: 'texture',
 							view: texture.view,
 							sourceWidth: texture.width,
 							sourceHeight: texture.height,
-							transform: layer.meta.transform,
+							transform,
+							uvCropMax: [au.cropRightFrac, 1.0],
 							transition: layer.meta.transition
 						});
 					} else if (layer.frame) {
@@ -4170,18 +4218,39 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
 				// per title on the cold export path, never per frame.
 				titleTextureFor: (clip) =>
 					clip.title ? (titleCache?.ensure(clip.id, clip.title) ?? null) : null,
-				overlayTextureLayersAt: (timelineTime) =>
-					activeCaptionLayersAt(exportCaptionTracksSnapshot, timelineTime, (trackId, segmentId) =>
-						exportCaptionTextureId(exportCaptionTextureGroupId, trackId, segmentId)
+				overlayTextureLayersAt: (timelineTime) => {
+					const ew = settings.width,
+						eh = settings.height;
+					return activeCaptionLayersAt(
+						exportCaptionTracksSnapshot,
+						timelineTime,
+						(trackId, segmentId) =>
+							exportCaptionTextureId(exportCaptionTextureGroupId, trackId, segmentId)
 					)
 						.map((layer) => {
 							const texture = titleCache?.get(layer.clipId);
 							if (!texture) return null;
+							const au = layer.animUniforms;
+							const transform: TransformParams =
+								au.opacity === 1 &&
+								au.scaleX === 1 &&
+								au.scaleY === 1 &&
+								au.translateXPx === 0 &&
+								au.translateYPx === 0
+									? layer.transform
+									: {
+											...layer.transform,
+											opacity: layer.transform.opacity * au.opacity,
+											scale: layer.transform.scale * ((au.scaleX + au.scaleY) / 2),
+											x: layer.transform.x + au.translateXPx / ew,
+											y: layer.transform.y + au.translateYPx / eh
+										};
 							return {
 								view: texture.view,
 								sourceWidth: texture.width,
 								sourceHeight: texture.height,
-								transform: layer.transform
+								transform,
+								uvCropMax: [au.cropRightFrac, 1.0] as [number, number]
 							};
 						})
 						.filter(
@@ -4192,8 +4261,10 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
 								sourceWidth: number;
 								sourceHeight: number;
 								transform: TransformParams;
+								uvCropMax: [number, number];
 							} => layer !== null
-						)
+						);
+				}
 			});
 			post({ type: 'export-complete', fileName: outputHandle.name, mimeType: result.mimeType });
 		} else if (reducedRenderer) {
@@ -4487,18 +4558,39 @@ async function runQueueJob(job: RenderQueueJob): Promise<void> {
 			transitions: audioTransitions,
 			titleTextureFor: (clip) =>
 				clip.title ? (titleCache?.ensure(clip.id, clip.title) ?? null) : null,
-			overlayTextureLayersAt: (timelineTime) =>
-				activeCaptionLayersAt(exportCaptionTracksSnapshot, timelineTime, (trackId, segmentId) =>
-					exportCaptionTextureId(exportCaptionTextureGroupId, trackId, segmentId)
+			overlayTextureLayersAt: (timelineTime) => {
+				const ew = settings.width,
+					eh = settings.height;
+				return activeCaptionLayersAt(
+					exportCaptionTracksSnapshot,
+					timelineTime,
+					(trackId, segmentId) =>
+						exportCaptionTextureId(exportCaptionTextureGroupId, trackId, segmentId)
 				)
 					.map((layer) => {
 						const texture = titleCache?.get(layer.clipId);
 						if (!texture) return null;
+						const au = layer.animUniforms;
+						const transform: TransformParams =
+							au.opacity === 1 &&
+							au.scaleX === 1 &&
+							au.scaleY === 1 &&
+							au.translateXPx === 0 &&
+							au.translateYPx === 0
+								? layer.transform
+								: {
+										...layer.transform,
+										opacity: layer.transform.opacity * au.opacity,
+										scale: layer.transform.scale * ((au.scaleX + au.scaleY) / 2),
+										x: layer.transform.x + au.translateXPx / ew,
+										y: layer.transform.y + au.translateYPx / eh
+									};
 						return {
 							view: texture.view,
 							sourceWidth: texture.width,
 							sourceHeight: texture.height,
-							transform: layer.transform
+							transform,
+							uvCropMax: [au.cropRightFrac, 1.0] as [number, number]
 						};
 					})
 					.filter(
@@ -4509,8 +4601,10 @@ async function runQueueJob(job: RenderQueueJob): Promise<void> {
 							sourceWidth: number;
 							sourceHeight: number;
 							transform: TransformParams;
+							uvCropMax: [number, number];
 						} => layer !== null
-					)
+					);
+			}
 		});
 
 		const elapsedSeconds = (performance.now() - startTime) / 1000;

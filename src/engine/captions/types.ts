@@ -10,7 +10,18 @@ export type CaptionAnchor =
 	| 'top-center'
 	| 'custom';
 export type CaptionLineWrap = 'balanced' | 'greedy';
-export type CaptionPresetId = 'subtitle' | 'lower-third' | 'note';
+// Phase 22 original three + Phase 30 extended preset IDs.
+export type CaptionPresetId =
+	| 'subtitle'
+	| 'lower-third'
+	| 'note'
+	| 'bold-outline'
+	| 'neon-glow'
+	| 'karaoke'
+	| 'cinematic'
+	| 'pop-card'
+	| 'bounce-card'
+	| 'slide-news';
 
 export interface CaptionDiagnostic {
 	code:
@@ -28,7 +39,8 @@ export interface CaptionDiagnostic {
 }
 
 export interface CaptionStyle {
-	presetId?: CaptionPresetId | null;
+	/** Built-in preset ID or custom preset UUID. */
+	presetId?: CaptionPresetId | (string & Record<never, never>) | null;
 	overrides?: Partial<TitleStyle>;
 	anchor: CaptionAnchor;
 	insetPx?: { x: number; y: number };
@@ -96,6 +108,21 @@ export interface ParsedCaptionDocument {
 }
 
 export const DEFAULT_CAPTION_TRACK_NAME = 'Captions';
+
+const CAPTION_PRESETS_SUBTITLE_STYLE: Partial<TitleStyle> = {
+	fontFamily: DEFAULT_TITLE_STYLE.fontFamily,
+	fontSizePx: 64,
+	color: '#ffffff',
+	backgroundColor: '#000000',
+	backgroundOpacity: 0.35,
+	outlineColor: '#000000',
+	outlineWidthPx: 4,
+	shadowColor: '#000000',
+	shadowBlurPx: 0,
+	shadowOffsetXPx: 0,
+	shadowOffsetYPx: 0,
+	align: 'center'
+};
 
 export const CAPTION_PRESETS: Record<
 	CaptionPresetId,
@@ -166,6 +193,57 @@ export const CAPTION_PRESETS: Record<
 		anchor: 'top-center',
 		maxWidthPercent: 56,
 		lineWrap: 'greedy'
+	},
+	// Phase 30 presets: layout defaults match subtitle; visual styling is driven by
+	// CaptionAnimStylePreset (anim-style.ts) via resolveAnimPreset at render time.
+	'bold-outline': {
+		label: 'Bold Outline',
+		style: { ...CAPTION_PRESETS_SUBTITLE_STYLE },
+		anchor: 'bottom-center',
+		maxWidthPercent: 72,
+		lineWrap: 'balanced'
+	},
+	'neon-glow': {
+		label: 'Neon Glow',
+		style: { ...CAPTION_PRESETS_SUBTITLE_STYLE },
+		anchor: 'bottom-center',
+		maxWidthPercent: 72,
+		lineWrap: 'balanced'
+	},
+	karaoke: {
+		label: 'Karaoke',
+		style: { ...CAPTION_PRESETS_SUBTITLE_STYLE },
+		anchor: 'bottom-center',
+		maxWidthPercent: 80,
+		lineWrap: 'balanced'
+	},
+	cinematic: {
+		label: 'Cinematic',
+		style: { ...CAPTION_PRESETS_SUBTITLE_STYLE },
+		anchor: 'bottom-center',
+		maxWidthPercent: 60,
+		lineWrap: 'balanced'
+	},
+	'pop-card': {
+		label: 'Pop Card',
+		style: { ...CAPTION_PRESETS_SUBTITLE_STYLE },
+		anchor: 'bottom-center',
+		maxWidthPercent: 72,
+		lineWrap: 'balanced'
+	},
+	'bounce-card': {
+		label: 'Bounce Card',
+		style: { ...CAPTION_PRESETS_SUBTITLE_STYLE },
+		anchor: 'bottom-center',
+		maxWidthPercent: 72,
+		lineWrap: 'balanced'
+	},
+	'slide-news': {
+		label: 'Slide News',
+		style: { ...CAPTION_PRESETS_SUBTITLE_STYLE },
+		anchor: 'bottom-center',
+		maxWidthPercent: 72,
+		lineWrap: 'balanced'
 	}
 };
 
@@ -190,13 +268,15 @@ export function cloneCaptionStyle(style: CaptionStyle): CaptionStyle {
 }
 
 export function normalizeCaptionStyle(style: Partial<CaptionStyle> | undefined): CaptionStyle {
+	// Accept any non-empty string as a presetId — built-in IDs and custom-preset UUIDs both valid.
 	const presetId =
-		style?.presetId === 'subtitle' ||
-		style?.presetId === 'lower-third' ||
-		style?.presetId === 'note'
-			? style.presetId
+		typeof style?.presetId === 'string' && style.presetId.length > 0
+			? (style.presetId as CaptionStyle['presetId'])
 			: DEFAULT_CAPTION_STYLE.presetId;
-	const preset = CAPTION_PRESETS[presetId ?? 'subtitle'];
+	// Layout defaults come from the built-in table; unknown/custom IDs fall back to 'subtitle'.
+	const knownId: CaptionPresetId =
+		presetId != null && presetId in CAPTION_PRESETS ? (presetId as CaptionPresetId) : 'subtitle';
+	const preset = CAPTION_PRESETS[knownId];
 	const anchor =
 		style?.anchor === 'bottom-center' ||
 		style?.anchor === 'bottom-left' ||
@@ -367,7 +447,11 @@ export function effectiveCaptionStyle(
 
 export function resolveCaptionTitleStyle(style: CaptionStyle): TitleStyle {
 	const normalized = normalizeCaptionStyle(style);
-	const preset = CAPTION_PRESETS[normalized.presetId ?? 'subtitle'];
+	const knownPresetId: CaptionPresetId =
+		normalized.presetId != null && normalized.presetId in CAPTION_PRESETS
+			? (normalized.presetId as CaptionPresetId)
+			: 'subtitle';
+	const preset = CAPTION_PRESETS[knownPresetId];
 	return normalizeTitleStyle({
 		...preset.style,
 		...normalized.overrides

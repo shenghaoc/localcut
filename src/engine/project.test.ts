@@ -673,3 +673,86 @@ describe('Phase 46 config persistence (schema v11)', () => {
 		expect(result.doc.liveAudioChainConfig).toBeUndefined();
 	});
 });
+
+describe('Phase 30 (v12) — customAnimCaptionPresets', () => {
+	const baseDoc = () => ({
+		schemaVersion: PROJECT_SCHEMA_VERSION,
+		projectId: 'p1',
+		savedAt: '2026-06-13T00:00:00.000Z',
+		timeline: timelineFixture(),
+		sources: [sourceFixture()],
+		captionTracks: []
+	});
+
+	it('v12 document without customAnimCaptionPresets deserializes with undefined field', () => {
+		const result = deserializeProject(baseDoc());
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.doc.customAnimCaptionPresets).toBeUndefined();
+	});
+
+	it('v12 document with a valid customAnimCaptionPresets array round-trips intact', () => {
+		const preset = {
+			captionStyleSchemaVersion: 1,
+			id: 'custom-abc',
+			label: 'My Preset',
+			builtIn: false,
+			anchor: 'bottom-center',
+			maxWidthPercent: 80,
+			lineWrap: 'balanced',
+			titleStyle: {}
+		};
+		const result = deserializeProject({ ...baseDoc(), customAnimCaptionPresets: [preset] });
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.doc.customAnimCaptionPresets).toHaveLength(1);
+		expect(result.doc.customAnimCaptionPresets![0]!.id).toBe('');
+		expect(result.doc.customAnimCaptionPresets![0]!.label).toBe('My Preset');
+	});
+
+	it('v12 document with invalid presets skips them gracefully', () => {
+		const result = deserializeProject({
+			...baseDoc(),
+			customAnimCaptionPresets: [
+				{ notAPreset: true },
+				{
+					captionStyleSchemaVersion: 1,
+					id: 'valid',
+					label: 'Valid',
+					builtIn: false,
+					anchor: 'bottom-center',
+					maxWidthPercent: 80,
+					lineWrap: 'balanced',
+					titleStyle: {}
+				}
+			]
+		});
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		// Only the valid preset is kept.
+		expect(result.doc.customAnimCaptionPresets).toHaveLength(1);
+	});
+
+	it('existing caption tracks and segments survive v12 deserialization', () => {
+		const doc = {
+			...baseDoc(),
+			captionTracks: [
+				{
+					id: 'trk1',
+					kind: 'caption',
+					name: 'Track 1',
+					language: null,
+					visible: true,
+					burnedIn: false,
+					defaultStyle: {},
+					segments: [{ id: 'seg1', start: 0, duration: 3, text: 'Hello world' }]
+				}
+			]
+		};
+		const result = deserializeProject(doc);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.doc.captionTracks).toHaveLength(1);
+		expect(result.doc.captionTracks[0]!.segments[0]!.text).toBe('Hello world');
+	});
+});

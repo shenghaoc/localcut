@@ -604,7 +604,19 @@ export type CaptionAnchorSnapshot =
 	| 'top-center'
 	| 'custom';
 export type CaptionLineWrapSnapshot = 'balanced' | 'greedy';
-export type CaptionPresetIdSnapshot = 'subtitle' | 'lower-third' | 'note';
+// Phase 22 original three + Phase 30 extended preset IDs + custom-preset strings (UUIDs).
+export type CaptionPresetIdSnapshot =
+	| 'subtitle'
+	| 'lower-third'
+	| 'note'
+	| 'bold-outline'
+	| 'neon-glow'
+	| 'karaoke'
+	| 'cinematic'
+	| 'pop-card'
+	| 'bounce-card'
+	| 'slide-news'
+	| (string & Record<never, never>);
 
 export interface CaptionDiagnosticSnapshot {
 	code:

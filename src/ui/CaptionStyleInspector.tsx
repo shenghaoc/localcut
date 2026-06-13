@@ -160,8 +160,39 @@ export function CaptionStyleInspector(props: CaptionStyleInspectorProps) {
 			setImportError(result.error);
 			return;
 		}
-		props.onImportPreset(result.preset);
-		setImportSuccess(`Imported: ${result.preset.label}`);
+		// T8.5: conflict resolution — check for a matching label in custom presets.
+		const incoming = result.preset;
+		const conflict = props.customPresets.find((p) => p.label === incoming.label);
+		if (conflict) {
+			const update = window.confirm(
+				`A custom preset named "${incoming.label}" already exists.\n\nClick OK to update it, or Cancel to save as a copy.`
+			);
+			if (update) {
+				// Overwrite: keep the existing preset's id.
+				props.onImportPreset({ ...incoming, id: conflict.id });
+			} else {
+				// Save as copy: keep the new UUID from openAndImportPreset.
+				props.onImportPreset({ ...incoming, label: `${incoming.label} (copy)` });
+			}
+		} else {
+			props.onImportPreset(incoming);
+		}
+		setImportSuccess(`Imported: ${incoming.label}`);
+	};
+
+	const handleSaveAsPreset = () => {
+		const label = window.prompt('Enter a name for this preset:');
+		if (!label || label.trim().length === 0) return;
+		const current = allPresets().find((p) => p.id === props.presetId);
+		if (!current) return;
+		const newPreset: CaptionAnimStylePreset = {
+			...current,
+			id: crypto.randomUUID(),
+			label: label.trim(),
+			builtIn: false
+		};
+		props.onImportPreset(newPreset);
+		setImportSuccess(`Saved as preset: ${newPreset.label}`);
 	};
 
 	const handleExport = () => {
@@ -215,6 +246,13 @@ export function CaptionStyleInspector(props: CaptionStyleInspectorProps) {
 				</button>
 				<button type="button" onClick={handleExport} aria-label="Export preset to file">
 					Export preset
+				</button>
+				<button
+					type="button"
+					onClick={handleSaveAsPreset}
+					aria-label="Save current style as a new preset"
+				>
+					Save as preset
 				</button>
 				<Show when={!props.customPresets.find((p) => p.id === props.presetId)?.builtIn}>
 					<button

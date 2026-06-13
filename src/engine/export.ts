@@ -134,6 +134,8 @@ export interface TimelineExportOptions {
 		sourceWidth: number;
 		sourceHeight: number;
 		transform: import('./transform').TransformParams;
+		/** Phase 30: UV horizontal crop for typewriter reveal. Default [1.0, 1.0]. */
+		uvCropMax?: [number, number];
 	}>;
 }
 
@@ -926,7 +928,8 @@ async function encodeVideoRange(
 						view: overlay.view,
 						sourceWidth: overlay.sourceWidth,
 						sourceHeight: overlay.sourceHeight,
-						transform: overlay.transform
+						transform: overlay.transform,
+						uvCropMax: overlay.uvCropMax
 					});
 				}
 				exportFrame =

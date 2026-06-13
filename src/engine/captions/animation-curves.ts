@@ -54,15 +54,20 @@ function enterUniforms(kind: CaptionAnimKind, t: number): CaptionAnimUniforms {
 		case 'none':
 			return CAPTION_ANIM_IDENTITY;
 		case 'pop': {
-			// Scale overshoots to 1.15 at t=0.5, settles to 1.0 at t=1.
-			const scale = t < 1 ? lerp(0, 1.15, easeOut(t)) : 1.0;
+			// Scale: 0→1.15 (first 70%), 1.15→1.0 settle (last 30%). Smooth overshoot.
+			const scale =
+				t < 0.7 ? lerp(0, 1.15, easeOut(t / 0.7)) : lerp(1.15, 1.0, easeInOut((t - 0.7) / 0.3));
 			const opacity = easeInOut(t);
 			return { ...CAPTION_ANIM_IDENTITY, scaleX: scale, scaleY: scale, opacity };
 		}
 		case 'bounce': {
-			// TranslateY: +40 → -8 → 0 with ease-out.
+			// TranslateY: +40 → -8 (overshoot) → 0, two-phase ease-out.
+			// First 60% of the enter sweeps 40→-8; last 40% settles -8→0.
 			const bounceT = easeOut(t);
-			const ty = lerp(40, -8, bounceT);
+			const ty =
+				t < 0.6
+					? lerp(40, -8, bounceT / easeOut(0.6))
+					: lerp(-8, 0, (bounceT - easeOut(0.6)) / (1 - easeOut(0.6)));
 			const opacity = easeInOut(t);
 			return { ...CAPTION_ANIM_IDENTITY, translateYPx: ty, opacity };
 		}
