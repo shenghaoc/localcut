@@ -2655,7 +2655,7 @@ export function App() {
 								<div class="preview-overlay">Importing…</div>
 							</Show>
 						</section>
-						<div id="side-rail" class="side-rail">
+						<div id="side-rail" class="side-rail" role="region" aria-label="Side panel">
 							<Show
 								when={!sideRailCollapsed()}
 								fallback={
