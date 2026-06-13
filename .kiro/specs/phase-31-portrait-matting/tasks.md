@@ -27,28 +27,44 @@
 
 ## T1 — Shared-device ORT session (gate for everything below)
 
-- [!] **T1.1 — BLOCKED (verified broken in-browser).** Hardware-WebGPU run with a
-      deployed model (synthetic luma-matte ONNX + ORT WASM served under `/models/`)
-      confirms the model loads (no "Failed"), but **the zero-copy GPU IO-binding
-      path does not work**: a buffer-readback diagnostic shows
-      `sameDevice=false` — ORT 1.26's WebGPU EP does **not** adopt the compositor
-      `GPUDevice` injected via `ort.env.webgpu.device`; it creates its own. The
-      preprocess pass fills the input buffer correctly (range `[-1, 0.94]`), but
-      `Tensor.fromGpuBuffer(inputBuffer)` references a buffer on the *compositor*
-      device while the session runs on *ORT's* device, so the model never sees the
-      input and the alpha output is all zeros. matte-apply then multiplies the
-      layer to full transparency → **enabling matte blanks the clip**.
+- [!] **T1.1 — BLOCKED by ORT 1.26 (verified in-browser, root-caused).**
+      Hardware-WebGPU runs with a deployed synthetic ONNX model + ORT WASM under
+      `/models/` proved the shared-device zero-copy contract cannot be met with
+      ORT 1.26 as integrated:
 
-      Root question to resolve before this feature can work: why does ORT ignore
-      the injected device? Likely ORT requires a device created with specific
-      features/limits, so it spins up its own. Options:
-      (a) create/obtain the device ORT needs and use it for the renderer too
-          (true zero-copy, intended design — needs ORT-version research);
-      (b) run the matte passes on ORT's device and bridge the ~64 KB alpha to the
-          renderer device via a CPU round-trip (functional, but a documented
-          compatibility deviation from the zero-copy gate — needs sign-off).
-      Until resolved, the feature is gated behind absent weights (fails gracefully
-      to unmatted), so no user hits the blank-clip path by default.
+      - `ort.env.webgpu.device = compositorDevice` **assigns** (the getter returns
+        it immediately) but ORT **replaces it during `InferenceSession.create`**
+        (`sameAfterCreate=false`); the feature sets are identical, so it is not a
+        device-capability mismatch — ORT simply creates and uses its own device.
+      - Confirmed with **both** ORT builds:
+        - all-backends `onnxruntime-web` (`ort.bundle.min.mjs`, jsep WASM): the
+          cross-device input is read as zeros → all-zero alpha → matte-apply makes
+          the clip fully transparent (**blank clip**), no error raised.
+        - dedicated `onnxruntime-web/webgpu` (`ort.webgpu.bundle.min.mjs`,
+          **asyncify** WASM): `OrtRun` throws
+          `WebGPU validation failed. [Buffer] ... cannot be used with [Device]`
+          from its own first op (Transpose) — explicit proof the session device ≠
+          the compositor device.
+      - The compositor-side passes are correct: the preprocess buffer holds proper
+        normalized input (`min=-1.0 max=0.94`); the failure is purely ORT not
+        sharing the device.
+
+      The committed code uses the all-backends build (minimal diff, original jsep
+      deployment). The per-frame error catch in `makeGetLayers` degrades any matte
+      failure to the unmatted frame, and the feature is gated behind absent weights,
+      so nothing breaks by default.
+
+      **Two unblock options (needs a decision):**
+      (a) *Invert device ownership* — let ORT create the device, retrieve it via
+          `env.webgpu.device` after the first session, and have the renderer adopt
+          THAT device for the whole compositor. True zero-copy, but a startup-
+          ordering / device-lifecycle restructure (renderer currently owns the
+          device, created before matte is ever used).
+      (b) *Alpha readback bridge* — run the matte passes on ORT's own device and
+          copy the ~64 KB r8 alpha to the compositor device via a CPU round-trip.
+          Functional and small, but a documented deviation from the zero-copy gate.
+      (Also worth checking: a newer onnxruntime-web that fixes external-device
+      adoption, which would make the intended `env.webgpu.device` injection work.)
 - [x] **T1.2** `matte-session.ts` in the pipeline worker: per-clip session lifecycle
       (create on first matted frame, key by `clipId`, release on delete/disable/dispose),
       MODNet manifest loading via the existing checksum path.

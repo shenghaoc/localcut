@@ -86,6 +86,16 @@ type Ort = typeof import('onnxruntime-web');
 
 /** Imports onnxruntime-web and points its WASM loader at the deployed path. */
 async function loadOrt(): Promise<Ort> {
+	// ⚠ KNOWN BLOCKER (T1.1, verified in-browser): ORT 1.26 does NOT adopt an
+	// externally-injected `env.webgpu.device`. Both the all-backends
+	// (`onnxruntime-web`) and the dedicated WebGPU (`onnxruntime-web/webgpu`)
+	// builds run the session on a device they create themselves, so a
+	// `Tensor.fromGpuBuffer` made on the compositor's device is cross-device.
+	// The all-backends build fails this silently (all-zero alpha); the WebGPU
+	// build throws an explicit "[Buffer] ... cannot be used with [Device]"
+	// validation error from OrtRun. Until shared-device works, the per-frame
+	// matte path produces nothing usable — see the spec for the two unblock
+	// options (invert device ownership, or a small alpha readback bridge).
 	const ortModule = await import('onnxruntime-web');
 	// Only override the WASM location in production. In production builds the ORT
 	// binaries are stripped from the bundle (Cloudflare's 25 MiB asset cap) and
