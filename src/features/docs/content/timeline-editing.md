@@ -43,9 +43,19 @@ Click **Add Title** in the timeline toolbar to create a text card at the playhea
 
 Select a clip to edit it in the **Inspector** (right sidebar):
 
-- **Video**: position, scale, rotation, opacity, fit mode (Fill / Fit / Letterbox); brightness, contrast, saturation, temperature; `.cube` LUT import with a strength slider.
+- **Video**: position, scale, rotation, opacity, fit mode (Fill / Fit / Letterbox); brightness, contrast, saturation, temperature; `.cube` LUT import with a strength slider; skin smoothing (see below).
 - **Audio**: per-track gain, pan, mute, solo; per-clip fade-in/fade-out.
 - **Keyframes**: click the diamond next to a parameter to set a keyframe at the playhead, move the playhead, change the value — the parameter animates between keyframes. The same interpolation is used in preview and export.
+
+## Skin smoothing
+
+The **Skin Smoothing** slider in the Inspector applies an edge-preserving beauty filter to the selected clip. It uses a guided filter on luma gated by a chroma-based skin mask, so edges (hair, eyes, jawline) stay sharp while skin texture is softened.
+
+- **Strength** (0–1): controls how much smoothing is applied. The parameter is keyframable.
+- **Skin Mask**: expand the disclosure to tune which colours the filter treats as skin. The five sliders (Cb min/max, Cr min/max, softness) adjust the chroma band-pass. The defaults work for most skin tones; widen the range for darker or lighter subjects.
+- **A/B Bypass**: toggles the effect on and off in the preview without changing the stored strength. Export always uses the stored value.
+
+Skin smoothing requires the WebGPU accelerated effect chain. On capability tiers without WebGPU the slider has no effect on preview or export.
 
 ## How the preview behaves
 

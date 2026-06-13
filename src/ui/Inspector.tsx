@@ -339,7 +339,7 @@ export function Inspector(props: InspectorProps) {
 	let lutInput: HTMLInputElement | undefined;
 
 	// Phase 32a: skin-smooth bypass signal (session-only, not in undo history).
-	const [skinSmoothBypass] = createSignal(false);
+	const [skinSmoothBypass, setSkinSmoothBypass] = createSignal(false);
 	// Phase 32a: skin-mask debounced editing.
 	const skinMaskPending = new Map<string, number>();
 	const skinMaskDebouncers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -392,16 +392,17 @@ export function Inspector(props: InspectorProps) {
 			key,
 			setTimeout(() => {
 				skinMaskDebouncers.delete(key);
-				skinMaskPending.delete(key);
-				// Build the full mask from current values + pending changes.
 				const mask = currentSkinMask();
-				const updated = { ...mask, [key]: value };
+				for (const [k, v] of skinMaskPending) mask[k as keyof typeof mask] = v;
+				skinMaskPending.clear();
+				for (const [, timer] of skinMaskDebouncers) clearTimeout(timer);
+				skinMaskDebouncers.clear();
 				props.onSkinMask!(clip.trackId, clip.clipId, {
-					cbMin: updated.cbMin,
-					cbMax: updated.cbMax,
-					crMin: updated.crMin,
-					crMax: updated.crMax,
-					softness: updated.softness
+					cbMin: mask.cbMin,
+					cbMax: mask.cbMax,
+					crMin: mask.crMin,
+					crMax: mask.crMax,
+					softness: mask.softness
 				});
 			}, PARAM_DEBOUNCE_MS)
 		);
@@ -1312,11 +1313,9 @@ export function Inspector(props: InspectorProps) {
 												onClick={() => {
 													const clip = props.selectedClip;
 													if (clip && props.onSkinSmoothBypass) {
-														props.onSkinSmoothBypass(
-															clip.trackId,
-															clip.clipId,
-															!skinSmoothBypass()
-														);
+														const next = !skinSmoothBypass();
+														setSkinSmoothBypass(next);
+														props.onSkinSmoothBypass(clip.trackId, clip.clipId, next);
 													}
 												}}
 											>

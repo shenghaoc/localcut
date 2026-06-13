@@ -9,7 +9,7 @@ struct SkinBoxUniform {
 };
 
 @group(0) @binding(0) var<uniform> u : SkinBoxUniform;
-@group(0) @binding(1) var src : texture_storage_2d<rg32float, read>;
+@group(0) @binding(1) var src : texture_2d<f32>;
 @group(0) @binding(2) var dst : texture_storage_2d<rg32float, write>;
 
 @compute @workgroup_size(8, 8, 1)
@@ -28,7 +28,7 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
   var count : f32 = 0.0;
   for (var k = -radius; k <= radius; k++) {
     let sampleCoord = clamp(coord + dir * k, vec2<i32>(0, 0), dimSize - vec2<i32>(1, 1));
-    sum += textureLoad(src, vec2<u32>(u32(sampleCoord.x), u32(sampleCoord.y)));
+    sum += textureLoad(src, vec2<u32>(u32(sampleCoord.x), u32(sampleCoord.y)), 0).rg;
     count += 1.0;
   }
 

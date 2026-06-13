@@ -176,7 +176,7 @@ An edge-preserving skin-smoothing effect that softens skin texture while preserv
 4. **A/B Bypass**: when strength > 0, an "A/B Bypass" toggle appears. This lets you compare before and after without losing your settings. Bypass affects preview only — export always uses the stored strength.
 5. **Skin Mask (advanced)**: expand the "Skin mask (advanced)" disclosure to fine-tune the chroma mask parameters (`Cb min`, `Cb max`, `Cr min`, `Cr max`, `Softness`). These control which colors are classified as skin. The defaults work well for most skin tones. Use "Reset mask" to restore defaults.
 
-**Tier requirement**: Skin smoothing requires the WebGPU effect chain (Accelerated or Compatibility-GPU tier). On tiers without WebGPU, the controls are disabled with an explanatory note.
+**Tier requirement**: Skin smoothing requires the WebGPU effect chain (Accelerated or Compatibility-GPU tier). On tiers without WebGPU the slider is still visible but the effect has no impact on preview or export.
 
 **Note**: This effect does not include face detection or geometry warps (face slimming, eye enlargement). Those features are planned for a future phase.
 

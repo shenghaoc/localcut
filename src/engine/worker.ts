@@ -588,7 +588,8 @@ function postTimelineState() {
 			audioFadeIn: clip.audioFadeIn,
 			audioFadeOut: clip.audioFadeOut,
 			offline: clip.kind === 'title' || sourceInputs.has(clip.sourceId) ? undefined : true,
-			linkedGroupId: clip.linkedGroupId
+			linkedGroupId: clip.linkedGroupId,
+			skinMask: clip.skinMask ? { ...clip.skinMask } : undefined
 		}))
 	}));
 	const captionSnapshot: CaptionTrackSnapshot[] = captionTracks.map((track) => ({
