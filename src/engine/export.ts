@@ -917,6 +917,7 @@ async function encodeVideoRange(
 						effects: sampled.effects,
 						transform: sampled.transform,
 						lut: layer.clip.lut,
+						skinMask: layer.clip.skinMask,
 						transition: layer.transition
 					});
 				}

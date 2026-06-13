@@ -654,6 +654,118 @@ describe('Phase 46 config persistence (schema v11)', () => {
 		expect(result.doc.liveAudioChainConfig).toBeUndefined();
 	});
 
+	it('v11 migration defaults skinSmoothStrength to 0 and omits skinMask', () => {
+		const v11Doc = {
+			schemaVersion: 11,
+			projectId: 'test-v11',
+			savedAt: new Date().toISOString(),
+			timeline: [
+				{
+					id: 'video-track',
+					type: 'video',
+					gain: 1,
+					pan: 0,
+					muted: false,
+					solo: false,
+					clips: [
+						{
+							id: 'clip-1',
+							sourceId: 'source-1',
+							start: 0,
+							duration: 5,
+							inPoint: 0,
+							effects: {
+								brightness: 0,
+								contrast: 1,
+								saturation: 1,
+								temperature: 6500,
+								temperatureStrength: 1,
+								lutStrength: 0
+							},
+							transform: {
+								x: 0,
+								y: 0,
+								scale: 1,
+								rotation: 0,
+								opacity: 1,
+								anchorX: 0.5,
+								anchorY: 0.5,
+								fit: 'fill'
+							}
+						}
+					]
+				}
+			],
+			captionTracks: [],
+			transitions: [],
+			markers: [],
+			sources: [],
+			masterGain: 1
+		};
+		const result = deserializeProject(v11Doc);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		const clip = result.doc.timeline[0]!.clips[0]!;
+		expect(clip.effects.skinSmoothStrength).toBe(0);
+		expect(clip.skinMask).toBeUndefined();
+	});
+
+	it('round-trips skinSmoothStrength and skinMask at the current version', () => {
+		const tl = timelineFixture();
+		tl[0]!.clips[0]!.effects.skinSmoothStrength = 0.7;
+		tl[0]!.clips[0]!.skinMask = {
+			cbMin: -0.15,
+			cbMax: 0.05,
+			crMin: 0.08,
+			crMax: 0.18,
+			softness: 0.06
+		};
+		const doc = serializeProject({
+			projectId: 'project-skin',
+			timeline: tl,
+			sources: [sourceFixture()]
+		});
+		const result = deserializeProject(doc);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		const clip = result.doc.timeline[0]!.clips[0]!;
+		expect(clip.effects.skinSmoothStrength).toBe(0.7);
+		expect(clip.skinMask).toEqual({
+			cbMin: -0.15,
+			cbMax: 0.05,
+			crMin: 0.08,
+			crMax: 0.18,
+			softness: 0.06
+		});
+	});
+
+	it('normalizes malformed skinMask on load', () => {
+		const tl = timelineFixture();
+		tl[0]!.clips[0]!.effects.skinSmoothStrength = 0.5;
+		tl[0]!.clips[0]!.skinMask = {
+			cbMin: -0.15,
+			cbMax: 0.05,
+			crMin: 0.08,
+			crMax: 0.18,
+			softness: 0.06
+		};
+		const doc = serializeProject({
+			projectId: 'project-mask',
+			timeline: tl,
+			sources: [sourceFixture()]
+		});
+		const rawClip = (doc as Record<string, unknown> & typeof doc).timeline[0].clips[0];
+		rawClip.skinMask = { cbMin: 999, cbMax: -999, crMin: NaN, crMax: 0.1, softness: -1 };
+		const result = deserializeProject(doc);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		const mask = result.doc.timeline[0]!.clips[0]!.skinMask!;
+		expect(mask.cbMin).toBeGreaterThanOrEqual(-0.5);
+		expect(mask.cbMin).toBeLessThanOrEqual(0.5);
+		expect(mask.softness).toBeGreaterThanOrEqual(0.005);
+		expect(Number.isFinite(mask.crMin)).toBe(true);
+	});
+
 	it('rejects malformed configs back to factory defaults (undefined)', () => {
 		const doc = serializeProject({
 			projectId: 'project-1',

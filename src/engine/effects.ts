@@ -41,6 +41,11 @@ export const DEFAULT_CLIP_EFFECTS: ClipEffectParams = {
 	skinSmoothStrength: 0
 };
 
+function clampFinite(v: number | undefined, lo: number, hi: number, fallback: number): number {
+	if (v === undefined || v === null || !Number.isFinite(v)) return fallback;
+	return Math.max(lo, Math.min(hi, v));
+}
+
 export function normalizeClipEffects(
 	partial: Partial<ClipEffectParams> | undefined
 ): ClipEffectParams {
@@ -51,7 +56,12 @@ export function normalizeClipEffects(
 		temperature: partial?.temperature ?? DEFAULT_CLIP_EFFECTS.temperature,
 		temperatureStrength: partial?.temperatureStrength ?? DEFAULT_CLIP_EFFECTS.temperatureStrength,
 		lutStrength: partial?.lutStrength ?? DEFAULT_CLIP_EFFECTS.lutStrength,
-		skinSmoothStrength: partial?.skinSmoothStrength ?? DEFAULT_CLIP_EFFECTS.skinSmoothStrength
+		skinSmoothStrength: clampFinite(
+			partial?.skinSmoothStrength,
+			0,
+			1,
+			DEFAULT_CLIP_EFFECTS.skinSmoothStrength
+		)
 	};
 }
 

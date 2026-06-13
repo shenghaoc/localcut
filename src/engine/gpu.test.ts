@@ -65,14 +65,16 @@ function fakeCanvas(): OffscreenCanvas {
 function layer(
 	width: number,
 	height: number,
-	transition?: CompositeLayer['transition']
+	transition?: CompositeLayer['transition'],
+	overrides?: Partial<{ effects: typeof DEFAULT_CLIP_EFFECTS; skinSmoothBypass: boolean }>
 ): CompositeLayer {
 	return {
 		kind: 'frame',
 		frame: { displayWidth: width, displayHeight: height } as unknown as VideoFrame,
-		effects: { ...DEFAULT_CLIP_EFFECTS },
+		effects: overrides?.effects ?? { ...DEFAULT_CLIP_EFFECTS },
 		transform: { ...DEFAULT_TRANSFORM },
-		transition
+		transition,
+		skinSmoothBypass: overrides?.skinSmoothBypass
 	};
 }
 
@@ -163,5 +165,113 @@ describe('PreviewRenderer scope gating (B7)', () => {
 		renderer.present([layer(1920, 1080)]);
 		expect(submit).toHaveBeenCalledTimes(1);
 		expect(renderer.lastFrameSubmissionCount).toBe(1);
+	});
+});
+
+describe('Phase 32a: skin-smooth pass count', () => {
+	it('adds 7 extra dispatch calls for one smoothed layer, still 1 submit', () => {
+		const { device, submit } = fakeDevice();
+		const renderer = new PreviewRenderer(device, fakeContext(), 'rgba8unorm', fakeCanvas(), false);
+		renderer.setPreviewSize(64, 64);
+
+		const pass = (
+			device.createCommandEncoder() as unknown as {
+				beginComputePass: () => { dispatchWorkgroups: ReturnType<typeof vi.fn> };
+			}
+		).beginComputePass();
+		const dispatch = pass.dispatchWorkgroups;
+
+		submit.mockClear();
+		dispatch.mockClear();
+		renderer.present([layer(1920, 1080)]);
+		const baselineDispatches = dispatch.mock.calls.length;
+
+		submit.mockClear();
+		dispatch.mockClear();
+		const smoothed = layer(1920, 1080, undefined, {
+			effects: { ...DEFAULT_CLIP_EFFECTS, skinSmoothStrength: 0.5 }
+		});
+		renderer.present([smoothed]);
+		expect(submit).toHaveBeenCalledTimes(1);
+		expect(dispatch.mock.calls.length - baselineDispatches).toBe(7);
+	});
+
+	it('adds 0 extra dispatches for strength 0, still 1 submit', () => {
+		const { device, submit } = fakeDevice();
+		const renderer = new PreviewRenderer(device, fakeContext(), 'rgba8unorm', fakeCanvas(), false);
+		renderer.setPreviewSize(64, 64);
+
+		const pass = (
+			device.createCommandEncoder() as unknown as {
+				beginComputePass: () => { dispatchWorkgroups: ReturnType<typeof vi.fn> };
+			}
+		).beginComputePass();
+		const dispatch = pass.dispatchWorkgroups;
+
+		dispatch.mockClear();
+		renderer.present([layer(1920, 1080)]);
+		const baselineDispatches = dispatch.mock.calls.length;
+
+		dispatch.mockClear();
+		renderer.present([
+			layer(1920, 1080, undefined, {
+				effects: { ...DEFAULT_CLIP_EFFECTS, skinSmoothStrength: 0 }
+			})
+		]);
+		expect(submit).toHaveBeenCalledTimes(2);
+		expect(dispatch.mock.calls.length).toBe(baselineDispatches);
+	});
+
+	it('adds 0 extra dispatches when bypass is true, still 1 submit', () => {
+		const { device, submit } = fakeDevice();
+		const renderer = new PreviewRenderer(device, fakeContext(), 'rgba8unorm', fakeCanvas(), false);
+		renderer.setPreviewSize(64, 64);
+
+		const pass = (
+			device.createCommandEncoder() as unknown as {
+				beginComputePass: () => { dispatchWorkgroups: ReturnType<typeof vi.fn> };
+			}
+		).beginComputePass();
+		const dispatch = pass.dispatchWorkgroups;
+
+		dispatch.mockClear();
+		renderer.present([layer(1920, 1080)]);
+		const baselineDispatches = dispatch.mock.calls.length;
+
+		dispatch.mockClear();
+		renderer.present([
+			layer(1920, 1080, undefined, {
+				effects: { ...DEFAULT_CLIP_EFFECTS, skinSmoothStrength: 0.5 },
+				skinSmoothBypass: true
+			})
+		]);
+		expect(submit).toHaveBeenCalledTimes(2);
+		expect(dispatch.mock.calls.length).toBe(baselineDispatches);
+	});
+
+	it('adds 14 extra dispatches for two smoothed layers, still 1 submit', () => {
+		const { device, submit } = fakeDevice();
+		const renderer = new PreviewRenderer(device, fakeContext(), 'rgba8unorm', fakeCanvas(), false);
+		renderer.setPreviewSize(64, 64);
+
+		const pass = (
+			device.createCommandEncoder() as unknown as {
+				beginComputePass: () => { dispatchWorkgroups: ReturnType<typeof vi.fn> };
+			}
+		).beginComputePass();
+		const dispatch = pass.dispatchWorkgroups;
+
+		dispatch.mockClear();
+		renderer.present([layer(1920, 1080), layer(1920, 1080)]);
+		const baselineDispatches = dispatch.mock.calls.length;
+
+		dispatch.mockClear();
+		const smoothedEffects = { ...DEFAULT_CLIP_EFFECTS, skinSmoothStrength: 0.5 };
+		renderer.present([
+			layer(1920, 1080, undefined, { effects: smoothedEffects }),
+			layer(1920, 1080, undefined, { effects: smoothedEffects })
+		]);
+		expect(submit).toHaveBeenCalledTimes(2);
+		expect(dispatch.mock.calls.length - baselineDispatches).toBe(14);
 	});
 });
