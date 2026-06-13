@@ -199,14 +199,20 @@ export function validateCaptionAnimPreset(raw: unknown): ValidationResult {
 		}
 	}
 
-	// Build the validated value (id is NOT taken from raw — caller assigns).
+	// Build the validated value. The `id` field is taken from the raw input
+	// when it's a non-empty string — that's the path used when re-hydrating a
+	// preset from `project.json`, where the persisted ID is the key segment
+	// styles reference. Callers that need a fresh ID (e.g. the file-import flow
+	// in `CaptionStyleInspector.openAndImportPreset`) overwrite `id` after
+	// validation. Empty string is the safe default for a raw input that
+	// somehow omits the field.
 	const anim = raw.animation as Record<string, unknown> | undefined;
 	const glow = raw.glow as Record<string, unknown> | undefined;
 	const pill = raw.pill as Record<string, unknown> | undefined;
 
 	const value: CaptionAnimStylePreset = {
 		captionStyleSchemaVersion: 1,
-		id: '', // caller assigns
+		id: typeof raw.id === 'string' ? raw.id : '',
 		label: raw.label as string,
 		builtIn: Boolean(raw.builtIn),
 		anchor: raw.anchor as CaptionAnchor,

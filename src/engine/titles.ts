@@ -232,6 +232,10 @@ export function rasterizeTitleToCanvas(
 			ctx.fillStyle = pill.color;
 			for (let i = 0; i < lines.length; i++) {
 				const line = lines[i]!;
+				// Skip blank / whitespace-only lines: drawing a pill of width
+				// `pill.paddingXPx * 2` for an invisible line just leaves a stray
+				// pill artifact (e.g. consecutive newlines in an SRT cue).
+				if (line.trim().length === 0) continue;
 				const lineW = ctx.measureText(line).width;
 				const ly = cy - blockHeight / 2 + lineHeight * (i + 0.5);
 				const rx =

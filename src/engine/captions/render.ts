@@ -51,6 +51,34 @@ export function captionTextureId(
 	return variant ? `caption:${trackId}:${segmentId}:${variant}` : `caption:${trackId}:${segmentId}`;
 }
 
+/**
+ * Map a segment-level word index (over the raw `segment.words` array) onto a
+ * (lineIndex, wordIndex) coordinate in the wrapped raster text. Returns null
+ * when the index falls past the last wrapped word — that happens when the
+ * caption text was edited but word timings are stale, and the caller should
+ * fall back to the full-line raster rather than highlight an out-of-range word.
+ *
+ * captionTitlePayload wraps text without reordering, so the wrapped raster's
+ * word order matches the input segment.text word order. We only need to find
+ * which wrapped line absorbs the requested word.
+ */
+export function mapWordToWrappedLine(
+	wrappedText: string,
+	segmentWordIndex: number
+): { lineIndex: number; wordIndex: number } | null {
+	if (segmentWordIndex < 0) return null;
+	const lines = wrappedText.split('\n');
+	let wordsBeforeLine = 0;
+	for (let i = 0; i < lines.length; i++) {
+		const wordsOnThisLine = lines[i]!.trim().split(/\s+/).filter(Boolean).length;
+		if (segmentWordIndex < wordsBeforeLine + wordsOnThisLine) {
+			return { lineIndex: i, wordIndex: segmentWordIndex - wordsBeforeLine };
+		}
+		wordsBeforeLine += wordsOnThisLine;
+	}
+	return null;
+}
+
 export function captionTitlePayload(
 	track: CaptionTrack,
 	segmentId: string,
@@ -144,31 +172,18 @@ export function activeCaptionPayloadsAt(
 		let extras = baseExtras;
 		if (segment.words && segment.words.length > 0 && preset.highlightColor) {
 			const activeWordIdx = karaokeActiveWordIndex(segment.words, time);
-			if (activeWordIdx >= 0) {
-				// Map the per-segment word index onto the wrapped raster's line/word
-				// coordinates. captionTitlePayload wraps text without reordering, so
-				// the wrapped raster's word order matches the input segment.text
-				// word order; we just need to find which wrapped line that word
-				// ended up on.
-				const wrappedLines = content.text.split('\n');
-				let wordsBeforeLine = 0;
-				let targetLineIdx = 0;
-				let targetWordWithinLine = activeWordIdx;
-				for (let i = 0; i < wrappedLines.length; i++) {
-					const wordsOnThisLine = wrappedLines[i]!.trim().split(/\s+/).filter(Boolean).length;
-					if (activeWordIdx < wordsBeforeLine + wordsOnThisLine) {
-						targetLineIdx = i;
-						targetWordWithinLine = activeWordIdx - wordsBeforeLine;
-						break;
-					}
-					wordsBeforeLine += wordsOnThisLine;
-				}
+			const mapped = activeWordIdx >= 0 ? mapWordToWrappedLine(content.text, activeWordIdx) : null;
+			// Only swap to the highlight variant when the word index actually maps
+			// to a wrapped line. Out-of-range mappings happen when the rendered
+			// text was edited but word timings were not — fall back to the full
+			// line raster rather than rasterising with an out-of-range index.
+			if (mapped) {
 				textureId = captionTextureId(track.id, segment.id, 'highlight');
 				extras = {
 					...(baseExtras ?? {}),
 					highlightWord: {
-						wordIndex: targetWordWithinLine,
-						lineIndex: targetLineIdx,
+						wordIndex: mapped.wordIndex,
+						lineIndex: mapped.lineIndex,
 						color: preset.highlightColor
 					}
 				};

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { activeCaptionPayloadsAt, captionTextureId } from './render';
+import { activeCaptionPayloadsAt, captionTextureId, mapWordToWrappedLine } from './render';
 import { createCaptionTrack } from './types';
 import type { CaptionTrack } from './types';
 import { CAPTION_ANIM_IDENTITY } from './animation-curves';
@@ -161,6 +161,23 @@ describe('activeCaptionPayloadsAt (Phase 30)', () => {
 		expect(payload!.content.style.color).toBe(neonGlow.titleStyle.color);
 	});
 
+	it('falls back to full-line texture when active word index is past the wrapped words', () => {
+		// Stale word timing: the third word slot is timed, but the segment text
+		// only has two words after wrap. The highlight variant must NOT be
+		// applied because there's no wrapped word to colour.
+		const track = trackWithSegment({
+			presetId: 'karaoke',
+			words: [
+				{ text: 'Hello', startS: 0.5, endS: 1.5 },
+				{ text: 'world', startS: 1.5, endS: 2.5 },
+				{ text: 'stale', startS: 2.5, endS: 3.5 }
+			]
+		});
+		const [payload] = activeCaptionPayloadsAt([track], 3.0, []);
+		expect(payload!.textureId).toBe(captionTextureId('trk', 'seg'));
+		expect(payload!.extras?.highlightWord).toBeUndefined();
+	});
+
 	it('resolves a custom preset passed via customPresets', () => {
 		const custom = {
 			...ANIM_CAPTION_PRESETS[0]!,
@@ -173,5 +190,28 @@ describe('activeCaptionPayloadsAt (Phase 30)', () => {
 		const [payload] = activeCaptionPayloadsAt([track], 0.1, [custom]);
 		// Inside enter window — should have non-identity uniforms.
 		expect(payload!.animUniforms.opacity).toBeLessThan(1);
+	});
+});
+
+describe('mapWordToWrappedLine', () => {
+	it('maps a word in the first line to (0, idx)', () => {
+		expect(mapWordToWrappedLine('Hello world\nFoo bar', 1)).toEqual({ lineIndex: 0, wordIndex: 1 });
+	});
+
+	it('maps a word in the second line to (1, idx)', () => {
+		expect(mapWordToWrappedLine('Hello world\nFoo bar', 2)).toEqual({ lineIndex: 1, wordIndex: 0 });
+		expect(mapWordToWrappedLine('Hello world\nFoo bar', 3)).toEqual({ lineIndex: 1, wordIndex: 1 });
+	});
+
+	it('returns null when the index is past the last word', () => {
+		expect(mapWordToWrappedLine('Hello world', 5)).toBeNull();
+	});
+
+	it('returns null for a negative index', () => {
+		expect(mapWordToWrappedLine('Hello world', -1)).toBeNull();
+	});
+
+	it('treats whitespace-only lines as zero words (does not advance the cursor)', () => {
+		expect(mapWordToWrappedLine('Hello\n\nworld', 1)).toEqual({ lineIndex: 2, wordIndex: 0 });
 	});
 });

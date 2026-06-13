@@ -203,10 +203,10 @@ describe('anim-style', () => {
 			if (!result.ok) expect(result.field).toBe('animation.durationS');
 		});
 
-		it('import path: sets builtIn to false and ignores file id', () => {
+		it('preserves a string id (callers that want a fresh UUID overwrite after)', () => {
 			const raw = {
 				captionStyleSchemaVersion: 1,
-				id: 'should-be-ignored',
+				id: 'my-preset-id',
 				label: 'Imported',
 				builtIn: true,
 				anchor: 'bottom-center',
@@ -216,10 +216,26 @@ describe('anim-style', () => {
 			const result = validateCaptionAnimPreset(raw);
 			expect(result.ok).toBe(true);
 			if (result.ok) {
-				// id is not taken from raw — caller assigns
-				expect(result.value.id).toBe('');
-				// builtIn is taken from raw as-is (caller forces false after validation)
+				// `id` survives validation; project-doc parsing relies on this so
+				// segment.style.presetId references resolve. The file-import flow
+				// overwrites with a fresh UUID after validation returns.
+				expect(result.value.id).toBe('my-preset-id');
+				// builtIn is taken from raw as-is (caller forces false after validation).
 			}
+		});
+
+		it('defaults id to empty string when the raw record omits it', () => {
+			const raw = {
+				captionStyleSchemaVersion: 1,
+				label: 'No id',
+				builtIn: false,
+				anchor: 'bottom-center',
+				maxWidthPercent: 80,
+				lineWrap: 'balanced'
+			};
+			const result = validateCaptionAnimPreset(raw);
+			expect(result.ok).toBe(true);
+			if (result.ok) expect(result.value.id).toBe('');
 		});
 	});
 

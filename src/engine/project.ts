@@ -1286,15 +1286,12 @@ function parseCustomAnimCaptionPresets(value: unknown): CaptionAnimStylePreset[]
 	const presets: CaptionAnimStylePreset[] = [];
 	for (const item of value) {
 		const result = validateCaptionAnimPreset(item);
-		if (!result.ok) continue;
-		// validateCaptionAnimPreset strips `id` because the file-import flow assigns
-		// a fresh UUID. For project-doc parsing, the persisted `id` is the key that
-		// segment.style.presetId references — preserve it from the raw record.
-		const rawId =
-			isRecord(item) && typeof item.id === 'string' && item.id.length > 0
-				? item.id
-				: result.value.id;
-		presets.push({ ...result.value, id: rawId });
+		// validateCaptionAnimPreset preserves the raw `id` (a non-empty string)
+		// because `segment.style.presetId` references it. Drop entries whose id
+		// failed validation — the validator yields `''` for raw records missing
+		// the field, and a preset without an id can't be looked up.
+		if (!result.ok || result.value.id.length === 0) continue;
+		presets.push(result.value);
 	}
 	return presets.length > 0 ? presets : undefined;
 }
