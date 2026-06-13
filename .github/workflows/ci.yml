@@ -15,21 +15,18 @@ concurrency:
 
 jobs:
   ci:
-    name: pnpm ci + check
+    name: vp check
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-      - name: Setup Node
-        uses: actions/setup-node@v6
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
         with:
           node-version-file: .node-version
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
+          cache: true
       - name: Install dependencies
-        run: pnpm ci
+        run: vp install
       - name: Run checks
-        run: pnpm run check
+        run: vp run check

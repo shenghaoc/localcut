@@ -23,18 +23,15 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v6
+      - uses: voidzero-dev/setup-vp@v1
         with:
           node-version-file: .node-version
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
+          cache: true
 
-      - run: pnpm ci
+      - run: vp install
 
       - name: Install Playwright Chromium
-        run: pnpm exec playwright install --with-deps chromium
+        run: vpx playwright install --with-deps chromium
 
       # Host networking so WebRTC ICE host candidates (UDP) are reachable from
       # the browser without per-port docker mappings; MTX_API exposes the
@@ -54,7 +51,7 @@ jobs:
           exit 1
 
       - name: Run WHIP integration tests
-        run: pnpm run test:e2e
+        run: vp run test:e2e
         env:
           MEDIAMTX_CONTAINER: whip-mediamtx
 
