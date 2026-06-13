@@ -1,3 +1,4 @@
+import { isFiniteNumber as finite } from '../../lib/math';
 import type { TimelineMarker } from '../timeline';
 import type { TimelineTrack } from '../timeline';
 import {
@@ -17,10 +18,6 @@ import {
 export interface CaptionSnapTarget {
 	time: number;
 	label: string;
-}
-
-function finite(value: number): boolean {
-	return Number.isFinite(value);
 }
 
 export function cloneCaptionTracks(tracks: readonly CaptionTrack[]): CaptionTrack[] {

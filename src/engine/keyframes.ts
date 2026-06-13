@@ -1,3 +1,4 @@
+import { isFiniteNumber as finite } from '../lib/math';
 import { KEYFRAME_EPSILON } from '../protocol';
 import type {
 	ClipEffectParamsSnapshot,
@@ -46,10 +47,6 @@ const TRANSFORM_PARAM_KEYS = new Set<ClipKeyframeParam>([
 	'anchorX',
 	'anchorY'
 ]);
-
-function finite(value: number): boolean {
-	return Number.isFinite(value);
-}
 
 function sameTime(a: number, b: number): boolean {
 	return Math.abs(a - b) <= KEYFRAME_EPSILON;

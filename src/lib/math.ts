@@ -16,7 +16,12 @@ export function clamp01(value: number): number {
 	return clamp(value, 0, 1);
 }
 
+/** Type guard: true when `value` is a number that is neither NaN nor ±Infinity. */
+export function isFiniteNumber(value: unknown): value is number {
+	return typeof value === 'number' && Number.isFinite(value);
+}
+
 /** Return `value` when it is a finite number, otherwise `fallback`. */
 export function finiteOr(value: unknown, fallback: number): number {
-	return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+	return isFiniteNumber(value) ? value : fallback;
 }

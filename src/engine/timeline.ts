@@ -1,3 +1,4 @@
+import { isFiniteNumber as finite } from '../lib/math';
 import { DEFAULT_CLIP_EFFECTS, normalizeClipEffects, type ClipEffectParams } from './effects';
 import {
 	DEFAULT_TRANSFORM,
@@ -176,10 +177,6 @@ function cloneTimeline(timeline: Timeline): Timeline {
 
 function findTrack(timeline: Timeline, trackId: string): TimelineTrack | null {
 	return timeline.find((track) => track.id === trackId) ?? null;
-}
-
-function finite(value: number): boolean {
-	return Number.isFinite(value);
 }
 
 function isInClip(time: number, clip: TimelineClip): boolean {

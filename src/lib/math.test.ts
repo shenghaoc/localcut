@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 
-import { clamp, clamp01, finiteOr } from './math';
+import { clamp, clamp01, finiteOr, isFiniteNumber } from './math';
 
 describe('clamp', () => {
 	it('returns the value when inside the range', () => {
@@ -27,6 +27,23 @@ describe('clamp01', () => {
 
 	it('propagates NaN (matching the previous Math.min/Math.max behaviour)', () => {
 		expect(Number.isNaN(clamp01(Number.NaN))).toBe(true);
+	});
+});
+
+describe('isFiniteNumber', () => {
+	it('accepts finite numbers including zero and negatives', () => {
+		expect(isFiniteNumber(0)).toBe(true);
+		expect(isFiniteNumber(-3.5)).toBe(true);
+		expect(isFiniteNumber(1e9)).toBe(true);
+	});
+
+	it('rejects NaN, infinities, and non-numbers', () => {
+		expect(isFiniteNumber(Number.NaN)).toBe(false);
+		expect(isFiniteNumber(Number.POSITIVE_INFINITY)).toBe(false);
+		expect(isFiniteNumber(Number.NEGATIVE_INFINITY)).toBe(false);
+		expect(isFiniteNumber('5')).toBe(false);
+		expect(isFiniteNumber(null)).toBe(false);
+		expect(isFiniteNumber(undefined)).toBe(false);
 	});
 });
 

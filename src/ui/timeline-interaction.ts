@@ -1,3 +1,4 @@
+import { isFiniteNumber as finite } from '../lib/math';
 import type { TimelineMarkerSnapshot, TimelineTrackSnapshot } from '../protocol';
 
 export type SnapTargetKind = 'zero' | 'playhead' | 'marker' | 'clip-start' | 'clip-end';
@@ -24,10 +25,6 @@ export interface MarqueeTimeRange {
 	startTime: number;
 	endTime: number;
 	trackIds: readonly string[];
-}
-
-function finite(value: number): boolean {
-	return Number.isFinite(value);
 }
 
 function pushTarget(targets: SnapTarget[], target: SnapTarget): void {
