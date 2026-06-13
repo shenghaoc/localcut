@@ -2,7 +2,8 @@ import { TITLE_RASTER_WIDTH } from '../titles';
 import { captionAnchorTransform, resolveCaptionTitleStyle } from './types';
 import { activeCaptionSegmentsAt, resolvedCaptionStyle } from './model';
 import type { CaptionTrack } from './types';
-import type { TitleContent, TitleRasterExtras } from '../title';
+import type { TitleContent, TitleRasterExtras, TitleStyle } from '../title';
+import { normalizeTitleStyle } from '../title';
 import type { TransformParams } from '../transform';
 import type { CaptionAnimStylePreset } from './anim-style';
 import { resolveAnimPreset } from './anim-style';
@@ -111,6 +112,18 @@ export function activeCaptionPayloadsAt(
 		const preset = resolveAnimPreset(style.presetId, customPresets);
 		const payload = captionTitlePayload(track, segment.id, segment.text);
 
+		// captionTitlePayload resolves the title style via CAPTION_PRESETS, whose
+		// Phase 30 entries are layout-only (every visual style is a copy of the
+		// subtitle style). The Phase 30 preset's actual look — colour, font
+		// size, outline — lives on CaptionAnimStylePreset.titleStyle and must be
+		// layered on top so neon-glow renders cyan, bold-outline gets its 6 px
+		// stroke, and custom presets use their stored titleStyle.
+		const mergedStyle: TitleStyle = normalizeTitleStyle({
+			...payload.content.style,
+			...preset.titleStyle
+		});
+		const content: TitleContent = { text: payload.content.text, style: mergedStyle };
+
 		// Compute animation uniforms for the current time.
 		const animUniforms = computeCaptionAnimUniforms(preset, segment.start, segment.duration, time);
 
@@ -137,7 +150,7 @@ export function activeCaptionPayloadsAt(
 				// the wrapped raster's word order matches the input segment.text
 				// word order; we just need to find which wrapped line that word
 				// ended up on.
-				const wrappedLines = payload.content.text.split('\n');
+				const wrappedLines = content.text.split('\n');
 				let wordsBeforeLine = 0;
 				let targetLineIdx = 0;
 				let targetWordWithinLine = activeWordIdx;
@@ -165,7 +178,7 @@ export function activeCaptionPayloadsAt(
 		return {
 			trackId: track.id,
 			segmentId: segment.id,
-			content: payload.content,
+			content,
 			transform: payload.transform,
 			animUniforms,
 			textureId,

@@ -1,12 +1,14 @@
 import { createEffect, createMemo, createSignal, For, on, Show } from 'solid-js';
 import { TRANSCRIPT_WINDOW_RADIUS, computeSegmentWindow } from './transcript-window';
 import type {
+	CaptionAnimStylePresetSnapshot,
 	CaptionDiagnosticSnapshot,
 	CaptionExportSettingsSnapshot,
 	CaptionPresetIdSnapshot,
 	CaptionTrackSnapshot,
 	CaptionStyleSnapshot
 } from '../protocol';
+import { CaptionStyleInspector } from './CaptionStyleInspector';
 
 interface TranscriptPanelProps {
 	captionTracks: CaptionTrackSnapshot[];
@@ -39,6 +41,14 @@ interface TranscriptPanelProps {
 	onMerge: (trackId: string, segmentIds: readonly string[]) => void;
 	onDelete: (trackId: string, segmentIds: readonly string[]) => void;
 	onSnap: (trackId: string, segmentId: string, edge: 'start' | 'end' | 'both') => void;
+	/** Phase 30: user-imported caption animation style presets. */
+	customAnimCaptionPresets: readonly CaptionAnimStylePresetSnapshot[];
+	/** Phase 30: set the animation preset on the selected segment or track default. */
+	onSetAnimPreset: (trackId: string, segmentId: string | undefined, presetId: string) => void;
+	/** Phase 30: import a validated custom preset into the project. */
+	onImportCustomPreset: (preset: CaptionAnimStylePresetSnapshot) => void;
+	/** Phase 30: remove a custom preset by id. */
+	onDeleteCustomPreset: (presetId: string) => void;
 }
 
 const PRESETS: { value: CaptionPresetIdSnapshot; label: string }[] = [
@@ -266,9 +276,15 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
 									<span>Visible</span>
 								</label>
 								<label>
-									<span>Preset</span>
+									<span>Preset (Phase 22 layout)</span>
 									<select
-										value={track().defaultStyle.presetId ?? 'subtitle'}
+										value={
+											(track().defaultStyle.presetId === 'subtitle' ||
+											track().defaultStyle.presetId === 'lower-third' ||
+											track().defaultStyle.presetId === 'note'
+												? track().defaultStyle.presetId
+												: 'subtitle') ?? 'subtitle'
+										}
 										onChange={(event) =>
 											props.onSetTrack(track().id, {
 												defaultStyle: {
@@ -282,6 +298,18 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
 										</For>
 									</select>
 								</label>
+								<div class="caption-anim-style-section">
+									<div class="caption-anim-style-heading">Animated style (Phase 30)</div>
+									<CaptionStyleInspector
+										presetId={track().defaultStyle.presetId ?? 'subtitle'}
+										customPresets={props.customAnimCaptionPresets}
+										onSetPresetId={(presetId) =>
+											props.onSetAnimPreset(track().id, undefined, presetId)
+										}
+										onImportPreset={(preset) => props.onImportCustomPreset(preset)}
+										onDeletePreset={(presetId) => props.onDeleteCustomPreset(presetId)}
+									/>
+								</div>
 								<label>
 									<span>Font size</span>
 									<input

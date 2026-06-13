@@ -150,6 +150,17 @@ describe('activeCaptionPayloadsAt (Phase 30)', () => {
 		expect(payload!.textureId).toBe(captionTextureId('trk', 'seg'));
 	});
 
+	it('merges preset.titleStyle into the payload content (Phase 30 colour reaches raster)', () => {
+		const neonGlow = ANIM_CAPTION_PRESETS.find((p) => p.id === 'neon-glow')!;
+		const track = trackWithSegment({ presetId: 'neon-glow' });
+		const [payload] = activeCaptionPayloadsAt([track], 2.5, []);
+		expect(payload).toBeDefined();
+		// neon-glow preset.titleStyle.color is the cyan glow text colour. The
+		// payload content style must reflect it — otherwise the raster falls back
+		// to the layout-only CAPTION_PRESETS subtitle entry and renders white.
+		expect(payload!.content.style.color).toBe(neonGlow.titleStyle.color);
+	});
+
 	it('resolves a custom preset passed via customPresets', () => {
 		const custom = {
 			...ANIM_CAPTION_PRESETS[0]!,

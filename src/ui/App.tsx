@@ -103,6 +103,7 @@ import {
 	suggestedFileNameForJob
 } from '../engine/render-queue';
 import { BUILT_IN_PRESETS } from '../engine/export-presets';
+import type { CaptionAnimStylePresetSnapshot } from '../protocol';
 import { createRecoveryMachine, type WorkerRecoveryState } from '../engine/recovery';
 import { AppErrorBoundary } from './ErrorBoundary';
 import { AudioCleanupPanel, type AppliedCleanupInfo } from './AudioCleanupPanel';
@@ -319,6 +320,13 @@ export function App() {
 	const [timeline, setTimeline] = createSignal<TimelineTrackSnapshot[]>([]);
 	const [captionTracks, setCaptionTracks] = createSignal<CaptionTrackSnapshot[]>([]);
 	const [captionDiagnostics, setCaptionDiagnostics] = createSignal<CaptionDiagnosticSnapshot[]>([]);
+	// Phase 30: user-imported animated caption presets, kept in sync with the worker.
+	// The snapshot type is the structured-clone-safe wire format; the engine type
+	// (`CaptionAnimStylePreset`) is structurally compatible so we don't need to
+	// convert at the boundary.
+	const [customAnimCaptionPresets, setCustomAnimCaptionPresets] = createSignal<
+		CaptionAnimStylePresetSnapshot[]
+	>([]);
 	const [markers, setMarkers] = createSignal<TimelineMarkerSnapshot[]>([]);
 	const [transitions, setTransitions] = createSignal<TimelineTransitionSnapshot[]>([]);
 	// Phase 13: currently selected transition for the Inspector panel.
@@ -1077,6 +1085,9 @@ export function App() {
 						: 'Imported captions'
 				);
 				break;
+			case 'caption-custom-presets-updated':
+				setCustomAnimCaptionPresets([...msg.presets]);
+				break;
 			case 'caption-export-result':
 				for (const file of msg.files) {
 					downloadTextFile(file.fileName, file.mimeType, file.content);
@@ -1593,6 +1604,7 @@ export function App() {
 		setMarkers([]);
 		setCaptionTracks([]);
 		setCaptionDiagnostics([]);
+		setCustomAnimCaptionPresets([]);
 		setSelectedCaptionTrackId(null);
 		setSelectedCaptionSegmentIds([]);
 		setSelectedClipRefs([]);
@@ -2867,6 +2879,27 @@ export function App() {
 															trackId,
 															segmentId,
 															edge
+														})
+													}
+													customAnimCaptionPresets={customAnimCaptionPresets()}
+													onSetAnimPreset={(trackId, segmentId, presetId) =>
+														captionBridge().send({
+															type: 'caption-set-anim-style',
+															trackId,
+															segmentId,
+															presetId
+														})
+													}
+													onImportCustomPreset={(preset) =>
+														captionBridge().send({
+															type: 'caption-import-custom-preset',
+															preset
+														})
+													}
+													onDeleteCustomPreset={(presetId) =>
+														captionBridge().send({
+															type: 'caption-delete-custom-preset',
+															presetId
 														})
 													}
 												/>

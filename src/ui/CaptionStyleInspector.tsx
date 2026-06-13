@@ -11,16 +11,23 @@ import {
 	MAX_PRESET_FILE_BYTES,
 	validateCaptionAnimPreset
 } from '../engine/captions/anim-style';
+import type { CaptionAnimStylePresetSnapshot } from '../protocol';
+
+// CaptionAnimStylePreset (engine) and CaptionAnimStylePresetSnapshot (protocol)
+// are structurally compatible — the protocol type relaxes the animation kind to
+// `string` so it's clone-safe across postMessage. The UI accepts the snapshot
+// shape from callers and produces it on outbound mutations.
+type UiPreset = CaptionAnimStylePresetSnapshot;
 
 interface CaptionStyleInspectorProps {
 	/** Current track or segment preset ID. */
 	presetId: string;
 	/** Custom presets from ProjectDoc. */
-	customPresets: readonly CaptionAnimStylePreset[];
+	customPresets: readonly UiPreset[];
 	/** Called when the user selects a preset. */
 	onSetPresetId: (presetId: string) => void;
 	/** Called to import a validated custom preset. */
-	onImportPreset: (preset: CaptionAnimStylePreset) => void;
+	onImportPreset: (preset: UiPreset) => void;
 	/** Called to delete a custom preset. */
 	onDeletePreset: (presetId: string) => void;
 }
@@ -159,7 +166,19 @@ function readAndValidate(
 /** The preset picker and override panel. */
 export function CaptionStyleInspector(props: CaptionStyleInspectorProps) {
 	const [importError, setImportError] = createSignal<string | null>(null);
-	const [importSuccess, setImportSuccess] = createSignal<string | null>(null);
+	const [importSuccess, setImportSuccessSignal] = createSignal<string | null>(null);
+
+	// Auto-clear the success notice after 3 s. Wrapping setImportSuccess in a
+	// helper that also schedules the timer is simpler than a createEffect for
+	// this one-shot UI affordance.
+	let successTimer: ReturnType<typeof setTimeout> | undefined;
+	const setImportSuccess = (value: string | null) => {
+		setImportSuccessSignal(value);
+		if (successTimer !== undefined) clearTimeout(successTimer);
+		if (value !== null) {
+			successTimer = setTimeout(() => setImportSuccessSignal(null), 3000);
+		}
+	};
 
 	const allPresets = () => [...ANIM_CAPTION_PRESETS, ...props.customPresets];
 
@@ -197,8 +216,8 @@ export function CaptionStyleInspector(props: CaptionStyleInspectorProps) {
 		if (!label || label.trim().length === 0) return;
 		const current = allPresets().find((p) => p.id === props.presetId);
 		if (!current) return;
-		const newPreset: CaptionAnimStylePreset = {
-			...current,
+		const newPreset: UiPreset = {
+			...(current as UiPreset),
 			id: crypto.randomUUID(),
 			label: label.trim(),
 			builtIn: false
@@ -209,12 +228,13 @@ export function CaptionStyleInspector(props: CaptionStyleInspectorProps) {
 
 	const handleExport = () => {
 		const preset = allPresets().find((p) => p.id === props.presetId);
-		if (preset) serializeAndSavePreset(preset);
+		// The runtime shape of UiPreset and CaptionAnimStylePreset is identical.
+		if (preset) serializeAndSavePreset(preset as unknown as CaptionAnimStylePreset);
 	};
 
-	// Auto-clear success message after 3s.
-	const successTimer: ReturnType<typeof setTimeout> | undefined = undefined;
-	onCleanup(() => clearTimeout(successTimer));
+	onCleanup(() => {
+		if (successTimer !== undefined) clearTimeout(successTimer);
+	});
 
 	return (
 		<div class="caption-style-inspector" role="group" aria-label="Caption animation style">
@@ -266,7 +286,8 @@ export function CaptionStyleInspector(props: CaptionStyleInspectorProps) {
 				>
 					Save as preset
 				</button>
-				<Show when={!props.customPresets.find((p) => p.id === props.presetId)?.builtIn}>
+				{/* Delete is only valid for custom presets — built-ins are immutable. */}
+				<Show when={props.customPresets.some((p) => p.id === props.presetId && !p.builtIn)}>
 					<button
 						type="button"
 						onClick={() => props.onDeletePreset(props.presetId)}

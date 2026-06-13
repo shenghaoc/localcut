@@ -66,7 +66,7 @@ import { activeCaptionPayloadsAt, captionTextureId } from './captions/render';
 import { CAPTION_ANIM_IDENTITY } from './captions/animation-curves';
 import type { CaptionAnimUniforms } from './captions/animation-curves';
 import type { CaptionAnimStylePreset } from './captions/anim-style';
-import { validateCaptionAnimPreset } from './captions/anim-style';
+import { resolveAnimPreset, validateCaptionAnimPreset } from './captions/anim-style';
 import {
 	buildCaptionSnapTargets,
 	makeCaptionSegmentId,
@@ -85,6 +85,7 @@ import { captionTrackFromWebVtt } from './captions/webvtt';
 import {
 	createCaptionTrack,
 	type CaptionExportSettings,
+	type CaptionStyle,
 	type CaptionTrack
 } from './captions/types';
 import {
@@ -1847,6 +1848,8 @@ async function handleRestoreProject(): Promise<void> {
 	lastExportSettings = doc.exportSettings ?? null;
 	exportPresets = (doc.exportPresets ?? []).filter((p) => !p.builtIn);
 	customAnimCaptionPresets = (doc.customAnimCaptionPresets ?? []) as CaptionAnimStylePreset[];
+	// Tell the UI about the restored custom presets so the picker shows them.
+	postMessage({ type: 'caption-custom-presets-updated', presets: customAnimCaptionPresets });
 	queueState = createEmptyQueueState();
 	if (doc.renderQueueHistory) {
 		queueState = { ...queueState, jobs: deserializeQueueHistory(doc.renderQueueHistory) };
@@ -2125,8 +2128,12 @@ function activeCaptionLayersAt(
 			textureIdFor === captionTextureId
 				? payload.textureId
 				: textureIdFor(payload.trackId, payload.segmentId);
-		if (titleCache && !titleCache.get(clipId))
-			titleCache.ensure(clipId, payload.content, payload.extras);
+		// TitleTextureCache.ensure is hash-checked: it no-ops when the content +
+		// extras hash matches the cached entry. Calling it unconditionally is
+		// required for karaoke — the highlight variant's content hash changes on
+		// every word-boundary crossing, so a `!get(clipId)` short-circuit would
+		// freeze the first word's colour for the rest of the segment.
+		if (titleCache) titleCache.ensure(clipId, payload.content, payload.extras);
 		layers.push({
 			clipId,
 			content: payload.content,
@@ -3564,6 +3571,7 @@ function handleCaptionImportCustomPreset(
 		type: 'caption-custom-presets-updated',
 		presets: customAnimCaptionPresets
 	});
+	scheduleAutosave();
 }
 
 function handleCaptionDeleteCustomPreset(
@@ -3574,6 +3582,7 @@ function handleCaptionDeleteCustomPreset(
 		type: 'caption-custom-presets-updated',
 		presets: customAnimCaptionPresets
 	});
+	scheduleAutosave();
 }
 
 function handleCaptionSetAnimStyle(
@@ -3581,12 +3590,23 @@ function handleCaptionSetAnimStyle(
 ): void {
 	const track = captionTracks.find((t: CaptionTrack) => t.id === cmd.trackId);
 	if (!track) return;
+	// Resolve the anim preset so its layout fields (anchor / maxWidthPercent /
+	// lineWrap) can propagate when the user picks a preset. Without this,
+	// selecting 'lower-third' would keep captions anchored at the previous
+	// position; the user expects layout to follow the preset on selection.
+	const animPreset = resolveAnimPreset(cmd.presetId, customAnimCaptionPresets);
+	const layoutOverlay: Partial<CaptionStyle> = {
+		anchor: animPreset.anchor,
+		maxWidthPercent: animPreset.maxWidthPercent,
+		lineWrap: animPreset.lineWrap
+	};
 	if (cmd.segmentId) {
 		const segment = track.segments.find((s) => s.id === cmd.segmentId);
 		if (!segment) return;
 		commitCaptionMutation(
 			() =>
 				setCaptionSegmentStyle(captionTracks, cmd.trackId, cmd.segmentId!, {
+					...layoutOverlay,
 					presetId: cmd.presetId as CaptionPresetIdSnapshot
 				}),
 			{ refreshPlayback: 'refresh' }
@@ -3595,7 +3615,11 @@ function handleCaptionSetAnimStyle(
 		commitCaptionMutation(
 			() =>
 				setCaptionTrackProps(captionTracks, cmd.trackId, {
-					defaultStyle: { ...track.defaultStyle, presetId: cmd.presetId as CaptionPresetIdSnapshot }
+					defaultStyle: {
+						...track.defaultStyle,
+						...layoutOverlay,
+						presetId: cmd.presetId as CaptionPresetIdSnapshot
+					}
 				}),
 			{ refreshPlayback: 'refresh' }
 		);
@@ -3736,6 +3760,8 @@ async function applyImportedDoc(doc: ProjectDoc): Promise<void> {
 	lastExportSettings = doc.exportSettings ?? null;
 	exportPresets = (doc.exportPresets ?? []).filter((p) => !p.builtIn);
 	customAnimCaptionPresets = (doc.customAnimCaptionPresets ?? []) as CaptionAnimStylePreset[];
+	// Tell the UI about the restored custom presets so the picker shows them.
+	postMessage({ type: 'caption-custom-presets-updated', presets: customAnimCaptionPresets });
 	queueState = createEmptyQueueState();
 	if (doc.renderQueueHistory) {
 		queueState = { ...queueState, jobs: deserializeQueueHistory(doc.renderQueueHistory) };

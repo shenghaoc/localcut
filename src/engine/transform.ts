@@ -119,8 +119,16 @@ export function computeFitRect(
 
 /** Floats per transform uniform: mat2 columns + translation + opacity + fit flag,
  *  then the layer "card" extents (fit rect + anchor) used to bound letterbox bars,
- *  then uvCropMax (Phase 30 caption typewriter crop). */
-export const TRANSFORM_UNIFORM_FLOATS = 14;
+ *  then uvCropMax (Phase 30 caption typewriter crop), then 2 floats of struct
+ *  padding so the host buffer matches the WGSL struct layout.
+ *
+ *  WGSL layout for the Transform struct (3 × vec4 + vec2): the largest member
+ *  alignment is 16 bytes (vec4), so the struct size rounds up to the next
+ *  multiple of 16 — 48 + 8 = 56, padded to 64. The host-side Float32Array must
+ *  therefore reserve 16 floats (64 bytes), not 14 (56 bytes); otherwise the
+ *  uniform buffer is shorter than the bind-group layout's minimum binding size
+ *  and WebGPU rejects the draw on conformant implementations. */
+export const TRANSFORM_UNIFORM_FLOATS = 16;
 export const TRANSFORM_UNIFORM_BYTES = TRANSFORM_UNIFORM_FLOATS * 4;
 
 /**
@@ -133,14 +141,15 @@ export const TRANSFORM_UNIFORM_BYTES = TRANSFORM_UNIFORM_FLOATS * 4;
  * Inverting gives `l = M·o + t`, where
  *   M = diag(1/sx, 1/sy) · R(−θ)  and  t = anchor − M·center.
  *
- * Layout: [m00, m01, m10, m11, t0, t1, opacity, fitFlag, rectW, rectH, anchorX, anchorY, cropMaxU, cropMaxV].
+ * Layout: [m00, m01, m10, m11, t0, t1, opacity, fitFlag, rectW, rectH, anchorX, anchorY, cropMaxU, cropMaxV, pad, pad].
  * `fitFlag` is 1 for `letterbox` (out-of-source texels become opaque black) and
  * 0 otherwise (out-of-source texels become transparent). The trailing `rect`/
  * `anchor` let the shader recover the layer "card" coordinate
  * `k = 0.5 + (l − anchor)·rect` and so paint letterbox bars only *inside* the
  * transformed layer (`k ∈ [0,1]²`), leaving everything beyond it transparent.
  * Phase 30: `cropMaxU`/`cropMaxV` clamp the UV sample coordinate for
- * typewriter reveal. Default [1.0, 1.0] (no crop).
+ * typewriter reveal. Default [1.0, 1.0] (no crop). The two trailing `pad`
+ * floats round the struct to 64 bytes — see TRANSFORM_UNIFORM_FLOATS.
  */
 export function packTransformUniform(
 	t: TransformParams,
@@ -203,6 +212,10 @@ export function packTransformUniform(
 		t.anchorY,
 		// Phase 30: UV crop for typewriter/karaoke reveal. [1.0, 1.0] = no crop.
 		uvCropMax?.[0] ?? 1.0,
-		uvCropMax?.[1] ?? 1.0
+		uvCropMax?.[1] ?? 1.0,
+		// Struct padding to round the WGSL Transform struct (3×vec4 + vec2) to
+		// the next vec4 boundary (64 bytes). See TRANSFORM_UNIFORM_FLOATS doc.
+		0,
+		0
 	]);
 }

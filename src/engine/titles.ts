@@ -255,17 +255,23 @@ export function rasterizeTitleToCanvas(
 		style.align === 'left' ? cx - maxWidth / 2 : style.align === 'right' ? cx + maxWidth / 2 : cx;
 
 	// Phase 30: glow pass — zero-offset shadow to produce a halo, then draw
-	// text body with shadowBlur = 0.
+	// text body with shadowBlur = 0. The transparent-fill technique is a
+	// standard Canvas2D idiom for emitting only the shadow: WebKit, Blink and
+	// Gecko all honour `shadowBlur` when `fillStyle` is `'transparent'` because
+	// the shadow is computed from the rasterized shape alpha, not the colour.
+	// We iterate with the array index (not `lines.indexOf(line)`) so duplicate
+	// lines — e.g. an SRT cue containing `"OK\nOK\nOK"` — each get their own
+	// glow halo at the correct y-position.
 	if (extras?.glow) {
 		ctx.shadowColor = extras.glow.color;
 		ctx.shadowBlur = extras.glow.blurPx;
 		ctx.shadowOffsetX = 0;
 		ctx.shadowOffsetY = 0;
 		ctx.fillStyle = 'transparent';
-		for (const line of lines) {
-			const ly = cy - blockHeight / 2 + lineHeight * (lines.indexOf(line) + 0.5);
+		lines.forEach((line, lineIdx) => {
+			const ly = cy - blockHeight / 2 + lineHeight * (lineIdx + 0.5);
 			ctx.fillText(line, anchorX, ly);
-		}
+		});
 		ctx.shadowBlur = 0;
 	}
 
