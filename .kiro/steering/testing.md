@@ -9,7 +9,7 @@ fileMatchPattern: ["**/*.test.ts", "src/engine/**"]
 
 - **Runner**: Vitest in Node environment (see `vitest.config.ts` / `package.json`).
 - **Location**: co-located with source — `src/engine/foo.test.ts` alongside `src/engine/foo.ts`.
-- **Scope**: engine modules only. SolidJS UI components are not unit-tested; validate them with manual smoke tests in a real browser.
+- **Scope**: engine modules and UI logic. SolidJS component behaviour is validated via Vitest Browser Mode (`src/**/*.browser.test.tsx`, `pnpm run test:browser`), which renders components in a real Chromium browser.
 
 ## What to Test
 

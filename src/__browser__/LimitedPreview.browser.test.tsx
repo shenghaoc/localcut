@@ -38,7 +38,7 @@ describe('LimitedPreview', () => {
 		const img = container.querySelector('img');
 		expect(img).not.toBeNull();
 		expect(img!.alt).toBe('Compatibility thumbnail for clip-001.mp4');
-		expect(img!.src).toContain('data:image/png');
+		expect(img!.getAttribute('src')).toContain('data:image/png');
 	});
 
 	it('displays resolution and duration in the metadata strip', () => {

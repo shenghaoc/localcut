@@ -51,17 +51,18 @@ describe('DocsNav', () => {
 
 	it('calls onNavigate when a non-active link is clicked', () => {
 		const { container, onNavigate } = renderDocsNav('index');
-		const links = container.querySelectorAll('a.docs-nav-item');
-		// Click the second link (Getting started)
-		const targetLink = links[1] as HTMLAnchorElement;
+		const targetLink = container.querySelector(
+			'a[href="/docs/getting-started"]'
+		) as HTMLAnchorElement;
 		targetLink.click();
 		expect(onNavigate).toHaveBeenCalledWith('getting-started');
 	});
 
 	it('does not call onNavigate when a modifier key is held', () => {
 		const { container, onNavigate } = renderDocsNav('index');
-		const links = container.querySelectorAll('a.docs-nav-item');
-		const targetLink = links[1] as HTMLAnchorElement;
+		const targetLink = container.querySelector(
+			'a[href="/docs/getting-started"]'
+		) as HTMLAnchorElement;
 		// Dispatch a click with metaKey held — should not be intercepted
 		const event = new MouseEvent('click', { bubbles: true, metaKey: true });
 		targetLink.dispatchEvent(event);
@@ -70,10 +71,9 @@ describe('DocsNav', () => {
 
 	it('sets correct href attributes for SPA routing', () => {
 		const { container } = renderDocsNav();
-		const links = container.querySelectorAll('a.docs-nav-item') as NodeListOf<HTMLAnchorElement>;
-		// First link is the index → /docs
-		expect(links[0].getAttribute('href')).toBe('/docs');
-		// Second link is getting-started → /docs/getting-started
-		expect(links[1].getAttribute('href')).toBe('/docs/getting-started');
+		const indexLink = container.querySelector('a[href="/docs"]');
+		const startLink = container.querySelector('a[href="/docs/getting-started"]');
+		expect(indexLink).not.toBeNull();
+		expect(startLink).not.toBeNull();
 	});
 });
