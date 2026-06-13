@@ -107,7 +107,11 @@ export function PreviewGizmo(props: PreviewGizmoProps) {
 			translate: `${b.left + cx - w / 2}px ${b.top + cy - h / 2}px`,
 			transform: `rotate(${t.rotation}deg)`,
 			'will-change':
-				d?.mode === 'move' ? 'translate' : d?.mode === 'rotate' ? 'transform' : undefined
+				d?.mode === 'move' || d?.mode === 'scale'
+					? 'translate'
+					: d?.mode === 'rotate'
+						? 'transform'
+						: undefined
 		};
 	}
 
