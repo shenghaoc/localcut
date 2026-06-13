@@ -1,10 +1,12 @@
-/** Phase 30 — Caption style inspector: preset picker, import/export, per-field overrides.
- *
- * Renders when a caption track or segment is selected. Keyboard accessible,
- * ARIA labels on all controls, no media objects or GPU handles in this file.
+/** Phase 30 — Caption style inspector: preset picker, import/export, per-field
+ *  overrides for titleStyle / glow / pill / animation. Edits are gathered as
+ *  a local draft and committed to the project as a new custom preset via
+ *  "Save as preset" (T8.1, T8.4). No media objects or GPU handles in this file;
+ *  every interactive control has an ARIA label; the file picker dialogs are
+ *  the only I/O.
  */
 
-import { createSignal, For, Show, onCleanup } from 'solid-js';
+import { createMemo, createSignal, For, Show, onCleanup } from 'solid-js';
 import type { CaptionAnimStylePreset } from '../engine/captions/anim-style';
 import {
 	ANIM_CAPTION_PRESETS,
@@ -18,6 +20,8 @@ import type { CaptionAnimStylePresetSnapshot } from '../protocol';
 // `string` so it's clone-safe across postMessage. The UI accepts the snapshot
 // shape from callers and produces it on outbound mutations.
 type UiPreset = CaptionAnimStylePresetSnapshot;
+
+const ANIM_KINDS = ['none', 'pop', 'bounce', 'slide-up', 'slide-down', 'typewriter'] as const;
 
 /**
  * UUID for a freshly imported / saved preset. `crypto.randomUUID()` requires a
@@ -62,10 +66,11 @@ interface CaptionStyleInspectorProps {
  * Serialize and save a preset to a local JSON file.
  * Falls back to `<a download>` when `showSaveFilePicker` is unavailable.
  */
-export function serializeAndSavePreset(preset: CaptionAnimStylePreset): void {
+export function serializeAndSavePreset(preset: UiPreset): void {
 	const json = JSON.stringify(preset, null, 2);
 	const blob = new Blob([json], { type: 'application/json' });
-	const filename = `${preset.id}.caption-preset.json`;
+	const safeStem = preset.label.replace(/[^a-z0-9-_]+/gi, '-').replace(/^-|-$/g, '') || preset.id;
+	const filename = `${safeStem}.caption-preset.json`;
 
 	if (typeof (globalThis as Record<string, unknown>).showSaveFilePicker === 'function') {
 		void (async () => {
@@ -189,6 +194,79 @@ function readAndValidate(
 	reader.readAsText(file);
 }
 
+/**
+ * Compute draft override fields from a base preset. Returns plain values that
+ * the override form binds to via signals; "Save as preset" reads them back to
+ * construct a new custom preset. Track/segment style.overrides are NOT touched
+ * by this draft — they remain a Phase 22 concept that the TranscriptPanel font
+ * size field already controls. This panel's overrides land in the new preset.
+ */
+function draftFromPreset(preset: UiPreset) {
+	const titleStyle = preset.titleStyle;
+	return {
+		color: titleStyle.color ?? '#ffffff',
+		fontSizePx: typeof titleStyle.fontSizePx === 'number' ? titleStyle.fontSizePx : 64,
+		outlineColor: titleStyle.outlineColor ?? '#000000',
+		outlineWidthPx: typeof titleStyle.outlineWidthPx === 'number' ? titleStyle.outlineWidthPx : 4,
+		glowEnabled: preset.glow !== undefined,
+		glowColor: preset.glow?.color ?? '#00ffff',
+		glowBlurPx: preset.glow?.blurPx ?? 20,
+		pillEnabled: preset.pill !== undefined,
+		pillColor: preset.pill?.color ?? '#000000',
+		pillOpacity: preset.pill?.opacity ?? 0.6,
+		pillRadiusPx: preset.pill?.radiusPx ?? 8,
+		pillPaddingXPx: preset.pill?.paddingXPx ?? 12,
+		pillPaddingYPx: preset.pill?.paddingYPx ?? 6,
+		enterKind: preset.animation?.enter ?? 'none',
+		exitKind: preset.animation?.exit ?? 'none',
+		animDurationS: preset.animation?.durationS ?? 0.25
+	};
+}
+
+type Draft = ReturnType<typeof draftFromPreset>;
+
+function presetFromDraft(label: string, base: UiPreset, draft: Draft): UiPreset {
+	return {
+		captionStyleSchemaVersion: 1,
+		id: newPresetId(),
+		label,
+		builtIn: false,
+		anchor: base.anchor,
+		maxWidthPercent: base.maxWidthPercent,
+		lineWrap: base.lineWrap,
+		insetPx: base.insetPx,
+		titleStyle: {
+			...base.titleStyle,
+			color: draft.color,
+			fontSizePx: draft.fontSizePx,
+			outlineColor: draft.outlineColor,
+			outlineWidthPx: draft.outlineWidthPx
+		},
+		...(draft.glowEnabled ? { glow: { color: draft.glowColor, blurPx: draft.glowBlurPx } } : {}),
+		...(draft.pillEnabled
+			? {
+					pill: {
+						paddingXPx: draft.pillPaddingXPx,
+						paddingYPx: draft.pillPaddingYPx,
+						radiusPx: draft.pillRadiusPx,
+						color: draft.pillColor,
+						opacity: draft.pillOpacity
+					}
+				}
+			: {}),
+		...(draft.enterKind !== 'none' || draft.exitKind !== 'none'
+			? {
+					animation: {
+						enter: draft.enterKind,
+						exit: draft.exitKind,
+						durationS: draft.animDurationS
+					}
+				}
+			: {}),
+		...(base.highlightColor ? { highlightColor: base.highlightColor } : {})
+	};
+}
+
 /** The preset picker and override panel. */
 export function CaptionStyleInspector(props: CaptionStyleInspectorProps) {
 	const [importError, setImportError] = createSignal<string | null>(null);
@@ -206,7 +284,41 @@ export function CaptionStyleInspector(props: CaptionStyleInspectorProps) {
 		}
 	};
 
-	const allPresets = () => [...ANIM_CAPTION_PRESETS, ...props.customPresets];
+	const allPresets = createMemo<UiPreset[]>(() => [
+		...ANIM_CAPTION_PRESETS,
+		...props.customPresets
+	]);
+	const activePreset = createMemo<UiPreset | null>(
+		() => allPresets().find((p) => p.id === props.presetId) ?? null
+	);
+
+	// Draft override state, seeded from whichever preset is currently selected.
+	// Re-seeds whenever the selected preset id changes (createMemo recomputes
+	// when its tracked dependency — the preset id — changes).
+	const initialDraft = createMemo<Draft>(() => {
+		const preset = activePreset();
+		return preset ? draftFromPreset(preset) : draftFromPreset(ANIM_CAPTION_PRESETS[0]!);
+	});
+	const [draft, setDraft] = createSignal<Draft>(initialDraft());
+	const [draftKey, setDraftKey] = createSignal(props.presetId);
+	const ensureDraftSync = () => {
+		if (draftKey() !== props.presetId) {
+			setDraft(initialDraft());
+			setDraftKey(props.presetId);
+		}
+	};
+	// Cheap polling-in-getter pattern: every render of the form reconciles the
+	// draft signal with the selected preset id. SolidJS reads in the form will
+	// trigger this getter, which re-syncs without a createEffect.
+	const d = (): Draft => {
+		ensureDraftSync();
+		return draft();
+	};
+
+	const updateDraft = <K extends keyof Draft>(key: K, value: Draft[K]) => {
+		ensureDraftSync();
+		setDraft((prev) => ({ ...prev, [key]: value }));
+	};
 
 	const handleImport = async () => {
 		setImportError(null);
@@ -238,25 +350,27 @@ export function CaptionStyleInspector(props: CaptionStyleInspectorProps) {
 	};
 
 	const handleSaveAsPreset = () => {
-		const label = window.prompt('Enter a name for this preset:');
-		if (!label || label.trim().length === 0) return;
-		const current = allPresets().find((p) => p.id === props.presetId);
-		if (!current) return;
-		const newPreset: UiPreset = {
-			...(current as UiPreset),
-			id: newPresetId(),
-			label: label.trim(),
-			builtIn: false
-		};
+		const base = activePreset();
+		if (!base) return;
+		const defaultLabel = `${base.label} (custom)`;
+		const label = window.prompt('Name this preset:', defaultLabel);
+		if (label === null) return; // User cancelled.
+		const trimmed = label.trim();
+		if (trimmed.length === 0) return;
+		const newPreset = presetFromDraft(trimmed, base, d());
 		props.onImportPreset(newPreset);
+		// Switch the selection to the new preset so further edits land on it.
+		props.onSetPresetId(newPreset.id);
 		setImportSuccess(`Saved as preset: ${newPreset.label}`);
 	};
 
 	const handleExport = () => {
-		const preset = allPresets().find((p) => p.id === props.presetId);
-		// The runtime shape of UiPreset and CaptionAnimStylePreset is identical.
-		if (preset) serializeAndSavePreset(preset as unknown as CaptionAnimStylePreset);
+		const preset = activePreset();
+		if (preset) serializeAndSavePreset(preset);
 	};
+
+	const isCustomSelected = () =>
+		props.customPresets.some((p) => p.id === props.presetId && !p.builtIn);
 
 	onCleanup(() => {
 		if (successTimer !== undefined) clearTimeout(successTimer);
@@ -273,47 +387,222 @@ export function CaptionStyleInspector(props: CaptionStyleInspectorProps) {
 							role="option"
 							aria-selected={preset.id === props.presetId}
 							aria-label={preset.label}
-							class={`caption-preset-swatch${preset.id === props.presetId ? ' selected' : ''}`}
+							class={`caption-preset-swatch${preset.id === props.presetId ? ' is-selected' : ''}`}
 							onClick={() => props.onSetPresetId(preset.id)}
 						>
 							<span class="caption-preset-swatch-label">{preset.label}</span>
-							{preset.glow && (
-								<span class="caption-preset-badge" aria-label="Has glow">
-									G
-								</span>
-							)}
-							{preset.pill && (
-								<span class="caption-preset-badge" aria-label="Has pill">
-									P
-								</span>
-							)}
-							{preset.animation && preset.animation.enter !== 'none' && (
-								<span class="caption-preset-badge" aria-label="Animated">
-									A
-								</span>
-							)}
+							<span class="caption-preset-badges">
+								{preset.glow && (
+									<span class="caption-preset-badge" aria-label="Has glow" title="Glow">
+										G
+									</span>
+								)}
+								{preset.pill && (
+									<span class="caption-preset-badge" aria-label="Has pill" title="Pill">
+										P
+									</span>
+								)}
+								{preset.animation && preset.animation.enter !== 'none' && (
+									<span class="caption-preset-badge" aria-label="Animated" title="Animated">
+										A
+									</span>
+								)}
+							</span>
 						</button>
 					)}
 				</For>
 			</div>
 
+			{/* Per-field override form. Edits stay local until "Save as preset" is
+			    pressed, which materialises a new custom preset and selects it. */}
+			<div class="caption-overrides" role="group" aria-label="Preset overrides">
+				<div class="caption-overrides-row">
+					<label>
+						<span>Text color</span>
+						<input
+							type="color"
+							value={d().color}
+							aria-label="Text color"
+							onInput={(e) => updateDraft('color', e.currentTarget.value)}
+						/>
+					</label>
+					<label>
+						<span>Font size (px)</span>
+						<input
+							type="number"
+							min="16"
+							max="200"
+							step="1"
+							value={d().fontSizePx}
+							aria-label="Font size in pixels"
+							onInput={(e) => updateDraft('fontSizePx', Number(e.currentTarget.value))}
+						/>
+					</label>
+					<label>
+						<span>Outline color</span>
+						<input
+							type="color"
+							value={d().outlineColor}
+							aria-label="Outline color"
+							onInput={(e) => updateDraft('outlineColor', e.currentTarget.value)}
+						/>
+					</label>
+					<label>
+						<span>Outline width (px)</span>
+						<input
+							type="number"
+							min="0"
+							max="32"
+							step="1"
+							value={d().outlineWidthPx}
+							aria-label="Outline width in pixels"
+							onInput={(e) => updateDraft('outlineWidthPx', Number(e.currentTarget.value))}
+						/>
+					</label>
+				</div>
+
+				<div class="caption-overrides-row">
+					<label class="caption-overrides-toggle">
+						<input
+							type="checkbox"
+							checked={d().glowEnabled}
+							aria-label="Enable glow"
+							onChange={(e) => updateDraft('glowEnabled', e.currentTarget.checked)}
+						/>
+						<span>Glow</span>
+					</label>
+					<label>
+						<span>Glow color</span>
+						<input
+							type="color"
+							value={d().glowColor}
+							disabled={!d().glowEnabled}
+							aria-label="Glow color"
+							onInput={(e) => updateDraft('glowColor', e.currentTarget.value)}
+						/>
+					</label>
+					<label>
+						<span>Glow blur (px)</span>
+						<input
+							type="number"
+							min="0"
+							max="80"
+							step="1"
+							value={d().glowBlurPx}
+							disabled={!d().glowEnabled}
+							aria-label="Glow blur radius in pixels"
+							onInput={(e) => updateDraft('glowBlurPx', Number(e.currentTarget.value))}
+						/>
+					</label>
+				</div>
+
+				<div class="caption-overrides-row">
+					<label class="caption-overrides-toggle">
+						<input
+							type="checkbox"
+							checked={d().pillEnabled}
+							aria-label="Enable background pill"
+							onChange={(e) => updateDraft('pillEnabled', e.currentTarget.checked)}
+						/>
+						<span>Pill</span>
+					</label>
+					<label>
+						<span>Pill color</span>
+						<input
+							type="color"
+							value={d().pillColor}
+							disabled={!d().pillEnabled}
+							aria-label="Pill color"
+							onInput={(e) => updateDraft('pillColor', e.currentTarget.value)}
+						/>
+					</label>
+					<label>
+						<span>Pill opacity</span>
+						<input
+							type="number"
+							min="0"
+							max="1"
+							step="0.05"
+							value={d().pillOpacity}
+							disabled={!d().pillEnabled}
+							aria-label="Pill opacity"
+							onInput={(e) => updateDraft('pillOpacity', Number(e.currentTarget.value))}
+						/>
+					</label>
+					<label>
+						<span>Pill radius (px)</span>
+						<input
+							type="number"
+							min="0"
+							max="40"
+							step="1"
+							value={d().pillRadiusPx}
+							disabled={!d().pillEnabled}
+							aria-label="Pill corner radius"
+							onInput={(e) => updateDraft('pillRadiusPx', Number(e.currentTarget.value))}
+						/>
+					</label>
+				</div>
+
+				<div class="caption-overrides-row">
+					<label>
+						<span>Enter animation</span>
+						<select
+							value={d().enterKind}
+							aria-label="Enter animation kind"
+							onChange={(e) => updateDraft('enterKind', e.currentTarget.value)}
+						>
+							<For each={ANIM_KINDS}>{(kind) => <option value={kind}>{kind}</option>}</For>
+						</select>
+					</label>
+					<label>
+						<span>Exit animation</span>
+						<select
+							value={d().exitKind}
+							aria-label="Exit animation kind"
+							onChange={(e) => updateDraft('exitKind', e.currentTarget.value)}
+						>
+							<For each={ANIM_KINDS}>{(kind) => <option value={kind}>{kind}</option>}</For>
+						</select>
+					</label>
+					<label>
+						<span>Duration (s)</span>
+						<input
+							type="number"
+							min="0.05"
+							max="1"
+							step="0.05"
+							value={d().animDurationS}
+							aria-label="Animation duration in seconds"
+							onInput={(e) => updateDraft('animDurationS', Number(e.currentTarget.value))}
+						/>
+					</label>
+				</div>
+			</div>
+
 			{/* Import/Export buttons */}
 			<div class="caption-preset-actions">
 				<button type="button" onClick={handleImport} aria-label="Import preset from file">
-					Import preset
+					Import…
 				</button>
-				<button type="button" onClick={handleExport} aria-label="Export preset to file">
-					Export preset
+				<button
+					type="button"
+					onClick={handleExport}
+					aria-label="Export preset to file"
+					disabled={!activePreset()}
+				>
+					Export
 				</button>
 				<button
 					type="button"
 					onClick={handleSaveAsPreset}
-					aria-label="Save current style as a new preset"
+					aria-label="Save current overrides as a new preset"
+					disabled={!activePreset()}
 				>
-					Save as preset
+					Save as preset…
 				</button>
 				{/* Delete is only valid for custom presets — built-ins are immutable. */}
-				<Show when={props.customPresets.some((p) => p.id === props.presetId && !p.builtIn)}>
+				<Show when={isCustomSelected()}>
 					<button
 						type="button"
 						onClick={() => props.onDeletePreset(props.presetId)}
