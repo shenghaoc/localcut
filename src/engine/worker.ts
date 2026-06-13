@@ -62,7 +62,11 @@ import {
 	type PcmPlane
 } from './live-audio/live-chain';
 import { exportCaptionSidecars } from './captions/export';
-import { activeCaptionPayloadsAt, captionTextureId } from './captions/render';
+import {
+	activeCaptionPayloadsAt,
+	captionTextureId,
+	enumerateCaptionRasterTargets
+} from './captions/render';
 import { CAPTION_ANIM_IDENTITY } from './captions/animation-curves';
 import type { CaptionAnimUniforms } from './captions/animation-curves';
 import type { CaptionAnimStylePreset } from './captions/anim-style';
@@ -1909,6 +1913,11 @@ async function handleNewProject(): Promise<void> {
 	projectId = makeProjectId();
 	nextSourceId = 1;
 	captionTracks = [];
+	// Phase 30: custom caption presets are project-scoped — clear them so they
+	// don't leak from the previous project into the new one. Notify the UI so
+	// the inspector's preset picker drops the stale entries.
+	customAnimCaptionPresets = [];
+	postMessage({ type: 'caption-custom-presets-updated', presets: [] });
 	markers = [];
 	masterGain = DEFAULT_MASTER_GAIN;
 	if (capture) requestCaptureStop();
@@ -1982,6 +1991,7 @@ function teardownMedia() {
 	titleCache?.retain(EMPTY_CLIP_IDS);
 	timeline = createEmptyTimeline();
 	captionTracks = [];
+	customAnimCaptionPresets = [];
 	transitions = [];
 	markers = [];
 }
@@ -2063,25 +2073,24 @@ function titleClips(): { trackId: string; clip: TimelineClip }[] {
 }
 
 /**
- * Edit-path raster sync: rasterizes every title clip (a no-op when the content
+ * Edit-path raster sync: rasterises every title clip (a no-op when the content
  * hash is unchanged) and drops cached textures for titles no longer present.
- * Called after timeline mutations and once fonts/GPU are ready — never per frame.
+ * Called after timeline mutations and once fonts/GPU are ready — never per
+ * frame. Pre-rasterises every caption raster target the project needs,
+ * including each per-word karaoke highlight variant, so the playback hot path
+ * can read straight from cache without invoking Canvas2D or uploading a new
+ * texture on word-boundary crossings.
  */
 function syncTitleRasters(): void {
 	if (!titleCache) return;
 	const active = new Set<string>(retainedOverlayTextureIds);
-	const previewTime = clockView?.[ClockIndex.CURRENT_TIME] ?? 0;
 	for (const { clip } of titleClips()) {
 		active.add(clip.id);
 		titleCache.rasterize(clip.id, clip.title!);
 	}
-	for (const payload of activeCaptionPayloadsAt(
-		captionTracks,
-		previewTime,
-		customAnimCaptionPresets
-	)) {
-		active.add(payload.textureId);
-		titleCache.rasterize(payload.textureId, payload.content, payload.extras);
+	for (const target of enumerateCaptionRasterTargets(captionTracks, customAnimCaptionPresets)) {
+		active.add(target.textureId);
+		titleCache.rasterize(target.textureId, target.content, target.extras);
 	}
 	titleCache.retain(active);
 }
@@ -2123,17 +2132,15 @@ function activeCaptionLayersAt(
 		animUniforms: CaptionAnimUniforms;
 	}> = [];
 	for (const payload of activeCaptionPayloadsAt(tracks, timestamp, customAnimCaptionPresets)) {
-		// Use the textureId from the payload (may be 'highlight' variant for karaoke).
+		// Use the textureId from the payload (may be 'highlight:<idx>' variant
+		// for karaoke). The pre-rasterise pass in syncTitleRasters has already
+		// populated the cache for every variant — this is a read-only hot path,
+		// NEVER a Canvas2D / GPU upload site. Hard gate 1: no sustained
+		// rasterisation on the playback path.
 		const clipId =
 			textureIdFor === captionTextureId
 				? payload.textureId
 				: textureIdFor(payload.trackId, payload.segmentId);
-		// TitleTextureCache.ensure is hash-checked: it no-ops when the content +
-		// extras hash matches the cached entry. Calling it unconditionally is
-		// required for karaoke — the highlight variant's content hash changes on
-		// every word-boundary crossing, so a `!get(clipId)` short-circuit would
-		// freeze the first word's colour for the rest of the segment.
-		if (titleCache) titleCache.ensure(clipId, payload.content, payload.extras);
 		layers.push({
 			clipId,
 			content: payload.content,
@@ -3590,15 +3597,17 @@ function handleCaptionSetAnimStyle(
 ): void {
 	const track = captionTracks.find((t: CaptionTrack) => t.id === cmd.trackId);
 	if (!track) return;
-	// Resolve the anim preset so its layout fields (anchor / maxWidthPercent /
-	// lineWrap) can propagate when the user picks a preset. Without this,
-	// selecting 'lower-third' would keep captions anchored at the previous
-	// position; the user expects layout to follow the preset on selection.
+	// Resolve the anim preset so its layout fields propagate when the user picks
+	// a preset. Without this, selecting 'lower-third' would keep captions
+	// anchored at the previous position; the user expects layout to follow the
+	// preset on selection. `insetPx` is included so custom presets that ship a
+	// custom offset don't silently render at the default inset.
 	const animPreset = resolveAnimPreset(cmd.presetId, customAnimCaptionPresets);
 	const layoutOverlay: Partial<CaptionStyle> = {
 		anchor: animPreset.anchor,
 		maxWidthPercent: animPreset.maxWidthPercent,
-		lineWrap: animPreset.lineWrap
+		lineWrap: animPreset.lineWrap,
+		...(animPreset.insetPx ? { insetPx: { ...animPreset.insetPx } } : {})
 	};
 	if (cmd.segmentId) {
 		const segment = track.segments.find((s) => s.id === cmd.segmentId);

@@ -317,3 +317,83 @@ describe('CaptionSegment words validation (Phase 30)', () => {
 		}
 	});
 });
+
+describe('Phase 30 — split/merge propagate karaoke words', () => {
+	it('partitions a segment-level words array along the split pivot', () => {
+		// "Hello world good morning friends" → 5 words; pivot = floor(5/2) = 2.
+		const id = 'seg-words';
+		const tracks = [
+			createCaptionTrack({
+				id: 'captions-1',
+				segments: [
+					{
+						id,
+						start: 0,
+						duration: 5,
+						text: 'Hello world good morning friends',
+						words: [
+							{ text: 'Hello', startS: 0.0, endS: 0.5 },
+							{ text: 'world', startS: 0.5, endS: 1.2 },
+							{ text: 'good', startS: 1.5, endS: 2.0 },
+							{ text: 'morning', startS: 2.0, endS: 2.5 },
+							{ text: 'friends', startS: 2.5, endS: 3.0 }
+						]
+					}
+				]
+			})
+		];
+		const split = splitCaptionSegment(tracks, 'captions-1', id, 2.0);
+		expect(split[0]!.segments).toHaveLength(2);
+		const [left, right] = split[0]!.segments;
+		// Left keeps the first 2 word records (matching the text pivot).
+		expect(left!.words?.map((w) => w.text)).toEqual(['Hello', 'world']);
+		// Right keeps the remaining 3 — no duplication of the original array.
+		expect(right!.words?.map((w) => w.text)).toEqual(['good', 'morning', 'friends']);
+	});
+
+	it('concatenates karaoke words when merging multiple segments', () => {
+		const a = 'seg-a';
+		const b = 'seg-b';
+		const tracks = [
+			createCaptionTrack({
+				id: 'captions-1',
+				segments: [
+					{
+						id: a,
+						start: 0,
+						duration: 1,
+						text: 'Hello',
+						words: [{ text: 'Hello', startS: 0.0, endS: 0.8 }]
+					},
+					{
+						id: b,
+						start: 1,
+						duration: 1,
+						text: 'world',
+						words: [{ text: 'world', startS: 1.0, endS: 1.8 }]
+					}
+				]
+			})
+		];
+		const merged = mergeCaptionSegments(tracks, 'captions-1', [a, b]);
+		expect(merged[0]!.segments).toHaveLength(1);
+		const segment = merged[0]!.segments[0]!;
+		expect(segment.words?.map((w) => w.text)).toEqual(['Hello', 'world']);
+	});
+
+	it('keeps words undefined when neither merged segment had karaoke timings', () => {
+		const a = 'seg-no-a';
+		const b = 'seg-no-b';
+		const tracks = [
+			createCaptionTrack({
+				id: 'captions-1',
+				segments: [
+					{ id: a, start: 0, duration: 1, text: 'Hi' },
+					{ id: b, start: 1, duration: 1, text: 'there' }
+				]
+			})
+		];
+		const merged = mergeCaptionSegments(tracks, 'captions-1', [a, b]);
+		expect(merged[0]!.segments[0]!.words).toBeUndefined();
+	});
+});

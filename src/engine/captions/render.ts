@@ -1,7 +1,7 @@
 import { TITLE_RASTER_WIDTH } from '../titles';
-import { captionAnchorTransform, resolveCaptionTitleStyle } from './types';
+import { CAPTION_PRESETS, captionAnchorTransform, normalizeCaptionStyle } from './types';
 import { activeCaptionSegmentsAt, resolvedCaptionStyle } from './model';
-import type { CaptionTrack } from './types';
+import type { CaptionPresetId, CaptionTrack } from './types';
 import type { TitleContent, TitleRasterExtras, TitleStyle } from '../title';
 import { normalizeTitleStyle } from '../title';
 import type { TransformParams } from '../transform';
@@ -43,10 +43,21 @@ function wrapBalanced(text: string, maxChars: number): string {
 		.join('\n');
 }
 
+/**
+ * Caption raster cache key.
+ *
+ * - No variant → the full-line raster (subtitle, lower-third, all non-karaoke
+ *   presets, and karaoke segments when no word is currently active).
+ * - `highlight:<idx>` → the karaoke-active-word variant where word `idx`
+ *   (zero-based, per the segment-level `words` array) is drawn in the
+ *   preset's `highlightColor`. The active word index is part of the key on
+ *   purpose: it lets the worker pre-rasterise every per-word variant at
+ *   sync time so the playback hot path never invokes Canvas2D.
+ */
 export function captionTextureId(
 	trackId: string,
 	segmentId: string,
-	variant?: 'highlight'
+	variant?: 'highlight' | `highlight:${number}`
 ): string {
 	return variant ? `caption:${trackId}:${segmentId}:${variant}` : `caption:${trackId}:${segmentId}`;
 }
@@ -79,40 +90,6 @@ export function mapWordToWrappedLine(
 	return null;
 }
 
-export function captionTitlePayload(
-	track: CaptionTrack,
-	segmentId: string,
-	text: string
-): { content: TitleContent; transform: TransformParams } {
-	const segment = track.segments.find((item) => item.id === segmentId);
-	if (!segment) {
-		return {
-			content: { text, style: resolveCaptionTitleStyle(track.defaultStyle) },
-			transform: captionAnchorTransform(track.defaultStyle)
-		};
-	}
-	const style = resolvedCaptionStyle(track, segment);
-	const titleStyle = resolveCaptionTitleStyle(style);
-	const approxCharsPerLine = Math.max(
-		12,
-		Math.floor(
-			(TITLE_RASTER_WIDTH * (style.maxWidthPercent / 100)) /
-				Math.max(24, titleStyle.fontSizePx * 0.58)
-		)
-	);
-	const wrapped =
-		style.lineWrap === 'balanced'
-			? wrapBalanced(text, approxCharsPerLine)
-			: wrapGreedy(text, approxCharsPerLine);
-	return {
-		content: {
-			text: wrapped,
-			style: titleStyle
-		},
-		transform: captionAnchorTransform(style)
-	};
-}
-
 export interface CaptionPayload {
 	trackId: string;
 	segmentId: string;
@@ -136,21 +113,41 @@ export function activeCaptionPayloadsAt(
 	customPresets: readonly CaptionAnimStylePreset[] = []
 ): CaptionPayload[] {
 	return activeCaptionSegmentsAt(tracks, time).map(({ track, segment }) => {
-		const style = resolvedCaptionStyle(track, segment);
+		const style = normalizeCaptionStyle(resolvedCaptionStyle(track, segment));
 		const preset = resolveAnimPreset(style.presetId, customPresets);
-		const payload = captionTitlePayload(track, segment.id, segment.text);
 
-		// captionTitlePayload resolves the title style via CAPTION_PRESETS, whose
-		// Phase 30 entries are layout-only (every visual style is a copy of the
-		// subtitle style). The Phase 30 preset's actual look — colour, font
-		// size, outline — lives on CaptionAnimStylePreset.titleStyle and must be
-		// layered on top so neon-glow renders cyan, bold-outline gets its 6 px
-		// stroke, and custom presets use their stored titleStyle.
-		const mergedStyle: TitleStyle = normalizeTitleStyle({
-			...payload.content.style,
-			...preset.titleStyle
+		// Three-layer style precedence (lowest → highest):
+		//   1. CAPTION_PRESETS[layoutId].style — Phase 22 layout defaults
+		//   2. preset.titleStyle               — Phase 30 visual look
+		//   3. style.overrides                 — user edits in TranscriptPanel
+		// The earlier merge order put preset.titleStyle ON TOP of payload.content.style
+		// (which already baked in user overrides), clobbering anything the user had
+		// set on the track/segment. Fix: rebuild the merge here so user overrides win.
+		const layoutPresetId: CaptionPresetId =
+			style.presetId != null && style.presetId in CAPTION_PRESETS
+				? (style.presetId as CaptionPresetId)
+				: 'subtitle';
+		const layoutPresetStyle = CAPTION_PRESETS[layoutPresetId].style;
+		const titleStyle: TitleStyle = normalizeTitleStyle({
+			...layoutPresetStyle,
+			...preset.titleStyle,
+			...(style.overrides ?? {})
 		});
-		const content: TitleContent = { text: payload.content.text, style: mergedStyle };
+
+		// Wrap the segment text using the resolved title style + caption layout.
+		const approxCharsPerLine = Math.max(
+			12,
+			Math.floor(
+				(TITLE_RASTER_WIDTH * (style.maxWidthPercent / 100)) /
+					Math.max(24, titleStyle.fontSizePx * 0.58)
+			)
+		);
+		const wrapped =
+			style.lineWrap === 'balanced'
+				? wrapBalanced(segment.text, approxCharsPerLine)
+				: wrapGreedy(segment.text, approxCharsPerLine);
+		const content: TitleContent = { text: wrapped, style: titleStyle };
+		const transform = captionAnchorTransform(style);
 
 		// Compute animation uniforms for the current time.
 		const animUniforms = computeCaptionAnimUniforms(preset, segment.start, segment.duration, time);
@@ -168,6 +165,10 @@ export function activeCaptionPayloadsAt(
 
 		// Karaoke: if words are present and a highlightColor is set, check if we
 		// should use the highlight texture variant + supply per-word colouring.
+		// The textureId encodes the active word index so each variant gets its
+		// own cache slot — that lets the worker pre-rasterise every variant at
+		// sync time and read it from cache on the playback hot path, without
+		// invoking Canvas2D per frame.
 		let textureId = captionTextureId(track.id, segment.id);
 		let extras = baseExtras;
 		if (segment.words && segment.words.length > 0 && preset.highlightColor) {
@@ -178,7 +179,7 @@ export function activeCaptionPayloadsAt(
 			// text was edited but word timings were not — fall back to the full
 			// line raster rather than rasterising with an out-of-range index.
 			if (mapped) {
-				textureId = captionTextureId(track.id, segment.id, 'highlight');
+				textureId = captionTextureId(track.id, segment.id, `highlight:${activeWordIdx}`);
 				extras = {
 					...(baseExtras ?? {}),
 					highlightWord: {
@@ -194,10 +195,82 @@ export function activeCaptionPayloadsAt(
 			trackId: track.id,
 			segmentId: segment.id,
 			content,
-			transform: payload.transform,
+			transform,
 			animUniforms,
 			textureId,
 			extras
 		};
 	});
+}
+
+/**
+ * Enumerate every caption raster texture the pipeline needs ready for the
+ * current project state. Used by the worker's edit-path sync to pre-rasterise
+ * caption textures off the playback hot path. Returns one entry per visible
+ * burned-in segment, plus N extra entries per karaoke segment with words —
+ * one per word — so the playback path can swap variants by simple cache get.
+ *
+ * The pre-roll covers every track segment regardless of playhead position;
+ * memory cost is bounded by total caption complexity (typical projects:
+ * dozens of segments × <10 words each → well under cache LRU pressure).
+ */
+export function enumerateCaptionRasterTargets(
+	tracks: readonly CaptionTrack[],
+	customPresets: readonly CaptionAnimStylePreset[] = []
+): Array<{ textureId: string; content: TitleContent; extras?: TitleRasterExtras }> {
+	const targets: Array<{ textureId: string; content: TitleContent; extras?: TitleRasterExtras }> =
+		[];
+	for (const track of tracks) {
+		if (!track.visible || !track.burnedIn) continue;
+		for (const segment of track.segments) {
+			// Sample the payload at the segment midpoint to get the resolved style
+			// + base extras (text-only fields; animUniforms / textureId variant
+			// are evaluated below). The midpoint avoids the enter/exit edges
+			// where overlap-clamped animation curves can swap textures.
+			const sampleAt = segment.start + segment.duration / 2;
+			const payloads = activeCaptionPayloadsAt([track], sampleAt, customPresets);
+			const baseline = payloads.find((p) => p.segmentId === segment.id);
+			if (!baseline) continue;
+
+			// Always include the full-line raster — used whenever karaoke is
+			// not currently spotlighting a word, and for every non-karaoke preset.
+			targets.push({
+				textureId: captionTextureId(track.id, segment.id),
+				content: baseline.content,
+				// Strip the highlightWord extras (this is the full-line variant).
+				extras:
+					baseline.extras?.glow || baseline.extras?.pill
+						? {
+								...(baseline.extras.glow ? { glow: baseline.extras.glow } : {}),
+								...(baseline.extras.pill ? { pill: baseline.extras.pill } : {})
+							}
+						: undefined
+			});
+
+			// Pre-rasterise every karaoke word variant so the hot path is a
+			// pure cache read. resolveAnimPreset / highlightColor must be set
+			// for variants to exist at all.
+			const style = normalizeCaptionStyle(resolvedCaptionStyle(track, segment));
+			const preset = resolveAnimPreset(style.presetId, customPresets);
+			if (!segment.words || segment.words.length === 0 || !preset.highlightColor) continue;
+			for (let i = 0; i < segment.words.length; i++) {
+				const mapped = mapWordToWrappedLine(baseline.content.text, i);
+				if (!mapped) continue;
+				targets.push({
+					textureId: captionTextureId(track.id, segment.id, `highlight:${i}`),
+					content: baseline.content,
+					extras: {
+						...(baseline.extras?.glow ? { glow: baseline.extras.glow } : {}),
+						...(baseline.extras?.pill ? { pill: baseline.extras.pill } : {}),
+						highlightWord: {
+							wordIndex: mapped.wordIndex,
+							lineIndex: mapped.lineIndex,
+							color: preset.highlightColor
+						}
+					}
+				});
+			}
+		}
+	}
+	return targets;
 }

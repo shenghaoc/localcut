@@ -756,4 +756,72 @@ describe('Phase 30 (v12) — customAnimCaptionPresets', () => {
 		expect(result.doc.captionTracks).toHaveLength(1);
 		expect(result.doc.captionTracks[0]!.segments[0]!.text).toBe('Hello world');
 	});
+
+	it('round-trips CaptionSegment.words through deserialize (karaoke timings survive reload)', () => {
+		const doc = {
+			...baseDoc(),
+			captionTracks: [
+				{
+					id: 'trk1',
+					kind: 'caption',
+					name: 'Track 1',
+					language: null,
+					visible: true,
+					burnedIn: false,
+					defaultStyle: {},
+					segments: [
+						{
+							id: 'seg1',
+							start: 0,
+							duration: 3,
+							text: 'Hello world',
+							words: [
+								{ text: 'Hello', startS: 0.5, endS: 1.5 },
+								{ text: 'world', startS: 1.5, endS: 2.5 }
+							]
+						}
+					]
+				}
+			]
+		};
+		const result = deserializeProject(doc);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		const segment = result.doc.captionTracks[0]!.segments[0]!;
+		expect(segment.words).toBeDefined();
+		expect(segment.words).toHaveLength(2);
+		expect(segment.words![0]!.text).toBe('Hello');
+		expect(segment.words![1]!.startS).toBe(1.5);
+	});
+
+	it('drops malformed words and keeps the segment otherwise valid', () => {
+		const doc = {
+			...baseDoc(),
+			captionTracks: [
+				{
+					id: 'trk1',
+					kind: 'caption',
+					name: 'Track 1',
+					language: null,
+					visible: true,
+					burnedIn: false,
+					defaultStyle: {},
+					segments: [
+						{
+							id: 'seg1',
+							start: 0,
+							duration: 3,
+							text: 'Hello',
+							words: [{ text: 'Hello', startS: 'nope', endS: 1 }]
+						}
+					]
+				}
+			]
+		};
+		const result = deserializeProject(doc);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.doc.captionTracks[0]!.segments[0]!.text).toBe('Hello');
+		expect(result.doc.captionTracks[0]!.segments[0]!.words).toBeUndefined();
+	});
 });

@@ -78,7 +78,7 @@ describe('activeCaptionPayloadsAt (Phase 30)', () => {
 		expect(payload!.textureId).toBe(captionTextureId('trk', 'seg'));
 	});
 
-	it('switches to highlight texture id when currentTimeS is within a word range', () => {
+	it('switches to a per-word highlight texture id when currentTimeS is within a word range', () => {
 		const track = trackWithSegment({
 			presetId: 'karaoke',
 			words: [
@@ -86,8 +86,13 @@ describe('activeCaptionPayloadsAt (Phase 30)', () => {
 				{ text: 'world', startS: 1.5, endS: 2.5 }
 			]
 		});
-		const [payload] = activeCaptionPayloadsAt([track], 1.0, []);
-		expect(payload!.textureId).toBe(captionTextureId('trk', 'seg', 'highlight'));
+		// Word 0 is active at t=1.0.
+		const [first] = activeCaptionPayloadsAt([track], 1.0, []);
+		expect(first!.textureId).toBe(captionTextureId('trk', 'seg', 'highlight:0'));
+		// Word 1 is active at t=2.0 — a *distinct* cache slot so syncTitleRasters
+		// can pre-rasterise both without one stomping the other.
+		const [second] = activeCaptionPayloadsAt([track], 2.0, []);
+		expect(second!.textureId).toBe(captionTextureId('trk', 'seg', 'highlight:1'));
 	});
 
 	it('populates extras.highlightWord with the active word index for karaoke', () => {
@@ -148,6 +153,23 @@ describe('activeCaptionPayloadsAt (Phase 30)', () => {
 		});
 		const [payload] = activeCaptionPayloadsAt([track], 1.0, []);
 		expect(payload!.textureId).toBe(captionTextureId('trk', 'seg'));
+	});
+
+	it('lets track style.overrides win over preset.titleStyle (user font size wins)', () => {
+		// User picks neon-glow (cyan, default fontSizePx=64-ish) and overrides
+		// fontSize=128 in the TranscriptPanel. The merge must preserve their
+		// override on top of the preset's titleStyle.
+		const track = createCaptionTrack({
+			id: 'trk',
+			burnedIn: true,
+			defaultStyle: {
+				presetId: 'neon-glow',
+				overrides: { fontSizePx: 128 }
+			},
+			segments: [{ id: 'seg', start: 0, duration: 5, text: 'Hello' }]
+		});
+		const [payload] = activeCaptionPayloadsAt([track], 2.5, []);
+		expect(payload!.content.style.fontSizePx).toBe(128);
 	});
 
 	it('merges preset.titleStyle into the payload content (Phase 30 colour reaches raster)', () => {

@@ -535,12 +535,38 @@ function parseCaptionSegment(value: unknown): CaptionSegment | null {
 		return null;
 	const style = parseCaptionStyle(value.style);
 	if (style === null) return null;
+	// Phase 30: karaoke word timings. Optional; round-tripped verbatim. Each
+	// entry is normalised on the next normalizeCaptionSegment pass, so we only
+	// need to reject malformed array entries here — anything non-array or
+	// undefined collapses to `undefined`, which the segment validator already
+	// tolerates.
+	let words: CaptionSegment['words'];
+	if (Array.isArray(value.words)) {
+		const parsed: { text: string; startS: number; endS: number }[] = [];
+		let allValid = true;
+		for (const item of value.words) {
+			if (!isRecord(item)) {
+				allValid = false;
+				break;
+			}
+			const wText = typeof item.text === 'string' ? item.text : null;
+			const startS = finiteNumber(item.startS);
+			const endS = finiteNumber(item.endS);
+			if (wText === null || startS === null || endS === null) {
+				allValid = false;
+				break;
+			}
+			parsed.push({ text: wText, startS, endS });
+		}
+		if (allValid && parsed.length > 0) words = parsed;
+	}
 	return {
 		id,
 		start,
 		duration,
 		text,
-		style: value.style === undefined || value.style === null ? undefined : style
+		style: value.style === undefined || value.style === null ? undefined : style,
+		...(words ? { words } : {})
 	};
 }
 
