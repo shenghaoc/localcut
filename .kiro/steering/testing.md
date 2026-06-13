@@ -9,7 +9,7 @@ fileMatchPattern: ["**/*.test.ts", "src/engine/**"]
 
 - **Runner**: Vitest in Node environment (see `vitest.config.ts` / `package.json`).
 - **Location**: co-located with source — `src/engine/foo.test.ts` alongside `src/engine/foo.ts`.
-- **Scope**: engine modules and UI logic. SolidJS component behaviour is validated via Vitest Browser Mode (`src/**/*.browser.test.tsx`, `pnpm run test:browser`), which renders components in a real Chromium browser.
+- **Scope**: engine modules and UI logic. SolidJS component behaviour is validated via Vitest Browser Mode (`src/**/*.browser.test.tsx`, `vp run test:browser`), which renders components in a real Chromium browser.
 
 ## What to Test
 
@@ -40,7 +40,7 @@ Any non-trivial logic change **must** come with tests; the test count must not d
 
 Manual only — no automated headless runner for GPU work:
 
-1. `pnpm dev` → open Chromium → status bar shows accelerated tier.
+1. `vp dev` → open Chromium → status bar shows accelerated tier.
 2. Import a local MP4/MOV/WebM clip.
 3. Cut, trim, reorder on the timeline.
 4. Export → confirm valid, timed MP4 plays back correctly.
@@ -48,4 +48,4 @@ Manual only — no automated headless runner for GPU work:
 
 ## Quality Gate
 
-`pnpm test` must stay green with no test count regression before merging any non-trivial logic change. `pnpm build` (strict `tsc`) is a prerequisite for every merge regardless of test scope.
+`vp test run` must stay green with no test count regression before merging any non-trivial logic change. `vp build` (strict `tsc`) is a prerequisite for every merge regardless of test scope.
