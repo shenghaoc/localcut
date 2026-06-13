@@ -5,7 +5,7 @@ import { defineConfig, devices } from '@playwright/test';
  * Requires a MediaMTX instance on localhost (see
  * .github/workflows/whip-integration.yml); run locally with:
  *   docker run --rm -d --name whip-mediamtx --network host -e MTX_API=yes bluenviron/mediamtx
- *   pnpm run test:e2e
+ *   vp run test:e2e
  */
 export default defineConfig({
 	testDir: 'tests/e2e',
@@ -30,7 +30,7 @@ export default defineConfig({
 			: {})
 	},
 	webServer: {
-		command: 'pnpm run dev -- --host 127.0.0.1 --port 5173 --strictPort',
+		command: 'vp dev -- --host 127.0.0.1 --port 5173 --strictPort',
 		url: 'http://127.0.0.1:5173',
 		reuseExistingServer: !process.env.CI,
 		timeout: 60_000
