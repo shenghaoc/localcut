@@ -17,7 +17,7 @@ function renderLimitedPreview(props = defaultProps) {
 	document.body.appendChild(container);
 	const dispose = render(() => <LimitedPreview {...props} />, container);
 	disposers.push(dispose);
-	return { container, dispose };
+	return { container };
 }
 
 afterEach(() => {

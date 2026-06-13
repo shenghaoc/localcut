@@ -12,7 +12,7 @@ function renderDocsNav(activeSlug = 'index', onNavigate = vi.fn()) {
 		container
 	);
 	disposers.push(dispose);
-	return { container, dispose, onNavigate };
+	return { container, onNavigate };
 }
 
 afterEach(() => {
