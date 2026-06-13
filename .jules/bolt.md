@@ -17,3 +17,8 @@
 
 **Learning:** Animating a timeline clip's position using the CSS `left` property inline during dragging forces main-thread layout recalculations (reflows) on every pointermove event. This causes layout thrashing and stuttering. An inline `transform: translateX(...)` is not a drop-in replacement here: inline `transform` permanently overrides the `.timeline-clip:hover { transform: translateY(-1px) }` lift, and the base class's `transition: transform 80ms ease` eases every drag update so the clip lags the cursor.
 **Action:** Use the standalone hardware-accelerated CSS `translate` property (Baseline 2022) for positioning, with `will-change: translate` applied only during active drags. `translate` composes with the hover `transform` instead of overriding it, is not covered by `transition: transform`, and still bypasses the layout phase via the compositor thread (GPU).
+
+## 2026-06-13 - CSS Layout Thrashing on Preview Gizmo Dragging
+
+**Learning:** Animating a preview gizmo's position using CSS `left` and `top` properties inline during dragging forces main-thread layout recalculations (reflows) on every pointermove event. This causes layout thrashing and stuttering.
+**Action:** Use the standalone hardware-accelerated CSS `translate` property for positioning, with `will-change: translate, transform` applied only during active drags or rotations. `translate` composes with the rotation `transform` instead of overriding it, and still bypasses the layout phase via the compositor thread (GPU). The `drag` state must be a SolidJS signal (not a plain `let`) for `will-change` to update reactively in the style computation.
