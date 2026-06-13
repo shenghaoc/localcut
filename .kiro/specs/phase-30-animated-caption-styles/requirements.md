@@ -122,6 +122,8 @@ metadata, not carried in sidecar formats.
   - `'typewriter'`: enter — `cropRightFrac` advances `0 → 1` linearly over
     `durationS`; no exit animation (full line stays visible).
   - `'none'`: identity; no interpolation performed.
+  - Karaoke word highlight does not use `cropRightFrac`; it swaps to a
+    pre-rasterized highlight texture variant at word boundaries (see R2.5).
 - **R3.6** `cropRightFrac` is applied in the compositor as a UV horizontal crop
   on the caption texture. If `TextureCompositeLayer` does not yet carry a
   `uvCropMax: [number, number]` uniform, it is added in
@@ -180,10 +182,11 @@ metadata, not carried in sidecar formats.
 
 ## R6 — Preview/export parity
 
-- **R6.1** `activeCaptionPayloadsAt(tracks, timeS)` in
-  `src/engine/captions/render.ts` is extended to return, alongside each raster
-  payload, the `CaptionAnimUniforms` computed for `timeS`. Both the preview rAF
-  loop and the export frame pump call this function; parity is structural.
+- **R6.1** `activeCaptionPayloadsAt(tracks, timeS, customPresets)` in
+  `src/engine/captions/render.ts` is extended to accept the project's custom
+  presets array and return, alongside each raster payload, the
+  `CaptionAnimUniforms` computed for `timeS`. Both the preview rAF loop and the
+  export frame pump call this function; parity is structural.
 - **R6.2** Burn-in export writes the styled raster with the same composite
   uniforms as preview for the same `timeS`. No separate export rendering path
   exists for caption styling.

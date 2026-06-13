@@ -29,10 +29,14 @@ zero-copy every frame. Phase 30 extends that contract to styled captions:
 - **Enter/exit animations** (pop, bounce, slide) are transform and opacity curves
   applied at composite time via uniforms, not by re-rasterizing per frame. The
   Phase 15 keyframe interpolation utilities already provide the curve machinery.
-- **Typewriter and karaoke** use a `cropRightFrac` uniform that UV-clips the
-  cached raster left-to-right — one cheap uniform write per frame, not a
-  re-rasterize. Karaoke re-rasterizes only on word-boundary crossings (at most
-  once per word), which is infrequent relative to the frame rate.
+- **Typewriter** uses a `cropRightFrac` uniform that UV-clips the cached raster
+  left-to-right — one cheap uniform write per frame, not a re-rasterize.
+- **Karaoke** highlights the active word by swapping to a pre-rasterized
+  highlight texture variant on each word-boundary crossing (at most once per
+  word). The highlight variant is rasterized once per word-boundary event using
+  the existing `TitleTextureCache`; no per-frame re-rasterization occurs. This
+  avoids the need for per-word horizontal pixel coordinates in the uniform
+  path, which would require a two-pass layout measurement.
 
 This approach keeps the per-frame cost equivalent to the existing title layer
 cost: one O(1) interpolation call and one uniform write per active segment.
@@ -61,7 +65,7 @@ unknown fields.
 
 Phase 29 (auto-captions ASR, PR open on `origin/phase-29-auto-captions`) emits
 word-level timestamps; its integration uses Phase 22 `CaptionSegment` objects.
-This phase adds `words?: ReadonlyArray<{ text; startS; endS }>` to
+This phase adds `words?: ReadonlyArray<{ text: string; startS: number; endS: number }>` to
 `CaptionSegment` using the same field shape Phase 29 needs to populate. The
 validator tolerates absence, so existing segments are unaffected. Phase 29 can
 land on either side of Phase 30 without a migration — it simply populates the
@@ -106,7 +110,7 @@ modules.
   │ compositor.ts single queue.submit per frame                    │
   │   → caption layers: TextureCompositeLayer with                 │
   │       opacity, translate, scale (from animUniforms)            │
-  │       uvCropMax = [cropRightFrac, 1.0] (typewriter/karaoke)    │
+  │       uvCropMax = [cropRightFrac, 1.0] (typewriter)            │
   └────────────────────────────────────────────────────────────────┘
 
                          Preset I/O (main thread)
@@ -269,6 +273,8 @@ export interface CaptionRasterPayload {
   trackId: string;
   segmentId: string;
   textureId: string;         // captionTextureId(trackId, segmentId [, 'highlight'])
+  content: TitleContent;
+  transform: TransformParams;
   sourceWidth: number;
   sourceHeight: number;
   anchor: CaptionAnchor;
@@ -287,7 +293,11 @@ export function activeCaptionPayloadsAt(
 The karaoke path identifies the active word as the word where
 `word.startS <= timeS < word.endS`; on word-boundary crossing the texture ID
 switches to the highlight variant (e.g. `captionTextureId(trackId, segmentId, 'highlight')`),
-which the `TitleTextureCache` manages as a separate slot.
+which the `TitleTextureCache` manages as a separate slot. Karaoke does not use
+`cropRightFrac` for word sweeping — the highlight variant is a fully rasterized
+texture with the active word drawn in `highlightColor`, swapped atomically at
+word boundaries. This avoids requiring per-word horizontal pixel coordinates in
+the uniform path.
 
 ### `src/engine/compositor.ts` (extended)
 
@@ -306,7 +316,7 @@ interface TextureCompositeLayer {
 
 The WGSL composite shader is extended with a `uvCropMax: vec2f` uniform per
 layer (or per-layer in the composite push-constant / uniform buffer). Caption
-layers that use typewriter or karaoke pass `[cropRightFrac, 1.0]`; all other
+layers that use typewriter pass `[cropRightFrac, 1.0]`; all other
 layers pass `[1.0, 1.0]` (no change to existing layer behavior). This is
 confined to the single existing `queue.submit` — hard gate 4 is not relaxed.
 

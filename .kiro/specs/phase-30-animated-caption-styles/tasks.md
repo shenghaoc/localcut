@@ -83,12 +83,14 @@
   `0` to `1` over the enter `durationS` starting at `segStartS`. Exit is
   `'none'` for typewriter (hold at 1 through segment end) — lock this decision
   in a comment.
-- [ ] **T4.5** Implement karaoke `cropRightFrac` computation: for the active
-  word identified by `words`, advance from 0 to 1 linearly across
-  `[word.startS, word.endS]`. Outside any word range, use 1 (full reveal).
-  This function accepts the `words` array and is called from
-  `activeCaptionPayloadsAt`; it does not call `computeCaptionAnimUniforms`
-  (separate concern).
+- [ ] **T4.5** Implement karaoke active-word identification: given a `words`
+  array and `currentTimeS`, return the index of the active word where
+  `word.startS <= currentTimeS < word.endS`, or `-1` when outside all word
+  ranges. This function is a pure lookup (no animation interpolation) and is
+  called from `activeCaptionPayloadsAt` to select the highlight texture variant.
+  It does not call `computeCaptionAnimUniforms` (separate concern). Karaoke
+  does not use `cropRightFrac` for word sweeping — the highlight variant is a
+  fully rasterized texture swapped at word boundaries.
 
 ## T5 — Compositor crop-uniform extension (R3.6)
 
@@ -118,7 +120,9 @@
   - Add `animUniforms.translateXPx` / `translateYPx` to the layer transform
     (additive, not replacing the anchor-based position).
   - Set `scaleX`, `scaleY` on the layer transform.
-  - Set `uvCropMax = [animUniforms.cropRightFrac, 1.0]`.
+  - Set `uvCropMax = [animUniforms.cropRightFrac, 1.0]` (active for typewriter
+    animation; karaoke uses texture variant swap, so karaoke caption layers pass
+    `[1.0, 1.0]`).
 - [ ] **T6.4** Verify that the caption composite layers are included in the
   single `queue.submit` per frame — no additional submission is introduced.
   Add a `// single-submit invariant: caption layers included here` comment at
@@ -189,8 +193,9 @@
   - Assert overlap clamping: segment 0.3 s long with `durationS = 0.25` (overlap
     of 0.05 s) clamps each to 0.15 s; check that mid-segment t=0.15 s is in
     hold phase.
-  - Assert karaoke `cropRightFrac` helper advances from 0 to 1 across a word
-    range and returns 1 outside any word range.
+  - Assert karaoke active-word helper returns correct word index when
+    `currentTimeS` falls within a word range, and returns `-1` outside all
+    word ranges.
 - [ ] **T9.3** Extend `src/engine/captions/render.test.ts`:
   - `activeCaptionPayloadsAt` with an animated preset at a time inside the enter
     window returns non-identity `animUniforms` (at minimum `opacity < 1` or
@@ -198,8 +203,9 @@
   - At a time in the hold phase, returns `CAPTION_ANIM_IDENTITY`.
   - At a time in the exit window, returns non-identity uniforms in the expected
     direction.
-  - Karaoke: `cropRightFrac` advances between two word boundaries when `words`
-    is present; stays 1 when `words` is absent.
+  - Karaoke: texture ID switches to highlight variant when `currentTimeS`
+    falls within a word range; uses full-line variant when `words` is absent
+    or `currentTimeS` is outside all word ranges.
 - [ ] **T9.4** Extend `src/engine/title.test.ts`:
   - `titleContentHash` returns distinct hashes when `glow.color` changes.
   - Distinct when `glow.blurPx` changes.
