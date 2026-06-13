@@ -26,10 +26,11 @@ export async function spawnAsrWorker(
 	const handler = (event: MessageEvent<AsrWorkerState>) => {
 		onState(event.data);
 	};
-	worker.addEventListener('message', handler);
-	worker.addEventListener('error', (event) => {
+	const errorHandler = (event: ErrorEvent) => {
 		onCrash(event.message || 'ASR worker crashed.');
-	});
+	};
+	worker.addEventListener('message', handler);
+	worker.addEventListener('error', errorHandler);
 	return {
 		send(command, transfer) {
 			if (transfer?.length) worker.postMessage(command, transfer);
@@ -37,6 +38,7 @@ export async function spawnAsrWorker(
 		},
 		terminate() {
 			worker.removeEventListener('message', handler);
+			worker.removeEventListener('error', errorHandler);
 			worker.terminate();
 		}
 	};

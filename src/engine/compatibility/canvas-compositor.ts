@@ -1,3 +1,4 @@
+import { clamp01 } from '../../lib/math';
 import { TITLE_RASTER_HEIGHT, type TitleContent } from '../title';
 import { computeFitRect, type TransformParams } from '../transform';
 import { rasterizeTitleToCanvas, TITLE_RASTER_WIDTH } from '../titles';
@@ -125,10 +126,6 @@ export function drawLayers(
 		}
 		target.globalAlpha = 1;
 	}
-}
-
-function clamp01(value: number): number {
-	return Math.max(0, Math.min(1, value));
 }
 
 export function drawTransformedImage(

@@ -2,6 +2,7 @@ import { createSignal, For, Show } from 'solid-js';
 import { X } from 'lucide-solid';
 import type { CleanupAction, CleanupResult, StorageHealthReport } from '../engine/storage-cleanup';
 import { runCleanup, requestPersistentStorage } from '../engine/storage-cleanup';
+import { formatBytes } from '../lib/format';
 import { Button } from './components/button';
 
 interface StorageCleanupDialogProps {
@@ -9,18 +10,6 @@ interface StorageCleanupDialogProps {
 	report: StorageHealthReport | null;
 	onClose: () => void;
 	onRefresh: () => void;
-}
-
-function formatBytes(value: number | null): string {
-	if (value === null) return 'Unknown';
-	const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-	let scaled = value;
-	let unit = 0;
-	while (scaled >= 1024 && unit < units.length - 1) {
-		scaled /= 1024;
-		unit += 1;
-	}
-	return `${scaled.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
 function pressureClass(pressure: StorageHealthReport['pressure']): string {
