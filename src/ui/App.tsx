@@ -2655,7 +2655,7 @@ export function App() {
 								<div class="preview-overlay">Importing…</div>
 							</Show>
 						</section>
-						<div class="side-rail">
+						<div id="side-rail" class="side-rail" role="region" aria-label="Side panel">
 							<Show
 								when={!sideRailCollapsed()}
 								fallback={
@@ -2663,6 +2663,8 @@ export function App() {
 										id="side-rail-expand-btn"
 										class="side-rail-expand"
 										aria-label="Expand side panel"
+										aria-expanded="false"
+										aria-controls="side-rail"
 										title="Expand side panel"
 										onClick={() => toggleSideRail(false)}
 									>
@@ -2671,7 +2673,7 @@ export function App() {
 								}
 							>
 								<div class="side-rail-tabs">
-									<div class="side-rail-tab-bar" role="tablist" aria-label="Side panel">
+									<div class="side-rail-tab-bar" role="tablist" aria-label="Side panel tabs">
 										<For each={SIDE_RAIL_TABS}>
 											{(tab) => (
 												<button
@@ -2694,6 +2696,8 @@ export function App() {
 										<button
 											class="side-rail-collapse"
 											aria-label="Collapse side panel"
+											aria-expanded="true"
+											aria-controls="side-rail"
 											title="Collapse side panel"
 											onClick={() => toggleSideRail(true)}
 										>
