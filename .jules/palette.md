@@ -4,7 +4,7 @@
 
 **Action:** Applied `role="status"`, `aria-live="polite"`, and `aria-atomic="true"` to the status text span to ensure screen readers announce these critical non-intrusive updates.
 
-## 2024-06-13 - Add aria-expanded and aria-controls to collapsable panels
+## 2026-06-13 - Add aria-expanded and aria-controls to collapsable panels
 
 **Learning:** The application uses buttons to collapse and expand structural side panels (like the inspector). Without `aria-expanded` and `aria-controls` attributes, screen reader users cannot tell if the panel is currently open or what content the button controls.
 

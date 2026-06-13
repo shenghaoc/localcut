@@ -2673,7 +2673,7 @@ export function App() {
 								}
 							>
 								<div class="side-rail-tabs">
-									<div class="side-rail-tab-bar" role="tablist" aria-label="Side panel">
+									<div class="side-rail-tab-bar" role="tablist" aria-label="Side panel tabs">
 										<For each={SIDE_RAIL_TABS}>
 											{(tab) => (
 												<button
