@@ -37,7 +37,7 @@ describe('LimitedPreview', () => {
 		const { container } = renderLimitedPreview();
 		const img = container.querySelector('img');
 		expect(img).not.toBeNull();
-		expect(img!.alt).toBe('Compatibility thumbnail for clip-001.mp4');
+		expect(img!.getAttribute('alt')).toBe('Compatibility thumbnail for clip-001.mp4');
 		expect(img!.getAttribute('src')).toContain('data:image/png');
 	});
 
