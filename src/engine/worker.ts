@@ -1393,6 +1393,12 @@ function afterTimelineMutation(
 	if (options.prune !== false) {
 		pruneUnusedSources();
 	}
+	if (skinSmoothBypassMap.size > 0) {
+		const liveIds = new Set(timeline.flatMap((t) => t.clips.map((c) => c.id)));
+		for (const id of skinSmoothBypassMap.keys()) {
+			if (!liveIds.has(id)) skinSmoothBypassMap.delete(id);
+		}
+	}
 	if (options.syncLuts !== false) {
 		syncTimelineLuts();
 	}

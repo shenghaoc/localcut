@@ -32,5 +32,6 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
     count += 1.0;
   }
 
-  textureStore(dst, coord, sum / count);
+  let avg = sum / count;
+  textureStore(dst, coord, vec4<f32>(avg, 0.0, 0.0));
 }

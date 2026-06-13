@@ -96,8 +96,8 @@ export function radiusForHeight(h: number): number {
 // ─── Skin mask ──────────────────────────────────────────────────────────
 
 /**
- * Returns mask weight m ∈ [0,1] for a gamma-encoded (sRGB OETF) RGB triple.
- * The input rgb is assumed to be in [0,1] gamma-encoded space.
+ * Returns mask weight m ∈ [0,1] for a working-linear [0,1] RGB triple.
+ * The function applies sRGB OETF internally before computing BT.601 chroma.
  */
 export function skinMaskWeight(
 	rgb: readonly [number, number, number],
@@ -296,7 +296,13 @@ export function referenceSkinSmooth(
 	}
 
 	// Run guided filter on luma
-	const smoothedLuma = referenceGuidedFilterLuma(luma, width, height, 4, SKIN_SMOOTH_EPSILON);
+	const smoothedLuma = referenceGuidedFilterLuma(
+		luma,
+		width,
+		height,
+		radiusForHeight(height),
+		SKIN_SMOOTH_EPSILON
+	);
 
 	// Compose: outRgb = clamp(rgbLin + strength * m * (Y' − Y), 0, 1)
 	for (let i = 0; i < n; i++) {

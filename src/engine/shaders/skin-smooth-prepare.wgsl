@@ -15,5 +15,5 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
   let coord = vec2<u32>(gid.x, gid.y);
   let rgba = textureLoad(src, coord, 0);
   let Y = dot(rgba.rgb, LUMA_BT709);
-  textureStore(dst, coord, vec2<f32>(Y, Y * Y));
+  textureStore(dst, coord, vec4<f32>(Y, Y * Y, 0.0, 0.0));
 }

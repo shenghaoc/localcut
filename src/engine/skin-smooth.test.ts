@@ -13,14 +13,24 @@ import {
 	isSkinSmoothActive
 } from './skin-smooth';
 
+// sRGB EOTF: gamma-encoded → linear (inverse of the OETF used inside skinMaskWeight).
+// Spec R2.4 provides representative gamma-encoded skin tones; tests must convert to
+// linear before passing to skinMaskWeight which applies OETF internally.
+function srgbEOTF(g: number): number {
+	return g <= 0.04045 ? g / 12.92 : Math.pow((g + 0.055) / 1.055, 2.4);
+}
+function toLinear(rgb: [number, number, number]): [number, number, number] {
+	return [srgbEOTF(rgb[0]), srgbEOTF(rgb[1]), srgbEOTF(rgb[2])];
+}
+
 describe('skinMaskWeight', () => {
-	it('returns >= 0.9 for light skin', () => {
-		const m = skinMaskWeight([0.96, 0.76, 0.65], DEFAULT_SKIN_MASK);
+	it('returns >= 0.9 for light skin (linear input)', () => {
+		const m = skinMaskWeight(toLinear([0.96, 0.76, 0.65]), DEFAULT_SKIN_MASK);
 		expect(m).toBeGreaterThanOrEqual(0.9);
 	});
 
-	it('returns >= 0.9 for deep skin', () => {
-		const m = skinMaskWeight([0.45, 0.27, 0.2], DEFAULT_SKIN_MASK);
+	it('returns >= 0.9 for deep skin (linear input)', () => {
+		const m = skinMaskWeight(toLinear([0.45, 0.27, 0.2]), DEFAULT_SKIN_MASK);
 		expect(m).toBeGreaterThanOrEqual(0.9);
 	});
 
@@ -33,15 +43,15 @@ describe('skinMaskWeight', () => {
 	});
 
 	it('returns 0 for mid grey', () => {
-		expect(skinMaskWeight([0.5, 0.5, 0.5], DEFAULT_SKIN_MASK)).toBe(0);
+		expect(skinMaskWeight(toLinear([0.5, 0.5, 0.5]), DEFAULT_SKIN_MASK)).toBe(0);
 	});
 
 	it('returns 0 for foliage green', () => {
-		expect(skinMaskWeight([0.13, 0.55, 0.13], DEFAULT_SKIN_MASK)).toBe(0);
+		expect(skinMaskWeight(toLinear([0.13, 0.55, 0.13]), DEFAULT_SKIN_MASK)).toBe(0);
 	});
 
 	it('returns 0 for fabric blue', () => {
-		expect(skinMaskWeight([0.2, 0.3, 0.8], DEFAULT_SKIN_MASK)).toBe(0);
+		expect(skinMaskWeight(toLinear([0.2, 0.3, 0.8]), DEFAULT_SKIN_MASK)).toBe(0);
 	});
 
 	it('returns 0 for saturated red', () => {
@@ -267,8 +277,20 @@ describe('isSkinSmoothActive', () => {
 		expect(isSkinSmoothActive({ skinSmoothStrength: 0 })).toBe(false);
 	});
 
+	it('returns false at negative strength', () => {
+		expect(isSkinSmoothActive({ skinSmoothStrength: -0.5 })).toBe(false);
+	});
+
+	it('returns true at very small positive strength', () => {
+		expect(isSkinSmoothActive({ skinSmoothStrength: 0.001 })).toBe(true);
+	});
+
 	it('returns true at strength 0.5', () => {
 		expect(isSkinSmoothActive({ skinSmoothStrength: 0.5 })).toBe(true);
+	});
+
+	it('returns true at boundary 1.0', () => {
+		expect(isSkinSmoothActive({ skinSmoothStrength: 1.0 })).toBe(true);
 	});
 });
 
@@ -281,6 +303,18 @@ describe('packSkinBoxUniform', () => {
 	it('packs vertical correctly', () => {
 		const result = packSkinBoxUniform(4, false);
 		expect(Array.from(result)).toEqual([4, 0, 1, 0]);
+	});
+
+	it('packs radius=0 (lower edge)', () => {
+		expect(Array.from(packSkinBoxUniform(0, true))).toEqual([0, 1, 0, 0]);
+	});
+
+	it('packs radius=2 (min from radiusForHeight)', () => {
+		expect(Array.from(packSkinBoxUniform(2, false))).toEqual([2, 0, 1, 0]);
+	});
+
+	it('packs radius=24 (max from radiusForHeight)', () => {
+		expect(Array.from(packSkinBoxUniform(24, true))).toEqual([24, 1, 0, 0]);
 	});
 });
 

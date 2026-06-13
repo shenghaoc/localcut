@@ -19,5 +19,5 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
   let variance = max(0.0, meanY2 - meanY * meanY);
   let a = variance / (variance + SKIN_EPSILON);
   let b = (1.0 - a) * meanY;
-  textureStore(dst, coord, vec2<f32>(a, b));
+  textureStore(dst, coord, vec4<f32>(a, b, 0.0, 0.0));
 }

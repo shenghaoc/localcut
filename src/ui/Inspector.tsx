@@ -310,6 +310,30 @@ const LUT_STRENGTH_SLIDER: SliderSpec = {
 	format: (v) => v.toFixed(2)
 };
 
+interface SkinMaskSliderSpec {
+	key: keyof import('../protocol').SkinMaskSnapshot;
+	label: string;
+	min: number;
+	max: number;
+	step: number;
+	format: (v: number) => string;
+}
+
+const SKIN_MASK_SLIDERS: SkinMaskSliderSpec[] = [
+	{ key: 'cbMin', label: 'Cb min', min: -0.5, max: 0.5, step: 0.01, format: (v) => v.toFixed(2) },
+	{ key: 'cbMax', label: 'Cb max', min: -0.5, max: 0.5, step: 0.01, format: (v) => v.toFixed(2) },
+	{ key: 'crMin', label: 'Cr min', min: -0.5, max: 0.5, step: 0.01, format: (v) => v.toFixed(2) },
+	{ key: 'crMax', label: 'Cr max', min: -0.5, max: 0.5, step: 0.01, format: (v) => v.toFixed(2) },
+	{
+		key: 'softness',
+		label: 'Softness',
+		min: 0.005,
+		max: 0.15,
+		step: 0.005,
+		format: (v) => v.toFixed(3)
+	}
+];
+
 type MixDraft = Pick<SelectedTrackMix, 'gain' | 'pan'>;
 type FadeDraft = Pick<SelectedClipFades, 'audioFadeIn' | 'audioFadeOut'>;
 type TransformDraft = TransformParamsSnapshot;
@@ -358,27 +382,21 @@ export function Inspector(props: InspectorProps) {
 		};
 	}
 
-	const SKIN_MASK_SLIDERS: {
-		key: keyof ReturnType<typeof currentSkinMask>;
-		label: string;
-		min: number;
-		max: number;
-		step: number;
-		format: (v: number) => string;
-	}[] = [
-		{ key: 'cbMin', label: 'Cb min', min: -0.5, max: 0.5, step: 0.01, format: (v) => v.toFixed(2) },
-		{ key: 'cbMax', label: 'Cb max', min: -0.5, max: 0.5, step: 0.01, format: (v) => v.toFixed(2) },
-		{ key: 'crMin', label: 'Cr min', min: -0.5, max: 0.5, step: 0.01, format: (v) => v.toFixed(2) },
-		{ key: 'crMax', label: 'Cr max', min: -0.5, max: 0.5, step: 0.01, format: (v) => v.toFixed(2) },
-		{
-			key: 'softness',
-			label: 'Softness',
-			min: 0.005,
-			max: 0.15,
-			step: 0.005,
-			format: (v) => v.toFixed(3)
-		}
-	];
+	function flushSkinMaskPending() {
+		if (!skinMaskTarget.clipId || skinMaskPending.size === 0) return;
+		for (const handle of skinMaskDebouncers.values()) clearTimeout(handle);
+		skinMaskDebouncers.clear();
+		const mask = currentSkinMask();
+		for (const [k, v] of skinMaskPending) mask[k as keyof typeof mask] = v;
+		skinMaskPending.clear();
+		props.onSkinMask?.(skinMaskTarget.trackId, skinMaskTarget.clipId, {
+			cbMin: mask.cbMin,
+			cbMax: mask.cbMax,
+			crMin: mask.crMin,
+			crMax: mask.crMax,
+			softness: mask.softness
+		});
+	}
 
 	function scheduleSkinMaskParam(key: string, value: number) {
 		const clip = props.selectedClip;
@@ -388,21 +406,21 @@ export function Inspector(props: InspectorProps) {
 		skinMaskPending.set(key, value);
 		const existing = skinMaskDebouncers.get(key);
 		if (existing) clearTimeout(existing);
+		const base = currentSkinMask();
 		skinMaskDebouncers.set(
 			key,
 			setTimeout(() => {
 				skinMaskDebouncers.delete(key);
-				const mask = currentSkinMask();
-				for (const [k, v] of skinMaskPending) mask[k as keyof typeof mask] = v;
+				for (const [k, v] of skinMaskPending) base[k as keyof typeof base] = v;
 				skinMaskPending.clear();
 				for (const [, timer] of skinMaskDebouncers) clearTimeout(timer);
 				skinMaskDebouncers.clear();
-				props.onSkinMask!(clip.trackId, clip.clipId, {
-					cbMin: mask.cbMin,
-					cbMax: mask.cbMax,
-					crMin: mask.crMin,
-					crMax: mask.crMax,
-					softness: mask.softness
+				props.onSkinMask!(skinMaskTarget.trackId, skinMaskTarget.clipId, {
+					cbMin: base.cbMin,
+					cbMax: base.cbMax,
+					crMin: base.crMin,
+					crMax: base.crMax,
+					softness: base.softness
 				});
 			}, PARAM_DEBOUNCE_MS)
 		);
@@ -684,18 +702,26 @@ export function Inspector(props: InspectorProps) {
 			flushPending();
 			flushMixPending();
 			flushFadePending();
+			flushSkinMaskPending();
 			pendingTarget.trackId = '';
 			pendingTarget.clipId = '';
 			mixTarget.trackId = '';
 			fadeTarget.trackId = '';
 			fadeTarget.clipId = '';
+			skinMaskTarget.trackId = '';
+			skinMaskTarget.clipId = '';
 			setDraft(null);
 			setMixDraft(null);
 			setFadeDraft(null);
+			setSkinSmoothBypass(false);
 			return;
 		}
 		if (pendingTarget.clipId && pendingTarget.clipId !== clip.clipId) {
 			flushPending();
+		}
+		if (skinMaskTarget.clipId && skinMaskTarget.clipId !== clip.clipId) {
+			flushSkinMaskPending();
+			setSkinSmoothBypass(false);
 		}
 		pendingTarget.trackId = clip.trackId;
 		pendingTarget.clipId = clip.clipId;
@@ -809,6 +835,7 @@ export function Inspector(props: InspectorProps) {
 		flushMixPending();
 		flushFadePending();
 		flushTransformPending();
+		flushSkinMaskPending();
 		flushTitle();
 	});
 
