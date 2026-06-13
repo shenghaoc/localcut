@@ -90,6 +90,41 @@ describe('activeCaptionPayloadsAt (Phase 30)', () => {
 		expect(payload!.textureId).toBe(captionTextureId('trk', 'seg', 'highlight'));
 	});
 
+	it('populates extras.highlightWord with the active word index for karaoke', () => {
+		const track = trackWithSegment({
+			presetId: 'karaoke',
+			words: [
+				{ text: 'Hello', startS: 0.5, endS: 1.5 },
+				{ text: 'world', startS: 1.5, endS: 2.5 }
+			]
+		});
+		// Second word is active at t=2.0.
+		const [payload] = activeCaptionPayloadsAt([track], 2.0, []);
+		expect(payload!.extras?.highlightWord).toBeDefined();
+		expect(payload!.extras!.highlightWord!.wordIndex).toBe(1);
+		expect(typeof payload!.extras!.highlightWord!.color).toBe('string');
+		expect(payload!.extras!.highlightWord!.color.length).toBeGreaterThan(0);
+	});
+
+	it('omits extras.highlightWord when outside word ranges', () => {
+		const track = trackWithSegment({
+			presetId: 'karaoke',
+			words: [{ text: 'Hello', startS: 1.0, endS: 2.0 }]
+		});
+		// t=0.5 is before the first word.
+		const [payload] = activeCaptionPayloadsAt([track], 0.5, []);
+		expect(payload!.extras?.highlightWord).toBeUndefined();
+	});
+
+	it('omits extras.highlightWord for non-karaoke presets even with words', () => {
+		const track = trackWithSegment({
+			presetId: 'subtitle',
+			words: [{ text: 'Hello', startS: 0.5, endS: 1.5 }]
+		});
+		const [payload] = activeCaptionPayloadsAt([track], 1.0, []);
+		expect(payload!.extras?.highlightWord).toBeUndefined();
+	});
+
 	it('uses full-line texture id when currentTimeS is outside all word ranges', () => {
 		const track = trackWithSegment({
 			presetId: 'karaoke',

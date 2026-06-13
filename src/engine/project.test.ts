@@ -706,7 +706,8 @@ describe('Phase 30 (v12) — customAnimCaptionPresets', () => {
 		expect(result.ok).toBe(true);
 		if (!result.ok) return;
 		expect(result.doc.customAnimCaptionPresets).toHaveLength(1);
-		expect(result.doc.customAnimCaptionPresets![0]!.id).toBe('');
+		// `id` is preserved from the persisted doc (segment.style.presetId references it).
+		expect(result.doc.customAnimCaptionPresets![0]!.id).toBe('custom-abc');
 		expect(result.doc.customAnimCaptionPresets![0]!.label).toBe('My Preset');
 	});
 

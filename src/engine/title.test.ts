@@ -139,4 +139,26 @@ describe('titleContentHash with extras (Phase 30)', () => {
 		const extras = { glow: { color: '#00ff00', blurPx: 15 } };
 		expect(titleContentHash(c, extras)).toBe(titleContentHash(c, extras));
 	});
+
+	it('returns a different hash when highlightWord.wordIndex changes (karaoke)', () => {
+		const a = titleContentHash(c, { highlightWord: { wordIndex: 0, color: '#ffff00' } });
+		const b = titleContentHash(c, { highlightWord: { wordIndex: 1, color: '#ffff00' } });
+		expect(a).not.toBe(b);
+	});
+
+	it('returns a different hash when highlightWord.color changes', () => {
+		const a = titleContentHash(c, { highlightWord: { wordIndex: 0, color: '#ffff00' } });
+		const b = titleContentHash(c, { highlightWord: { wordIndex: 0, color: '#00ffff' } });
+		expect(a).not.toBe(b);
+	});
+
+	it('returns a different hash when highlightWord.lineIndex changes', () => {
+		const a = titleContentHash(c, {
+			highlightWord: { wordIndex: 0, color: '#ffff00', lineIndex: 0 }
+		});
+		const b = titleContentHash(c, {
+			highlightWord: { wordIndex: 0, color: '#ffff00', lineIndex: 1 }
+		});
+		expect(a).not.toBe(b);
+	});
 });

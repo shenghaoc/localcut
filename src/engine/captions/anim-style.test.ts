@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vite-plus/test';
 import {
 	ANIM_CAPTION_PRESETS,
 	ANIM_CAPTION_PRESET_DEFAULTS,
+	MAX_PRESET_FILE_BYTES,
 	resolveAnimPreset,
 	validateCaptionAnimPreset
 } from './anim-style';
@@ -218,6 +219,19 @@ describe('anim-style', () => {
 				// id is not taken from raw — caller assigns
 				expect(result.value.id).toBe('');
 				// builtIn is taken from raw as-is (caller forces false after validation)
+			}
+		});
+	});
+
+	describe('MAX_PRESET_FILE_BYTES (R4.6)', () => {
+		it('is exactly 64 KiB', () => {
+			expect(MAX_PRESET_FILE_BYTES).toBe(64 * 1024);
+		});
+
+		it('every built-in preset serializes well under the cap', () => {
+			for (const preset of ANIM_CAPTION_PRESETS) {
+				const json = JSON.stringify(preset);
+				expect(json.length).toBeLessThan(MAX_PRESET_FILE_BYTES);
 			}
 		});
 	});

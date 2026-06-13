@@ -6,7 +6,11 @@
 
 import { createSignal, For, Show, onCleanup } from 'solid-js';
 import type { CaptionAnimStylePreset } from '../engine/captions/anim-style';
-import { ANIM_CAPTION_PRESETS, validateCaptionAnimPreset } from '../engine/captions/anim-style';
+import {
+	ANIM_CAPTION_PRESETS,
+	MAX_PRESET_FILE_BYTES,
+	validateCaptionAnimPreset
+} from '../engine/captions/anim-style';
 
 interface CaptionStyleInspectorProps {
 	/** Current track or segment preset ID. */
@@ -121,6 +125,14 @@ function readAndValidate(
 		result: { ok: true; preset: CaptionAnimStylePreset } | { ok: false; error: string }
 	) => void
 ): void {
+	// R4.6: bounded memory — reject oversized files before reading them into memory.
+	if (file.size > MAX_PRESET_FILE_BYTES) {
+		resolve({
+			ok: false,
+			error: `Preset file exceeds ${Math.round(MAX_PRESET_FILE_BYTES / 1024)} KiB limit (got ${Math.round(file.size / 1024)} KiB).`
+		});
+		return;
+	}
 	const reader = new FileReader();
 	reader.onload = () => {
 		try {

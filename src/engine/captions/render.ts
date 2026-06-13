@@ -2,7 +2,7 @@ import { TITLE_RASTER_WIDTH } from '../titles';
 import { captionAnchorTransform, resolveCaptionTitleStyle } from './types';
 import { activeCaptionSegmentsAt, resolvedCaptionStyle } from './model';
 import type { CaptionTrack } from './types';
-import type { TitleContent } from '../title';
+import type { TitleContent, TitleRasterExtras } from '../title';
 import type { TransformParams } from '../transform';
 import type { CaptionAnimStylePreset } from './anim-style';
 import { resolveAnimPreset } from './anim-style';
@@ -84,18 +84,28 @@ export function captionTitlePayload(
 	};
 }
 
-export function activeCaptionPayloadsAt(
-	tracks: readonly CaptionTrack[],
-	time: number,
-	customPresets: readonly CaptionAnimStylePreset[] = []
-): Array<{
+export interface CaptionPayload {
 	trackId: string;
 	segmentId: string;
 	content: TitleContent;
 	transform: TransformParams;
 	animUniforms: CaptionAnimUniforms;
 	textureId: string;
-}> {
+	/**
+	 * Raster extras for this segment. Glow/pill come from the preset; the
+	 * `highlightWord` field is populated for karaoke when the active word
+	 * intersects `time`. Callers feed this into `rasterizeTitleToCanvas` /
+	 * `titleContentHash` so the highlight variant texture renders with the
+	 * active word in the preset's `highlightColor`.
+	 */
+	extras?: TitleRasterExtras;
+}
+
+export function activeCaptionPayloadsAt(
+	tracks: readonly CaptionTrack[],
+	time: number,
+	customPresets: readonly CaptionAnimStylePreset[] = []
+): CaptionPayload[] {
 	return activeCaptionSegmentsAt(tracks, time).map(({ track, segment }) => {
 		const style = resolvedCaptionStyle(track, segment);
 		const preset = resolveAnimPreset(style.presetId, customPresets);
@@ -104,13 +114,51 @@ export function activeCaptionPayloadsAt(
 		// Compute animation uniforms for the current time.
 		const animUniforms = computeCaptionAnimUniforms(preset, segment.start, segment.duration, time);
 
+		// Preset-derived raster extras (glow / pill). The karaoke highlight word
+		// is added below when applicable; it changes the cache key so the
+		// rasterizer produces a distinct texture per active word.
+		const baseExtras: TitleRasterExtras | undefined =
+			preset.glow || preset.pill
+				? {
+						...(preset.glow ? { glow: preset.glow } : {}),
+						...(preset.pill ? { pill: preset.pill } : {})
+					}
+				: undefined;
+
 		// Karaoke: if words are present and a highlightColor is set, check if we
-		// should use the highlight texture variant.
+		// should use the highlight texture variant + supply per-word colouring.
 		let textureId = captionTextureId(track.id, segment.id);
+		let extras = baseExtras;
 		if (segment.words && segment.words.length > 0 && preset.highlightColor) {
 			const activeWordIdx = karaokeActiveWordIndex(segment.words, time);
 			if (activeWordIdx >= 0) {
+				// Map the per-segment word index onto the wrapped raster's line/word
+				// coordinates. captionTitlePayload wraps text without reordering, so
+				// the wrapped raster's word order matches the input segment.text
+				// word order; we just need to find which wrapped line that word
+				// ended up on.
+				const wrappedLines = payload.content.text.split('\n');
+				let wordsBeforeLine = 0;
+				let targetLineIdx = 0;
+				let targetWordWithinLine = activeWordIdx;
+				for (let i = 0; i < wrappedLines.length; i++) {
+					const wordsOnThisLine = wrappedLines[i]!.trim().split(/\s+/).filter(Boolean).length;
+					if (activeWordIdx < wordsBeforeLine + wordsOnThisLine) {
+						targetLineIdx = i;
+						targetWordWithinLine = activeWordIdx - wordsBeforeLine;
+						break;
+					}
+					wordsBeforeLine += wordsOnThisLine;
+				}
 				textureId = captionTextureId(track.id, segment.id, 'highlight');
+				extras = {
+					...(baseExtras ?? {}),
+					highlightWord: {
+						wordIndex: targetWordWithinLine,
+						lineIndex: targetLineIdx,
+						color: preset.highlightColor
+					}
+				};
 			}
 		}
 
@@ -120,7 +168,8 @@ export function activeCaptionPayloadsAt(
 			content: payload.content,
 			transform: payload.transform,
 			animUniforms,
-			textureId
+			textureId,
+			extras
 		};
 	});
 }

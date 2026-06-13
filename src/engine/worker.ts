@@ -2078,7 +2078,7 @@ function syncTitleRasters(): void {
 		customAnimCaptionPresets
 	)) {
 		active.add(payload.textureId);
-		titleCache.rasterize(payload.textureId, payload.content);
+		titleCache.rasterize(payload.textureId, payload.content, payload.extras);
 	}
 	titleCache.retain(active);
 }
@@ -2125,7 +2125,8 @@ function activeCaptionLayersAt(
 			textureIdFor === captionTextureId
 				? payload.textureId
 				: textureIdFor(payload.trackId, payload.segmentId);
-		if (titleCache && !titleCache.get(clipId)) titleCache.ensure(clipId, payload.content);
+		if (titleCache && !titleCache.get(clipId))
+			titleCache.ensure(clipId, payload.content, payload.extras);
 		layers.push({
 			clipId,
 			content: payload.content,

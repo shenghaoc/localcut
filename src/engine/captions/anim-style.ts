@@ -10,6 +10,16 @@ import type { TitleStyle } from '../title';
 
 export const CAPTION_ANIM_SCHEMA_VERSION = 1;
 
+/**
+ * Maximum byte size for an imported preset JSON file (R4.6).
+ *
+ * Preset files are user-authored stylesheet records with no embedded raster
+ * data; 64 KiB is well above any realistic preset. Bounding the read size
+ * prevents an oversized file from being decoded into memory before the
+ * validator can reject it.
+ */
+export const MAX_PRESET_FILE_BYTES = 64 * 1024;
+
 export type CaptionAnimKind = 'none' | 'pop' | 'bounce' | 'slide-up' | 'slide-down' | 'typewriter';
 
 export interface CaptionPillConfig {

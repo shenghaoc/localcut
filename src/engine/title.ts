@@ -35,7 +35,7 @@ export interface TitleContent {
 	style: TitleStyle;
 }
 
-/** Phase 30: optional extras for caption glow and pill rendering. */
+/** Phase 30: optional extras for caption glow, pill, and karaoke rendering. */
 export interface TitleRasterExtras {
 	glow?: { color: string; blurPx: number };
 	pill?: {
@@ -45,6 +45,13 @@ export interface TitleRasterExtras {
 		color: string;
 		opacity: number;
 	};
+	/**
+	 * Karaoke per-word highlight. When set, `rasterizeTitleToCanvas` walks the
+	 * line's whitespace-separated words and draws the word at `wordIndex` in
+	 * `color` while remaining words keep the base style. `lineIndex` selects
+	 * which line within the wrapped text holds the active word; defaults to 0.
+	 */
+	highlightWord?: { wordIndex: number; color: string; lineIndex?: number };
 }
 
 /** Reference raster height; the 2D canvas is sized to a 16:9 box at this height. */
@@ -182,6 +189,11 @@ export function titleContentHash(content: TitleContent, extras?: TitleRasterExtr
 		parts.push(`pill.radiusPx=${String(extras.pill.radiusPx)}`);
 		parts.push(`pill.color=${extras.pill.color}`);
 		parts.push(`pill.opacity=${String(extras.pill.opacity)}`);
+	}
+	if (extras?.highlightWord) {
+		parts.push(`hw.idx=${String(extras.highlightWord.wordIndex)}`);
+		parts.push(`hw.color=${extras.highlightWord.color}`);
+		parts.push(`hw.line=${String(extras.highlightWord.lineIndex ?? 0)}`);
 	}
 	// NUL separator so free-form text can't masquerade as a following field=value
 	// pair and collide with a different style set.

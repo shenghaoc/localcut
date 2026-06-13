@@ -269,23 +269,75 @@ export function rasterizeTitleToCanvas(
 		ctx.shadowBlur = 0;
 	}
 
+	// Karaoke per-word highlight: when extras.highlightWord targets the current
+	// line, walk the line word-by-word so the active word can use a distinct
+	// fill colour while keeping every other word in the base style. Otherwise
+	// fall back to a single fillText call per line — same output as before this
+	// branch existed.
+	const highlight = extras?.highlightWord;
+
 	lines.forEach((line, index) => {
 		const ly = cy - blockHeight / 2 + lineHeight * (index + 0.5);
-		// Shadow attaches to the outermost shape only (outline if present, else
-		// fill) so it isn't doubled by drawing both stroke and fill.
-		if (style.outlineWidthPx > 0) {
-			setShadow(ctx, content, true);
-			ctx.lineWidth = style.outlineWidthPx;
-			ctx.strokeStyle = style.outlineColor;
-			ctx.lineJoin = 'round';
-			ctx.strokeText(line, anchorX, ly);
+		const targetLine = highlight?.lineIndex ?? 0;
+		const wordHighlightActive = highlight !== undefined && index === targetLine && line.length > 0;
+
+		if (!wordHighlightActive) {
+			// Existing single-fill path.
+			if (style.outlineWidthPx > 0) {
+				setShadow(ctx, content, true);
+				ctx.lineWidth = style.outlineWidthPx;
+				ctx.strokeStyle = style.outlineColor;
+				ctx.lineJoin = 'round';
+				ctx.strokeText(line, anchorX, ly);
+				setShadow(ctx, content, false);
+			} else {
+				setShadow(ctx, content, true);
+			}
+			ctx.fillStyle = style.color;
+			ctx.fillText(line, anchorX, ly);
 			setShadow(ctx, content, false);
-		} else {
-			setShadow(ctx, content, true);
+			return;
 		}
-		ctx.fillStyle = style.color;
-		ctx.fillText(line, anchorX, ly);
-		setShadow(ctx, content, false);
+
+		// Word-by-word path. measureText handles the chosen font + size so the
+		// total reflows naturally — we only need a starting x and the per-word
+		// advance. Use textAlign='left' inside the loop and compute the left
+		// edge from the original alignment so the line still anchors correctly.
+		const savedAlign = ctx.textAlign;
+		const tokens = line.split(/(\s+)/); // keeps the whitespace runs as tokens
+		let wordCounter = 0;
+		const lineWidth = ctx.measureText(line).width;
+		const startX =
+			style.align === 'left'
+				? anchorX
+				: style.align === 'right'
+					? anchorX - lineWidth
+					: anchorX - lineWidth / 2;
+		ctx.textAlign = 'left';
+		let cursorX = startX;
+		for (const token of tokens) {
+			const tokenWidth = ctx.measureText(token).width;
+			const isWhitespace = /^\s+$/.test(token);
+			if (token.length > 0 && !isWhitespace) {
+				const isActive = wordCounter === highlight!.wordIndex;
+				if (style.outlineWidthPx > 0) {
+					setShadow(ctx, content, true);
+					ctx.lineWidth = style.outlineWidthPx;
+					ctx.strokeStyle = style.outlineColor;
+					ctx.lineJoin = 'round';
+					ctx.strokeText(token, cursorX, ly);
+					setShadow(ctx, content, false);
+				} else {
+					setShadow(ctx, content, true);
+				}
+				ctx.fillStyle = isActive ? highlight!.color : style.color;
+				ctx.fillText(token, cursorX, ly);
+				setShadow(ctx, content, false);
+				wordCounter += 1;
+			}
+			cursorX += tokenWidth;
+		}
+		ctx.textAlign = savedAlign;
 	});
 }
 

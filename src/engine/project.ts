@@ -495,9 +495,12 @@ function parseCaptionStyle(value: unknown): CaptionStyle | null {
 	if (value === undefined || value === null) return normalizeCaptionStyle({});
 	if (!isRecord(value)) return null;
 	return normalizeCaptionStyle({
+		// Accept any non-empty string as presetId — built-in IDs and custom
+		// preset UUIDs are both valid. normalizeCaptionStyle handles unknown
+		// IDs by falling back to the subtitle layout while preserving the ID.
 		presetId:
-			value.presetId === 'subtitle' || value.presetId === 'lower-third' || value.presetId === 'note'
-				? value.presetId
+			typeof value.presetId === 'string' && value.presetId.length > 0
+				? (value.presetId as CaptionStyle['presetId'])
 				: undefined,
 		overrides: isRecord(value.overrides)
 			? (value.overrides as Partial<CaptionTrackSnapshot['defaultStyle']['overrides']>)
@@ -1283,7 +1286,15 @@ function parseCustomAnimCaptionPresets(value: unknown): CaptionAnimStylePreset[]
 	const presets: CaptionAnimStylePreset[] = [];
 	for (const item of value) {
 		const result = validateCaptionAnimPreset(item);
-		if (result.ok) presets.push(result.value);
+		if (!result.ok) continue;
+		// validateCaptionAnimPreset strips `id` because the file-import flow assigns
+		// a fresh UUID. For project-doc parsing, the persisted `id` is the key that
+		// segment.style.presetId references — preserve it from the raw record.
+		const rawId =
+			isRecord(item) && typeof item.id === 'string' && item.id.length > 0
+				? item.id
+				: result.value.id;
+		presets.push({ ...result.value, id: rawId });
 	}
 	return presets.length > 0 ? presets : undefined;
 }
