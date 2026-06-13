@@ -638,7 +638,8 @@ export function App() {
 					effects: sampleEffectsAt(clip.effects, clip.keyframes, localTime),
 					transform: sampleTransformAt(clip.transform, clip.keyframes, localTime),
 					keyframes: clip.keyframes,
-					lut: clip.lut
+					lut: clip.lut,
+					skinMask: clip.skinMask
 				};
 			}
 		}
@@ -2780,6 +2781,17 @@ export function App() {
 														bridge?.send({ type: 'remove-transition', transitionId });
 														transitionMeta.delete(transitionId);
 														setSelectedTransitionId(null);
+													}}
+													onSkinMask={(trackId, clipId, mask) => {
+														bridge?.send({ type: 'set-skin-mask', trackId, clipId, mask });
+													}}
+													onSkinSmoothBypass={(trackId, clipId, bypass) => {
+														bridge?.send({
+															type: 'set-skin-smooth-bypass',
+															trackId,
+															clipId,
+															bypass
+														});
 													}}
 												/>
 											</div>

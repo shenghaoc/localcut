@@ -141,10 +141,10 @@ describe('Normalize matrix selection', () => {
 });
 
 describe('Pipeline order', () => {
-	it('PIPELINE_ORDER contains all 7 stages exactly once', () => {
+	it('PIPELINE_ORDER contains all 8 stages exactly once', () => {
 		const stages = new Set(PIPELINE_ORDER);
-		expect(stages.size).toBe(7);
-		expect(PIPELINE_ORDER.length).toBe(7);
+		expect(stages.size).toBe(8);
+		expect(PIPELINE_ORDER.length).toBe(8);
 	});
 
 	it('starts with source-normalization', () => {

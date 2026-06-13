@@ -95,8 +95,9 @@
   Bindings: `@group(0) @binding(0) var moments: texture_storage_2d<rg32float, read>`
   (holds meanY in `.r`, meanY² in `.g`),
   `@group(0) @binding(1) var dst: texture_storage_2d<rg32float, write>`.
-  Per pixel: `var = max(0.0, moments.g - moments.r * moments.r)`,
-  `a = var / (var + SKIN_EPSILON)`, `b = (1.0 - a) * moments.r`. Writes `(a, b)`.
+  Per pixel: load texel `let m = textureLoad(moments, coord);`, compute
+  `variance = max(0.0, m.g - m.r * m.r)`,
+  `a = variance / (variance + SKIN_EPSILON)`, `b = (1.0 - a) * m.r`. Writes `(a, b)`.
   Embed literal `0.01` for epsilon. No f16 variant.
 - [ ] **T5.4** Create `src/engine/shaders/skin-smooth-apply.wgsl`: pass 7.
   Bindings: `@group(0) @binding(0) var<uniform> u: SkinApplyUniform` (32 bytes),
@@ -106,7 +107,8 @@
   Per pixel: compute `Y = dot(rgb, LUMA_BT709)`, `Yprime = meanCoeffs.r*Y + meanCoeffs.g`,
   gamma-encode `rgb` with sRGB OETF to get `rgbG`, compute `Y601 = dot(rgbG, LUMA_BT601)`,
   `Cb = (rgbG.b − Y601) * CB_SCALE`, `Cr = (rgbG.r − Y601) * CR_SCALE`, `m = band(...)*band(...)`,
-  `outRgb = clamp(rgb + u.strength * m * (Yprime − Y), 0, 1)`. Preserve alpha.
+  `outRgb = clamp(rgb + vec3f(u.strength * m * (Yprime − Y)), vec3f(0.0), vec3f(1.0))`.
+  Preserve alpha by loading the full RGBA texel first: `let rgba = textureLoad(src, coord)`.
   Embed literals for all constants. No f16 variant.
 
 ## T6 — GPU renderer integration (R3)

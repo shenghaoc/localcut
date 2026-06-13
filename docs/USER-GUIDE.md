@@ -166,6 +166,20 @@ Import a `.cube` LUT file for professional color grading:
 2. In the Inspector, click **Import LUT** and choose a `.cube` file.
 3. Adjust the **LUT Strength** slider to blend between the original and graded look.
 
+### Skin Smoothing (Beauty)
+
+An edge-preserving skin-smoothing effect that softens skin texture while preserving edges like hairlines, eyelids, and jaw lines. The effect uses a guided filter on luma, gated by a chroma-based skin-probability mask, so non-skin regions (text, foliage, fabric) are left untouched.
+
+1. Select a video clip.
+2. In the Inspector, adjust the **Skin Smoothing** slider (range 0–1, default 0). At 0 the effect is bypassed with zero GPU cost.
+3. The effect is keyframable — use the diamond button to set keyframes at different times.
+4. **A/B Bypass**: when strength > 0, an "A/B Bypass" toggle appears. This lets you compare before and after without losing your settings. Bypass affects preview only — export always uses the stored strength.
+5. **Skin Mask (advanced)**: expand the "Skin mask (advanced)" disclosure to fine-tune the chroma mask parameters (`Cb min`, `Cb max`, `Cr min`, `Cr max`, `Softness`). These control which colors are classified as skin. The defaults work well for most skin tones. Use "Reset mask" to restore defaults.
+
+**Tier requirement**: Skin smoothing requires the WebGPU effect chain (Accelerated or Compatibility-GPU tier). On tiers without WebGPU, the controls are disabled with an explanatory note.
+
+**Note**: This effect does not include face detection or geometry warps (face slimming, eye enlargement). Those features are planned for a future phase.
+
 ## Video Transitions
 
 Add a transition between two adjacent clips on the same video track:

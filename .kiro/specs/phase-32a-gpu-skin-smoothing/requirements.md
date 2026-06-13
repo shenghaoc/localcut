@@ -1,6 +1,6 @@
 # Requirements: Phase 32a — GPU Skin Smoothing
 
-LocalCut gains a beauty effect (磨皮): a pure-WGSL skin-smoothing node in the
+LocalCut gains a beauty effect (skin smoothing): a pure-WGSL skin-smoothing node in the
 existing per-clip accelerated effect chain. Smoothing is an edge-preserving
 **self-guided guided filter** on luma, gated by a tunable chroma-based
 skin-probability mask (BT.601 Cb/Cr range), driven by a single keyframable
@@ -90,7 +90,7 @@ WebGPU chain render without smoothing and say so.
   strength into the chain's destination texture.
 - **R3.3** Working data: `Y = dot(rgbLinear, (0.2126, 0.7152, 0.0722))` on
   the base-corrected working-linear image. Final compose:
-  `outRgb = clamp(rgbLinear + strength * m * (Y' − Y), 0, 1)` with
+  `outRgb = clamp(rgbLinear + vec3f(strength * m * (Y' − Y)), vec3f(0.0), vec3f(1.0))` with
   `Y' = meanA * Y + meanB` — luma-delta only, chroma untouched, so strength 0
   or mask 0 reproduces the input **bit-exactly**.
 - **R3.4** Intermediate moments use two dedicated **`rg32float`** storage
@@ -101,7 +101,7 @@ WebGPU chain render without smoothing and say so.
   ships **f32-only WGSL** on both the f16 and f32 chain variants (a stated,
   justified exception to the `*.f16.wgsl` pairing convention).
 - **R3.5** The node slots into the per-layer pipeline between
-  `base-correction` and `lut-apply`: `PIPELINE_ORDER` in
+  `lut-apply` and `opacity`: `PIPELINE_ORDER` in
   `src/engine/colour.ts` gains a `'skin-smooth'` stage at that position, and
   `compositeLayers`/`processLayer` in `src/engine/gpu.ts` encodes it there.
   The pass-7 destination is selected from the `storage.a/b/c` ping-pong with

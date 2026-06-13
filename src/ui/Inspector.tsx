@@ -30,6 +30,7 @@ export interface SelectedClip {
 	transform: TransformParamsSnapshot;
 	keyframes?: ClipKeyframesSnapshot;
 	lut?: ClipLutSnapshot;
+	skinMask?: import('../protocol').SkinMaskSnapshot;
 }
 
 export interface SelectedClipTransform {
@@ -121,6 +122,14 @@ interface InspectorProps {
 	) => void;
 	onTransitionDuration?: (transitionId: string, durationS: number) => void;
 	onRemoveTransition?: (transitionId: string) => void;
+	/** Phase 32a: skin-mask sidecar editing. */
+	onSkinMask?: (
+		trackId: string,
+		clipId: string,
+		mask: import('../protocol').SkinMaskSnapshot
+	) => void;
+	/** Phase 32a: session-only A/B bypass toggle. */
+	onSkinSmoothBypass?: (trackId: string, clipId: string, bypass: boolean) => void;
 }
 
 type TransformSliderKey = 'x' | 'y' | 'scale' | 'rotation' | 'opacity';
@@ -281,6 +290,14 @@ const SLIDERS: SliderSpec[] = [
 		max: 1,
 		step: 0.01,
 		format: (v) => v.toFixed(2)
+	},
+	{
+		key: 'skinSmoothStrength',
+		label: 'Skin Smoothing',
+		min: 0,
+		max: 1,
+		step: 0.01,
+		format: (v) => v.toFixed(2)
 	}
 ];
 
@@ -320,6 +337,75 @@ export function Inspector(props: InspectorProps) {
 	const mixTarget = { trackId: '' };
 	const fadeTarget = { trackId: '', clipId: '' };
 	let lutInput: HTMLInputElement | undefined;
+
+	// Phase 32a: skin-smooth bypass signal (session-only, not in undo history).
+	const [skinSmoothBypass] = createSignal(false);
+	// Phase 32a: skin-mask debounced editing.
+	const skinMaskPending = new Map<string, number>();
+	const skinMaskDebouncers = new Map<string, ReturnType<typeof setTimeout>>();
+	const skinMaskTarget = { trackId: '', clipId: '' };
+
+	/** Current skin mask values (from clip or defaults). */
+	function currentSkinMask() {
+		const clip = props.selectedClip;
+		const mask = clip?.skinMask;
+		return {
+			cbMin: mask?.cbMin ?? -0.2,
+			cbMax: mask?.cbMax ?? 0.0,
+			crMin: mask?.crMin ?? 0.05,
+			crMax: mask?.crMax ?? 0.2,
+			softness: mask?.softness ?? 0.04
+		};
+	}
+
+	const SKIN_MASK_SLIDERS: {
+		key: keyof ReturnType<typeof currentSkinMask>;
+		label: string;
+		min: number;
+		max: number;
+		step: number;
+		format: (v: number) => string;
+	}[] = [
+		{ key: 'cbMin', label: 'Cb min', min: -0.5, max: 0.5, step: 0.01, format: (v) => v.toFixed(2) },
+		{ key: 'cbMax', label: 'Cb max', min: -0.5, max: 0.5, step: 0.01, format: (v) => v.toFixed(2) },
+		{ key: 'crMin', label: 'Cr min', min: -0.5, max: 0.5, step: 0.01, format: (v) => v.toFixed(2) },
+		{ key: 'crMax', label: 'Cr max', min: -0.5, max: 0.5, step: 0.01, format: (v) => v.toFixed(2) },
+		{
+			key: 'softness',
+			label: 'Softness',
+			min: 0.005,
+			max: 0.15,
+			step: 0.005,
+			format: (v) => v.toFixed(3)
+		}
+	];
+
+	function scheduleSkinMaskParam(key: string, value: number) {
+		const clip = props.selectedClip;
+		if (!clip || !props.onSkinMask) return;
+		skinMaskTarget.trackId = clip.trackId;
+		skinMaskTarget.clipId = clip.clipId;
+		skinMaskPending.set(key, value);
+		const existing = skinMaskDebouncers.get(key);
+		if (existing) clearTimeout(existing);
+		skinMaskDebouncers.set(
+			key,
+			setTimeout(() => {
+				skinMaskDebouncers.delete(key);
+				skinMaskPending.delete(key);
+				// Build the full mask from current values + pending changes.
+				const mask = currentSkinMask();
+				const updated = { ...mask, [key]: value };
+				props.onSkinMask!(clip.trackId, clip.clipId, {
+					cbMin: updated.cbMin,
+					cbMax: updated.cbMax,
+					crMin: updated.crMin,
+					crMax: updated.crMax,
+					softness: updated.softness
+				});
+			}, PARAM_DEBOUNCE_MS)
+		);
+	}
 
 	function currentLocalTime(): number | null {
 		const clip = props.selectedClip;
@@ -1215,6 +1301,81 @@ export function Inspector(props: InspectorProps) {
 											</div>
 										</div>
 									</div>
+									{/* Phase 32a: Skin smoothing A/B bypass toggle */}
+									<Show when={effects().skinSmoothStrength > 0}>
+										<div class="skin-smooth-bypass">
+											<button
+												type="button"
+												class={`bypass-toggle${skinSmoothBypass() ? ' is-active' : ''}`}
+												aria-pressed={skinSmoothBypass()}
+												aria-label="Bypass skin smoothing (A/B)"
+												onClick={() => {
+													const clip = props.selectedClip;
+													if (clip && props.onSkinSmoothBypass) {
+														props.onSkinSmoothBypass(
+															clip.trackId,
+															clip.clipId,
+															!skinSmoothBypass()
+														);
+													}
+												}}
+											>
+												A/B Bypass
+											</button>
+											<span class="text-xs text-muted-foreground">
+												Bypass affects preview only — export always uses stored strength.
+											</span>
+										</div>
+									</Show>
+									{/* Phase 32a: Skin mask (advanced) disclosure */}
+									<details class="skin-mask-disclosure">
+										<summary>Skin mask (advanced)</summary>
+										<div class="skin-mask-sliders">
+											<For each={SKIN_MASK_SLIDERS}>
+												{(spec) => (
+													<div class="effect-slider">
+														<div class="effect-slider-label">
+															<span>{spec.label}</span>
+															<span class="effect-slider-value tabular-nums">
+																{spec.format(currentSkinMask()[spec.key])}
+															</span>
+														</div>
+														<input
+															type="range"
+															min={spec.min}
+															max={spec.max}
+															step={spec.step}
+															value={currentSkinMask()[spec.key]}
+															onInput={(e) =>
+																scheduleSkinMaskParam(
+																	spec.key,
+																	Number((e.currentTarget as HTMLInputElement).value)
+																)
+															}
+														/>
+													</div>
+												)}
+											</For>
+											<button
+												type="button"
+												class="skin-mask-reset"
+												onClick={() => {
+													const clip = props.selectedClip;
+													if (clip && props.onSkinMask) {
+														props.onSkinMask(clip.trackId, clip.clipId, {
+															cbMin: -0.2,
+															cbMax: 0.0,
+															crMin: 0.05,
+															crMax: 0.2,
+															softness: 0.04
+														});
+													}
+												}}
+											>
+												Reset mask
+											</button>
+										</div>
+									</details>
 								</div>
 							)}
 						</Show>

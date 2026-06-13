@@ -28,6 +28,7 @@ export interface ClipEffectParams {
 	temperature: number;
 	temperatureStrength: number;
 	lutStrength: number;
+	skinSmoothStrength: number;
 }
 
 export const DEFAULT_CLIP_EFFECTS: ClipEffectParams = {
@@ -36,7 +37,8 @@ export const DEFAULT_CLIP_EFFECTS: ClipEffectParams = {
 	saturation: 1,
 	temperature: 6500,
 	temperatureStrength: 1,
-	lutStrength: 0
+	lutStrength: 0,
+	skinSmoothStrength: 0
 };
 
 export function normalizeClipEffects(
@@ -48,7 +50,8 @@ export function normalizeClipEffects(
 		saturation: partial?.saturation ?? DEFAULT_CLIP_EFFECTS.saturation,
 		temperature: partial?.temperature ?? DEFAULT_CLIP_EFFECTS.temperature,
 		temperatureStrength: partial?.temperatureStrength ?? DEFAULT_CLIP_EFFECTS.temperatureStrength,
-		lutStrength: partial?.lutStrength ?? DEFAULT_CLIP_EFFECTS.lutStrength
+		lutStrength: partial?.lutStrength ?? DEFAULT_CLIP_EFFECTS.lutStrength,
+		skinSmoothStrength: partial?.skinSmoothStrength ?? DEFAULT_CLIP_EFFECTS.skinSmoothStrength
 	};
 }
 
@@ -153,9 +156,12 @@ export function clipEffectsEqual(a: ClipEffectParams, b: ClipEffectParams): bool
 		a.saturation === b.saturation &&
 		a.temperature === b.temperature &&
 		a.temperatureStrength === b.temperatureStrength &&
-		a.lutStrength === b.lutStrength
+		a.lutStrength === b.lutStrength &&
+		a.skinSmoothStrength === b.skinSmoothStrength
 	);
 }
+
+export { isSkinSmoothActive } from './skin-smooth';
 
 export function packEffectUniform(effectId: EffectId, params: ClipEffectParams): Float32Array {
 	const entry = [...EFFECT_REGISTRY, LUT_REGISTRY_ENTRY].find((e) => e.id === effectId);

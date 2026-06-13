@@ -4,7 +4,7 @@
 
 ## Goal
 
-Add a pure-WGSL beauty effect node (磨皮, skin smoothing) to the per-clip
+Add a pure-WGSL beauty effect node (skin smoothing) to the per-clip
 accelerated effect chain. A single keyframable strength parameter (Phase 15)
 drives an edge-preserving guided filter on BT.709 luma, gated by a tunable
 BT.601 chroma skin-probability mask. Seven compute passes are encoded into the
@@ -284,9 +284,9 @@ clamp, not wrapping). Bounds-checked on the output coordinate.
 Pass 4. Bindings:
 `@group(0) @binding(0) var moments: texture_storage_2d<rg32float, read>` — holds `(meanY, meanY²)`,
 `@group(0) @binding(1) var dst: texture_storage_2d<rg32float, write>`.
-Computes `var = max(0.0, moments.g - moments.r * moments.r)`,
-`a = var / (var + SKIN_EPSILON)`,
-`b = (1.0 - a) * moments.r`. Writes `(a, b)` to `dst`. No `src` texture needed
+Computes `let m = textureLoad(moments, coord); let variance = max(0.0, m.g - m.r * m.r)`,
+`a = variance / (variance + SKIN_EPSILON)`,
+`b = (1.0 - a) * m.r`. Writes `(a, b)` to `dst`. No `src` texture needed
 (the guided-filter self-guide uses only the moments, not the original pixels).
 
 ### `src/engine/shaders/skin-smooth-apply.wgsl` (new)
@@ -300,7 +300,9 @@ Pass 7. Bindings:
 Algorithm per pixel:
 
 ```wgsl
-let rgb   = textureLoad(src, coord).rgb;
+let rgba  = textureLoad(src, coord);
+let rgb   = rgba.rgb;
+let alpha = rgba.a;
 let Y     = dot(rgb, LUMA_BT709);
 let ab    = textureLoad(meanCoeffs, coord);
 let Yprime = ab.r * Y + ab.g;            // guided-filter output luma
@@ -311,7 +313,7 @@ let Cb    = (rgbG.b - Y601) * CB_SCALE;
 let Cr    = (rgbG.r - Y601) * CR_SCALE;
 let m     = band(Cb, u.cbMin, u.cbMax, u.softness)
           * band(Cr, u.crMin, u.crMax, u.softness);
-let outRgb = clamp(rgb + u.strength * m * (Yprime - Y), vec3f(0.0), vec3f(1.0));
+let outRgb = clamp(rgb + vec3f(u.strength * m * (Yprime - Y)), vec3f(0.0), vec3f(1.0));
 textureStore(dst, coord, vec4f(outRgb, alpha));
 ```
 
