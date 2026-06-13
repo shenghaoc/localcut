@@ -54,7 +54,11 @@ describe('DocsNav', () => {
 		const targetLink = container.querySelector(
 			'a[href="/docs/getting-started"]'
 		) as HTMLAnchorElement;
-		targetLink.click();
+		// Use dispatchEvent to avoid triggering real anchor navigation
+		// which would nuke the Vitest browser iframe.
+		targetLink.dispatchEvent(
+			new MouseEvent('click', { bubbles: true, cancelable: true })
+		);
 		expect(onNavigate).toHaveBeenCalledWith('getting-started');
 	});
 
