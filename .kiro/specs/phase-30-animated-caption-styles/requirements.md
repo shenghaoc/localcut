@@ -15,6 +15,12 @@ metadata, not carried in sidecar formats.
 
 ## R1 — Animated caption style model
 
+- **R1.0** The existing Phase 22 `CaptionStyle.presetId` type union is extended
+  to accept the Phase 30 built-in IDs (R1.3) AND arbitrary string IDs (custom
+  preset UUIDs). Unknown / unresolvable IDs fall back to the `"subtitle"`
+  layout defaults at the rendering layer (no schema migration required for
+  existing v10 documents whose tracks reference `"subtitle"` | `"lower-third"`
+  | `"note"`).
 - **R1.1** `CaptionAnimStylePreset` is a new versioned type exported from
   `src/engine/captions/anim-style.ts` with the discriminant field
   `captionStyleSchemaVersion: 1`. It carries: `id: string`, `label: string`,
@@ -161,24 +167,35 @@ metadata, not carried in sidecar formats.
   media bundles. Custom presets live in `project.json`; a test asserts the
   Phase 23 bundle asset manifest never lists files with `captionStyleSchemaVersion`
   in their content.
+- **R4.6** **Bounded memory.** Preset JSON files are read via `File.text()`
+  (whole-file decode) — acceptable because preset files are user-authored
+  stylesheet records with no embedded raster data. The validator caps file
+  size at 64 KiB before parsing; oversized files are rejected with a
+  field-named error. No streaming JSON parser is required at this scale.
 
-## R5 — ProjectDoc schema migration (version 10 → 11)
+## R5 — ProjectDoc schema migration (version 11 → 12)
+
+> Note: v11 was claimed by Phase 46 (config persistence). Phase 30 is the
+> `11 → 12` step. v10 documents migrate through v11 first via the existing
+> chain; both v11 and v12 carry `customAnimCaptionPresets` as an optional
+> array (Phase 30 is the producer; Phase 46 didn't touch the field).
 
 - **R5.1** `PROJECT_SCHEMA_VERSION` in `src/engine/project.ts` is bumped from
-  `10` to `11`. The migration in `src/engine/persistence.ts` handles
-  `10 → 11` by inserting `customAnimCaptionPresets: []` when the field is
-  absent. No other transformation is needed.
+  `11` to `12`. The validator/migration entry point is a new `deserializeV12`
+  function in `src/engine/project.ts` (delegating to `deserializeV10` for the
+  shared field surface). No transformation is required for documents already
+  at v11 — `customAnimCaptionPresets` is optional and absent → `undefined`.
 - **R5.2** `CaptionSegment.words` is optional; migration never touches existing
-  segments. The validator in `src/engine/persistence.ts` uses the
-  `isRecord / requiredString / finiteNumber` pattern and treats `words` as
-  entirely optional (undefined or a valid array).
-- **R5.3** Documents at versions below 10 first run existing migrations to
-  reach version 10, then the new `10 → 11` step applies. Each migration is a
+  segments. The validator in `src/engine/project.ts` (`parseCaptionSegment`)
+  uses the `isRecord / requiredString / finiteNumber` pattern and treats
+  `words` as entirely optional (undefined or a valid array).
+- **R5.3** Documents at versions below 11 first run existing migrations to
+  reach version 11, then the new `11 → 12` step applies. Each migration is a
   pure function; the chain is sequential.
-- **R5.4** A document at version 11 opened by a build that expects version 10
-  is caught by the existing "unknown version" guard in
-  `src/engine/persistence.ts`, which shows a "project was created with a newer
-  version of LocalCut" warning instead of silently corrupting state.
+- **R5.4** A document at version 12 opened by a build that expects version 11
+  is caught by the existing "unknown version" guard in `src/engine/project.ts`
+  (`deserializeProject` switch — unmatched `schemaVersion` returns
+  `{ ok: false, reason: 'Unsupported project schemaVersion' }`).
 
 ## R6 — Preview/export parity
 
@@ -195,7 +212,12 @@ metadata, not carried in sidecar formats.
   Animated style fields are never written into SRT or VTT output.
 - **R6.4** Styled captions survive Phase 23 bundle export/import:
   `customAnimCaptionPresets` in `ProjectDoc` serializes into `project.json`,
-  and bundle import restores it exactly. No additional bundle logic is needed.
+  and bundle import restores it exactly. The worker's `BundleWorkerContext.getProjectState()`
+  must include the field so `runExportProjectBundle` passes it into
+  `serializeProject`; without this thread-through, custom-preset references
+  in segment styles survive but the preset definitions don't, and importing
+  the bundle elsewhere silently falls back to `"subtitle"`. A regression test
+  asserts a round-tripped bundle preserves at least one custom preset.
 
 ## R7 — Performance
 
@@ -242,9 +264,13 @@ metadata, not carried in sidecar formats.
 - **R9.4** `src/engine/title.test.ts` (extends existing): `titleContentHash`
   returns distinct hashes when `glow.color`, `glow.blurPx`, or `pill` fields
   change; hash is stable for identical inputs.
-- **R9.5** `src/engine/persistence.test.ts` (extends existing): version 10 → 11
-  migration adds `customAnimCaptionPresets: []`; version 11 round-trips
-  unchanged; existing caption tracks and segments survive.
+- **R9.5** `src/engine/project.test.ts` (extends existing): version 11 → 12
+  upgrade preserves all v11 fields and leaves `customAnimCaptionPresets`
+  `undefined` when absent; a v12 document with a non-empty
+  `customAnimCaptionPresets` round-trips through `serializeProject` /
+  `deserializeProject` with all entries intact; invalid preset entries are
+  dropped gracefully without rejecting the whole document; existing caption
+  tracks and segments survive v12 deserialization.
 - **R9.6** All new tests run in Vitest Node environment with no media fixtures.
   Test count must grow. `npm run build` must pass (strict TypeScript).
 - **R9.7** `docs/CAPTION-STYLES.md` is created covering: the 10 built-in preset

@@ -1,6 +1,9 @@
 # Design: Phase 30 — Animated Caption Styles
 
-> Status: **Proposed** — spec only, not yet implemented.
+> Status: **Shipped** in [PR #68](https://github.com/shenghaoc/browser-editor/pull/68).
+> This design document is kept up to date with the as-built implementation;
+> deviations from the original draft (notably the v11 → v12 schema bump and the
+> bundle-export thread-through) are reflected below.
 
 ## Goal
 
@@ -323,13 +326,23 @@ confined to the single existing `queue.submit` — hard gate 4 is not relaxed.
 ### `src/engine/project.ts` (extended)
 
 ```typescript
-// PROJECT_SCHEMA_VERSION bumped: 10 → 11
+// PROJECT_SCHEMA_VERSION bumped: 11 → 12
+// (v11 was claimed by Phase 46 config persistence; Phase 30 is 11 → 12.)
 
 export interface ProjectDoc {
   // ... existing fields ...
   customAnimCaptionPresets?: CaptionAnimStylePreset[];  // NEW optional
   captionTracks: CaptionTrack[];  // CaptionSegment.words field added (optional)
 }
+
+// Phase 22's CaptionStyle.presetId type union is extended to accept Phase 30
+// IDs plus arbitrary string IDs (custom preset UUIDs). Layout lookups in
+// CAPTION_PRESETS fall back to 'subtitle' when the ID is unknown.
+export type CaptionPresetId =
+  | 'subtitle' | 'lower-third' | 'note'              // Phase 22
+  | 'bold-outline' | 'neon-glow' | 'karaoke'         // Phase 30
+  | 'cinematic' | 'pop-card' | 'bounce-card' | 'slide-news'
+  | (string & Record<never, never>);                 // custom preset UUIDs
 ```
 
 ### `src/engine/captions/types.ts` (extended)
@@ -345,20 +358,47 @@ export interface CaptionSegment {
 }
 ```
 
-### `src/engine/persistence.ts` (extended)
+### `src/engine/project.ts` deserialization (the migration entry point lives here, NOT in persistence.ts)
 
-Migration `10 → 11`:
+The deserializer dispatches on `schemaVersion` via a switch in
+`deserializeProject`. The new `deserializeV12` function handles v12 documents
+by delegating to the shared v10/v11 field surface plus the new optional
+`customAnimCaptionPresets` array:
+
 ```typescript
-function migrateV10toV11(doc: Record<string, unknown>): void {
-  if (!Array.isArray(doc['customAnimCaptionPresets'])) {
-    doc['customAnimCaptionPresets'] = [];
-  }
-  // CaptionSegment.words: no action required — validator already tolerates absence.
+function deserializeV12(value: Record<string, unknown>): DeserializeProjectResult {
+  // Reuses deserializeV10 for the shared field surface (timeline, captionTracks,
+  // transitions, markers, sources, masterGain, exportSettings).
+  const base = deserializeV10(value);
+  if (!base.ok) return base;
+  const customAnimCaptionPresets = parseCustomAnimCaptionPresets(
+    value.customAnimCaptionPresets,  // optional; undefined → undefined
+  );
+  return { ok: true, doc: { ...base.doc, customAnimCaptionPresets } };
 }
 ```
 
 Version guard is unchanged: documents at schema version > current are blocked
-with a user-visible "newer version" notice.
+by the existing default branch of the switch with
+`{ ok: false, reason: 'Unsupported project schemaVersion' }`.
+
+### `src/engine/project-bundle/bundle-jobs.ts` (extended)
+
+`BundleWorkerContext.getProjectState()` is extended to include
+`customAnimCaptionPresets?: ProjectDoc['customAnimCaptionPresets']`.
+`runExportProjectBundle` threads the field into the `serializeProject` call:
+
+```typescript
+const doc = serializeProject({
+  // ... existing fields ...
+  customAnimCaptionPresets: state.customAnimCaptionPresets,
+});
+```
+
+Without this thread-through, segment styles referencing a custom preset ID
+survive bundle round-trip but the preset definitions don't, and importing
+the bundle on a fresh project falls back silently to `"subtitle"`. This was
+identified during code review (Codex P1) and added as part of this phase.
 
 ### `src/protocol.ts` (extended)
 
@@ -411,14 +451,19 @@ ARIA labels on all controls, no media objects or GPU handles in UI code,
 
 ## Persistence and schema notes
 
-- `PROJECT_SCHEMA_VERSION`: `10 → 11` (in `src/engine/project.ts`).
+- `PROJECT_SCHEMA_VERSION`: `11 → 12` (in `src/engine/project.ts`). v11 was
+  claimed by Phase 46 (config persistence); Phase 30 is `11 → 12`.
 - `BUNDLE_SCHEMA_VERSION` is **not** bumped — bundle structure is unchanged;
-  the new fields ride in `project.json`.
-- `customAnimCaptionPresets` in `ProjectDoc`: optional array; migration inserts
-  `[]` when absent. Field is serialized into the bundle's `project.json` by the
-  existing bundle serializer with no additional logic.
-- `CaptionSegment.words`: optional; validator accepts undefined or a valid
-  array. No migration writes words onto existing segments.
+  the new fields ride in `project.json`. The bundle worker context, however,
+  must be extended to thread `customAnimCaptionPresets` into the serializer
+  (see `bundle-jobs.ts` section above) — fields don't ride into the bundle
+  for free, they ride because the worker context exposes them.
+- `customAnimCaptionPresets` in `ProjectDoc`: optional array. When absent the
+  field deserializes to `undefined` (not `[]`); the worker treats `undefined`
+  and `[]` identically. Field is serialized into the bundle's `project.json`
+  by `serializeProject`.
+- `CaptionSegment.words`: optional; `parseCaptionSegment` accepts undefined or
+  a valid array. No migration writes words onto existing segments.
 - Preset files exported by the user are **not** bundle assets and are never
   listed in `manifest.json`.
 
@@ -434,16 +479,20 @@ are already in the repo. No new npm packages are introduced.
   - `src/engine/captions/anim-style.test.ts` — preset validation, defaults,
     import guard (forced `builtIn: false`, new UUID), version rejection.
   - `src/engine/captions/animation-curves.test.ts` — `computeCaptionAnimUniforms`
-    for all 6 kinds at t=0/0.5/1; overlap clamping; identity for 'none'.
-  - `src/engine/captions/render.test.ts` (extended) — `activeCaptionPayloadsAt`
-    returns non-identity uniforms inside enter window; identity outside; karaoke
-    cropUV advances across word boundaries.
+    for all 6 kinds at t=0/0.5/1; overlap clamping; identity for 'none';
+    karaoke active-word lookup.
+  - `src/engine/captions/render.test.ts` (new) — `activeCaptionPayloadsAt`
+    returns non-identity uniforms inside enter / exit windows; identity in
+    hold phase; karaoke `textureId` switches to the highlight variant when
+    `currentTimeS` falls within a word range, and the full-line variant
+    otherwise.
   - `src/engine/title.test.ts` (extended) — `titleContentHash` distinguishes
     glow and pill field changes; stable for identical inputs.
-  - `src/engine/persistence.test.ts` (extended) — v10→v11 migration; v11
-    round-trip; existing caption segments survive.
-  - `src/engine/captions/types.test.ts` (extended) — `words` validator: valid,
-    absent, overlapping, out-of-segment-range.
+  - `src/engine/project.test.ts` (extended) — v12 round-trip; existing v11
+    caption segments survive; v12 with `customAnimCaptionPresets` round-trips
+    cleanly; invalid presets are dropped without rejecting the document.
+  - `src/engine/captions.test.ts` (extended) — `CaptionSegment.words`
+    validator: valid, absent, overlapping, out-of-segment-range.
 - **No new Playwright tests.** All acceptance criteria are provable by unit
   tests + the existing preview/export integration paths; no UI-critical flow
   requires a real browser for this phase.
