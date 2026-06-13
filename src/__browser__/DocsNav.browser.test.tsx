@@ -56,9 +56,7 @@ describe('DocsNav', () => {
 		) as HTMLAnchorElement;
 		// Use dispatchEvent to avoid triggering real anchor navigation
 		// which would nuke the Vitest browser iframe.
-		targetLink.dispatchEvent(
-			new MouseEvent('click', { bubbles: true, cancelable: true })
-		);
+		targetLink.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
 		expect(onNavigate).toHaveBeenCalledWith('getting-started');
 	});
 

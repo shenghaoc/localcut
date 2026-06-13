@@ -20,8 +20,8 @@ export function DocsNav(props: DocsNavProps) {
 						class={`docs-nav-item${section.slug === props.activeSlug ? ' is-active' : ''}`}
 						aria-current={section.slug === props.activeSlug ? 'page' : undefined}
 						onClick={(event) => {
-							if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
 							event.preventDefault();
+							if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
 							props.onNavigate(section.slug);
 						}}
 					>
