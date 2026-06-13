@@ -49,7 +49,7 @@ const CORNERS = [
  */
 export function PreviewGizmo(props: PreviewGizmoProps) {
 	const [box, setBox] = createSignal<Box | null>(null);
-	let drag: DragState | null = null;
+	const [drag, setDrag] = createSignal<DragState | null>(null);
 
 	function measure() {
 		const canvas = props.canvasEl();
@@ -98,12 +98,20 @@ export function PreviewGizmo(props: PreviewGizmoProps) {
 		const h = rect.height * b.height;
 		const cx = (0.5 + t.x) * b.width;
 		const cy = (0.5 + t.y) * b.height;
+		const d = drag();
 		return {
-			left: `${b.left + cx - w / 2}px`,
-			top: `${b.top + cy - h / 2}px`,
+			left: '0px',
+			top: '0px',
 			width: `${w}px`,
 			height: `${h}px`,
-			transform: `rotate(${t.rotation}deg)`
+			translate: `${b.left + cx - w / 2}px ${b.top + cy - h / 2}px`,
+			transform: `rotate(${t.rotation}deg)`,
+			'will-change':
+				d?.mode === 'move' || d?.mode === 'scale'
+					? 'translate'
+					: d?.mode === 'rotate'
+						? 'transform'
+						: undefined
 		};
 	}
 
@@ -121,7 +129,7 @@ export function PreviewGizmo(props: PreviewGizmoProps) {
 		const centerY = p.top + b.top + (0.5 + t.y) * b.height;
 		const dx = event.clientX - centerX;
 		const dy = event.clientY - centerY;
-		drag = {
+		setDrag({
 			mode,
 			box: b,
 			centerX,
@@ -131,7 +139,7 @@ export function PreviewGizmo(props: PreviewGizmoProps) {
 			pointerY: event.clientY,
 			startDist: Math.hypot(dx, dy) || 1,
 			startAngle: Math.atan2(dy, dx)
-		};
+		});
 		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
 		window.addEventListener('pointermove', onPointerMove);
 		window.addEventListener('pointerup', endDrag);
@@ -139,24 +147,25 @@ export function PreviewGizmo(props: PreviewGizmoProps) {
 	}
 
 	function onPointerMove(event: PointerEvent) {
-		if (!drag) return;
-		if (drag.mode === 'move') {
-			const dx = (event.clientX - drag.pointerX) / drag.box.width;
-			const dy = (event.clientY - drag.pointerY) / drag.box.height;
-			props.onChange({ x: drag.start.x + dx, y: drag.start.y + dy });
-		} else if (drag.mode === 'scale') {
-			const dist = Math.hypot(event.clientX - drag.centerX, event.clientY - drag.centerY);
-			const next = Math.max(0.02, (dist / drag.startDist) * drag.start.scale);
+		const d = drag();
+		if (!d) return;
+		if (d.mode === 'move') {
+			const dx = (event.clientX - d.pointerX) / d.box.width;
+			const dy = (event.clientY - d.pointerY) / d.box.height;
+			props.onChange({ x: d.start.x + dx, y: d.start.y + dy });
+		} else if (d.mode === 'scale') {
+			const dist = Math.hypot(event.clientX - d.centerX, event.clientY - d.centerY);
+			const next = Math.max(0.02, (dist / d.startDist) * d.start.scale);
 			props.onChange({ scale: next });
 		} else {
-			const angle = Math.atan2(event.clientY - drag.centerY, event.clientX - drag.centerX);
-			const deltaDeg = ((angle - drag.startAngle) * 180) / Math.PI;
-			props.onChange({ rotation: drag.start.rotation + deltaDeg });
+			const angle = Math.atan2(event.clientY - d.centerY, event.clientX - d.centerX);
+			const deltaDeg = ((angle - d.startAngle) * 180) / Math.PI;
+			props.onChange({ rotation: d.start.rotation + deltaDeg });
 		}
 	}
 
 	function endDrag() {
-		drag = null;
+		setDrag(null);
 		window.removeEventListener('pointermove', onPointerMove);
 		window.removeEventListener('pointerup', endDrag);
 		window.removeEventListener('pointercancel', endDrag);
