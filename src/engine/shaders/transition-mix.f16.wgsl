@@ -49,7 +49,7 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
         case 2u: {
             // wipe: 0=left, 1=right, 2=up, 3=down
             let isHorizontal = uniforms.direction <= 1u;
-            let edge = select(f16(uv.y), f16(uv.x), isHorizontal);
+            let edge = select(uv.y, uv.x, isHorizontal);
             let flip = uniforms.direction == 1u || uniforms.direction == 3u;
             // smoothstep in f32 for precision, then narrow to f16 for the mix.
             // Remap t so the feather window stays entirely inside [0,1], preventing a
@@ -57,8 +57,8 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
             let feather = 0.005;
             let adjustedT = f32(t) * (1.0 + 2.0 * feather) - feather;
             let visible = select(
-                f16(1.0 - smoothstep(adjustedT - feather, adjustedT + feather, f32(edge))),
-                f16(smoothstep(1.0 - adjustedT - feather, 1.0 - adjustedT + feather, f32(edge))),
+                f16(1.0 - smoothstep(adjustedT - feather, adjustedT + feather, edge)),
+                f16(smoothstep(1.0 - adjustedT - feather, 1.0 - adjustedT + feather, edge)),
                 flip
             );
             result = mix(outColor, inColor, visible);
