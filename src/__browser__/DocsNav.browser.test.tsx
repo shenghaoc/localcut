@@ -54,9 +54,9 @@ describe('DocsNav', () => {
 		const targetLink = container.querySelector(
 			'a[href="/docs/getting-started"]'
 		) as HTMLAnchorElement;
-		// Use dispatchEvent to avoid triggering real anchor navigation
-		// which would nuke the Vitest browser iframe.
-		targetLink.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+		// Remove href to prevent real anchor navigation nuking the Vitest iframe.
+		targetLink.removeAttribute('href');
+		targetLink.click();
 		expect(onNavigate).toHaveBeenCalledWith('getting-started');
 	});
 
@@ -65,9 +65,9 @@ describe('DocsNav', () => {
 		const targetLink = container.querySelector(
 			'a[href="/docs/getting-started"]'
 		) as HTMLAnchorElement;
-		// Dispatch a click with metaKey held — should not be intercepted
-		const event = new MouseEvent('click', { bubbles: true, metaKey: true });
-		targetLink.dispatchEvent(event);
+		// Remove href to prevent real anchor navigation nuking the Vitest iframe.
+		targetLink.removeAttribute('href');
+		targetLink.dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true }));
 		expect(onNavigate).not.toHaveBeenCalled();
 	});
 
