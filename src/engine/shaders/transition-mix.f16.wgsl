@@ -49,7 +49,7 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
         case 2u: {
             // wipe: 0=left, 1=right, 2=up, 3=down
             let isHorizontal = uniforms.direction <= 1u;
-            let edge = isHorizontal ? f16(uv.x) : f16(uv.y);
+            let edge = select(f16(uv.y), f16(uv.x), isHorizontal);
             let flip = uniforms.direction == 1u || uniforms.direction == 3u;
             // smoothstep in f32 for precision, then narrow to f16 for the mix.
             // Remap t so the feather window stays entirely inside [0,1], preventing a
@@ -69,7 +69,7 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
             let slideT = 1.0h - t;
             var slideInUV = uv;
             var slideOutUV = uv;
-            let signVal: f32 = (uniforms.direction == 1u || uniforms.direction == 3u) ? -1.0 : 1.0;
+            let signVal: f32 = select(1.0, -1.0, uniforms.direction == 1u || uniforms.direction == 3u);
             if isHorizontal {
                 slideInUV.x = uv.x + signVal * f32(slideT);
                 slideOutUV.x = uv.x + signVal * f32(t) * -1.0;
