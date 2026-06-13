@@ -68,7 +68,7 @@ export function stableStringify(value: unknown): string {
 		const keys = Object.keys(value).sort();
 		return `{${keys.map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(',')}}`;
 	}
-	return stablePrimitive(String(value));
+	return stablePrimitive(JSON.stringify(value));
 }
 
 export function hashString(input: string): string {

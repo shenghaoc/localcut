@@ -96,7 +96,7 @@ describe('SequentialAudioSource', () => {
 
 		// Target == source rate → passthrough, exact source frames.
 		const same = await makeSource().pcmWindowAt(0, 8, 1, 8);
-		expect([...same].slice(0, 4)).toEqual([...data.slice(0, 4)]);
+		expect(same.slice(0, 4)).toEqual(data.slice(0, 4));
 
 		// Target != source rate → must resample even though it matches the ctor rate.
 		const down = await makeSource().pcmWindowAt(0, 16, 1, 4);

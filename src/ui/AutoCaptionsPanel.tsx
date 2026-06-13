@@ -76,6 +76,7 @@ function asrJobLabel(job: ActiveAsrJob): string {
 }
 
 export const AutoCaptionsPanel: Component<AutoCaptionsPanelProps> = (props) => {
+	// eslint-disable-next-line eslint/no-unassigned-vars — SolidJS ref assigns via JSX
 	let panelRef: HTMLElement | undefined;
 	const [language, setLanguage] = createSignal<string>('en');
 

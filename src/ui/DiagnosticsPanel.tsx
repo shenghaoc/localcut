@@ -44,6 +44,7 @@ function observedBudgetValue(budget: PerformanceBudget): string {
 }
 
 export function DiagnosticsPanel(props: DiagnosticsPanelProps) {
+	// eslint-disable-next-line eslint/no-unassigned-vars — SolidJS ref assigns via JSX
 	let panelRef: HTMLElement | undefined;
 	const [copyStatus, setCopyStatus] = createSignal<string | null>(null);
 

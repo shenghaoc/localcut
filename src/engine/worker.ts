@@ -1205,12 +1205,14 @@ async function computeWaveformsForSource(handle: MediaInputHandle): Promise<void
 async function fileFromHandle(handle: FileSystemFileHandle): Promise<File | null> {
 	try {
 		const permissionRequest = { mode: 'read' as const };
+		// eslint-disable-next-line typescript/unbound-method -- optional API; called with explicit `this`
 		const queryPermission = handle.queryPermission;
 		if (queryPermission) {
 			const state = await queryPermission.call(handle, permissionRequest);
 			if (state === 'denied') return null;
 			if (state === 'granted') return await handle.getFile();
 		}
+		// eslint-disable-next-line typescript/unbound-method -- optional API; called with explicit `this`
 		const requestPermission = handle.requestPermission;
 		if (requestPermission) {
 			const state = await requestPermission.call(handle, permissionRequest);
@@ -2341,6 +2343,7 @@ async function handleImport(file: File, fileHandle?: FileSystemFileHandle | null
  */
 function pruneUnusedSources(): void {
 	if (exportAbort) return;
+	// eslint-disable-next-line unicorn/no-useless-spread — snapshot needed: deletes during iteration
 	for (const [id, handle] of [...sourceInputs.entries()]) {
 		if (binSourceIds.has(id)) continue;
 		secondaryFrameSources.release(id);
@@ -3638,6 +3641,7 @@ async function applyImportedDoc(doc: ProjectDoc): Promise<void> {
 	nextSourceId = nextSourceIdFromDescriptors(doc.sources);
 
 	const keepIds = new Set(doc.sources.map((source) => source.sourceId));
+	// eslint-disable-next-line unicorn/no-useless-spread — snapshot needed: deletes during iteration
 	for (const id of [...binSourceIds]) {
 		if (keepIds.has(id)) continue;
 		binSourceIds.delete(id);

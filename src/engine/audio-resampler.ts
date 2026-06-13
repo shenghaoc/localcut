@@ -16,6 +16,7 @@ function besselI0(x: number): number {
 	for (let k = 1; k <= 20; k++) {
 		term *= (halfX / k) * (halfX / k);
 		sum += term;
+		// eslint-disable-next-line oxc/erasing-op — convergence threshold, not a bug
 		if (term < sum * 1e-16) break;
 	}
 	return sum;

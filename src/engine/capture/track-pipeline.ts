@@ -331,7 +331,7 @@ export class TrackPipeline {
 		this.track.stop();
 		if (this.reader) {
 			try {
-				this.reader.cancel();
+				void this.reader.cancel();
 			} catch {
 				// best-effort cancel during dispose
 			}

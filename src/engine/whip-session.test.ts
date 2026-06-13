@@ -1,3 +1,4 @@
+/* eslint-disable typescript/unbound-method -- vi.fn() mock accessors are unbound by design */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { PublishSettingsDoc, PublishState } from '../protocol';
 import { defaultPublishSettings } from './publish-settings';
