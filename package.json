@@ -18,7 +18,7 @@
 		"format": "vp fmt .",
 		"format:check": "vp fmt --check .",
 		"typecheck": "tsc --noEmit",
-		"check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build",
+		"check": "vp run format:check && vp lint . && vp run typecheck && vp test run && vp build",
 		"build:wasm": "node scripts/build-wasm.mjs",
 		"test:e2e": "playwright test",
 		"prepare": "vp config"
