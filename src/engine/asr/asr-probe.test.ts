@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
+import { describe, expect, it } from 'vite-plus/test';
 import type { WebNNProbeResult } from '../../protocol';
-import { probeAsr } from './asr-probe';
+import { asrAvailable, probeAsr } from './asr-probe';
 
 const WEBNN_READY: WebNNProbeResult = {
 	mlPresent: true,
@@ -15,30 +15,25 @@ const WEBNN_ABSENT: WebNNProbeResult = {
 };
 
 describe('probeAsr', () => {
-	afterEach(() => {
-		vi.unstubAllGlobals();
-	});
-
-	it('does not expose placeholder WebNN ASR as an available engine', () => {
+	it('does not expose WebNN as an available engine until a real runtime lands', () => {
 		const result = probeAsr(WEBNN_READY);
 
 		expect(result.webnn.modelSupport).toBe('supported');
 		expect(result.recommended).toBe('none');
+		expect(asrAvailable(result)).toBe(false);
 	});
 
-	it('reports Browser SpeechRecognition but does not select it for clip transcription', () => {
-		vi.stubGlobal('SpeechRecognition', class {});
-
+	it('reports unavailable when WebNN is absent', () => {
 		const result = probeAsr(WEBNN_ABSENT);
 
-		expect(result.speechRecognition).toBe('supported');
 		expect(result.recommended).toBe('none');
+		expect(asrAvailable(result)).toBe(false);
 	});
 
-	it('reports unavailable when neither WebNN nor Browser SpeechRecognition is available', () => {
-		const result = probeAsr(WEBNN_ABSENT);
+	it('does not carry any Browser SpeechRecognition signal', () => {
+		// The removed Chrome Speech fallback must leave no probe surface behind.
+		const result = probeAsr(WEBNN_READY);
 
-		expect(result.speechRecognition).toBe('unsupported');
-		expect(result.recommended).toBe('none');
+		expect(Object.keys(result)).not.toContain('speechRecognition');
 	});
 });

@@ -1,21 +1,13 @@
 /**
- * ASR capability probe (Phase 29). WebNN and Browser SpeechRecognition remain
- * diagnostic signals only until selected-clip transcription has a real
- * worker-backed ASR engine.
+ * ASR capability probe (Phase 29). Reports WebNN as a diagnostic signal only.
+ *
+ * There is no practical fallback for selected-clip transcription: Browser
+ * SpeechRecognition listens to live mic/page audio and cannot consume the PCM
+ * extracted from a timeline clip, so the Chrome Speech service was removed
+ * rather than kept as a fake fallback. Auto Captions stay `recommended: 'none'`
+ * until the on-device LiteRT-over-WebNN Whisper engine (PR94) lands.
  */
 import type { AsrProbeResult, FeatureSupport, WebNNProbeResult } from '../../protocol';
-
-function probeSpeechRecognition(): FeatureSupport {
-	try {
-		const hasRecognition =
-			typeof (globalThis as Record<string, unknown>)['SpeechRecognition'] !== 'undefined' ||
-			typeof (globalThis as Record<string, unknown>)['webkitSpeechRecognition'] !== 'undefined';
-		if (!hasRecognition) return 'unsupported';
-		return 'supported';
-	} catch {
-		return 'unknown';
-	}
-}
 
 function defaultWebNNProbe(): WebNNProbeResult {
 	return {
@@ -31,8 +23,7 @@ function defaultWebNNProbe(): WebNNProbeResult {
 
 export function probeAsr(webnnProbe?: WebNNProbeResult | null): AsrProbeResult {
 	const webnn = webnnProbe ?? defaultWebNNProbe();
-	const speechRecognition = probeSpeechRecognition();
-	return { webnn, speechRecognition, recommended: 'none' };
+	return { webnn, recommended: 'none' };
 }
 
 export function asrAvailable(result: AsrProbeResult): boolean {
@@ -40,4 +31,4 @@ export function asrAvailable(result: AsrProbeResult): boolean {
 }
 
 export const ASR_UNAVAILABLE_MESSAGE =
-	'Auto captions need a real selected-audio ASR engine. Browser SpeechRecognition is disabled for clips.';
+	'Auto Captions are unavailable until the on-device WebNN speech engine (LiteRT Whisper) lands. Browser speech recognition is not a usable fallback for timeline clips.';

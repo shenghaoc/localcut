@@ -280,7 +280,7 @@ function asrRow(probe: CapabilityProbeResult): CapabilityRow {
 		active: false,
 		action: supported
 			? `Auto Captions (Experimental) available via ${engineLabel}.`
-			: 'Auto Captions need a worker-backed selected-audio ASR engine.'
+			: 'Auto Captions need the on-device WebNN Whisper engine (LiteRT); there is no browser fallback.'
 	};
 }
 

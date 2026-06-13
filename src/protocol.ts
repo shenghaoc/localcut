@@ -198,11 +198,13 @@ export type CleanupWorkerState =
 
 export type AsrRecommendedEngine = 'webnn-whisper' | 'none';
 
-/** ASR capability probe result. Reuses the Phase 28 WebNN probe;
- *  SpeechRecognition is diagnostic only for selected-clip ASR. */
+/** ASR capability probe result. Reuses the Phase 28 WebNN probe. Browser
+ *  SpeechRecognition was removed as a fallback: it listens to live mic/page
+ *  audio and cannot consume the PCM extracted from a selected timeline clip,
+ *  so it was never a usable path. Auto Captions stay `recommended: 'none'`
+ *  until the on-device LiteRT-over-WebNN Whisper engine (PR94) lands. */
 export interface AsrProbeResult {
 	webnn: WebNNProbeResult;
-	speechRecognition: FeatureSupport;
 	recommended: AsrRecommendedEngine;
 }
 

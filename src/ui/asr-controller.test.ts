@@ -27,7 +27,6 @@ const WEBNN_ABSENT: WebNNProbeResult = {
 
 const WEBNN_PROBE: AsrProbeResult = {
 	webnn: WEBNN_READY,
-	speechRecognition: 'unsupported',
 	recommended: 'webnn-whisper'
 };
 

@@ -27,15 +27,8 @@ export interface AutoCaptionsPanelProps {
 	onClose: () => void;
 }
 
-function formatEngine(recommended: string, speechRecognition: string): string {
-	switch (recommended) {
-		case 'webnn-whisper':
-			return 'WebNN Whisper';
-		default:
-			return speechRecognition === 'supported'
-				? 'Unavailable (Browser Speech disabled for clips)'
-				: 'Unavailable';
-	}
+function formatEngine(recommended: string): string {
+	return recommended === 'webnn-whisper' ? 'WebNN Whisper' : 'Unavailable';
 }
 
 function formatDuration(ms: number | null): string {
@@ -67,8 +60,7 @@ export const AutoCaptionsPanel: Component<AutoCaptionsPanelProps> = (props) => {
 	});
 
 	const availability = () => asrActionAvailability(props.state, props.selectedClip);
-	const engineLabel = () =>
-		formatEngine(props.state.recommendedEngine, props.state.probe?.speechRecognition ?? 'unknown');
+	const engineLabel = () => formatEngine(props.state.recommendedEngine);
 
 	return (
 		<Show when={props.open}>
@@ -270,8 +262,8 @@ export const AutoCaptionsPanel: Component<AutoCaptionsPanelProps> = (props) => {
 				</Show>
 
 				<footer class="capability-panel-note">
-					Selected-clip transcription requires a worker-backed ASR engine. Browser SpeechRecognition
-					is not used for timeline clips.
+					Selected-clip transcription requires an on-device, worker-backed ASR engine. The WebNN
+					Whisper engine is not available yet; there is no browser fallback.
 				</footer>
 			</aside>
 		</Show>

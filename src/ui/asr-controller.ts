@@ -6,8 +6,9 @@
  *   controller       ──(transcribe, transferred)──────────►  ASR worker  (WebNN only)
  *   controller       ──(asr-create-caption-track)─────────►  pipeline worker
  *
- * Browser SpeechRecognition is intentionally not used: it cannot consume
- * extracted timeline PCM for selected-clip transcription.
+ * There is no browser fallback. Chrome's SpeechRecognition service was removed
+ * because it cannot consume extracted timeline PCM; the only path forward is
+ * the on-device LiteRT-over-WebNN Whisper engine (PR94).
  */
 import type {
 	AsrModelStatus,
