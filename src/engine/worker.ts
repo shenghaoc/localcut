@@ -3777,7 +3777,9 @@ const bundleWorkerContext: BundleWorkerContext = {
 		markers,
 		masterGain,
 		exportSettings: lastExportSettings ?? undefined,
-		sources: currentProjectSources()
+		sources: currentProjectSources(),
+		customAnimCaptionPresets:
+			customAnimCaptionPresets.length > 0 ? customAnimCaptionPresets : undefined
 	}),
 	resolveSourceFile: makeStoredSourceResolver(loadStoredSource, fileFromHandle),
 	collectLuts: collectTimelineLuts,
