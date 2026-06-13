@@ -8,6 +8,8 @@ struct Transform {
   m : vec4<f32>,
   params : vec4<f32>,
   card : vec4<f32>,
+  // Phase 30: UV crop max for typewriter reveal. Default (1.0, 1.0) = no crop.
+  cropMax : vec2<f32>,
 }
 
 @group(0) @binding(0) var<uniform> u : Transform;
@@ -31,7 +33,9 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
 
   let inside = l.x >= 0.0 && l.x <= 1.0 && l.y >= 0.0 && l.y <= 1.0;
   if (inside) {
-    let c = textureSampleLevel(srcTexture, srcSampler, l, 0.0);
+    // Phase 30: apply UV crop for typewriter reveal.
+    let clampedL = vec2<f32>(clamp(l.x, 0.0, u.cropMax.x), l.y);
+    let c = textureSampleLevel(srcTexture, srcSampler, clampedL, 0.0);
     let a = f16(c.a) * f16(u.params.z);
     let rgb = vec3<f16>(c.rgb) * a;
     textureStore(dstTexture, coord, vec4<f32>(vec3<f32>(rgb), f32(a)));

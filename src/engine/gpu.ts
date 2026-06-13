@@ -87,6 +87,13 @@ export interface TextureCompositeLayer {
 	transform: TransformParams;
 	/** Phase 13: present when this layer participates in a transition blend. */
 	transition?: import('./timeline').TransitionResolveMeta;
+	/**
+	 * Phase 30: UV horizontal crop for typewriter animation. Default [1.0, 1.0]
+	 * (no crop). Caption layers pass [cropRightFrac, 1.0]; non-caption layers
+	 * omit this field or pass [1.0, 1.0]. Only U is cropped (horizontal reveal);
+	 * V is unclamped. Applied in the transform shader as a UV clamp.
+	 */
+	uvCropMax?: [number, number];
 }
 
 export type CompositeLayer = FrameCompositeLayer | TextureCompositeLayer;
@@ -553,7 +560,8 @@ export class PreviewRenderer {
 				slot,
 				wgX,
 				wgY,
-				transformDst
+				transformDst,
+				layer.kind === 'texture' ? layer.uvCropMax : undefined
 			);
 			return { srcWidth, srcHeight };
 		};
@@ -814,7 +822,8 @@ export class PreviewRenderer {
 		slot: number,
 		wgX: number,
 		wgY: number,
-		dstView: GPUTextureView
+		dstView: GPUTextureView,
+		uvCropMax?: [number, number]
 	): void {
 		let buffer = this.transformBuffers[slot];
 		if (!buffer) {
@@ -824,7 +833,14 @@ export class PreviewRenderer {
 			});
 			this.transformBuffers[slot] = buffer;
 		}
-		const packed = packTransformUniform(transform, this.width, this.height, srcWidth, srcHeight);
+		const packed = packTransformUniform(
+			transform,
+			this.width,
+			this.height,
+			srcWidth,
+			srcHeight,
+			uvCropMax
+		);
 		this.device.queue.writeBuffer(buffer, 0, packed);
 		const bindGroup = this.device.createBindGroup({
 			layout: this.transformPipeline.getBindGroupLayout(0),

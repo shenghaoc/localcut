@@ -248,6 +248,21 @@ Import, edit, and export caption tracks:
 - **Style**: Set preset, font size, color, background, burn-in, and visibility per track. Individual segments can override color and background.
 - **Export**: Export captions as SRT or VTT files.
 
+## Caption Styles and Animation
+
+Apply rich visual presets to caption tracks with glow effects, background pills,
+and enter/exit animations. See [Caption Styles and Animation](CAPTION-STYLES.md)
+for the full reference.
+
+- **Preset Picker**: Select from 10+ built-in presets (subtitle, lower-third,
+  neon-glow, karaoke, etc.) in the caption style inspector.
+- **Import/Export Presets**: Import `.caption-preset.json` files to add custom
+  presets, or export your favorites to share.
+- **Animations**: Presets can include pop, bounce, slide, or typewriter enter/exit
+  animations. Animations are applied at composite time — no re-rasterization per frame.
+- **Karaoke**: The karaoke preset highlights the active word when per-word timing
+  data is present (auto-populated by Phase 29 auto-captions ASR).
+
 ## Replay Buffer
 
 Continuously record a screen capture into a rolling buffer and save the last moments as a timeline clip — without interrupting the recording.

@@ -2,6 +2,7 @@
 import {
 	assertCrossOriginIsolated,
 	type CapabilityProbeResult,
+	type CaptionPresetIdSnapshot,
 	type CaptionTrackSnapshot,
 	ClockIndex,
 	TIMELINE_EPSILON,
@@ -62,6 +63,8 @@ import {
 } from './live-audio/live-chain';
 import { exportCaptionSidecars } from './captions/export';
 import { activeCaptionPayloadsAt, captionTextureId } from './captions/render';
+import type { CaptionAnimStylePreset } from './captions/anim-style';
+import { validateCaptionAnimPreset } from './captions/anim-style';
 import {
 	buildCaptionSnapTargets,
 	makeCaptionSegmentId,
@@ -321,6 +324,7 @@ let layerBudgetWarned = false;
 let exportAbort: AbortController | null = null;
 let lastExportSettings: ExportSettings | null = null;
 let exportPresets: ExportPresetDoc[] = [];
+let customAnimCaptionPresets: CaptionAnimStylePreset[] = [];
 let queueState: RenderQueueState = createEmptyQueueState();
 let queueRunning = false;
 let queueJobAbort: AbortController | null = null;
@@ -1111,6 +1115,7 @@ async function persistCurrentProject(): Promise<void> {
 		projectId,
 		timeline,
 		captionTracks,
+		customAnimCaptionPresets,
 		transitions,
 		markers,
 		sources: currentProjectSources(),
@@ -1839,6 +1844,7 @@ async function handleRestoreProject(): Promise<void> {
 	syncTimelineLuts();
 	lastExportSettings = doc.exportSettings ?? null;
 	exportPresets = (doc.exportPresets ?? []).filter((p) => !p.builtIn);
+	customAnimCaptionPresets = (doc.customAnimCaptionPresets ?? []) as CaptionAnimStylePreset[];
 	queueState = createEmptyQueueState();
 	if (doc.renderQueueHistory) {
 		queueState = { ...queueState, jobs: deserializeQueueHistory(doc.renderQueueHistory) };
@@ -3511,6 +3517,84 @@ function handleSnapCaptionSegment(
 	);
 }
 
+// ── Phase 30: Animated caption style handlers ─────────────────────────────
+
+function handleCaptionImportCustomPreset(
+	cmd: Extract<WorkerCommand, { type: 'caption-import-custom-preset' }>
+): void {
+	const result = validateCaptionAnimPreset(cmd.preset);
+	if (!result.ok) return;
+	const preset: CaptionAnimStylePreset = { ...result.value, id: cmd.preset.id, builtIn: false };
+	const existing = customAnimCaptionPresets.findIndex((p) => p.id === preset.id);
+	if (existing >= 0) {
+		customAnimCaptionPresets[existing] = preset;
+	} else {
+		customAnimCaptionPresets.push(preset);
+	}
+	postMessage({
+		type: 'caption-custom-presets-updated',
+		presets: customAnimCaptionPresets
+	});
+}
+
+function handleCaptionDeleteCustomPreset(
+	cmd: Extract<WorkerCommand, { type: 'caption-delete-custom-preset' }>
+): void {
+	customAnimCaptionPresets = customAnimCaptionPresets.filter((p) => p.id !== cmd.presetId);
+	postMessage({
+		type: 'caption-custom-presets-updated',
+		presets: customAnimCaptionPresets
+	});
+}
+
+function handleCaptionSetAnimStyle(
+	cmd: Extract<WorkerCommand, { type: 'caption-set-anim-style' }>
+): void {
+	const track = captionTracks.find((t: CaptionTrack) => t.id === cmd.trackId);
+	if (!track) return;
+	if (cmd.segmentId) {
+		const segment = track.segments.find((s) => s.id === cmd.segmentId);
+		if (!segment) return;
+		commitCaptionMutation(
+			() =>
+				setCaptionSegmentStyle(captionTracks, cmd.trackId, cmd.segmentId!, {
+					presetId: cmd.presetId as CaptionPresetIdSnapshot
+				}),
+			{ refreshPlayback: 'refresh' }
+		);
+	} else {
+		commitCaptionMutation(
+			() =>
+				setCaptionTrackProps(captionTracks, cmd.trackId, {
+					defaultStyle: { ...track.defaultStyle, presetId: cmd.presetId as CaptionPresetIdSnapshot }
+				}),
+			{ refreshPlayback: 'refresh' }
+		);
+	}
+}
+
+function handleCaptionSetWords(cmd: Extract<WorkerCommand, { type: 'caption-set-words' }>): void {
+	const track = captionTracks.find((t: CaptionTrack) => t.id === cmd.trackId);
+	if (!track) return;
+	const segment = track.segments.find((s) => s.id === cmd.segmentId);
+	if (!segment) return;
+	commitCaptionMutation(
+		() => {
+			return captionTracks.map((t: CaptionTrack) => {
+				if (t.id !== cmd.trackId) return t;
+				return {
+					...t,
+					segments: t.segments.map((s) => {
+						if (s.id !== cmd.segmentId) return s;
+						return { ...s, words: cmd.words ? [...cmd.words] : undefined };
+					})
+				};
+			});
+		},
+		{ refreshPlayback: 'refresh' }
+	);
+}
+
 function applyHistoryRestore(next: {
 	timeline: Timeline;
 	captionTracks?: CaptionTrack[];
@@ -3622,6 +3706,7 @@ async function applyImportedDoc(doc: ProjectDoc): Promise<void> {
 	syncTimelineLuts();
 	lastExportSettings = doc.exportSettings ?? null;
 	exportPresets = (doc.exportPresets ?? []).filter((p) => !p.builtIn);
+	customAnimCaptionPresets = (doc.customAnimCaptionPresets ?? []) as CaptionAnimStylePreset[];
 	queueState = createEmptyQueueState();
 	if (doc.renderQueueHistory) {
 		queueState = { ...queueState, jobs: deserializeQueueHistory(doc.renderQueueHistory) };
@@ -5544,6 +5629,18 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			break;
 		case 'snap-caption-segment':
 			handleSnapCaptionSegment(cmd);
+			break;
+		case 'caption-import-custom-preset':
+			handleCaptionImportCustomPreset(cmd);
+			break;
+		case 'caption-delete-custom-preset':
+			handleCaptionDeleteCustomPreset(cmd);
+			break;
+		case 'caption-set-anim-style':
+			handleCaptionSetAnimStyle(cmd);
+			break;
+		case 'caption-set-words':
+			handleCaptionSetWords(cmd);
 			break;
 		case 'preset-save':
 			handlePresetSave(cmd);

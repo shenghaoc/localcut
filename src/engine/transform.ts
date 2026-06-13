@@ -118,8 +118,9 @@ export function computeFitRect(
 }
 
 /** Floats per transform uniform: mat2 columns + translation + opacity + fit flag,
- *  then the layer "card" extents (fit rect + anchor) used to bound letterbox bars. */
-export const TRANSFORM_UNIFORM_FLOATS = 12;
+ *  then the layer "card" extents (fit rect + anchor) used to bound letterbox bars,
+ *  then uvCropMax (Phase 30 caption typewriter crop). */
+export const TRANSFORM_UNIFORM_FLOATS = 14;
 export const TRANSFORM_UNIFORM_BYTES = TRANSFORM_UNIFORM_FLOATS * 4;
 
 /**
@@ -132,19 +133,22 @@ export const TRANSFORM_UNIFORM_BYTES = TRANSFORM_UNIFORM_FLOATS * 4;
  * Inverting gives `l = M·o + t`, where
  *   M = diag(1/sx, 1/sy) · R(−θ)  and  t = anchor − M·center.
  *
- * Layout: [m00, m01, m10, m11, t0, t1, opacity, fitFlag, rectW, rectH, anchorX, anchorY].
+ * Layout: [m00, m01, m10, m11, t0, t1, opacity, fitFlag, rectW, rectH, anchorX, anchorY, cropMaxU, cropMaxV].
  * `fitFlag` is 1 for `letterbox` (out-of-source texels become opaque black) and
  * 0 otherwise (out-of-source texels become transparent). The trailing `rect`/
  * `anchor` let the shader recover the layer "card" coordinate
  * `k = 0.5 + (l − anchor)·rect` and so paint letterbox bars only *inside* the
  * transformed layer (`k ∈ [0,1]²`), leaving everything beyond it transparent.
+ * Phase 30: `cropMaxU`/`cropMaxV` clamp the UV sample coordinate for
+ * typewriter reveal. Default [1.0, 1.0] (no crop).
  */
 export function packTransformUniform(
 	t: TransformParams,
 	outputWidth: number,
 	outputHeight: number,
 	sourceWidth: number,
-	sourceHeight: number
+	sourceHeight: number,
+	uvCropMax?: [number, number]
 ): Float32Array {
 	// For 90°/270° rotations (the values that real-world rotation metadata produces)
 	// the layer's bounding box is the source rectangle transposed. Computing the fit
@@ -196,6 +200,9 @@ export function packTransformUniform(
 		rect.width,
 		rect.height,
 		t.anchorX,
-		t.anchorY
+		t.anchorY,
+		// Phase 30: UV crop for typewriter/karaoke reveal. [1.0, 1.0] = no crop.
+		uvCropMax?.[0] ?? 1.0,
+		uvCropMax?.[1] ?? 1.0
 	]);
 }

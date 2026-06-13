@@ -35,6 +35,18 @@ export interface TitleContent {
 	style: TitleStyle;
 }
 
+/** Phase 30: optional extras for caption glow and pill rendering. */
+export interface TitleRasterExtras {
+	glow?: { color: string; blurPx: number };
+	pill?: {
+		paddingXPx: number;
+		paddingYPx: number;
+		radiusPx: number;
+		color: string;
+		opacity: number;
+	};
+}
+
 /** Reference raster height; the 2D canvas is sized to a 16:9 box at this height. */
 export const TITLE_RASTER_HEIGHT = 1080;
 
@@ -152,11 +164,25 @@ export function cloneTitleContent(content: TitleContent): TitleContent {
  * field (via {@link TITLE_STYLE_KEYS}) so changing any one of them invalidates
  * the cached texture; identical content reuses it. Derived generically from the
  * key list so a newly added style field is automatically covered.
+ *
+ * Phase 30: when `extras` is provided, glow and pill fields are included in
+ * the hash. Callers that omit `extras` receive the same hash as before.
  */
-export function titleContentHash(content: TitleContent): string {
+export function titleContentHash(content: TitleContent, extras?: TitleRasterExtras): string {
 	const style = normalizeTitleStyle(content.style);
 	const parts = [`text=${content.text}`];
 	for (const key of TITLE_STYLE_KEYS) parts.push(`${key}=${String(style[key])}`);
+	if (extras?.glow) {
+		parts.push(`glow.color=${extras.glow.color}`);
+		parts.push(`glow.blurPx=${String(extras.glow.blurPx)}`);
+	}
+	if (extras?.pill) {
+		parts.push(`pill.paddingXPx=${String(extras.pill.paddingXPx)}`);
+		parts.push(`pill.paddingYPx=${String(extras.pill.paddingYPx)}`);
+		parts.push(`pill.radiusPx=${String(extras.pill.radiusPx)}`);
+		parts.push(`pill.color=${extras.pill.color}`);
+		parts.push(`pill.opacity=${String(extras.pill.opacity)}`);
+	}
 	// NUL separator so free-form text can't masquerade as a following field=value
 	// pair and collide with a different style set.
 	return parts.join('\u0000');

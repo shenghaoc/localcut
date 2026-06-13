@@ -4,6 +4,10 @@ import { activeCaptionSegmentsAt, resolvedCaptionStyle } from './model';
 import type { CaptionTrack } from './types';
 import type { TitleContent } from '../title';
 import type { TransformParams } from '../transform';
+import type { CaptionAnimStylePreset } from './anim-style';
+import { resolveAnimPreset } from './anim-style';
+import type { CaptionAnimUniforms } from './animation-curves';
+import { computeCaptionAnimUniforms, karaokeActiveWordIndex } from './animation-curves';
 
 function wrapGreedy(text: string, maxChars: number): string {
 	const words = text.trim().split(/\s+/).filter(Boolean);
@@ -38,8 +42,12 @@ function wrapBalanced(text: string, maxChars: number): string {
 		.join('\n');
 }
 
-export function captionTextureId(trackId: string, segmentId: string): string {
-	return `caption:${trackId}:${segmentId}`;
+export function captionTextureId(
+	trackId: string,
+	segmentId: string,
+	variant?: 'highlight'
+): string {
+	return variant ? `caption:${trackId}:${segmentId}:${variant}` : `caption:${trackId}:${segmentId}`;
 }
 
 export function captionTitlePayload(
@@ -78,20 +86,41 @@ export function captionTitlePayload(
 
 export function activeCaptionPayloadsAt(
 	tracks: readonly CaptionTrack[],
-	time: number
+	time: number,
+	customPresets: readonly CaptionAnimStylePreset[] = []
 ): Array<{
 	trackId: string;
 	segmentId: string;
 	content: TitleContent;
 	transform: TransformParams;
+	animUniforms: CaptionAnimUniforms;
+	textureId: string;
 }> {
 	return activeCaptionSegmentsAt(tracks, time).map(({ track, segment }) => {
+		const style = resolvedCaptionStyle(track, segment);
+		const preset = resolveAnimPreset(style.presetId, customPresets);
 		const payload = captionTitlePayload(track, segment.id, segment.text);
+
+		// Compute animation uniforms for the current time.
+		const animUniforms = computeCaptionAnimUniforms(preset, segment.start, segment.duration, time);
+
+		// Karaoke: if words are present and a highlightColor is set, check if we
+		// should use the highlight texture variant.
+		let textureId = captionTextureId(track.id, segment.id);
+		if (segment.words && segment.words.length > 0 && preset.highlightColor) {
+			const activeWordIdx = karaokeActiveWordIndex(segment.words, time);
+			if (activeWordIdx >= 0) {
+				textureId = captionTextureId(track.id, segment.id, 'highlight');
+			}
+		}
+
 		return {
 			trackId: track.id,
 			segmentId: segment.id,
 			content: payload.content,
-			transform: payload.transform
+			transform: payload.transform,
+			animUniforms,
+			textureId
 		};
 	});
 }

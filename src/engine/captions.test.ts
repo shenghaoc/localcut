@@ -231,3 +231,89 @@ describe('caption editing and export', () => {
 		expect(tracks[0]!.defaultStyle.anchor).toBe('bottom-left');
 	});
 });
+
+describe('CaptionSegment words validation (Phase 30)', () => {
+	it('accepts a valid ordered non-overlapping words array', () => {
+		const track = createCaptionTrack({
+			id: 'test',
+			segments: [
+				{
+					id: 'seg-1',
+					start: 0,
+					duration: 3,
+					text: 'Hello world foo',
+					words: [
+						{ text: 'Hello', startS: 0, endS: 1 },
+						{ text: 'world', startS: 1, endS: 2 },
+						{ text: 'foo', startS: 2, endS: 3 }
+					]
+				}
+			]
+		});
+		expect(track.segments[0]!.words).toHaveLength(3);
+	});
+
+	it('accepts undefined words (no error)', () => {
+		const track = createCaptionTrack({
+			id: 'test',
+			segments: [{ id: 'seg-1', start: 0, duration: 3, text: 'Hello' }]
+		});
+		expect(track.segments[0]!.words).toBeUndefined();
+	});
+
+	it('emits a warning (not a throw) for overlapping word ranges', () => {
+		const warnings: string[] = [];
+		const origWarn = console.warn;
+		console.warn = (msg: string) => warnings.push(msg);
+		try {
+			const track = createCaptionTrack({
+				id: 'test',
+				segments: [
+					{
+						id: 'seg-1',
+						start: 0,
+						duration: 3,
+						text: 'Hello world',
+						words: [
+							{ text: 'Hello', startS: 0, endS: 1.5 },
+							{ text: 'world', startS: 1, endS: 2 }
+						]
+					}
+				]
+			});
+			// Overlapping words are dropped (normalized away)
+			expect(track.segments[0]!.words).toBeUndefined();
+			expect(warnings.some((w) => w.includes('overlaps'))).toBe(true);
+		} finally {
+			console.warn = origWarn;
+		}
+	});
+
+	it('emits a warning for a word whose endS exceeds segment end', () => {
+		const warnings: string[] = [];
+		const origWarn = console.warn;
+		console.warn = (msg: string) => warnings.push(msg);
+		try {
+			createCaptionTrack({
+				id: 'test',
+				segments: [
+					{
+						id: 'seg-1',
+						start: 0,
+						duration: 2,
+						text: 'Hello world',
+						words: [
+							{ text: 'Hello', startS: 0, endS: 1 },
+							{ text: 'world', startS: 1, endS: 3 }
+						]
+					}
+				]
+			});
+			// Word extends outside segment — warning emitted, but words are kept
+			// since it's just a warning, not a validation failure.
+			expect(warnings.some((w) => w.includes('extends outside'))).toBe(true);
+		} finally {
+			console.warn = origWarn;
+		}
+	});
+});

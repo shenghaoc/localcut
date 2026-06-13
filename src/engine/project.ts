@@ -23,6 +23,8 @@ import {
 	type CaptionStyle,
 	type CaptionTrack
 } from './captions/types';
+import type { CaptionAnimStylePreset } from './captions/anim-style';
+import { validateCaptionAnimPreset } from './captions/anim-style';
 import {
 	DEFAULT_CLIP_AUDIO_FADES,
 	DEFAULT_MASTER_GAIN,
@@ -44,7 +46,7 @@ import { cloneClipKeyframes, parseClipKeyframes } from './keyframes';
 import { cloneClipLut, parsePersistedClipLut } from './lut';
 import { parseExportPresetDoc } from './export-presets';
 
-export const PROJECT_SCHEMA_VERSION = 11;
+export const PROJECT_SCHEMA_VERSION = 12;
 const DURATION_MATCH_TOLERANCE_S = 0.25;
 const TIMING_MATCH_TOLERANCE_S = 0.05;
 
@@ -56,6 +58,8 @@ export interface ProjectDoc {
 	savedAt: string;
 	timeline: Timeline;
 	captionTracks: CaptionTrack[];
+	/** Phase 30: user-imported caption animation style presets. */
+	customAnimCaptionPresets?: CaptionAnimStylePreset[];
 	transitions: TimelineTransition[];
 	markers: TimelineMarker[];
 	sources: SourceDescriptor[];
@@ -71,6 +75,7 @@ export interface SerializeProjectOptions {
 	projectId: string;
 	timeline: Timeline;
 	captionTracks?: readonly CaptionTrack[];
+	customAnimCaptionPresets?: readonly CaptionAnimStylePreset[];
 	transitions?: readonly TimelineTransition[];
 	markers?: readonly TimelineMarker[];
 	sources: readonly SourceDescriptor[];
@@ -393,6 +398,9 @@ export function serializeProject(options: SerializeProjectOptions): ProjectDoc {
 	}
 	if (options.liveAudioChainConfig) {
 		doc.liveAudioChainConfig = cloneLiveAudioChainConfig(options.liveAudioChainConfig);
+	}
+	if (options.customAnimCaptionPresets && options.customAnimCaptionPresets.length > 0) {
+		doc.customAnimCaptionPresets = options.customAnimCaptionPresets.map((p) => ({ ...p }));
 	}
 	return doc;
 }
@@ -1269,6 +1277,32 @@ function deserializeV10(value: Record<string, unknown>): DeserializeProjectResul
 	};
 }
 
+/** Parse customAnimCaptionPresets from a raw project document. */
+function parseCustomAnimCaptionPresets(value: unknown): CaptionAnimStylePreset[] | undefined {
+	if (!Array.isArray(value)) return undefined;
+	const presets: CaptionAnimStylePreset[] = [];
+	for (const item of value) {
+		const result = validateCaptionAnimPreset(item);
+		if (result.ok) presets.push(result.value);
+	}
+	return presets.length > 0 ? presets : undefined;
+}
+
+function deserializeV12(value: Record<string, unknown>): DeserializeProjectResult {
+	const result = deserializeV10(value);
+	if (!result.ok) return result;
+	// v12 (Phase 30): optional customAnimCaptionPresets; absent/invalid → undefined.
+	const customPresets = parseCustomAnimCaptionPresets(value.customAnimCaptionPresets);
+	return {
+		ok: true,
+		doc: {
+			...result.doc,
+			schemaVersion: PROJECT_SCHEMA_VERSION,
+			customAnimCaptionPresets: customPresets
+		}
+	};
+}
+
 export function deserializeProject(value: unknown): DeserializeProjectResult {
 	if (!isRecord(value)) return { ok: false, reason: 'Project document is not an object.' };
 	const schemaVersion = finiteNumber(value.schemaVersion);
@@ -1300,6 +1334,9 @@ export function deserializeProject(value: unknown): DeserializeProjectResult {
 			// v11 adds replayBufferConfig + liveAudioChainConfig (Phase 46).
 			// Both fields are optional with factory defaults; v10 docs deserialize fine.
 			return deserializeV10(value);
+		case 12:
+			// v12 (Phase 30): adds customAnimCaptionPresets (optional; absent in v10/v11).
+			return deserializeV12(value);
 		default:
 			return { ok: false, reason: `Unsupported project schemaVersion ${schemaVersion}.` };
 	}

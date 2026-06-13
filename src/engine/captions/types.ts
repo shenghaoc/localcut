@@ -36,12 +36,20 @@ export interface CaptionStyle {
 	lineWrap: CaptionLineWrap;
 }
 
+export interface CaptionWord {
+	text: string;
+	startS: number;
+	endS: number;
+}
+
 export interface CaptionSegment {
 	id: string;
 	start: number;
 	duration: number;
 	text: string;
 	style?: Partial<CaptionStyle> | null;
+	/** Phase 30: optional per-word timing for karaoke highlight. */
+	words?: readonly CaptionWord[];
 }
 
 export interface CaptionTrack {
@@ -214,6 +222,38 @@ export function normalizeCaptionStyle(style: Partial<CaptionStyle> | undefined):
 }
 
 export function normalizeCaptionSegment(segment: CaptionSegment): CaptionSegment {
+	// Validate words: accept undefined, accept valid ordered non-overlapping array,
+	// emit a non-fatal warning for overlapping or out-of-range entries.
+	let validatedWords: readonly CaptionWord[] | undefined;
+	if (segment.words !== undefined) {
+		const words = [...segment.words];
+		let valid = true;
+		for (let i = 0; i < words.length; i++) {
+			const w = words[i]!;
+			if (w.endS <= w.startS) {
+				console.warn(`CaptionSegment ${segment.id}: word "${w.text}" has endS <= startS.`);
+				valid = false;
+				break;
+			}
+			if (w.startS < segment.start || w.endS > segment.start + segment.duration) {
+				console.warn(
+					`CaptionSegment ${segment.id}: word "${w.text}" range [${w.startS}, ${w.endS}] extends outside segment [${segment.start}, ${segment.start + segment.duration}].`
+				);
+			}
+			if (i > 0) {
+				const prev = words[i - 1]!;
+				if (w.startS < prev.endS) {
+					console.warn(
+						`CaptionSegment ${segment.id}: word "${w.text}" overlaps with previous word "${prev.text}".`
+					);
+					valid = false;
+					break;
+				}
+			}
+		}
+		validatedWords = valid ? Object.freeze(words) : undefined;
+	}
+
 	return {
 		id: segment.id,
 		start: Math.max(0, segment.start),
@@ -232,7 +272,8 @@ export function normalizeCaptionSegment(segment: CaptionSegment): CaptionSegment
 						: {}),
 					...(segment.style.lineWrap !== undefined ? { lineWrap: segment.style.lineWrap } : {})
 				}
-			: undefined
+			: undefined,
+		words: validatedWords
 	};
 }
 
@@ -242,7 +283,8 @@ export function cloneCaptionSegment(segment: CaptionSegment): CaptionSegment {
 		start: segment.start,
 		duration: segment.duration,
 		text: segment.text,
-		style: segment.style ? normalizeCaptionSegment(segment).style : undefined
+		style: segment.style ? normalizeCaptionSegment(segment).style : undefined,
+		words: segment.words ? [...segment.words] : undefined
 	};
 }
 

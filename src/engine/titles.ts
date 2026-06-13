@@ -13,7 +13,8 @@ import {
 	TITLE_RASTER_HEIGHT,
 	normalizeTitleStyle,
 	titleContentHash,
-	type TitleContent
+	type TitleContent,
+	type TitleRasterExtras
 } from './title';
 
 /** 16:9 raster box; titles lay out against this via the Phase 12 transform. */
@@ -34,7 +35,7 @@ export interface TitleTexture {
  */
 export interface TitleUploader {
 	/** Raster + GPU upload for one title. EDIT-PATH ONLY (never per frame). */
-	upload(content: TitleContent): TitleTexture;
+	upload(content: TitleContent, extras?: TitleRasterExtras): TitleTexture;
 	destroy(texture: TitleTexture): void;
 }
 
@@ -57,19 +58,19 @@ export class TitleTextureCache {
 	 * Edit-time (re)raster: uploads a fresh texture iff the content hash changed,
 	 * destroying the superseded one; otherwise returns the cached texture intact.
 	 */
-	rasterize(clipId: string, content: TitleContent): TitleTexture {
-		const hash = titleContentHash(content);
+	rasterize(clipId: string, content: TitleContent, extras?: TitleRasterExtras): TitleTexture {
+		const hash = titleContentHash(content, extras);
 		const existing = this.entries.get(clipId);
 		if (existing && existing.hash === hash) return existing.texture;
-		const texture = this.uploader.upload(content);
+		const texture = this.uploader.upload(content, extras);
 		if (existing) this.uploader.destroy(existing.texture);
 		this.entries.set(clipId, { hash, texture });
 		return texture;
 	}
 
 	/** Cold-path guarantee that a current texture exists (used before export). */
-	ensure(clipId: string, content: TitleContent): TitleTexture {
-		return this.rasterize(clipId, content);
+	ensure(clipId: string, content: TitleContent, extras?: TitleRasterExtras): TitleTexture {
+		return this.rasterize(clipId, content, extras);
 	}
 
 	/** Per-frame read; `null` until first rastered. Never rasters or uploads. */
@@ -179,15 +180,19 @@ function setShadow(ctx: Canvas2D, content: TitleContent, on: boolean): void {
 
 /**
  * Draws a title onto a transparent 2D canvas: optional background box, optional
- * outline (stroke under fill), optional drop shadow, multi-line aware. The
- * generic `sans-serif` fallback in the font string keeps text legible when a
- * bundled font failed to load (offline-safe).
+ * outline (stroke under fill), optional drop shadow, optional glow, optional
+ * per-line pills, multi-line aware. The generic `sans-serif` fallback in the
+ * font string keeps text legible when a bundled font failed to load (offline-safe).
+ *
+ * Phase 30: CJK script falls back to the system font stack via canvas font
+ * fallback: `'LocalCut Sans', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif`.
  */
 export function rasterizeTitleToCanvas(
 	ctx: Canvas2D,
 	width: number,
 	height: number,
-	content: TitleContent
+	content: TitleContent,
+	extras?: TitleRasterExtras
 ): void {
 	const style = normalizeTitleStyle(content.style);
 	ctx.clearRect(0, 0, width, height);
@@ -195,7 +200,7 @@ export function rasterizeTitleToCanvas(
 	const lines = content.text.length > 0 ? content.text.split('\n') : [''];
 	const fontSize = style.fontSizePx;
 	const lineHeight = fontSize * 1.25;
-	ctx.font = `${fontSize}px "${style.fontFamily}", "LocalCut Sans", sans-serif`;
+	ctx.font = `${fontSize}px "${style.fontFamily}", "LocalCut Sans", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif`;
 	ctx.textBaseline = 'middle';
 
 	let maxWidth = 0;
@@ -217,9 +222,52 @@ export function rasterizeTitleToCanvas(
 		});
 	}
 
+	// Phase 30: per-line background pills (drawn before text).
+	if (extras?.pill) {
+		const pill = extras.pill;
+		ctx.textAlign = style.align;
+		const anchorX =
+			style.align === 'left' ? cx - maxWidth / 2 : style.align === 'right' ? cx + maxWidth / 2 : cx;
+		withAlpha(ctx, pill.opacity, () => {
+			ctx.fillStyle = pill.color;
+			for (let i = 0; i < lines.length; i++) {
+				const line = lines[i]!;
+				const lineW = ctx.measureText(line).width;
+				const ly = cy - blockHeight / 2 + lineHeight * (i + 0.5);
+				const rx =
+					style.align === 'left'
+						? anchorX - pill.paddingXPx
+						: style.align === 'right'
+							? anchorX - lineW - pill.paddingXPx
+							: anchorX - lineW / 2 - pill.paddingXPx;
+				const ry = ly - lineHeight / 2 - pill.paddingYPx;
+				const rw = lineW + pill.paddingXPx * 2;
+				const rh = lineHeight + pill.paddingYPx * 2;
+				ctx.beginPath();
+				ctx.roundRect(rx, ry, rw, rh, pill.radiusPx);
+				ctx.fill();
+			}
+		});
+	}
+
 	ctx.textAlign = style.align;
 	const anchorX =
 		style.align === 'left' ? cx - maxWidth / 2 : style.align === 'right' ? cx + maxWidth / 2 : cx;
+
+	// Phase 30: glow pass — zero-offset shadow to produce a halo, then draw
+	// text body with shadowBlur = 0.
+	if (extras?.glow) {
+		ctx.shadowColor = extras.glow.color;
+		ctx.shadowBlur = extras.glow.blurPx;
+		ctx.shadowOffsetX = 0;
+		ctx.shadowOffsetY = 0;
+		ctx.fillStyle = 'transparent';
+		for (const line of lines) {
+			const ly = cy - blockHeight / 2 + lineHeight * (lines.indexOf(line) + 0.5);
+			ctx.fillText(line, anchorX, ly);
+		}
+		ctx.shadowBlur = 0;
+	}
 
 	lines.forEach((line, index) => {
 		const ly = cy - blockHeight / 2 + lineHeight * (index + 0.5);
@@ -252,8 +300,8 @@ export function createCanvasTitleUploader(device: GPUDevice): TitleUploader {
 	if (!ctx) throw new Error('Title raster: could not acquire a 2D context.');
 
 	return {
-		upload(content: TitleContent): TitleTexture {
-			rasterizeTitleToCanvas(ctx, TITLE_RASTER_WIDTH, TITLE_RASTER_HEIGHT, content);
+		upload(content: TitleContent, extras?: TitleRasterExtras): TitleTexture {
+			rasterizeTitleToCanvas(ctx, TITLE_RASTER_WIDTH, TITLE_RASTER_HEIGHT, content, extras);
 			const texture = device.createTexture({
 				size: { width: TITLE_RASTER_WIDTH, height: TITLE_RASTER_HEIGHT },
 				format: 'rgba8unorm',
