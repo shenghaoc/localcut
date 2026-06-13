@@ -22,25 +22,25 @@
   verdict. GPL-family models (including RVM) must not be shipped, defaulted to, or
   recommended in UI/docs, including as runtime-downloaded weights.
 - **R2.2** Shipped/recommended models and runtimes are permissively licensed
-  (Apache-2.0/MIT/BSD): MODNet, MediaPipe selfie segmenter, onnxruntime-web.
+  (Apache-2.0/MIT/BSD): MODNet, MediaPipe selfie segmenter, LiteRT.js.
 
 ## R3 — Zero-copy realtime inference
 
 - **R3.1** The inference pipeline is GPU-resident end to end:
-  `VideoFrame → importExternalTexture → preprocess WGSL → ORT WebGPU EP with GPU IO
-  binding → alpha GPU buffer → alpha texture → compositor`. No `getImageData`,
+  `VideoFrame → importExternalTexture → preprocess WGSL → LiteRT.js WebGPU delegate
+  with GPU tensor buffers → alpha GPU buffer → alpha texture → compositor`. No `getImageData`,
   `createImageBitmap`-based preprocessing, CPU tensor staging, or pixel `postMessage`
   hops anywhere in the accelerated path.
 - **R3.2** The matte session runs in the **pipeline worker on the compositor's
-  `GPUDevice`**. If device sharing with ORT is impossible on the shipped version, the
-  WebGPU matte path is disabled (fallback per R7) — a CPU readback bridge is not an
-  acceptable substitute.
+  `GPUDevice`**. LiteRT.js must bind to that shared device before model compilation.
+  If the runtime cannot bind to the compositor device, the WebGPU matte path is disabled
+  (fallback per R7) — a CPU readback bridge is not an acceptable substitute.
 - **R3.3** Inference is per-frame at playback/export time. The alpha LRU cache
   (byte-budgeted, `.destroy()` on eviction) is a reuse cache only; correctness never
   depends on a frame being cached.
-- **R3.4** Matte-related passes (preprocess excepted where ORT requires its own
-  submission) ride the existing single per-frame compositor submission; the matting
-  feature adds no extra `queue.submit` to the effect chain.
+- **R3.4** Matte-related resolve/apply passes ride the existing single per-frame
+  compositor submission; the matting feature adds no extra `queue.submit` to the effect
+  chain.
 
 ## R4 — Recurrent state policy
 

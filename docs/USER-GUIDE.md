@@ -211,7 +211,7 @@ When clips on the timeline use different audio sample rates (e.g. a 44.1 kHz MP3
 
 ## Portrait Matte (Experimental)
 
-Portrait Matte separates the foreground person from the background in video clips — "green screen without a green screen" — using an on-device, permissively licensed ML matting model (MODNet-class, Apache-2.0). The feature runs entirely in the browser via ONNX Runtime Web (WebGPU or WASM) with no server-side processing. Do **not** deploy GPL-licensed model weights (e.g. RobustVideoMatting) at the model URL — this application is MIT-licensed and the project's licensing verdict on candidate models is recorded in the Phase 31 design document.
+Portrait Matte separates the foreground person from the background in video clips — "green screen without a green screen" — using an on-device, permissively licensed ML matting model (MODNet-class, Apache-2.0). The feature runs entirely in the browser through LiteRT.js on WebGPU with no server-side processing. Do **not** deploy GPL-licensed model weights at the model URL — this application is MIT-licensed and the project's licensing verdict on candidate models is recorded in the Phase 31 design document.
 
 > Runs on this device. No upload. No API key. No server inference.
 
@@ -231,7 +231,7 @@ The matte is computed **in real time** on the GPU as frames play or export — t
 
 - Matting requires the accelerated (WebGPU) tier. A reduced non-WebGPU fallback is planned but not yet available.
 - Model weights are **not bundled** with the app. If no model is deployed at the manifest URL, enabling the matte reports a model-unavailable status and the clip plays unchanged. There is no cloud fallback of any kind.
-- The ONNX Runtime WASM binaries are likewise not bundled (they exceed static-hosting asset limits); deployments that enable the matte must serve them same-origin under `/models/ort/` next to the model weights.
+- LiteRT.js runtime assets are served same-origin under `/models/litert/` and cached after first use; they are not install-time precached.
 - Disabling the matte drops the clip's temporal state and cached frames; re-enabling recomputes them.
 
 ## Local Audio Cleanup (Experimental)

@@ -25,57 +25,23 @@
       `blurRadius?`; `schemaVersion` bump; serialization + undo tests updated.
       Existing `enabled`/`modelKey`/`strength` fields and mutations survive.
 
-## T1 — Shared-device ORT session (gate for everything below)
+## T1 — Shared-device LiteRT session (gate for everything below)
 
-- [!] **T1.1 — BLOCKED by ORT 1.26 (verified in-browser, root-caused).**
-      Hardware-WebGPU runs with a deployed synthetic ONNX model + ORT WASM under
-      `/models/` proved the shared-device zero-copy contract cannot be met with
-      ORT 1.26 as integrated:
-
-      - `ort.env.webgpu.device = compositorDevice` **assigns** (the getter returns
-        it immediately) but ORT **replaces it during `InferenceSession.create`**
-        (`sameAfterCreate=false`); the feature sets are identical, so it is not a
-        device-capability mismatch — ORT simply creates and uses its own device.
-      - Confirmed with **both** ORT builds:
-        - all-backends `onnxruntime-web` (`ort.bundle.min.mjs`, jsep WASM): the
-          cross-device input is read as zeros → all-zero alpha → matte-apply makes
-          the clip fully transparent (**blank clip**), no error raised.
-        - dedicated `onnxruntime-web/webgpu` (`ort.webgpu.bundle.min.mjs`,
-          **asyncify** WASM): `OrtRun` throws
-          `WebGPU validation failed. [Buffer] ... cannot be used with [Device]`
-          from its own first op (Transpose) — explicit proof the session device ≠
-          the compositor device.
-      - The compositor-side passes are correct: the preprocess buffer holds proper
-        normalized input (`min=-1.0 max=0.94`); the failure is purely ORT not
-        sharing the device.
-
-      The committed code uses the all-backends build (minimal diff, original jsep
-      deployment). The per-frame error catch in `makeGetLayers` degrades any matte
-      failure to the unmatted frame, and the feature is gated behind absent weights,
-      so nothing breaks by default.
-
-      **Two unblock options (needs a decision):**
-      (a) *Invert device ownership* — let ORT create the device, retrieve it via
-          `env.webgpu.device` after the first session, and have the renderer adopt
-          THAT device for the whole compositor. True zero-copy, but a startup-
-          ordering / device-lifecycle restructure (renderer currently owns the
-          device, created before matte is ever used).
-      (b) *Alpha readback bridge* — run the matte passes on ORT's own device and
-          copy the ~64 KB r8 alpha to the compositor device via a CPU round-trip.
-          Functional and small, but a documented deviation from the zero-copy gate.
-      (Also worth checking: a newer onnxruntime-web that fixes external-device
-      adoption, which would make the intended `env.webgpu.device` injection work.)
-- [x] **T1.2** `matte-session.ts` in the pipeline worker: per-clip session lifecycle
+- [x] **T1.1** Replace the inference runtime with LiteRT.js (`@litertjs/core`) and bind
+      it to the compositor `GPUDevice` before model compilation.
+- [x] **T1.2** Serve LiteRT.js runtime assets same-origin under `/models/litert/`;
+      exclude them from install-time precache and runtime-cache them only after use.
+- [x] **T1.3** `matte-session.ts` in the pipeline worker: per-clip session lifecycle
       (create on first matted frame, key by `clipId`, release on delete/disable/dispose),
       MODNet manifest loading via the existing checksum path.
 
 ## T2 — Zero-copy inference passes
 
-- [x] **T2.1** `matte-preprocess.wgsl`: external texture → resized/normalized NCHW
+- [x] **T2.1** `matte-preprocess.wgsl`: external texture → resized/normalized model-layout
       float32 GPU buffer at model input resolution (consumes the P19 proxy-resolution
       decode feed in preview).
-- [x] **T2.2** Run inference per displayed frame with GPU IO binding; alpha tensor →
-      `r8unorm` alpha texture without CPU contact.
+- [x] **T2.2** Run inference per displayed frame with LiteRT.js GPU tensor buffers;
+      alpha tensor → `r8unorm` alpha texture without CPU contact.
 - [x] **T2.3** `matte-temporal.wgsl`: EMA smoothing pass over the previous alpha
       texture; history owned by the clip session; reset per the R4.2 discontinuity
       policy (seek, >1.5-frame source-time jump, clip boundary, toggle, model swap).

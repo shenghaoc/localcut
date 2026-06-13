@@ -1,11 +1,15 @@
 /**
- * Matte-model manifest: declares the ONNX model asset (provenance, license,
+ * Matte-model manifest: declares the LiteRT model asset (provenance, license,
  * exact size, SHA-256 checksum, input dimensions). Weights are fetched
  * same-origin only, never at app startup, and must match the manifest
  * byte-for-byte before an inference session is created.
  */
 
-import type { MatteModelManifestSnapshot } from '../../protocol';
+import type {
+	MatteModelFormat,
+	MatteModelManifestSnapshot,
+	MatteTensorLayout
+} from '../../protocol';
 
 export class ManifestError extends Error {
 	constructor(message: string) {
@@ -32,11 +36,28 @@ function requirePositiveInt(value: unknown, field: string): number {
 	return value;
 }
 
+function optionalFormat(value: unknown): MatteModelFormat {
+	if (value === undefined) return 'tflite';
+	if (value !== 'tflite') {
+		throw new ManifestError('"format" must be "tflite"');
+	}
+	return value;
+}
+
+function optionalLayout(value: unknown): MatteTensorLayout {
+	if (value === undefined) return 'nhwc';
+	if (value !== 'nchw' && value !== 'nhwc') {
+		throw new ManifestError('"inputLayout" must be "nchw" or "nhwc"');
+	}
+	return value;
+}
+
 /** Validates an untrusted manifest document. Unknown fields are tolerated. */
 export function validateManifest(value: unknown): MatteModelManifestSnapshot {
 	if (!isRecord(value)) throw new ManifestError('manifest must be an object');
 	const id = requireString(value.id, 'id');
 	const version = requireString(value.version, 'version');
+	const format = optionalFormat(value.format);
 	const license = requireString(value.license, 'license');
 	const source = requireString(value.source, 'source');
 	const sizeBytes = requirePositiveInt(value.sizeBytes, 'sizeBytes');
@@ -46,8 +67,20 @@ export function validateManifest(value: unknown): MatteModelManifestSnapshot {
 	}
 	const inputWidth = requirePositiveInt(value.inputWidth, 'inputWidth');
 	const inputHeight = requirePositiveInt(value.inputHeight, 'inputHeight');
+	const inputLayout = optionalLayout(value.inputLayout);
 
-	return { id, version, license, source, sizeBytes, checksum, inputWidth, inputHeight };
+	return {
+		id,
+		version,
+		format,
+		license,
+		source,
+		sizeBytes,
+		checksum,
+		inputWidth,
+		inputHeight,
+		inputLayout
+	};
 }
 
 /**

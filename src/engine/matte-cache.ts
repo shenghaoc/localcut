@@ -17,9 +17,9 @@ export interface CachedMatteRef {
 	bytes: number;
 }
 
-/** Estimate bytes for an rgba8unorm texture at the given dimensions. */
+/** Estimate bytes for an r8unorm texture at the given dimensions. */
 function estimateBytes(width: number, height: number): number {
-	return width * height * 4;
+	return width * height;
 }
 
 export function makeMatteCacheKey(clipId: string, sourceTime: number): string {

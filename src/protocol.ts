@@ -302,7 +302,10 @@ export type MatteBackend = 'webgpu' | 'wasm' | 'none';
 
 export type MatteModelStatus = 'not-loaded' | 'loading' | 'loaded' | 'failed';
 
-/** Probe result for onnxruntime-web backend availability. */
+export type MatteModelFormat = 'tflite';
+export type MatteTensorLayout = 'nchw' | 'nhwc';
+
+/** Probe result for LiteRT backend availability. */
 export interface MatteProbeResult {
 	webgpu: FeatureSupport;
 	wasm: FeatureSupport;
@@ -314,12 +317,14 @@ export interface MatteProbeResult {
 export interface MatteModelManifestSnapshot {
 	id: string;
 	version: string;
+	format: MatteModelFormat;
 	license: string;
 	source: string;
 	sizeBytes: number;
 	checksum: string;
 	inputWidth: number;
 	inputHeight: number;
+	inputLayout: MatteTensorLayout;
 }
 
 /**

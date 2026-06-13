@@ -52,6 +52,13 @@ function tensorDescriptor(shape: readonly number[], mode: 'read' | 'write'): MLT
 	return descriptor;
 }
 
+function copyFloat32(buffer: ArrayBufferLike): Float32Array {
+	const source = new Float32Array(buffer);
+	const copy = new Float32Array(source.length);
+	copy.set(source);
+	return copy;
+}
+
 export class RnnoiseModel {
 	private constructor(
 		private readonly context: MLContext,
@@ -61,9 +68,9 @@ export class RnnoiseModel {
 		readonly deviceType: WebNNDeviceType
 	) {}
 
-	private vadState = new Float32Array(BATCH * VAD_GRU_HIDDEN);
-	private noiseState = new Float32Array(BATCH * NOISE_GRU_HIDDEN);
-	private denoiseState = new Float32Array(BATCH * DENOISE_GRU_HIDDEN);
+	private vadState: Float32Array = new Float32Array(BATCH * VAD_GRU_HIDDEN);
+	private noiseState: Float32Array = new Float32Array(BATCH * NOISE_GRU_HIDDEN);
+	private denoiseState: Float32Array = new Float32Array(BATCH * DENOISE_GRU_HIDDEN);
 
 	/**
 	 * Builds the graph on the first backend in `deviceTypes` that succeeds.
@@ -249,10 +256,10 @@ export class RnnoiseModel {
 			context.readTensor(tensors.noiseHOut),
 			context.readTensor(tensors.denoiseHOut)
 		]);
-		this.vadState = new Float32Array(vadH);
-		this.noiseState = new Float32Array(noiseH);
-		this.denoiseState = new Float32Array(denoiseH);
-		return new Float32Array(gains);
+		this.vadState = copyFloat32(vadH);
+		this.noiseState = copyFloat32(noiseH);
+		this.denoiseState = copyFloat32(denoiseH);
+		return copyFloat32(gains);
 	}
 
 	destroy(): void {

@@ -1,8 +1,15 @@
-import { defineConfig } from 'vite-plus';
+import { defineConfig, type Plugin } from 'vite-plus';
 import { execSync } from 'node:child_process';
+import { createRequire } from 'node:module';
+import { readFileSync, readdirSync } from 'node:fs';
+import path from 'node:path';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import solid from 'vite-plugin-solid';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
+
+const require = createRequire(import.meta.url);
+const LITERT_WASM_ROUTE = '/models/litert/';
 
 function gitSha(): string {
 	try {
@@ -13,6 +20,52 @@ function gitSha(): string {
 	} catch {
 		return 'dev';
 	}
+}
+
+function liteRtWasmAssets(): Plugin {
+	const packageRoot = path.dirname(require.resolve('@litertjs/core/package.json'));
+	const wasmDir = path.join(packageRoot, 'wasm');
+	const files = readdirSync(wasmDir).filter((file) => /\.(?:js|wasm)$/.test(file));
+
+	function serveFile(req: IncomingMessage, res: ServerResponse, next: () => void): void {
+		const pathname = req.url?.split('?')[0] ?? '';
+		if (!pathname.startsWith(LITERT_WASM_ROUTE)) {
+			next();
+			return;
+		}
+		const fileName = decodeURIComponent(pathname.slice(LITERT_WASM_ROUTE.length));
+		if (!files.includes(fileName)) {
+			next();
+			return;
+		}
+		const filePath = path.join(wasmDir, fileName);
+		res.statusCode = 200;
+		res.setHeader(
+			'Content-Type',
+			fileName.endsWith('.wasm') ? 'application/wasm' : 'text/javascript'
+		);
+		res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+		res.end(readFileSync(filePath));
+	}
+
+	return {
+		name: 'litert-wasm-assets',
+		configureServer(server) {
+			server.middlewares.use(serveFile);
+		},
+		configurePreviewServer(server) {
+			server.middlewares.use(serveFile);
+		},
+		generateBundle() {
+			for (const fileName of files) {
+				this.emitFile({
+					type: 'asset',
+					fileName: `models/litert/${fileName}`,
+					source: readFileSync(path.join(wasmDir, fileName))
+				});
+			}
+		}
+	};
 }
 
 export default defineConfig({
@@ -193,21 +246,7 @@ export default defineConfig({
 	plugins: [
 		tailwindcss(),
 		solid(),
-		{
-			// onnxruntime-web references its WASM binaries via `new URL(...,
-			// import.meta.url)`, so Vite emits them into dist/assets — the
-			// threaded JSEP binary alone is ~26 MB, over Cloudflare Workers'
-			// 25 MiB per-asset limit. Like the matte model weights, the ORT
-			// runtime binaries are deployed separately under /models/ort/
-			// (see env.wasm.wasmPaths in src/engine/matte/matte-engine.ts),
-			// so strip the bundled copies from the build output.
-			name: 'strip-ort-wasm-assets',
-			generateBundle(_options: unknown, bundle: Record<string, unknown>) {
-				for (const key of Object.keys(bundle)) {
-					if (/ort-.*\.wasm$/.test(key)) delete bundle[key];
-				}
-			}
-		},
+		liteRtWasmAssets(),
 		VitePWA({
 			registerType: 'prompt',
 			manifest: {
@@ -227,12 +266,22 @@ export default defineConfig({
 				// Phase 27: model weights must never precache at install — startup
 				// stays model-free. They enter the runtime cache only after the user
 				// explicitly loads the model, so later loads work offline.
-				globIgnores: ['**/models/**', '**/ort-*.wasm'],
+				globIgnores: ['**/models/**'],
 				runtimeCaching: [
 					{
 						urlPattern: /\/models\/rnnoise\//,
 						handler: 'CacheFirst',
 						options: { cacheName: 'rnnoise-model' }
+					},
+					{
+						urlPattern: /\/models\/matte\//,
+						handler: 'CacheFirst',
+						options: { cacheName: 'matte-model' }
+					},
+					{
+						urlPattern: /\/models\/litert\//,
+						handler: 'CacheFirst',
+						options: { cacheName: 'litert-runtime' }
 					}
 				]
 			}

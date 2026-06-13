@@ -5,8 +5,7 @@
  * per-frame, zero-copy inference at playback/export time:
  *
  *   VideoFrame → importExternalTexture → preprocess WGSL (resize/normalize,
- *   NCHW pack into a GPU buffer) → onnxruntime-web WebGPU EP with GPU IO
- *   binding (`Tensor.fromGpuBuffer`, `preferredOutputLocation: 'gpu-buffer'`)
+ *   pack into a GPU buffer) → LiteRT.js WebGPU delegate on the same GPUDevice
  *   → resolve WGSL (alpha buffer → r8 texture + EMA temporal smoothing)
  *   → matte-apply / matte-blur in the Phase 12 compositor.
  *
@@ -26,18 +25,21 @@
 
 import mattePreprocessSource from '../shaders/matte-preprocess.wgsl?raw';
 import matteResolveSource from '../shaders/matte-resolve.wgsl?raw';
-import type { MatteEngineStatusSnapshot, MatteModelStatus } from '../../protocol';
+import type {
+	MatteEngineStatusSnapshot,
+	MatteModelStatus,
+	MatteTensorLayout
+} from '../../protocol';
 import { MatteCache, makeMatteCacheKey } from '../matte-cache';
 import { validateManifest, verifyWeights } from './model-manifest';
 
 /**
- * Same-origin locations for the model manifest and the ORT WASM binaries.
+ * Same-origin locations for the model manifest and LiteRT WASM binaries.
  * Neither is bundled (Cloudflare Workers caps assets at 25 MiB) — deployments
- * that enable matting serve them under /models/ (see the
- * `strip-ort-wasm-assets` plugin in vite.config.ts).
+ * that enable matting serve them under /models/.
  */
 const MATTE_MANIFEST_URL = '/models/matte/manifest.json';
-const ORT_WASM_BASE_PATH = '/models/ort/';
+const LITERT_WASM_BASE_PATH = '/models/litert/';
 
 /** EMA history weight — the temporal-stability surrogate for single-frame
  *  models (R4). Fixed (also in test mode) so output is deterministic. */
@@ -74,39 +76,56 @@ interface ClipSession {
 }
 
 interface LoadedModel {
-	session: import('onnxruntime-web').InferenceSession;
-	inputName: string;
+	compiled: import('@litertjs/core').CompiledModel;
+	environment: import('@litertjs/core').Environment;
 	outputName: string;
 	width: number;
 	height: number;
+	inputLayout: MatteTensorLayout;
+	inputShape: number[];
 	modelKey: string;
 }
 
-type Ort = typeof import('onnxruntime-web');
+type LiteRtModule = typeof import('@litertjs/core');
+type LiteRtTensor = import('@litertjs/core').Tensor;
 
-/** Imports onnxruntime-web and points its WASM loader at the deployed path. */
-async function loadOrt(): Promise<Ort> {
-	// ⚠ KNOWN BLOCKER (T1.1, verified in-browser): ORT 1.26 does NOT adopt an
-	// externally-injected `env.webgpu.device`. Both the all-backends
-	// (`onnxruntime-web`) and the dedicated WebGPU (`onnxruntime-web/webgpu`)
-	// builds run the session on a device they create themselves, so a
-	// `Tensor.fromGpuBuffer` made on the compositor's device is cross-device.
-	// The all-backends build fails this silently (all-zero alpha); the WebGPU
-	// build throws an explicit "[Buffer] ... cannot be used with [Device]"
-	// validation error from OrtRun. Until shared-device works, the per-frame
-	// matte path produces nothing usable — see the spec for the two unblock
-	// options (invert device ownership, or a small alpha readback bridge).
-	const ortModule = await import('onnxruntime-web');
-	// Only override the WASM location in production. In production builds the ORT
-	// binaries are stripped from the bundle (Cloudflare's 25 MiB asset cap) and
-	// served from /models/ort/. In dev they are NOT stripped, so ORT must load
-	// them from its own bundled (node_modules) location — pointing it at
-	// /models/ort/ would make Vite try to ES-import a /public file, which it
-	// forbids ("can only be referenced via HTML tags").
-	if (import.meta.env.PROD && ortModule.env?.wasm) {
-		ortModule.env.wasm.wasmPaths = ORT_WASM_BASE_PATH;
+interface LiteRtRuntime {
+	module: LiteRtModule;
+	runtime: import('@litertjs/core').LiteRt;
+	environment: import('@litertjs/core').Environment;
+}
+
+function sameShape(actual: Int32Array, expected: readonly number[]): boolean {
+	if (actual.length !== expected.length) return false;
+	for (let i = 0; i < expected.length; i++) {
+		if (actual[i] !== expected[i]) return false;
 	}
-	return ortModule;
+	return true;
+}
+
+function expectedInputShape(layout: MatteTensorLayout, width: number, height: number): number[] {
+	return layout === 'nchw' ? [1, 3, height, width] : [1, height, width, 3];
+}
+
+function tensorElementCount(shape: Int32Array): number {
+	let count = 1;
+	for (const dim of shape) count *= dim;
+	return count;
+}
+
+async function loadLiteRtRuntime(device: GPUDevice): Promise<LiteRtRuntime> {
+	const module = await import('@litertjs/core');
+	const runtime = await module.loadLiteRt(LITERT_WASM_BASE_PATH, {
+		threads: self.crossOriginIsolated === true
+	});
+	runtime.setWebGpuDevice(device);
+	const environment = await module.Environment.create({ webGpuDevice: device });
+	runtime.setDefaultEnvironment(environment);
+	if (runtime.getWebGpuDevice() !== device || environment.webGpuDevice !== device) {
+		environment.delete();
+		throw new Error('LiteRT did not bind to the compositor GPU device.');
+	}
+	return { module, runtime, environment };
 }
 
 export class MatteEngine {
@@ -119,12 +138,12 @@ export class MatteEngine {
 	private readonly sessions = new Map<string, ClipSession>();
 	private readonly lastView = new Map<string, GPUTextureView>();
 
-	private ort: Ort | null = null;
 	private model: LoadedModel | null = null;
 	private modelStatus: MatteModelStatus = 'not-loaded';
 	private loadError: string | undefined;
 	private loadPromise: Promise<void> | null = null;
 	private pinWarned = new Set<string>();
+	private liteRt: LiteRtModule | null = null;
 
 	private preprocessPipeline: GPUComputePipeline | null = null;
 	private resolvePipeline: GPUComputePipeline | null = null;
@@ -229,7 +248,8 @@ export class MatteEngine {
 		this.preprocessUniform = null;
 		this.resolveUniform?.destroy();
 		this.resolveUniform = null;
-		void this.model?.session.release();
+		this.model?.compiled.delete();
+		this.model?.environment.delete();
 		this.model = null;
 	}
 
@@ -242,8 +262,8 @@ export class MatteEngine {
 		this.onStatus({
 			probe: {
 				webgpu: 'supported',
-				// Honest capability: the non-WebGPU fallback (MediaPipe selfie
-				// segmenter) is specced but not implemented yet — see tasks T4.1.
+				// Honest capability: the non-WebGPU fallback is specced but not
+				// implemented yet — see tasks T4.1.
 				wasm: 'unsupported',
 				backend: 'webgpu'
 			},
@@ -269,14 +289,6 @@ export class MatteEngine {
 		this.loadError = undefined;
 		this.postStatus();
 
-		const ort = await loadOrt();
-		// Shared-device contract (R3.2): the WebGPU EP must compute on the
-		// compositor's device or GPU IO binding cannot deliver alpha without a
-		// readback. ORT ≥1.26 accepts an externally created device before the
-		// first session.
-		(ort.env.webgpu as unknown as { device?: GPUDevice }).device = this.device;
-		this.ort = ort;
-
 		const response = await fetch(this.manifestUrl);
 		if (!response.ok) {
 			throw new Error(`Matte model manifest fetch failed: HTTP ${response.status}`);
@@ -291,7 +303,7 @@ export class MatteEngine {
 			);
 		}
 		const weightsRelative =
-			typeof rawManifest.weightsUrl === 'string' ? rawManifest.weightsUrl : 'model.onnx';
+			typeof rawManifest.weightsUrl === 'string' ? rawManifest.weightsUrl : 'model.tflite';
 		const weightsUrl = new URL(weightsRelative, new URL(this.manifestUrl, self.location.href));
 		if (weightsUrl.origin !== self.location.origin) {
 			throw new Error('Matte model weights must be same-origin.');
@@ -303,29 +315,73 @@ export class MatteEngine {
 		const bytes = await weights.arrayBuffer();
 		await verifyWeights(manifest, bytes);
 
-		const session = await ort.InferenceSession.create(bytes, {
-			executionProviders: ['webgpu'],
-			// Alpha stays on the GPU; the resolve pass consumes the buffer directly.
-			preferredOutputLocation: 'gpu-buffer'
-		} as import('onnxruntime-web').InferenceSession.SessionOptions);
+		const {
+			module,
+			runtime,
+			environment: liteRtEnvironment
+		} = await loadLiteRtRuntime(this.device);
+		let environment: import('@litertjs/core').Environment | null = liteRtEnvironment;
+		let compiled: import('@litertjs/core').CompiledModel | null = null;
+		try {
+			compiled = await runtime.loadAndCompile(new Uint8Array(bytes), {
+				accelerator: 'webgpu',
+				environment,
+				gpuOptions: { precision: 'fp32' }
+			});
+			if (!compiled.isFullyAccelerated) {
+				throw new Error('Matte model did not compile fully on the WebGPU accelerator.');
+			}
 
-		const inputName = session.inputNames[0];
-		const outputName = session.outputNames[0];
-		if (!inputName || !outputName) {
-			void session.release();
-			throw new Error('Matte model exposes no input/output tensors.');
+			const inputs = compiled.getInputDetails();
+			const outputs = compiled.getOutputDetails();
+			if (inputs.length !== 1 || outputs.length !== 1) {
+				throw new Error('Matte model must expose exactly one input and one output tensor.');
+			}
+			const input = inputs[0]!;
+			const output = outputs[0]!;
+			const inputShape = expectedInputShape(
+				manifest.inputLayout,
+				manifest.inputWidth,
+				manifest.inputHeight
+			);
+			if (input.dtype !== 'float32' || !sameShape(input.shape, inputShape)) {
+				throw new Error(
+					`Matte model input shape must be ${inputShape.join('x')} float32 (${manifest.inputLayout}).`
+				);
+			}
+			if (
+				output.dtype !== 'float32' ||
+				tensorElementCount(output.shape) !== manifest.inputWidth * manifest.inputHeight
+			) {
+				throw new Error(
+					'Matte model output must be a float32 alpha tensor with one value per pixel.'
+				);
+			}
+
+			const outputName = output.name;
+			if (!outputName) {
+				throw new Error('Matte model exposes no output tensor.');
+			}
+
+			this.liteRt = module;
+			this.model = {
+				compiled,
+				environment,
+				outputName,
+				width: manifest.inputWidth,
+				height: manifest.inputHeight,
+				inputLayout: manifest.inputLayout,
+				inputShape,
+				modelKey: manifest.id
+			};
+			compiled = null;
+			environment = null;
+			this.modelStatus = 'loaded';
+			this.postStatus();
+		} finally {
+			compiled?.delete();
+			environment?.delete();
 		}
-
-		this.model = {
-			session,
-			inputName,
-			outputName,
-			width: manifest.inputWidth,
-			height: manifest.inputHeight,
-			modelKey: manifest.id
-		};
-		this.modelStatus = 'loaded';
-		this.postStatus();
 	}
 
 	private ensurePipelines(): void {
@@ -346,7 +402,7 @@ export class MatteEngine {
 			}
 		});
 		this.preprocessUniform = device.createBuffer({
-			size: 8,
+			size: 16,
 			usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
 		});
 		this.resolveUniform = device.createBuffer({
@@ -386,7 +442,7 @@ export class MatteEngine {
 		cacheKey: string
 	): Promise<GPUTextureView | null> {
 		const model = this.model!;
-		const ort = this.ort!;
+		const litert = this.liteRt!;
 		const device = this.device;
 		this.ensurePipelines();
 
@@ -414,13 +470,14 @@ export class MatteEngine {
 			});
 		}
 
-		let outputTensor: import('onnxruntime-web').Tensor | null = null;
+		let inputTensor: LiteRtTensor | null = null;
+		let outputTensor: LiteRtTensor | null = null;
 		try {
-			// 1. Preprocess: external texture → normalized NCHW GPU buffer.
+			// 1. Preprocess: external texture → normalized model-layout GPU buffer.
 			device.queue.writeBuffer(
 				this.preprocessUniform!,
 				0,
-				new Uint32Array([model.width, model.height])
+				new Uint32Array([model.width, model.height, model.inputLayout === 'nhwc' ? 1 : 0, 0])
 			);
 			const external = device.importExternalTexture({ source: request.frame });
 			const preEncoder = device.createCommandEncoder();
@@ -442,18 +499,23 @@ export class MatteEngine {
 			prePass.end();
 			device.queue.submit([preEncoder.finish()]);
 
-			// 2. Inference with GPU IO binding — the tensor wraps our buffer, the
-			// output stays in a GPU buffer (no CPU contact).
-			const inputTensor = ort.Tensor.fromGpuBuffer(this.inputBuffer as never, {
-				dataType: 'float32',
-				dims: [1, 3, model.height, model.width]
-			});
-			const results = await model.session.run({ [model.inputName]: inputTensor });
-			outputTensor = results[model.outputName] ?? null;
+			// 2. Inference on the shared LiteRT WebGPU environment. The tensor wraps
+			// our compositor-device buffer and the output must also be WebGPU-backed.
+			inputTensor = new litert.Tensor(
+				this.inputBuffer,
+				model.inputShape,
+				'float32',
+				model.environment
+			);
+			const results = await model.compiled.run(inputTensor);
+			outputTensor = results[0] ?? null;
 			if (!outputTensor) {
 				throw new Error(`Matte model output "${model.outputName}" missing.`);
 			}
-			const alphaBuffer = outputTensor.gpuBuffer as GPUBuffer;
+			if (outputTensor.accelerator !== 'webgpu') {
+				throw new Error('Matte model output was not produced on the WebGPU accelerator.');
+			}
+			const alphaBuffer = outputTensor.toGpuBuffer();
 
 			// 3. Resolve: raw alpha buffer + history → smoothed r8 alpha texture.
 			const alphaTexture = device.createTexture({
@@ -502,7 +564,8 @@ export class MatteEngine {
 			if (view) this.lastView.set(request.clipId, view);
 			return view;
 		} finally {
-			outputTensor?.dispose();
+			outputTensor?.delete();
+			inputTensor?.delete();
 			try {
 				request.frame.close();
 			} catch {

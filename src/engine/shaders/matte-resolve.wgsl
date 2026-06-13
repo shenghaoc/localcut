@@ -1,7 +1,7 @@
 // Phase 31 matte resolve pass.
-// Reads the raw alpha tensor produced by the inference session (NCHW [1,1,H,W]
-// float32 GPU buffer — never read back to the CPU) and writes the temporally
-// smoothed alpha into the per-clip history texture (r8unorm).
+// Reads the raw float32 alpha tensor produced by LiteRT on the shared GPUDevice
+// and writes the temporally smoothed alpha into the per-clip history texture
+// (r8unorm).
 //
 // Temporal stability (recurrent surrogate for single-frame models like MODNet):
 //   alpha_t = mix(alpha_raw, alpha_{t-1}, k)

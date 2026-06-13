@@ -1,12 +1,15 @@
 // Phase 31 matte preprocess pass (zero-copy inference input).
 // Samples the decoded VideoFrame (external texture) at model input resolution
-// and writes a normalized NCHW float32 tensor into a storage buffer that the
-// onnxruntime-web WebGPU session consumes directly via Tensor.fromGpuBuffer.
+// and writes a normalized float32 tensor into a storage buffer consumed directly
+// by LiteRT from the shared GPUDevice.
 // MODNet normalization: (x - 0.5) / 0.5  →  [-1, 1].
 
 struct Uniforms {
   modelWidth: u32,
   modelHeight: u32,
+  // 0 = NCHW, 1 = NHWC.
+  inputLayout: u32,
+  _pad: u32,
 }
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -27,7 +30,18 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
   let planeSize = u.modelWidth * u.modelHeight;
   let pixel = gid.y * u.modelWidth + gid.x;
-  tensorOut[pixel] = (rgb.r - 0.5) / 0.5;
-  tensorOut[planeSize + pixel] = (rgb.g - 0.5) / 0.5;
-  tensorOut[2u * planeSize + pixel] = (rgb.b - 0.5) / 0.5;
+  let r = (rgb.r - 0.5) / 0.5;
+  let g = (rgb.g - 0.5) / 0.5;
+  let b = (rgb.b - 0.5) / 0.5;
+
+  if (u.inputLayout == 1u) {
+    let offset = pixel * 3u;
+    tensorOut[offset] = r;
+    tensorOut[offset + 1u] = g;
+    tensorOut[offset + 2u] = b;
+  } else {
+    tensorOut[pixel] = r;
+    tensorOut[planeSize + pixel] = g;
+    tensorOut[2u * planeSize + pixel] = b;
+  }
 }

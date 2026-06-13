@@ -37,17 +37,16 @@ obligations onto every deployer.
 | **MODNet** | None built in — single-frame; needs an external temporal smoothing pass | High (true matting, trimap-free) | Good (~512² single pass) | **Apache-2.0** | **Primary.** Apache-licensed true matting; temporal stability restored by our EMA smoothing pass (below). |
 | **MediaPipe Selfie Segmentation** (`@mediapipe/tasks-vision`) | Moderate (per-frame, but stable masks in practice) | Lower — segmentation mask, not matting; soft edges only via feathering | Excellent (built for realtime) | **Apache-2.0** | **Fallback** for reduced/WASM-only environments where MODNet inference can't hold realtime. |
 
-**Recorded verdict: MODNet (Apache-2.0) primary via `onnxruntime-web` WebGPU EP;
+**Recorded verdict: MODNet (Apache-2.0) primary via LiteRT.js WebGPU delegate;
 MediaPipe selfie segmenter (Apache-2.0) as the labeled reduced-quality fallback;
 RVM rejected solely on GPL-3.0 licensing.** If a permissively licensed RVM-class
 recurrent model appears later, the recurrent-state policy below already covers it.
 
-The runtime is `onnxruntime-web` (MIT) — vision CNNs are impractical to hand-build via
-WebNN `MLGraphBuilder`, the documented deviation from Phase 28's WebNN choice. The
-"Phase 28 runtime" contract this phase inherits is the *operational* pattern: dedicated
-lazily-loaded inference module, manifest-validated checksummed same-origin weights,
-probe that informs but never gates `CapabilityTierV2`, explicit user opt-in, cancellable
-work, zero cloud.
+The runtime is LiteRT.js (`@litertjs/core`, Apache-2.0). It provides the Phase 28
+operational pattern this feature needs: a lazily loaded inference module, shared
+WebGPU-device binding, manifest-validated checksummed same-origin weights, a probe that
+informs but never gates `CapabilityTierV2`, explicit user opt-in, cancellable work, and
+zero cloud.
 
 ## Zero-copy pipeline
 
@@ -58,9 +57,9 @@ hops.
 ```
 VideoFrame (pipeline worker decode, per displayed frame)
   → importExternalTexture
-  → preprocess WGSL pass (resize to model input, normalize, NCHW pack into GPU buffer)
-  → ORT WebGPU EP session.run with GPU IO binding
-      (input: Tensor.fromGpuBuffer; preferredOutputLocation: 'gpu-buffer')
+  → preprocess WGSL pass (resize to model input, normalize, pack into GPU buffer)
+  → LiteRT.js WebGPU delegate on the shared GPUDevice
+      (input/output tensors backed by GPUBuffer)
   → alpha tensor (GPU buffer) → alpha texture (r8unorm)
   → temporal-smooth WGSL pass (EMA over previous alpha; recurrent surrogate)
   → [export only] guided-upsample WGSL pass (joint bilateral, guided by full-res luma)
@@ -71,18 +70,17 @@ Consequences that the previous design got wrong:
 
 - **The session lives in the pipeline worker, on the compositor's `GPUDevice`.**
   GPU buffers are not transferable across workers, so a separate inference worker
-  forces a CPU readback. ORT's WebGPU EP must be configured with the pipeline worker's
-  existing device (`ort.env.webgpu` device injection). Validating that this works on the
-  shipped ORT version is the first implementation task; if a shared device proves
-  impossible, the feature ships **disabled** rather than silently reintroducing readbacks.
+  forces a CPU readback. LiteRT.js is initialized with the pipeline worker's existing
+  device before model compilation; if shared-device binding is unavailable, the feature
+  ships **disabled** rather than silently reintroducing readbacks.
 - **Inference is per-frame at playback/export time, not an offline batch job.** The
   alpha-texture LRU cache remains as a *reuse* cache (paused playhead, scrubbing
   back over recent frames), not as the source of truth. Export never has "missing matte"
   frames because export runs the same per-frame path.
-- The single-`queue.submit` gate applies to the compositor's effect chain. ORT issues its
-  own internal submissions for inference; that is a separate subsystem and documented
-  as such. Alpha delivery into the compositor adds **no** extra submission: the
-  temporal-smooth/upsample/matte-apply passes ride the existing per-frame encoder.
+- The single-`queue.submit` gate applies to the compositor's effect chain. LiteRT.js may
+  issue its own internal submissions for inference; that is a separate subsystem and
+  documented as such. Alpha delivery into the compositor adds **no** extra submission:
+  the temporal-smooth/upsample/matte-apply passes ride the existing per-frame encoder.
 
 ## Recurrent state policy
 
@@ -167,7 +165,7 @@ what the acceptance test asserts; without the flag, runtime behavior may adapt f
 
 | Capability | Path | Behaviour |
 |---|---|---|
-| WebGPU + shared-device IO binding | MODNet via ORT WebGPU EP | Full feature, realtime preview at proxy resolution |
+| WebGPU + shared-device tensor buffers | MODNet via LiteRT.js WebGPU delegate | Full feature, realtime preview at proxy resolution |
 | WebGPU unavailable / device sharing impossible | MediaPipe selfie segmenter (WASM) | Labeled reduced quality ("segmentation, not matting"); realtime maintained |
 | Neither | Feature unavailable | Matte controls disabled with explanation |
 
@@ -205,7 +203,7 @@ corrected design:
   Recurrent plumbing survives only behind the model-capability abstraction.
 - **CPU preprocessing path** (`createImageBitmap` → `OffscreenCanvas`/`getImageData` →
   `ImageData`/`Uint8Array` postMessage hops) — replaced by the GPU preprocess pass +
-  ORT IO binding.
+  LiteRT.js GPU tensor binding.
 - **Offline whole-clip batch pre-computation** and its main-thread orchestration
   (`request-matte-frames` round-trips through the UI) — replaced by per-frame inference
   in the pipeline worker at playback/export time.
