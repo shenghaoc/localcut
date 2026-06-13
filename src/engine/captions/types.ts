@@ -1,5 +1,4 @@
-import type { TitleStyle } from '../title';
-import { DEFAULT_TITLE_STYLE, normalizeTitleStyle } from '../title';
+import { DEFAULT_TITLE_STYLE, normalizeTitleStyle, type TitleStyle } from '../title';
 import { DEFAULT_TRANSFORM, normalizeTransform, type TransformParams } from '../transform';
 
 export type CaptionFormat = 'srt' | 'webvtt';

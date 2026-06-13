@@ -1,6 +1,5 @@
 import { isFiniteNumber as finite } from '../../lib/math';
-import type { TimelineMarker } from '../timeline';
-import type { TimelineTrack } from '../timeline';
+import type { TimelineMarker, TimelineTrack } from '../timeline';
 import {
 	CAPTION_PRESETS,
 	captionSegmentEnd,

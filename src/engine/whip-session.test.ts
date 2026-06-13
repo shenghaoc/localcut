@@ -2,8 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { PublishSettingsDoc, PublishState } from '../protocol';
 import { defaultPublishSettings } from './publish-settings';
-import type { WhipClient } from './whip-client';
-import { WhipRequestError } from './whip-client';
+import { type WhipClient, WhipRequestError } from './whip-client';
 import {
 	createWhipSession,
 	extractOutboundSample,

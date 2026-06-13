@@ -1,5 +1,8 @@
-import type { LiveAudioChainConfig } from '../../protocol';
-import { LiveChainMeterIndex, DEFAULT_LIVE_AUDIO_CHAIN_CONFIG } from '../../protocol';
+import {
+	DEFAULT_LIVE_AUDIO_CHAIN_CONFIG,
+	type LiveAudioChainConfig,
+	LiveChainMeterIndex
+} from '../../protocol';
 import { createGateState, processGate, type GateState } from './gate';
 import { createCompressorState, processCompressor, type CompressorState } from './compressor';
 import { createLimiterState, processLimiter, type LimiterState } from './limiter';
