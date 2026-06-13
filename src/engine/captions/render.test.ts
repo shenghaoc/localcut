@@ -215,6 +215,47 @@ describe('activeCaptionPayloadsAt (Phase 30)', () => {
 	});
 });
 
+describe('text wrapping (Phase 30)', () => {
+	it('wraps CJK text without spaces into multi-line content', () => {
+		// Long Chinese run with no whitespace: split(/\s+/) would emit one
+		// mega-line. Intl.Segmenter (or Array.from fallback) lets the wrapper
+		// break at grapheme boundaries.
+		const text = '你好世界你好世界你好世界你好世界你好世界你好世界';
+		const track = createCaptionTrack({
+			id: 'trk',
+			burnedIn: true,
+			defaultStyle: {
+				presetId: 'subtitle',
+				maxWidthPercent: 50,
+				overrides: { fontSizePx: 128 }
+			},
+			segments: [{ id: 'seg', start: 0, duration: 5, text }]
+		});
+		const [payload] = activeCaptionPayloadsAt([track], 2.5, []);
+		expect(payload).toBeDefined();
+		// Wrapped output must contain at least one newline (multi-line).
+		expect(payload!.content.text.split('\n').length).toBeGreaterThan(1);
+	});
+
+	it('keeps Latin space-delimited wrapping unchanged', () => {
+		const text = 'Hello world how are you';
+		const track = createCaptionTrack({
+			id: 'trk',
+			burnedIn: true,
+			defaultStyle: {
+				presetId: 'subtitle',
+				maxWidthPercent: 30,
+				overrides: { fontSizePx: 64 }
+			},
+			segments: [{ id: 'seg', start: 0, duration: 5, text }]
+		});
+		const [payload] = activeCaptionPayloadsAt([track], 2.5, []);
+		expect(payload).toBeDefined();
+		// Wrapped lines must still join cleanly when whitespace is removed.
+		expect(payload!.content.text.replace(/\n/g, ' ')).toBe(text);
+	});
+});
+
 describe('mapWordToWrappedLine', () => {
 	it('maps a word in the first line to (0, idx)', () => {
 		expect(mapWordToWrappedLine('Hello world\nFoo bar', 1)).toEqual({ lineIndex: 0, wordIndex: 1 });

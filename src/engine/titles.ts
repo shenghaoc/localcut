@@ -314,7 +314,7 @@ export function rasterizeTitleToCanvas(
 		// advance. Use textAlign='left' inside the loop and compute the left
 		// edge from the original alignment so the line still anchors correctly.
 		const savedAlign = ctx.textAlign;
-		const tokens = line.split(/(\s+)/); // keeps the whitespace runs as tokens
+		const tokens = line.split(/(\s+)/); // keeps whitespace runs as tokens
 		let wordCounter = 0;
 		const lineWidth = ctx.measureText(line).width;
 		const startX =

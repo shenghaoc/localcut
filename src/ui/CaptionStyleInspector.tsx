@@ -195,6 +195,42 @@ function readAndValidate(
 }
 
 /**
+ * `<input type="color">` only accepts `#rrggbb` strings. Underlying style
+ * fields can be any CSS colour notation (`'red'`, `'rgba(...)'`, `'hsl(...)'`),
+ * which the input would silently render as black. Normalise to `#rrggbb` using
+ * a Canvas2D parse trick: setting an arbitrary string as `fillStyle` is
+ * lossless to whatever the browser can interpret, and reading it back yields
+ * a canonical form. Falls back to a sensible default when the string is
+ * unparseable.
+ */
+function normalizeHexColor(input: string | undefined, fallback: string): string {
+	if (!input) return fallback;
+	if (/^#[0-9a-fA-F]{6}$/.test(input)) return input.toLowerCase();
+	if (typeof document === 'undefined') return fallback;
+	try {
+		const probe = document.createElement('canvas').getContext('2d');
+		if (!probe) return fallback;
+		probe.fillStyle = '#000000';
+		probe.fillStyle = input;
+		const value = probe.fillStyle;
+		// Canvas returns either "#rrggbb" (opaque) or "rgba(r, g, b, a)" (with alpha).
+		if (typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value)) {
+			return value.toLowerCase();
+		}
+		const rgbaMatch = /^rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(String(value));
+		if (rgbaMatch) {
+			const r = Number(rgbaMatch[1]).toString(16).padStart(2, '0');
+			const g = Number(rgbaMatch[2]).toString(16).padStart(2, '0');
+			const b = Number(rgbaMatch[3]).toString(16).padStart(2, '0');
+			return `#${r}${g}${b}`;
+		}
+		return fallback;
+	} catch {
+		return fallback;
+	}
+}
+
+/**
  * Compute draft override fields from a base preset. Returns plain values that
  * the override form binds to via signals; "Save as preset" reads them back to
  * construct a new custom preset. Track/segment style.overrides are NOT touched
@@ -204,15 +240,15 @@ function readAndValidate(
 function draftFromPreset(preset: UiPreset) {
 	const titleStyle = preset.titleStyle;
 	return {
-		color: titleStyle.color ?? '#ffffff',
+		color: normalizeHexColor(titleStyle.color, '#ffffff'),
 		fontSizePx: typeof titleStyle.fontSizePx === 'number' ? titleStyle.fontSizePx : 64,
-		outlineColor: titleStyle.outlineColor ?? '#000000',
+		outlineColor: normalizeHexColor(titleStyle.outlineColor, '#000000'),
 		outlineWidthPx: typeof titleStyle.outlineWidthPx === 'number' ? titleStyle.outlineWidthPx : 4,
 		glowEnabled: preset.glow !== undefined,
-		glowColor: preset.glow?.color ?? '#00ffff',
+		glowColor: normalizeHexColor(preset.glow?.color, '#00ffff'),
 		glowBlurPx: preset.glow?.blurPx ?? 20,
 		pillEnabled: preset.pill !== undefined,
-		pillColor: preset.pill?.color ?? '#000000',
+		pillColor: normalizeHexColor(preset.pill?.color, '#000000'),
 		pillOpacity: preset.pill?.opacity ?? 0.6,
 		pillRadiusPx: preset.pill?.radiusPx ?? 8,
 		pillPaddingXPx: preset.pill?.paddingXPx ?? 12,

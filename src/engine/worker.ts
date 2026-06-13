@@ -64,8 +64,8 @@ import {
 import { exportCaptionSidecars } from './captions/export';
 import {
 	activeCaptionPayloadsAt,
-	captionTextureId,
-	enumerateCaptionRasterTargets
+	enumerateCaptionRasterTargets,
+	type CaptionTextureIdMaker
 } from './captions/render';
 import { CAPTION_ANIM_IDENTITY } from './captions/animation-curves';
 import type { CaptionAnimUniforms } from './captions/animation-curves';
@@ -2099,12 +2099,43 @@ function exportCaptionTextureId(exportId: string, trackId: string, segmentId: st
 	return `export-caption:${exportId}:${trackId}:${segmentId}`;
 }
 
-function rasterizeExportCaptionTextures(exportId: string, tracks: readonly CaptionTrack[]): void {
-	for (const track of tracks) {
-		if (!track.visible || !track.burnedIn) continue;
-		for (const segment of track.segments)
-			retainedOverlayTextureIds.add(exportCaptionTextureId(exportId, track.id, segment.id));
+/**
+ * Rewrite an edit-path caption textureId (`caption:<trk>:<seg>` or
+ * `caption:<trk>:<seg>:highlight:<idx>`) onto the export-path namespace
+ * (`export-caption:<exportId>:<trk>:<seg>[…]`). Preserves the karaoke variant
+ * suffix so the export cache reads its pre-rasterised per-word texture rather
+ * than collapsing to the base id (which is what the prior remap callback,
+ * `(trackId, segmentId) => …`, did — silently dropping karaoke highlighting
+ * from every export).
+ */
+function remapToExportCaptionTextureId(exportId: string, editPathId: string): string {
+	return editPathId.replace(/^caption:/, `export-caption:${exportId}:`);
+}
+
+function rasterizeExportCaptionTextures(
+	exportId: string,
+	tracks: readonly CaptionTrack[]
+): string[] {
+	if (!titleCache) return [];
+	// Mirror the edit-path pre-rasterise pass under the per-export texture
+	// namespace. Without this, removing the hot-path `ensure()` from
+	// `activeCaptionLayersAt` would leave the export with empty texture cache
+	// entries — burned-in captions would render as black holes, and karaoke
+	// variants would never exist at all. Returns every textureId touched so
+	// the caller can hand them to releaseRetainedOverlayTextures on teardown.
+	const baseFor = (trackId: string, segmentId: string): string =>
+		exportCaptionTextureId(exportId, trackId, segmentId);
+	const idMaker: CaptionTextureIdMaker = Object.assign(baseFor, {
+		withVariant: (trackId: string, segmentId: string, variant: `highlight:${number}`) =>
+			`${baseFor(trackId, segmentId)}:${variant}`
+	});
+	const touched: string[] = [];
+	for (const target of enumerateCaptionRasterTargets(tracks, customAnimCaptionPresets, idMaker)) {
+		retainedOverlayTextureIds.add(target.textureId);
+		titleCache.rasterize(target.textureId, target.content, target.extras);
+		touched.push(target.textureId);
 	}
+	return touched;
 }
 
 function releaseRetainedOverlayTextures(textureIds: readonly string[]): void {
@@ -2118,7 +2149,7 @@ function releaseRetainedOverlayTextures(textureIds: readonly string[]): void {
 function activeCaptionLayersAt(
 	tracks: readonly CaptionTrack[],
 	timestamp: number,
-	textureIdFor: (trackId: string, segmentId: string) => string = captionTextureId
+	remapTextureId: (editPathTextureId: string) => string = (id) => id
 ): Array<{
 	clipId: string;
 	content: TitleContent;
@@ -2132,15 +2163,16 @@ function activeCaptionLayersAt(
 		animUniforms: CaptionAnimUniforms;
 	}> = [];
 	for (const payload of activeCaptionPayloadsAt(tracks, timestamp, customAnimCaptionPresets)) {
-		// Use the textureId from the payload (may be 'highlight:<idx>' variant
-		// for karaoke). The pre-rasterise pass in syncTitleRasters has already
-		// populated the cache for every variant — this is a read-only hot path,
-		// NEVER a Canvas2D / GPU upload site. Hard gate 1: no sustained
-		// rasterisation on the playback path.
-		const clipId =
-			textureIdFor === captionTextureId
-				? payload.textureId
-				: textureIdFor(payload.trackId, payload.segmentId);
+		// The payload's textureId already encodes the karaoke variant when
+		// applicable. The remap callback lets the export path rewrite to its
+		// own `export-caption:<exportId>:…` namespace WITHOUT dropping the
+		// variant (the prior 2-arg callback signature did exactly that, so
+		// karaoke captions exported as unhighlighted base text). The pre-
+		// rasterise pass in syncTitleRasters (edit) and rasterizeExport-
+		// CaptionTextures (export) has already populated the cache for every
+		// variant — this is a read-only hot path, NEVER a Canvas2D / GPU
+		// upload site. Hard gate 1: no sustained rasterisation on playback.
+		const clipId = remapTextureId(payload.textureId);
 		layers.push({
 			clipId,
 			content: payload.content,
@@ -3578,6 +3610,10 @@ function handleCaptionImportCustomPreset(
 		type: 'caption-custom-presets-updated',
 		presets: customAnimCaptionPresets
 	});
+	// Re-rasterise so any segment already referencing this preset id picks up
+	// the new fields. `rasterize` is hash-checked, so segments using OTHER
+	// presets pay only a hash compare; touched segments get a fresh upload.
+	syncTitleRasters();
 	scheduleAutosave();
 }
 
@@ -3589,6 +3625,10 @@ function handleCaptionDeleteCustomPreset(
 		type: 'caption-custom-presets-updated',
 		presets: customAnimCaptionPresets
 	});
+	// Segments that referenced this preset fall back to the 'subtitle' layout
+	// at next resolve; re-rasterise so the cache reflects the fallback instead
+	// of holding the now-orphaned custom-preset texture.
+	syncTitleRasters();
 	scheduleAutosave();
 }
 
@@ -4218,14 +4258,10 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
 			typeof crypto !== 'undefined' && 'randomUUID' in crypto
 				? crypto.randomUUID()
 				: `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-		exportCaptionTextureIds = exportCaptionTracksSnapshot.flatMap((track) =>
-			track.visible && track.burnedIn
-				? track.segments.map((segment) =>
-						exportCaptionTextureId(exportCaptionTextureGroupId, track.id, segment.id)
-					)
-				: []
+		exportCaptionTextureIds = rasterizeExportCaptionTextures(
+			exportCaptionTextureGroupId,
+			exportCaptionTracksSnapshot
 		);
-		rasterizeExportCaptionTextures(exportCaptionTextureGroupId, exportCaptionTracksSnapshot);
 		const videoHandle = firstExportVideoHandle();
 		const settings = normalizeExportSettings(
 			cmd.settings,
@@ -4259,11 +4295,8 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
 				overlayTextureLayersAt: (timelineTime) => {
 					const ew = settings.width,
 						eh = settings.height;
-					return activeCaptionLayersAt(
-						exportCaptionTracksSnapshot,
-						timelineTime,
-						(trackId, segmentId) =>
-							exportCaptionTextureId(exportCaptionTextureGroupId, trackId, segmentId)
+					return activeCaptionLayersAt(exportCaptionTracksSnapshot, timelineTime, (editPathId) =>
+						remapToExportCaptionTextureId(exportCaptionTextureGroupId, editPathId)
 					)
 						.map((layer) => {
 							const texture = titleCache?.get(layer.clipId);
@@ -4323,8 +4356,8 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
 				transitions: audioTransitions,
 				hasVideoTransitions: transitions.length > 0,
 				overlayTitleLayersAt: (timelineTime) =>
-					activeCaptionLayersAt(exportCaptionTracksSnapshot, timelineTime, (trackId, segmentId) =>
-						exportCaptionTextureId(exportCaptionTextureGroupId, trackId, segmentId)
+					activeCaptionLayersAt(exportCaptionTracksSnapshot, timelineTime, (editPathId) =>
+						remapToExportCaptionTextureId(exportCaptionTextureGroupId, editPathId)
 					).map((layer) => ({
 						content: layer.content,
 						transform: layer.transform
@@ -4551,14 +4584,10 @@ async function runQueueJob(job: RenderQueueJob): Promise<void> {
 			typeof crypto !== 'undefined' && 'randomUUID' in crypto
 				? crypto.randomUUID()
 				: `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-		exportCaptionTextureIds = exportCaptionTracksSnapshot.flatMap((track) =>
-			track.visible && track.burnedIn
-				? track.segments.map((segment) =>
-						exportCaptionTextureId(exportCaptionTextureGroupId, track.id, segment.id)
-					)
-				: []
+		exportCaptionTextureIds = rasterizeExportCaptionTextures(
+			exportCaptionTextureGroupId,
+			exportCaptionTracksSnapshot
 		);
-		rasterizeExportCaptionTextures(exportCaptionTextureGroupId, exportCaptionTracksSnapshot);
 
 		const videoHandle = firstExportVideoHandle();
 		const jobSettings: ExportSettings = {
@@ -4599,11 +4628,8 @@ async function runQueueJob(job: RenderQueueJob): Promise<void> {
 			overlayTextureLayersAt: (timelineTime) => {
 				const ew = settings.width,
 					eh = settings.height;
-				return activeCaptionLayersAt(
-					exportCaptionTracksSnapshot,
-					timelineTime,
-					(trackId, segmentId) =>
-						exportCaptionTextureId(exportCaptionTextureGroupId, trackId, segmentId)
+				return activeCaptionLayersAt(exportCaptionTracksSnapshot, timelineTime, (editPathId) =>
+					remapToExportCaptionTextureId(exportCaptionTextureGroupId, editPathId)
 				)
 					.map((layer) => {
 						const texture = titleCache?.get(layer.clipId);
