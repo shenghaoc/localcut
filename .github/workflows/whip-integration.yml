@@ -31,7 +31,7 @@ jobs:
       - run: vp install
 
       - name: Install Playwright Chromium
-        run: vp exec playwright install --with-deps chromium
+        run: vpx playwright install --with-deps chromium
 
       # Host networking so WebRTC ICE host candidates (UDP) are reachable from
       # the browser without per-port docker mappings; MTX_API exposes the

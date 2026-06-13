@@ -29,6 +29,6 @@ jobs:
       - name: Install dependencies
         run: vp install
       - name: Install Playwright Chromium
-        run: vp exec playwright install --with-deps chromium
+        run: vpx playwright install --with-deps chromium
       - name: Run browser tests
         run: vp run test:browser
