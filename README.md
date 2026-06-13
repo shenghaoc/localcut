@@ -63,7 +63,7 @@ vp run test:e2e                  # Playwright E2E (full user-flow tests, require
 ```
 
 - **Unit tests** (`vp test run`): fast logic tests running in Node. These run as part of `vp run check` and CI.
-- **Browser tests** (`vp run test:browser`): component and integration tests that render SolidJS components in a real Chromium browser via Vitest Browser Mode. Use these for behavior that depends on real DOM, browser APIs, or user interaction. Not included in the default `check` gate yet — run explicitly.
+- **Browser tests** (`vp run test:browser`): component and integration tests that render SolidJS components in a real Chromium browser via Vitest Browser Mode. Use these for behavior that depends on real DOM, browser APIs, or user interaction. Not included in the default `check` gate yet — run explicitly. Requires Chromium installed once: `vpx playwright install --with-deps chromium`.
 - **E2E tests** (`vp run test:e2e`): full Playwright user-flow tests (e.g., WHIP publish integration). Requires a running dev server and, for some tests, external services.
 
 ## PWA & Deployment
