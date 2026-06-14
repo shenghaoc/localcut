@@ -223,6 +223,31 @@ Audio runs through an AudioWorklet graph and is the master clock for A/V sync �
 
 When clips on the timeline use different audio sample rates (e.g. a 44.1 kHz MP3 alongside a 48 kHz video), the engine resamples all audio to the target output rate using a polyphase sinc filter. This happens transparently during both playback and export — no user action is needed. The source health panel shows a **Mixed audio sample rates** note as an informational reminder.
 
+## Portrait Matte (Experimental)
+
+Portrait Matte separates the foreground person from the background in video clips — "green screen without a green screen" — using an on-device, permissively licensed ML matting model (MODNet-class `.tflite`, Apache-2.0). The feature runs entirely in the browser on **LiteRT.js** (the same on-device ML runtime as Audio Cleanup and Auto Captions), using your GPU via WebGPU with no server-side processing. Do **not** deploy GPL-licensed model weights (e.g. RobustVideoMatting) at the model URL — this application is MIT-licensed and the project's licensing verdict on candidate models is recorded in the Phase 31 design document.
+
+> Runs on this device. No upload. No API key. No server inference.
+
+**How to use it**:
+
+1. Select a video clip on the timeline and find **Portrait Matte** in the Inspector.
+2. Check **Enable**. On first use the app fetches the model manifest from `/models/matte/manifest.json` (same-origin) and the checksum-verified model weights it references. Nothing is downloaded at app startup. Playback continues unmatted until the model is ready — it never stalls on a download.
+3. Pick a **Mode**:
+   - **Remove background** — the background becomes transparent, compositing over whatever is below.
+   - **Replace background** — same as remove; place any timeline source (video, still, title) on the track directly below this clip and it shows through.
+   - **Blur background** — the subject stays sharp while the background is defocused; adjust **Blur radius**.
+4. Adjust **Strength** (0–100%) to blend between the original and matted image.
+
+The matte is computed **in real time** on the GPU as frames play or export — there is no separate "compute the whole clip" step, no waiting, and exports always carry the matte. Seeking resets the temporal smoothing so the matte stays coherent after jumps.
+
+**Requirements and limits**:
+
+- Matting requires the accelerated (WebGPU) tier. A reduced non-WebGPU fallback is planned but not yet available.
+- The `.tflite` model is **not bundled** with the app. If no model is deployed at the manifest URL, enabling the matte reports a model-unavailable status and the clip plays unchanged. There is no cloud fallback of any kind.
+- The LiteRT WASM runtime is shared with Audio Cleanup and Auto Captions (served from `/litert/<build>/`), so no extra runtime needs deploying for the matte — only the model `.tflite` and its `manifest.json`.
+- Disabling the matte drops the clip's temporal state and cached frames; re-enabling recomputes them.
+
 ## Local Audio Cleanup (Experimental)
 
 LocalCut Studio can reduce background noise in audio clips entirely on your device using the DTLN model (Dual-Signal Transformation LSTM Network) running through LiteRT.js. This feature is **experimental** and fully local:

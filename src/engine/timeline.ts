@@ -29,10 +29,26 @@ import {
 	type KeyframeEasing
 } from './keyframes';
 import { cloneClipLut, type ClipLut } from './lut';
-import { TIMELINE_EPSILON, type CleanedAudioRefSnapshot } from '../protocol';
+import {
+	TIMELINE_EPSILON,
+	type CleanedAudioRefSnapshot,
+	type ClipMatteSnapshot
+} from '../protocol';
 
 /** Denoised-audio routing for a clip (Phase 28 local audio cleanup). */
 export type CleanedAudioRef = CleanedAudioRefSnapshot;
+
+/** Phase 31: per-clip portrait matte configuration. */
+export type ClipMatte = ClipMatteSnapshot;
+
+export const DEFAULT_MATTE: ClipMatte = {
+	enabled: true,
+	mode: 'remove',
+	// Model pin: MODNet (Apache-2.0). GPL-family models (e.g. RVM) are rejected —
+	// see .kiro/specs/phase-31-portrait-matting/design.md for the license verdict.
+	modelKey: 'modnet-v1',
+	strength: 1.0
+};
 
 /** Source clips decode media; title clips are source-less text overlays (Phase 14). */
 export type ClipKind = 'video' | 'title';
@@ -54,6 +70,8 @@ export interface TimelineClip {
 	lut?: ClipLut;
 	/** Phase 32a: optional skin-mask sidecar (per-clip chroma mask params). */
 	skinMask?: import('./skin-smooth').SkinMaskParams;
+	/** Phase 31: optional portrait matte configuration. */
+	matte?: ClipMatte;
 	audioFadeIn: number;
 	audioFadeOut: number;
 	/** Text + style for `kind: 'title'` clips; absent otherwise (Phase 14). */
@@ -630,6 +648,7 @@ function cloneClip(clip: TimelineClip): TimelineClip {
 		audioFadeIn: clip.audioFadeIn,
 		audioFadeOut: clip.audioFadeOut,
 		title: clip.title ? cloneTitleContent(clip.title) : undefined,
+		matte: clip.matte ? { ...clip.matte } : undefined,
 		linkedGroupId: clip.linkedGroupId,
 		cleanedAudio: clip.cleanedAudio ? { ...clip.cleanedAudio } : undefined,
 		skinMask: clip.skinMask ? { ...clip.skinMask } : undefined
@@ -1297,6 +1316,82 @@ export function setSkinMask(
 	const next = cloneTimeline(timeline);
 	const clip = next[loc.trackIndex]!.clips[loc.clipIndex]!;
 	clip.skinMask = { ...mask };
+	return next;
+}
+
+/** Phase 31: enables or disables portrait matting on a clip. */
+export function setClipMatteEnabled(
+	timeline: Timeline,
+	trackId: string,
+	clipId: string,
+	enabled: boolean
+): Timeline {
+	const loc = trackWithClip(timeline, trackId, clipId);
+	if (!loc) return timeline;
+	const clip = timeline[loc.trackIndex]!.clips[loc.clipIndex]!;
+	if (clip.matte?.enabled === enabled) return timeline;
+	const next = cloneTimeline(timeline);
+	const nextClip = next[loc.trackIndex]!.clips[loc.clipIndex]!;
+	nextClip.matte = {
+		...DEFAULT_MATTE,
+		...nextClip.matte,
+		enabled
+	};
+	return next;
+}
+
+/** Phase 31: sets the portrait matte strength (0..1) on a clip. */
+export function setClipMatteStrength(
+	timeline: Timeline,
+	trackId: string,
+	clipId: string,
+	strength: number
+): Timeline {
+	const clamped = Math.min(1, Math.max(0, strength));
+	if (!Number.isFinite(clamped)) return timeline;
+	const loc = trackWithClip(timeline, trackId, clipId);
+	if (!loc) return timeline;
+	const clip = timeline[loc.trackIndex]!.clips[loc.clipIndex]!;
+	if (!clip.matte || clip.matte.strength === clamped) return timeline;
+	const next = cloneTimeline(timeline);
+	const nextClip = next[loc.trackIndex]!.clips[loc.clipIndex]!;
+	nextClip.matte = { ...nextClip.matte!, strength: clamped };
+	return next;
+}
+
+/** Phase 31: sets the matte mode (remove / replace / blur) on a clip. */
+export function setClipMatteMode(
+	timeline: Timeline,
+	trackId: string,
+	clipId: string,
+	mode: ClipMatte['mode']
+): Timeline {
+	const loc = trackWithClip(timeline, trackId, clipId);
+	if (!loc) return timeline;
+	const clip = timeline[loc.trackIndex]!.clips[loc.clipIndex]!;
+	if (!clip.matte || clip.matte.mode === mode) return timeline;
+	const next = cloneTimeline(timeline);
+	const nextClip = next[loc.trackIndex]!.clips[loc.clipIndex]!;
+	nextClip.matte = { ...nextClip.matte!, mode };
+	return next;
+}
+
+/** Phase 31: sets the blur-mode background radius (px, clamped to [0, 64]). */
+export function setClipMatteBlurRadius(
+	timeline: Timeline,
+	trackId: string,
+	clipId: string,
+	blurRadius: number
+): Timeline {
+	const clamped = Math.min(64, Math.max(0, blurRadius));
+	if (!Number.isFinite(clamped)) return timeline;
+	const loc = trackWithClip(timeline, trackId, clipId);
+	if (!loc) return timeline;
+	const clip = timeline[loc.trackIndex]!.clips[loc.clipIndex]!;
+	if (!clip.matte || clip.matte.blurRadius === clamped) return timeline;
+	const next = cloneTimeline(timeline);
+	const nextClip = next[loc.trackIndex]!.clips[loc.clipIndex]!;
+	nextClip.matte = { ...nextClip.matte!, blurRadius: clamped };
 	return next;
 }
 

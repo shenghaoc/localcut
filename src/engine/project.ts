@@ -209,6 +209,7 @@ function cloneClip(clip: TimelineClip): TimelineClip {
 	if (clip.linkedGroupId) cloned.linkedGroupId = clip.linkedGroupId;
 	if (clip.cleanedAudio) cloned.cleanedAudio = { ...clip.cleanedAudio };
 	if (clip.skinMask) cloned.skinMask = { ...clip.skinMask };
+	if (clip.matte) cloned.matte = { ...clip.matte };
 	const keyframes = cloneClipKeyframes(clip.keyframes);
 	if (keyframes) cloned.keyframes = keyframes;
 	const lut = cloneClipLut(clip.lut);
@@ -507,6 +508,23 @@ function parseClip(value: unknown): TimelineClip | null {
 	if (linkedGroupId) clip.linkedGroupId = linkedGroupId;
 	if (keyframes) clip.keyframes = keyframes;
 	if (lut) clip.lut = lut;
+	if (isRecord(value.matte)) {
+		const enabled = typeof value.matte.enabled === 'boolean' ? value.matte.enabled : true;
+		const mode =
+			value.matte.mode === 'replace' || value.matte.mode === 'blur' ? value.matte.mode : 'remove';
+		// Model pin survives round-trip verbatim (P23); mismatches against the
+		// deployed model surface a warning at load, never a silent switch.
+		const modelKey = typeof value.matte.modelKey === 'string' ? value.matte.modelKey : 'modnet-v1';
+		const strength = finiteNumber(value.matte.strength);
+		const blurRadius = finiteNumber(value.matte.blurRadius);
+		clip.matte = {
+			enabled,
+			mode,
+			modelKey,
+			strength: strength !== null && strength >= 0 && strength <= 1 ? strength : 1.0,
+			...(blurRadius !== null && blurRadius >= 0 ? { blurRadius: Math.min(64, blurRadius) } : {})
+		};
+	}
 	const cleanedAudio = isTitle ? undefined : parseCleanedAudio(value.cleanedAudio);
 	if (cleanedAudio) clip.cleanedAudio = cleanedAudio;
 	// Phase 32a: parse optional skin-mask sidecar (normalize invalid values, don't reject).
@@ -1454,9 +1472,12 @@ export function deserializeProject(value: unknown): DeserializeProjectResult {
 			// Both fields are optional with factory defaults; v10/v11 docs deserialize fine.
 			return deserializeV10(value);
 		case 13:
+		case 14:
 			// v13 (Phase 30): adds customAnimCaptionPresets (optional; absent in
 			// v10/v11/v12). Originally targeted v12, but Phase 32a (Skin Smoothing)
 			// claimed v12 first, so Phase 30 ships as v13.
+			// v14 (Phase 31): adds the optional clip `matte` (mode/strength/blurRadius);
+			// the shared clip parser handles it, so v13 docs deserialize fine.
 			return deserializeV13(value);
 		case 14:
 			// v14 (Phase 36): adds optional voiceCleanup on top of v13. Phase 36
