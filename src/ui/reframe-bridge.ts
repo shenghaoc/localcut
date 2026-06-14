@@ -3,10 +3,11 @@
  * only when the user triggers analysis, so nothing model/runtime-related enters
  * the startup module graph or spawns eagerly (R0.3).
  *
- * It is a **module** worker (matching `vite.config` `worker.format: 'es'`).
- * Both the saliency path and the MediaPipe face detector load via ES dynamic
- * `import()` (no `importScripts`); the face model is fetched only on the user's
- * explicit "Load face model" action.
+ * Spawned as a **classic** worker (like the Phase 28 cleanup worker), because
+ * MediaPipe Tasks Vision loads its WASM runtime via `importScripts`, which ES
+ * module workers forbid. Vite bundles this worker's ES imports into a classic
+ * IIFE. The face model/runtime is fetched only on the user's explicit "Load
+ * face model" action; the saliency path needs no `importScripts`.
  */
 import type { SmartReframeWorkerCommand, SmartReframeWorkerState } from '../protocol';
 
@@ -20,7 +21,7 @@ export async function spawnSmartReframeWorker(
 	onCrash: (message: string) => void
 ): Promise<SmartReframeWorkerPort> {
 	const worker = new Worker(new URL('../engine/reframe/reframe-analyzer.ts', import.meta.url), {
-		type: 'module'
+		type: 'classic'
 	});
 	const handler = (event: MessageEvent<SmartReframeWorkerState>) => {
 		onState(event.data);
