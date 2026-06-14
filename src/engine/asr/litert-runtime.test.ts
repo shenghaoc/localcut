@@ -179,6 +179,47 @@ describe('LiteRT accelerator options', () => {
 		});
 	});
 
+	it('deletes a compiled model when runtime construction throws', async () => {
+		const { api, model } = fakeApi();
+		api.Tensor.fromTypedArray.mockImplementationOnce(() => {
+			throw new Error('mask allocation failed');
+		});
+
+		await expect(
+			createLiteRtWhisperRuntime({
+				wasmPath: '/litert/',
+				accelerator: 'wasm',
+				modelBytes: new Uint8Array([9]),
+				manifest: MANIFEST
+			})
+		).rejects.toThrow('mask allocation failed');
+
+		expect(model.delete).toHaveBeenCalledTimes(1);
+	});
+
+	it('deletes an accelerated compiled model before falling back to wasm construction', async () => {
+		const { api } = fakeApi();
+		const acceleratedModel = { run: vi.fn(), delete: vi.fn() };
+		const wasmModel = { run: vi.fn(), delete: vi.fn() };
+		api.loadAndCompile.mockResolvedValueOnce(acceleratedModel).mockResolvedValueOnce(wasmModel);
+		api.Tensor.fromTypedArray
+			.mockImplementationOnce(() => {
+				throw new Error('accelerated constructor failed');
+			})
+			.mockImplementation(() => tensor());
+
+		const runtime = await createLiteRtWhisperRuntime({
+			wasmPath: '/litert/',
+			accelerator: 'webgpu',
+			modelBytes: new Uint8Array([5]),
+			manifest: MANIFEST
+		});
+
+		expect(runtime.accelerator).toBe('wasm');
+		expect(acceleratedModel.delete).toHaveBeenCalledTimes(1);
+		expect(wasmModel.delete).not.toHaveBeenCalled();
+	});
+
 	it('deletes decode outputs even when reading logits rejects', async () => {
 		const hidden = tensor();
 		const logits = tensor(new Error('read failed'));

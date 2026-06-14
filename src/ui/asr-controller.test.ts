@@ -232,6 +232,7 @@ describe('AsrController', () => {
 	it('transcribes a clip into a generated caption track', async () => {
 		const h = harness();
 		h.controller.setProbe();
+		await h.controller.loadModel();
 		const ok = await h.controller.transcribeClip(CLIP, 'en');
 		expect(ok).toBe(true);
 		expect(h.tracks).toHaveLength(1);
@@ -254,11 +255,23 @@ describe('AsrController', () => {
 		const h = harness();
 		h.transcribeMode.value = 'empty';
 		h.controller.setProbe();
+		await h.controller.loadModel();
 		const ok = await h.controller.transcribeClip(CLIP, 'en');
 		expect(ok).toBe(false);
 		expect(h.tracks).toHaveLength(0);
 		expect(h.controller.getState().error).toMatch(/No speech/);
 		expect(h.controller.getState().job).toBeNull();
+	});
+
+	it('does not auto-load or spawn a worker when transcribe is triggered before the model is loaded', async () => {
+		const h = harness();
+		h.controller.setProbe();
+
+		expect(await h.controller.transcribeClip(CLIP, 'en')).toBe(false);
+
+		expect(h.spawnCount()).toBe(0);
+		expect(h.workerCommands).toHaveLength(0);
+		expect(h.controller.getState().error).toBe('Load the selected model before transcribing.');
 	});
 
 	it('surfaces a worker crash and resets model status', async () => {
@@ -439,6 +452,12 @@ describe('asrActionAvailability', () => {
 		const availability = asrActionAvailability(baseState({ available: false }), CLIP);
 		expect(availability.transcribeClip.enabled).toBe(false);
 		expect(availability.loadModel.enabled).toBe(false);
+	});
+
+	it('keeps transcribe disabled until the model has finished loading', () => {
+		const availability = asrActionAvailability(baseState({ modelStatus: 'not-loaded' }), CLIP);
+		expect(availability.transcribeClip.enabled).toBe(false);
+		expect(availability.transcribeClip.reason).toBe('Load the selected model before transcribing.');
 	});
 
 	it('requires a selected clip and keeps the unwired range action disabled', () => {

@@ -8,7 +8,8 @@ import {
 	melFilterbank,
 	normaliseMelSpectrogram,
 	powerSpectrum,
-	prepareMonoPcm
+	prepareMonoPcm,
+	reflectPad
 } from './whisper-dsp';
 
 describe('hannWindow', () => {
@@ -43,6 +44,12 @@ describe('extractMelSpectrogram', () => {
 		const mel = extractMelSpectrogram(pcm, DEFAULT_MEL_CONFIG);
 		expect(mel.nMel).toBe(80);
 		expect(mel.nFrames).toBe(16000 / DEFAULT_MEL_CONFIG.hopLength); // 100
+	});
+
+	it('keeps empty PCM finite by zero-filling reflect padding', () => {
+		expect(reflectPad(new Float32Array(0), 4)).toEqual(new Float32Array(8));
+		const mel = extractMelSpectrogram(new Float32Array(0), DEFAULT_MEL_CONFIG);
+		expect([...mel.data].every(Number.isFinite)).toBe(true);
 	});
 
 	it('concentrates energy near the bin of a pure tone', () => {

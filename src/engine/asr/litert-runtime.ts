@@ -195,6 +195,20 @@ class LiteRtRuntimeImpl implements LiteRtWhisperRuntime {
 	}
 }
 
+function ownCompiledModel(params: {
+	api: LiteRtApi;
+	model: LiteRtCompiledModel;
+	accelerator: AsrAccelerator;
+	manifest: AsrModelManifestSnapshot;
+}): LiteRtWhisperRuntime {
+	try {
+		return new LiteRtRuntimeImpl(params);
+	} catch (error) {
+		params.model.delete();
+		throw error;
+	}
+}
+
 /**
  * Loads the LiteRT.js WASM runtime and compiles the Whisper model into a
  * ready-to-run {@link WhisperRuntime}. Tries the requested accelerator and, if
@@ -240,7 +254,12 @@ export async function createLiteRtWhisperRuntime(
 			try {
 				model = await api.loadAndCompile(options.modelBytes, compileOptions);
 				accelerator = loadedAccelerator;
-				return new LiteRtRuntimeImpl({ api, model, accelerator, manifest: options.manifest });
+				return ownCompiledModel({
+					api,
+					model,
+					accelerator,
+					manifest: options.manifest
+				});
 			} catch (error) {
 				lastError = error;
 			}
@@ -255,5 +274,5 @@ export async function createLiteRtWhisperRuntime(
 		accelerator = 'wasm';
 	}
 
-	return new LiteRtRuntimeImpl({ api, model, accelerator, manifest: options.manifest });
+	return ownCompiledModel({ api, model, accelerator, manifest: options.manifest });
 }

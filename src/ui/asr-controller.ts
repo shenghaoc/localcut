@@ -91,6 +91,12 @@ export function preferredAccelerator(probe: AsrProbeResult | null): AsrAccelerat
 	return ASR_DEFAULT_ACCELERATOR;
 }
 
+function modelLoadGateReason(state: AsrControllerState): string | null {
+	if (state.modelStatus === 'loaded') return null;
+	if (state.modelStatus === 'loading') return 'Wait for the ASR model to finish loading.';
+	return 'Load the selected model before transcribing.';
+}
+
 export interface AsrClipTarget {
 	trackId: string;
 	clipId: string;
@@ -480,7 +486,15 @@ export class AsrController {
 		timelineRange?: AsrTimelineRange
 	): Promise<boolean> {
 		if (this.state.job) return false;
-		if (!(await this.loadModel())) return false;
+		if (!this.state.available || this.state.recommendedEngine === 'none') {
+			this.update({ error: ASR_UNAVAILABLE_MESSAGE });
+			return false;
+		}
+		const loadGate = modelLoadGateReason(this.state);
+		if (loadGate) {
+			this.update({ error: loadGate });
+			return false;
+		}
 
 		const durationS = clip
 			? Math.min(clip.durationS, ASR_MAX_JOB_SECONDS)
@@ -677,6 +691,7 @@ export function asrActionAvailability(
 	const noClip = selectedClip === null;
 	const modelNeeded = state.modelStatus !== 'loaded';
 	const busyReason = busy ? 'An ASR task is in progress.' : null;
+	const modelReason = modelLoadGateReason(state);
 	const clipReason = noClip ? 'Select a clip on the timeline first.' : null;
 	const rangeReason =
 		'Timeline range transcription needs mixed timeline audio extraction; transcribe a selected clip for now.';
@@ -686,12 +701,12 @@ export function asrActionAvailability(
 			reason: busyReason ?? (modelNeeded ? null : 'Model already loaded.')
 		},
 		transcribeClip: {
-			enabled: !busy && !noClip,
-			reason: busyReason ?? clipReason
+			enabled: !busy && !modelNeeded && !noClip,
+			reason: busyReason ?? modelReason ?? clipReason
 		},
 		transcribeRange: {
 			enabled: false,
-			reason: busyReason ?? rangeReason
+			reason: busyReason ?? modelReason ?? rangeReason
 		},
 		cancel: {
 			enabled: busy,

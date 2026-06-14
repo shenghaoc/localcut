@@ -5,6 +5,7 @@ import {
 	cleanedFileName,
 	cleanupActionAvailability,
 	CleanupController,
+	preferredCleanupAccelerator,
 	type ApplyCleanupRequest,
 	type CleanupClipTarget,
 	type ClipAudioRequest
@@ -14,6 +15,16 @@ import type { CleanupProbeResult, CleanupWorkerCommand, CleanupWorkerState } fro
 const PROBE_OK: CleanupProbeResult = {
 	wasmAvailable: true,
 	accelerator: 'wasm'
+};
+
+const PROBE_WEBGPU: CleanupProbeResult = {
+	wasmAvailable: true,
+	accelerator: 'webgpu'
+};
+
+const PROBE_WEBNN: CleanupProbeResult = {
+	wasmAvailable: true,
+	accelerator: 'webnn'
 };
 
 const PROBE_ABSENT: CleanupProbeResult = {
@@ -164,6 +175,20 @@ describe('CleanupController', () => {
 		expect(h.spawnCount()).toBe(1);
 		const load = h.workerCommands.find((cmd) => cmd.type === 'cleanup-load-model');
 		expect(load).toBeDefined();
+	});
+
+	it('passes the probed preferred accelerator through model load', async () => {
+		const h = harness();
+		h.controller.setCleanupProbe(PROBE_WEBGPU);
+
+		expect(await h.controller.loadModel()).toBe(true);
+
+		expect(h.workerCommands).toContainEqual(
+			expect.objectContaining({
+				type: 'cleanup-load-model',
+				preferredAccelerator: 'webgpu'
+			})
+		);
 	});
 
 	it('runs a preview job over a bounded range and stores A/B buffers', async () => {
@@ -329,6 +354,17 @@ describe('cleanupActionAvailability', () => {
 		expect(availability.preview.enabled).toBe(false);
 		expect(availability.preview.reason).toMatch(/Select an audio clip/);
 		expect(availability.cancel.enabled).toBe(false);
+	});
+});
+
+describe('preferredCleanupAccelerator', () => {
+	it('uses the probe when one is present', () => {
+		expect(preferredCleanupAccelerator(PROBE_WEBNN)).toBe('webnn');
+		expect(preferredCleanupAccelerator(PROBE_WEBGPU)).toBe('webgpu');
+	});
+
+	it('falls back to wasm when no probe is available yet', () => {
+		expect(preferredCleanupAccelerator(null)).toBe('wasm');
 	});
 });
 

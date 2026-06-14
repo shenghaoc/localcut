@@ -33,6 +33,10 @@ export const CLEANUP_WASM_PATH = `/litert/${CLEANUP_BUILD_SHA}/`;
 
 export const CLEANUP_UNAVAILABLE_MESSAGE = 'WebAssembly is required for local audio cleanup.';
 
+export function preferredCleanupAccelerator(probe: CleanupProbeResult | null): CleanupAccelerator {
+	return probe?.accelerator ?? 'wasm';
+}
+
 export interface CleanupClipTarget {
 	trackId: string;
 	clipId: string;
@@ -326,7 +330,7 @@ export class CleanupController {
 				type: 'cleanup-load-model',
 				manifestUrl: this.ports.manifestUrl,
 				wasmPath: this.ports.wasmPath,
-				preferredAccelerator: 'wasm'
+				preferredAccelerator: preferredCleanupAccelerator(this.state.probe)
 			});
 			return await done;
 		} catch (error) {
