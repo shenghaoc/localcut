@@ -33,17 +33,17 @@ export interface ReframeContext {
 }
 
 export interface ReframeControllerState {
-	status: ReframeStatus;
+	readonly status: ReframeStatus;
 	/** Analysis progress in [0,1]. */
-	progress: number;
-	framesProcessed: number;
-	totalFrames: number;
-	stats: ReframeAnalysisStatsSnapshot | null;
-	result: ClipKeyframesSnapshot | null;
-	error: string | null;
+	readonly progress: number;
+	readonly framesProcessed: number;
+	readonly totalFrames: number;
+	readonly stats: ReframeAnalysisStatsSnapshot | null;
+	readonly result: ClipKeyframesSnapshot | null;
+	readonly error: string | null;
 	/** True when `error` is a model-integrity failure (R2.2), shown distinctly. */
-	integrityError: boolean;
-	context: ReframeContext | null;
+	readonly integrityError: boolean;
+	readonly context: ReframeContext | null;
 }
 
 export interface ReframeControllerPorts {

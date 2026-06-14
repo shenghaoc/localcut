@@ -443,7 +443,7 @@ const unknownCapture: CaptureProbeResult = {
 };
 
 /** Probe Smart Reframe capabilities. Saliency is always supported (pure DSP). */
-function probeSmartReframe(): SmartReframeProbeResult {
+export function probeSmartReframe(): SmartReframeProbeResult {
 	// No face-detection model catalogue entry is bundled in this build, so face
 	// detection is unavailable and analysis runs saliency-only (R2.6 / R8.2).
 	// This is honest rather than 'unknown': the LiteRT.js detector, manifest

@@ -19,6 +19,12 @@ export interface TrackedDetection {
 	source: 'face' | 'saliency';
 }
 
+/**
+ * A timestamped, smoothed 2D subject sample. The coordinate convention is
+ * context-dependent: the tracker emits `[0,1]` centroids; the keyframe generator
+ * consumes centre-relative offsets (`[-0.5, 0.5]`) — the analyser converts
+ * between them. Defined once here and re-exported from the keyframe generator.
+ */
 export interface TrajectoryPoint {
 	time: number;
 	cx: number;

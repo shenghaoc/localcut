@@ -35,9 +35,11 @@ confirmation before replacing them.
 - **Visual saliency** (always available) estimates the most prominent region of
   each frame from skin tone, edges, and local contrast — no machine-learning
   model required. This build uses saliency for every clip.
-- **Face detection** is a planned enhancement. When a face-detection model ships
-  it will drive the subject locator and fall back to saliency for clips with no
-  faces. Until then the Smart Reframe panel notes that saliency is in use.
+- **Face detection** runs on the same on-device LiteRT runtime as Auto Captions
+  and Audio Cleanup; it is the designed primary locator and falls back to
+  saliency for clips with no faces. The runtime and model loader are in place,
+  but no face-detection model is bundled in this build yet, so the Smart Reframe
+  panel notes that saliency is in use until a model ships.
 
 A lightweight tracker follows one subject across the clip and smooths its path,
 and **shot-boundary detection** resets the tracker at hard cuts so the crop does

@@ -408,6 +408,9 @@ export interface SmartReframeProbeResult {
 /** Detection mode used during the last analysis. */
 export type ReframeAnalysisMode = 'face' | 'saliency' | 'mixed';
 
+/** LiteRT.js compile target for the face-detection model. */
+export type ReframeAccelerator = 'wasm' | 'webgpu' | 'webnn';
+
 /** Model manifest for the LiteRT.js face-detection model (TFLite). */
 export interface ReframeModelManifestSnapshot {
 	id: string;
@@ -421,15 +424,6 @@ export interface ReframeModelManifestSnapshot {
 	/** Floats per detection row in the model's flat output (≥ 5). */
 	outputStride: number;
 	format: 'tflite';
-}
-
-/** A single face detection result in normalised coordinates. */
-export interface ReframeFaceDetectionSnapshot {
-	x: number;
-	y: number;
-	width: number;
-	height: number;
-	confidence: number;
 }
 
 /** Commands posted from the UI to the Smart Reframe worker. */
@@ -458,7 +452,7 @@ export type SmartReframeWorkerCommand =
 				manifest: ReframeModelManifestSnapshot;
 				/** Directory the LiteRT.js WASM runtime loads from (same-origin). */
 				wasmPath: string;
-				accelerator: 'wasm' | 'webgpu' | 'webnn';
+				accelerator: ReframeAccelerator;
 			};
 	  }
 	| { type: 'reframe-cancel' }

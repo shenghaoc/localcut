@@ -5,9 +5,22 @@ import {
 	anyVideoDecodeSupported,
 	anyVideoEncodeSupported,
 	deriveCapabilityTierV2,
-	exportConstraintsForProbe
+	exportConstraintsForProbe,
+	probeSmartReframe
 } from './capability-probe-v2';
 import { compatAdapterProbeResult, probeResultFor } from './compatibility/capability-fixtures';
+
+describe('probeSmartReframe', () => {
+	it('reports saliency supported, no bundled face model, and worker-gated analysis', () => {
+		const probe = probeSmartReframe();
+		// Saliency is pure DSP — always available.
+		expect(probe.saliency).toBe('supported');
+		// No face-detection model catalogue entry is bundled in this build.
+		expect(probe.faceDetection).toBe('unsupported');
+		// Analysis worker availability follows the Worker constructor.
+		expect(['supported', 'unsupported']).toContain(probe.analysisWorker);
+	});
+});
 
 describe('deriveCapabilityTierV2', () => {
 	it('derives all fixture tiers', () => {

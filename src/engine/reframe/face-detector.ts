@@ -10,9 +10,8 @@
  */
 
 import { loadLiteRtModule } from '../asr/litert-loader';
+import type { ReframeAccelerator } from '../../protocol';
 import type { ReframeModelManifest } from './model-manifest';
-
-export type ReframeAccelerator = 'wasm' | 'webgpu' | 'webnn';
 
 export interface FaceDetection {
 	/** Normalised left edge in [0,1]. */
@@ -43,8 +42,6 @@ export const DEFAULT_FACE_DETECTOR_OPTIONS: FaceDetectorOptions = {
 	iouThreshold: 0.3
 };
 
-/** Maximum longest edge for analysis frames. */
-const MAX_ANALYSIS_EDGE = 512;
 /** LiteRT models are exported with a single default serving signature. */
 const SIGNATURE = 'serving_default';
 
@@ -118,38 +115,6 @@ export function decodeFaceDetections(
 		});
 	}
 	return nonMaxSuppression(detections, options.iouThreshold);
-}
-
-/**
- * Downscale an ImageData so its longest edge is at most `maxEdge`.
- * Returns the original if already small enough.
- */
-export function downscaleForAnalysis(
-	imageData: ImageData,
-	maxEdge: number = MAX_ANALYSIS_EDGE
-): ImageData {
-	const { width, height } = imageData;
-	const longest = Math.max(width, height);
-	if (longest <= maxEdge) return imageData;
-
-	const scale = maxEdge / longest;
-	const newW = Math.round(width * scale);
-	const newH = Math.round(height * scale);
-
-	// OffscreenCanvas is always available in the worker context.
-	try {
-		const canvas = new OffscreenCanvas(newW, newH);
-		const ctx = canvas.getContext('2d');
-		if (!ctx) return imageData;
-		const srcCanvas = new OffscreenCanvas(width, height);
-		const srcCtx = srcCanvas.getContext('2d');
-		if (!srcCtx) return imageData;
-		srcCtx.putImageData(imageData, 0, 0);
-		ctx.drawImage(srcCanvas, 0, 0, newW, newH);
-		return ctx.getImageData(0, 0, newW, newH);
-	} catch {
-		return imageData;
-	}
 }
 
 /**

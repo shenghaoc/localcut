@@ -660,17 +660,45 @@ export function App() {
 
 	// Pending get-source-file round-trips to the pipeline worker, resolved in
 	// handleState when the `source-file` / `source-file-error` message arrives.
-	const pendingSourceFileRequests = new Map<
-		string,
-		{ resolve: (file: File) => void; reject: (error: Error) => void }
-	>();
+	interface PendingSourceFile {
+		resolve: (file: File) => void;
+		reject: (error: Error) => void;
+		timer: ReturnType<typeof setTimeout>;
+	}
+	const pendingSourceFileRequests = new Map<string, PendingSourceFile>();
 	let sourceFileRequestSeq = 0;
+	/** Bound the wait so a dropped worker reply can't hang analysis at "resolving". */
+	const SOURCE_FILE_TIMEOUT_MS = 30_000;
+
+	/** Settle one pending request exactly once, clearing its timer + map entry. */
+	function settleSourceFile(requestId: string, action: (pending: PendingSourceFile) => void): void {
+		const pending = pendingSourceFileRequests.get(requestId);
+		if (!pending) return;
+		pendingSourceFileRequests.delete(requestId);
+		clearTimeout(pending.timer);
+		action(pending);
+	}
+
+	/** Reject every in-flight request (teardown / worker crash) so no Promise or
+	 *  `File` handle leaks. */
+	function drainPendingSourceFileRequests(reason: string): void {
+		for (const [, pending] of pendingSourceFileRequests) {
+			clearTimeout(pending.timer);
+			pending.reject(new Error(reason));
+		}
+		pendingSourceFileRequests.clear();
+	}
 
 	function requestSourceFile(sourceId: string): Promise<File> {
 		if (!bridge) return Promise.reject(new Error('Media pipeline is not ready.'));
 		const requestId = `reframe-src-${sourceFileRequestSeq++}`;
 		return new Promise<File>((resolve, reject) => {
-			pendingSourceFileRequests.set(requestId, { resolve, reject });
+			const timer = setTimeout(() => {
+				settleSourceFile(requestId, (pending) =>
+					pending.reject(new Error('Timed out resolving the source media for Smart Reframe.'))
+				);
+			}, SOURCE_FILE_TIMEOUT_MS);
+			pendingSourceFileRequests.set(requestId, { resolve, reject, timer });
 			bridge!.send({ type: 'get-source-file', requestId, sourceId });
 		});
 	}
@@ -1125,22 +1153,12 @@ export function App() {
 				cleanupController.handlePipelineMessage(msg);
 				asrController.handlePipelineMessage(msg);
 				break;
-			case 'source-file': {
-				const pending = pendingSourceFileRequests.get(msg.requestId);
-				if (pending) {
-					pendingSourceFileRequests.delete(msg.requestId);
-					pending.resolve(msg.file);
-				}
+			case 'source-file':
+				settleSourceFile(msg.requestId, (pending) => pending.resolve(msg.file));
 				break;
-			}
-			case 'source-file-error': {
-				const pending = pendingSourceFileRequests.get(msg.requestId);
-				if (pending) {
-					pendingSourceFileRequests.delete(msg.requestId);
-					pending.reject(new Error(msg.message));
-				}
+			case 'source-file-error':
+				settleSourceFile(msg.requestId, (pending) => pending.reject(new Error(msg.message)));
 				break;
-			}
 			case 'audio-cleanup-applied':
 				cleanupController.handlePipelineMessage(msg);
 				setStatusLine(
@@ -2462,6 +2480,7 @@ export function App() {
 			cleanupController.dispose();
 			asrController.dispose();
 			reframeController.dispose();
+			drainPendingSourceFileRequests('Smart Reframe was torn down.');
 			if (worker && bridge) {
 				const workerToDispose = worker;
 				workerToDispose.removeEventListener('error', handleWorkerCrash);

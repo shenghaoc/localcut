@@ -35,26 +35,11 @@ import {
 	DEFAULT_KEYFRAME_GEN_CONFIG,
 	type TrajectoryPoint
 } from './keyframe-generator';
-import type { FaceDetection, FaceDetector } from './face-detector';
+import type { FaceDetector } from './face-detector';
 import { validateManifest } from './model-manifest';
 import { AssetIntegrityError, createOpfsAssetStore, loadVerifiedAsset } from '../asr/asset-cache';
 import { assertTrustedModelUrl } from '../asr/model-catalog';
-
-/** Pick the primary subject from a frame's faces: highest confidence, ties
- *  broken by largest area (R2.4). */
-function pickPrimaryFace(faces: FaceDetection[]): FaceDetection {
-	return faces.reduce((best, face) => {
-		if (face.confidence !== best.confidence) return face.confidence > best.confidence ? face : best;
-		return face.width * face.height > best.width * best.height ? face : best;
-	});
-}
-
-/** Derive the honest analysis mode from per-frame source counts. */
-function deriveMode(facesDetected: number, saliencyFrames: number): 'face' | 'saliency' | 'mixed' {
-	if (facesDetected > 0 && saliencyFrames > 0) return 'mixed';
-	if (facesDetected > 0) return 'face';
-	return 'saliency';
-}
+import { deriveMode, pickPrimaryFace } from './reframe-analysis';
 
 const MAX_ANALYSIS_EDGE = 512;
 const PROGRESS_THROTTLE_MS = 100;
@@ -239,10 +224,9 @@ async function handleStart(
 			let detection: TrackedDetection | null = null;
 
 			if (faceDetector) {
-				const faces = await faceDetector.detect(imageData);
-				if (faces.length > 0) {
+				const primary = pickPrimaryFace(await faceDetector.detect(imageData));
+				if (primary) {
 					facesDetected++;
-					const primary = pickPrimaryFace(faces);
 					detection = {
 						cx: primary.x + primary.width / 2,
 						cy: primary.y + primary.height / 2,

@@ -1,9 +1,12 @@
 /**
  * Lazy bridge to the Smart Reframe worker (Phase 33). The worker is constructed
  * only when the user triggers analysis, so nothing model/runtime-related enters
- * the startup module graph or spawns eagerly (R0.3). It is spawned as a
- * **classic** worker because LiteRT.js's WASM loader uses `importScripts`, which
- * only works in non-module workers (same constraint as the ASR/cleanup workers).
+ * the startup module graph or spawns eagerly (R0.3).
+ *
+ * It is a **module** worker (matching `vite.config` `worker.format: 'es'`). The
+ * shipped saliency path needs no `importScripts`; when a face-detection model is
+ * bundled (task T15) the LiteRT WASM loader's `importScripts` requirement is
+ * handled then, as the ASR/cleanup workers do.
  */
 import type { SmartReframeWorkerCommand, SmartReframeWorkerState } from '../protocol';
 
@@ -17,7 +20,7 @@ export async function spawnSmartReframeWorker(
 	onCrash: (message: string) => void
 ): Promise<SmartReframeWorkerPort> {
 	const worker = new Worker(new URL('../engine/reframe/reframe-analyzer.ts', import.meta.url), {
-		type: 'classic'
+		type: 'module'
 	});
 	const handler = (event: MessageEvent<SmartReframeWorkerState>) => {
 		onState(event.data);

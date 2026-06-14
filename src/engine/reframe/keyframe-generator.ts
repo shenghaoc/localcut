@@ -6,6 +6,12 @@
 
 import { KEYFRAME_EPSILON } from '../../protocol';
 import type { ClipKeyframesSnapshot, KeyframeSnapshot } from '../../protocol';
+// `TrajectoryPoint` is owned by the tracker (its trajectory output); re-exported
+// here so the analyser and tests keep importing it from one place (no duplicate
+// structural definition). The generator treats the coordinates as centre-offsets
+// — the analyser converts the tracker's [0,1] centroid to that convention first.
+import type { TrajectoryPoint } from './subject-tracker';
+export type { TrajectoryPoint };
 
 export interface KeyframeGenConfig {
 	targetAspect: number;
@@ -19,8 +25,8 @@ export interface KeyframeGenConfig {
 	/** Clip-local times (seconds) of detected shot boundaries (R5.3). Motion is
 	 *  clamped independently within each shot, and a `'hold'` keyframe is placed
 	 *  just before each cut so the preceding interval does not interpolate across
-	 *  the discontinuity. Defaults to none. */
-	shotBoundaries?: number[];
+	 *  the discontinuity. Defaults to none. Only read (a sorted copy is taken). */
+	shotBoundaries?: readonly number[];
 }
 
 export const DEFAULT_KEYFRAME_GEN_CONFIG: Omit<KeyframeGenConfig, 'targetAspect' | 'sourceAspect'> =
@@ -29,19 +35,6 @@ export const DEFAULT_KEYFRAME_GEN_CONFIG: Omit<KeyframeGenConfig, 'targetAspect'
 		velocityBound: 0.3,
 		accelerationBound: 0.5
 	};
-
-/**
- * A smoothed subject sample. `cx`/`cy` are the subject's offset **from the
- * source-frame centre** in normalised units (0 = centred, ±0.5 = frame edge),
- * matching the `x = -cx * scale` position formula below. The analyser converts
- * the tracker's `[0,1]` centroid into this centre-relative convention before
- * calling the generator.
- */
-export interface TrajectoryPoint {
-	time: number;
-	cx: number;
-	cy: number;
-}
 
 /** Gap inserted before a cut for the pre-cut `'hold'` keyframe (R5.3). Larger
  *  than `KEYFRAME_EPSILON` so the hold and the post-cut keyframe are distinct

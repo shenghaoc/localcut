@@ -2722,11 +2722,11 @@ async function handleGetSourceFile(
 			});
 			return;
 		}
-		self.postMessage({
-			type: 'source-file',
-			requestId: cmd.requestId,
-			file
-		} satisfies WorkerStateMessage);
+		// The File is structured-clone-copied to the UI (and again to the analysis
+		// worker), so a GB-scale source is briefly duplicated in memory. Acceptable
+		// for the user-initiated, one-clip Smart Reframe flow; revisit with a
+		// transferable handle / streaming source if it becomes a problem.
+		post({ type: 'source-file', requestId: cmd.requestId, file });
 	} catch (error) {
 		post({ type: 'source-file-error', requestId: cmd.requestId, message: errorMessage(error) });
 	}
