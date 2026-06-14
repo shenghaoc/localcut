@@ -123,6 +123,11 @@ import {
 	type AsrControllerState
 } from './asr-controller';
 import { spawnAsrWorker } from './asr-bridge';
+import { SmartReframePanel, type ReframeAnalyseSettings } from './SmartReframePanel';
+import { ReframeOverlay } from './ReframeOverlay';
+import { ReframeController, type ReframeControllerState } from './reframe-controller';
+import { spawnSmartReframeWorker } from './reframe-bridge';
+import { REFRAME_ASPECT_VALUES } from '../protocol';
 import PipelineWorker from '../engine/worker.ts?worker';
 
 const VIDEO_ACCEPT =
@@ -302,6 +307,7 @@ export function App() {
 	const [diagnosticsPanelOpen, setDiagnosticsPanelOpen] = createSignal(false);
 	const [audioCleanupOpen, setAudioCleanupOpen] = createSignal(false);
 	const [asrPanelOpen, setAsrPanelOpen] = createSignal(false);
+	const [smartReframeOpen, setSmartReframeOpen] = createSignal(false);
 	const [diagnosticSnapshot, setDiagnosticSnapshot] = createSignal<DiagnosticSnapshot | null>(null);
 	const [recentErrorLog, setRecentErrorLog] = createSignal(createEmptyRecentErrorLog());
 	const [compatibilityPreview, setCompatibilityPreview] =
@@ -627,6 +633,161 @@ export function App() {
 		}
 		return null;
 	});
+
+	// ── Phase 33: Smart Reframe (experimental) ──
+	// The controller spawns its dedicated analysis worker lazily on first use;
+	// the pipeline worker only resolves the source File and applies keyframes.
+	const reframeController = new ReframeController({
+		spawnWorker: spawnSmartReframeWorker,
+		onError: (message) => {
+			setRecentErrorLog((prev) =>
+				addRecentError(
+					prev,
+					createRecentError({
+						code: 'smart_reframe.analysis_failed',
+						subsystem: 'worker',
+						severity: 'error',
+						message
+					})
+				)
+			);
+		}
+	});
+	const [reframeState, setReframeState] = createSignal<ReframeControllerState>(
+		reframeController.getState()
+	);
+	reframeController.subscribe(setReframeState);
+
+	// Pending get-source-file round-trips to the pipeline worker, resolved in
+	// handleState when the `source-file` / `source-file-error` message arrives.
+	const pendingSourceFileRequests = new Map<
+		string,
+		{ resolve: (file: File) => void; reject: (error: Error) => void }
+	>();
+	let sourceFileRequestSeq = 0;
+
+	function requestSourceFile(sourceId: string): Promise<File> {
+		if (!bridge) return Promise.reject(new Error('Media pipeline is not ready.'));
+		const requestId = `reframe-src-${sourceFileRequestSeq++}`;
+		return new Promise<File>((resolve, reject) => {
+			pendingSourceFileRequests.set(requestId, { resolve, reject });
+			bridge!.send({ type: 'get-source-file', requestId, sourceId });
+		});
+	}
+
+	interface ReframeClipTarget {
+		trackId: string;
+		clipId: string;
+		sourceId: string;
+		hasKeyframes: boolean;
+		sourceWidth: number;
+		sourceHeight: number;
+		rotationDeg: number;
+		duration: number;
+		inPoint: number;
+	}
+
+	const selectedReframeClip = createMemo<ReframeClipTarget | null>(() => {
+		for (const ref of selectedClipRefs()) {
+			const track = timeline().find((item) => item.id === ref.trackId);
+			if (!track || track.type !== 'video') continue;
+			const clip = track.clips.find((item) => item.id === ref.clipId);
+			if (!clip || clip.kind === 'title' || !clip.sourceId) continue;
+			const video = assets().find((item) => item.sourceId === clip.sourceId)?.video;
+			if (!video) continue;
+			// Rotation-aware dimensions (Phase 18): 90°/270° swap width and height.
+			const rotation = (((video.rotationDeg ?? 0) % 360) + 360) % 360;
+			const swap = rotation === 90 || rotation === 270;
+			const kf = clip.keyframes;
+			return {
+				trackId: track.id,
+				clipId: clip.id,
+				sourceId: clip.sourceId,
+				hasKeyframes: Boolean(kf?.x?.length || kf?.y?.length || kf?.scale?.length),
+				sourceWidth: swap ? video.height : video.width,
+				sourceHeight: swap ? video.width : video.height,
+				rotationDeg: rotation,
+				duration: clip.duration,
+				inPoint: clip.inPoint
+			};
+		}
+		return null;
+	});
+
+	const reframePanelClip = createMemo(() => {
+		const clip = selectedReframeClip();
+		return clip
+			? { id: clip.clipId, trackId: clip.trackId, hasKeyframes: clip.hasKeyframes }
+			: null;
+	});
+
+	/** Clip-local playhead time for the overlay preview, from the analysed clip. */
+	const reframeOverlayTime = createMemo(() => {
+		const ctx = reframeState().context;
+		if (!ctx) return 0;
+		const track = timeline().find((item) => item.id === ctx.trackId);
+		const clip = track?.clips.find((item) => item.id === ctx.clipId);
+		if (!clip) return 0;
+		return clipLocalTime(clip, clock.currentTime()) ?? 0;
+	});
+
+	async function handleReframeAnalyse(settings: ReframeAnalyseSettings) {
+		const clip = selectedReframeClip();
+		if (!clip) return;
+		pauseFromKeyboard();
+		const targetAspectValue = REFRAME_ASPECT_VALUES[settings.targetAspect];
+		const sourceAspect = clip.sourceHeight > 0 ? clip.sourceWidth / clip.sourceHeight : 1;
+		const runId = reframeController.beginAnalysis({
+			trackId: clip.trackId,
+			clipId: clip.clipId,
+			sourceAspect,
+			targetAspectValue
+		});
+		let file: File;
+		try {
+			file = await requestSourceFile(clip.sourceId);
+		} catch (error) {
+			// Only surface the failure if this is still the current run — the user
+			// may have cancelled or started another analysis while the File was in
+			// flight (a stale resolve must not touch the newer run).
+			if (reframeController.getState().context?.runId === runId) {
+				reframeController.fail(error instanceof Error ? error.message : String(error));
+			}
+			return;
+		}
+		// The user may have cancelled or superseded this run during the (awaited)
+		// File resolution; don't kick off analysis behind their back.
+		if (reframeController.getState().context?.runId !== runId) return;
+		await reframeController.runStart({
+			type: 'reframe-start',
+			clipId: clip.clipId,
+			sourceFile: file,
+			sourceRotation: clip.rotationDeg,
+			sourceWidth: clip.sourceWidth,
+			sourceHeight: clip.sourceHeight,
+			targetAspect: targetAspectValue,
+			clipDuration: clip.duration,
+			inPoint: clip.inPoint,
+			velocityBound: settings.velocityBound,
+			accelerationBound: settings.accelerationBound,
+			analysisFps: settings.analysisFps
+		});
+	}
+
+	function handleReframeApply() {
+		const state = reframeController.getState();
+		if (!state.context || !state.result) return;
+		bridge?.send({
+			type: 'replace-keyframe-tracks',
+			trackId: state.context.trackId,
+			clipId: state.context.clipId,
+			tracks: state.result,
+			// The generated x/y translations only crop correctly under fill (R6.2a).
+			fit: 'fill'
+		});
+		reframeController.discard();
+		setStatusLine('Smart Reframe keyframes applied');
+	}
 
 	function findTimelineClip(ref: TimelineClipReference): TimelineClipSnapshot | null {
 		const track = timeline().find((item) => item.id === ref.trackId);
@@ -964,6 +1125,22 @@ export function App() {
 				cleanupController.handlePipelineMessage(msg);
 				asrController.handlePipelineMessage(msg);
 				break;
+			case 'source-file': {
+				const pending = pendingSourceFileRequests.get(msg.requestId);
+				if (pending) {
+					pendingSourceFileRequests.delete(msg.requestId);
+					pending.resolve(msg.file);
+				}
+				break;
+			}
+			case 'source-file-error': {
+				const pending = pendingSourceFileRequests.get(msg.requestId);
+				if (pending) {
+					pendingSourceFileRequests.delete(msg.requestId);
+					pending.reject(new Error(msg.message));
+				}
+				break;
+			}
 			case 'audio-cleanup-applied':
 				cleanupController.handlePipelineMessage(msg);
 				setStatusLine(
@@ -2284,6 +2461,7 @@ export function App() {
 			thumbnailStore.clear();
 			cleanupController.dispose();
 			asrController.dispose();
+			reframeController.dispose();
 			if (worker && bridge) {
 				const workerToDispose = worker;
 				workerToDispose.removeEventListener('error', handleWorkerCrash);
@@ -2352,6 +2530,7 @@ export function App() {
 					onOpenHelp={() => openDocs()}
 					onOpenAudioCleanup={() => setAudioCleanupOpen(true)}
 					onOpenAutoCaptions={() => setAsrPanelOpen(true)}
+					onOpenSmartReframe={() => setSmartReframeOpen(true)}
 					onOpenPublish={() => setPublishPanelOpen(true)}
 					publishLive={publishBusy()}
 					masterGain={masterGain()}
@@ -2575,6 +2754,17 @@ export function App() {
 									<div class="safe-area-rect safe-area-title" />
 								</div>
 							</Show>
+							<ReframeOverlay
+								visible={
+									smartReframeOpen() &&
+									reframeState().status === 'review' &&
+									reframeState().result !== null
+								}
+								keyframes={reframeState().result}
+								currentTime={reframeOverlayTime()}
+								sourceAspect={reframeState().context?.sourceAspect ?? 1}
+								targetAspect={reframeState().context?.targetAspectValue ?? 1}
+							/>
 							<Show when={previewSurfaceAvailable()}>
 								<button
 									type="button"
@@ -3177,6 +3367,26 @@ export function App() {
 						}}
 						onCancel={() => asrController.cancel()}
 						onClose={() => setAsrPanelOpen(false)}
+					/>
+					<SmartReframePanel
+						open={smartReframeOpen()}
+						state={reframeState()}
+						selectedClip={reframePanelClip()}
+						faceDetectionSupported={
+							capabilityProbeV2()?.smartReframe?.faceDetection === 'supported'
+						}
+						workerAvailable={capabilityProbeV2()?.smartReframe?.analysisWorker !== 'unsupported'}
+						onAnalyse={(settings) => void handleReframeAnalyse(settings)}
+						onCancel={() => reframeController.cancel()}
+						onApply={handleReframeApply}
+						onDiscard={() => reframeController.discard()}
+						onClose={() => {
+							// Closing while busy stops the worker rather than leaving it
+							// scanning the whole clip with no visible UI.
+							const status = reframeController.getState().status;
+							if (status === 'resolving' || status === 'analysing') reframeController.cancel();
+							setSmartReframeOpen(false);
+						}}
 					/>
 					<PublishPanel
 						open={publishPanelOpen()}

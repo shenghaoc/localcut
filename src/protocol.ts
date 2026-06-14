@@ -103,6 +103,9 @@ export interface CapabilityProbeResult {
 	/** Phase 29 (ASR auto captions): display/feature-gate only — never
 	 *  consulted by tier derivation or any pipeline code path. */
 	asr?: AsrProbeResult;
+	/** Phase 33 (Smart Reframe): display/feature-gate only — never
+	 *  consulted by tier derivation or any pipeline code path. */
+	smartReframe?: SmartReframeProbeResult;
 }
 
 // ── Phase 28: Local Audio Cleanup (LiteRT DTLN) ──
@@ -379,6 +382,120 @@ export interface AsrCreateCaptionTrackCommand {
 	phraseLevel: boolean;
 	/** Human-readable name for the generated track. */
 	trackName: string;
+}
+
+// ── Phase 33: Smart Reframe ──
+
+/** Supported target aspect ratios for Smart Reframe. */
+export type ReframeTargetAspect = '9:16' | '1:1' | '4:5' | '16:9' | '4:3';
+
+/** Aspect ratio value for each named target. */
+export const REFRAME_ASPECT_VALUES: Record<ReframeTargetAspect, number> = {
+	'9:16': 9 / 16,
+	'1:1': 1,
+	'4:5': 4 / 5,
+	'16:9': 16 / 9,
+	'4:3': 4 / 3
+};
+
+/** Face detection capability probe for Smart Reframe. */
+export interface SmartReframeProbeResult {
+	faceDetection: FeatureSupport;
+	saliency: FeatureSupport;
+	analysisWorker: FeatureSupport;
+}
+
+/** Detection mode used during the last analysis. */
+export type ReframeAnalysisMode = 'face' | 'saliency' | 'mixed';
+
+/** Model manifest for the LiteRT.js face-detection model (TFLite). */
+export interface ReframeModelManifestSnapshot {
+	id: string;
+	version: string;
+	license: string;
+	source: string;
+	/** The TFLite model asset: URL + size + `sha256-` digest. */
+	model: { url: string; sizeBytes: number; checksum: string };
+	/** Square model input edge in px. */
+	inputSize: number;
+	/** Floats per detection row in the model's flat output (≥ 5). */
+	outputStride: number;
+	format: 'tflite';
+}
+
+/** A single face detection result in normalised coordinates. */
+export interface ReframeFaceDetectionSnapshot {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+	confidence: number;
+}
+
+/** Commands posted from the UI to the Smart Reframe worker. */
+export type SmartReframeWorkerCommand =
+	| {
+			type: 'reframe-start';
+			clipId: string;
+			sourceFile: File;
+			sourceRotation: number;
+			sourceWidth: number;
+			sourceHeight: number;
+			targetAspect: number;
+			clipDuration: number;
+			inPoint: number;
+			analysisFps?: number;
+			velocityBound?: number;
+			accelerationBound?: number;
+			shotBoundaryThreshold?: number;
+			/** Optional face-detection model (R2). When omitted (the default in
+			 *  builds that ship no model catalogue entry), analysis runs
+			 *  saliency-only (R2.6 / R8.2). When present, the model is downloaded +
+			 *  digest-verified via the shared asset cache and compiled with
+			 *  LiteRT.js from `wasmPath`; a checksum/size mismatch is a hard error,
+			 *  never a silent fallback (R2.2). */
+			faceModel?: {
+				manifest: ReframeModelManifestSnapshot;
+				/** Directory the LiteRT.js WASM runtime loads from (same-origin). */
+				wasmPath: string;
+				accelerator: 'wasm' | 'webgpu' | 'webnn';
+			};
+	  }
+	| { type: 'reframe-cancel' }
+	| { type: 'reframe-dispose' };
+
+/** State messages posted from the Smart Reframe worker back to the UI. */
+export type SmartReframeWorkerState =
+	| {
+			type: 'reframe-progress';
+			fraction: number;
+			framesProcessed: number;
+			totalFrames: number;
+	  }
+	| {
+			type: 'reframe-result';
+			keyframes: ClipKeyframesSnapshot;
+			stats: ReframeAnalysisStatsSnapshot;
+	  }
+	| {
+			type: 'reframe-error';
+			reason: string;
+			/** True when the failure is a model-integrity violation (checksum/size
+			 *  mismatch, R2.2) rather than a recoverable runtime issue. Integrity
+			 *  failures must never silently fall back to saliency. */
+			integrity?: boolean;
+	  }
+	| { type: 'reframe-cancelled' };
+
+/** Analysis statistics returned with the reframe result. */
+export interface ReframeAnalysisStatsSnapshot {
+	framesAnalysed: number;
+	facesDetected: number;
+	saliencyFrames: number;
+	shotBoundaries: number;
+	keyframesGenerated: number;
+	safeZoneCompliance: number;
+	mode: ReframeAnalysisMode;
 }
 
 export interface WorkerInit {
@@ -1101,6 +1218,32 @@ interface DeleteKeyframeCommand {
 	t: number;
 }
 
+/** Phase 33: replace entire keyframe tracks for a clip in a single undo step
+ *  (R7.5). Times in each track are **clip-local** seconds — generated reframe
+ *  keyframes are authored clip-local. Tracks listed in `tracks` overwrite the
+ *  clip's existing tracks for those params; params not listed are untouched.
+ *  An empty array for a param clears that track. */
+interface ReplaceKeyframeTracksCommand {
+	type: 'replace-keyframe-tracks';
+	trackId: string;
+	clipId: string;
+	tracks: ClipKeyframesSnapshot;
+	/** Optional fit mode to set atomically with the tracks (Smart Reframe sends
+	 *  `'fill'` because its x/y translations are only correct under the fill
+	 *  crop, R6.2a). Applied in the same single-undo mutation. */
+	fit?: FitModeSnapshot;
+}
+
+/** Phase 33: resolve the source `File` for a clip's source so a separate
+ *  analysis worker can demux it. The pipeline worker owns the media bytes
+ *  (OPFS / File System Access handle); the UI requests the File via this
+ *  command and forwards it to the lazily-spawned Smart Reframe worker. */
+interface GetSourceFileCommand {
+	type: 'get-source-file';
+	requestId: string;
+	sourceId: string;
+}
+
 interface ImportLutCommand {
 	type: 'import-lut';
 	trackId: string;
@@ -1640,6 +1783,8 @@ export type WorkerCommand =
 	| SetKeyframeCommand
 	| SetKeyframesCommand
 	| DeleteKeyframeCommand
+	| ReplaceKeyframeTracksCommand
+	| GetSourceFileCommand
 	| ImportLutCommand
 	| SetLutStrengthCommand
 	| SetTrackGainCommand
@@ -1938,6 +2083,11 @@ export type WorkerStateMessage =
 			clipDurationS: number;
 	  }
 	| { type: 'clip-audio-error'; requestId: string; message: string }
+	// Phase 33: resolved source File for Smart Reframe analysis. The File is
+	// structured-clone-copied to the UI, which forwards it to the analysis worker
+	// (the UI already holds source dimensions/rotation via its asset snapshot).
+	| { type: 'source-file'; requestId: string; file: File }
+	| { type: 'source-file-error'; requestId: string; message: string }
 	| {
 			type: 'audio-cleanup-applied';
 			trackId: string;

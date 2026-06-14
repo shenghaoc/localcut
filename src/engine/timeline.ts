@@ -4,6 +4,7 @@ import {
 	DEFAULT_TRANSFORM,
 	normalizeTransform,
 	transformsEqual,
+	type FitMode,
 	type TransformParams
 } from './transform';
 import {
@@ -18,6 +19,7 @@ import {
 	cloneClipKeyframes,
 	deleteKeyframe,
 	insertKeyframe,
+	isClipKeyframeParam,
 	isEffectKeyframeParam,
 	isTransformKeyframeParam,
 	normalizeClipKeyframes,
@@ -1186,6 +1188,72 @@ export function deleteClipKeyframe(
 		...normalized,
 		[key]: nextTrack
 	});
+	return next;
+}
+
+/**
+ * Replace whole keyframe tracks on a clip in one mutation (Phase 33 R7.5).
+ * `tracks` carries **clip-local** keyframe times. Params present in `tracks`
+ * overwrite the clip's existing tracks for those params (an explicitly-listed
+ * param normalising to empty is cleared); params not listed are untouched. The
+ * base transform/effect value for each replaced param is set to its value at
+ * the clip start so a non-keyframed sample stays consistent. Returns the
+ * original timeline on a no-op so it produces a single, coalescing-free undo
+ * entry only when something actually changed.
+ */
+export function replaceClipKeyframeTracks(
+	timeline: Timeline,
+	trackId: string,
+	clipId: string,
+	tracks: ClipKeyframes,
+	fit?: FitMode
+): Timeline {
+	const loc = trackWithClip(timeline, trackId, clipId);
+	if (!loc) return timeline;
+	const clip = timeline[loc.trackIndex]!.clips[loc.clipIndex]!;
+	const incoming = normalizeClipKeyframes(tracks, clip.duration) ?? {};
+	const merged: ClipKeyframes = {
+		...(normalizeClipKeyframes(clip.keyframes, clip.duration) ?? {})
+	};
+	const effectPatch: Partial<ClipEffectParams> = {};
+	const transformPatch: Partial<TransformParams> = {};
+	let changed = false;
+
+	for (const rawKey of Object.keys(tracks)) {
+		if (!isClipKeyframeParam(rawKey)) continue;
+		const key = rawKey;
+		const track = incoming[key];
+		if (track && track.length > 0) {
+			merged[key] = track;
+			const baseValue = track[0]!.value;
+			if (isEffectKeyframeParam(key)) effectPatch[key] = baseValue;
+			else if (isTransformKeyframeParam(key)) transformPatch[key] = baseValue;
+		} else if (merged[key]) {
+			delete merged[key];
+		} else {
+			continue;
+		}
+		changed = true;
+	}
+
+	// A fit-mode change alone is also a meaningful mutation: the generated x/y
+	// translations only crop correctly under the requested fit mode (R6.2a).
+	const fitChanges = fit !== undefined && clip.transform.fit !== fit;
+	if (!changed && !fitChanges) return timeline;
+
+	const next = cloneTimeline(timeline);
+	const nextClip = next[loc.trackIndex]!.clips[loc.clipIndex]!;
+	nextClip.keyframes = stripEmptyKeyframes(merged);
+	if (Object.keys(effectPatch).length > 0) {
+		nextClip.effects = { ...nextClip.effects, ...effectPatch };
+	}
+	if (Object.keys(transformPatch).length > 0 || fit !== undefined) {
+		nextClip.transform = normalizeTransform({
+			...nextClip.transform,
+			...transformPatch,
+			...(fit !== undefined ? { fit } : {})
+		});
+	}
 	return next;
 }
 

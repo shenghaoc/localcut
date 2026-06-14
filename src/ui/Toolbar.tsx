@@ -3,6 +3,7 @@ import {
 	Activity,
 	AudioWaveform,
 	Cpu,
+	Crop,
 	FolderOpen,
 	Gauge,
 	Languages,
@@ -48,6 +49,7 @@ interface ToolbarProps {
 	onOpenHelp?: () => void;
 	onOpenAudioCleanup?: () => void;
 	onOpenAutoCaptions?: () => void;
+	onOpenSmartReframe?: () => void;
 	onOpenPublish?: () => void;
 	/** True while a publish session is connecting/live/reconnecting. */
 	publishLive?: boolean;
@@ -260,6 +262,15 @@ export function Toolbar(props: ToolbarProps) {
 				>
 					<Languages size={13} aria-hidden="true" />
 					Auto Captions
+				</button>
+				<button
+					type="button"
+					class="pipeline-chip pipeline-chip-button"
+					onClick={() => props.onOpenSmartReframe?.()}
+					title="Smart Reframe (Experimental) — auto crop-path between aspect ratios"
+				>
+					<Crop size={13} aria-hidden="true" />
+					Smart Reframe
 				</button>
 				<button
 					type="button"

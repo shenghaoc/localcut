@@ -53,6 +53,7 @@ import {
 	overwriteEdit,
 	liftRegion,
 	extractRegion,
+	replaceClipKeyframeTracks,
 	type TimelineClip,
 	type TimelineTrack,
 	type TimelineMarker,
@@ -2067,5 +2068,119 @@ describe('review fixes', () => {
 		if (rightFrag.keyframes?.brightness) {
 			expect(rightFrag.keyframes.brightness[0]!.t).toBe(0);
 		}
+	});
+});
+
+describe('replaceClipKeyframeTracks (Phase 33 R7.5)', () => {
+	function timelineWithClip(): TimelineTrack[] {
+		return [
+			{
+				id: 'v',
+				type: 'video',
+				...DEFAULT_TRACK_MIX,
+				clips: [clip({ id: 'c', sourceId: 's', start: 0, duration: 4, inPoint: 0 })]
+			}
+		];
+	}
+
+	it('writes whole x/y/scale tracks in one call', () => {
+		const next = replaceClipKeyframeTracks(timelineWithClip(), 'v', 'c', {
+			x: [
+				{ t: 0, value: -0.1, easing: 'linear' },
+				{ t: 2, value: 0.2, easing: 'linear' }
+			],
+			y: [{ t: 0, value: 0, easing: 'linear' }],
+			scale: [{ t: 0, value: 1, easing: 'linear' }]
+		});
+		const kf = next[0]!.clips[0]!.keyframes;
+		expect(kf?.x).toHaveLength(2);
+		expect(kf?.y).toHaveLength(1);
+		expect(kf?.scale).toHaveLength(1);
+		// Base transform reflects the value at clip start.
+		expect(next[0]!.clips[0]!.transform.x).toBeCloseTo(-0.1, 5);
+	});
+
+	it('clamps clip-local keyframe times to the clip duration', () => {
+		const next = replaceClipKeyframeTracks(timelineWithClip(), 'v', 'c', {
+			x: [
+				{ t: 0, value: 0, easing: 'linear' },
+				{ t: 99, value: 0.3, easing: 'linear' }
+			]
+		});
+		const xs = next[0]!.clips[0]!.keyframes?.x ?? [];
+		expect(xs.every((frame) => frame.t <= 4 + 1e-6)).toBe(true);
+	});
+
+	it('leaves params not listed untouched and clears an explicitly-empty track', () => {
+		const seeded = replaceClipKeyframeTracks(timelineWithClip(), 'v', 'c', {
+			x: [
+				{ t: 0, value: 0, easing: 'linear' },
+				{ t: 1, value: 0.2, easing: 'linear' }
+			],
+			y: [
+				{ t: 0, value: 0, easing: 'linear' },
+				{ t: 1, value: -0.2, easing: 'linear' }
+			]
+		});
+		// Replace only x with an empty track; y must remain.
+		const next = replaceClipKeyframeTracks(seeded, 'v', 'c', { x: [] });
+		expect(next[0]!.clips[0]!.keyframes?.x).toBeUndefined();
+		expect(next[0]!.clips[0]!.keyframes?.y).toHaveLength(2);
+	});
+
+	it('returns the same timeline on a no-op', () => {
+		const tl = timelineWithClip();
+		expect(replaceClipKeyframeTracks(tl, 'v', 'missing', { x: [] })).toBe(tl);
+	});
+
+	it('forces the requested fit mode atomically with the tracks (R6.2a)', () => {
+		const tl: TimelineTrack[] = [
+			{
+				id: 'v',
+				type: 'video',
+				...DEFAULT_TRACK_MIX,
+				clips: [
+					clip({
+						id: 'c',
+						sourceId: 's',
+						start: 0,
+						duration: 4,
+						inPoint: 0,
+						transform: { ...defaultClipTransform(), fit: 'fit' }
+					})
+				]
+			}
+		];
+		const next = replaceClipKeyframeTracks(
+			tl,
+			'v',
+			'c',
+			{ x: [{ t: 0, value: -0.5, easing: 'linear' }] },
+			'fill'
+		);
+		expect(next[0]!.clips[0]!.transform.fit).toBe('fill');
+	});
+
+	it('treats a fit-only change as a real mutation', () => {
+		const tl: TimelineTrack[] = [
+			{
+				id: 'v',
+				type: 'video',
+				...DEFAULT_TRACK_MIX,
+				clips: [
+					clip({
+						id: 'c',
+						sourceId: 's',
+						start: 0,
+						duration: 4,
+						inPoint: 0,
+						transform: { ...defaultClipTransform(), fit: 'letterbox' }
+					})
+				]
+			}
+		];
+		const next = replaceClipKeyframeTracks(tl, 'v', 'c', {}, 'fill');
+		expect(next).not.toBe(tl);
+		expect(next[0]!.clips[0]!.transform.fit).toBe('fill');
 	});
 });

@@ -122,6 +122,7 @@ import {
 	setClipEffectParam,
 	setClipKeyframe,
 	setClipKeyframes,
+	replaceClipKeyframeTracks,
 	deleteClipKeyframe,
 	setClipTransform,
 	setClipLut,
@@ -2693,6 +2694,42 @@ function handleSetKeyframes(cmd: Extract<WorkerCommand, { type: 'set-keyframes' 
 			syncLuts: false
 		}
 	);
+}
+
+function handleReplaceKeyframeTracks(
+	cmd: Extract<WorkerCommand, { type: 'replace-keyframe-tracks' }>
+) {
+	// Phase 33 R7.5: write all generated reframe tracks (and the fill fit mode)
+	// as a single undo entry. No coalesce key so it never merges with a
+	// neighbouring keyframe edit.
+	commitTimelineMutation(
+		() => replaceClipKeyframeTracks(timeline, cmd.trackId, cmd.clipId, cmd.tracks, cmd.fit),
+		{ refreshPlayback: 'refresh', prune: false, syncLuts: false }
+	);
+}
+
+async function handleGetSourceFile(
+	cmd: Extract<WorkerCommand, { type: 'get-source-file' }>
+): Promise<void> {
+	try {
+		const resolve = makeStoredSourceResolver(loadStoredSource, fileFromHandle);
+		const file = await resolve(cmd.sourceId);
+		if (!file) {
+			post({
+				type: 'source-file-error',
+				requestId: cmd.requestId,
+				message: 'Source media is offline — re-link it before running Smart Reframe.'
+			});
+			return;
+		}
+		self.postMessage({
+			type: 'source-file',
+			requestId: cmd.requestId,
+			file
+		} satisfies WorkerStateMessage);
+	} catch (error) {
+		post({ type: 'source-file-error', requestId: cmd.requestId, message: errorMessage(error) });
+	}
 }
 
 function handleDeleteKeyframe(cmd: Extract<WorkerCommand, { type: 'delete-keyframe' }>) {
@@ -5640,6 +5677,12 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			break;
 		case 'set-keyframes':
 			handleSetKeyframes(cmd);
+			break;
+		case 'replace-keyframe-tracks':
+			handleReplaceKeyframeTracks(cmd);
+			break;
+		case 'get-source-file':
+			void handleGetSourceFile(cmd);
 			break;
 		case 'delete-keyframe':
 			handleDeleteKeyframe(cmd);

@@ -5,7 +5,8 @@ import type {
 	CodecProbeResult,
 	ExportCodecSupport,
 	FeatureSupport,
-	LivePublishProbeResult
+	LivePublishProbeResult,
+	SmartReframeProbeResult
 } from '../protocol';
 import type { CleanupProbeResult } from '../protocol';
 import { probeAsr } from './asr/asr-probe';
@@ -441,6 +442,26 @@ const unknownCapture: CaptureProbeResult = {
 	opfsSyncAccessHandle: 'unknown'
 };
 
+/** Probe Smart Reframe capabilities. Saliency is always supported (pure DSP). */
+function probeSmartReframe(): SmartReframeProbeResult {
+	// No face-detection model catalogue entry is bundled in this build, so face
+	// detection is unavailable and analysis runs saliency-only (R2.6 / R8.2).
+	// This is honest rather than 'unknown': the LiteRT.js detector, manifest
+	// verification, and worker gating all exist and activate once a model ships
+	// (spec task T15.2).
+	const faceDetection: FeatureSupport = 'unsupported';
+
+	// Analysis worker: the dedicated Smart Reframe worker needs the Worker ctor.
+	const analysisWorker: FeatureSupport =
+		typeof Worker !== 'undefined' ? 'supported' : 'unsupported';
+
+	return {
+		faceDetection,
+		saliency: 'supported', // Pure DSP — always available
+		analysisWorker
+	};
+}
+
 /**
  * Whether recording is available: accelerated tier + all critical capture probes
  * are `'supported'`. Display audio is NOT critical (its absence only disables the
@@ -514,6 +535,7 @@ export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 		...probeWithoutTier,
 		tier: deriveCapabilityTierV2(probeWithoutTier),
 		cleanup,
-		asr: probeAsr()
+		asr: probeAsr(),
+		smartReframe: probeSmartReframe()
 	};
 }

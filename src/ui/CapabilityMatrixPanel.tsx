@@ -173,6 +173,7 @@ function rowsForProbe(probe: CapabilityProbeResult): CapabilityRow[] {
 		},
 		cleanupRow(probe),
 		asrRow(probe),
+		smartReframeRow(probe),
 		// ── Capture Engine (Phase 41) probes ─────────────────────────
 		{
 			label: 'Capture: MSTP',
@@ -279,6 +280,28 @@ function asrRow(probe: CapabilityProbeResult): CapabilityRow {
 		action: supported
 			? `Auto Captions (Experimental) available via ${engineLabel}.`
 			: 'On-device captions require WebAssembly support.'
+	};
+}
+
+/** Smart Reframe (Phase 33) gates only the optional reframe tool — never the
+ *  tier (R8.4). Saliency is always available; face detection is reported
+ *  separately and is currently unbundled (saliency-only, R8.2). */
+function smartReframeRow(probe: CapabilityProbeResult): CapabilityRow {
+	const sr = probe.smartReframe;
+	if (!sr) {
+		return { label: 'Smart Reframe', support: 'unknown', active: false, action: null };
+	}
+	const workerOk = sr.analysisWorker === 'supported';
+	const faceOk = sr.faceDetection === 'supported';
+	return {
+		label: 'Smart Reframe',
+		support: workerOk ? 'supported' : 'unsupported',
+		active: false,
+		action: !workerOk
+			? 'Smart Reframe needs Web Workers.'
+			: faceOk
+				? 'Auto crop-path (Experimental) with face detection.'
+				: 'Auto crop-path (Experimental) using visual saliency; no face model bundled.'
 	};
 }
 
