@@ -278,7 +278,7 @@ export interface AsrModelManifestSnapshot {
 	/** Model-specific decode quality thresholds. Smaller models need more
 	 *  permissive values to avoid the silence gate and temperature fallback
 	 *  misfiring on real speech. Omitted fields use built-in defaults. */
-	decode?: AsrDecodeParams | null;
+	decode: AsrDecodeParams | null;
 }
 
 /** Per-model decode quality parameters. All fields are optional; the decode
