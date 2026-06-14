@@ -3,16 +3,16 @@
 	"version": "breizhn-dtln-v1",
 	"license": "MIT",
 	"source": "https://github.com/breizhn/DTLN",
-	"sizeBytes": 3538944,
+	"sizeBytes": 3975748,
 	"model1": {
 		"url": "/_model/gh/breizhn/DTLN/master/pretrained_model/model_1.tflite",
-		"sizeBytes": 1769472,
-		"checksum": "sha256-0000000000000000000000000000000000000000000000000000000000000000"
+		"sizeBytes": 1459944,
+		"checksum": "sha256-91281a38e80fe9fd330e28eda7e16fe4e483ee5199a3e687a099939013c25de0"
 	},
 	"model2": {
 		"url": "/_model/gh/breizhn/DTLN/master/pretrained_model/model_2.tflite",
-		"sizeBytes": 1769472,
-		"checksum": "sha256-0000000000000000000000000000000000000000000000000000000000000000"
+		"sizeBytes": 2515804,
+		"checksum": "sha256-7ae37ec802862d8a65b5cdabfbcbbe22caaf7cd39e79adf574d15837d1520830"
 	},
 	"audio": {
 		"sampleRate": 16000,
