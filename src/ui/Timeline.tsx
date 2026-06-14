@@ -367,7 +367,7 @@ export function Timeline(props: TimelineProps) {
 	}
 
 	function markerAt(offset: 1 | -1): TimelineMarkerSnapshot | null {
-		const sorted = [...props.markers()].sort((a, b) => a.time - b.time);
+		const sorted = props.markers().toSorted((a, b) => a.time - b.time);
 		if (sorted.length === 0) return null;
 		const current = boundedCurrentTime();
 		if (offset > 0) {

@@ -6,28 +6,10 @@
  * timelines can export and play without errors.
  */
 
+import { kaiserWindow } from './resampler-math';
+
 const DEFAULT_FILTER_SIZE = 16;
 const KAISER_BETA = 6.0;
-
-function besselI0(x: number): number {
-	let sum = 1.0;
-	let term = 1.0;
-	const halfX = x * 0.5;
-	for (let k = 1; k <= 20; k++) {
-		term *= (halfX / k) * (halfX / k);
-		sum += term;
-		if (term < sum * 1e-16) break;
-	}
-	return sum;
-}
-
-function kaiserWindow(n: number, size: number, beta: number): number {
-	const center = (size - 1) * 0.5;
-	const ratio = (n - center) / center;
-	const arg = 1.0 - ratio * ratio;
-	if (arg <= 0) return 0;
-	return besselI0(beta * Math.sqrt(arg)) / besselI0(beta);
-}
 
 function buildFilterTable(
 	filterSize: number,

@@ -10,6 +10,7 @@ import {
 	Plus,
 	Trash2
 } from 'lucide-solid';
+import { formatClock } from '../lib/format';
 import type { MediaAssetSnapshot } from '../protocol';
 import type { ThumbnailEntry } from './thumbnail-store';
 
@@ -34,13 +35,6 @@ function formatSize(bytes: number): string {
 	if (mb >= 10) return `${mb.toFixed(0)} MB`;
 	if (mb >= 1) return `${mb.toFixed(1)} MB`;
 	return `${Math.max(1, Math.round(bytes / 1000))} KB`;
-}
-
-function formatDuration(seconds: number): string {
-	const s = Math.max(0, seconds);
-	const m = Math.floor(s / 60);
-	const sec = Math.floor(s % 60);
-	return `${m}:${String(sec).padStart(2, '0')}`;
 }
 
 function summarize(asset: MediaAssetSnapshot): string {
@@ -98,7 +92,7 @@ function metaRows(asset: MediaAssetSnapshot): { label: string; value: string }[]
 		if (a.codec) parts.push(a.codec);
 		rows.push({ label: 'Audio', value: parts.join(' · ') });
 	}
-	rows.push({ label: 'Duration', value: formatDuration(asset.durationS) });
+	rows.push({ label: 'Duration', value: formatClock(asset.durationS) });
 	rows.push({ label: 'File size', value: formatSize(asset.byteSize) });
 	if (asset.mimeType) rows.push({ label: 'Type', value: asset.mimeType });
 	return rows;
@@ -264,7 +258,7 @@ export function MediaBin(props: MediaBinProps) {
 											<span class="media-bin-name-text">{asset.fileName}</span>
 										</span>
 										<span class="media-bin-sub">
-											{summarize(asset)} · {formatDuration(asset.durationS)} ·{' '}
+											{summarize(asset)} · {formatClock(asset.durationS)} ·{' '}
 											{formatSize(asset.byteSize)}
 											<Show when={offline()}> · offline</Show>
 										</span>

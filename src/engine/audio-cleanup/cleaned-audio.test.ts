@@ -4,14 +4,18 @@ import {
 	cleanedAudioMissing,
 	cleanedAudioSubstitute
 } from './cleaned-audio';
-import { defaultTimelineClip, setClipCleanedAudio, type Timeline } from '../timeline';
-import { DEFAULT_TRACK_MIX } from '../timeline';
+import {
+	defaultTimelineClip,
+	DEFAULT_TRACK_MIX,
+	setClipCleanedAudio,
+	type Timeline
+} from '../timeline';
 
 const REF = {
 	assetId: 'cleaned-1',
 	clipInPointS: 2,
 	durationS: 5,
-	modelId: 'rnnoise',
+	modelId: 'dtln',
 	modelVersion: 'test'
 };
 

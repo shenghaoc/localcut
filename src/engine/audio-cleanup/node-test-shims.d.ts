@@ -1,6 +1,6 @@
 /**
  * Minimal Node built-in declarations for the audio-cleanup asset-verification
- * test, which reads `public/models/rnnoise/` from disk under Vitest's node
+ * test, which reads `public/models/dtln/` from disk under Vitest's node
  * environment. The project intentionally omits `@types/node` (its globals
  * collide with DOM-typed engine code), so only the exact surface the test
  * uses is declared here.

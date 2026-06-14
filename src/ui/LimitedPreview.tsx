@@ -1,21 +1,11 @@
+import { formatClock } from '../lib/format';
+
 interface LimitedPreviewProps {
 	thumbnailUrl: string;
 	fileName: string;
 	width: number;
 	height: number;
 	duration: number;
-}
-
-function formatDuration(seconds: number): string {
-	if (!Number.isFinite(seconds) || seconds <= 0) return '0:00';
-	const total = Math.floor(seconds);
-	const hours = Math.floor(total / 3600);
-	const minutes = Math.floor((total % 3600) / 60);
-	const secs = total % 60;
-	if (hours > 0) {
-		return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-	}
-	return `${minutes}:${secs.toString().padStart(2, '0')}`;
 }
 
 /** Reduced-resolution compatibility preview — separate from the accelerated WebGPU path. */
@@ -32,7 +22,7 @@ export function LimitedPreview(props: LimitedPreviewProps) {
 			<div class="limited-preview-meta">
 				<span class="limited-preview-badge">Compatibility preview</span>
 				<span class="limited-preview-copy">
-					{props.fileName} · {props.width}×{props.height} · {formatDuration(props.duration)}
+					{props.fileName} · {props.width}×{props.height} · {formatClock(props.duration)}
 				</span>
 			</div>
 		</div>

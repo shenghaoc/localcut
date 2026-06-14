@@ -109,8 +109,8 @@ describe('effects', () => {
 		});
 		expect(packed[0]).toBeCloseTo(0.75);
 		expect(packed).toHaveLength(12);
-		expect([...packed.slice(4, 7)]).toEqual([0, 0, 0]);
-		expect([...packed.slice(8, 11)]).toEqual([1, 1, 1]);
+		expect(Array.from(packed.slice(4, 7))).toEqual([0, 0, 0]);
+		expect(Array.from(packed.slice(8, 11))).toEqual([1, 1, 1]);
 	});
 
 	it('packs LUT domain uniforms from the clip LUT', () => {

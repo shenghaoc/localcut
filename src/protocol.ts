@@ -97,25 +97,21 @@ export interface CapabilityProbeResult {
 	livePublish: LivePublishProbeResult;
 	capture: CaptureProbeResult;
 	tier: CapabilityTierV2;
-	/** Phase 28 (WebNN audio cleanup): display/feature-gate only — never
+	/** Phase 28 (LiteRT DTLN audio cleanup): display/feature-gate only — never
 	 *  consulted by tier derivation or any pipeline code path. */
-	webnn?: WebNNProbeResult;
+	cleanup?: CleanupProbeResult;
 	/** Phase 29 (ASR auto captions): display/feature-gate only — never
 	 *  consulted by tier derivation or any pipeline code path. */
 	asr?: AsrProbeResult;
 }
 
-// ── Phase 28: Local Audio Cleanup (WebNN RNNoise) ──
+// ── Phase 28: Local Audio Cleanup (LiteRT DTLN) ──
 
-export type WebNNDeviceTypeSnapshot = 'cpu' | 'gpu' | 'npu';
+export type CleanupAccelerator = 'wasm' | 'webgpu' | 'webnn';
 
-export interface WebNNProbeResult {
-	/** `navigator.ml` exists in this browsing context. */
-	mlPresent: boolean;
-	backends: Record<WebNNDeviceTypeSnapshot, FeatureSupport>;
-	/** Unknown until the user explicitly loads the model; the graph build
-	 *  outcome is the ground truth. */
-	modelSupport: FeatureSupport;
+export interface CleanupProbeResult {
+	wasmAvailable: boolean;
+	accelerator: CleanupAccelerator;
 }
 
 /** Reference from a timeline clip to its denoised derived audio asset. */
@@ -132,16 +128,10 @@ export interface CleanedAudioRefSnapshot {
 
 export type CleanupModelStatus = 'not-loaded' | 'loading' | 'loaded' | 'failed';
 
-/** Manifest document validated by the Audio Cleanup worker before any fetch. */
-export interface CleanupModelManifestSnapshot {
-	id: 'rnnoise';
-	version: string;
-	license: string;
-	source: string;
+export interface CleanupModelAssetSnapshot {
+	url: string;
 	sizeBytes: number;
 	checksum: string;
-	audio: { sampleRate: 48000; channels: 1; frameSize: 480 };
-	tensors: Array<{ name: string; byteOffset: number; byteLength: number }>;
 }
 
 /** Commands posted from the UI bridge to the Audio Cleanup worker. */
@@ -149,9 +139,9 @@ export type CleanupWorkerCommand =
 	| { type: 'cleanup-probe' }
 	| {
 			type: 'cleanup-load-model';
-			manifest: CleanupModelManifestSnapshot;
-			weightsUrl: string;
-			preferredBackends: WebNNDeviceTypeSnapshot[];
+			manifestUrl: string;
+			wasmPath: string;
+			preferredAccelerator: CleanupAccelerator;
 	  }
 	| { type: 'cleanup-begin'; jobId: number; totalFrames: number }
 	| {
@@ -167,12 +157,13 @@ export type CleanupWorkerCommand =
 
 /** State messages posted from the Audio Cleanup worker back to the UI. */
 export type CleanupWorkerState =
-	| { type: 'cleanup-probe-result'; result: WebNNProbeResult }
+	| { type: 'cleanup-probe-result'; result: CleanupProbeResult }
 	| {
 			type: 'cleanup-model-status';
 			status: CleanupModelStatus;
-			backend?: WebNNDeviceTypeSnapshot;
+			accelerator?: CleanupAccelerator;
 			sizeBytes?: number;
+			version?: string;
 			error?: string;
 	  }
 	| {
@@ -185,7 +176,7 @@ export type CleanupWorkerState =
 	| {
 			type: 'cleanup-result';
 			jobId: number;
-			sampleRate: 48000;
+			sampleRate: 16000;
 			channels: 1;
 			pcm?: Float32Array;
 			wav?: ArrayBuffer;
@@ -194,40 +185,115 @@ export type CleanupWorkerState =
 	| { type: 'cleanup-cancelled'; jobId?: number }
 	| { type: 'cleanup-error'; jobId?: number; message: string };
 
-// ── Phase 29: Auto Captions (ASR) ──
+// ── Phase 29: Auto Captions (ASR) — LiteRT.js Whisper ──
 
-export type AsrRecommendedEngine = 'webnn-whisper' | 'none';
+/** The only ASR engine: LiteRT.js Whisper, compiled on WebGPU, WebNN, or WASM. */
+export type AsrRecommendedEngine = 'litert-whisper' | 'none';
 
-/** ASR capability probe result. Reuses the Phase 28 WebNN probe. Browser
- *  SpeechRecognition was removed as a fallback: it listens to live mic/page
- *  audio and cannot consume the PCM extracted from a selected timeline clip,
- *  so it was never a usable path. Auto Captions stay `recommended: 'none'`
- *  until the on-device LiteRT-over-WebNN Whisper engine (PR94) lands. */
+/** LiteRT accelerator used to compile the Whisper graphs. `wasm` is the
+ *  baseline that works without WebGPU/WebNN; `webgpu` and `webnn` are optional
+ *  faster paths when the browser exposes those accelerators. */
+export type AsrAccelerator = 'wasm' | 'webgpu' | 'webnn';
+
+/** ASR capability probe result. LiteRT.js needs only WebAssembly; WebGPU, WebNN,
+ *  and cross-origin isolation are reported for information and do not gate
+ *  availability. */
 export interface AsrProbeResult {
-	webnn: WebNNProbeResult;
+	/** WebAssembly is available — the minimum LiteRT requirement. */
+	wasm: FeatureSupport;
+	/** WebGPU adapter available as an optional faster accelerator. */
+	webgpu: FeatureSupport;
+	/** Experimental WebNN API available as an optional NPU/system ML accelerator. */
+	webnn: FeatureSupport;
+	/** `crossOriginIsolated === true` for SAB-capable full-performance builds. */
+	crossOriginIsolated: boolean;
 	recommended: AsrRecommendedEngine;
 }
 
 export type AsrModelStatus = 'not-loaded' | 'loading' | 'loaded' | 'failed';
 
-/** Manifest document validated by the ASR worker before any fetch. */
+/** One downloadable, digest-verified model asset. */
+export interface AsrModelAssetSnapshot {
+	/** Same-origin URL the asset is fetched from. */
+	url: string;
+	sizeBytes: number;
+	/** `sha256-<64 hex>` digest of the asset bytes; verified before use. */
+	checksum: string;
+}
+
+/** Special token ids for the Whisper vocabulary the model was trained on. */
+export interface AsrSpecialTokens {
+	startOfTranscript: number;
+	endOfText: number;
+	transcribe: number;
+	noTimestamps: number;
+	/** Id of `<|nospeech|>`; used to probe no-speech probability. */
+	noSpeech: number;
+	/** Id of `<|0.00|>`; timestamp seconds = (id − timestampBegin) × 0.02. */
+	timestampBegin: number;
+	/** ISO code → language token id (e.g. `{ en: 50259, zh: 50260 }`). */
+	language: Record<string, number>;
+}
+
+/** Manifest document validated by the ASR worker before any fetch. Declares the
+ *  single TFLite Whisper graph (with `encode`/`decode` signatures), the
+ *  byte-level BPE tokenizer vocabulary, the fixed audio contract, the special
+ *  token ids, and provenance (license/source/size/digests). */
 export interface AsrModelManifestSnapshot {
-	id: 'whisper-tiny-bilingual';
+	id: string;
 	version: string;
 	license: string;
 	source: string;
+	/** Sum of all asset sizes — the total download budget shown to the user. */
 	sizeBytes: number;
-	checksum: string;
-	audio: { sampleRate: 16000; channels: 1; hopLength: 160; nMel: 80 };
+	/** Single TFLite Whisper graph exposing `encode` and `decode` signatures. */
+	model: AsrModelAssetSnapshot;
+	/** Tokenizer vocabulary JSON (byte-level BPE token string → id). */
+	tokenizer: AsrModelAssetSnapshot;
+	audio: {
+		sampleRate: 16000;
+		channels: 1;
+		hopLength: number;
+		nMel: number;
+		/** Decoder context window in seconds (Whisper = 30). */
+		chunkLengthS: number;
+	};
+	/** Fixed decoder context length — the token buffer and causal-mask size. */
+	maxDecodeTokens: number;
 	vocabSize: number;
 	encoderFramesPerSecond: number;
+	tokens: AsrSpecialTokens;
 	languages: string[];
+	/** Language forced when the user picks "auto", or null for model detection. */
+	defaultLanguage: string | null;
+	/** Model-specific decode quality thresholds. Smaller models need more
+	 *  permissive values to avoid the silence gate and temperature fallback
+	 *  misfiring on real speech. Omitted fields use built-in defaults. */
+	decode: AsrDecodeParams | null;
+}
+
+/** Per-model decode quality parameters. All fields are optional; the decode
+ *  loop falls back to built-in defaults (calibrated for whisper-base) when a
+ *  field is absent or the whole section is omitted. */
+export interface AsrDecodeParams {
+	/** Average log-probability below which a decode is considered low-confidence
+	 *  and retried at the next temperature. Default: -1.0. */
+	logProbThreshold?: number;
+	/** No-speech probability above which (combined with low logprob) the window
+	 *  is treated as silence. Default: 0.6. */
+	noSpeechThreshold?: number;
+	/** Compression ratio above which the text is considered degenerate repetition.
+	 *  Default: 2.4. */
+	compressionRatioThreshold?: number;
+	/** Temperature schedule for fallback. Default: [0, 0.2, 0.4, 0.6, 0.8, 1.0]. */
+	temperatures?: number[];
 }
 
 /** Metadata marker for auto-generated caption tracks. */
 export interface AsrGeneratedCaptionMetadata {
 	generatedBy: 'auto-captions-phase-29';
-	engine: 'webnn-whisper';
+	engine: 'litert-whisper';
+	accelerator: AsrAccelerator;
 	language: string | null;
 	phraseLevel: boolean;
 	createdAt: string;
@@ -238,21 +304,32 @@ export type AsrWorkerCommand =
 	| { type: 'asr-probe' }
 	| {
 			type: 'asr-load-model';
-			manifest: AsrModelManifestSnapshot;
-			weightsUrl: string;
-			vocabUrl: string;
-			preferredBackends: WebNNDeviceTypeSnapshot[];
+			/** Same-origin URL of the model manifest JSON. */
+			manifestUrl: string;
+			/** Preferred accelerator; the worker falls back to `wasm` if needed. */
+			accelerator: AsrAccelerator;
+			/** Directory (or .js file) the LiteRT.js WASM runtime loads from. */
+			wasmPath: string;
 	  }
 	| {
 			type: 'asr-transcribe';
 			jobId: number;
-			engine: 'webnn-whisper';
 			pcm: Float32Array;
 			sampleRate: number;
 			channels: number;
 			offsetS: number;
 			totalDurationS: number;
 			language?: string;
+			/**
+			 * De-overlap bounds for overlapping decode windows: keep only segments
+			 * whose start falls in [trustedFromS, trustedToS). Adjacent windows' trusted
+			 * ranges tile the timeline without overlap, so no segment is emitted twice.
+			 * Omitted ⇒ keep all (single / non-overlapping window).
+			 */
+			trustedFromS?: number;
+			trustedToS?: number;
+			/** True on the last window of the job; triggers finalisation. */
+			isFinal?: boolean;
 	  }
 	| { type: 'asr-cancel'; jobId?: number }
 	| { type: 'asr-dispose' };
@@ -263,9 +340,15 @@ export type AsrWorkerState =
 	| {
 			type: 'asr-model-status';
 			status: AsrModelStatus;
-			engine: 'webnn-whisper' | null;
-			backend?: WebNNDeviceTypeSnapshot;
+			accelerator?: AsrAccelerator;
+			/** Total model size in bytes (from the manifest). */
 			sizeBytes?: number;
+			/** Bytes downloaded so far while `status === 'loading'`. */
+			downloadedBytes?: number;
+			/** Download/compile progress in [0, 1] while `status === 'loading'`. */
+			fraction?: number;
+			/** On `loaded`: true when every asset came from the on-device cache. */
+			cached?: boolean;
 			error?: string;
 	  }
 	| {
@@ -278,7 +361,6 @@ export type AsrWorkerState =
 	| {
 			type: 'asr-result';
 			jobId: number;
-			engine: 'webnn-whisper';
 			segments: CaptionSegmentSnapshot[];
 			language: string | null;
 			phraseLevel: boolean;
@@ -292,7 +374,8 @@ export interface AsrCreateCaptionTrackCommand {
 	type: 'asr-create-caption-track';
 	segments: CaptionSegmentSnapshot[];
 	language: string | null;
-	engine: 'webnn-whisper';
+	engine: 'litert-whisper';
+	accelerator: AsrAccelerator;
 	phraseLevel: boolean;
 	/** Human-readable name for the generated track. */
 	trackName: string;
@@ -1155,6 +1238,16 @@ interface SetCaptionTrackCommand {
 	defaultStyle?: Partial<CaptionStyleSnapshot>;
 }
 
+interface DeleteCaptionTrackCommand {
+	type: 'delete-caption-track';
+	trackId: string;
+}
+
+interface DeleteCaptionTracksCommand {
+	type: 'delete-caption-tracks';
+	trackIds: readonly string[];
+}
+
 interface SetCaptionSegmentTextCommand {
 	type: 'set-caption-segment-text';
 	trackId: string;
@@ -1541,6 +1634,8 @@ export type WorkerCommand =
 	| ImportCaptionsCommand
 	| ExportCaptionsCommand
 	| SetCaptionTrackCommand
+	| DeleteCaptionTrackCommand
+	| DeleteCaptionTracksCommand
 	| SetCaptionSegmentTextCommand
 	| SetCaptionSegmentTimingCommand
 	| SetCaptionSegmentStyleCommand

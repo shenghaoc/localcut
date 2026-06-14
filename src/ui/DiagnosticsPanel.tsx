@@ -9,6 +9,7 @@ import {
 	buildCopyableDiagnosticReport,
 	formatCopyableDiagnosticReport
 } from '../diagnostics/redaction';
+import { formatBytes } from '../lib/format';
 import { Button } from './components/button';
 
 interface DiagnosticsPanelProps {
@@ -20,18 +21,6 @@ interface DiagnosticsPanelProps {
 	onRecoveryAction?: (actionId: string) => void;
 	/** Opens the in-app user guide on the Performance section. */
 	onOpenGuide?: () => void;
-}
-
-function formatBytes(value: number | null): string {
-	if (value === null) return 'Unknown';
-	const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-	let scaled = value;
-	let unit = 0;
-	while (scaled >= 1024 && unit < units.length - 1) {
-		scaled /= 1024;
-		unit += 1;
-	}
-	return `${scaled.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
 function budgetClass(budget: PerformanceBudget): string {
@@ -55,6 +44,7 @@ function observedBudgetValue(budget: PerformanceBudget): string {
 }
 
 export function DiagnosticsPanel(props: DiagnosticsPanelProps) {
+	// eslint-disable-next-line eslint/no-unassigned-vars — SolidJS ref assigns via JSX
 	let panelRef: HTMLElement | undefined;
 	const [copyStatus, setCopyStatus] = createSignal<string | null>(null);
 

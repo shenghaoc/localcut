@@ -260,6 +260,7 @@ export function createPublishController(deps: PublishControllerDeps): PublishCon
 				deps.sendCommand({ type: 'publish-tap-start', mode });
 			});
 		}
+		// eslint-disable-next-line typescript/unbound-method -- optional factory with immediate call
 		const generator = (deps.createTrackGenerator ?? defaultCreateTrackGenerator)();
 		mainSink = createBoundedFrameSink<VideoFrame>(generator.writable.getWriter(), (error) =>
 			setError(
@@ -335,6 +336,7 @@ export function createPublishController(deps: PublishControllerDeps): PublishCon
 			try {
 				const video = await startVideoTap(probe.livePublish);
 				const audio = deps.getAudioTrack();
+				// eslint-disable-next-line typescript/unbound-method -- optional factory with immediate call
 				const nextSession = (deps.createSession ?? defaultCreateSession)();
 				session = nextSession;
 				sessionUnsubscribe = nextSession.onState((next) => {

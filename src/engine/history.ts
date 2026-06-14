@@ -77,7 +77,7 @@ export function createTimelineHistory(options: TimelineHistoryOptions = {}): Tim
 	): void {
 		const timestamp = now();
 		const coalesceKey = pushOptions.coalesceKey ?? null;
-		const last = past[past.length - 1] ?? null;
+		const last = past.at(-1) ?? null;
 		future.length = 0;
 
 		if (

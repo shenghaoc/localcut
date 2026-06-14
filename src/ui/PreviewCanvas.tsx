@@ -8,6 +8,7 @@ interface PreviewCanvasProps {
 }
 
 export function PreviewCanvas(props: PreviewCanvasProps) {
+	// eslint-disable-next-line eslint/no-unassigned-vars — SolidJS ref assigns via JSX
 	let canvasEl: HTMLCanvasElement | undefined;
 
 	onMount(() => {

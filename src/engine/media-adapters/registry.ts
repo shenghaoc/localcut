@@ -13,6 +13,7 @@ export function selectPrimaryMediaAdapter(
 ): MediaAdapter | null {
 	return (
 		adapters.find(
+			// eslint-disable-next-line typescript/unbound-method -- canInspect is a pure predicate, no `this` dependency
 			(adapter) => adapter.role === 'primary' && adapter.canInspect(file) && adapter.open
 		) ?? null
 	);

@@ -17,7 +17,7 @@ export interface ShortcutConflict {
 }
 
 function chordKey(binding: ShortcutBinding): string {
-	const parts: string[] = [...binding.modifiers].sort();
+	const parts: string[] = binding.modifiers.toSorted();
 	parts.push(binding.key.toLowerCase());
 	return parts.join('+');
 }
@@ -95,7 +95,7 @@ export function createShortcutRegistry(): ShortcutRegistry {
 			modifiers: readonly string[],
 			activeScopes: readonly ShortcutScope[]
 		): ShortcutBinding | null {
-			const normalizedMods = [...modifiers].sort();
+			const normalizedMods = modifiers.toSorted();
 			const targetChord = [...normalizedMods, key.toLowerCase()].join('+');
 
 			let best: ShortcutBinding | null = null;

@@ -1,5 +1,4 @@
-import type { TitleStyle } from '../title';
-import { DEFAULT_TITLE_STYLE, normalizeTitleStyle } from '../title';
+import { DEFAULT_TITLE_STYLE, normalizeTitleStyle, type TitleStyle } from '../title';
 import { DEFAULT_TRANSFORM, normalizeTransform, type TransformParams } from '../transform';
 
 export type CaptionFormat = 'srt' | 'webvtt';
@@ -369,7 +368,7 @@ export function cloneCaptionSegment(segment: CaptionSegment): CaptionSegment {
 }
 
 export function sortCaptionSegments(segments: readonly CaptionSegment[]): CaptionSegment[] {
-	return [...segments].sort((a, b) =>
+	return segments.toSorted((a, b) =>
 		a.start === b.start ? a.id.localeCompare(b.id) : a.start - b.start
 	);
 }
@@ -462,30 +461,35 @@ export function captionAnchorTransform(style: CaptionStyle): TransformParams {
 	const normalized = normalizeCaptionStyle(style);
 	const insetX = (normalized.insetPx?.x ?? 0) / 960;
 	const insetY = (normalized.insetPx?.y ?? 0) / 540;
+	const bottomY = 0.5 - insetY;
+	const topY = -0.5 + insetY;
 	switch (normalized.anchor) {
 		case 'bottom-left':
 			return normalizeTransform({
 				...DEFAULT_TRANSFORM,
-				x: -0.5 + insetX,
-				y: 0.78 - insetY,
-				anchorX: -0.5,
-				anchorY: 0.5
+				x: -0.25 + insetX,
+				y: bottomY,
+				anchorX: 0.5,
+				anchorY: 0.5,
+				fit: 'fit'
 			});
 		case 'bottom-right':
 			return normalizeTransform({
 				...DEFAULT_TRANSFORM,
-				x: 0.5 - insetX,
-				y: 0.78 - insetY,
+				x: 0.25 - insetX,
+				y: bottomY,
 				anchorX: 0.5,
-				anchorY: 0.5
+				anchorY: 0.5,
+				fit: 'fit'
 			});
 		case 'top-center':
 			return normalizeTransform({
 				...DEFAULT_TRANSFORM,
 				x: 0,
-				y: -0.78 + insetY,
-				anchorX: 0,
-				anchorY: -0.5
+				y: topY,
+				anchorX: 0.5,
+				anchorY: 0.5,
+				fit: 'fit'
 			});
 		case 'custom':
 			return normalizeTransform(DEFAULT_TRANSFORM);
@@ -494,9 +498,10 @@ export function captionAnchorTransform(style: CaptionStyle): TransformParams {
 			return normalizeTransform({
 				...DEFAULT_TRANSFORM,
 				x: 0,
-				y: 0.78 - insetY,
-				anchorX: 0,
-				anchorY: 0.5
+				y: bottomY,
+				anchorX: 0.5,
+				anchorY: 0.5,
+				fit: 'fit'
 			});
 	}
 }

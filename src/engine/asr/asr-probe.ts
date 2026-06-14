@@ -1,29 +1,54 @@
 /**
- * ASR capability probe (Phase 29). Reports WebNN as a diagnostic signal only.
+ * ASR capability probe (Phase 29, LiteRT.js Whisper). LiteRT.js needs only
+ * WebAssembly, so availability is gated on `WebAssembly` support. WebGPU,
+ * experimental WebNN, and cross-origin isolation are reported for information
+ * only and never gate the feature.
  *
- * There is no practical fallback for selected-clip transcription: Browser
- * SpeechRecognition listens to live mic/page audio and cannot consume the PCM
- * extracted from a timeline clip, so the Chrome Speech service was removed
- * rather than kept as a fake fallback. Auto Captions stay `recommended: 'none'`
- * until the on-device LiteRT-over-WebNN Whisper engine (PR94) lands.
+ * Side-effect free: no model load, no graph build, no WASM instantiation.
  */
-import type { AsrProbeResult, FeatureSupport, WebNNProbeResult } from '../../protocol';
+import type { AsrProbeResult, FeatureSupport } from '../../protocol';
 
-function defaultWebNNProbe(): WebNNProbeResult {
-	return {
-		mlPresent: false,
-		backends: {
-			cpu: 'unknown' as FeatureSupport,
-			gpu: 'unknown' as FeatureSupport,
-			npu: 'unknown' as FeatureSupport
-		},
-		modelSupport: 'unknown' as FeatureSupport
-	};
+function fromBoolean(value: boolean): FeatureSupport {
+	return value ? 'supported' : 'unsupported';
 }
 
-export function probeAsr(webnnProbe?: WebNNProbeResult | null): AsrProbeResult {
-	const webnn = webnnProbe ?? defaultWebNNProbe();
-	return { webnn, recommended: 'none' };
+function probeWasm(): FeatureSupport {
+	try {
+		return fromBoolean(
+			typeof WebAssembly !== 'undefined' && typeof WebAssembly.instantiate === 'function'
+		);
+	} catch {
+		return 'unknown';
+	}
+}
+
+function probeWebGpu(): FeatureSupport {
+	try {
+		return fromBoolean(typeof navigator !== 'undefined' && 'gpu' in navigator);
+	} catch {
+		return 'unknown';
+	}
+}
+
+function probeWebNN(): FeatureSupport {
+	try {
+		const nav =
+			typeof navigator === 'undefined' ? null : (navigator as Navigator & { ml?: unknown });
+		return fromBoolean(nav !== null && nav.ml !== undefined);
+	} catch {
+		return 'unknown';
+	}
+}
+
+export function probeAsr(): AsrProbeResult {
+	const wasm = probeWasm();
+	return {
+		wasm,
+		webgpu: probeWebGpu(),
+		webnn: probeWebNN(),
+		crossOriginIsolated: globalThis.crossOriginIsolated === true,
+		recommended: wasm === 'supported' ? 'litert-whisper' : 'none'
+	};
 }
 
 export function asrAvailable(result: AsrProbeResult): boolean {
@@ -31,4 +56,7 @@ export function asrAvailable(result: AsrProbeResult): boolean {
 }
 
 export const ASR_UNAVAILABLE_MESSAGE =
-	'Auto Captions are unavailable until the on-device WebNN speech engine (LiteRT Whisper) lands. Browser speech recognition is not a usable fallback for timeline clips.';
+	'Auto captions require WebAssembly, which is unavailable in this browser.';
+
+export const ASR_ACCURACY_NOTE =
+	'On-device Whisper via LiteRT.js, preferring experimental WebNN, then WebGPU, and falling back to WASM. The first run downloads the model once, then caches it for offline reuse.';

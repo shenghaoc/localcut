@@ -20,13 +20,16 @@
 		"typecheck": "tsc --noEmit",
 		"check": "vp run format:check && vp lint . && vp run typecheck && vp test run && vp build",
 		"build:wasm": "node scripts/build-wasm.mjs",
+		"setup:litert": "node scripts/setup-litert-assets.mjs",
 		"test:e2e": "playwright test",
+		"postinstall": "node scripts/setup-litert-assets.mjs",
 		"prepare": "vp config"
 	},
 	"dependencies": {
 		"@fontsource/dm-sans": "^5.2.8",
 		"@fontsource/jetbrains-mono": "^5.2.8",
 		"@kobalte/core": "^0.13.11",
+		"@litertjs/core": "^2.5.2",
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
 		"dompurify": "^3.4.8",

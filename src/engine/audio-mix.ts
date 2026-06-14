@@ -1,5 +1,7 @@
 /** Shared per-sample audio mix stage — preview and export consume the same math. */
 
+import { clamp01 } from '../lib/math';
+
 export interface MixStageParams {
 	gain: number;
 	pan: number;
@@ -24,10 +26,6 @@ export interface ResolvedAudioTransition {
 }
 
 const MIN_CLIP_DURATION_S = 1e-6;
-
-function clamp01(value: number): number {
-	return Math.max(0, Math.min(1, value));
-}
 
 function clampPan(pan: number): number {
 	return Math.max(-1, Math.min(1, pan));

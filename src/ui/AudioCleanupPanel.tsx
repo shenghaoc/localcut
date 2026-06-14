@@ -1,5 +1,5 @@
 /**
- * "Local Audio Cleanup (Experimental)" panel — Phase 27.
+ * "Local Audio Cleanup (Experimental)" panel — Phase 28.
  *
  * Thin renderer over `CleanupController` state. Everything heavy happens in
  * the lazily spawned Audio Cleanup worker; this component only shows status,
@@ -47,6 +47,7 @@ function formatBytes(bytes: number | null): string {
 }
 
 export const AudioCleanupPanel: Component<AudioCleanupPanelProps> = (props) => {
+	// eslint-disable-next-line eslint/no-unassigned-vars — SolidJS ref assigns via JSX
 	let panelRef: HTMLElement | undefined;
 	let audioContext: AudioContext | null = null;
 	let activeSource: AudioBufferSourceNode | null = null;
@@ -102,7 +103,6 @@ export const AudioCleanupPanel: Component<AudioCleanupPanelProps> = (props) => {
 		audioContext = null;
 	});
 
-	// ARIA modal dialog pattern: move focus into the panel when it opens.
 	createEffect(() => {
 		if (props.open) {
 			requestAnimationFrame(() => panelRef?.focus());
@@ -150,20 +150,14 @@ export const AudioCleanupPanel: Component<AudioCleanupPanelProps> = (props) => {
 						<h2>Status</h2>
 						<dl class="diagnostics-grid">
 							<div>
-								<dt>WebNN backends</dt>
-								<dd>
-									{props.state.webnn
-										? (['npu', 'gpu', 'cpu'] as const)
-												.filter((b) => props.state.webnn?.backends[b] === 'supported')
-												.join(', ') || 'none'
-										: 'unknown'}
-								</dd>
+								<dt>Engine</dt>
+								<dd>LiteRT DTLN</dd>
 							</div>
 							<div>
 								<dt>Model</dt>
 								<dd>
 									{props.state.modelStatus}
-									<Show when={props.state.backend}> via {props.state.backend}</Show>
+									<Show when={props.state.accelerator}> via {props.state.accelerator}</Show>
 								</dd>
 							</div>
 							<div>
@@ -317,8 +311,8 @@ export const AudioCleanupPanel: Component<AudioCleanupPanelProps> = (props) => {
 				</Show>
 
 				<footer class="capability-panel-note">
-					Model: RNNoise (BSD-3-Clause, Xiph.Org / Mozilla) via the WebNN samples ecosystem. Weights
-					load from this app's own origin only after you click "Load model".
+					Model: DTLN (MIT, Interspeech 2020) via LiteRT. Weights load from this app's own origin
+					only after you click "Load model".
 				</footer>
 			</aside>
 		</Show>

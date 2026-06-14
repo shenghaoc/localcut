@@ -1,5 +1,5 @@
-import type { TimelineMarker } from '../timeline';
-import type { TimelineTrack } from '../timeline';
+import { isFiniteNumber as finite } from '../../lib/math';
+import type { TimelineMarker, TimelineTrack } from '../timeline';
 import {
 	CAPTION_PRESETS,
 	captionSegmentEnd,
@@ -17,10 +17,6 @@ import {
 export interface CaptionSnapTarget {
 	time: number;
 	label: string;
-}
-
-function finite(value: number): boolean {
-	return Number.isFinite(value);
 }
 
 export function cloneCaptionTracks(tracks: readonly CaptionTrack[]): CaptionTrack[] {
@@ -53,7 +49,7 @@ function hasOwn<T extends object, K extends PropertyKey>(
 	value: T,
 	key: K
 ): value is T & Record<K, unknown> {
-	return Object.prototype.hasOwnProperty.call(value, key);
+	return Object.hasOwn(value, key);
 }
 
 export function upsertCaptionTrack(
@@ -116,6 +112,22 @@ export function setCaptionTrackProps(
 		defaultStyle
 	});
 	return next;
+}
+
+export function deleteCaptionTrack(
+	tracks: readonly CaptionTrack[],
+	trackId: string
+): CaptionTrack[] {
+	return cloneCaptionTracks(tracks).filter((track) => track.id !== trackId);
+}
+
+export function deleteCaptionTracks(
+	tracks: readonly CaptionTrack[],
+	trackIds: readonly string[]
+): CaptionTrack[] {
+	const deleteIds = new Set(trackIds);
+	if (deleteIds.size === 0) return tracks as CaptionTrack[];
+	return cloneCaptionTracks(tracks).filter((track) => !deleteIds.has(track.id));
 }
 
 export function setCaptionSegmentText(

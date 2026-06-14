@@ -73,6 +73,8 @@ import type { CaptionAnimStylePreset } from './captions/anim-style';
 import { resolveAnimPreset, validateCaptionAnimPreset } from './captions/anim-style';
 import {
 	buildCaptionSnapTargets,
+	deleteCaptionTrack,
+	deleteCaptionTracks,
 	makeCaptionSegmentId,
 	makeCaptionTrackId,
 	mergeCaptionSegments,
@@ -92,6 +94,7 @@ import {
 	type CaptionStyle,
 	type CaptionTrack
 } from './captions/types';
+import { createAsrCaptionTrack } from './asr/caption-track';
 import {
 	addMarker,
 	addTrack,
@@ -1214,12 +1217,14 @@ async function computeWaveformsForSource(handle: MediaInputHandle): Promise<void
 async function fileFromHandle(handle: FileSystemFileHandle): Promise<File | null> {
 	try {
 		const permissionRequest = { mode: 'read' as const };
+		// eslint-disable-next-line typescript/unbound-method -- optional API; called with explicit `this`
 		const queryPermission = handle.queryPermission;
 		if (queryPermission) {
 			const state = await queryPermission.call(handle, permissionRequest);
 			if (state === 'denied') return null;
 			if (state === 'granted') return await handle.getFile();
 		}
+		// eslint-disable-next-line typescript/unbound-method -- optional API; called with explicit `this`
 		const requestPermission = handle.requestPermission;
 		if (requestPermission) {
 			const state = await requestPermission.call(handle, permissionRequest);
@@ -2419,6 +2424,7 @@ async function handleImport(file: File, fileHandle?: FileSystemFileHandle | null
  */
 function pruneUnusedSources(): void {
 	if (exportAbort) return;
+	// eslint-disable-next-line unicorn/no-useless-spread — snapshot needed: deletes during iteration
 	for (const [id, handle] of [...sourceInputs.entries()]) {
 		if (binSourceIds.has(id)) continue;
 		secondaryFrameSources.release(id);
@@ -2949,25 +2955,13 @@ function handleRemoveAudioCleanup(
 function handleAsrCreateCaptionTrack(
 	cmd: Extract<WorkerCommand, { type: 'asr-create-caption-track' }>
 ): void {
-	const trackId = makeCaptionTrackId();
-	const segments = cmd.segments.map((segment) => ({
-		...segment,
-		id: makeCaptionSegmentId()
-	}));
-	const track = createCaptionTrack({
-		id: trackId,
-		name: cmd.trackName,
+	const track = createAsrCaptionTrack({
+		segments: cmd.segments,
+		trackName: cmd.trackName,
 		language: cmd.language ?? null,
-		burnedIn: false,
-		visible: true,
-		segments,
-		generatedBy: JSON.stringify({
-			generatedBy: 'auto-captions-phase-29',
-			engine: cmd.engine,
-			language: cmd.language,
-			phraseLevel: cmd.phraseLevel,
-			createdAt: new Date().toISOString()
-		})
+		engine: cmd.engine,
+		accelerator: cmd.accelerator,
+		phraseLevel: cmd.phraseLevel
 	});
 	commitCaptionMutation(() => [...captionTracks, track], {
 		refreshPlayback: 'refresh'
@@ -3237,7 +3231,7 @@ function handleRippleDelete(cmd: Extract<WorkerCommand, { type: 'ripple-delete' 
 		const nextTimeline = rippleDelete(timeline, cmd.clips, syncLockedTrackIds);
 		if (nextTimeline === timeline) return { timeline, captionTracks, transitions, markers };
 		let nextMarkers: TimelineMarker[] = markers as TimelineMarker[];
-		const sorted = [...removedRegions].sort((a, b) => a.start - b.start);
+		const sorted = removedRegions.toSorted((a, b) => a.start - b.start);
 		const merged: { start: number; end: number }[] = [];
 		for (const r of sorted) {
 			if (merged.length > 0 && r.start <= merged[merged.length - 1]!.end + TIMELINE_EPSILON) {
@@ -3496,6 +3490,22 @@ function handleSetCaptionTrack(cmd: Extract<WorkerCommand, { type: 'set-caption-
 		...(cmd.defaultStyle !== undefined ? { defaultStyle: cmd.defaultStyle } : {})
 	};
 	commitCaptionMutation(() => setCaptionTrackProps(captionTracks, cmd.trackId, patch), {
+		refreshPlayback: 'refresh'
+	});
+}
+
+function handleDeleteCaptionTrack(
+	cmd: Extract<WorkerCommand, { type: 'delete-caption-track' }>
+): void {
+	commitCaptionMutation(() => deleteCaptionTrack(captionTracks, cmd.trackId), {
+		refreshPlayback: 'refresh'
+	});
+}
+
+function handleDeleteCaptionTracks(
+	cmd: Extract<WorkerCommand, { type: 'delete-caption-tracks' }>
+): void {
+	commitCaptionMutation(() => deleteCaptionTracks(captionTracks, cmd.trackIds), {
 		refreshPlayback: 'refresh'
 	});
 }
@@ -3820,6 +3830,7 @@ async function applyImportedDoc(doc: ProjectDoc): Promise<void> {
 	nextSourceId = nextSourceIdFromDescriptors(doc.sources);
 
 	const keepIds = new Set(doc.sources.map((source) => source.sourceId));
+	// eslint-disable-next-line unicorn/no-useless-spread — snapshot needed: deletes during iteration
 	for (const id of [...binSourceIds]) {
 		if (keepIds.has(id)) continue;
 		binSourceIds.delete(id);
@@ -5766,6 +5777,12 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 		}
 		case 'set-caption-track':
 			handleSetCaptionTrack(cmd);
+			break;
+		case 'delete-caption-track':
+			handleDeleteCaptionTrack(cmd);
+			break;
+		case 'delete-caption-tracks':
+			handleDeleteCaptionTracks(cmd);
 			break;
 		case 'set-caption-segment-text':
 			handleSetCaptionSegmentText(cmd);

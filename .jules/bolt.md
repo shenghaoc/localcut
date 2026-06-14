@@ -22,3 +22,8 @@
 
 **Learning:** Animating a preview gizmo's position using CSS `left` and `top` properties inline during dragging forces main-thread layout recalculations (reflows) on every pointermove event. This causes layout thrashing and stuttering.
 **Action:** Use the standalone hardware-accelerated CSS `translate` property for positioning, with `will-change: translate, transform` applied only during active drags or rotations. `translate` composes with the rotation `transform` instead of overriding it, and still bypasses the layout phase via the compositor thread (GPU). The `drag` state must be a SolidJS signal (not a plain `let`) for `will-change` to update reactively in the style computation.
+
+## 2026-06-14 - CSS Layout Thrashing on Replay Buffer Progress Bar
+
+**Learning:** Animating a continuously updating progress bar (like the replay buffer) using the CSS `width` property inline (e.g. `style={{ width: \`${percent}%\` }}`) forces main-thread layout recalculations (reflows) on every update. This thrashes performance.
+**Action:** Use hardware-accelerated CSS `transform: scaleX(...)` combined with `transform-origin: left` and `width: 100%` on the base class instead. The browser can offload this to the compositor thread (GPU), bypassing the layout phase entirely for much smoother animation.

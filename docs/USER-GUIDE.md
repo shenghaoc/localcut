@@ -211,16 +211,16 @@ When clips on the timeline use different audio sample rates (e.g. a 44.1 kHz MP3
 
 ## Local Audio Cleanup (Experimental)
 
-LocalCut Studio can reduce background noise in audio clips entirely on your device using the RNNoise model running through WebNN (`navigator.ml`). This feature is **experimental** and fully local:
+LocalCut Studio can reduce background noise in audio clips entirely on your device using the DTLN model (Dual-Signal Transformation LSTM Network) running through LiteRT WASM inference. This feature is **experimental** and fully local:
 
 > Runs on this device. No upload. No API key. No server inference.
 
-**Requirements**: a browser with WebNN support (a recent Chromium with WebNN enabled). In browsers without WebNN the panel shows "WebNN local cleanup unavailable in this browser." and everything else in the editor works exactly as before — there is no cloud fallback of any kind.
+**Requirements**: a browser with WebAssembly support (all modern browsers). In browsers without WebAssembly the panel shows "WebAssembly is required for local audio cleanup." and everything else in the editor works exactly as before — there is no cloud fallback of any kind.
 
 **How to use it**:
 
 1. Click **Audio Cleanup** in the toolbar to open the panel. Nothing is downloaded at app startup; the model loads only when you ask for it.
-2. Click **Load model** to fetch and verify the RNNoise weights (~350 KB, served from the app's own origin and checksum-verified). After one successful load the weights are cached for offline use.
+2. Click **Load model** to fetch and verify the two DTLN TFLite models (~4 MB total, downloaded from GitHub via a same-origin proxy and SHA-256-verified). After one successful load the models are cached in OPFS for offline use.
 3. Select an audio clip on the timeline.
 4. Click **Preview cleanup** to denoise the first 10 seconds and A/B compare **Play original** vs **Play cleaned**.
 5. Click **Apply to export / create cleaned audio asset** to process the whole clip. This creates a derived `*.cleaned.wav` asset in the Media Bin and routes the clip's audio through it for both playback and export.
@@ -231,10 +231,10 @@ LocalCut Studio can reduce background noise in audio clips entirely on your devi
 - Applying cleanup is a normal timeline edit: **undo/redo** works, and **Remove cleanup** in the panel returns the clip to its original audio at any time. The derived asset stays in the Media Bin.
 - Export is unchanged unless you applied cleanup; only clips you explicitly cleaned use the denoised audio.
 - If you later trim a cleaned clip beyond the range that was cleaned, the clip automatically falls back to its original audio (re-apply cleanup to cover the new range). If the cleaned asset goes missing (e.g. cleared storage), the original audio plays and a source-health warning appears.
-- One cleanup pass is limited to 15 minutes of audio.
-- The panel shows which WebNN backend is in use (NPU/GPU/CPU), the model status and size, and the last analysis duration; the Capabilities panel has a **WebNN (audio cleanup)** row.
+- One cleanup pass is limited to 12 minutes of audio.
+- The panel shows the WASM accelerator status, the model status and size, and the last analysis duration; the Capabilities panel has an **Audio cleanup (LiteRT DTLN)** row.
 
-Model: RNNoise (Jean-Marc Valin, Xiph.Org/Mozilla — BSD-3-Clause), integrated per the [WebNN samples](https://github.com/webmachinelearning/webnn-samples/tree/master/rnnoise) reference.
+Model: DTLN (Nils L. Westhausen, Interspeech 2020 — MIT), from [breizhn/DTLN](https://github.com/breizhn/DTLN).
 
 ## Captions & Subtitles
 
@@ -247,6 +247,23 @@ Import, edit, and export caption tracks:
 - **Delete**: Remove selected caption segments.
 - **Style**: Set preset, font size, color, background, burn-in, and visibility per track. Individual segments can override color and background.
 - **Export**: Export captions as SRT or VTT files.
+
+### Auto Captions (experimental)
+
+LocalCut Studio can transcribe a clip's audio into a caption track entirely on your device, using [OpenAI Whisper](https://github.com/openai/whisper) compiled by [LiteRT.js](https://www.npmjs.com/package/@litertjs/core). Like Audio Cleanup, it is **experimental** and fully local — no microphone, no app-audio capture, and no cloud API.
+
+- **Choose a model**: The panel lists the available models with their provider, size, and a **Learn more** link to the model card. Today it ships **Whisper Base** (better accuracy, larger download) and **Whisper Tiny** (faster, smaller).
+- **Load model**: Click **Load model**. The model downloads once from a trusted source, is checksum-verified, and is stored on your device (OPFS) so later loads are instant and work offline — the network is touched at most once. Nothing downloads until you click, and the panel tells you when a model loaded straight from the device cache.
+- **Transcribe selected clip**: Select a clip on the timeline, optionally pick a language (Auto-detect / English / Chinese), and click **Transcribe selected clip**. The result becomes a normal, editable caption track positioned on the timeline where that clip lives.
+- **Burn in when needed**: Generated ASR tracks start as editable sidecar captions. Turn on **Burn-in** in the Transcript panel when you want them overlaid in preview/export.
+- **Transcribe timeline range**: The button is present in the panel, but timeline-range transcription is still disabled until mixed timeline audio extraction lands.
+- **Cancel** stops a running model load or transcription; a selection with no speech does not create an empty track.
+
+Model assets are fetched only from this app's own origin or a small allowlist of reputable hosts (Hugging Face, Kaggle / Google AI Edge, GitHub), and every file is verified against a published SHA-256 digest before use.
+
+**Requirements**: a browser with WebAssembly (effectively every modern browser). When experimental WebNN is enabled, LiteRT requests WebNN with the JSPI runtime first; otherwise it tries WebGPU, then falls back to the WASM accelerator — the panel shows which one actually compiled. The transcription runs in a dedicated worker, so the editor stays responsive. The model itself is downloaded on demand from Hugging Face (digest-verified, then OPFS-cached); if it can't be reached, **Load model** fails gracefully and the rest of the editor works exactly as before — there is no cloud _processing_ of any kind, only the one-time model download. The panel shows the detected engine (LiteRT Whisper), model size and download progress, and the last transcription duration; the Capabilities panel has an **Auto Captions (ASR)** row.
+
+Model: Whisper (MIT, OpenAI), compiled with LiteRT.js (Apache-2.0, Google) on WebNN, WebGPU, or the WASM accelerator.
 
 ## Caption Styles and Animation
 
@@ -261,7 +278,7 @@ for the full reference.
 - **Animations**: Presets can include pop, bounce, slide, or typewriter enter/exit
   animations. Animations are applied at composite time — no re-rasterization per frame.
 - **Karaoke**: The karaoke preset highlights the active word when per-word timing
-  data is present (auto-populated by Phase 29 auto-captions ASR).
+  data is present (auto-populated by the Auto Captions ASR engine above).
 
 ## Replay Buffer
 

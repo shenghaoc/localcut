@@ -1,34 +1,28 @@
 /**
- * Audio Cleanup worker (Phase 28) — owns the WebNN context, the RNNoise graph,
- * and all chunk processing. Lazily spawned by `src/ui/cleanup-bridge.ts` only
- * when the user opens the panel or starts a cleanup action; entirely separate
+ * Audio Cleanup worker (Phase 28) — owns the LiteRT DTLN runtime and all
+ * chunk processing. Lazily spawned by `src/ui/cleanup-bridge.ts` only when
+ * the user opens the panel or starts a cleanup action; entirely separate
  * from the pipeline worker, which it never imports.
  *
- * Everything here is local-only: weights load same-origin on explicit command,
- * audio never leaves the device, and there is no cloud fallback of any kind.
+ * Spawned as a **classic** worker (not ES module) because LiteRT.js loads
+ * its WASM via `importScripts`.
  */
 
 import type { CleanupWorkerCommand, CleanupWorkerState } from '../../protocol';
+import { createOpfsAssetStore, loadVerifiedAsset } from '../asr/asset-cache';
 import { AudioResampler } from '../audio-resampler';
 import {
 	CleanupCancelledError,
 	CleanupJobProcessor,
 	concatPcm,
-	downmixToMono
+	downmixToMono,
+	trimDtlnOutputToInput
 } from './cleanup-jobs';
-import {
-	RNNOISE_FRAME_SIZE,
-	RNNOISE_SAMPLE_RATE,
-	unpackWeights,
-	validateManifest,
-	verifyWeights
-} from './model-manifest';
-import { RnnoiseDsp } from './rnnoise-dsp';
-import { RnnoiseModel } from './rnnoise-graph';
+import { DtlnDsp, DTLN_BLOCK_SHIFT, DTLN_SAMPLE_RATE } from './dtln-dsp';
+import { DtlnRuntime } from './dtln-runtime';
+import { validateManifest, type CleanupModelManifest } from './model-manifest';
 import { encodeWavPcm16 } from './wav';
-import { probeWebNN } from './webnn-probe';
 
-/** Hard upper bound on a single job (15 min @ 48 kHz) to bound memory. */
 const MAX_JOB_FRAMES = 90_000;
 
 interface ActiveJob {
@@ -39,12 +33,10 @@ interface ActiveJob {
 	outputs: Float32Array[];
 }
 
-let model: RnnoiseModel | null = null;
-let modelSizeBytes = 0;
+let runtime: DtlnRuntime | null = null;
+let manifestData: CleanupModelManifest | null = null;
 let job: ActiveJob | null = null;
-/** Bumped by cancel/dispose so awaited work from a stale generation is dropped. */
 let loadGeneration = 0;
-/** Serializes async command handling (worker messages can outpace inference). */
 let queue: Promise<void> = Promise.resolve();
 
 function post(message: CleanupWorkerState, transfer?: Transferable[]): void {
@@ -67,55 +59,91 @@ function dropJob(): void {
 }
 
 async function handleProbe(): Promise<void> {
-	const result = await probeWebNN(self.navigator as { ml?: ML });
-	if (model) result.modelSupport = 'supported';
-	post({ type: 'cleanup-probe-result', result });
+	post({
+		type: 'cleanup-probe-result',
+		result: {
+			wasmAvailable: typeof WebAssembly !== 'undefined',
+			accelerator: runtime?.accelerator ?? 'wasm'
+		}
+	});
 }
 
 async function handleLoadModel(
 	cmd: Extract<CleanupWorkerCommand, { type: 'cleanup-load-model' }>
 ): Promise<void> {
 	const generation = ++loadGeneration;
-	if (model) {
+	if (runtime) {
 		post({
 			type: 'cleanup-model-status',
 			status: 'loaded',
-			backend: model.deviceType,
-			sizeBytes: modelSizeBytes
+			accelerator: runtime.accelerator,
+			sizeBytes: manifestData?.sizeBytes,
+			version: manifestData?.version
 		});
 		return;
 	}
 	post({ type: 'cleanup-model-status', status: 'loading' });
 	try {
-		const ml = (self.navigator as { ml?: ML }).ml;
-		if (!ml) throw new Error('WebNN (navigator.ml) is unavailable in this browser.');
-		const manifest = validateManifest(cmd.manifest);
-		const response = await fetch(cmd.weightsUrl);
-		if (!response.ok) {
-			throw new Error(`Weights fetch failed: HTTP ${response.status}`);
-		}
-		const bytes = await response.arrayBuffer();
-		if (generation !== loadGeneration) return; // cancelled while fetching
-		await verifyWeights(manifest, bytes);
-		const weights = unpackWeights(manifest, bytes);
-		const loaded = await RnnoiseModel.create(
-			ml,
-			weights,
-			/* frames */ 100,
-			cmd.preferredBackends.length > 0 ? cmd.preferredBackends : ['npu', 'gpu', 'cpu']
-		);
+		const response = await fetch(cmd.manifestUrl);
+		if (!response.ok) throw new Error(`Manifest fetch failed: HTTP ${response.status}`);
+		const raw = await response.json();
+		if (generation !== loadGeneration) return;
+
+		const manifest = validateManifest(raw);
+		manifestData = manifest;
+
+		const store = await createOpfsAssetStore('cleanup-models');
+
+		const combinedTotal = manifest.model1.sizeBytes + manifest.model2.sizeBytes;
+		let received1 = 0;
+		let received2 = 0;
+		const postDownloadProgress = () => {
+			const pct = Math.round(((received1 + received2) / combinedTotal) * 100);
+			post({
+				type: 'cleanup-model-status',
+				status: 'loading',
+				sizeBytes: manifest.sizeBytes,
+				error: `Downloading models… ${pct}%`
+			});
+		};
+
+		const [model1Bytes, model2Bytes] = await Promise.all([
+			loadVerifiedAsset(manifest.model1, {
+				store,
+				onProgress: (p) => {
+					received1 = p.receivedBytes;
+					postDownloadProgress();
+				}
+			}),
+			loadVerifiedAsset(manifest.model2, {
+				store,
+				onProgress: (p) => {
+					received2 = p.receivedBytes;
+					postDownloadProgress();
+				}
+			})
+		]);
+		if (generation !== loadGeneration) return;
+
+		const loaded = await DtlnRuntime.create({
+			wasmPath: cmd.wasmPath,
+			accelerator: cmd.preferredAccelerator,
+			model1Bytes,
+			model2Bytes,
+			stateShape: manifest.stateShape
+		});
 		if (generation !== loadGeneration) {
 			loaded.destroy();
 			post({ type: 'cleanup-cancelled' });
 			return;
 		}
-		model = loaded;
-		modelSizeBytes = manifest.sizeBytes;
+		runtime = loaded;
 		post({
 			type: 'cleanup-model-status',
 			status: 'loaded',
-			backend: model.deviceType,
-			sizeBytes: modelSizeBytes
+			accelerator: runtime.accelerator,
+			sizeBytes: manifest.sizeBytes,
+			version: manifest.version
 		});
 	} catch (error) {
 		if (generation !== loadGeneration) return;
@@ -124,53 +152,52 @@ async function handleLoadModel(
 }
 
 function handleBegin(cmd: Extract<CleanupWorkerCommand, { type: 'cleanup-begin' }>): void {
-	if (!model) {
+	if (!runtime) {
 		post({ type: 'cleanup-error', jobId: cmd.jobId, message: 'Cleanup model is not loaded.' });
 		return;
 	}
+	const maxSeconds = Math.floor((MAX_JOB_FRAMES * DTLN_BLOCK_SHIFT) / DTLN_SAMPLE_RATE / 60);
 	if (cmd.totalFrames > MAX_JOB_FRAMES) {
 		post({
 			type: 'cleanup-error',
 			jobId: cmd.jobId,
-			message: `Cleanup range too long (max ${Math.floor((MAX_JOB_FRAMES * RNNOISE_FRAME_SIZE) / RNNOISE_SAMPLE_RATE / 60)} minutes per pass).`
+			message: `Cleanup range too long (max ${maxSeconds} minutes per pass).`
 		});
 		return;
 	}
 	dropJob();
-	const activeModel = model;
-	activeModel.resetState();
+	const activeRuntime = runtime;
+	activeRuntime.resetState();
 	const jobId = cmd.jobId;
 	const totalFrames = Math.max(1, cmd.totalFrames);
-	const processor = new CleanupJobProcessor(
-		new RnnoiseDsp(),
-		{ infer: (features) => activeModel.infer(features) },
-		{
-			batchFrames: activeModel.batchFrames,
-			onBatch: ({ processedFrames }) => {
-				post({
-					type: 'cleanup-progress',
-					jobId,
-					processedFrames: Math.min(processedFrames, totalFrames),
-					totalFrames,
-					fraction: Math.min(1, processedFrames / totalFrames)
-				});
-			}
+	const dsp = new DtlnDsp();
+	const batchFrames = 100;
+	const processor = new CleanupJobProcessor(dsp, activeRuntime, {
+		batchFrames,
+		onBatch: ({ processedFrames }) => {
+			post({
+				type: 'cleanup-progress',
+				jobId,
+				processedFrames: Math.min(processedFrames, totalFrames),
+				totalFrames,
+				fraction: Math.min(1, processedFrames / totalFrames)
+			});
 		}
-	);
+	});
 	job = { jobId, totalFrames, processor, resampler: null, outputs: [] };
 }
 
 async function handleChunk(
 	cmd: Extract<CleanupWorkerCommand, { type: 'cleanup-chunk' }>
 ): Promise<void> {
-	if (!job || job.jobId !== cmd.jobId) return; // stale chunk after cancel
+	if (!job || job.jobId !== cmd.jobId) return;
 	const active = job;
 	try {
 		let mono = downmixToMono(cmd.pcm, Math.max(1, cmd.channels));
-		if (cmd.sampleRate !== RNNOISE_SAMPLE_RATE) {
+		if (cmd.sampleRate !== DTLN_SAMPLE_RATE) {
 			active.resampler ??= new AudioResampler({
 				inputRate: cmd.sampleRate,
-				outputRate: RNNOISE_SAMPLE_RATE,
+				outputRate: DTLN_SAMPLE_RATE,
 				channels: 1
 			});
 			mono = active.resampler.process(mono, mono.length);
@@ -200,16 +227,17 @@ async function handleEnd(
 		}
 		const finalOut = await active.processor.finalize();
 		if (finalOut.length > 0) active.outputs.push(finalOut);
-		const pcm = concatPcm(active.outputs);
+		const rawPcm = concatPcm(active.outputs);
+		const pcm = trimDtlnOutputToInput(rawPcm, active.processor.inputSampleCount);
 		job = null;
 		const durationMs = performance.now() - startedAt;
 		if (cmd.output === 'wav') {
-			const wav = encodeWavPcm16(pcm, RNNOISE_SAMPLE_RATE, 1);
+			const wav = encodeWavPcm16(pcm, DTLN_SAMPLE_RATE, 1);
 			post(
 				{
 					type: 'cleanup-result',
 					jobId: cmd.jobId,
-					sampleRate: RNNOISE_SAMPLE_RATE,
+					sampleRate: DTLN_SAMPLE_RATE,
 					channels: 1,
 					wav,
 					durationMs
@@ -221,7 +249,7 @@ async function handleEnd(
 				{
 					type: 'cleanup-result',
 					jobId: cmd.jobId,
-					sampleRate: RNNOISE_SAMPLE_RATE,
+					sampleRate: DTLN_SAMPLE_RATE,
 					channels: 1,
 					pcm,
 					durationMs
@@ -238,10 +266,10 @@ async function handleEnd(
 
 function handleCancel(cmd: Extract<CleanupWorkerCommand, { type: 'cleanup-cancel' }>): void {
 	if (cmd.jobId === undefined) {
-		loadGeneration += 1; // also abandons an in-flight model load
+		loadGeneration += 1;
 		dropJob();
 		post({ type: 'cleanup-cancelled' });
-		if (!model) post({ type: 'cleanup-model-status', status: 'not-loaded' });
+		if (!runtime) post({ type: 'cleanup-model-status', status: 'not-loaded' });
 		return;
 	}
 	if (job && job.jobId === cmd.jobId) {
@@ -253,15 +281,13 @@ function handleCancel(cmd: Extract<CleanupWorkerCommand, { type: 'cleanup-cancel
 function handleDispose(): void {
 	loadGeneration += 1;
 	dropJob();
-	model?.destroy();
-	model = null;
+	runtime?.destroy();
+	runtime = null;
 	self.close();
 }
 
 self.onmessage = (event: MessageEvent<CleanupWorkerCommand>) => {
 	const cmd = event.data;
-	// Cancel and dispose act immediately; everything else runs serialized so
-	// chunk processing for one job never interleaves.
 	if (cmd.type === 'cleanup-cancel') {
 		handleCancel(cmd);
 		return;
@@ -290,14 +316,11 @@ self.onmessage = (event: MessageEvent<CleanupWorkerCommand>) => {
 					break;
 			}
 		} catch (error) {
-			// An unhandled rejection would break the promise chain permanently,
-			// skipping every subsequent command. Keep the queue alive, but never
-			// silently: drop any half-processed job and surface the failure.
 			dropJob();
 			try {
 				post({ type: 'cleanup-error', message: errorText(error) });
 			} catch {
-				// Posting can only fail if the worker is being torn down.
+				// Worker is being torn down.
 			}
 		}
 	});

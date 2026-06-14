@@ -1,3 +1,4 @@
+import { isFiniteNumber as finite } from '../lib/math';
 import type { TimeRange } from './cache-types';
 import { stableStringify } from './cache-key';
 import {
@@ -25,10 +26,6 @@ const EMPTY_INVALIDATION: CacheInvalidation = {
 	fullTimeline: false,
 	reasons: []
 };
-
-function finite(value: number): boolean {
-	return Number.isFinite(value);
-}
 
 export function normalizeRange(range: TimeRange): TimeRange | null {
 	if (!finite(range.startS) || !finite(range.endS)) return null;

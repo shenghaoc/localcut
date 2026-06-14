@@ -1,5 +1,6 @@
 /** Preview playback loop, transport, and adaptive-resolution policy (Phase 2). */
 
+import { clamp } from '../lib/math';
 import type { PreviewResolution } from '../protocol';
 
 /** Minimal decoded-frame shape consumed by playback (satisfied by Mediabunny's VideoSample). */
@@ -28,7 +29,7 @@ export interface RenderedLayer<M = unknown> {
 export function clampTime(time: number, duration: number): number {
 	if (Number.isNaN(time)) return 0;
 	const max = duration > 0 ? duration : 0;
-	return Math.min(Math.max(0, time), max);
+	return clamp(time, 0, max);
 }
 
 /** Target time for a one-frame step in `direction` (+1 forward, -1 back). */

@@ -16,6 +16,7 @@ import opacityF32 from './shaders/opacity.wgsl?raw';
 import opacityF16 from './shaders/opacity.f16.wgsl?raw';
 import clippingOverlaySource from './shaders/clipping-overlay.wgsl?raw';
 import { EffectChain, type ClipEffectParams } from './effects';
+import { createComputePipeline } from './gpu-pipeline';
 import type { ClipLut } from './lut';
 import {
 	DEFAULT_TRANSFORM,
@@ -223,67 +224,44 @@ export class PreviewRenderer {
 			fragment: { module: presentModule, entryPoint: 'fs', targets: [{ format }] },
 			primitive: { topology: 'triangle-list' }
 		});
-		this.clearPipeline = device.createComputePipeline({
-			layout: 'auto',
-			compute: { module: device.createShaderModule({ code: clearSource }), entryPoint: 'main' }
-		});
-		this.transformPipeline = device.createComputePipeline({
-			layout: 'auto',
-			compute: {
-				module: device.createShaderModule({ code: useF16 ? transformF16 : transformF32 }),
-				entryPoint: 'main'
-			}
-		});
-		this.compositePipeline = device.createComputePipeline({
-			layout: 'auto',
-			compute: {
-				module: device.createShaderModule({ code: useF16 ? compositeOverF16 : compositeOverF32 }),
-				entryPoint: 'main'
-			}
-		});
+		this.clearPipeline = createComputePipeline(device, clearSource, 'clear');
+		this.transformPipeline = createComputePipeline(
+			device,
+			useF16 ? transformF16 : transformF32,
+			'transform'
+		);
+		this.compositePipeline = createComputePipeline(
+			device,
+			useF16 ? compositeOverF16 : compositeOverF32,
+			'composite-over'
+		);
 
 		// Phase 13: transition-mix pipeline for cut-point blends.
-		this.transitionMixPipeline = device.createComputePipeline({
-			layout: 'auto',
-			compute: {
-				module: device.createShaderModule({ code: useF16 ? transitionMixF16 : transitionMixF32 }),
-				entryPoint: 'main'
-			}
-		});
+		this.transitionMixPipeline = createComputePipeline(
+			device,
+			useF16 ? transitionMixF16 : transitionMixF32,
+			'transition-mix'
+		);
 
 		// Phase 21: new stage pipelines
-		this.sourceNormalizePipeline = device.createComputePipeline({
-			layout: 'auto',
-			compute: {
-				module: device.createShaderModule({
-					code: useF16 ? sourceNormalizeF16 : sourceNormalizeF32
-				}),
-				entryPoint: 'main'
-			}
-		});
-		this.outputConvertPipeline = device.createComputePipeline({
-			layout: 'auto',
-			compute: {
-				module: device.createShaderModule({ code: useF16 ? outputConvertF16 : outputConvertF32 }),
-				entryPoint: 'main'
-			}
-		});
-		this.opacityPipeline = device.createComputePipeline({
-			layout: 'auto',
-			compute: {
-				module: device.createShaderModule({ code: useF16 ? opacityF16 : opacityF32 }),
-				entryPoint: 'main'
-			}
-		});
+		this.sourceNormalizePipeline = createComputePipeline(
+			device,
+			useF16 ? sourceNormalizeF16 : sourceNormalizeF32,
+			'source-normalize'
+		);
+		this.outputConvertPipeline = createComputePipeline(
+			device,
+			useF16 ? outputConvertF16 : outputConvertF32,
+			'output-convert'
+		);
+		this.opacityPipeline = createComputePipeline(
+			device,
+			useF16 ? opacityF16 : opacityF32,
+			'opacity'
+		);
 		this.clippingOverlayPipeline = (() => {
 			try {
-				return device.createComputePipeline({
-					layout: 'auto',
-					compute: {
-						module: device.createShaderModule({ code: clippingOverlaySource }),
-						entryPoint: 'main'
-					}
-				});
+				return createComputePipeline(device, clippingOverlaySource, 'clipping-overlay');
 			} catch {
 				return null;
 			}

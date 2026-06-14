@@ -1,3 +1,4 @@
+/* eslint-disable typescript/unbound-method -- vi.fn() mock accessors are unbound by design */
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { ThumbnailGenerator, thumbnailBucket, type ThumbnailResult } from './thumbnails';
 

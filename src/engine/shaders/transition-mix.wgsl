@@ -50,7 +50,7 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
             // wipe: feathered edge sweeping across the frame
             // 0=left, 1=right, 2=up, 3=down
             let isHorizontal = uniforms.direction <= 1u;
-            let edge = isHorizontal ? uv.x : uv.y;
+            let edge = select(uv.y, uv.x, isHorizontal);
             let flip = uniforms.direction == 1u || uniforms.direction == 3u;
             // smoothstep for sub-pixel feathered wipe edge (avoids aliased hard step).
             // Remap t so the feather window stays entirely inside [0,1], preventing a
@@ -71,7 +71,7 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
             let slideT = 1.0 - t;
             var slideInUV = uv;
             var slideOutUV = uv;
-            let signVal = (uniforms.direction == 1u || uniforms.direction == 3u) ? -1.0 : 1.0;
+            let signVal = select(1.0, -1.0, uniforms.direction == 1u || uniforms.direction == 3u);
             if isHorizontal {
                 slideInUV.x = uv.x + signVal * slideT;
                 slideOutUV.x = uv.x + signVal * t * -1.0;

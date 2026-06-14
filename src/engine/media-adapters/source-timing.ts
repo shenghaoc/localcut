@@ -1,3 +1,4 @@
+import { finiteOr } from '../../lib/math';
 import type { TimelineClip } from '../timeline';
 import type {
 	NormalizedSourceTiming,
@@ -46,10 +47,6 @@ export interface BuildNormalizedSourceTimingOptions {
 }
 
 const TIMING_EPSILON = 1e-6;
-
-function finiteOr(value: number | null | undefined, fallback: number): number {
-	return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
-}
 
 function trackTiming(track: SourceTrackInspection | undefined): NormalizedTrackTiming | undefined {
 	if (!track) return undefined;

@@ -171,7 +171,7 @@ function rowsForProbe(probe: CapabilityProbeResult): CapabilityRow[] {
 			active: probe.audioWorklet === 'supported',
 			action: null
 		},
-		webnnRow(probe),
+		cleanupRow(probe),
 		asrRow(probe),
 		// ── Capture Engine (Phase 41) probes ─────────────────────────
 		{
@@ -248,29 +248,27 @@ function rowsForProbe(probe: CapabilityProbeResult): CapabilityRow[] {
 	];
 }
 
-/** WebNN gates only the experimental Audio Cleanup feature — never the tier. */
-function webnnRow(probe: CapabilityProbeResult): CapabilityRow {
-	const webnn = probe.webnn;
-	const backends = webnn
-		? (['npu', 'gpu', 'cpu'] as const).filter((b) => webnn.backends[b] === 'supported')
-		: [];
-	const supported = webnn?.mlPresent === true && backends.length > 0;
+function cleanupRow(probe: CapabilityProbeResult): CapabilityRow {
+	const cleanup = probe.cleanup;
+	const supported = cleanup?.wasmAvailable ?? typeof WebAssembly !== 'undefined';
 	return {
-		label: 'WebNN (audio cleanup)',
-		support: webnn ? (supported ? 'supported' : 'unsupported') : 'unknown',
+		label: 'Audio cleanup (LiteRT DTLN)',
+		support: supported ? 'supported' : 'unsupported',
 		active: false,
 		action: supported
-			? `Local Audio Cleanup (Experimental) available via ${backends.join(', ')}.`
-			: 'Optional on-device audio cleanup needs a browser with WebNN (navigator.ml).'
+			? `Local Audio Cleanup (Experimental) available via LiteRT (${cleanup?.accelerator ?? 'wasm'}).`
+			: 'Audio cleanup requires WebAssembly.'
 	};
 }
 
 /** ASR probes gate only the experimental Auto Captions feature — never the tier. */
 function asrRow(probe: CapabilityProbeResult): CapabilityRow {
 	const asr = probe.asr;
+	const accelerator =
+		asr?.webnn === 'supported' ? 'WEBNN' : asr?.webgpu === 'supported' ? 'WEBGPU' : 'WASM';
 	const engineLabel = asr
-		? asr.recommended === 'webnn-whisper'
-			? 'WebNN Whisper'
+		? asr.recommended === 'litert-whisper'
+			? `LiteRT Whisper (${accelerator})`
 			: 'unavailable'
 		: 'unknown';
 	const supported = asr?.recommended !== 'none';
@@ -280,7 +278,7 @@ function asrRow(probe: CapabilityProbeResult): CapabilityRow {
 		active: false,
 		action: supported
 			? `Auto Captions (Experimental) available via ${engineLabel}.`
-			: 'Auto Captions need the on-device WebNN Whisper engine (LiteRT); there is no browser fallback.'
+			: 'On-device captions require WebAssembly support.'
 	};
 }
 

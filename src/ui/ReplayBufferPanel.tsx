@@ -90,9 +90,15 @@ export function ReplayBufferPanel(props: ReplayBufferPanelProps) {
 								</div>
 								<div class="buffer-indicator">
 									<div class="buffer-bar-bg">
-										<div class="buffer-bar-fill" style={`width: ${bufferPercent()}%`} />
+										<div
+											class="buffer-bar-fill"
+											style={{
+												transform: `scaleX(${(bufferPercent() || 0) / 100})`,
+												'will-change': 'transform'
+											}}
+										/>
 									</div>
-									<span class="buffer-label">{bufferPercent().toFixed(0)}%</span>
+									<span class="buffer-label">{(bufferPercent() || 0).toFixed(0)}%</span>
 								</div>
 							</div>
 
@@ -100,7 +106,7 @@ export function ReplayBufferPanel(props: ReplayBufferPanelProps) {
 								<Button
 									variant="secondary"
 									onClick={() => props.onSaveLastN()}
-									disabled={props.saveInProgress || bufferPercent() === 0}
+									disabled={props.saveInProgress || !bufferPercent()}
 									aria-label={`Save last ${saveSeconds()} seconds`}
 								>
 									<Save size={16} />

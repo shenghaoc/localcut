@@ -92,6 +92,7 @@ export class TitleTextureCache {
 
 	/** Drops textures for clips no longer on the timeline (post-edit cleanup). */
 	retain(activeClipIds: ReadonlySet<string>): void {
+		// eslint-disable-next-line unicorn/no-useless-spread — snapshot needed: deletes during iteration
 		for (const clipId of [...this.entries.keys()]) {
 			if (!activeClipIds.has(clipId)) this.remove(clipId);
 		}

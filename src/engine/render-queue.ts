@@ -10,6 +10,7 @@ import type {
 	TimelineMarkerSnapshot,
 	ExportPresetDoc
 } from '../protocol';
+import { clamp } from '../lib/math';
 import type { TimelineMarker } from './timeline';
 import {
 	buildTemplateContext,
@@ -80,7 +81,7 @@ export function reorderJob(
 	const job = state.jobs[idx]!;
 	if (job.status !== 'pending') return state;
 	const jobs = state.jobs.filter((j) => j.id !== jobId);
-	const clamped = Math.max(0, Math.min(newIndex, jobs.length));
+	const clamped = clamp(newIndex, 0, jobs.length);
 	jobs.splice(clamped, 0, job);
 	return { ...state, jobs };
 }
@@ -258,7 +259,7 @@ export function createJobsFromMarkers(
 	outputTemplate: string | null
 ): RenderQueueJob[] {
 	if (markers.length < 2) return [];
-	const sorted = [...markers].sort((a, b) => a.time - b.time);
+	const sorted = markers.toSorted((a, b) => a.time - b.time);
 	const jobs: RenderQueueJob[] = [];
 	for (let i = 0; i < sorted.length - 1; i++) {
 		const start = sorted[i]!;

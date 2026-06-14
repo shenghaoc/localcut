@@ -1,3 +1,4 @@
+import { clamp, clamp01, isFiniteNumber as finite } from '../lib/math';
 import { DEFAULT_CLIP_EFFECTS, normalizeClipEffects, type ClipEffectParams } from './effects';
 import {
 	DEFAULT_TRANSFORM,
@@ -178,10 +179,6 @@ function findTrack(timeline: Timeline, trackId: string): TimelineTrack | null {
 	return timeline.find((track) => track.id === trackId) ?? null;
 }
 
-function finite(value: number): boolean {
-	return Number.isFinite(value);
-}
-
 function isInClip(time: number, clip: TimelineClip): boolean {
 	return (
 		finite(clip.start) &&
@@ -282,7 +279,7 @@ export function resolveAllAt(
 			const track = timeline.find((t) => t.id === transition.trackId);
 			if (!track || track.type !== 'video') continue;
 
-			const sorted = [...track.clips].sort((a, b) => a.start - b.start);
+			const sorted = track.clips.toSorted((a, b) => a.start - b.start);
 			const fromIdx = sorted.findIndex((c) => c.id === transition.fromClipId);
 			if (fromIdx < 0 || fromIdx + 1 >= sorted.length) continue;
 			const toIdx = fromIdx + 1;
@@ -296,7 +293,7 @@ export function resolveAllAt(
 			const windowEnd = cutPoint + half;
 			if (time < windowStart || time >= windowEnd) continue;
 
-			const mixT = Math.max(0, Math.min(1, (time - windowStart) / transition.durationS));
+			const mixT = clamp01((time - windowStart) / transition.durationS);
 
 			// Find and mark the existing layer (if any) for this track.
 			const layerIdx = layers.findIndex((l) => l.trackId === transition.trackId);
@@ -648,7 +645,7 @@ function cloneWithNewId(clip: TimelineClip): TimelineClip {
 }
 
 function sortByStart(clips: readonly TimelineClip[]): TimelineClip[] {
-	return [...clips].sort((a, b) => {
+	return clips.toSorted((a, b) => {
 		const startDiff = a.start - b.start;
 		if (startDiff !== 0) return startDiff;
 		return a.id.localeCompare(b.id);
@@ -1075,7 +1072,7 @@ function localKeyframeTime(clip: TimelineClip, timelineTime: number): number | n
 	if (!finite(timelineTime)) return null;
 	const local = timelineTime - clip.start;
 	if (local < -TIMELINE_EPSILON || local > clip.duration + TIMELINE_EPSILON) return null;
-	return Math.min(Math.max(0, local), clip.duration);
+	return clamp(local, 0, clip.duration);
 }
 
 function stripEmptyKeyframes(keyframes: ClipKeyframes): ClipKeyframes | undefined {
@@ -1213,7 +1210,7 @@ export function setClipLutStrength(
 	clipId: string,
 	strength: number
 ): Timeline {
-	const clamped = finite(strength) ? Math.min(1, Math.max(0, strength)) : Number.NaN;
+	const clamped = finite(strength) ? clamp01(strength) : Number.NaN;
 	if (!finite(clamped)) return timeline;
 	return setClipEffectParam(timeline, trackId, clipId, 'lutStrength', clamped);
 }
@@ -1446,7 +1443,7 @@ export function reorderTrack(timeline: Timeline, trackId: string, toIndex: numbe
 	if (!Number.isInteger(toIndex)) return timeline;
 	const from = timeline.findIndex((track) => track.id === trackId);
 	if (from < 0) return timeline;
-	const clamped = Math.min(Math.max(0, toIndex), timeline.length - 1);
+	const clamped = clamp(toIndex, 0, timeline.length - 1);
 	if (clamped === from) return timeline;
 	const next = [...timeline];
 	const [moved] = next.splice(from, 1);
@@ -1532,7 +1529,7 @@ export function deleteMarker(
 }
 
 export function sortMarkers(markers: readonly TimelineMarker[]): TimelineMarker[] {
-	return [...markers].sort((a, b) => {
+	return markers.toSorted((a, b) => {
 		const timeDiff = a.time - b.time;
 		if (timeDiff !== 0) return timeDiff;
 		return a.id.localeCompare(b.id);

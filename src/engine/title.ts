@@ -7,6 +7,8 @@
  * old text is the failure mode the keying exists to prevent (R2.3).
  */
 
+import { clamp, finiteOr } from '../lib/math';
+
 export type TitleAlign = 'left' | 'center' | 'right';
 
 /**
@@ -79,14 +81,6 @@ export const DEFAULT_TITLE_STYLE: TitleStyle = {
 
 /** Stable list of style keys, sorted so the hash order is deterministic. */
 export const TITLE_STYLE_KEYS = Object.keys(DEFAULT_TITLE_STYLE).sort() as (keyof TitleStyle)[];
-
-function clamp(value: number, min: number, max: number): number {
-	return Math.min(max, Math.max(min, value));
-}
-
-function finiteOr(value: unknown, fallback: number): number {
-	return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
-}
 
 /** Accepts `#rgb`/`#rgba`/`#rrggbb`/`#rrggbbaa` (any case); anything else falls back. */
 function normalizeColor(value: unknown, fallback: string): string {

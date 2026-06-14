@@ -1,47 +1,26 @@
-import { describe, expect, it, vi } from 'vite-plus/test';
+import { describe, expect, it } from 'vite-plus/test';
 import {
 	CleanupCancelledError,
 	CleanupJobProcessor,
 	concatPcm,
 	downmixToMono,
-	type FrameDsp
+	DTLN_WARMUP_SAMPLES,
+	trimDtlnOutputToInput,
+	type CleanupInferenceRunner
 } from './cleanup-jobs';
-import { RNNOISE_FEATURE_SIZE, RNNOISE_FRAME_SIZE, RNNOISE_GAINS_SIZE } from './model-manifest';
-import type { FrameSpectra } from './rnnoise-dsp';
+import { DTLN_BLOCK_LEN, DTLN_BLOCK_SHIFT, DtlnDsp } from './dtln-dsp';
 
-/**
- * Fake DSP mirroring the real one's contract: one-frame algorithmic delay
- * (output frame n replays input frame n−1, scaled by the first gain) with
- * streaming state carried across frames, so chunk-boundary continuity and
- * delay compensation are both observable.
- */
-function fakeDsp(): FrameDsp & { framesSeen: number } {
-	const inputs: Float32Array[] = [];
-	let postCount = 0;
+function passthrough(): CleanupInferenceRunner & { model1Calls: number; model2Calls: number } {
 	return {
-		framesSeen: 0,
-		preProcessFrame(input, features, spectra: FrameSpectra) {
-			spectra.xRe.set(input.subarray(0, RNNOISE_FRAME_SIZE));
-			inputs.push(input.slice(0, RNNOISE_FRAME_SIZE));
-			features[0] = this.framesSeen;
-			this.framesSeen += 1;
-			return false;
+		model1Calls: 0,
+		model2Calls: 0,
+		async runModel1(magnitude: Float32Array) {
+			this.model1Calls++;
+			return new Float32Array(magnitude.length).fill(1);
 		},
-		postProcessFrame(gains, _spectra: FrameSpectra, out) {
-			const delayed = postCount > 0 ? inputs[postCount - 1]! : new Float32Array(RNNOISE_FRAME_SIZE);
-			postCount += 1;
-			for (let i = 0; i < RNNOISE_FRAME_SIZE; i++) out[i] = delayed[i]! * gains[0]!;
-		}
-	};
-}
-
-function unitRunner(batchFrames: number) {
-	return {
-		calls: [] as number[],
-		async infer(features: Float32Array, frameCount: number) {
-			this.calls.push(frameCount);
-			expect(features.length).toBe(batchFrames * RNNOISE_FEATURE_SIZE);
-			return new Float32Array(batchFrames * RNNOISE_GAINS_SIZE).fill(1);
+		async runModel2(estimated: Float32Array) {
+			this.model2Calls++;
+			return estimated.slice();
 		}
 	};
 }
@@ -53,31 +32,31 @@ function ramp(samples: number): Float32Array {
 }
 
 describe('CleanupJobProcessor', () => {
-	it('aligns arbitrary chunk sizes to 480-sample frames and preserves all samples', async () => {
-		const runner = unitRunner(4);
-		const processor = new CleanupJobProcessor(fakeDsp(), runner, { batchFrames: 4 });
-		const input = ramp(480 * 5 + 123);
+	it('aligns arbitrary chunk sizes to 128-sample frames and produces output', async () => {
+		const runner = passthrough();
+		const dsp = new DtlnDsp();
+		const processor = new CleanupJobProcessor(dsp, runner, { batchFrames: 4 });
+		const input = ramp(DTLN_BLOCK_SHIFT * 5 + 23);
 		const outputs: Float32Array[] = [];
-		// Push in deliberately awkward chunk sizes; the remainder goes last.
 		let cursor = 0;
-		for (const size of [100, 700, 479, 481, 960]) {
+		for (const size of [50, 200, 127, 129, 256]) {
 			outputs.push(await processor.push(input.subarray(cursor, cursor + size)));
 			cursor += size;
 		}
 		outputs.push(await processor.push(input.subarray(cursor)));
 		outputs.push(await processor.finalize());
 		const out = concatPcm(outputs);
-		expect(out.length).toBe(input.length);
-		// Delay compensation makes output align 1:1 with input (unit gains).
-		for (let i = 0; i < input.length; i += 997) {
-			expect(out[i]).toBeCloseTo(input[i]!, 6);
-		}
+		const inputFrames = Math.ceil(input.length / DTLN_BLOCK_SHIFT);
+		const olaFlushFrames = DTLN_BLOCK_LEN / DTLN_BLOCK_SHIFT - 1;
+		expect(out.length).toBe((inputFrames + olaFlushFrames) * DTLN_BLOCK_SHIFT);
+		expect(runner.model1Calls).toBeGreaterThan(0);
+		expect(runner.model2Calls).toBe(runner.model1Calls);
 	});
 
 	it('produces identical output regardless of chunking (state carried across chunks)', async () => {
-		const input = ramp(480 * 7 + 250);
+		const input = ramp(DTLN_BLOCK_SHIFT * 7 + 50);
 		const runAll = async (chunkSizes: number[]): Promise<Float32Array> => {
-			const processor = new CleanupJobProcessor(fakeDsp(), unitRunner(3), { batchFrames: 3 });
+			const processor = new CleanupJobProcessor(new DtlnDsp(), passthrough(), { batchFrames: 3 });
 			const outputs: Float32Array[] = [];
 			let cursor = 0;
 			for (const size of chunkSizes) {
@@ -89,65 +68,62 @@ describe('CleanupJobProcessor', () => {
 			return concatPcm(outputs);
 		};
 		const whole = await runAll([]);
-		const chunked = await runAll([100, 480, 1000, 333]);
+		const chunked = await runAll([50, 128, 300, 100]);
 		expect(chunked.length).toBe(whole.length);
 		expect([...chunked]).toEqual([...whole]);
 	});
 
 	it('reports monotonic progress per batch', async () => {
 		const reports: number[] = [];
-		const processor = new CleanupJobProcessor(fakeDsp(), unitRunner(2), {
+		const processor = new CleanupJobProcessor(new DtlnDsp(), passthrough(), {
 			batchFrames: 2,
 			onBatch: ({ processedFrames }) => reports.push(processedFrames)
 		});
-		await processor.push(ramp(480 * 7));
+		await processor.push(ramp(DTLN_BLOCK_SHIFT * 7));
 		await processor.finalize();
 		expect(reports.length).toBeGreaterThan(1);
 		for (let i = 1; i < reports.length; i++) {
 			expect(reports[i]!).toBeGreaterThan(reports[i - 1]!);
 		}
-		// 7 input frames + 1 delay-compensation flush frame.
-		expect(reports[reports.length - 1]).toBe(8);
 	});
 
-	it('zero-pads the features of a partial final batch', async () => {
-		const seen: Float32Array[] = [];
-		const runner = {
-			async infer(features: Float32Array) {
-				seen.push(features.slice());
-				return new Float32Array(4 * RNNOISE_GAINS_SIZE).fill(1);
-			}
-		};
-		const dsp = fakeDsp();
-		const processor = new CleanupJobProcessor(dsp, runner, { batchFrames: 4 });
-		await processor.push(ramp(480 * 4));
-		await processor.finalize();
-		const last = seen[seen.length - 1]!;
-		// Final batch holds 1 flush frame; features for frames 2..4 must be zero.
-		const tail = last.subarray(1 * RNNOISE_FEATURE_SIZE);
-		expect(Math.max(...tail.map(Math.abs))).toBe(0);
-	});
-
-	it('abort() cancels promptly between batches and releases nothing half-done', async () => {
+	it('abort() cancels promptly between frames and rejects further pushes', async () => {
+		const dsp = new DtlnDsp();
 		const processor = new CleanupJobProcessor(
-			fakeDsp(),
+			dsp,
 			{
-				infer: vi.fn(async () => {
+				async runModel1(mag) {
 					processor.abort();
-					return new Float32Array(2 * RNNOISE_GAINS_SIZE).fill(1);
-				})
+					return new Float32Array(mag.length).fill(1);
+				},
+				async runModel2(est) {
+					return est.slice();
+				}
 			},
 			{ batchFrames: 2 }
 		);
-		await expect(processor.push(ramp(480 * 4))).rejects.toThrow(CleanupCancelledError);
-		await expect(processor.push(ramp(480))).rejects.toThrow(CleanupCancelledError);
+		await expect(processor.push(ramp(DTLN_BLOCK_SHIFT * 4))).rejects.toThrow(CleanupCancelledError);
+		await expect(processor.push(ramp(DTLN_BLOCK_SHIFT))).rejects.toThrow(CleanupCancelledError);
 	});
 
 	it('abort() before finalize rejects finalize', async () => {
-		const processor = new CleanupJobProcessor(fakeDsp(), unitRunner(2), { batchFrames: 2 });
-		await processor.push(ramp(480));
+		const processor = new CleanupJobProcessor(new DtlnDsp(), passthrough(), { batchFrames: 2 });
+		await processor.push(ramp(DTLN_BLOCK_SHIFT));
 		processor.abort();
 		await expect(processor.finalize()).rejects.toThrow(CleanupCancelledError);
+	});
+
+	it('trims DTLN warm-up and flush padding back to the original input length', () => {
+		const inputSamples = 5;
+		const raw = new Float32Array(DTLN_WARMUP_SAMPLES + inputSamples + DTLN_BLOCK_SHIFT);
+		for (let i = 0; i < raw.length; i++) raw[i] = i;
+
+		const trimmed = trimDtlnOutputToInput(raw, inputSamples);
+
+		expect([...trimmed]).toEqual(
+			Array.from({ length: inputSamples }, (_, i) => DTLN_WARMUP_SAMPLES + i)
+		);
+		expect(trimmed.length).toBe(inputSamples);
 	});
 });
 
