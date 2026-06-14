@@ -1,4 +1,5 @@
 import { createEffect, createSignal, onCleanup, Show } from 'solid-js';
+import { clamp } from '../lib/math';
 import { type TimelineClipSnapshot as ProtocolTimelineClip, type WaveformPeaks } from '../protocol';
 import { resolveSnap, timelineTimeAtClientX, type SnapTarget } from './timeline-interaction';
 import type { ThumbnailEntry } from './thumbnail-store';
@@ -38,10 +39,6 @@ function filmstripTimestamps(clip: ProtocolTimelineClip, tileCount: number): num
 		times.push(clip.inPoint + ((i + 0.5) / tileCount) * clip.duration);
 	}
 	return times;
-}
-
-function clamp(value: number, min: number, max: number) {
-	return Math.min(Math.max(value, min), max);
 }
 
 /**
@@ -95,6 +92,9 @@ export function TimelineClip(props: TimelineClipProps) {
 	onCleanup(clearPointerListeners);
 	onCleanup(() => {
 		if (thumbRequestTimer) clearTimeout(thumbRequestTimer);
+		// A trim debounce in flight when the clip unmounts (e.g. mid-drag delete)
+		// would otherwise fire against a gone component.
+		if (trimDebounce) clearTimeout(trimDebounce);
 	});
 
 	// Filmstrip: sample thumbnails across a video clip, requesting any that are

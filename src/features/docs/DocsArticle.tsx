@@ -1,6 +1,5 @@
 import { createEffect, createMemo, on } from 'solid-js';
-import type { DocSection } from './docsManifest';
-import { parseDocsPath } from './docsManifest';
+import { type DocSection, parseDocsPath } from './docsManifest';
 import { renderDocHtml } from './markdown';
 
 interface DocsArticleProps {

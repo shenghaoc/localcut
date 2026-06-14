@@ -1,5 +1,7 @@
 /** Per-clip transform model + fit-mode math + uniform packing — Phase 12. */
 
+import { clamp, finiteOr } from '../lib/math';
+
 /**
  * How a layer whose source aspect differs from the output is sized before the
  * user transform is applied:
@@ -40,14 +42,6 @@ export const DEFAULT_TRANSFORM: TransformParams = {
 	anchorY: 0.5,
 	fit: 'fill'
 };
-
-function clamp(value: number, min: number, max: number): number {
-	return Math.min(max, Math.max(min, value));
-}
-
-function finiteOr(value: unknown, fallback: number): number {
-	return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
-}
 
 function normalizeFit(value: unknown): FitMode {
 	return value === 'fit' || value === 'letterbox' || value === 'fill'

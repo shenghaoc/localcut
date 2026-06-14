@@ -69,6 +69,7 @@ export class ThumbnailStore {
 	/** Closes and drops every bitmap for a source (asset removed / re-keyed). */
 	clearSource(sourceId: string): void {
 		const prefix = `${sourceId}:`;
+		// eslint-disable-next-line unicorn/no-useless-spread — snapshot needed: deletes during iteration
 		for (const [key, entry] of [...this.entries]) {
 			if (!key.startsWith(prefix)) continue;
 			this.entries.delete(key);

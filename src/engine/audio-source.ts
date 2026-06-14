@@ -4,7 +4,7 @@ import { WasmAudioResampler } from './audio-resampler-wasm';
 
 // Kick off WASM compilation early so the module is ready before the first
 // synchronous process() call. Failure is non-fatal.
-WasmAudioResampler.init();
+void WasmAudioResampler.init();
 
 export interface AudioSampleLike {
 	readonly timestamp: number;

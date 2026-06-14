@@ -1,5 +1,6 @@
 /** rAF reader for AudioWorklet peak/RMS meters in the meter SAB. */
 
+import { clamp } from '../lib/math';
 import { MeterIndex } from '../protocol';
 
 export interface MeterLevels {
@@ -43,5 +44,5 @@ export function levelToDb(level: number): number {
 
 export function meterHeightPercent(level: number): number {
 	const db = levelToDb(level);
-	return Math.max(0, Math.min(100, ((db + 60) / 60) * 100));
+	return clamp(((db + 60) / 60) * 100, 0, 100);
 }

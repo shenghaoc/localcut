@@ -9,6 +9,7 @@ interface WaveformProps {
 
 /** Paints min/max peak buckets on an audio-lane canvas. */
 export function Waveform(props: WaveformProps) {
+	// eslint-disable-next-line eslint/no-unassigned-vars — SolidJS ref assigns via JSX
 	let canvas: HTMLCanvasElement | undefined;
 
 	function paint() {

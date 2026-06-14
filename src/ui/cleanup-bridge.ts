@@ -22,10 +22,11 @@ export async function spawnCleanupWorker(
 	const handler = (event: MessageEvent<CleanupWorkerState>) => {
 		onState(event.data);
 	};
-	worker.addEventListener('message', handler);
-	worker.addEventListener('error', (event) => {
+	const errorHandler = (event: ErrorEvent) => {
 		onCrash(event.message || 'Audio cleanup worker crashed.');
-	});
+	};
+	worker.addEventListener('message', handler);
+	worker.addEventListener('error', errorHandler);
 	return {
 		send(command, transfer) {
 			if (transfer?.length) worker.postMessage(command, transfer);
@@ -33,6 +34,7 @@ export async function spawnCleanupWorker(
 		},
 		terminate() {
 			worker.removeEventListener('message', handler);
+			worker.removeEventListener('error', errorHandler);
 			worker.terminate();
 		}
 	};

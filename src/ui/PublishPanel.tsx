@@ -85,6 +85,7 @@ export function PublishPanel(props: PublishPanelProps) {
 	const [settings, setSettings] = createSignal<PublishSettingsDoc>(defaultPublishSettings());
 	const [settingsLoaded, setSettingsLoaded] = createSignal(false);
 	const [retryRemainingS, setRetryRemainingS] = createSignal<number | null>(null);
+	// eslint-disable-next-line eslint/no-unassigned-vars — SolidJS ref assigns via JSX
 	let panelRef: HTMLElement | undefined;
 
 	onMount(() => {

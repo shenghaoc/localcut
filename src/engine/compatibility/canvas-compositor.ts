@@ -1,3 +1,4 @@
+import { clamp01 } from '../../lib/math';
 import { TITLE_RASTER_HEIGHT, type TitleContent } from '../title';
 import { computeFitRect, type TransformParams } from '../transform';
 import { rasterizeTitleToCanvas, TITLE_RASTER_WIDTH } from '../titles';
@@ -110,7 +111,7 @@ export function drawLayers(
 	try {
 		target.clearRect(0, 0, width, height);
 		for (const layer of layers) {
-			target.globalAlpha = Math.max(0, Math.min(1, layer.opacity));
+			target.globalAlpha = clamp01(layer.opacity);
 			target.drawImage(layer.bitmap, layer.x, layer.y, layer.width, layer.height);
 		}
 	} finally {
@@ -125,10 +126,6 @@ export function drawLayers(
 		}
 		target.globalAlpha = 1;
 	}
-}
-
-function clamp01(value: number): number {
-	return Math.max(0, Math.min(1, value));
 }
 
 export function drawTransformedImage(

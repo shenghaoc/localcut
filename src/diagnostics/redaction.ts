@@ -21,7 +21,7 @@ const COMMON_FILE_PATTERN =
 const HEX_FINGERPRINT_PATTERN = /\b[a-f0-9]{32,}\b/gi;
 
 function stableSourceAliases(sources: readonly DiagnosticSourceInput[]): Map<string, string> {
-	const sorted = [...sources].sort((a, b) => a.sourceId.localeCompare(b.sourceId));
+	const sorted = sources.toSorted((a, b) => a.sourceId.localeCompare(b.sourceId));
 	return new Map(sorted.map((source, index) => [source.sourceId, `source-${index + 1}`]));
 }
 

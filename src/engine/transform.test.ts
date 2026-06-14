@@ -82,6 +82,7 @@ describe('transform uniform packing', () => {
 		const [m00, , , , t0] = packed;
 		// l(o) = m00*o + t0. A 2x layer means the full output edge (o=0..1) samples
 		// only the central half of the source (l = 0.25..0.75).
+		// eslint-disable-next-line oxc/erasing-op — intentional: asserting transform maps 0 correctly
 		expect(m00! * 0 + t0!).toBeCloseTo(0.25);
 		expect(m00! * 1 + t0!).toBeCloseTo(0.75);
 	});

@@ -532,6 +532,7 @@ export class CleanupController {
 			for (const waiter of waiters) waiter(false);
 		}
 		// Reject any extraction still in flight so the job loop exits promptly.
+		// eslint-disable-next-line unicorn/no-useless-spread — snapshot needed: deletes during iteration
 		for (const [requestId, pending] of [...this.pendingExtractions]) {
 			this.pendingExtractions.delete(requestId);
 			pending.reject(new CleanupCancelled());

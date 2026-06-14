@@ -30,7 +30,7 @@ export function createBudgetCounter(metric: BudgetMetric): BudgetCounter {
 		},
 
 		latest(): BudgetSample | null {
-			return samples.length > 0 ? samples[samples.length - 1]! : null;
+			return samples.at(-1) ?? null;
 		},
 
 		average(windowMs: number): number | null {

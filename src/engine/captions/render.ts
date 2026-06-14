@@ -1,7 +1,6 @@
 import { TITLE_RASTER_WIDTH } from '../titles';
-import { captionAnchorTransform, resolveCaptionTitleStyle } from './types';
+import { captionAnchorTransform, type CaptionTrack, resolveCaptionTitleStyle } from './types';
 import { activeCaptionSegmentsAt, resolvedCaptionStyle } from './model';
-import type { CaptionTrack } from './types';
 import type { TitleContent } from '../title';
 import type { TransformParams } from '../transform';
 

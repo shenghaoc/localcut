@@ -10,7 +10,7 @@
  * Phase 21 scopes feature flag (B7).
  *
  * The full scope UI/worker/SAB/throttling pipeline is unfinished: `dispatchScopes`
- * is a placeholder and `ScopePanel` is not wired into the app. Until the pipeline
+ * is a placeholder and no scope panel is wired into the app. Until the pipeline
  * is complete, scopes must be impossible to enable so no scope pass ever runs by
  * default. Flip this to `true` only when the end-to-end path lands.
  */

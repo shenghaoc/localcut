@@ -79,7 +79,7 @@ describe('RnnoiseDsp', () => {
 		const spectra = createFrameSpectra();
 		const silence = dsp.preProcessFrame(new Float32Array(FRAME_SIZE), features, spectra);
 		expect(silence).toBe(true);
-		expect([...features]).toEqual(new Array(NB_FEATURES).fill(0));
+		expect([...features]).toEqual(Array.from({ length: NB_FEATURES }, () => 0));
 	});
 
 	it('produces finite, bounded features for real audio', () => {

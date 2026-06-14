@@ -7,13 +7,14 @@ import type {
 	TimelineClipSnapshot,
 	TransformParamsSnapshot
 } from '../protocol';
+import { clamp, clamp01 } from '../lib/math';
 
 function sameTime(a: number, b: number): boolean {
 	return Math.abs(a - b) <= KEYFRAME_EPSILON;
 }
 
 function amountFor(easing: KeyframeSnapshot['easing'], amount: number): number {
-	const t = Math.min(1, Math.max(0, amount));
+	const t = clamp01(amount);
 	if (easing === 'hold') return 0;
 	if (easing === 'ease') return t * t * (3 - 2 * t);
 	return t;
@@ -26,7 +27,7 @@ export function clipLocalTime(
 	if (!Number.isFinite(timelineTime)) return null;
 	const local = timelineTime - clip.start;
 	if (local < -TIMELINE_EPSILON || local > clip.duration + TIMELINE_EPSILON) return null;
-	return Math.min(Math.max(0, local), clip.duration);
+	return clamp(local, 0, clip.duration);
 }
 
 export function sortedKeyframes(

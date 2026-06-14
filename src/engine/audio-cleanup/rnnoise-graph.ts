@@ -9,8 +9,12 @@
  * Runs only inside the Audio Cleanup worker.
  */
 
-import { RNNOISE_FEATURE_SIZE, RNNOISE_GAINS_SIZE, type NpyTensor } from './model-manifest';
-import { RNNOISE_TENSOR_NAMES } from './model-manifest';
+import {
+	RNNOISE_FEATURE_SIZE,
+	RNNOISE_GAINS_SIZE,
+	type NpyTensor,
+	RNNOISE_TENSOR_NAMES
+} from './model-manifest';
 
 const VAD_GRU_HIDDEN = 24;
 const NOISE_GRU_HIDDEN = 48;

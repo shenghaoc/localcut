@@ -14,6 +14,7 @@ import colourTemperatureF16 from './shaders/colour-temperature.f16.wgsl?raw';
 import lutApplyF32 from './shaders/lut-apply.wgsl?raw';
 import lutApplyF16 from './shaders/lut-apply.f16.wgsl?raw';
 import passthroughSource from './shaders/passthrough.wgsl?raw';
+import { createComputePipeline } from './gpu-pipeline';
 import { LutTextureCache, type ClipLut } from './lut';
 
 export type EffectId = 'brightness-contrast' | 'saturation' | 'colour-temperature' | 'lut-apply';
@@ -220,20 +221,12 @@ export class EffectChain {
 	constructor(device: GPUDevice, useF16: boolean) {
 		this.device = device;
 
-		const passthroughModule = device.createShaderModule({ code: passthroughSource });
-		this.passthroughPipeline = device.createComputePipeline({
-			layout: 'auto',
-			compute: { module: passthroughModule, entryPoint: 'main' }
-		});
+		this.passthroughPipeline = createComputePipeline(device, passthroughSource, 'passthrough');
 		this.passthroughLayout = this.passthroughPipeline.getBindGroupLayout(0);
 
 		this.effects = EFFECT_REGISTRY.map((entry) => {
 			const code = useF16 ? entry.shaderF16 : entry.shaderF32;
-			const module = device.createShaderModule({ code });
-			const pipeline = device.createComputePipeline({
-				layout: 'auto',
-				compute: { module, entryPoint: 'main' }
-			});
+			const pipeline = createComputePipeline(device, code, entry.id);
 			return {
 				id: entry.id,
 				byteLength: entry.uniformByteLength,
@@ -243,13 +236,11 @@ export class EffectChain {
 			};
 		});
 
-		const lutModule = device.createShaderModule({
-			code: useF16 ? LUT_REGISTRY_ENTRY.shaderF16 : LUT_REGISTRY_ENTRY.shaderF32
-		});
-		const lutPipeline = device.createComputePipeline({
-			layout: 'auto',
-			compute: { module: lutModule, entryPoint: 'main' }
-		});
+		const lutPipeline = createComputePipeline(
+			device,
+			useF16 ? LUT_REGISTRY_ENTRY.shaderF16 : LUT_REGISTRY_ENTRY.shaderF32,
+			LUT_REGISTRY_ENTRY.id
+		);
 		this.lutEffect = {
 			id: LUT_REGISTRY_ENTRY.id,
 			byteLength: LUT_REGISTRY_ENTRY.uniformByteLength,

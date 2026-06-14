@@ -19,8 +19,12 @@ import type {
 	ThroughputProbe
 } from '../../protocol';
 import { exportConstraintsForProbe } from '../capability-probe-v2';
-import type { CloseableBitmap, CloseableFrame } from './canvas-compositor';
-import { CanvasCompatibilityRenderer, type CanvasCompatibilityLayer } from './canvas-compositor';
+import {
+	type CanvasCompatibilityLayer,
+	CanvasCompatibilityRenderer,
+	type CloseableBitmap,
+	type CloseableFrame
+} from './canvas-compositor';
 import type { MediaInputHandle } from '../media-io';
 import {
 	buildExportPlan,
