@@ -146,7 +146,10 @@ import { BLAZEFACE_SHORT_RANGE_URL, MEDIAPIPE_WASM_PATH } from '../engine/refram
 import { REFRAME_ASPECT_VALUES } from '../protocol';
 // Phase 40: On-Device Language Tools
 import { LanguageToolsPanel } from './LanguageToolsPanel';
-import { TranslationController, type TranslationControllerState } from './language-tools/translation-controller';
+import {
+	TranslationController,
+	type TranslationControllerState
+} from './language-tools/translation-controller';
 import { DraftController, type DraftControllerState } from './language-tools/draft-controller';
 import { languageToolsSurfaceVisible } from '../protocol';
 import PipelineWorker from '../engine/worker.ts?worker';
@@ -815,7 +818,7 @@ export function App() {
 			});
 		},
 		onTranslatedTrackCreated: (trackId) => {
-			const track = captionTracks().find(t => t.id === trackId);
+			const track = captionTracks().find((t) => t.id === trackId);
 			setStatusLine(
 				track
 					? `Translated caption track "${track.name}" created`
@@ -4066,7 +4069,7 @@ export function App() {
 						draftState={draftState()}
 						captionTracks={captionTracks()}
 						onTranslate={(trackId, targetLang) => {
-							const track = captionTracks().find(t => t.id === trackId);
+							const track = captionTracks().find((t) => t.id === trackId);
 							if (!track) return;
 							pauseFromKeyboard();
 							void translationController.translateTrack(
@@ -4081,7 +4084,7 @@ export function App() {
 						}}
 						onCancelTranslate={() => translationController.cancel()}
 						onGenerateDraft={(trackId) => {
-							const track = captionTracks().find(t => t.id === trackId);
+							const track = captionTracks().find((t) => t.id === trackId);
 							if (!track) return;
 							pauseFromKeyboard();
 							void draftController.generateDraft(track.segments);

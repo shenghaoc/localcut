@@ -41,10 +41,7 @@ interface TranslatorTranslateOptions {
 }
 
 interface Translator {
-	translate(
-		input: string,
-		options?: TranslatorTranslateOptions
-	): Promise<string>;
+	translate(input: string, options?: TranslatorTranslateOptions): Promise<string>;
 	destroy(): void;
 }
 
@@ -88,14 +85,8 @@ interface SummarizerCreateOptions extends AICreateMonitorOptions {
 }
 
 interface Summarizer {
-	summarize(
-		input: string,
-		options?: { signal?: AbortSignal }
-	): Promise<string>;
-	summarizeStreaming(
-		input: string,
-		options?: { signal?: AbortSignal }
-	): ReadableStream<string>;
+	summarize(input: string, options?: { signal?: AbortSignal }): Promise<string>;
+	summarizeStreaming(input: string, options?: { signal?: AbortSignal }): ReadableStream<string>;
 	countTokens(input: string): Promise<number>;
 	destroy(): void;
 }
@@ -114,14 +105,8 @@ interface LanguageModelPromptOptions {
 }
 
 interface LanguageModel {
-	prompt(
-		input: string,
-		options?: LanguageModelPromptOptions
-	): Promise<string>;
-	promptStreaming(
-		input: string,
-		options?: LanguageModelPromptOptions
-	): ReadableStream<string>;
+	prompt(input: string, options?: LanguageModelPromptOptions): Promise<string>;
+	promptStreaming(input: string, options?: LanguageModelPromptOptions): ReadableStream<string>;
 	countTokens(input: string): Promise<number>;
 	destroy(): void;
 }

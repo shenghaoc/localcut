@@ -7,10 +7,7 @@
  * Runs on the main thread. Output is read-only and copyable — never written
  * to the project document.
  */
-import type {
-	AiAvailability,
-	LanguageToolsProbeResult
-} from '../../protocol';
+import type { AiAvailability, LanguageToolsProbeResult } from '../../protocol';
 import { assembleTranscript } from '../../engine/language-tools/transcript';
 import {
 	buildDraftPrompt,
@@ -60,10 +57,7 @@ interface SummarizerSession {
 }
 
 interface LanguageModelSession {
-	promptStreaming(
-		input: string,
-		options?: { signal?: AbortSignal }
-	): ReadableStream<string>;
+	promptStreaming(input: string, options?: { signal?: AbortSignal }): ReadableStream<string>;
 	countTokens(input: string): Promise<number>;
 	destroy(): void;
 }
@@ -90,9 +84,7 @@ interface AiAPI {
 
 export class DraftController {
 	private state: DraftControllerState;
-	private readonly listeners = new Set<
-		(state: DraftControllerState) => void
-	>();
+	private readonly listeners = new Set<(state: DraftControllerState) => void>();
 	private summarizer: SummarizerSession | null = null;
 	private languageModel: LanguageModelSession | null = null;
 	private abortController: AbortController | null = null;
@@ -110,9 +102,7 @@ export class DraftController {
 		return this.state;
 	}
 
-	subscribe(
-		listener: (state: DraftControllerState) => void
-	): () => void {
+	subscribe(listener: (state: DraftControllerState) => void): () => void {
 		this.listeners.add(listener);
 		listener(this.state);
 		return () => this.listeners.delete(listener);
@@ -131,10 +121,8 @@ export class DraftController {
 	/** Update the probe result. */
 	setProbe(probe: LanguageToolsProbeResult): void {
 		const available =
-			(probe.summarizer !== 'unavailable' &&
-				probe.summarizer !== 'unknown') ||
-			(probe.languageModel !== 'unavailable' &&
-				probe.languageModel !== 'unknown');
+			(probe.summarizer !== 'unavailable' && probe.summarizer !== 'unknown') ||
+			(probe.languageModel !== 'unavailable' && probe.languageModel !== 'unknown');
 		this.update({
 			summarizerAvailability: probe.summarizer,
 			languageModelAvailability: probe.languageModel,
@@ -213,14 +201,11 @@ export class DraftController {
 			let condensed = transcript;
 			if (this.summarizerReady && api.summarizer) {
 				if (!this.summarizer) {
-					this.summarizer = await api.summarizer.create(
-						buildSummarizerOptions()
-					);
+					this.summarizer = await api.summarizer.create(buildSummarizerOptions());
 				}
 
 				// Check if we need to chunk
-				const tokenCount =
-					await this.summarizer.countTokens(transcript);
+				const tokenCount = await this.summarizer.countTokens(transcript);
 				// Gemini Nano's effective context is ~4k tokens. Reserve ~1k for
 				// the summarizer's internal prompt overhead so the input fits.
 				const maxTokens = 3000;
@@ -228,31 +213,25 @@ export class DraftController {
 				if (tokenCount > maxTokens) {
 					// Chunk and summarize hierarchically
 					const words = transcript.split(/\s+/);
-					const chunkSize = Math.ceil(
-						(words.length * maxTokens) / tokenCount
-					);
+					const chunkSize = Math.ceil((words.length * maxTokens) / tokenCount);
 					const chunks: string[] = [];
 					for (let i = 0; i < words.length; i += chunkSize) {
-						chunks.push(
-							words.slice(i, i + chunkSize).join(' ')
-						);
+						chunks.push(words.slice(i, i + chunkSize).join(' '));
 					}
 					// Summarize chunks; catch individual failures so one
 					// bad chunk doesn't abort the entire draft.
 					const summaries = await Promise.all(
-						chunks.map(chunk =>
-							this.summarizer!.summarize(chunk, {
-								signal: combinedSignal
-							}).catch(() => chunk) // fall back to raw text
+						chunks.map(
+							(chunk) =>
+								this.summarizer!.summarize(chunk, {
+									signal: combinedSignal
+								}).catch(() => chunk) // fall back to raw text
 						)
 					);
 					condensed = summaries.join(' ');
 					// Summarize the summaries
 					if (summaries.length > 1) {
-						condensed = await this.summarizer.summarize(
-							condensed,
-							{ signal: combinedSignal }
-						);
+						condensed = await this.summarizer.summarize(condensed, { signal: combinedSignal });
 					}
 				} else {
 					condensed = await this.summarizer.summarize(transcript, {
@@ -273,10 +252,9 @@ export class DraftController {
 				}
 
 				const prompt = buildDraftPrompt(condensed);
-				const stream =
-					await this.languageModel.promptStreaming(prompt, {
-						signal: combinedSignal
-					});
+				const stream = this.languageModel.promptStreaming(prompt, {
+					signal: combinedSignal
+				});
 
 				let accumulated = '';
 				const reader = stream.getReader();
@@ -317,8 +295,7 @@ export class DraftController {
 				this.updateJob({ phase: 'idle', cancelled: true });
 				return;
 			}
-			const message =
-				err instanceof Error ? err.message : String(err);
+			const message = err instanceof Error ? err.message : String(err);
 			this.updateJob({ phase: 'error', error: message });
 		} finally {
 			this.abortController = null;

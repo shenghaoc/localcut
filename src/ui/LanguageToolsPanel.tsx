@@ -6,15 +6,11 @@
  * Draft (transcript → titles/hashtags/文案). Both are progressive
  * enhancement — hidden when the APIs are absent.
  */
-import { createEffect, createSignal, Show, type Component } from 'solid-js';
+import { createEffect, createSignal, For, Show, type Component } from 'solid-js';
 import { X, Copy, Check, Languages, FileText } from 'lucide-solid';
 import { Button } from './components/button';
-import type {
-	TranslationControllerState
-} from './language-tools/translation-controller';
-import type {
-	DraftControllerState
-} from './language-tools/draft-controller';
+import type { TranslationControllerState } from './language-tools/translation-controller';
+import type { DraftControllerState } from './language-tools/draft-controller';
 import type { CaptionTrackSnapshot } from '../protocol';
 
 export interface LanguageToolsPanelProps {
@@ -31,7 +27,7 @@ export interface LanguageToolsPanelProps {
 }
 
 const PRIVACY_STATEMENT =
-	'All translation and drafting run on this device through Chrome\'s built-in AI. Nothing is uploaded. No cloud API.';
+	"All translation and drafting run on this device through Chrome's built-in AI. Nothing is uploaded. No cloud API.";
 
 function formatDuration(ms: number | null): string {
 	if (ms === null) return '—';
@@ -45,6 +41,7 @@ function formatPercent(fraction: number | null): string {
 }
 
 export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) => {
+	// eslint-disable-next-line eslint/no-unassigned-vars — SolidJS ref assigns via JSX
 	let panelRef: HTMLElement | undefined;
 	const [selectedTrackId, setSelectedTrackId] = createSignal<string>('');
 	const [targetLang, setTargetLang] = createSignal<'zh' | 'en'>('en');
@@ -65,7 +62,11 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 
 	const canTranslate = () => {
 		const job = translateJob();
-		if (job && (job.phase === 'translating' || job.phase === 'detecting' || job.phase === 'downloading')) return false;
+		if (
+			job &&
+			(job.phase === 'translating' || job.phase === 'detecting' || job.phase === 'downloading')
+		)
+			return false;
 		return selectedTrackId() && props.translationState.available;
 	};
 
@@ -127,12 +128,14 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 						<option value="" disabled>
 							Select a caption track…
 						</option>
-						{props.captionTracks.map(track => (
-							<option value={track.id}>
-								{track.name}
-								{track.language ? ` (${track.language})` : ''}
-							</option>
-						))}
+						<For each={props.captionTracks}>
+							{(track) => (
+								<option value={track.id}>
+									{track.name}
+									{track.language ? ` (${track.language})` : ''}
+								</option>
+							)}
+						</For>
 					</select>
 					<Show when={props.captionTracks.length === 0}>
 						<p class="capability-panel-note">
@@ -145,12 +148,19 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 				<Show when={props.translationState.available}>
 					<section class="diagnostics-section">
 						<h2>
-							<Languages size={14} aria-hidden="true" style={{ "margin-right": "4px" }} />
+							<Languages size={14} aria-hidden="true" style={{ 'margin-right': '4px' }} />
 							Translate
 						</h2>
 
 						{/* Target language picker */}
-						<div style={{ display: 'flex', gap: '8px', 'align-items': 'center', 'margin-bottom': '8px' }}>
+						<div
+							style={{
+								display: 'flex',
+								gap: '8px',
+								'align-items': 'center',
+								'margin-bottom': '8px'
+							}}
+						>
 							<label style={{ 'font-size': '0.85em' }}>Target:</label>
 							<select
 								value={targetLang()}
@@ -174,7 +184,13 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 							>
 								Translate
 							</Button>
-							<Show when={translateJob()?.phase === 'translating' || translateJob()?.phase === 'detecting' || translateJob()?.phase === 'downloading'}>
+							<Show
+								when={
+									translateJob()?.phase === 'translating' ||
+									translateJob()?.phase === 'detecting' ||
+									translateJob()?.phase === 'downloading'
+								}
+							>
 								<Button size="sm" variant="ghost" onClick={props.onCancelTranslate}>
 									Cancel
 								</Button>
@@ -221,7 +237,7 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 				<Show when={props.draftState.available}>
 					<section class="diagnostics-section">
 						<h2>
-							<FileText size={14} aria-hidden="true" style={{ "margin-right": "4px" }} />
+							<FileText size={14} aria-hidden="true" style={{ 'margin-right': '4px' }} />
 							Draft
 						</h2>
 
@@ -236,7 +252,9 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 							>
 								Generate Draft
 							</Button>
-							<Show when={draftJob()?.phase === 'summarizing' || draftJob()?.phase === 'generating'}>
+							<Show
+								when={draftJob()?.phase === 'summarizing' || draftJob()?.phase === 'generating'}
+							>
 								<Button size="sm" variant="ghost" onClick={props.onCancelDraft}>
 									Cancel
 								</Button>
@@ -252,17 +270,19 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 								<Show when={draftJob()!.phase === 'generating'}>
 									<p style={{ 'font-size': '0.85em' }}>Generating drafts…</p>
 									<Show when={draftJob()!.streamedText}>
-										<pre style={{
-											'font-size': '0.8em',
-											'max-height': '120px',
-											overflow: 'auto',
-											'white-space': 'pre-wrap',
-											'word-break': 'break-word',
-											background: 'var(--color-surface, #1a1a2e)',
-											padding: '8px',
-											'border-radius': '4px',
-											'margin-top': '4px'
-										}}>
+										<pre
+											style={{
+												'font-size': '0.8em',
+												'max-height': '120px',
+												overflow: 'auto',
+												'white-space': 'pre-wrap',
+												'word-break': 'break-word',
+												background: 'var(--color-surface, #1a1a2e)',
+												padding: '8px',
+												'border-radius': '4px',
+												'margin-top': '4px'
+											}}
+										>
 											{draftJob()!.streamedText}
 										</pre>
 									</Show>
@@ -281,12 +301,20 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 								{/* Titles */}
 								<Show when={draftJob()!.draft!.titles.length > 0}>
 									<div style={{ 'margin-bottom': '12px' }}>
-										<div style={{ display: 'flex', 'justify-content': 'space-between', 'align-items': 'center' }}>
+										<div
+											style={{
+												display: 'flex',
+												'justify-content': 'space-between',
+												'align-items': 'center'
+											}}
+										>
 											<h3 style={{ 'font-size': '0.85em', 'font-weight': '600' }}>Titles</h3>
 											<Button
 												size="icon"
 												variant="ghost"
-												onClick={() => copyToClipboard(draftJob()!.draft!.titles.join('\n'), 'titles')}
+												onClick={() =>
+													copyToClipboard(draftJob()!.draft!.titles.join('\n'), 'titles')
+												}
 												aria-label="Copy titles"
 											>
 												<Show when={copiedField() === 'titles'} fallback={<Copy size={14} />}>
@@ -294,21 +322,33 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 												</Show>
 											</Button>
 										</div>
-										{draftJob()!.draft!.titles.map((title, i) => (
-											<p style={{ 'font-size': '0.85em', 'margin': '2px 0' }}>{i + 1}. {title}</p>
-										))}
+										<For each={draftJob()!.draft!.titles}>
+											{(title, i) => (
+												<p style={{ 'font-size': '0.85em', margin: '2px 0' }}>
+													{i() + 1}. {title}
+												</p>
+											)}
+										</For>
 									</div>
 								</Show>
 
 								{/* Hashtags */}
 								<Show when={draftJob()!.draft!.hashtags.length > 0}>
 									<div style={{ 'margin-bottom': '12px' }}>
-										<div style={{ display: 'flex', 'justify-content': 'space-between', 'align-items': 'center' }}>
+										<div
+											style={{
+												display: 'flex',
+												'justify-content': 'space-between',
+												'align-items': 'center'
+											}}
+										>
 											<h3 style={{ 'font-size': '0.85em', 'font-weight': '600' }}>Hashtags</h3>
 											<Button
 												size="icon"
 												variant="ghost"
-												onClick={() => copyToClipboard(draftJob()!.draft!.hashtags.join(' '), 'hashtags')}
+												onClick={() =>
+													copyToClipboard(draftJob()!.draft!.hashtags.join(' '), 'hashtags')
+												}
 												aria-label="Copy hashtags"
 											>
 												<Show when={copiedField() === 'hashtags'} fallback={<Copy size={14} />}>
@@ -323,8 +363,16 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 								{/* Caption (文案) */}
 								<Show when={draftJob()!.draft!.caption}>
 									<div style={{ 'margin-bottom': '12px' }}>
-										<div style={{ display: 'flex', 'justify-content': 'space-between', 'align-items': 'center' }}>
-											<h3 style={{ 'font-size': '0.85em', 'font-weight': '600' }}>文案 (Caption)</h3>
+										<div
+											style={{
+												display: 'flex',
+												'justify-content': 'space-between',
+												'align-items': 'center'
+											}}
+										>
+											<h3 style={{ 'font-size': '0.85em', 'font-weight': '600' }}>
+												文案 (Caption)
+											</h3>
 											<Button
 												size="icon"
 												variant="ghost"
@@ -336,7 +384,9 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 												</Show>
 											</Button>
 										</div>
-										<p style={{ 'font-size': '0.85em', 'white-space': 'pre-wrap' }}>{draftJob()!.draft!.caption}</p>
+										<p style={{ 'font-size': '0.85em', 'white-space': 'pre-wrap' }}>
+											{draftJob()!.draft!.caption}
+										</p>
 									</div>
 								</Show>
 
@@ -348,9 +398,7 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 					</section>
 				</Show>
 
-				<footer class="capability-panel-note">
-					{PRIVACY_STATEMENT}
-				</footer>
+				<footer class="capability-panel-note">{PRIVACY_STATEMENT}</footer>
 			</aside>
 		</Show>
 	);

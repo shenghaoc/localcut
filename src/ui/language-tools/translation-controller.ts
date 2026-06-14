@@ -112,9 +112,7 @@ interface TranslationAPI {
 export class TranslationController {
 	private readonly ports: TranslationControllerPorts;
 	private state: TranslationControllerState;
-	private readonly listeners = new Set<
-		(state: TranslationControllerState) => void
-	>();
+	private readonly listeners = new Set<(state: TranslationControllerState) => void>();
 	private translator: TranslatorSession | null = null;
 	private detector: DetectorSession | null = null;
 	private abortController: AbortController | null = null;
@@ -134,9 +132,7 @@ export class TranslationController {
 		return this.state;
 	}
 
-	subscribe(
-		listener: (state: TranslationControllerState) => void
-	): () => void {
+	subscribe(listener: (state: TranslationControllerState) => void): () => void {
 		this.listeners.add(listener);
 		listener(this.state);
 		return () => this.listeners.delete(listener);
@@ -156,11 +152,8 @@ export class TranslationController {
 	 *  completes or is re-run). */
 	setProbe(probe: LanguageToolsProbeResult): void {
 		const available =
-			Object.values(probe.translator).some(
-				a => a !== 'unavailable' && a !== 'unknown'
-			) ||
-			(probe.languageDetector !== 'unavailable' &&
-				probe.languageDetector !== 'unknown');
+			Object.values(probe.translator).some((a) => a !== 'unavailable' && a !== 'unknown') ||
+			(probe.languageDetector !== 'unavailable' && probe.languageDetector !== 'unknown');
 		this.update({
 			probe,
 			available,
@@ -184,11 +177,7 @@ export class TranslationController {
 	isPairReady(source: 'zh' | 'en', target: 'zh' | 'en'): boolean {
 		const key = `${source}->${target}`;
 		const avail = this.state.translatorAvailability[key];
-		return (
-			avail === 'available' ||
-			avail === 'downloadable' ||
-			avail === 'downloading'
-		);
+		return avail === 'available' || avail === 'downloadable' || avail === 'downloading';
 	}
 
 	/** Translate a caption track.
@@ -252,7 +241,7 @@ export class TranslationController {
 				}
 				const sampleSize = Math.min(5, track.segments.length);
 				const detections = await Promise.all(
-					track.segments.slice(0, sampleSize).map(seg =>
+					track.segments.slice(0, sampleSize).map((seg) =>
 						this.detector!.detect(seg.text).catch(() => ({
 							detectedLanguage: 'en',
 							confidence: 0
@@ -280,8 +269,7 @@ export class TranslationController {
 			const monitor = new EventTarget();
 			monitor.addEventListener('downloadprogress', ((e: Event) => {
 				const pe = e as ProgressEvent;
-				const fraction =
-					pe.total > 0 ? pe.loaded / pe.total : null;
+				const fraction = pe.total > 0 ? pe.loaded / pe.total : null;
 				this.updateJob({ downloadFraction: fraction });
 			}) as EventListener);
 
@@ -313,23 +301,16 @@ export class TranslationController {
 				});
 				translatedTexts.push(translated);
 				// Yield to keep the UI responsive
-				await new Promise(resolve => setTimeout(resolve, 0));
+				await new Promise((resolve) => setTimeout(resolve, 0));
 			}
 
 			// Build translated segments with timing copied verbatim
-			const translatedSegments = buildTranslatedSegments(
-				track.segments,
-				translatedTexts
-			);
+			const translatedSegments = buildTranslatedSegments(track.segments, translatedTexts);
 
 			// Check for empty result
-			const hasContent = translatedSegments.some(
-				s => s.text.trim().length > 0
-			);
+			const hasContent = translatedSegments.some((s) => s.text.trim().length > 0);
 			if (!hasContent) {
-				throw new Error(
-					'Translation produced no text. The source track may be empty.'
-				);
+				throw new Error('Translation produced no text. The source track may be empty.');
 			}
 
 			// Phase 4: send to worker
@@ -350,8 +331,7 @@ export class TranslationController {
 				this.updateJob({ phase: 'idle' });
 				return;
 			}
-			const message =
-				err instanceof Error ? err.message : String(err);
+			const message = err instanceof Error ? err.message : String(err);
 			this.updateJob({ phase: 'error', error: message });
 			this.ports.onError?.(message);
 		} finally {

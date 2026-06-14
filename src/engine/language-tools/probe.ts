@@ -88,9 +88,7 @@ async function probeTranslatorPair(
 /** Probe LanguageDetector availability via `translation.canTranslate()`.
  *  LanguageDetector shares the translation download, so we check the
  *  translation namespace's general readiness. */
-async function probeLanguageDetector(
-	scope: LanguageToolsScope
-): Promise<AiAvailability> {
+async function probeLanguageDetector(scope: LanguageToolsScope): Promise<AiAvailability> {
 	try {
 		const ns = scope.translation;
 		if (!ns) return 'unknown';
@@ -141,14 +139,13 @@ async function probeLanguageModel(scope: LanguageToolsScope): Promise<AiAvailabi
 export async function probeLanguageTools(
 	scope: LanguageToolsScope = globalThis as unknown as LanguageToolsScope
 ): Promise<LanguageToolsProbeResult> {
-	const [enToZh, zhToEn, languageDetector, summarizer, languageModel] =
-		await Promise.all([
-			probeTranslatorPair(scope, 'en', 'zh'),
-			probeTranslatorPair(scope, 'zh', 'en'),
-			probeLanguageDetector(scope),
-			probeSummarizer(scope),
-			probeLanguageModel(scope)
-		]);
+	const [enToZh, zhToEn, languageDetector, summarizer, languageModel] = await Promise.all([
+		probeTranslatorPair(scope, 'en', 'zh'),
+		probeTranslatorPair(scope, 'zh', 'en'),
+		probeLanguageDetector(scope),
+		probeSummarizer(scope),
+		probeLanguageModel(scope)
+	]);
 
 	const translator: TranslatorAvailabilityMap = {
 		'en->zh': enToZh,

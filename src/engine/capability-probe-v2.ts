@@ -552,8 +552,6 @@ export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 		cleanup,
 		asr: probeAsr(),
 		smartReframe: probeSmartReframe(),
-		languageTools: await probeLanguageTools().catch(
-			(): undefined => undefined
-		)
+		languageTools: await probeLanguageTools().catch((): undefined => undefined)
 	};
 }

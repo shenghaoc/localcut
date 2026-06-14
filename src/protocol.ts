@@ -592,7 +592,7 @@ export interface LanguageToolsProbeResult {
  *  gates the surface on. */
 export function languageToolsSurfaceVisible(p: LanguageToolsProbeResult): boolean {
 	const anyTranslator = Object.values(p.translator).some(
-		a => a !== 'unavailable' && a !== 'unknown'
+		(a) => a !== 'unavailable' && a !== 'unknown'
 	);
 	return (
 		anyTranslator ||

@@ -67,7 +67,7 @@ export function parseDraftResponse(response: string): ParsedDraft {
 	if (titleMatch?.[1]) {
 		result.titles = titleMatch[1]
 			.split('\n')
-			.map(line => line.trim())
+			.map((line) => line.trim())
 			.filter(Boolean)
 			.slice(0, 3); // max 3 titles
 	}
@@ -76,7 +76,7 @@ export function parseDraftResponse(response: string): ParsedDraft {
 		const tagLine = hashtagMatch[1].trim();
 		result.hashtags = tagLine
 			.split(/\s+/)
-			.filter(tag => tag.startsWith('#'))
+			.filter((tag) => tag.startsWith('#'))
 			.slice(0, 5); // max 5 hashtags
 	}
 

@@ -8,53 +8,59 @@ import { describe, expect, it } from 'vite-plus/test';
 import { probeLanguageTools, type LanguageToolsScope } from './probe';
 import { languageToolsSurfaceVisible } from '../../protocol';
 
-function mockScope(options: {
-	translatorReady?: boolean;
-	translatorAfterDownload?: boolean;
-	summarizerReady?: boolean;
-	summarizerAfterDownload?: boolean;
-	languageModelReady?: boolean;
-	languageModelAfterDownload?: boolean;
-} = {}): LanguageToolsScope {
-	const translation = options.translatorReady !== undefined || options.translatorAfterDownload !== undefined
-		? {
-			canTranslate: async () => {
-				if (options.translatorReady) return 'readily' as const;
-				if (options.translatorAfterDownload) return 'after-download' as const;
-				return 'no' as const;
-			}
-		}
-		: undefined;
+function mockScope(
+	options: {
+		translatorReady?: boolean;
+		translatorAfterDownload?: boolean;
+		summarizerReady?: boolean;
+		summarizerAfterDownload?: boolean;
+		languageModelReady?: boolean;
+		languageModelAfterDownload?: boolean;
+	} = {}
+): LanguageToolsScope {
+	const translation =
+		options.translatorReady !== undefined || options.translatorAfterDownload !== undefined
+			? {
+					canTranslate: async () => {
+						if (options.translatorReady) return 'readily' as const;
+						if (options.translatorAfterDownload) return 'after-download' as const;
+						return 'no' as const;
+					}
+				}
+			: undefined;
 
-	const summarizer = options.summarizerReady !== undefined || options.summarizerAfterDownload !== undefined
-		? {
-			capabilities: async () => ({
-				available: options.summarizerReady
-					? ('readily' as const)
-					: options.summarizerAfterDownload
-						? ('after-download' as const)
-						: ('no' as const)
-			})
-		}
-		: undefined;
+	const summarizer =
+		options.summarizerReady !== undefined || options.summarizerAfterDownload !== undefined
+			? {
+					capabilities: async () => ({
+						available: options.summarizerReady
+							? ('readily' as const)
+							: options.summarizerAfterDownload
+								? ('after-download' as const)
+								: ('no' as const)
+					})
+				}
+			: undefined;
 
-	const languageModel = options.languageModelReady !== undefined || options.languageModelAfterDownload !== undefined
-		? {
-			capabilities: async () => ({
-				available: options.languageModelReady
-					? ('readily' as const)
-					: options.languageModelAfterDownload
-						? ('after-download' as const)
-						: ('no' as const)
-			})
-		}
-		: undefined;
+	const languageModel =
+		options.languageModelReady !== undefined || options.languageModelAfterDownload !== undefined
+			? {
+					capabilities: async () => ({
+						available: options.languageModelReady
+							? ('readily' as const)
+							: options.languageModelAfterDownload
+								? ('after-download' as const)
+								: ('no' as const)
+					})
+				}
+			: undefined;
 
 	return {
 		translation: translation as LanguageToolsScope['translation'],
-		ai: (summarizer || languageModel)
-			? { summarizer, languageModel } as LanguageToolsScope['ai']
-			: undefined
+		ai:
+			summarizer || languageModel
+				? ({ summarizer, languageModel } as LanguageToolsScope['ai'])
+				: undefined
 	};
 }
 
@@ -120,7 +126,9 @@ describe('probeLanguageTools', () => {
 	it('handles API throwing an error gracefully', async () => {
 		const scope: LanguageToolsScope = {
 			translation: {
-				canTranslate: async () => { throw new Error('API error'); }
+				canTranslate: async () => {
+					throw new Error('API error');
+				}
 			} as LanguageToolsScope['translation']
 		};
 		const result = await probeLanguageTools(scope);

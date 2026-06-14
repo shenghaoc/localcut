@@ -10,11 +10,9 @@ import type { CaptionSegmentSnapshot } from '../../protocol';
  * Assemble a transcript string from caption segments.
  * Concatenates trimmed, non-empty segment text in order, separated by spaces.
  */
-export function assembleTranscript(
-	segments: readonly CaptionSegmentSnapshot[]
-): string {
+export function assembleTranscript(segments: readonly CaptionSegmentSnapshot[]): string {
 	return segments
-		.map(s => s.text.trim())
+		.map((s) => s.text.trim())
 		.filter(Boolean)
 		.join(' ');
 }
@@ -33,7 +31,7 @@ export function buildTranslatedSegments(
 	if (sourceSegments.length !== translatedTexts.length) {
 		throw new Error(
 			`Timing invariant violation: ${sourceSegments.length} source segments ` +
-			`but ${translatedTexts.length} translated texts`
+				`but ${translatedTexts.length} translated texts`
 		);
 	}
 	return sourceSegments.map((source, i) => ({

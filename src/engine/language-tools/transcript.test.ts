@@ -121,9 +121,7 @@ describe('dominantLanguage', () => {
 	});
 
 	it('handles zh-CN variant', () => {
-		const detections = [
-			{ detectedLanguage: 'zh-CN', confidence: 0.95 }
-		];
+		const detections = [{ detectedLanguage: 'zh-CN', confidence: 0.95 }];
 		expect(dominantLanguage(detections)).toBe('zh');
 	});
 });
