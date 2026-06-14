@@ -263,8 +263,8 @@ export default defineConfig({
 				runtimeCaching: [
 					{
 						urlPattern: /\/models\/dtln\//,
-						handler: 'CacheFirst',
-						options: { cacheName: 'dtln-model' }
+						handler: 'NetworkFirst',
+						options: { cacheName: 'dtln-manifest' }
 					},
 					{
 						// The Whisper model itself is fetched cross-origin (Hugging Face)
@@ -295,6 +295,18 @@ export default defineConfig({
 	worker: { format: 'es' },
 	build: { target: 'esnext', outDir: 'dist' },
 	server: {
+		proxy: {
+			'/_model/hf': {
+				target: 'https://huggingface.co',
+				changeOrigin: true,
+				rewrite: (path) => path.replace(/^\/_model\/hf\//, '/')
+			},
+			'/_model/gh': {
+				target: 'https://raw.githubusercontent.com',
+				changeOrigin: true,
+				rewrite: (path) => path.replace(/^\/_model\/gh\//, '/')
+			}
+		},
 		headers: {
 			'Cross-Origin-Opener-Policy': 'same-origin',
 			'Cross-Origin-Embedder-Policy': 'require-corp'

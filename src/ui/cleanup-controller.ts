@@ -25,8 +25,8 @@ export const CLEANUP_PREVIEW_SECONDS = 10;
 export const CLEANUP_EXTRACT_WINDOW_SECONDS = 10;
 export const CLEANUP_SAMPLE_RATE = 16_000;
 export const CLEANUP_BLOCK_SHIFT = 128;
-/** Mirrors the cleanup worker's per-job bound (15 min @ 16 kHz). */
-export const CLEANUP_MAX_JOB_SECONDS = 900;
+/** Mirrors the cleanup worker's per-job bound (12 min @ 16 kHz / 128-sample shift). */
+export const CLEANUP_MAX_JOB_SECONDS = 720;
 
 export const CLEANUP_UNAVAILABLE_MESSAGE = 'WebAssembly is required for local audio cleanup.';
 
@@ -215,6 +215,7 @@ export class CleanupController {
 	private handleWorkerState(msg: CleanupWorkerState): void {
 		switch (msg.type) {
 			case 'cleanup-model-status': {
+				if (msg.version) this.manifestVersion = msg.version;
 				this.update({
 					modelStatus: msg.status,
 					accelerator: msg.accelerator ?? (msg.status === 'loaded' ? this.state.accelerator : null),
@@ -222,9 +223,11 @@ export class CleanupController {
 					error:
 						msg.status === 'failed'
 							? (msg.error ?? 'Model load failed.')
-							: msg.status === 'loading'
-								? (msg.error ?? this.state.error)
-								: this.state.error
+							: msg.status === 'loaded'
+								? null
+								: msg.status === 'loading'
+									? (msg.error ?? this.state.error)
+									: this.state.error
 				});
 				if (msg.status === 'loaded' || msg.status === 'failed') {
 					const ok = msg.status === 'loaded';

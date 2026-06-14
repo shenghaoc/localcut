@@ -163,6 +163,7 @@ export type CleanupWorkerState =
 			status: CleanupModelStatus;
 			accelerator?: CleanupAccelerator;
 			sizeBytes?: number;
+			version?: string;
 			error?: string;
 	  }
 	| {

@@ -76,7 +76,8 @@ async function handleLoadModel(
 			type: 'cleanup-model-status',
 			status: 'loaded',
 			accelerator: runtime.accelerator,
-			sizeBytes: manifestData?.sizeBytes
+			sizeBytes: manifestData?.sizeBytes,
+			version: manifestData?.version
 		});
 		return;
 	}
@@ -140,7 +141,8 @@ async function handleLoadModel(
 			type: 'cleanup-model-status',
 			status: 'loaded',
 			accelerator: runtime.accelerator,
-			sizeBytes: manifest.sizeBytes
+			sizeBytes: manifest.sizeBytes,
+			version: manifest.version
 		});
 	} catch (error) {
 		if (generation !== loadGeneration) return;

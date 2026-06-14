@@ -38,6 +38,7 @@ interface LiteRtApi {
 }
 
 const SIGNATURE = 'serving_default';
+let liteRtLoaded = false;
 
 export interface DtlnRuntimeOptions {
 	wasmPath: string;
@@ -80,12 +81,16 @@ export class DtlnRuntime {
 		};
 
 		let accelerator = options.accelerator;
-		try {
-			await api.loadLiteRt(options.wasmPath, loadOptions(accelerator));
-		} catch {
-			if (accelerator !== 'wasm') {
-				await api.loadLiteRt(options.wasmPath, loadOptions('wasm'));
-				accelerator = 'wasm';
+		if (!liteRtLoaded) {
+			try {
+				await api.loadLiteRt(options.wasmPath, loadOptions(accelerator));
+				liteRtLoaded = true;
+			} catch {
+				if (accelerator !== 'wasm') {
+					await api.loadLiteRt(options.wasmPath, loadOptions('wasm'));
+					accelerator = 'wasm';
+					liteRtLoaded = true;
+				}
 			}
 		}
 

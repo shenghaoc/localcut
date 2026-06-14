@@ -20,5 +20,5 @@
 		"blockLen": 512,
 		"blockShift": 128
 	},
-	"stateShape": [1, 4, 128]
+	"stateShape": [1, 2, 128, 2]
 }

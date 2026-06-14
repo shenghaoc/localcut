@@ -25,7 +25,7 @@ function validManifestInput(): Record<string, unknown> {
 			blockLen: DTLN_BLOCK_LEN,
 			blockShift: DTLN_BLOCK_SHIFT
 		},
-		stateShape: [1, 4, 128]
+		stateShape: [1, 2, 128, 2]
 	};
 }
 
@@ -37,7 +37,7 @@ describe('validateManifest', () => {
 		expect(manifest.model1.sizeBytes).toBe(1000);
 		expect(manifest.model2.sizeBytes).toBe(1000);
 		expect(manifest.audio.sampleRate).toBe(DTLN_SAMPLE_RATE);
-		expect(manifest.stateShape).toEqual([1, 4, 128]);
+		expect(manifest.stateShape).toEqual([1, 2, 128, 2]);
 	});
 
 	it('rejects non-object documents', () => {
@@ -113,6 +113,6 @@ describe('shipped manifest asset', () => {
 		expect(manifest.model1.url).toMatch(/model_1\.tflite/);
 		expect(manifest.model2.url).toMatch(/model_2\.tflite/);
 		expect(manifest.audio.sampleRate).toBe(DTLN_SAMPLE_RATE);
-		expect(manifest.stateShape).toEqual([1, 4, 128]);
+		expect(manifest.stateShape).toEqual([1, 2, 128, 2]);
 	});
 });
