@@ -124,6 +124,7 @@ describe('cleanup-worker', () => {
 		resolveFinalize(new Float32Array([1, 2, 3, 4]));
 		await flushQueue();
 
+		expect(processor.abort).toHaveBeenCalledTimes(1);
 		expect(messages).not.toContainEqual(
 			expect.objectContaining({ type: 'cleanup-result', jobId: 7 })
 		);
