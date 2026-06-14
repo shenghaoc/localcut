@@ -69,6 +69,7 @@ class WorkletRnnoiseRing {
 		// Match the export RnnoiseRing contract: every ring starts with one
 		// frame of queued silence so live monitor and export latency agree.
 		this.pendingWrite = RNNOISE_FRAME_SIZE;
+		this.heap = null;
 	}
 
 	destroy() {
@@ -78,6 +79,7 @@ class WorkletRnnoiseRing {
 		this.state = 0;
 		this.inputPtr = 0;
 		this.outputPtr = 0;
+		this.heap = null;
 	}
 
 	push(input) {
@@ -98,7 +100,14 @@ class WorkletRnnoiseRing {
 	}
 
 	processFrame() {
-		const heap = new Float32Array(this.module.memory.buffer);
+		// Cache the heap view per ring and only rebuild it when WASM memory
+		// grows (its underlying ArrayBuffer is replaced after memory.grow()).
+		// Allocating a fresh full-heap view on every 480-sample frame on the
+		// real-time audio thread creates needless GC pressure.
+		if (!this.heap || this.heap.buffer !== this.module.memory.buffer) {
+			this.heap = new Float32Array(this.module.memory.buffer);
+		}
+		const heap = this.heap;
 		heap.set(this.inputFrame, this.inputPtr / 4);
 		this.module.processFrame(this.state, this.outputPtr, this.inputPtr);
 		const processed = heap.subarray(this.outputPtr / 4, this.outputPtr / 4 + RNNOISE_FRAME_SIZE);
@@ -252,7 +261,7 @@ class AudioPlaybackProcessor extends AudioWorkletProcessor {
 			if (event.data?.type === 'seek') {
 				this.timelineAnchor = event.data.time;
 				this.framesConsumed = 0;
-				this.resetDenoisers();
+				this.resetCleanupChain();
 			}
 			if (event.data?.type === 'master-gain') {
 				const gain = event.data.gain;
@@ -262,7 +271,7 @@ class AudioPlaybackProcessor extends AudioWorkletProcessor {
 				void this.loadRnnoise(event.data.bytes ?? event.data.b64);
 			}
 			if (event.data?.type === 'voice-cleanup-disable') {
-				this.resetDenoisers();
+				this.resetCleanupChain();
 			}
 		};
 	}
@@ -329,10 +338,37 @@ class AudioPlaybackProcessor extends AudioWorkletProcessor {
 		}
 	}
 
-	resetDenoisers() {
+	resetCleanupChain() {
 		for (const ring of this.rnnoiseByTrack.values()) ring.destroy();
 		this.rnnoiseByTrack.clear();
 		this.trackDenoiserGain.clear();
+		// Replace gate/limiter so their envelope followers, hold counters and
+		// lookahead delay lines don't carry pre-seek gain reduction into the
+		// new audio position. Otherwise a seek to silence can keep audio
+		// suppressed until the gate envelope re-opens, or a seek over a loud
+		// section can leave the limiter clamping a quiet target.
+		this.gate = new WorkletGate();
+		this.limiter = new WorkletLimiter();
+	}
+
+	/**
+	 * Destroy and forget WASM rings whose tracks the SAB bitmask now reports
+	 * as disabled, after their crossfade has fully faded out. Without this,
+	 * disabling a track during playback (no seek) leaks its DenoiseState +
+	 * malloc'd I/O buffers until the next seek.
+	 */
+	collectStaleDenoiserRings() {
+		if (this.rnnoiseByTrack.size === 0) return;
+		for (const trackIndex of [...this.rnnoiseByTrack.keys()]) {
+			const enabled = this.isDenoiserEnabledForTrack(trackIndex);
+			const gain = this.trackDenoiserGain.get(trackIndex) ?? 0;
+			if (!enabled && gain <= 0) {
+				const ring = this.rnnoiseByTrack.get(trackIndex);
+				if (ring) ring.destroy();
+				this.rnnoiseByTrack.delete(trackIndex);
+				this.trackDenoiserGain.delete(trackIndex);
+			}
+		}
 	}
 
 	isDenoiserEnabledForTrack(trackIndex) {
@@ -424,6 +460,8 @@ class AudioPlaybackProcessor extends AudioWorkletProcessor {
 		if (state !== 1) {
 			return true;
 		}
+
+		this.collectStaleDenoiserRings();
 
 		const outChannels = output.length;
 		const frames = output[0]?.length ?? 0;

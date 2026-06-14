@@ -600,6 +600,25 @@ export async function mixAudioWindow(
 										sampleRate
 									)
 								: null;
+						// Denoise each source's PCM before the crossfade so the denoiser
+						// sees the natural per-source level. Blending first and denoising
+						// the result causes a volume dip in transitions: equal-power
+						// crossfade pulls each source down to ~0.71 at the midpoint, and
+						// RNNoise suppresses dimmer signals more aggressively. A brief
+						// GRU-state artifact at the boundary where outPcm/inPcm share one
+						// ring is the documented trade (Claude review P2): the network
+						// adapts within one frame and the crossfade masks it.
+						if (
+							options.voiceCleanup?.denoiserEnabledTracks.includes(track.id) &&
+							options.cleanupState
+						) {
+							const { denoiseInterleavedTrackPcm } =
+								await import('./voice-cleanup/voice-cleanup-processor');
+							if (outPcm)
+								denoiseInterleavedTrackPcm(track.id, outPcm, channels, options.cleanupState);
+							if (inPcm)
+								denoiseInterleavedTrackPcm(track.id, inPcm, channels, options.cleanupState);
+						}
 						if (!outPcm && !inPcm) {
 							const outSkip =
 								outSourceTime && outHandle
@@ -628,10 +647,6 @@ export async function mixAudioWindow(
 						}
 						const windowStart = cutTime - half;
 						const { left, right } = panCoefficients(track.pan, channels);
-						const transitionPcm =
-							options.voiceCleanup?.denoiserEnabledTracks.includes(track.id) && options.cleanupState
-								? new Float32Array(runFrames * channels)
-								: null;
 						for (let frame = 0; frame < runFrames; frame += 1) {
 							const frameTime = timelineTime + frame / sampleRate;
 							const mixT = (frameTime - windowStart) / transitionSpec.durationS;
@@ -651,32 +666,23 @@ export async function mixAudioWindow(
 							const outScale = hasOut ? track.gain * gains.outgoing * outFade : 0;
 							const inScale = hasIn ? track.gain * gains.incoming * inFade : 0;
 							const srcFrame = frame * channels;
-							const destFrame = transitionPcm
-								? frame * channels
-								: (offsetFrames + frame) * channels;
-							const dest = transitionPcm ?? out;
+							const destFrame = (offsetFrames + frame) * channels;
 
 							if (channels === 1) {
 								const outVal = outPcm ? (outPcm[srcFrame] ?? 0) * outScale : 0;
 								const inVal = inPcm ? (inPcm[srcFrame] ?? 0) * inScale : 0;
-								dest[destFrame] = (dest[destFrame] ?? 0) + outVal + inVal;
+								out[destFrame] = (out[destFrame] ?? 0) + outVal + inVal;
 							} else {
 								const outL = outPcm ? (outPcm[srcFrame] ?? 0) : 0;
 								const outR = outPcm ? (outPcm[srcFrame + 1] ?? outL) : 0;
 								const inL = inPcm ? (inPcm[srcFrame] ?? 0) : 0;
 								const inR = inPcm ? (inPcm[srcFrame + 1] ?? inL) : 0;
 
-								dest[destFrame] =
-									(dest[destFrame] ?? 0) + outL * left * outScale + inL * left * inScale;
-								dest[destFrame + 1] =
-									(dest[destFrame + 1] ?? 0) + outR * right * outScale + inR * right * inScale;
+								out[destFrame] =
+									(out[destFrame] ?? 0) + outL * left * outScale + inL * left * inScale;
+								out[destFrame + 1] =
+									(out[destFrame + 1] ?? 0) + outR * right * outScale + inR * right * inScale;
 							}
-						}
-						if (transitionPcm && options.cleanupState) {
-							const { denoiseInterleavedTrackPcm } =
-								await import('./voice-cleanup/voice-cleanup-processor');
-							denoiseInterleavedTrackPcm(track.id, transitionPcm, channels, options.cleanupState);
-							accumulateMix(out, transitionPcm, offsetFrames * channels);
 						}
 						offsetFrames += runFrames;
 						continue;

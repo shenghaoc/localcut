@@ -841,7 +841,7 @@ describe('mixAudioWindow', () => {
 		expect(incoming.pcmWindowAt).toHaveBeenCalledWith(0.25, 3, 1, 4);
 	});
 
-	it('denoises the crossfaded transition track once instead of feeding outgoing and incoming sequentially', async () => {
+	it('denoises outgoing and incoming PCM separately so the crossfade does not dim speech', async () => {
 		const outgoing = sourceWith(0.25);
 		const incoming = sourceWith(0.75);
 		const sources = new Map<string, MediaInputHandle>([
@@ -891,8 +891,14 @@ describe('mixAudioWindow', () => {
 			cleanupState
 		});
 
-		expect(push).toHaveBeenCalledOnce();
+		// Denoise outgoing and incoming separately BEFORE the crossfade. Denoising
+		// the blended PCM caused a volume dip because the equal-power crossfade
+		// pulls each source down ~3 dB at the midpoint and RNNoise then over-
+		// suppresses the dimmer speech. Two pushes through the per-track ring is
+		// the right shape; the brief GRU artifact at the boundary is documented.
+		expect(push).toHaveBeenCalledTimes(2);
 		expect(push.mock.calls[0]?.[0]).toHaveLength(4);
+		expect(push.mock.calls[1]?.[0]).toHaveLength(4);
 		expect(mixed.every((sample) => Number.isFinite(sample))).toBe(true);
 	});
 
