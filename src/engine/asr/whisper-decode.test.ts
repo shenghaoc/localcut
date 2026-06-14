@@ -719,4 +719,108 @@ describe('transcribeWindow', () => {
 		).rejects.toBeInstanceOf(DecodeCancelledError);
 		expect(disposed).toBe(true);
 	});
+
+	it('respects model-specific decodeParams for the silence gate', async () => {
+		// The silence gate fires when noSpeechProb >= threshold AND avgLogProb < logProbThreshold.
+		// With default thresholds this window is silenced; with a permissive logProbThreshold
+		// the avgLogProb condition fails and the window produces output.
+		let call = 0;
+		const makeRuntime = (): WhisperRuntime => ({
+			async encode(mel): Promise<EncodedAudio> {
+				return { frames: mel.nFrames, dispose: () => undefined };
+			},
+			async decode() {
+				const logits = new Float32Array(VOCAB_SIZE);
+				if (call === 0) {
+					// Dominant no-speech → prob ≈ 1.0 (well above both 0.6 and 0.75)
+					logits[SPECIAL.noSpeech] = 20;
+					logits[SPECIAL.timestampBegin] = 8;
+				} else if (call === 1) {
+					logits[1] = 8; // "hello" — low-confidence
+				} else if (call === 2) {
+					logits[2] = 8; // "world" — distinct from token 1 to avoid hallucination filter
+				} else if (call === 3) {
+					logits[SPECIAL.timestampBegin + 50] = 100; // closing timestamp
+				} else {
+					logits[SPECIAL.endOfText] = 100;
+				}
+				call++;
+				return logits;
+			},
+			dispose() {}
+		});
+
+		// Without decodeParams (default logProbThreshold=-1.0) → silence gate fires
+		call = 0;
+		const silenced = await transcribeWindow({
+			runtime: makeRuntime(),
+			monoPcm: new Float32Array(16000),
+			vocab: VOCAB,
+			special: SPECIAL,
+			maxTokens: 128,
+			offsetS: 0,
+			language: 'en'
+		});
+		expect(silenced.segments).toEqual([]);
+
+		// With extremely permissive logProbThreshold → avgLogProb is above it, gate doesn't fire
+		call = 0;
+		const passed = await transcribeWindow({
+			runtime: makeRuntime(),
+			monoPcm: new Float32Array(16000),
+			vocab: VOCAB,
+			special: SPECIAL,
+			maxTokens: 128,
+			offsetS: 0,
+			language: 'en',
+			decodeParams: { logProbThreshold: -100 }
+		});
+		expect(passed.segments.length).toBeGreaterThan(0);
+	});
+
+	it('uses custom temperature schedule from decodeParams', async () => {
+		let decodeCallCount = 0;
+		const runtime: WhisperRuntime = {
+			async encode(mel): Promise<EncodedAudio> {
+				return { frames: mel.nFrames, dispose: () => undefined };
+			},
+			async decode() {
+				decodeCallCount++;
+				const logits = new Float32Array(VOCAB_SIZE);
+				// Produce repetitive output that will fail compression ratio check
+				logits[1] = 100;
+				return logits;
+			},
+			dispose() {}
+		};
+
+		// With default temperatures (6 temps) — more decode calls
+		decodeCallCount = 0;
+		await transcribeWindow({
+			runtime,
+			monoPcm: new Float32Array(16000),
+			vocab: VOCAB,
+			special: SPECIAL,
+			maxTokens: 10,
+			offsetS: 0,
+			language: 'en'
+		});
+		const defaultCalls = decodeCallCount;
+
+		// With reduced temperature schedule (2 temps) — fewer decode calls
+		decodeCallCount = 0;
+		await transcribeWindow({
+			runtime,
+			monoPcm: new Float32Array(16000),
+			vocab: VOCAB,
+			special: SPECIAL,
+			maxTokens: 10,
+			offsetS: 0,
+			language: 'en',
+			decodeParams: { temperatures: [0.0, 0.2] }
+		});
+		const reducedCalls = decodeCallCount;
+
+		expect(reducedCalls).toBeLessThan(defaultCalls);
+	});
 });

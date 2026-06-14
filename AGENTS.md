@@ -40,6 +40,8 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 
 - [**Bugfix: Phase 29 LiteRT WASM Whisper**](.kiro/specs/bugfix-phase-29-litert-wasm-whisper/tasks.md) — real on-device Auto Captions: LiteRT.js Whisper on the WASM accelerator (only engine; Browser SpeechRecognition removed); manifest-declared, SHA-256-verified, OPFS-cached, click-to-load TFLite encoder/decoder + tokenizer; worker-side log-mel → encode → greedy decode → timestamped caption segments; untyped LiteRT loader boundary; self-hosted WASM via `pnpm setup:litert`.
 
+- [**Bugfix: Whisper-tiny decode quality**](.kiro/specs/bugfix-whisper-tiny-decode-quality/tasks.md) — manifest-configurable decode thresholds (`logProbThreshold`, `noSpeechThreshold`, `compressionRatioThreshold`, `temperatures`) so whisper-tiny's lower-confidence predictions don't trigger the silence gate or temperature fallback on real speech; tuned tiny params ship in `manifest-tiny.json`.
+
 - [**Bugfix: Mixed-rate audio resampling**](.kiro/specs/bugfix-mixed-rate-audio/tasks.md) — streaming polyphase sinc resampler complementing Mediabunny; per-call target-rate `pcmWindowAt`/`pcmAt`; canonical playback ring rate; anti-aliased downsample; source-health + docs.
 
 - [**Bugfix: Remove Chrome Speech fallback (Phase 29)**](.kiro/specs/bugfix-phase-29-asr-availability/tasks.md) — delete the dead Chrome Speech service (adapter, ambient typings, `speechRecognition` probe field, "Browser Speech disabled" UI copy); there is no practical browser fallback for selected-clip ASR. Auto Captions stay unavailable (`recommended: 'none'`) until the on-device LiteRT-over-WebNN Whisper engine (PR #94) lands.

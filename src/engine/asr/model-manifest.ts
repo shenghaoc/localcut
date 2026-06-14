@@ -10,6 +10,7 @@
  * error and must never trigger a silent retry against another source.
  */
 import type {
+	AsrDecodeParams,
 	AsrModelAssetSnapshot,
 	AsrModelManifestSnapshot,
 	AsrSpecialTokens
@@ -95,6 +96,39 @@ function validateSpecialTokens(value: unknown): AsrSpecialTokens {
 	};
 }
 
+function isFiniteNumber(v: unknown): v is number {
+	return typeof v === 'number' && Number.isFinite(v);
+}
+
+function validateDecodeParams(value: unknown): AsrDecodeParams | null {
+	if (value === undefined || value === null) return null;
+	if (!isObject(value)) throw new AsrManifestError('decode must be an object or null');
+	const params: AsrDecodeParams = {};
+	if (value['logProbThreshold'] !== undefined) {
+		if (!isFiniteNumber(value['logProbThreshold']))
+			throw new AsrManifestError('decode.logProbThreshold must be a finite number');
+		params.logProbThreshold = value['logProbThreshold'];
+	}
+	if (value['noSpeechThreshold'] !== undefined) {
+		if (!isFiniteNumber(value['noSpeechThreshold']))
+			throw new AsrManifestError('decode.noSpeechThreshold must be a finite number');
+		params.noSpeechThreshold = value['noSpeechThreshold'];
+	}
+	if (value['compressionRatioThreshold'] !== undefined) {
+		if (!isFiniteNumber(value['compressionRatioThreshold']))
+			throw new AsrManifestError('decode.compressionRatioThreshold must be a finite number');
+		params.compressionRatioThreshold = value['compressionRatioThreshold'];
+	}
+	if (value['temperatures'] !== undefined) {
+		if (!Array.isArray(value['temperatures']) || !value['temperatures'].every(isFiniteNumber))
+			throw new AsrManifestError('decode.temperatures must be an array of finite numbers');
+		if (value['temperatures'].length === 0)
+			throw new AsrManifestError('decode.temperatures must not be empty');
+		params.temperatures = value['temperatures'];
+	}
+	return params;
+}
+
 /**
  * Validates an untrusted manifest document. Throws {@link AsrManifestError} with
  * a precise reason on the first violation. Unknown fields are tolerated so the
@@ -153,6 +187,8 @@ export function validateAsrManifest(value: unknown): AsrModelManifestSnapshot {
 	if (isString(defaultLanguage) && !languages.includes(defaultLanguage))
 		throw new AsrManifestError('defaultLanguage must be one of languages');
 
+	const decode = validateDecodeParams(value['decode']);
+
 	return {
 		id: value['id'],
 		version: value['version'],
@@ -173,7 +209,8 @@ export function validateAsrManifest(value: unknown): AsrModelManifestSnapshot {
 		encoderFramesPerSecond: value['encoderFramesPerSecond'] as number,
 		tokens,
 		languages,
-		defaultLanguage: defaultLanguage ?? null
+		defaultLanguage: defaultLanguage ?? null,
+		decode
 	};
 }
 

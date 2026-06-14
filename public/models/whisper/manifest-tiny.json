@@ -37,5 +37,11 @@
 		}
 	},
 	"languages": ["en", "zh"],
-	"defaultLanguage": null
+	"defaultLanguage": null,
+	"decode": {
+		"logProbThreshold": -1.5,
+		"noSpeechThreshold": 0.75,
+		"compressionRatioThreshold": 3.0,
+		"temperatures": [0.0, 0.2, 0.4]
+	}
 }

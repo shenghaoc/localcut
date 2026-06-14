@@ -100,6 +100,52 @@ describe('validateAsrManifest', () => {
 		m2.defaultLanguage = 'fr';
 		expect(() => validateAsrManifest(m2)).toThrow(/defaultLanguage must be one of languages/);
 	});
+
+	it('accepts a manifest without decode params (backwards compatible)', () => {
+		const manifest = validateAsrManifest(validManifest());
+		expect(manifest.decode).toBeNull();
+	});
+
+	it('accepts valid decode params', () => {
+		const m = validManifest();
+		m.decode = {
+			logProbThreshold: -1.5,
+			noSpeechThreshold: 0.75,
+			compressionRatioThreshold: 3.0,
+			temperatures: [0.0, 0.2, 0.4]
+		};
+		const manifest = validateAsrManifest(m);
+		expect(manifest.decode?.logProbThreshold).toBe(-1.5);
+		expect(manifest.decode?.noSpeechThreshold).toBe(0.75);
+		expect(manifest.decode?.compressionRatioThreshold).toBe(3.0);
+		expect(manifest.decode?.temperatures).toEqual([0.0, 0.2, 0.4]);
+	});
+
+	it('accepts partial decode params', () => {
+		const m = validManifest();
+		m.decode = { logProbThreshold: -2.0 };
+		const manifest = validateAsrManifest(m);
+		expect(manifest.decode?.logProbThreshold).toBe(-2.0);
+		expect(manifest.decode?.noSpeechThreshold).toBeUndefined();
+	});
+
+	it('rejects invalid decode params', () => {
+		const m1 = validManifest();
+		m1.decode = { logProbThreshold: 'bad' };
+		expect(() => validateAsrManifest(m1)).toThrow(/decode.logProbThreshold/);
+
+		const m2 = validManifest();
+		m2.decode = { temperatures: [] };
+		expect(() => validateAsrManifest(m2)).toThrow(/decode.temperatures must not be empty/);
+
+		const m3 = validManifest();
+		m3.decode = { temperatures: [0.0, 'bad'] };
+		expect(() => validateAsrManifest(m3)).toThrow(/decode.temperatures must be an array/);
+
+		const m4 = validManifest();
+		m4.decode = 'not-an-object';
+		expect(() => validateAsrManifest(m4)).toThrow(/decode must be an object/);
+	});
 });
 
 describe('shipped manifests', () => {
