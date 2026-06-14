@@ -202,4 +202,63 @@ describe('animation-curves', () => {
 			expect(karaokeActiveWordIndex([], 1.0)).toBe(-1);
 		});
 	});
+
+	// ── Direct exit-curve coverage ────────────────────────────────────────────
+	//
+	// The prior pop/bounce/slide-up/slide-down test groups exercised the enter
+	// half only. Direction regressions on the exit side (sign-flip, missing
+	// fade, hold-on-exit instead of slide-away) wouldn't surface — these
+	// tests sample the exit window of each kind and assert direction.
+	describe('exit curves', () => {
+		const base = ANIM_CAPTION_PRESETS.find((p) => p.id === 'pop-card')!;
+		const dur = 0.3;
+		const segDur = 5;
+		// Exit starts at (segDur - dur); midpoint at (segDur - dur/2).
+		const midExit = segDur - dur / 2;
+		const lateExit = segDur - dur * 0.1;
+		const presetWith = (enter: 'pop' | 'bounce' | 'slide-up' | 'slide-down') => ({
+			...base,
+			animation: { enter, exit: enter, durationS: dur }
+		});
+
+		it('pop exit fades opacity 1→0 and shrinks scale', () => {
+			const u = computeCaptionAnimUniforms(presetWith('pop'), 0, segDur, midExit);
+			expect(u.opacity).toBeLessThan(1);
+			expect(u.opacity).toBeGreaterThan(0);
+			expect(u.scaleX).toBeLessThan(1);
+		});
+
+		it('bounce exit moves translateY positive (away) and fades', () => {
+			const u = computeCaptionAnimUniforms(presetWith('bounce'), 0, segDur, midExit);
+			expect(u.translateYPx).toBeGreaterThan(5);
+			expect(u.opacity).toBeLessThan(1);
+		});
+
+		it('slide-up exit moves translateY positive (down off-screen)', () => {
+			const u = computeCaptionAnimUniforms(presetWith('slide-up'), 0, segDur, midExit);
+			expect(u.translateYPx).toBeGreaterThan(10);
+			expect(u.opacity).toBeLessThan(1);
+		});
+
+		it('slide-down exit moves translateY negative (up off-screen)', () => {
+			const u = computeCaptionAnimUniforms(presetWith('slide-down'), 0, segDur, midExit);
+			expect(u.translateYPx).toBeLessThan(-10);
+			expect(u.opacity).toBeLessThan(1);
+		});
+
+		it('opacity tends to 0 near end of exit window', () => {
+			const u = computeCaptionAnimUniforms(presetWith('pop'), 0, segDur, lateExit);
+			expect(u.opacity).toBeLessThan(0.2);
+		});
+
+		it('typewriter exit holds at full reveal (cropRightFrac stays 1)', () => {
+			const p = {
+				...base,
+				animation: { enter: 'typewriter' as const, exit: 'typewriter' as const, durationS: dur }
+			};
+			const u = computeCaptionAnimUniforms(p, 0, segDur, midExit);
+			expect(u.cropRightFrac).toBe(1);
+			expect(u.opacity).toBe(1);
+		});
+	});
 });

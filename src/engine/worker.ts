@@ -1856,9 +1856,9 @@ async function handleRestoreProject(): Promise<void> {
 	syncTimelineLuts();
 	lastExportSettings = doc.exportSettings ?? null;
 	exportPresets = (doc.exportPresets ?? []).filter((p) => !p.builtIn);
-	customAnimCaptionPresets = (doc.customAnimCaptionPresets ?? []) as CaptionAnimStylePreset[];
+	customAnimCaptionPresets = doc.customAnimCaptionPresets ?? [];
 	// Tell the UI about the restored custom presets so the picker shows them.
-	postMessage({ type: 'caption-custom-presets-updated', presets: customAnimCaptionPresets });
+	post({ type: 'caption-custom-presets-updated', presets: customAnimCaptionPresets });
 	queueState = createEmptyQueueState();
 	if (doc.renderQueueHistory) {
 		queueState = { ...queueState, jobs: deserializeQueueHistory(doc.renderQueueHistory) };
@@ -1922,7 +1922,7 @@ async function handleNewProject(): Promise<void> {
 	// don't leak from the previous project into the new one. Notify the UI so
 	// the inspector's preset picker drops the stale entries.
 	customAnimCaptionPresets = [];
-	postMessage({ type: 'caption-custom-presets-updated', presets: [] });
+	post({ type: 'caption-custom-presets-updated', presets: [] });
 	markers = [];
 	masterGain = DEFAULT_MASTER_GAIN;
 	if (capture) requestCaptureStop();
@@ -3608,7 +3608,31 @@ function handleCaptionImportCustomPreset(
 	cmd: Extract<WorkerCommand, { type: 'caption-import-custom-preset' }>
 ): void {
 	const result = validateCaptionAnimPreset(cmd.preset);
-	if (!result.ok) return;
+	if (!result.ok) {
+		// Surface validation failure to the UI so the user knows why an import
+		// they just triggered did nothing. Bare `return` would leave the picker
+		// silently unchanged and look like a no-op.
+		post({
+			type: 'caption-custom-preset-import-failed',
+			field: result.field,
+			message: result.message
+		});
+		return;
+	}
+	// Empty id makes the preset un-referenceable: `segment.style.presetId`
+	// can't link to it, and `parseCustomAnimCaptionPresets` drops zero-length
+	// ids on the next reload, so the preset would "disappear" silently. The
+	// inspector's import flow assigns a fresh UUID before sending — guard
+	// here so any other producer (e.g. a future automation hook) can't bypass
+	// the contract.
+	if (cmd.preset.id.length === 0) {
+		post({
+			type: 'caption-custom-preset-import-failed',
+			field: 'id',
+			message: 'Preset id is empty; assign a non-empty string before importing.'
+		});
+		return;
+	}
 	const preset: CaptionAnimStylePreset = { ...result.value, id: cmd.preset.id, builtIn: false };
 	const existing = customAnimCaptionPresets.findIndex((p) => p.id === preset.id);
 	if (existing >= 0) {
@@ -3616,7 +3640,7 @@ function handleCaptionImportCustomPreset(
 	} else {
 		customAnimCaptionPresets.push(preset);
 	}
-	postMessage({
+	post({
 		type: 'caption-custom-presets-updated',
 		presets: customAnimCaptionPresets
 	});
@@ -3631,7 +3655,7 @@ function handleCaptionDeleteCustomPreset(
 	cmd: Extract<WorkerCommand, { type: 'caption-delete-custom-preset' }>
 ): void {
 	customAnimCaptionPresets = customAnimCaptionPresets.filter((p) => p.id !== cmd.presetId);
-	postMessage({
+	post({
 		type: 'caption-custom-presets-updated',
 		presets: customAnimCaptionPresets
 	});
@@ -3818,9 +3842,9 @@ async function applyImportedDoc(doc: ProjectDoc): Promise<void> {
 	syncTimelineLuts();
 	lastExportSettings = doc.exportSettings ?? null;
 	exportPresets = (doc.exportPresets ?? []).filter((p) => !p.builtIn);
-	customAnimCaptionPresets = (doc.customAnimCaptionPresets ?? []) as CaptionAnimStylePreset[];
+	customAnimCaptionPresets = doc.customAnimCaptionPresets ?? [];
 	// Tell the UI about the restored custom presets so the picker shows them.
-	postMessage({ type: 'caption-custom-presets-updated', presets: customAnimCaptionPresets });
+	post({ type: 'caption-custom-presets-updated', presets: customAnimCaptionPresets });
 	queueState = createEmptyQueueState();
 	if (doc.renderQueueHistory) {
 		queueState = { ...queueState, jobs: deserializeQueueHistory(doc.renderQueueHistory) };

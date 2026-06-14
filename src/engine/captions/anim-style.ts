@@ -126,13 +126,19 @@ export function validateCaptionAnimPreset(raw: unknown): ValidationResult {
 		};
 	}
 
-	if (!requiredString(raw.label)) {
+	// Bind every checked field to a local `const` of its narrowed type, so the
+	// builder below pulls from narrowed locals instead of re-casting `raw.*`.
+	// `requiredString` and the `isCaption*` predicates each act as a type
+	// guard already, so TypeScript carries the narrowing into the locals.
+	const label = requiredString(raw.label);
+	if (label === null) {
 		return { ok: false, field: 'label', message: 'Required non-empty string.' };
 	}
 
 	if (!isCaptionAnchor(raw.anchor)) {
 		return { ok: false, field: 'anchor', message: 'Invalid anchor value.' };
 	}
+	const anchor: CaptionAnchor = raw.anchor;
 
 	const maxWidth = finiteNumber(raw.maxWidthPercent);
 	if (maxWidth === null || maxWidth < 20 || maxWidth > 100) {
@@ -142,19 +148,22 @@ export function validateCaptionAnimPreset(raw: unknown): ValidationResult {
 	if (!isCaptionLineWrap(raw.lineWrap)) {
 		return { ok: false, field: 'lineWrap', message: 'Must be "balanced" or "greedy".' };
 	}
+	const lineWrap: CaptionLineWrap = raw.lineWrap;
 
 	// Validate animation sub-object if present.
+	let animation: CaptionAnimStylePreset['animation'];
 	if (raw.animation !== undefined) {
 		if (!isRecord(raw.animation)) {
 			return { ok: false, field: 'animation', message: 'Expected an object.' };
 		}
-		if (!isCaptionAnimKind(raw.animation.enter)) {
+		const rawAnim = raw.animation;
+		if (!isCaptionAnimKind(rawAnim.enter)) {
 			return { ok: false, field: 'animation.enter', message: 'Invalid animation kind.' };
 		}
-		if (!isCaptionAnimKind(raw.animation.exit)) {
+		if (!isCaptionAnimKind(rawAnim.exit)) {
 			return { ok: false, field: 'animation.exit', message: 'Invalid animation kind.' };
 		}
-		const dur = finiteNumber(raw.animation.durationS);
+		const dur = finiteNumber(rawAnim.durationS);
 		if (dur === null || dur < 0.05 || dur > 1.0) {
 			return {
 				ok: false,
@@ -162,41 +171,55 @@ export function validateCaptionAnimPreset(raw: unknown): ValidationResult {
 				message: 'Must be a number in [0.05, 1.0].'
 			};
 		}
+		animation = { enter: rawAnim.enter, exit: rawAnim.exit, durationS: dur };
 	}
 
 	// Validate glow sub-object if present.
+	let glow: CaptionAnimStylePreset['glow'];
 	if (raw.glow !== undefined) {
 		if (!isRecord(raw.glow)) {
 			return { ok: false, field: 'glow', message: 'Expected an object.' };
 		}
-		if (!requiredString(raw.glow.color)) {
+		const glowColor = requiredString(raw.glow.color);
+		if (glowColor === null) {
 			return { ok: false, field: 'glow.color', message: 'Required non-empty string.' };
 		}
 		const blur = finiteNumber(raw.glow.blurPx);
 		if (blur === null || blur < 0 || blur > 80) {
 			return { ok: false, field: 'glow.blurPx', message: 'Must be a number in [0, 80].' };
 		}
+		glow = { color: glowColor, blurPx: blur };
 	}
 
 	// Validate pill sub-object if present.
+	let pill: CaptionAnimStylePreset['pill'];
 	if (raw.pill !== undefined) {
 		if (!isRecord(raw.pill)) {
 			return { ok: false, field: 'pill', message: 'Expected an object.' };
 		}
+		const rawPill = raw.pill;
 		const pillFields = ['paddingXPx', 'paddingYPx', 'radiusPx'] as const;
+		const dims: Record<(typeof pillFields)[number], number> = {
+			paddingXPx: 0,
+			paddingYPx: 0,
+			radiusPx: 0
+		};
 		for (const f of pillFields) {
-			const v = finiteNumber(raw.pill[f]);
+			const v = finiteNumber(rawPill[f]);
 			if (v === null || v < 0) {
 				return { ok: false, field: `pill.${f}`, message: 'Must be a non-negative number.' };
 			}
+			dims[f] = v;
 		}
-		if (!requiredString(raw.pill.color)) {
+		const pillColor = requiredString(rawPill.color);
+		if (pillColor === null) {
 			return { ok: false, field: 'pill.color', message: 'Required non-empty string.' };
 		}
-		const op = finiteNumber(raw.pill.opacity);
+		const op = finiteNumber(rawPill.opacity);
 		if (op === null || op < 0 || op > 1) {
 			return { ok: false, field: 'pill.opacity', message: 'Must be a number in [0, 1].' };
 		}
+		pill = { ...dims, color: pillColor, opacity: op };
 	}
 
 	// Build the validated value. The `id` field is taken from the raw input
@@ -206,18 +229,14 @@ export function validateCaptionAnimPreset(raw: unknown): ValidationResult {
 	// in `CaptionStyleInspector.openAndImportPreset`) overwrite `id` after
 	// validation. Empty string is the safe default for a raw input that
 	// somehow omits the field.
-	const anim = raw.animation as Record<string, unknown> | undefined;
-	const glow = raw.glow as Record<string, unknown> | undefined;
-	const pill = raw.pill as Record<string, unknown> | undefined;
-
 	const value: CaptionAnimStylePreset = {
 		captionStyleSchemaVersion: 1,
 		id: typeof raw.id === 'string' ? raw.id : '',
-		label: raw.label as string,
+		label,
 		builtIn: Boolean(raw.builtIn),
-		anchor: raw.anchor as CaptionAnchor,
+		anchor,
 		maxWidthPercent: maxWidth,
-		lineWrap: raw.lineWrap as CaptionLineWrap,
+		lineWrap,
 		titleStyle: isRecord(raw.titleStyle) ? (raw.titleStyle as Partial<TitleStyle>) : {}
 	};
 
@@ -227,30 +246,9 @@ export function validateCaptionAnimPreset(raw: unknown): ValidationResult {
 		if (ix !== null && iy !== null) value.insetPx = { x: ix, y: iy };
 	}
 
-	if (glow) {
-		value.glow = {
-			color: glow.color as string,
-			blurPx: finiteNumber(glow.blurPx) ?? 0
-		};
-	}
-
-	if (pill) {
-		value.pill = {
-			paddingXPx: finiteNumber(pill.paddingXPx) ?? 0,
-			paddingYPx: finiteNumber(pill.paddingYPx) ?? 0,
-			radiusPx: finiteNumber(pill.radiusPx) ?? 0,
-			color: pill.color as string,
-			opacity: finiteNumber(pill.opacity) ?? 1
-		};
-	}
-
-	if (anim) {
-		value.animation = {
-			enter: anim.enter as CaptionAnimKind,
-			exit: anim.exit as CaptionAnimKind,
-			durationS: finiteNumber(anim.durationS) ?? 0.25
-		};
-	}
+	if (glow) value.glow = glow;
+	if (pill) value.pill = pill;
+	if (animation) value.animation = animation;
 
 	if (typeof raw.highlightColor === 'string' && raw.highlightColor.length > 0) {
 		value.highlightColor = raw.highlightColor;

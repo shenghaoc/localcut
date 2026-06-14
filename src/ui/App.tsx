@@ -1086,6 +1086,9 @@ export function App() {
 			case 'caption-custom-presets-updated':
 				setCustomAnimCaptionPresets([...msg.presets]);
 				break;
+			case 'caption-custom-preset-import-failed':
+				setStatusLine(`Preset import failed: ${msg.field} — ${msg.message}`);
+				break;
 			case 'caption-export-result':
 				for (const file of msg.files) {
 					downloadTextFile(file.fileName, file.mimeType, file.content);

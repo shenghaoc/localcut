@@ -22,6 +22,12 @@ import type { CaptionAnimStylePresetSnapshot } from '../protocol';
 type UiPreset = CaptionAnimStylePresetSnapshot;
 
 const ANIM_KINDS = ['none', 'pop', 'bounce', 'slide-up', 'slide-down', 'typewriter'] as const;
+type AnimKind = (typeof ANIM_KINDS)[number];
+
+/** Narrow a free-form string from a <select> onChange to a CaptionAnimKind. */
+function coerceAnimKind(value: string): AnimKind {
+	return (ANIM_KINDS as readonly string[]).includes(value) ? (value as AnimKind) : 'none';
+}
 
 /**
  * UUID for a freshly imported / saved preset. `crypto.randomUUID()` requires a
@@ -63,10 +69,19 @@ interface CaptionStyleInspectorProps {
 }
 
 /**
- * Serialize and save a preset to a local JSON file.
- * Falls back to `<a download>` when `showSaveFilePicker` is unavailable.
+ * Serialize and save a preset to a local JSON file. Resolves to `null` on
+ * success or user cancellation, or to an error message on a real failure
+ * (quota exceeded, permission denied, write rejected). The previous
+ * implementation swallowed every exception as "user cancelled", hiding real
+ * filesystem errors from the user — `onError` lets the caller surface them.
+ *
+ * Falls back to `<a download>` when `showSaveFilePicker` is unavailable;
+ * the download path can only fail synchronously so it never invokes `onError`.
  */
-export function serializeAndSavePreset(preset: UiPreset): void {
+export function serializeAndSavePreset(
+	preset: UiPreset,
+	onError?: (message: string) => void
+): void {
 	const json = JSON.stringify(preset, null, 2);
 	const blob = new Blob([json], { type: 'application/json' });
 	const safeStem = preset.label.replace(/[^a-z0-9-_]+/gi, '-').replace(/^-|-$/g, '') || preset.id;
@@ -91,8 +106,17 @@ export function serializeAndSavePreset(preset: UiPreset): void {
 				const writable = await handle.createWritable();
 				await writable.write(blob);
 				await writable.close();
-			} catch {
-				// User cancelled — no error to report.
+			} catch (error) {
+				// DOMException 'AbortError' is the only signal that means
+				// "user cancelled" — anything else (QuotaExceededError,
+				// NotAllowedError from a lost user gesture, an unexpected
+				// I/O failure) is a real problem and must surface to the user.
+				const isCancel = error instanceof DOMException && error.name === 'AbortError';
+				if (!isCancel && onError) {
+					const message =
+						error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+					onError(message);
+				}
 			}
 		})();
 	} else {
@@ -195,6 +219,28 @@ function readAndValidate(
 }
 
 /**
+ * Module-level Canvas2D probe used by `normalizeHexColor`. Allocated lazily on
+ * first call and reused for every subsequent call — the inspector seeds 7
+ * colour fields on every preset switch, so per-call allocation was burning a
+ * fresh `<canvas>` element + 2D context each time. The probe never holds any
+ * rendered pixels (we only read `fillStyle`), so it's safe to share.
+ */
+let colorProbeCtx: CanvasRenderingContext2D | null | undefined;
+function getColorProbeCtx(): CanvasRenderingContext2D | null {
+	if (colorProbeCtx !== undefined) return colorProbeCtx;
+	if (typeof document === 'undefined') {
+		colorProbeCtx = null;
+		return null;
+	}
+	try {
+		colorProbeCtx = document.createElement('canvas').getContext('2d');
+	} catch {
+		colorProbeCtx = null;
+	}
+	return colorProbeCtx;
+}
+
+/**
  * `<input type="color">` only accepts `#rrggbb` strings. Underlying style
  * fields can be any CSS colour notation (`'red'`, `'rgba(...)'`, `'hsl(...)'`),
  * which the input would silently render as black. Normalise to `#rrggbb` using
@@ -206,10 +252,9 @@ function readAndValidate(
 function normalizeHexColor(input: string | undefined, fallback: string): string {
 	if (!input) return fallback;
 	if (/^#[0-9a-fA-F]{6}$/.test(input)) return input.toLowerCase();
-	if (typeof document === 'undefined') return fallback;
+	const probe = getColorProbeCtx();
+	if (!probe) return fallback;
 	try {
-		const probe = document.createElement('canvas').getContext('2d');
-		if (!probe) return fallback;
 		probe.fillStyle = '#000000';
 		probe.fillStyle = input;
 		const value = probe.fillStyle;
@@ -402,7 +447,10 @@ export function CaptionStyleInspector(props: CaptionStyleInspectorProps) {
 
 	const handleExport = () => {
 		const preset = activePreset();
-		if (preset) serializeAndSavePreset(preset);
+		if (!preset) return;
+		serializeAndSavePreset(preset, (message) =>
+			setImportError(`Could not save preset: ${message}`)
+		);
 	};
 
 	const isCustomSelected = () =>
@@ -586,7 +634,7 @@ export function CaptionStyleInspector(props: CaptionStyleInspectorProps) {
 						<select
 							value={d().enterKind}
 							aria-label="Enter animation kind"
-							onChange={(e) => updateDraft('enterKind', e.currentTarget.value)}
+							onChange={(e) => updateDraft('enterKind', coerceAnimKind(e.currentTarget.value))}
 						>
 							<For each={ANIM_KINDS}>{(kind) => <option value={kind}>{kind}</option>}</For>
 						</select>
@@ -596,7 +644,7 @@ export function CaptionStyleInspector(props: CaptionStyleInspectorProps) {
 						<select
 							value={d().exitKind}
 							aria-label="Exit animation kind"
-							onChange={(e) => updateDraft('exitKind', e.currentTarget.value)}
+							onChange={(e) => updateDraft('exitKind', coerceAnimKind(e.currentTarget.value))}
 						>
 							<For each={ANIM_KINDS}>{(kind) => <option value={kind}>{kind}</option>}</For>
 						</select>

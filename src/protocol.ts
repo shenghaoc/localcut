@@ -1297,6 +1297,17 @@ interface SnapCaptionSegmentCommand {
 }
 
 // Phase 30: Animated caption style commands.
+// Mirrors the engine's CaptionAnimKind union literally — kept here so that the
+// protocol boundary catches typos at compile time instead of routing them
+// through `string` and silently degrading to identity at the curve evaluator.
+export type CaptionAnimKindSnapshot =
+	| 'none'
+	| 'pop'
+	| 'bounce'
+	| 'slide-up'
+	| 'slide-down'
+	| 'typewriter';
+
 export interface CaptionAnimStylePresetSnapshot {
 	captionStyleSchemaVersion: 1;
 	id: string;
@@ -1315,7 +1326,7 @@ export interface CaptionAnimStylePresetSnapshot {
 		color: string;
 		opacity: number;
 	};
-	animation?: { enter: string; exit: string; durationS: number };
+	animation?: { enter: CaptionAnimKindSnapshot; exit: CaptionAnimKindSnapshot; durationS: number };
 	highlightColor?: string;
 }
 
@@ -1831,6 +1842,13 @@ export type WorkerStateMessage =
 	| { type: 'caption-import-result'; result: CaptionImportResultSnapshot }
 	| { type: 'caption-export-result'; files: readonly CaptionSidecarFileSnapshot[] }
 	| { type: 'caption-custom-presets-updated'; presets: readonly CaptionAnimStylePresetSnapshot[] }
+	| {
+			type: 'caption-custom-preset-import-failed';
+			/** Field name from the validator (e.g. `'animation.durationS'`). */
+			field: string;
+			/** Human-readable description of the failure, suitable for UI display. */
+			message: string;
+	  }
 	| { type: 'media-assets'; assets: MediaAssetSnapshot[] }
 	| {
 			type: 'thumbnail';
