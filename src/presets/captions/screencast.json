@@ -1,0 +1,23 @@
+{
+	"captionStyleSchemaVersion": 1,
+	"id": "screencast",
+	"label": "Screencast",
+	"builtIn": true,
+	"anchor": "bottom-center",
+	"maxWidthPercent": 64,
+	"lineWrap": "greedy",
+	"titleStyle": {
+		"fontFamily": "'Courier New', Courier, monospace",
+		"fontSizePx": 52,
+		"color": "#FFFFFF",
+		"backgroundColor": "#1A1A1A",
+		"backgroundOpacity": 0.8,
+		"outlineColor": "#FFFFFF",
+		"outlineWidthPx": 0,
+		"shadowColor": "#000000",
+		"shadowBlurPx": 0,
+		"shadowOffsetXPx": 0,
+		"shadowOffsetYPx": 0,
+		"align": "center"
+	}
+}

@@ -1,9 +1,10 @@
 import { createEffect, createMemo, createSignal, For, Show, untrack } from 'solid-js';
 import { Popover } from '@kobalte/core/popover';
-import { Download, ListPlus, Save } from 'lucide-solid';
+import { Copy, Download, ListPlus, Save } from 'lucide-solid';
 import { Button } from './components/button';
 import { validateOutputTemplate } from '../engine/export-presets';
 import { exportConstraintsForProbe } from '../engine/capability-probe-v2';
+import { generateChapterText, generateChaptersJson } from '../engine/chapters';
 import type {
 	CapabilityProbeResult,
 	ExportCodecSupport,
@@ -28,6 +29,8 @@ interface ExportDialogProps {
 	initialSettings: ExportSettings | null;
 	presets: ExportPresetDoc[];
 	markers: TimelineMarkerSnapshot[];
+	/** Project name for chapter file suggested name. */
+	projectName?: string;
 	onProbe: () => void;
 	onStart: (settings: ExportSettings) => void;
 	onCancel: () => void;
@@ -652,6 +655,16 @@ export function ExportDialog(props: ExportDialogProps) {
 						</div>
 					</Show>
 
+					{/* Chapters section (Phase 44 T7.4) */}
+					<details class="export-chapters">
+						<summary>YouTube Chapters</summary>
+						<ChaptersSection
+							markers={props.markers}
+							timelineDuration={props.timelineDuration}
+							projectName={props.projectName ?? 'project'}
+						/>
+					</details>
+
 					{/* Save preset */}
 					<Show when={savingPreset()}>
 						<div class="export-fields" style={{ 'margin-top': '8px' }}>
@@ -769,5 +782,102 @@ export function ExportDialog(props: ExportDialogProps) {
 				</Popover.Content>
 			</Popover.Portal>
 		</Popover>
+	);
+}
+
+/** Chapters section for the Export dialog — Phase 44 T7.4. */
+function ChaptersSection(props: {
+	markers: TimelineMarkerSnapshot[];
+	timelineDuration: number;
+	projectName: string;
+}) {
+	const chapterResult = createMemo(() =>
+		generateChapterText(props.markers, props.timelineDuration)
+	);
+	const isValid = () => chapterResult().valid;
+	const chapterText = () => {
+		const r = chapterResult();
+		return r.valid ? r.text : '';
+	};
+	const chapterReason = () => {
+		const r = chapterResult();
+		return r.valid ? '' : r.reason;
+	};
+	const chapterEntries = () => {
+		const r = chapterResult();
+		return r.valid ? r.entries : [];
+	};
+
+	async function handleCopy() {
+		const text = chapterText();
+		if (!text) return;
+		try {
+			await navigator.clipboard.writeText(text);
+		} catch {
+			// Clipboard API may be unavailable; silently ignore.
+		}
+	}
+
+	async function handleSave() {
+		const text = chapterText();
+		const entries = chapterEntries();
+		if (!text || entries.length === 0) return;
+		const textBlob = new Blob([text], { type: 'text/plain' });
+		const jsonContent = generateChaptersJson(entries);
+		const jsonBlob = new Blob([jsonContent], { type: 'application/json' });
+		const textName = `${props.projectName}.chapters.txt`;
+		const jsonName = `${props.projectName}.chapters.json`;
+
+		if (typeof (globalThis as Record<string, unknown>).showSaveFilePicker === 'function') {
+			try {
+				const handle = await (
+					globalThis as unknown as {
+						showSaveFilePicker: (options: unknown) => Promise<FileSystemFileHandle>;
+					}
+				).showSaveFilePicker({
+					suggestedName: textName,
+					types: [{ description: 'Chapter Text', accept: { 'text/plain': ['.txt'] } }]
+				});
+				const writable = await handle.createWritable();
+				await writable.write(textBlob);
+				await writable.close();
+				// Download JSON as sidecar fallback (parent directory not accessible from file handle).
+				downloadBlob(jsonBlob, jsonName);
+			} catch {
+				// User cancelled or API unavailable; fall through to download.
+			}
+		} else {
+			downloadBlob(textBlob, textName);
+			downloadBlob(jsonBlob, jsonName);
+		}
+	}
+
+	function downloadBlob(blob: Blob, name: string) {
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = name;
+		a.click();
+		URL.revokeObjectURL(url);
+	}
+
+	return (
+		<div class="chapters-section">
+			<Show when={isValid()} fallback={<p class="export-error">{chapterReason()}</p>}>
+				<div class="chapters-preview">
+					<pre class="chapters-text">{chapterText()}</pre>
+				</div>
+				<div class="chapters-actions">
+					<Button variant="secondary" onClick={handleCopy}>
+						<Copy size={14} aria-hidden="true" />
+						Copy to Clipboard
+					</Button>
+					<Button variant="secondary" onClick={handleSave}>
+						<Download size={14} aria-hidden="true" />
+						Save .chapters.txt
+					</Button>
+				</div>
+			</Show>
+		</div>
 	);
 }

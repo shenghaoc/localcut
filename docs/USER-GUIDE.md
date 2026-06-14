@@ -413,13 +413,85 @@ and enter/exit animations. See [Caption Styles and Animation](CAPTION-STYLES.md)
 for the full reference.
 
 - **Preset Picker**: Select from 10+ built-in presets (subtitle, lower-third,
-  neon-glow, karaoke, etc.) in the caption style inspector.
+  neon-glow, karaoke, screencast, etc.) in the caption style inspector.
+- **Screencast Preset**: High-contrast monospace text (`Courier New`) on a dark
+  background, optimized for on-screen code and terminal recordings.
 - **Import/Export Presets**: Import `.caption-preset.json` files to add custom
   presets, or export your favorites to share.
 - **Animations**: Presets can include pop, bounce, slide, or typewriter enter/exit
   animations. Animations are applied at composite time — no re-rasterization per frame.
 - **Karaoke**: The karaoke preset highlights the active word when per-word timing
   data is present (auto-populated by the Auto Captions ASR engine above).
+
+## Silence Detection (Phase 44)
+
+Detect silent regions in your audio tracks and remove them with a single click. This is especially useful for screencasts and tutorials where dead air accumulates between spoken segments.
+
+### How to Use
+
+1. **Select audio tracks** on the timeline (the button is disabled when no audio tracks are selected).
+2. Open the **Silence Review Panel** from the Edit menu or audio track header.
+3. **Tune parameters** (collapsible):
+   - **Open threshold** (−60 to −20 dBFS, default −42): RMS below this opens a silence region.
+   - **Close threshold** (−60 to −20 dBFS, default −36): RMS above this closes a silence region.
+   - **Min silence** (0.1 to 10 s, default 0.6): Minimum consecutive silence duration to keep.
+   - **Keep padding** (0 to 1.0 s, default 0.15): Inward contraction on each side of detected regions.
+   - **Min kept segment** (0.1 to 2.0 s, default 0.3): Adjacent regions whose gap is shorter than this are merged.
+4. Click **Detect Silence**. A progress bar shows analysis progress.
+5. **Review results**: each region shows start time, end time, duration, and peak dB.
+   - **Apply**: removes the region via ripple delete (one undo step per region).
+   - **Skip**: dims the row; skipped regions are not removed.
+   - **Apply All**: applies all non-skipped regions.
+6. **Undo**: use Ctrl+Z / Cmd+Z to undo applied cuts individually.
+
+> Detection runs entirely in the pipeline worker — no audio data leaves your device. The same audio + same parameters always produce identical results.
+
+## Keystroke Overlay (Phase 44)
+
+Generate title clips that display keyboard shortcuts as rounded-rect keycap pills on the timeline. This is designed for tutorial and screencast recordings.
+
+### Requirements
+
+- An own-tab capture session with **"Record shortcuts"** enabled (Phase 43).
+- The capture session's event log must contain key events.
+
+### How to Use
+
+1. Import a capture session that has key-event log entries.
+2. Click **"Generate keystroke overlay"** in the Edit menu or the Capture import dialog.
+3. Title clips are created on the topmost video track. Each clip displays a keycap pill (monospace font, dark background, white outline) for 1.2 seconds.
+4. Key events less than 300 ms apart are merged into a single clip (combos joined with `·`).
+5. Edit or delete overlay clips like any other title clip.
+
+> Only non-text shortcuts are recorded (modifier combos, function keys, Escape, etc.). Single printable characters without modifiers and events from form fields are never recorded.
+
+## YouTube Chapters (Phase 44)
+
+Export YouTube-compatible chapter markers from your timeline.
+
+### How to Add Markers
+
+1. Position the playhead where you want a chapter.
+2. Add a marker and give it a non-empty label.
+3. Repeat for at least 3 chapters (YouTube's minimum).
+
+### Rules
+
+- **Auto-Intro**: if no marker exists at time 0, an "Intro" chapter is automatically inserted at 00:00:00.
+- **Minimum 3 chapters** (including auto-Intro).
+- **10-second spacing** between adjacent chapters.
+- Markers with empty labels are ignored.
+
+### Exporting
+
+1. Open the **Export** dialog.
+2. Expand the **YouTube Chapters** section.
+3. If validation passes, the chapter text is displayed. Click:
+   - **Copy to Clipboard**: copies the chapter text for pasting into a video description.
+   - **Save .chapters.txt**: saves the chapter text file and a `.chapters.json` sidecar.
+4. If validation fails, the error message explains what to fix.
+
+> Note: MP4 container chapter metadata is not yet supported (Mediabunny has no chapter API). The sidecar files are the production path.
 
 ## Smart Reframe (Experimental)
 

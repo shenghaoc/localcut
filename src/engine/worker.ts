@@ -193,6 +193,7 @@ import {
 } from './audio-ring';
 import { openMediaFile, STILL_DEFAULT_DURATION_S, type MediaInputHandle } from './media-io';
 import { healthReportForHandle } from './media-adapters/mediabunny-adapter';
+import { detectSilence } from './silence-detector';
 import {
 	resolveSourceTimestamp,
 	resolveNormalizedSourceTimestamp,
@@ -359,6 +360,8 @@ const remapLUTSignatures = new Map<string, string>();
 const liveWsolaStretchers = new Map<string, WsolaStretcher>();
 const WSOLA_INPUT_PAD_FRAMES = WSOLA_WINDOW_SAMPLES + WSOLA_SEARCH_RADIUS_SAMPLES;
 const restoringSourceIds = new Set<string>();
+/** Phase 44: in-flight silence detection request IDs (cancellation set). */
+const inFlightSilenceRequests = new Set<string>();
 let thumbnailGen: ThumbnailGenerator | null = null;
 const THUMBNAIL_WIDTH = 160;
 const history = createTimelineHistory();
@@ -5581,6 +5584,120 @@ async function handleQueueStart() {
 
 // ── Phase 36: Voice Cleanup handlers ──
 
+// ── Phase 44: Silence Detection handler ──
+
+async function handleDetectSilence(
+	cmd: Extract<WorkerCommand, { type: 'detect-silence' }>
+): Promise<void> {
+	const { requestId, trackIds, params } = cmd;
+	inFlightSilenceRequests.add(requestId);
+	try {
+		const allRegions: import('./silence-detector').SilenceRegion[] = [];
+		for (let i = 0; i < trackIds.length; i++) {
+			if (!inFlightSilenceRequests.has(requestId)) return; // Cancelled.
+			const trackId = trackIds[i]!;
+			const track = timeline.find((t) => t.id === trackId);
+			if (!track) continue;
+			// Collect all clips on this track that have audio.
+			const pcmChunks: Float32Array[] = [];
+			const trackDuration = getTimelineDuration([track]);
+			if (trackDuration <= 0) continue;
+			const targetSampleRate = params.sampleRate;
+			// Iterate clips and collect PCM for the full track.
+			for (const clip of track.clips) {
+				if (clip.kind === 'title') continue;
+				const handle = sourceInputs.get(clip.sourceId);
+				if (!handle?.audioSource) continue;
+				const channels = Math.max(1, handle.audioChannels || 1);
+				const frames = Math.max(1, Math.round(clip.duration * targetSampleRate));
+				const pcm = await handle.audioSource.pcmWindowAt(
+					clip.inPoint,
+					frames,
+					channels,
+					targetSampleRate
+				);
+				if (!inFlightSilenceRequests.has(requestId)) return; // Cancelled.
+				// Mono mix: average all channels.
+				if (channels > 1) {
+					const mono = new Float32Array(frames);
+					for (let f = 0; f < frames; f++) {
+						let sum = 0;
+						for (let ch = 0; ch < channels; ch++) {
+							sum += pcm[f * channels + ch]!;
+						}
+						mono[f] = sum / channels;
+					}
+					pcmChunks.push(mono);
+				} else {
+					pcmChunks.push(pcm);
+				}
+			}
+			if (pcmChunks.length === 0) continue;
+			// Concatenate into one Float32Array.
+			const totalLen = pcmChunks.reduce((s, c) => s + c.length, 0);
+			const mono = new Float32Array(totalLen);
+			let offset = 0;
+			for (const chunk of pcmChunks) {
+				mono.set(chunk, offset);
+				offset += chunk.length;
+			}
+			// Run silence detection.
+			const trackRegions = detectSilence(mono, params);
+			allRegions.push(...trackRegions);
+			post({ type: 'silence-progress', requestId, progressFraction: (i + 1) / trackIds.length });
+		}
+		if (!inFlightSilenceRequests.has(requestId)) return; // Cancelled.
+		// Sort by start time and deduplicate overlapping regions across tracks.
+		allRegions.sort((a, b) => a.startS - b.startS);
+		post({ type: 'silence-result', requestId, regions: allRegions });
+	} catch (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		post({ type: 'silence-error', requestId, message });
+	} finally {
+		inFlightSilenceRequests.delete(requestId);
+	}
+}
+
+// ── Phase 44: Keystroke Overlay handler ──
+
+function handleGenerateKeyOverlay(
+	cmd: Extract<WorkerCommand, { type: 'generate-key-overlay' }>
+): void {
+	const { clips } = cmd;
+	if (clips.length === 0) return;
+	commitTimelineMutation(() => {
+		// Find or create a topmost video track for keystroke overlay clips.
+		// TimelineTrack has no `name` field; the overlay track is the topmost video track.
+		let overlayTrack = timeline.find((t) => t.type === 'video');
+		let nextTimeline = timeline;
+		if (!overlayTrack) {
+			nextTimeline = addTrack(nextTimeline, 'video');
+			overlayTrack = nextTimeline[nextTimeline.length - 1]!;
+		}
+		// Insert title clips for each overlay entry.
+		for (const clip of clips) {
+			const titleClip = defaultTitleClip({
+				id: makeTitleClipId(),
+				start: clip.startS,
+				duration: clip.durationS
+			});
+			const withClip = insertClip(nextTimeline, overlayTrack!.id, titleClip);
+			if (withClip !== nextTimeline) {
+				nextTimeline = withClip;
+				// Set the title text and style.
+				const insertedId = titleClip.id;
+				nextTimeline = setTitleContent(nextTimeline, overlayTrack!.id, insertedId, {
+					text: clip.text,
+					style: clip.style
+				});
+			}
+		}
+		return nextTimeline;
+	});
+}
+
+// ── Phase 36: Voice Cleanup handlers (continued) ──
+
 async function handleVoiceCleanupAnalyseLoudness(
 	cmd: Extract<WorkerCommand, { type: 'voice-cleanup-analyse-loudness' }>
 ): Promise<void> {
@@ -7300,6 +7417,17 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			break;
 		case 'clear-time-remap':
 			handleClearTimeRemap(cmd);
+			break;
+		// Phase 44: Silence Detection
+		case 'detect-silence':
+			void handleDetectSilence(cmd);
+			break;
+		case 'cancel-silence-detection':
+			inFlightSilenceRequests.delete(cmd.requestId);
+			break;
+		// Phase 44: Keystroke overlay
+		case 'generate-key-overlay':
+			handleGenerateKeyOverlay(cmd);
 			break;
 		case 'dispose':
 			void handleDispose();

@@ -114,6 +114,7 @@ import type { CaptionAnimStylePresetSnapshot } from '../protocol';
 import { createRecoveryMachine, type WorkerRecoveryState } from '../engine/recovery';
 import { AppErrorBoundary } from './ErrorBoundary';
 import { AudioCleanupPanel, type AppliedCleanupInfo } from './AudioCleanupPanel';
+import { SilenceReviewPanel } from './SilenceReviewPanel';
 import {
 	CleanupController,
 	CLEANUP_WASM_PATH,
@@ -317,6 +318,7 @@ export function App() {
 	const [audioCleanupOpen, setAudioCleanupOpen] = createSignal(false);
 	const [asrPanelOpen, setAsrPanelOpen] = createSignal(false);
 	const [smartReframeOpen, setSmartReframeOpen] = createSignal(false);
+	const [silenceReviewOpen, setSilenceReviewOpen] = createSignal(false);
 	const [diagnosticSnapshot, setDiagnosticSnapshot] = createSignal<DiagnosticSnapshot | null>(null);
 	const [recentErrorLog, setRecentErrorLog] = createSignal(createEmptyRecentErrorLog());
 	const [compatibilityPreview, setCompatibilityPreview] =
@@ -3811,6 +3813,60 @@ export function App() {
 							setSmartReframeOpen(false);
 						}}
 					/>
+					<Show when={silenceReviewOpen()}>
+						<SilenceReviewPanel
+							trackIds={timeline()
+								.filter((track) => track.type === 'audio')
+								.map((track) => track.id)}
+							sendCommand={(cmd) => bridge?.send(cmd)}
+							onWorkerMessage={(handler) => {
+								const wrapped = (msg: import('../protocol').WorkerStateMessage) => {
+									if (
+										msg.type === 'silence-progress' ||
+										msg.type === 'silence-result' ||
+										msg.type === 'silence-error'
+									) {
+										handler(msg);
+									}
+								};
+								const worker = ensureWorker().worker;
+								const listener = (e: MessageEvent) => wrapped(e.data);
+								worker.addEventListener('message', listener);
+								return () => worker.removeEventListener('message', listener);
+							}}
+							onApplyRegion={(region) => {
+								const clipsToDelete: import('../protocol').TimelineClipReference[] = [];
+								for (const track of timeline()) {
+									for (const clip of track.clips) {
+										const clipEnd = clip.start + clip.duration;
+										if (clip.start < region.endS && clipEnd > region.startS) {
+											clipsToDelete.push({ trackId: track.id, clipId: clip.id });
+										}
+									}
+								}
+								if (clipsToDelete.length > 0) {
+									bridge?.send({ type: 'ripple-delete', clips: clipsToDelete });
+								}
+							}}
+							onApplyAll={(regions) => {
+								for (const region of regions) {
+									const clipsToDelete: import('../protocol').TimelineClipReference[] = [];
+									for (const track of timeline()) {
+										for (const clip of track.clips) {
+											const clipEnd = clip.start + clip.duration;
+											if (clip.start < region.endS && clipEnd > region.startS) {
+												clipsToDelete.push({ trackId: track.id, clipId: clip.id });
+											}
+										}
+									}
+									if (clipsToDelete.length > 0) {
+										bridge?.send({ type: 'ripple-delete', clips: clipsToDelete });
+									}
+								}
+							}}
+							onClose={() => setSilenceReviewOpen(false)}
+						/>
+					</Show>
 					<PublishPanel
 						open={publishPanelOpen()}
 						probe={capabilityProbeV2()}
