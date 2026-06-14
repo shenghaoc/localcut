@@ -82,7 +82,12 @@ export function sampleEffectsAt(
 			localTime,
 			effects.temperatureStrength
 		),
-		lutStrength: sampleKeyframes(keyframes?.lutStrength, localTime, effects.lutStrength)
+		lutStrength: sampleKeyframes(keyframes?.lutStrength, localTime, effects.lutStrength),
+		skinSmoothStrength: sampleKeyframes(
+			keyframes?.skinSmoothStrength,
+			localTime,
+			effects.skinSmoothStrength
+		)
 	};
 }
 

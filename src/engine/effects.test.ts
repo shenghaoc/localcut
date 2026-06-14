@@ -8,6 +8,7 @@ import {
 	isColourTemperatureActive,
 	isLutActive,
 	isSaturationActive,
+	isSkinSmoothActive,
 	normalizeClipEffects,
 	packEffectUniform,
 	packLutUniform
@@ -111,6 +112,40 @@ describe('effects', () => {
 		expect(packed).toHaveLength(12);
 		expect(Array.from(packed.slice(4, 7))).toEqual([0, 0, 0]);
 		expect(Array.from(packed.slice(8, 11))).toEqual([1, 1, 1]);
+	});
+
+	it('defaults skinSmoothStrength to 0', () => {
+		expect(DEFAULT_CLIP_EFFECTS.skinSmoothStrength).toBe(0);
+	});
+
+	it('normalizeClipEffects fills skinSmoothStrength: 0 for absent', () => {
+		expect(normalizeClipEffects({}).skinSmoothStrength).toBe(0);
+	});
+
+	it('normalizeClipEffects clamps skinSmoothStrength > 1 to 1', () => {
+		expect(normalizeClipEffects({ skinSmoothStrength: 1.5 }).skinSmoothStrength).toBe(1);
+	});
+
+	it('normalizeClipEffects clamps skinSmoothStrength < 0 to 0', () => {
+		expect(normalizeClipEffects({ skinSmoothStrength: -0.1 }).skinSmoothStrength).toBe(0);
+	});
+
+	it('normalizeClipEffects falls back NaN skinSmoothStrength to 0', () => {
+		expect(normalizeClipEffects({ skinSmoothStrength: NaN }).skinSmoothStrength).toBe(0);
+	});
+
+	it('isSkinSmoothActive returns false at default strength', () => {
+		expect(isSkinSmoothActive(DEFAULT_CLIP_EFFECTS)).toBe(false);
+	});
+
+	it('isSkinSmoothActive returns true at strength 0.5', () => {
+		expect(isSkinSmoothActive({ ...DEFAULT_CLIP_EFFECTS, skinSmoothStrength: 0.5 })).toBe(true);
+	});
+
+	it('clipEffectsEqual distinguishes differing skinSmoothStrength', () => {
+		expect(
+			clipEffectsEqual(DEFAULT_CLIP_EFFECTS, { ...DEFAULT_CLIP_EFFECTS, skinSmoothStrength: 0.3 })
+		).toBe(false);
 	});
 
 	it('packs LUT domain uniforms from the clip LUT', () => {

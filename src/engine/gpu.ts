@@ -15,9 +15,15 @@ import outputConvertF16 from './shaders/output-convert.f16.wgsl?raw';
 import opacityF32 from './shaders/opacity.wgsl?raw';
 import opacityF16 from './shaders/opacity.f16.wgsl?raw';
 import clippingOverlaySource from './shaders/clipping-overlay.wgsl?raw';
-import { EffectChain, type ClipEffectParams } from './effects';
+import skinSmoothPrepareSource from './shaders/skin-smooth-prepare.wgsl?raw';
+import skinSmoothBoxSource from './shaders/skin-smooth-box.wgsl?raw';
+import skinSmoothCoeffsSource from './shaders/skin-smooth-coeffs.wgsl?raw';
+import skinSmoothApplySource from './shaders/skin-smooth-apply.wgsl?raw';
+import { EffectChain, type ClipEffectParams, isSkinSmoothActive } from './effects';
 import { createComputePipeline } from './gpu-pipeline';
 import type { ClipLut } from './lut';
+import { packSkinBoxUniform, packSkinApplyUniform, radiusForHeight } from './skin-smooth';
+import type { SkinMaskSnapshot } from '../protocol';
 import {
 	DEFAULT_TRANSFORM,
 	packTransformUniform,
@@ -71,6 +77,10 @@ export interface FrameCompositeLayer {
 	effects: ClipEffectParams;
 	transform: TransformParams;
 	lut?: ClipLut;
+	/** Phase 32a: optional skin-mask sidecar. */
+	skinMask?: SkinMaskSnapshot;
+	/** Phase 32a: session-only bypass flag (never serialised). */
+	skinSmoothBypass?: boolean;
 	/** Phase 13: present when this layer participates in a transition blend. */
 	transition?: import('./timeline').TransitionResolveMeta;
 }
@@ -188,6 +198,24 @@ export class PreviewRenderer {
 	private outConvUniform: GPUBuffer | null = null;
 	private readonly outConvGroupLayout: GPUBindGroupLayout;
 
+	// Phase 32a: skin-smoothing pipelines and resources.
+	private readonly skinSmoothPreparePipeline: GPUComputePipeline;
+	private readonly skinSmoothBoxPipeline: GPUComputePipeline;
+	private readonly skinSmoothCoeffsPipeline: GPUComputePipeline;
+	private readonly skinSmoothApplyPipeline: GPUComputePipeline;
+	private readonly skinSmoothGroupLayout: GPUBindGroupLayout;
+	private readonly skinSmoothBoxGroupLayout: GPUBindGroupLayout;
+	private readonly skinSmoothCoeffsGroupLayout: GPUBindGroupLayout;
+	private readonly skinSmoothApplyGroupLayout: GPUBindGroupLayout;
+	private skinScratch0: GPUTexture | null = null;
+	private skinScratch1: GPUTexture | null = null;
+	private skinScratch0View: GPUTextureView | null = null;
+	private skinScratch1View: GPUTextureView | null = null;
+	private skinBoxUniformH: GPUBuffer | null = null;
+	private skinBoxUniformV: GPUBuffer | null = null;
+	private skinBoxUniformHeight: number | null = null;
+	private readonly skinApplyUniforms: GPUBuffer[] = [];
+
 	// Phase 21: scopes SAB reference (set by worker for scope output).
 	private scopeSab: Float32Array | null = null;
 	private scopesEnabled = false;
@@ -267,10 +295,44 @@ export class PreviewRenderer {
 			}
 		})();
 
+		// Phase 32a: skin-smoothing pipelines (f32-only, no f16 variant).
+		this.skinSmoothPreparePipeline = device.createComputePipeline({
+			layout: 'auto',
+			compute: {
+				module: device.createShaderModule({ code: skinSmoothPrepareSource }),
+				entryPoint: 'main'
+			}
+		});
+		this.skinSmoothBoxPipeline = device.createComputePipeline({
+			layout: 'auto',
+			compute: {
+				module: device.createShaderModule({ code: skinSmoothBoxSource }),
+				entryPoint: 'main'
+			}
+		});
+		this.skinSmoothCoeffsPipeline = device.createComputePipeline({
+			layout: 'auto',
+			compute: {
+				module: device.createShaderModule({ code: skinSmoothCoeffsSource }),
+				entryPoint: 'main'
+			}
+		});
+		this.skinSmoothApplyPipeline = device.createComputePipeline({
+			layout: 'auto',
+			compute: {
+				module: device.createShaderModule({ code: skinSmoothApplySource }),
+				entryPoint: 'main'
+			}
+		});
+
 		this.normalizeGroupLayout = this.sourceNormalizePipeline.getBindGroupLayout(0);
 		this.outConvGroupLayout = this.outputConvertPipeline.getBindGroupLayout(0);
 		this.opacityGroupLayout = this.opacityPipeline.getBindGroupLayout(0);
 		this.transitionGroupLayout = this.transitionMixPipeline.getBindGroupLayout(0);
+		this.skinSmoothGroupLayout = this.skinSmoothPreparePipeline.getBindGroupLayout(0);
+		this.skinSmoothBoxGroupLayout = this.skinSmoothBoxPipeline.getBindGroupLayout(0);
+		this.skinSmoothCoeffsGroupLayout = this.skinSmoothCoeffsPipeline.getBindGroupLayout(0);
+		this.skinSmoothApplyGroupLayout = this.skinSmoothApplyPipeline.getBindGroupLayout(0);
 
 		this.sampler = device.createSampler({
 			magFilter: 'linear',
@@ -524,9 +586,26 @@ export class PreviewRenderer {
 					wgY
 				);
 			}
-			const opaqueView = this.encodeOpacity(encoder, lutView, layer.transform, slot, wgX, wgY);
+			// Phase 32a: skin-smoothing stage (between lut-apply and opacity).
+			let skinView = lutView;
+			if (layer.kind === 'frame' && isSkinSmoothActive(layer.effects) && !layer.skinSmoothBypass) {
+				const skinDst =
+					lutView === storage.a ? storage.b : lutView === storage.b ? storage.c : storage.a;
+				this.encodeSkinSmooth(
+					encoder,
+					lutView,
+					skinDst,
+					layer.effects.skinSmoothStrength,
+					layer.skinMask,
+					slot,
+					wgX,
+					wgY
+				);
+				skinView = skinDst;
+			}
+			const opaqueView = this.encodeOpacity(encoder, skinView, layer.transform, slot, wgX, wgY);
 			const xfParams =
-				layer.transform.opacity < 1.0 && opaqueView !== lutView
+				layer.transform.opacity < 1.0 && opaqueView !== skinView
 					? { ...layer.transform, opacity: 1.0 }
 					: layer.transform;
 			this.encodeTransformDirect(
@@ -751,6 +830,181 @@ export class PreviewRenderer {
 		return dstView;
 	}
 
+	private ensureSkinBoxUniforms(): void {
+		if (!this.skinBoxUniformH) {
+			this.skinBoxUniformH = this.device.createBuffer({
+				size: 16,
+				usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+			});
+			this.skinBoxUniformV = this.device.createBuffer({
+				size: 16,
+				usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+			});
+			this.skinBoxUniformHeight = null;
+		}
+		if (this.skinBoxUniformHeight === this.height) return;
+		const radius = radiusForHeight(this.height);
+		this.device.queue.writeBuffer(this.skinBoxUniformH, 0, packSkinBoxUniform(radius, true));
+		this.device.queue.writeBuffer(this.skinBoxUniformV!, 0, packSkinBoxUniform(radius, false));
+		this.skinBoxUniformHeight = this.height;
+	}
+
+	/** Phase 32a: skin-smoothing — 7-pass guided filter on luma, gated by chroma mask. */
+	private encodeSkinSmooth(
+		encoder: GPUCommandEncoder,
+		srcView: GPUTextureView,
+		dstView: GPUTextureView,
+		strength: number,
+		mask: SkinMaskSnapshot | undefined,
+		slot: number,
+		wgX: number,
+		wgY: number
+	): void {
+		// Lazily allocate scratch textures
+		if (!this.skinScratch0) {
+			const usage = GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING;
+			const size = { width: this.width, height: this.height };
+			this.skinScratch0 = this.device.createTexture({ size, format: 'rg32float', usage });
+			this.skinScratch1 = this.device.createTexture({ size, format: 'rg32float', usage });
+			this.skinScratch0View = this.skinScratch0.createView();
+			this.skinScratch1View = this.skinScratch1.createView();
+		}
+
+		const s0 = this.skinScratch0View!;
+		const s1 = this.skinScratch1View!;
+		this.ensureSkinBoxUniforms();
+
+		// Pass 1: prepare — compute (Y, Y²) from source
+		{
+			const bg = this.device.createBindGroup({
+				layout: this.skinSmoothGroupLayout,
+				entries: [
+					{ binding: 0, resource: srcView },
+					{ binding: 1, resource: s0 }
+				]
+			});
+			const pass = encoder.beginComputePass();
+			pass.setPipeline(this.skinSmoothPreparePipeline);
+			pass.setBindGroup(0, bg);
+			pass.dispatchWorkgroups(wgX, wgY);
+			pass.end();
+		}
+
+		// Pass 2: box-H on (Y, Y²)
+		{
+			const bg = this.device.createBindGroup({
+				layout: this.skinSmoothBoxGroupLayout,
+				entries: [
+					{ binding: 0, resource: { buffer: this.skinBoxUniformH! } },
+					{ binding: 1, resource: s0 },
+					{ binding: 2, resource: s1 }
+				]
+			});
+			const pass = encoder.beginComputePass();
+			pass.setPipeline(this.skinSmoothBoxPipeline);
+			pass.setBindGroup(0, bg);
+			pass.dispatchWorkgroups(wgX, wgY);
+			pass.end();
+		}
+
+		// Pass 3: box-V on (Y, Y²) → (meanY, meanY²)
+		{
+			const bg = this.device.createBindGroup({
+				layout: this.skinSmoothBoxGroupLayout,
+				entries: [
+					{ binding: 0, resource: { buffer: this.skinBoxUniformV! } },
+					{ binding: 1, resource: s1 },
+					{ binding: 2, resource: s0 }
+				]
+			});
+			const pass = encoder.beginComputePass();
+			pass.setPipeline(this.skinSmoothBoxPipeline);
+			pass.setBindGroup(0, bg);
+			pass.dispatchWorkgroups(wgX, wgY);
+			pass.end();
+		}
+
+		// Pass 4: coefficients — compute (a, b) from moments
+		{
+			const bg = this.device.createBindGroup({
+				layout: this.skinSmoothCoeffsGroupLayout,
+				entries: [
+					{ binding: 0, resource: s0 },
+					{ binding: 1, resource: s1 }
+				]
+			});
+			const pass = encoder.beginComputePass();
+			pass.setPipeline(this.skinSmoothCoeffsPipeline);
+			pass.setBindGroup(0, bg);
+			pass.dispatchWorkgroups(wgX, wgY);
+			pass.end();
+		}
+
+		// Pass 5: box-H on (a, b)
+		{
+			const bg = this.device.createBindGroup({
+				layout: this.skinSmoothBoxGroupLayout,
+				entries: [
+					{ binding: 0, resource: { buffer: this.skinBoxUniformH! } },
+					{ binding: 1, resource: s1 },
+					{ binding: 2, resource: s0 }
+				]
+			});
+			const pass = encoder.beginComputePass();
+			pass.setPipeline(this.skinSmoothBoxPipeline);
+			pass.setBindGroup(0, bg);
+			pass.dispatchWorkgroups(wgX, wgY);
+			pass.end();
+		}
+
+		// Pass 6: box-V on (a, b) → (meanA, meanB)
+		{
+			const bg = this.device.createBindGroup({
+				layout: this.skinSmoothBoxGroupLayout,
+				entries: [
+					{ binding: 0, resource: { buffer: this.skinBoxUniformV! } },
+					{ binding: 1, resource: s0 },
+					{ binding: 2, resource: s1 }
+				]
+			});
+			const pass = encoder.beginComputePass();
+			pass.setPipeline(this.skinSmoothBoxPipeline);
+			pass.setBindGroup(0, bg);
+			pass.dispatchWorkgroups(wgX, wgY);
+			pass.end();
+		}
+
+		// Per-layer apply uniform
+		let applyBuffer = this.skinApplyUniforms[slot];
+		if (!applyBuffer) {
+			applyBuffer = this.device.createBuffer({
+				size: 32,
+				usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+			});
+			this.skinApplyUniforms[slot] = applyBuffer;
+		}
+		this.device.queue.writeBuffer(applyBuffer, 0, packSkinApplyUniform(strength, mask));
+
+		// Pass 7: apply — compose with mask and strength
+		{
+			// Destination is one of the chain's rgba8unorm ping-pong storage textures.
+			const bg = this.device.createBindGroup({
+				layout: this.skinSmoothApplyGroupLayout,
+				entries: [
+					{ binding: 0, resource: { buffer: applyBuffer } },
+					{ binding: 1, resource: srcView },
+					{ binding: 2, resource: s1 },
+					{ binding: 3, resource: dstView }
+				]
+			});
+			const pass = encoder.beginComputePass();
+			pass.setPipeline(this.skinSmoothApplyPipeline);
+			pass.setBindGroup(0, bg);
+			pass.dispatchWorkgroups(wgX, wgY);
+			pass.end();
+		}
+	}
+
 	/** Stage 7: output-conversion — working linear → sRGB OETF for display/export. */
 	private encodeOutputConvert(
 		encoder: GPUCommandEncoder,
@@ -929,6 +1183,13 @@ export class PreviewRenderer {
 		this.transitionUniformBuffers.length = 0;
 		this.outConvUniform?.destroy();
 		this.outConvUniform = null;
+		this.skinBoxUniformH?.destroy();
+		this.skinBoxUniformH = null;
+		this.skinBoxUniformV?.destroy();
+		this.skinBoxUniformV = null;
+		this.skinBoxUniformHeight = null;
+		for (const buffer of this.skinApplyUniforms) buffer.destroy();
+		this.skinApplyUniforms.length = 0;
 		this.presentBindGroup = null;
 		this.lastPresentView = null;
 		this.scopeSab = null;
@@ -946,6 +1207,8 @@ export class PreviewRenderer {
 		this.zebraTex?.destroy();
 		this.accTex?.[0]?.destroy();
 		this.accTex?.[1]?.destroy();
+		this.skinScratch0?.destroy();
+		this.skinScratch1?.destroy();
 		this.storageA = null;
 		this.storageB = null;
 		this.storageC = null;
@@ -966,6 +1229,10 @@ export class PreviewRenderer {
 		this.transformView = null;
 		this.transformViewB = null;
 		this.accView = null;
+		this.skinScratch0 = null;
+		this.skinScratch1 = null;
+		this.skinScratch0View = null;
+		this.skinScratch1View = null;
 	}
 
 	private captureCanvasFrame(timestamp: number, duration: number): VideoFrame {

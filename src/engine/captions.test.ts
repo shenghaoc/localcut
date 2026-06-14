@@ -153,7 +153,8 @@ describe('caption editing and export', () => {
 								saturation: 1,
 								temperature: 6500,
 								temperatureStrength: 0,
-								lutStrength: 0
+								lutStrength: 0,
+								skinSmoothStrength: 0
 							},
 							transform: {
 								x: 0,

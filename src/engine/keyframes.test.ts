@@ -4,6 +4,7 @@ import { DEFAULT_TRANSFORM } from './transform';
 import {
 	deleteKeyframe,
 	insertKeyframe,
+	isEffectKeyframeParam,
 	moveKeyframe,
 	normalizeKeyframeTrack,
 	sampleClipParamsAt,
@@ -167,6 +168,30 @@ describe('keyframes', () => {
 		expect(clip.keyframes?.y).toEqual([{ t: 2, value: -0.5, easing: 'linear' }]);
 		expect(clip.transform.x).toBe(0.25);
 		expect(clip.transform.y).toBe(-0.5);
+	});
+
+	it('recognises skinSmoothStrength as an effect keyframe param', () => {
+		expect(isEffectKeyframeParam('skinSmoothStrength')).toBe(true);
+	});
+
+	it('sampleClipParamsAt interpolates skinSmoothStrength keyframes', () => {
+		const clip = defaultTimelineClip({
+			id: 'clip-k',
+			sourceId: 'source-k',
+			start: 0,
+			duration: 10,
+			inPoint: 0,
+			keyframes: {
+				skinSmoothStrength: [
+					{ t: 0, value: 0, easing: 'linear' },
+					{ t: 10, value: 1, easing: 'linear' }
+				]
+			}
+		});
+		const at5 = sampleClipParamsAt(clip, 5);
+		expect(at5.effects.skinSmoothStrength).toBeCloseTo(0.5, 1);
+		const at0 = sampleClipParamsAt(clip, 0);
+		expect(at0.effects.skinSmoothStrength).toBeCloseTo(0, 1);
 	});
 
 	it('keeps keyframes normalized when trimming a clip shorter', () => {

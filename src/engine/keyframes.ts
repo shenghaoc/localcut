@@ -35,7 +35,8 @@ const EFFECT_PARAM_KEYS = new Set<ClipKeyframeParam>([
 	'saturation',
 	'temperature',
 	'temperatureStrength',
-	'lutStrength'
+	'lutStrength',
+	'skinSmoothStrength'
 ]);
 
 const TRANSFORM_PARAM_KEYS = new Set<ClipKeyframeParam>([

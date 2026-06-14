@@ -414,6 +414,51 @@ describe('timeline', () => {
 		expect(pasted[0]!.clips.map((item) => item.start)).toEqual([0, 3, 10, 13]);
 	});
 
+	it('splitClipAt carries skinMask on both halves', () => {
+		const skinMask = { cbMin: -0.15, cbMax: 0.05, crMin: 0.08, crMax: 0.18, softness: 0.06 };
+		const timeline: TimelineTrack[] = [
+			{
+				id: 'video-track',
+				type: 'video',
+				...DEFAULT_TRACK_MIX,
+				clips: [
+					{
+						...clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 10, inPoint: 0 }),
+						skinMask
+					}
+				]
+			}
+		];
+
+		const split = splitClipAt(timeline, 'video-track', 5);
+		expect(split[0]!.clips).toHaveLength(2);
+		expect(split[0]!.clips[0]!.skinMask).toEqual(skinMask);
+		expect(split[0]!.clips[1]!.skinMask).toEqual(skinMask);
+	});
+
+	it('copy/paste carries skinMask', () => {
+		const skinMask = { cbMin: -0.1, cbMax: 0.02, crMin: 0.06, crMax: 0.22, softness: 0.04 };
+		const timeline: TimelineTrack[] = [
+			{
+				id: 'video-track',
+				type: 'video',
+				...DEFAULT_TRACK_MIX,
+				clips: [
+					{
+						...clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 2, inPoint: 0 }),
+						skinMask
+					}
+				]
+			}
+		];
+		const pasted = pasteClips(
+			timeline,
+			[{ trackId: 'video-track', clip: timeline[0]!.clips[0]! }],
+			5
+		);
+		expect(pasted[0]!.clips[1]!.skinMask).toEqual(skinMask);
+	});
+
 	it('pastes clips with their full LUT data intact', () => {
 		const lut = {
 			key: 'lut-a',

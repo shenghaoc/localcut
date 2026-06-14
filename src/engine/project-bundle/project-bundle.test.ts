@@ -56,7 +56,8 @@ function timelineFixture(): Timeline {
 						saturation: 1,
 						temperature: 0,
 						temperatureStrength: 0,
-						lutStrength: 0
+						lutStrength: 0,
+						skinSmoothStrength: 0
 					},
 					transform: {
 						x: 0,
@@ -328,7 +329,8 @@ describe('bundle project.json serialization', () => {
 								saturation: 1,
 								temperature: 0,
 								temperatureStrength: 0,
-								lutStrength: 0.5
+								lutStrength: 0.5,
+								skinSmoothStrength: 0
 							},
 							transform: {
 								x: 0,

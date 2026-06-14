@@ -44,6 +44,7 @@ import {
 } from './timeline';
 import { cloneClipKeyframes, parseClipKeyframes } from './keyframes';
 import { cloneClipLut, parsePersistedClipLut } from './lut';
+import { normalizeSkinMask } from './skin-smooth';
 import { parseExportPresetDoc } from './export-presets';
 
 export const PROJECT_SCHEMA_VERSION = 12;
@@ -203,6 +204,7 @@ function cloneClip(clip: TimelineClip): TimelineClip {
 	}
 	if (clip.linkedGroupId) cloned.linkedGroupId = clip.linkedGroupId;
 	if (clip.cleanedAudio) cloned.cleanedAudio = { ...clip.cleanedAudio };
+	if (clip.skinMask) cloned.skinMask = { ...clip.skinMask };
 	const keyframes = cloneClipKeyframes(clip.keyframes);
 	if (keyframes) cloned.keyframes = keyframes;
 	const lut = cloneClipLut(clip.lut);
@@ -467,7 +469,8 @@ function parseClip(value: unknown): TimelineClip | null {
 			saturation: finiteNumber(rawEffects.saturation) ?? undefined,
 			temperature: finiteNumber(rawEffects.temperature) ?? undefined,
 			temperatureStrength: finiteNumber(rawEffects.temperatureStrength) ?? undefined,
-			lutStrength: finiteNumber(rawEffects.lutStrength) ?? undefined
+			lutStrength: finiteNumber(rawEffects.lutStrength) ?? undefined,
+			skinSmoothStrength: finiteNumber(rawEffects.skinSmoothStrength) ?? undefined
 		}),
 		// Older docs (schema ≤ 3) carry no transform; normalizeTransform fills identity.
 		transform: normalizeTransform({
@@ -488,6 +491,16 @@ function parseClip(value: unknown): TimelineClip | null {
 	if (lut) clip.lut = lut;
 	const cleanedAudio = isTitle ? undefined : parseCleanedAudio(value.cleanedAudio);
 	if (cleanedAudio) clip.cleanedAudio = cleanedAudio;
+	// Phase 32a: parse optional skin-mask sidecar (normalize invalid values, don't reject).
+	if (isRecord(value.skinMask)) {
+		clip.skinMask = normalizeSkinMask({
+			cbMin: finiteNumber(value.skinMask.cbMin) ?? undefined,
+			cbMax: finiteNumber(value.skinMask.cbMax) ?? undefined,
+			crMin: finiteNumber(value.skinMask.crMin) ?? undefined,
+			crMax: finiteNumber(value.skinMask.crMax) ?? undefined,
+			softness: finiteNumber(value.skinMask.softness) ?? undefined
+		});
+	}
 	return clip;
 }
 
@@ -1365,8 +1378,10 @@ export function deserializeProject(value: unknown): DeserializeProjectResult {
 			return deserializeV9(value);
 		case 10:
 		case 11:
+		case 12:
 			// v11 adds replayBufferConfig + liveAudioChainConfig (Phase 46).
-			// Both fields are optional with factory defaults; v10 docs deserialize fine.
+			// v12 adds skinSmoothStrength + skinMask (Phase 32a).
+			// Both fields are optional with factory defaults; v10/v11 docs deserialize fine.
 			return deserializeV10(value);
 		case 12:
 			// v12 (Phase 30): adds customAnimCaptionPresets (optional; absent in v10/v11).
