@@ -221,7 +221,8 @@ export class DraftController {
 				// Check if we need to chunk
 				const tokenCount =
 					await this.summarizer.countTokens(transcript);
-				// Gemini Nano typical context: ~4k tokens
+				// Gemini Nano's effective context is ~4k tokens. Reserve ~1k for
+				// the summarizer's internal prompt overhead so the input fits.
 				const maxTokens = 3000;
 
 				if (tokenCount > maxTokens) {
@@ -236,11 +237,13 @@ export class DraftController {
 							words.slice(i, i + chunkSize).join(' ')
 						);
 					}
+					// Summarize chunks; catch individual failures so one
+					// bad chunk doesn't abort the entire draft.
 					const summaries = await Promise.all(
 						chunks.map(chunk =>
 							this.summarizer!.summarize(chunk, {
 								signal: combinedSignal
-							})
+							}).catch(() => chunk) // fall back to raw text
 						)
 					);
 					condensed = summaries.join(' ');

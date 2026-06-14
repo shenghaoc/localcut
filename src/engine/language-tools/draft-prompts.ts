@@ -45,6 +45,12 @@ export interface ParsedDraft {
  *
  * Expects the simple delimited format from `buildDraftPrompt()`.
  * Falls back gracefully if the model doesn't follow the format exactly.
+ *
+ * Note: the regex matching is intentionally simple — if the model echoes
+ * "TITLES:" in the caption text, it could mis-parse. This is acceptable
+ * because (a) the prompt asks for a specific format, (b) Gemini Nano
+ * follows structured prompts reasonably well, and (c) the output is
+ * read-only copyable text, not critical data.
  */
 export function parseDraftResponse(response: string): ParsedDraft {
 	const result: ParsedDraft = {

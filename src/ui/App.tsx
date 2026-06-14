@@ -814,8 +814,13 @@ export function App() {
 				generatedBy: 'language-tools-phase-40'
 			});
 		},
-		onTranslatedTrackCreated: (_trackId) => {
-			setStatusLine(`Translated caption track created`);
+		onTranslatedTrackCreated: (trackId) => {
+			const track = captionTracks().find(t => t.id === trackId);
+			setStatusLine(
+				track
+					? `Translated caption track "${track.name}" created`
+					: 'Translated caption track created'
+			);
 		},
 		onError: (message) => {
 			setRecentErrorLog((prev) =>

@@ -47,6 +47,8 @@ export function buildTranslatedSegments(
 /**
  * Select a dominant language from a sample of detected languages.
  * Returns 'zh' or 'en' based on the most common detection.
+ * On tie (equal confidence sums), defaults to 'zh' — the primary
+ * bilingual target for this feature.
  */
 export function dominantLanguage(
 	detections: readonly { detectedLanguage: string; confidence: number }[]

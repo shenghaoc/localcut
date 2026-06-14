@@ -205,7 +205,18 @@ export class TranslationController {
 	): Promise<void> {
 		const api = this.getTranslationApi();
 		if (!api) {
-			this.update({ job: { phase: 'error', current: 0, total: 0, downloadFraction: null, detectedSource: null, targetLang: targetLang ?? 'en', durationMs: null, error: 'Translation API not available.' } });
+			this.update({
+				job: {
+					phase: 'error',
+					current: 0,
+					total: 0,
+					downloadFraction: null,
+					detectedSource: null,
+					targetLang: targetLang ?? 'en',
+					durationMs: null,
+					error: 'Translation API not available.'
+				}
+			});
 			return;
 		}
 

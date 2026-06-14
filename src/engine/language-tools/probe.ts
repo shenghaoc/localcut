@@ -109,9 +109,9 @@ async function probeLanguageDetector(
 
 async function probeSummarizer(scope: LanguageToolsScope): Promise<AiAvailability> {
 	try {
-		const caps = scope.ai?.summarizer?.capabilities;
-		if (!caps) return 'unknown';
-		const result = await caps.call(scope.ai!.summarizer!);
+		const summarizer = scope.ai?.summarizer;
+		if (!summarizer) return 'unknown';
+		const result = await summarizer.capabilities();
 		return mapCapabilities(result);
 	} catch {
 		return 'unknown';
@@ -120,9 +120,9 @@ async function probeSummarizer(scope: LanguageToolsScope): Promise<AiAvailabilit
 
 async function probeLanguageModel(scope: LanguageToolsScope): Promise<AiAvailability> {
 	try {
-		const caps = scope.ai?.languageModel?.capabilities;
-		if (!caps) return 'unknown';
-		const result = await caps.call(scope.ai!.languageModel!);
+		const languageModel = scope.ai?.languageModel;
+		if (!languageModel) return 'unknown';
+		const result = await languageModel.capabilities();
 		return mapCapabilities(result);
 	} catch {
 		return 'unknown';
