@@ -243,6 +243,11 @@ class AudioPlaybackProcessor extends AudioWorkletProcessor {
 		this.trackDenoiserGain = new Map();
 		this.gate = new WorkletGate();
 		this.limiter = new WorkletLimiter();
+		// Per-quantum scratch buffers. Grown on demand and reused across process()
+		// calls so the real-time audio thread does not allocate per render quantum
+		// (which can trigger GC and cause audible dropouts).
+		this.scratchInterleaved = new Float32Array(0);
+		this.scratchDeltas = new Float32Array(0);
 		this.port.onmessage = (event) => {
 			if (event.data?.type === 'seek') {
 				this.timelineAnchor = event.data.time;
@@ -263,7 +268,15 @@ class AudioPlaybackProcessor extends AudioWorkletProcessor {
 	}
 
 	async loadRnnoise(payload) {
-		if (this.rnnoiseModule || this.rnnoiseLoading) {
+		// Already loaded: re-post ready so a UI that reset its status (e.g. after
+		// the user disabled all denoised tracks then re-enabled one) leaves the
+		// "Loading RNNoise WASM…" state. Without this the panel can stick at
+		// loading even though the module is usable.
+		if (this.rnnoiseModule) {
+			this.port.postMessage({ type: 'voice-cleanup-wasm-ready' });
+			return;
+		}
+		if (this.rnnoiseLoading) {
 			return;
 		}
 		this.rnnoiseLoading = true;
@@ -421,7 +434,15 @@ class AudioPlaybackProcessor extends AudioWorkletProcessor {
 		let peakR = 0;
 		let sumSqL = 0;
 		let sumSqR = 0;
-		const interleaved = new Float32Array(frames * outChannels);
+		const interleavedLen = frames * outChannels;
+		if (this.scratchInterleaved.length < interleavedLen) {
+			this.scratchInterleaved = new Float32Array(interleavedLen);
+		}
+		const interleaved = this.scratchInterleaved;
+		if (this.scratchDeltas.length < outChannels) {
+			this.scratchDeltas = new Float32Array(outChannels);
+		}
+		const deltas = this.scratchDeltas;
 
 		for (let frame = 0; frame < frames; frame += 1) {
 			if (((write - read) | 0) <= 0) {
@@ -434,7 +455,7 @@ class AudioPlaybackProcessor extends AudioWorkletProcessor {
 			const ringFrame = ((read % this.capacityFrames) + this.capacityFrames) % this.capacityFrames;
 			const src = ringFrame * this.channels;
 			const trackIndex = Atomics.load(this.trackIds, ringFrame);
-			const deltas = new Float32Array(outChannels);
+			for (let ch = 0; ch < outChannels; ch += 1) deltas[ch] = 0;
 			for (
 				let denoiseTrackIndex = 0;
 				denoiseTrackIndex < MAX_AUDIO_RING_TRACKS;
