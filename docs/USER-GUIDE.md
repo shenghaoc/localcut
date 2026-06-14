@@ -225,11 +225,11 @@ When clips on the timeline use different audio sample rates (e.g. a 44.1 kHz MP3
 
 ## Local Audio Cleanup (Experimental)
 
-LocalCut Studio can reduce background noise in audio clips entirely on your device using the DTLN model (Dual-Signal Transformation LSTM Network) running through LiteRT WASM inference. This feature is **experimental** and fully local:
+LocalCut Studio can reduce background noise in audio clips entirely on your device using the DTLN model (Dual-Signal Transformation LSTM Network) running through LiteRT.js. This feature is **experimental** and fully local:
 
 > Runs on this device. No upload. No API key. No server inference.
 
-**Requirements**: a browser with WebAssembly support (all modern browsers). In browsers without WebAssembly the panel shows "WebAssembly is required for local audio cleanup." and everything else in the editor works exactly as before — there is no cloud fallback of any kind.
+**Requirements**: a browser with WebAssembly support (all modern browsers). LiteRT prefers experimental WebNN first, then WebGPU, and falls back to the WASM accelerator when accelerated backends are unavailable or fail to compile on the current device. In browsers without WebAssembly the panel shows "WebAssembly is required for local audio cleanup." and everything else in the editor works exactly as before — there is no cloud fallback of any kind.
 
 **How to use it**:
 
@@ -246,7 +246,7 @@ LocalCut Studio can reduce background noise in audio clips entirely on your devi
 - Export is unchanged unless you applied cleanup; only clips you explicitly cleaned use the denoised audio.
 - If you later trim a cleaned clip beyond the range that was cleaned, the clip automatically falls back to its original audio (re-apply cleanup to cover the new range). If the cleaned asset goes missing (e.g. cleared storage), the original audio plays and a source-health warning appears.
 - One cleanup pass is limited to 12 minutes of audio.
-- The panel shows the WASM accelerator status, the model status and size, and the last analysis duration; the Capabilities panel has an **Audio cleanup (LiteRT DTLN)** row.
+- The panel shows the accelerator that actually loaded (`webnn`, `webgpu`, or `wasm`), the model status and size, and the last analysis duration; the Capabilities panel has an **Audio cleanup (LiteRT DTLN)** row.
 
 Model: DTLN (Nils L. Westhausen, Interspeech 2020 — MIT), from [breizhn/DTLN](https://github.com/breizhn/DTLN).
 
