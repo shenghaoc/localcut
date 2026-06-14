@@ -49,26 +49,3 @@ export function validateManifest(value: unknown): MatteModelManifestSnapshot {
 
 	return { id, version, license, source, sizeBytes, checksum, inputWidth, inputHeight };
 }
-
-/**
- * Verifies fetched model bytes against the manifest. Both size and SHA-256
- * digest must match exactly; a mismatch is a hard error and must never trigger
- * a silent retry against another source.
- */
-export async function verifyWeights(
-	manifest: MatteModelManifestSnapshot,
-	bytes: ArrayBuffer
-): Promise<void> {
-	if (bytes.byteLength !== manifest.sizeBytes) {
-		throw new ManifestError(
-			`model size mismatch: expected ${manifest.sizeBytes} bytes, got ${bytes.byteLength}`
-		);
-	}
-	const digestBuffer = await crypto.subtle.digest('SHA-256', bytes);
-	const digest = Array.from(new Uint8Array(digestBuffer))
-		.map((byte) => byte.toString(16).padStart(2, '0'))
-		.join('');
-	if (`sha256-${digest}` !== manifest.checksum) {
-		throw new ManifestError(`model checksum mismatch: sha256-${digest}`);
-	}
-}
