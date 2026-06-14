@@ -15,7 +15,7 @@ const REF = {
 	assetId: 'cleaned-1',
 	clipInPointS: 2,
 	durationS: 5,
-	modelId: 'rnnoise',
+	modelId: 'dtln',
 	modelVersion: 'test'
 };
 

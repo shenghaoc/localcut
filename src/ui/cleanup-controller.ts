@@ -9,35 +9,31 @@
  *
  * The cleanup worker is spawned lazily on the first action. All ports are
  * injected so the whole flow — lazy spawn, windowed extraction, progress,
- * cancellation, unsupported-browser behavior — is unit-testable without
- * workers, WebNN, or the DOM.
+ * cancellation — is unit-testable without workers, LiteRT, or the DOM.
  */
 
 import type {
+	CleanupAccelerator,
 	CleanupModelStatus,
+	CleanupProbeResult,
 	CleanupWorkerState,
-	WebNNDeviceTypeSnapshot,
-	WebNNProbeResult,
 	WorkerStateMessage
 } from '../protocol';
-import { webNNAvailable } from '../engine/audio-cleanup/webnn-probe';
 import type { CleanupWorkerPort } from './cleanup-bridge';
 
 export const CLEANUP_PREVIEW_SECONDS = 10;
 export const CLEANUP_EXTRACT_WINDOW_SECONDS = 10;
-export const CLEANUP_SAMPLE_RATE = 48_000;
-export const CLEANUP_FRAME_SIZE = 480;
-/** Mirrors the cleanup worker's per-job bound (15 min @ 48 kHz). */
+export const CLEANUP_SAMPLE_RATE = 16_000;
+export const CLEANUP_BLOCK_SHIFT = 128;
+/** Mirrors the cleanup worker's per-job bound (15 min @ 16 kHz). */
 export const CLEANUP_MAX_JOB_SECONDS = 900;
 
-export const CLEANUP_UNAVAILABLE_MESSAGE = 'WebNN local cleanup unavailable in this browser.';
+export const CLEANUP_UNAVAILABLE_MESSAGE = 'WebAssembly is required for local audio cleanup.';
 
 export interface CleanupClipTarget {
 	trackId: string;
 	clipId: string;
-	/** Clip in-point in source seconds at job start. */
 	inPointS: number;
-	/** Clip duration in seconds at job start. */
 	durationS: number;
 	fileName: string;
 }
@@ -64,10 +60,10 @@ export interface CleanupPreviewBuffers {
 }
 
 export interface CleanupControllerState {
-	webnn: WebNNProbeResult | null;
+	probe: CleanupProbeResult | null;
 	available: boolean;
 	modelStatus: CleanupModelStatus;
-	backend: WebNNDeviceTypeSnapshot | null;
+	accelerator: CleanupAccelerator | null;
 	modelSizeBytes: number | null;
 	job: CleanupJobState | null;
 	preview: CleanupPreviewBuffers | null;
@@ -102,8 +98,8 @@ export interface CleanupControllerPorts {
 	): Promise<CleanupWorkerPort>;
 	requestClipAudio(request: ClipAudioRequest): void;
 	applyToClip(request: ApplyCleanupRequest): void;
-	fetchManifest(): Promise<unknown>;
-	weightsUrl: string;
+	manifestUrl: string;
+	wasmPath: string;
 	onError?(message: string): void;
 }
 
@@ -134,13 +130,17 @@ export class CleanupCancelled extends Error {
 	}
 }
 
+function cleanupAvailable(probe: CleanupProbeResult | null | undefined): boolean {
+	return probe?.wasmAvailable ?? typeof WebAssembly !== 'undefined';
+}
+
 export class CleanupController {
 	private readonly ports: CleanupControllerPorts;
 	private state: CleanupControllerState = {
-		webnn: null,
-		available: false,
+		probe: null,
+		available: typeof WebAssembly !== 'undefined',
 		modelStatus: 'not-loaded',
-		backend: null,
+		accelerator: null,
 		modelSizeBytes: null,
 		job: null,
 		preview: null,
@@ -171,7 +171,6 @@ export class CleanupController {
 		return () => this.listeners.delete(listener);
 	}
 
-	/** True once any cleanup worker has been spawned (test/diagnostic hook). */
 	get workerSpawned(): boolean {
 		return this.worker !== null || this.workerSpawn !== null;
 	}
@@ -181,11 +180,10 @@ export class CleanupController {
 		for (const listener of this.listeners) listener(this.state);
 	}
 
-	setWebNNProbe(probe: WebNNProbeResult | null): void {
-		this.update({ webnn: probe, available: webNNAvailable(probe) });
+	setCleanupProbe(probe: CleanupProbeResult | null): void {
+		this.update({ probe, available: cleanupAvailable(probe) });
 	}
 
-	/** Routes relevant pipeline-worker state messages into the controller. */
 	handlePipelineMessage(msg: WorkerStateMessage): void {
 		if (msg.type === 'clip-audio') {
 			const pending = this.pendingExtractions.get(msg.requestId);
@@ -219,21 +217,20 @@ export class CleanupController {
 			case 'cleanup-model-status': {
 				this.update({
 					modelStatus: msg.status,
-					backend: msg.backend ?? (msg.status === 'loaded' ? this.state.backend : null),
+					accelerator: msg.accelerator ?? (msg.status === 'loaded' ? this.state.accelerator : null),
 					modelSizeBytes: msg.sizeBytes ?? this.state.modelSizeBytes,
-					error: msg.status === 'failed' ? (msg.error ?? 'Model load failed.') : this.state.error
+					error:
+						msg.status === 'failed'
+							? (msg.error ?? 'Model load failed.')
+							: msg.status === 'loading'
+								? (msg.error ?? this.state.error)
+								: this.state.error
 				});
 				if (msg.status === 'loaded' || msg.status === 'failed') {
 					const ok = msg.status === 'loaded';
 					const waiters = this.modelLoadWaiters;
 					this.modelLoadWaiters = [];
 					for (const waiter of waiters) waiter(ok);
-					// Graph build outcome is the ground truth for modelSupport (R1.3).
-					if (this.state.webnn) {
-						this.update({
-							webnn: { ...this.state.webnn, modelSupport: ok ? 'supported' : 'unsupported' }
-						});
-					}
 				}
 				break;
 			}
@@ -273,7 +270,7 @@ export class CleanupController {
 				break;
 			}
 			case 'cleanup-probe-result':
-				this.setWebNNProbe(msg.result);
+				this.setCleanupProbe(msg.result);
 				break;
 		}
 	}
@@ -285,13 +282,10 @@ export class CleanupController {
 			(message) => {
 				this.update({
 					modelStatus: 'not-loaded',
-					backend: null,
+					accelerator: null,
 					job: null,
 					error: message
 				});
-				// A crash bypasses cleanup-model-status, so drain any callers blocked
-				// on the in-flight load and short-circuit the extraction loop before
-				// rejecting the job result.
 				const waiters = this.modelLoadWaiters;
 				this.modelLoadWaiters = [];
 				for (const waiter of waiters) waiter(false);
@@ -309,7 +303,6 @@ export class CleanupController {
 		return this.worker;
 	}
 
-	/** Explicit user action: fetch + checksum the weights and build the graph. */
 	async loadModel(): Promise<boolean> {
 		if (!this.state.available) {
 			this.update({ error: CLEANUP_UNAVAILABLE_MESSAGE });
@@ -322,17 +315,12 @@ export class CleanupController {
 		this.update({ modelStatus: 'loading', error: null });
 		try {
 			const worker = await this.ensureWorker();
-			const manifest = await this.ports.fetchManifest();
-			if (manifest && typeof manifest === 'object' && 'version' in manifest) {
-				const version = (manifest as { version?: unknown }).version;
-				if (typeof version === 'string') this.manifestVersion = version;
-			}
 			const done = new Promise<boolean>((resolve) => this.modelLoadWaiters.push(resolve));
 			worker.send({
 				type: 'cleanup-load-model',
-				manifest: manifest as never,
-				weightsUrl: this.ports.weightsUrl,
-				preferredBackends: ['npu', 'gpu', 'cpu']
+				manifestUrl: this.ports.manifestUrl,
+				wasmPath: this.ports.wasmPath,
+				preferredAccelerator: 'wasm'
 			});
 			return await done;
 		} catch (error) {
@@ -363,7 +351,7 @@ export class CleanupController {
 				: Math.min(clip.durationS, CLEANUP_MAX_JOB_SECONDS);
 		const totalFrames = Math.max(
 			1,
-			Math.ceil((durationS * CLEANUP_SAMPLE_RATE) / CLEANUP_FRAME_SIZE)
+			Math.ceil((durationS * CLEANUP_SAMPLE_RATE) / CLEANUP_BLOCK_SHIFT)
 		);
 		const worker = await this.ensureWorker();
 		const jobId = this.nextJobId++;
@@ -392,8 +380,6 @@ export class CleanupController {
 				job.resultReject = reject;
 			}
 		);
-		// The extraction loop below can throw before `result` is awaited; keep its
-		// rejection observed so a cancel never surfaces as an unhandled rejection.
 		result.catch(() => undefined);
 
 		worker.send({ type: 'cleanup-begin', jobId, totalFrames });
@@ -410,7 +396,6 @@ export class CleanupController {
 			});
 			if (job.cancelled) throw new CleanupCancelled();
 			if (kind === 'preview') {
-				// Keep the original PCM for the A/B toggle (bounded preview range).
 				job.originalChunks.push(window.pcm.slice());
 				job.originalChannels = window.channels;
 			}
@@ -503,7 +488,7 @@ export class CleanupController {
 				fileName: cleanedFileName(clip.fileName),
 				clipInPointS: clip.inPointS,
 				durationS: Math.min(clip.durationS, CLEANUP_MAX_JOB_SECONDS),
-				modelId: 'rnnoise',
+				modelId: 'dtln',
 				modelVersion: this.manifestVersion
 			});
 			return true;
@@ -531,7 +516,6 @@ export class CleanupController {
 			this.modelLoadWaiters = [];
 			for (const waiter of waiters) waiter(false);
 		}
-		// Reject any extraction still in flight so the job loop exits promptly.
 		// eslint-disable-next-line unicorn/no-useless-spread — snapshot needed: deletes during iteration
 		for (const [requestId, pending] of [...this.pendingExtractions]) {
 			this.pendingExtractions.delete(requestId);
@@ -564,7 +548,6 @@ export interface CleanupActionAvailability {
 	cancel: { enabled: boolean; reason: string | null };
 }
 
-/** Pure helper driving panel button enablement + disabled reasons. */
 export function cleanupActionAvailability(
 	state: CleanupControllerState,
 	selectedClip: CleanupClipTarget | null

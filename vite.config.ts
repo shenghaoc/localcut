@@ -262,9 +262,9 @@ export default defineConfig({
 				globIgnores: ['**/models/**', '**/litert/**'],
 				runtimeCaching: [
 					{
-						urlPattern: /\/models\/rnnoise\//,
+						urlPattern: /\/models\/dtln\//,
 						handler: 'CacheFirst',
-						options: { cacheName: 'rnnoise-model' }
+						options: { cacheName: 'dtln-model' }
 					},
 					{
 						// The Whisper model itself is fetched cross-origin (Hugging Face)

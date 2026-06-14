@@ -97,25 +97,21 @@ export interface CapabilityProbeResult {
 	livePublish: LivePublishProbeResult;
 	capture: CaptureProbeResult;
 	tier: CapabilityTierV2;
-	/** Phase 28 (WebNN audio cleanup): display/feature-gate only — never
+	/** Phase 28 (LiteRT DTLN audio cleanup): display/feature-gate only — never
 	 *  consulted by tier derivation or any pipeline code path. */
-	webnn?: WebNNProbeResult;
+	cleanup?: CleanupProbeResult;
 	/** Phase 29 (ASR auto captions): display/feature-gate only — never
 	 *  consulted by tier derivation or any pipeline code path. */
 	asr?: AsrProbeResult;
 }
 
-// ── Phase 28: Local Audio Cleanup (WebNN RNNoise) ──
+// ── Phase 28: Local Audio Cleanup (LiteRT DTLN) ──
 
-export type WebNNDeviceTypeSnapshot = 'cpu' | 'gpu' | 'npu';
+export type CleanupAccelerator = 'wasm' | 'webgpu' | 'webnn';
 
-export interface WebNNProbeResult {
-	/** `navigator.ml` exists in this browsing context. */
-	mlPresent: boolean;
-	backends: Record<WebNNDeviceTypeSnapshot, FeatureSupport>;
-	/** Unknown until the user explicitly loads the model; the graph build
-	 *  outcome is the ground truth. */
-	modelSupport: FeatureSupport;
+export interface CleanupProbeResult {
+	wasmAvailable: boolean;
+	accelerator: CleanupAccelerator;
 }
 
 /** Reference from a timeline clip to its denoised derived audio asset. */
@@ -132,16 +128,10 @@ export interface CleanedAudioRefSnapshot {
 
 export type CleanupModelStatus = 'not-loaded' | 'loading' | 'loaded' | 'failed';
 
-/** Manifest document validated by the Audio Cleanup worker before any fetch. */
-export interface CleanupModelManifestSnapshot {
-	id: 'rnnoise';
-	version: string;
-	license: string;
-	source: string;
+export interface CleanupModelAssetSnapshot {
+	url: string;
 	sizeBytes: number;
 	checksum: string;
-	audio: { sampleRate: 48000; channels: 1; frameSize: 480 };
-	tensors: Array<{ name: string; byteOffset: number; byteLength: number }>;
 }
 
 /** Commands posted from the UI bridge to the Audio Cleanup worker. */
@@ -149,9 +139,9 @@ export type CleanupWorkerCommand =
 	| { type: 'cleanup-probe' }
 	| {
 			type: 'cleanup-load-model';
-			manifest: CleanupModelManifestSnapshot;
-			weightsUrl: string;
-			preferredBackends: WebNNDeviceTypeSnapshot[];
+			manifestUrl: string;
+			wasmPath: string;
+			preferredAccelerator: CleanupAccelerator;
 	  }
 	| { type: 'cleanup-begin'; jobId: number; totalFrames: number }
 	| {
@@ -167,11 +157,11 @@ export type CleanupWorkerCommand =
 
 /** State messages posted from the Audio Cleanup worker back to the UI. */
 export type CleanupWorkerState =
-	| { type: 'cleanup-probe-result'; result: WebNNProbeResult }
+	| { type: 'cleanup-probe-result'; result: CleanupProbeResult }
 	| {
 			type: 'cleanup-model-status';
 			status: CleanupModelStatus;
-			backend?: WebNNDeviceTypeSnapshot;
+			accelerator?: CleanupAccelerator;
 			sizeBytes?: number;
 			error?: string;
 	  }
@@ -185,7 +175,7 @@ export type CleanupWorkerState =
 	| {
 			type: 'cleanup-result';
 			jobId: number;
-			sampleRate: 48000;
+			sampleRate: 16000;
 			channels: 1;
 			pcm?: Float32Array;
 			wav?: ArrayBuffer;

@@ -9,18 +9,16 @@ import {
 	type CleanupClipTarget,
 	type ClipAudioRequest
 } from './cleanup-controller';
-import type { CleanupWorkerCommand, CleanupWorkerState, WebNNProbeResult } from '../protocol';
+import type { CleanupProbeResult, CleanupWorkerCommand, CleanupWorkerState } from '../protocol';
 
-const WEBNN_OK: WebNNProbeResult = {
-	mlPresent: true,
-	backends: { cpu: 'supported', gpu: 'unsupported', npu: 'unsupported' },
-	modelSupport: 'unknown'
+const PROBE_OK: CleanupProbeResult = {
+	wasmAvailable: true,
+	accelerator: 'wasm'
 };
 
-const WEBNN_ABSENT: WebNNProbeResult = {
-	mlPresent: false,
-	backends: { cpu: 'unsupported', gpu: 'unsupported', npu: 'unsupported' },
-	modelSupport: 'unknown'
+const PROBE_ABSENT: CleanupProbeResult = {
+	wasmAvailable: false,
+	accelerator: 'wasm'
 };
 
 const CLIP: CleanupClipTarget = {
@@ -68,8 +66,8 @@ function harness(): Harness {
 								postState({
 									type: 'cleanup-model-status',
 									status: 'loaded',
-									backend: 'cpu',
-									sizeBytes: 352_968
+									accelerator: 'wasm',
+									sizeBytes: 3_538_944
 								});
 								break;
 							case 'cleanup-chunk':
@@ -85,11 +83,11 @@ function harness(): Harness {
 								postState({
 									type: 'cleanup-result',
 									jobId: cmd.jobId,
-									sampleRate: 48000,
+									sampleRate: 16000,
 									channels: 1,
 									...(cmd.output === 'wav'
 										? { wav: new ArrayBuffer(44) }
-										: { pcm: new Float32Array(480) }),
+										: { pcm: new Float32Array(128) }),
 									durationMs: 42
 								});
 								break;
@@ -120,8 +118,8 @@ function harness(): Harness {
 			});
 		},
 		applyToClip: (request) => applied.push(request),
-		fetchManifest: async () => ({ version: 'manifest-v1' }),
-		weightsUrl: '/models/rnnoise/weights.bin',
+		manifestUrl: '/models/dtln/manifest.json',
+		wasmPath: '/litert/',
 		onError: (message) => errors.push(message)
 	});
 	return {
@@ -139,14 +137,14 @@ function harness(): Harness {
 describe('CleanupController', () => {
 	it('never spawns the worker until an explicit user action', () => {
 		const h = harness();
-		h.controller.setWebNNProbe(WEBNN_OK);
+		h.controller.setCleanupProbe(PROBE_OK);
 		expect(h.controller.workerSpawned).toBe(false);
 		expect(h.spawnCount()).toBe(0);
 	});
 
-	it('keeps the feature unavailable and spawns nothing when WebNN is absent', async () => {
+	it('keeps the feature unavailable and spawns nothing when WASM is absent', async () => {
 		const h = harness();
-		h.controller.setWebNNProbe(WEBNN_ABSENT);
+		h.controller.setCleanupProbe(PROBE_ABSENT);
 		expect(h.controller.getState().available).toBe(false);
 		expect(await h.controller.loadModel()).toBe(false);
 		expect(await h.controller.previewCleanup(CLIP)).toBe(false);
@@ -155,15 +153,14 @@ describe('CleanupController', () => {
 		expect(h.extractions.length).toBe(0);
 	});
 
-	it('loads the model on explicit action and upgrades modelSupport from the build outcome', async () => {
+	it('loads the model on explicit action and reports the accelerator', async () => {
 		const h = harness();
-		h.controller.setWebNNProbe(WEBNN_OK);
+		h.controller.setCleanupProbe(PROBE_OK);
 		expect(await h.controller.loadModel()).toBe(true);
 		const state = h.controller.getState();
 		expect(state.modelStatus).toBe('loaded');
-		expect(state.backend).toBe('cpu');
-		expect(state.modelSizeBytes).toBe(352_968);
-		expect(state.webnn?.modelSupport).toBe('supported');
+		expect(state.accelerator).toBe('wasm');
+		expect(state.modelSizeBytes).toBe(3_538_944);
 		expect(h.spawnCount()).toBe(1);
 		const load = h.workerCommands.find((cmd) => cmd.type === 'cleanup-load-model');
 		expect(load).toBeDefined();
@@ -171,35 +168,31 @@ describe('CleanupController', () => {
 
 	it('runs a preview job over a bounded range and stores A/B buffers', async () => {
 		const h = harness();
-		h.controller.setWebNNProbe(WEBNN_OK);
+		h.controller.setCleanupProbe(PROBE_OK);
 		expect(await h.controller.previewCleanup(CLIP)).toBe(true);
-		// 25 s clip → preview bounded to 10 s → a single 10 s extraction window.
 		expect(h.extractions.length).toBe(1);
 		expect(h.extractions[0]!.durationS).toBe(10);
 		expect(h.extractions[0]!.sampleRate).toBe(CLEANUP_SAMPLE_RATE);
 		const state = h.controller.getState();
 		expect(state.job).toBeNull();
 		expect(state.preview).not.toBeNull();
-		expect(state.preview!.cleaned.length).toBe(480);
+		expect(state.preview!.cleaned.length).toBe(128);
 		expect(state.preview!.original.length).toBe(10 * CLEANUP_SAMPLE_RATE);
 		expect(state.lastAnalysisMs).toBe(42);
 	});
 
 	it('applies cleanup end-to-end: windowed extraction → WAV → pipeline apply → undoable state', async () => {
 		const h = harness();
-		h.controller.setWebNNProbe(WEBNN_OK);
+		h.controller.setCleanupProbe(PROBE_OK);
 		const clip = { ...CLIP, durationS: 12 };
 		expect(await h.controller.applyCleanup(clip)).toBe(true);
-		// 12 s clip → two extraction windows (10 s + 2 s).
 		expect(h.extractions.map((r) => r.durationS)).toEqual([10, 2]);
 		expect(h.applied.length).toBe(1);
 		const request = h.applied[0]!;
 		expect(request.fileName).toBe('interview.cleaned.wav');
 		expect(request.clipInPointS).toBe(1.5);
 		expect(request.durationS).toBe(12);
-		expect(request.modelId).toBe('rnnoise');
-		expect(request.modelVersion).toBe('manifest-v1');
-		// Pipeline confirmation clears the applying state.
+		expect(request.modelId).toBe('dtln');
 		expect(h.controller.getState().job?.phase).toBe('applying');
 		h.controller.handlePipelineMessage({
 			type: 'audio-cleanup-applied',
@@ -214,7 +207,7 @@ describe('CleanupController', () => {
 
 	it('surfaces a failed apply from the pipeline worker', async () => {
 		const h = harness();
-		h.controller.setWebNNProbe(WEBNN_OK);
+		h.controller.setCleanupProbe(PROBE_OK);
 		await h.controller.applyCleanup({ ...CLIP, durationS: 3 });
 		h.controller.handlePipelineMessage({
 			type: 'audio-cleanup-applied',
@@ -230,7 +223,7 @@ describe('CleanupController', () => {
 
 	it('rejects clips longer than one cleanup pass with a clear error', async () => {
 		const h = harness();
-		h.controller.setWebNNProbe(WEBNN_OK);
+		h.controller.setCleanupProbe(PROBE_OK);
 		expect(await h.controller.applyCleanup({ ...CLIP, durationS: 1000 })).toBe(false);
 		expect(h.controller.getState().error).toMatch(/too long/);
 		expect(h.spawnCount()).toBe(0);
@@ -238,10 +231,9 @@ describe('CleanupController', () => {
 
 	it('cancel during extraction stops the job promptly without an error state', async () => {
 		const h = harness();
-		h.controller.setWebNNProbe(WEBNN_OK);
+		h.controller.setCleanupProbe(PROBE_OK);
 		h.autoRespond.extraction = false;
 		const pending = h.controller.previewCleanup(CLIP);
-		// Wait for the job to reach the extraction request.
 		await vi.waitFor(() => expect(h.extractions.length).toBe(1));
 		h.controller.cancel();
 		expect(await pending).toBe(false);
@@ -253,13 +245,12 @@ describe('CleanupController', () => {
 
 	it('a crash during model load drains all waiters instead of hanging them', async () => {
 		const h = harness();
-		h.controller.setWebNNProbe(WEBNN_OK);
+		h.controller.setCleanupProbe(PROBE_OK);
 		h.autoRespond.modelLoad = false;
 		const first = h.controller.loadModel();
 		await vi.waitFor(() =>
 			expect(h.workerCommands.some((cmd) => cmd.type === 'cleanup-load-model')).toBe(true)
 		);
-		// A second caller queues on the in-flight load.
 		const second = h.controller.loadModel();
 		h.crashWorker('worker died during load');
 		expect(await first).toBe(false);
@@ -269,18 +260,16 @@ describe('CleanupController', () => {
 
 	it('a crash mid-job stops the extraction loop instead of requesting more windows', async () => {
 		const h = harness();
-		h.controller.setWebNNProbe(WEBNN_OK);
+		h.controller.setCleanupProbe(PROBE_OK);
 		h.autoRespond.extraction = false;
 		const pending = h.controller.previewCleanup(CLIP);
 		await vi.waitFor(() => expect(h.extractions.length).toBe(1));
 		h.crashWorker('worker died mid-job');
-		// The pipeline worker (still alive) answers the in-flight extraction;
-		// the loop must bail on the crash flag rather than fetch the next window.
 		h.controller.handlePipelineMessage({
 			type: 'clip-audio',
 			requestId: h.extractions[0]!.requestId,
-			pcm: new Float32Array(48000),
-			sampleRate: 48000,
+			pcm: new Float32Array(16000),
+			sampleRate: 16000,
 			channels: 1,
 			clipOffsetS: 0,
 			clipDurationS: CLIP.durationS
@@ -292,7 +281,7 @@ describe('CleanupController', () => {
 
 	it('a cleanup-worker crash resets the feature without touching the rest of the app', async () => {
 		const h = harness();
-		h.controller.setWebNNProbe(WEBNN_OK);
+		h.controller.setCleanupProbe(PROBE_OK);
 		expect(await h.controller.loadModel()).toBe(true);
 		h.crashWorker('worker died');
 		const state = h.controller.getState();
@@ -300,14 +289,13 @@ describe('CleanupController', () => {
 		expect(state.job).toBeNull();
 		expect(state.error).toBe('worker died');
 		expect(h.errors).toEqual(['worker died']);
-		// The next explicit action recovers by re-spawning a fresh worker.
 		expect(await h.controller.loadModel()).toBe(true);
 		expect(h.spawnCount()).toBe(2);
 	});
 
 	it('reports extraction errors from the pipeline worker as job errors', async () => {
 		const h = harness();
-		h.controller.setWebNNProbe(WEBNN_OK);
+		h.controller.setCleanupProbe(PROBE_OK);
 		h.autoRespond.extraction = false;
 		const pending = h.controller.previewCleanup(CLIP);
 		await vi.waitFor(() => expect(h.extractions.length).toBe(1));
@@ -323,9 +311,9 @@ describe('CleanupController', () => {
 });
 
 describe('cleanupActionAvailability', () => {
-	it('disables everything with the unavailable message when WebNN is unsupported', () => {
+	it('disables everything with the unavailable message when WASM is unsupported', () => {
 		const h = harness();
-		h.controller.setWebNNProbe(WEBNN_ABSENT);
+		h.controller.setCleanupProbe(PROBE_ABSENT);
 		const availability = cleanupActionAvailability(h.controller.getState(), CLIP);
 		expect(availability.loadModel.enabled).toBe(false);
 		expect(availability.preview.enabled).toBe(false);
@@ -335,7 +323,7 @@ describe('cleanupActionAvailability', () => {
 
 	it('requires a selected audio clip for preview/apply', () => {
 		const h = harness();
-		h.controller.setWebNNProbe(WEBNN_OK);
+		h.controller.setCleanupProbe(PROBE_OK);
 		const availability = cleanupActionAvailability(h.controller.getState(), null);
 		expect(availability.loadModel.enabled).toBe(true);
 		expect(availability.preview.enabled).toBe(false);

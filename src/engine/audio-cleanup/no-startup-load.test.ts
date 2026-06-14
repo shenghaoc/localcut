@@ -1,5 +1,5 @@
 /**
- * Guards the Phase 27 hard constraints at the module-graph level:
+ * Guards the Phase 27/28 hard constraints at the module-graph level:
  *
  *  - App startup never references model weights or spawns the cleanup worker
  *    (R0.2/A1): the cleanup worker module may only be reached through the
@@ -21,14 +21,11 @@ import probeSource from '../capability-probe-v2.ts?raw';
 describe('no model load at startup (module graph)', () => {
 	it('App.tsx never statically imports the cleanup worker or model modules', () => {
 		expect(appSource).not.toMatch(/from\s+['"].*cleanup-worker/);
-		expect(appSource).not.toMatch(/rnnoise-graph|rnnoise-dsp|model-manifest/);
-		expect(appSource).not.toMatch(/weights\.bin['"]\s*\)/); // only template URL string, no import
+		expect(appSource).not.toMatch(/dtln-runtime|dtln-dsp|model-manifest/);
 	});
 
-	it('the cleanup worker is reachable only via dynamic import in cleanup-bridge', () => {
-		expect(bridgeSource).toMatch(
-			/await\s+import\(\s*\n?\s*['"]\.\.\/engine\/audio-cleanup\/cleanup-worker\.ts\?worker['"]/
-		);
+	it('the cleanup worker is reachable only via URL constructor in cleanup-bridge (classic worker)', () => {
+		expect(bridgeSource).toMatch(/new\s+URL\(\s*['"]\.\.\/engine\/audio-cleanup\/cleanup-worker/);
 		expect(bridgeSource).not.toMatch(/^import .*cleanup-worker/m);
 	});
 
@@ -38,15 +35,14 @@ describe('no model load at startup (module graph)', () => {
 		);
 		expect(
 			importPaths.filter((path) =>
-				/cleanup-worker|rnnoise-graph|rnnoise-dsp|model-manifest|webnn-probe/i.test(path)
+				/cleanup-worker|dtln-runtime|dtln-dsp|model-manifest/i.test(path)
 			)
 		).toEqual([]);
-		// Only the pure routing helper is allowed.
 		expect(importPaths).toContain('./audio-cleanup/cleaned-audio');
 	});
 
 	it('the capability probe references no model/weights URLs', () => {
-		expect(probeSource).not.toMatch(/weights|manifest\.json|rnnoise-graph/);
+		expect(probeSource).not.toMatch(/weights|manifest\.json|dtln-runtime/);
 	});
 
 	it('the toolbar and panel modules reference no weights URL or worker import', () => {
@@ -69,7 +65,6 @@ describe('no model load at startup (runtime)', () => {
 			await import('../capability-probe-v2');
 			await import('../../ui/cleanup-controller');
 			await import('../../ui/cleanup-bridge');
-			await import('./webnn-probe');
 			await import('./model-manifest');
 			expect(fetchSpy).not.toHaveBeenCalled();
 			expect(workerSpy).not.toHaveBeenCalled();

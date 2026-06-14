@@ -7,7 +7,7 @@ import type {
 	FeatureSupport,
 	LivePublishProbeResult
 } from '../protocol';
-import { probeWebNN } from './audio-cleanup/webnn-probe';
+import type { CleanupProbeResult } from '../protocol';
 import { probeAsr } from './asr/asr-probe';
 
 type VideoCodecProbeName = 'h264' | 'vp9' | 'av1';
@@ -465,13 +465,14 @@ export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 	// standard adapter succeeds would mislabel Chrome — which exposes both — as
 	// lacking the compatibility adapter. The compatibilityAdapter boolean below (not
 	// the raw support flag) is what drives the reduced-pipeline wiring decision.
-	// WebNN gates only the optional Audio Cleanup feature; it is carried for
-	// diagnostics display and never consulted by deriveCapabilityTierV2.
-	const [webGPUCore, webGPUCompat, webnn] = await Promise.all([
+	const [webGPUCore, webGPUCompat] = await Promise.all([
 		probeGpuAdapter(false),
-		probeGpuAdapter(true),
-		probeWebNN()
+		probeGpuAdapter(true)
 	]);
+	const cleanup: CleanupProbeResult = {
+		wasmAvailable: typeof WebAssembly !== 'undefined',
+		accelerator: 'wasm'
+	};
 	const codecs = await probeCodecs().catch(() => unknownCodecs);
 	// One transfer attempt feeds both the publish and capture probe groups, so
 	// the two diagnostics rows can never drift apart within a session.
@@ -512,7 +513,7 @@ export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 	return {
 		...probeWithoutTier,
 		tier: deriveCapabilityTierV2(probeWithoutTier),
-		webnn,
+		cleanup,
 		asr: probeAsr()
 	};
 }

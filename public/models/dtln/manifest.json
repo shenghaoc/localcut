@@ -1,0 +1,24 @@
+{
+	"id": "dtln",
+	"version": "breizhn-dtln-v1",
+	"license": "MIT",
+	"source": "https://github.com/breizhn/DTLN",
+	"sizeBytes": 3538944,
+	"model1": {
+		"url": "/_model/hf/breizhn/DTLN/resolve/main/pretrained_model/model_1.tflite",
+		"sizeBytes": 1769472,
+		"checksum": "sha256-0000000000000000000000000000000000000000000000000000000000000000"
+	},
+	"model2": {
+		"url": "/_model/hf/breizhn/DTLN/resolve/main/pretrained_model/model_2.tflite",
+		"sizeBytes": 1769472,
+		"checksum": "sha256-0000000000000000000000000000000000000000000000000000000000000000"
+	},
+	"audio": {
+		"sampleRate": 16000,
+		"channels": 1,
+		"blockLen": 512,
+		"blockShift": 128
+	},
+	"stateShape": [1, 4, 128]
+}

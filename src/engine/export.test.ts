@@ -510,7 +510,7 @@ describe('mixAudioWindow', () => {
 			assetId: 'cleaned-asset',
 			clipInPointS: 0,
 			durationS: 1,
-			modelId: 'rnnoise',
+			modelId: 'dtln',
 			modelVersion: 'test'
 		};
 		const edit: Timeline = [audioTrack({ id: 'a-track', clips: [clip] })];
@@ -544,7 +544,7 @@ describe('mixAudioWindow', () => {
 			assetId: 'missing-asset',
 			clipInPointS: 0,
 			durationS: 1,
-			modelId: 'rnnoise',
+			modelId: 'dtln',
 			modelVersion: 'test'
 		};
 		const edit: Timeline = [audioTrack({ id: 'a-track', clips: [clip] })];

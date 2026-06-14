@@ -517,12 +517,8 @@ export function App() {
 				modelVersion: request.modelVersion
 			});
 		},
-		fetchManifest: async () => {
-			const response = await fetch(`${import.meta.env.BASE_URL}models/rnnoise/manifest.json`);
-			if (!response.ok) throw new Error(`Model manifest unavailable (HTTP ${response.status}).`);
-			return response.json();
-		},
-		weightsUrl: `${import.meta.env.BASE_URL}models/rnnoise/weights.bin`,
+		manifestUrl: `${import.meta.env.BASE_URL}models/dtln/manifest.json`,
+		wasmPath: `${import.meta.env.BASE_URL}litert/`,
 		onError: (message) => {
 			setRecentErrorLog((prev) =>
 				addRecentError(
@@ -950,7 +946,7 @@ export function App() {
 			case 'capability-probe-v2':
 				setCapabilityProbeV2(msg.result);
 				setExportCodecs([...exportConstraintsForProbe(msg.result)]);
-				cleanupController.setWebNNProbe(msg.result.webnn ?? null);
+				cleanupController.setCleanupProbe(msg.result.cleanup ?? null);
 				asrController.setProbe();
 				break;
 			case 'clip-audio':
@@ -2135,7 +2131,7 @@ export function App() {
 			const probe = await probeCapabilitiesV2();
 			setCapabilityProbeV2(probe);
 			setExportCodecs([...exportConstraintsForProbe(probe)]);
-			cleanupController.setWebNNProbe(probe.webnn ?? null);
+			cleanupController.setCleanupProbe(probe.cleanup ?? null);
 			asrController.setProbe();
 			if (pendingInitCanvas) {
 				const canvas = pendingInitCanvas;
