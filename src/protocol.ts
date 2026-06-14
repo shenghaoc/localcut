@@ -856,6 +856,14 @@ export interface TimelineMarkerSnapshot {
 	label: string;
 }
 
+// -- Phase 34: Beat Detection --
+
+export interface BeatAnalysisResultSnapshot {
+	tempoBpm: number;
+	beatCount: number; // beatTimesMs.length -- for UI display
+	analyserVersion: number;
+}
+
 export type TransitionKindSnapshot = 'cross-dissolve' | 'dip-to-black' | 'wipe' | 'slide';
 
 export interface TransitionParamsSnapshot {
@@ -1761,6 +1769,15 @@ export type WorkerCommand =
 	| { type: 'capture-recovery-discard'; sessionId: string }
 	| { type: 'set-skin-mask'; trackId: string; clipId: string; mask: SkinMaskSnapshot }
 	| { type: 'set-skin-smooth-bypass'; trackId: string; clipId: string; bypass: boolean }
+	// -- Phase 34: Beat Detection --
+	| { type: 'analyze-beats'; sourceId: string }
+	| { type: 'cancel-beat-analysis'; sourceId: string }
+	| {
+			type: 'beat-auto-cut';
+			mode: 'split' | 'align';
+			clipRefs: { trackId: string; clipId: string }[];
+	  }
+	| { type: 'set-beat-settings'; enabledSourceIds: string[]; globalOffsetMs: number }
 	| { type: 'dispose' };
 
 /** A measured preview resolution tier (adaptive downscale of the decode path). */
@@ -1996,6 +2013,16 @@ export type WorkerStateMessage =
 			sessionId: string;
 			trackIds: string[];
 	  }
+	// -- Phase 34: Beat Detection --
+	| { type: 'beat-analysis-progress'; sourceId: string; fraction: number }
+	| {
+			type: 'beat-analysis-result';
+			sourceId: string;
+			tempoBpm: number;
+			beatTimesMs: number[];
+			analyserVersion: number;
+	  }
+	| { type: 'beat-analysis-error'; sourceId: string; message: string }
 	| { type: 'error'; message: string };
 
 // ── Phase 46: Replay Buffer + Live Audio Chain ──

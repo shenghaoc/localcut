@@ -1,7 +1,7 @@
 import { isFiniteNumber as finite } from '../lib/math';
 import type { TimelineMarkerSnapshot, TimelineTrackSnapshot } from '../protocol';
 
-export type SnapTargetKind = 'zero' | 'playhead' | 'marker' | 'clip-start' | 'clip-end';
+export type SnapTargetKind = 'zero' | 'playhead' | 'marker' | 'clip-start' | 'clip-end' | 'beat';
 
 export interface SnapTarget {
 	kind: SnapTargetKind;
@@ -34,10 +34,21 @@ function pushTarget(targets: SnapTarget[], target: SnapTarget): void {
 
 export function buildSnapTargets(
 	timeline: readonly TimelineTrackSnapshot[],
-	markers: readonly TimelineMarkerSnapshot[]
+	markers: readonly TimelineMarkerSnapshot[],
+	beatTimesSeconds?: readonly number[]
 ): SnapTarget[] {
 	const targets: SnapTarget[] = [];
 	pushTarget(targets, { kind: 'zero', time: 0, id: 'zero', label: 'Start' });
+	if (beatTimesSeconds) {
+		for (let n = 0; n < beatTimesSeconds.length; n++) {
+			pushTarget(targets, {
+				kind: 'beat',
+				time: beatTimesSeconds[n],
+				id: `beat-${n}`,
+				label: `Beat ${n + 1}`
+			});
+		}
+	}
 	for (const marker of markers) {
 		pushTarget(targets, {
 			kind: 'marker',

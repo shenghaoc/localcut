@@ -223,6 +223,37 @@ Audio runs through an AudioWorklet graph and is the master clock for A/V sync �
 
 When clips on the timeline use different audio sample rates (e.g. a 44.1 kHz MP3 alongside a 48 kHz video), the engine resamples all audio to the target output rate using a polyphase sinc filter. This happens transparently during both playback and export — no user action is needed. The source health panel shows a **Mixed audio sample rates** note as an informational reminder.
 
+## Beat Detection
+
+LocalCut can analyse any imported audio source to detect its tempo and beat positions. The analysis runs entirely on your device in the pipeline worker — no audio is uploaded, and no server is involved.
+
+### How to use it
+
+1. Import an audio source (MP3, AAC, WAV, etc.) into the Media Bin.
+2. Open the **Beat Detection** panel below the Media Bin.
+3. Click **Analyse** next to the audio source. A progress bar shows the analysis status.
+4. Once complete, the detected tempo (BPM) and beat count are displayed.
+5. Click **On** to enable the beat grid display on the timeline ruler. Beat ticks appear in purple (`#b06cff`); the first beat of each bar is taller.
+
+### Beat grid controls
+
+- **Offset nudge** (–500 ms to +500 ms): shifts all displayed beat times forward or backward in time. Use this to align the beat grid with the actual musical beats if the detected grid is slightly off.
+- **Snap to beats**: toggle the "Beat" button in the timeline toolbar (keyboard shortcut **B**) to include beat positions in the snap target set. When enabled, dragging clip edges or playhead snaps to the nearest beat.
+- **Auto-cut**: select one or more clips on the timeline, then click **Split** or **Align** in the Beat Detection panel:
+  - **Split mode**: splits each selected clip at every beat time that falls inside its span. Segments shorter than 0.2 seconds are skipped to avoid creating uneditable slivers.
+  - **Align mode**: moves each selected clip's start to the nearest beat time. If two clips on the same track would overlap after alignment, the later clip is left in place.
+
+### WASM acceleration
+
+The beat analysis uses a WASM SIMD-accelerated FFT when available for faster analysis. If WASM SIMD is not supported by your browser, a pure JavaScript fallback is used transparently — the results are the same on the same platform. The Capabilities panel shows the WASM status.
+
+### Technical notes
+
+- Analysis supports tempo detection in the range 60–200 BPM.
+- Beat times are derived from the analysis and are not stored as editable markers. They do not appear in the export markers range selector.
+- Analysis results are cached per source fingerprint. Re-importing the same audio file does not require re-analysis.
+- Analysis results are included in project bundles, so round-tripped projects retain their beat data.
+
 ## Local Audio Cleanup (Experimental)
 
 LocalCut Studio can reduce background noise in audio clips entirely on your device using the DTLN model (Dual-Signal Transformation LSTM Network) running through LiteRT WASM inference. This feature is **experimental** and fully local:

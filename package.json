@@ -20,6 +20,7 @@
 		"typecheck": "tsgo --noEmit",
 		"check": "vp run format:check && vp lint . && vp run typecheck && vp test run && vp build",
 		"build:wasm": "node scripts/build-wasm.mjs",
+		"build:wasm:beat": "node scripts/build-wasm-beat.mjs",
 		"setup:litert": "node scripts/setup-litert-assets.mjs",
 		"test:e2e": "playwright test",
 		"postinstall": "node scripts/setup-litert-assets.mjs",
