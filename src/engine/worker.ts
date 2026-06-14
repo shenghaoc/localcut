@@ -2,6 +2,7 @@
 import {
 	assertCrossOriginIsolated,
 	type CapabilityProbeResult,
+	type CaptionPresetIdSnapshot,
 	type CaptionTrackSnapshot,
 	ClockIndex,
 	TIMELINE_EPSILON,
@@ -61,7 +62,15 @@ import {
 	type PcmPlane
 } from './live-audio/live-chain';
 import { exportCaptionSidecars } from './captions/export';
-import { activeCaptionPayloadsAt, captionTextureId } from './captions/render';
+import {
+	activeCaptionPayloadsAt,
+	enumerateCaptionRasterTargets,
+	type CaptionTextureIdMaker
+} from './captions/render';
+import { CAPTION_ANIM_IDENTITY } from './captions/animation-curves';
+import type { CaptionAnimUniforms } from './captions/animation-curves';
+import type { CaptionAnimStylePreset } from './captions/anim-style';
+import { resolveAnimPreset, validateCaptionAnimPreset } from './captions/anim-style';
 import {
 	buildCaptionSnapTargets,
 	deleteCaptionTrack,
@@ -82,6 +91,7 @@ import { captionTrackFromWebVtt } from './captions/webvtt';
 import {
 	createCaptionTrack,
 	type CaptionExportSettings,
+	type CaptionStyle,
 	type CaptionTrack
 } from './captions/types';
 import { createAsrCaptionTrack } from './asr/caption-track';
@@ -328,6 +338,7 @@ let layerBudgetWarned = false;
 let exportAbort: AbortController | null = null;
 let lastExportSettings: ExportSettings | null = null;
 let exportPresets: ExportPresetDoc[] = [];
+let customAnimCaptionPresets: CaptionAnimStylePreset[] = [];
 let queueState: RenderQueueState = createEmptyQueueState();
 let queueRunning = false;
 let queueJobAbort: AbortController | null = null;
@@ -1119,6 +1130,7 @@ async function persistCurrentProject(): Promise<void> {
 		projectId,
 		timeline,
 		captionTracks,
+		customAnimCaptionPresets,
 		transitions,
 		markers,
 		sources: currentProjectSources(),
@@ -1855,6 +1867,9 @@ async function handleRestoreProject(): Promise<void> {
 	syncTimelineLuts();
 	lastExportSettings = doc.exportSettings ?? null;
 	exportPresets = (doc.exportPresets ?? []).filter((p) => !p.builtIn);
+	customAnimCaptionPresets = doc.customAnimCaptionPresets ?? [];
+	// Tell the UI about the restored custom presets so the picker shows them.
+	post({ type: 'caption-custom-presets-updated', presets: customAnimCaptionPresets });
 	queueState = createEmptyQueueState();
 	if (doc.renderQueueHistory) {
 		queueState = { ...queueState, jobs: deserializeQueueHistory(doc.renderQueueHistory) };
@@ -1914,6 +1929,11 @@ async function handleNewProject(): Promise<void> {
 	projectId = makeProjectId();
 	nextSourceId = 1;
 	captionTracks = [];
+	// Phase 30: custom caption presets are project-scoped — clear them so they
+	// don't leak from the previous project into the new one. Notify the UI so
+	// the inspector's preset picker drops the stale entries.
+	customAnimCaptionPresets = [];
+	post({ type: 'caption-custom-presets-updated', presets: [] });
 	markers = [];
 	masterGain = DEFAULT_MASTER_GAIN;
 	if (capture) requestCaptureStop();
@@ -1988,6 +2008,7 @@ function teardownMedia() {
 	titleCache?.retain(EMPTY_CLIP_IDS);
 	timeline = createEmptyTimeline();
 	captionTracks = [];
+	customAnimCaptionPresets = [];
 	transitions = [];
 	markers = [];
 }
@@ -2069,22 +2090,24 @@ function titleClips(): { trackId: string; clip: TimelineClip }[] {
 }
 
 /**
- * Edit-path raster sync: rasterizes every title clip (a no-op when the content
+ * Edit-path raster sync: rasterises every title clip (a no-op when the content
  * hash is unchanged) and drops cached textures for titles no longer present.
- * Called after timeline mutations and once fonts/GPU are ready — never per frame.
+ * Called after timeline mutations and once fonts/GPU are ready — never per
+ * frame. Pre-rasterises every caption raster target the project needs,
+ * including each per-word karaoke highlight variant, so the playback hot path
+ * can read straight from cache without invoking Canvas2D or uploading a new
+ * texture on word-boundary crossings.
  */
 function syncTitleRasters(): void {
 	if (!titleCache) return;
 	const active = new Set<string>(retainedOverlayTextureIds);
-	const previewTime = clockView?.[ClockIndex.CURRENT_TIME] ?? 0;
 	for (const { clip } of titleClips()) {
 		active.add(clip.id);
 		titleCache.rasterize(clip.id, clip.title!);
 	}
-	for (const payload of activeCaptionPayloadsAt(captionTracks, previewTime)) {
-		const clipId = captionTextureId(payload.trackId, payload.segmentId);
-		active.add(clipId);
-		titleCache.rasterize(clipId, payload.content);
+	for (const target of enumerateCaptionRasterTargets(captionTracks, customAnimCaptionPresets)) {
+		active.add(target.textureId);
+		titleCache.rasterize(target.textureId, target.content, target.extras);
 	}
 	titleCache.retain(active);
 }
@@ -2093,12 +2116,43 @@ function exportCaptionTextureId(exportId: string, trackId: string, segmentId: st
 	return `export-caption:${exportId}:${trackId}:${segmentId}`;
 }
 
-function rasterizeExportCaptionTextures(exportId: string, tracks: readonly CaptionTrack[]): void {
-	for (const track of tracks) {
-		if (!track.visible || !track.burnedIn) continue;
-		for (const segment of track.segments)
-			retainedOverlayTextureIds.add(exportCaptionTextureId(exportId, track.id, segment.id));
+/**
+ * Rewrite an edit-path caption textureId (`caption:<trk>:<seg>` or
+ * `caption:<trk>:<seg>:highlight:<idx>`) onto the export-path namespace
+ * (`export-caption:<exportId>:<trk>:<seg>[…]`). Preserves the karaoke variant
+ * suffix so the export cache reads its pre-rasterised per-word texture rather
+ * than collapsing to the base id (which is what the prior remap callback,
+ * `(trackId, segmentId) => …`, did — silently dropping karaoke highlighting
+ * from every export).
+ */
+function remapToExportCaptionTextureId(exportId: string, editPathId: string): string {
+	return editPathId.replace(/^caption:/, `export-caption:${exportId}:`);
+}
+
+function rasterizeExportCaptionTextures(
+	exportId: string,
+	tracks: readonly CaptionTrack[]
+): string[] {
+	if (!titleCache) return [];
+	// Mirror the edit-path pre-rasterise pass under the per-export texture
+	// namespace. Without this, removing the hot-path `ensure()` from
+	// `activeCaptionLayersAt` would leave the export with empty texture cache
+	// entries — burned-in captions would render as black holes, and karaoke
+	// variants would never exist at all. Returns every textureId touched so
+	// the caller can hand them to releaseRetainedOverlayTextures on teardown.
+	const baseFor = (trackId: string, segmentId: string): string =>
+		exportCaptionTextureId(exportId, trackId, segmentId);
+	const idMaker: CaptionTextureIdMaker = Object.assign(baseFor, {
+		withVariant: (trackId: string, segmentId: string, variant: `highlight:${number}`) =>
+			`${baseFor(trackId, segmentId)}:${variant}`
+	});
+	const touched: string[] = [];
+	for (const target of enumerateCaptionRasterTargets(tracks, customAnimCaptionPresets, idMaker)) {
+		retainedOverlayTextureIds.add(target.textureId);
+		titleCache.rasterize(target.textureId, target.content, target.extras);
+		touched.push(target.textureId);
 	}
+	return touched;
 }
 
 function releaseRetainedOverlayTextures(textureIds: readonly string[]): void {
@@ -2112,13 +2166,36 @@ function releaseRetainedOverlayTextures(textureIds: readonly string[]): void {
 function activeCaptionLayersAt(
 	tracks: readonly CaptionTrack[],
 	timestamp: number,
-	textureIdFor: (trackId: string, segmentId: string) => string = captionTextureId
-): Array<{ clipId: string; content: TitleContent; transform: TransformParams }> {
-	const layers: Array<{ clipId: string; content: TitleContent; transform: TransformParams }> = [];
-	for (const payload of activeCaptionPayloadsAt(tracks, timestamp)) {
-		const clipId = textureIdFor(payload.trackId, payload.segmentId);
-		if (titleCache && !titleCache.get(clipId)) titleCache.ensure(clipId, payload.content);
-		layers.push({ clipId, content: payload.content, transform: payload.transform });
+	remapTextureId: (editPathTextureId: string) => string = (id) => id
+): Array<{
+	clipId: string;
+	content: TitleContent;
+	transform: TransformParams;
+	animUniforms: CaptionAnimUniforms;
+}> {
+	const layers: Array<{
+		clipId: string;
+		content: TitleContent;
+		transform: TransformParams;
+		animUniforms: CaptionAnimUniforms;
+	}> = [];
+	for (const payload of activeCaptionPayloadsAt(tracks, timestamp, customAnimCaptionPresets)) {
+		// The payload's textureId already encodes the karaoke variant when
+		// applicable. The remap callback lets the export path rewrite to its
+		// own `export-caption:<exportId>:…` namespace WITHOUT dropping the
+		// variant (the prior 2-arg callback signature did exactly that, so
+		// karaoke captions exported as unhighlighted base text). The pre-
+		// rasterise pass in syncTitleRasters (edit) and rasterizeExport-
+		// CaptionTextures (export) has already populated the cache for every
+		// variant — this is a read-only hot path, NEVER a Canvas2D / GPU
+		// upload site. Hard gate 1: no sustained rasterisation on playback.
+		const clipId = remapTextureId(payload.textureId);
+		layers.push({
+			clipId,
+			content: payload.content,
+			transform: payload.transform,
+			animUniforms: payload.animUniforms
+		});
 	}
 	return layers;
 }
@@ -2143,6 +2220,8 @@ type LayerMeta =
 			clipId: string;
 			content: TitleContent;
 			transform: TransformParams;
+			/** Phase 30: caption animation uniforms; CAPTION_ANIM_IDENTITY for non-caption title clips. */
+			animUniforms: CaptionAnimUniforms;
 			transition?: import('./timeline').TransitionResolveMeta;
 	  };
 
@@ -2179,6 +2258,7 @@ function makeGetLayers() {
 							clipId: layer.clip.id,
 							content: layer.clip.title,
 							transform: sampled.transform,
+							animUniforms: CAPTION_ANIM_IDENTITY,
 							transition: layer.transition
 						}
 					});
@@ -2230,7 +2310,8 @@ function makeGetLayers() {
 						kind: 'title',
 						clipId: caption.clipId,
 						content: caption.content,
-						transform: caption.transform
+						transform: caption.transform,
+						animUniforms: caption.animUniforms
 					}
 				});
 			}
@@ -3557,6 +3638,135 @@ function handleSnapCaptionSegment(
 	);
 }
 
+// ── Phase 30: Animated caption style handlers ─────────────────────────────
+
+function handleCaptionImportCustomPreset(
+	cmd: Extract<WorkerCommand, { type: 'caption-import-custom-preset' }>
+): void {
+	const result = validateCaptionAnimPreset(cmd.preset);
+	if (!result.ok) {
+		// Surface validation failure to the UI so the user knows why an import
+		// they just triggered did nothing. Bare `return` would leave the picker
+		// silently unchanged and look like a no-op.
+		post({
+			type: 'caption-custom-preset-import-failed',
+			field: result.field,
+			message: result.message
+		});
+		return;
+	}
+	// Empty id makes the preset un-referenceable: `segment.style.presetId`
+	// can't link to it, and `parseCustomAnimCaptionPresets` drops zero-length
+	// ids on the next reload, so the preset would "disappear" silently. The
+	// inspector's import flow assigns a fresh UUID before sending — guard
+	// here so any other producer (e.g. a future automation hook) can't bypass
+	// the contract.
+	if (cmd.preset.id.length === 0) {
+		post({
+			type: 'caption-custom-preset-import-failed',
+			field: 'id',
+			message: 'Preset id is empty; assign a non-empty string before importing.'
+		});
+		return;
+	}
+	const preset: CaptionAnimStylePreset = { ...result.value, id: cmd.preset.id, builtIn: false };
+	const existing = customAnimCaptionPresets.findIndex((p) => p.id === preset.id);
+	if (existing >= 0) {
+		customAnimCaptionPresets[existing] = preset;
+	} else {
+		customAnimCaptionPresets.push(preset);
+	}
+	post({
+		type: 'caption-custom-presets-updated',
+		presets: customAnimCaptionPresets
+	});
+	// Re-rasterise so any segment already referencing this preset id picks up
+	// the new fields. `rasterize` is hash-checked, so segments using OTHER
+	// presets pay only a hash compare; touched segments get a fresh upload.
+	syncTitleRasters();
+	scheduleAutosave();
+}
+
+function handleCaptionDeleteCustomPreset(
+	cmd: Extract<WorkerCommand, { type: 'caption-delete-custom-preset' }>
+): void {
+	customAnimCaptionPresets = customAnimCaptionPresets.filter((p) => p.id !== cmd.presetId);
+	post({
+		type: 'caption-custom-presets-updated',
+		presets: customAnimCaptionPresets
+	});
+	// Segments that referenced this preset fall back to the 'subtitle' layout
+	// at next resolve; re-rasterise so the cache reflects the fallback instead
+	// of holding the now-orphaned custom-preset texture.
+	syncTitleRasters();
+	scheduleAutosave();
+}
+
+function handleCaptionSetAnimStyle(
+	cmd: Extract<WorkerCommand, { type: 'caption-set-anim-style' }>
+): void {
+	const track = captionTracks.find((t: CaptionTrack) => t.id === cmd.trackId);
+	if (!track) return;
+	// Resolve the anim preset so its layout fields propagate when the user picks
+	// a preset. Without this, selecting 'lower-third' would keep captions
+	// anchored at the previous position; the user expects layout to follow the
+	// preset on selection. `insetPx` is included so custom presets that ship a
+	// custom offset don't silently render at the default inset.
+	const animPreset = resolveAnimPreset(cmd.presetId, customAnimCaptionPresets);
+	const layoutOverlay: Partial<CaptionStyle> = {
+		anchor: animPreset.anchor,
+		maxWidthPercent: animPreset.maxWidthPercent,
+		lineWrap: animPreset.lineWrap,
+		...(animPreset.insetPx ? { insetPx: { ...animPreset.insetPx } } : {})
+	};
+	if (cmd.segmentId) {
+		const segment = track.segments.find((s) => s.id === cmd.segmentId);
+		if (!segment) return;
+		commitCaptionMutation(
+			() =>
+				setCaptionSegmentStyle(captionTracks, cmd.trackId, cmd.segmentId!, {
+					...layoutOverlay,
+					presetId: cmd.presetId as CaptionPresetIdSnapshot
+				}),
+			{ refreshPlayback: 'refresh' }
+		);
+	} else {
+		commitCaptionMutation(
+			() =>
+				setCaptionTrackProps(captionTracks, cmd.trackId, {
+					defaultStyle: {
+						...track.defaultStyle,
+						...layoutOverlay,
+						presetId: cmd.presetId as CaptionPresetIdSnapshot
+					}
+				}),
+			{ refreshPlayback: 'refresh' }
+		);
+	}
+}
+
+function handleCaptionSetWords(cmd: Extract<WorkerCommand, { type: 'caption-set-words' }>): void {
+	const track = captionTracks.find((t: CaptionTrack) => t.id === cmd.trackId);
+	if (!track) return;
+	const segment = track.segments.find((s) => s.id === cmd.segmentId);
+	if (!segment) return;
+	commitCaptionMutation(
+		() => {
+			return captionTracks.map((t: CaptionTrack) => {
+				if (t.id !== cmd.trackId) return t;
+				return {
+					...t,
+					segments: t.segments.map((s) => {
+						if (s.id !== cmd.segmentId) return s;
+						return { ...s, words: cmd.words ? [...cmd.words] : undefined };
+					})
+				};
+			});
+		},
+		{ refreshPlayback: 'refresh' }
+	);
+}
+
 function applyHistoryRestore(next: {
 	timeline: Timeline;
 	captionTracks?: CaptionTrack[];
@@ -3668,6 +3878,9 @@ async function applyImportedDoc(doc: ProjectDoc): Promise<void> {
 	syncTimelineLuts();
 	lastExportSettings = doc.exportSettings ?? null;
 	exportPresets = (doc.exportPresets ?? []).filter((p) => !p.builtIn);
+	customAnimCaptionPresets = doc.customAnimCaptionPresets ?? [];
+	// Tell the UI about the restored custom presets so the picker shows them.
+	post({ type: 'caption-custom-presets-updated', presets: customAnimCaptionPresets });
 	queueState = createEmptyQueueState();
 	if (doc.renderQueueHistory) {
 		queueState = { ...queueState, jobs: deserializeQueueHistory(doc.renderQueueHistory) };
@@ -3711,7 +3924,9 @@ const bundleWorkerContext: BundleWorkerContext = {
 		markers,
 		masterGain,
 		exportSettings: lastExportSettings ?? undefined,
-		sources: currentProjectSources()
+		sources: currentProjectSources(),
+		customAnimCaptionPresets:
+			customAnimCaptionPresets.length > 0 ? customAnimCaptionPresets : undefined
 	}),
 	resolveSourceFile: makeStoredSourceResolver(loadStoredSource, fileFromHandle),
 	collectLuts: collectTimelineLuts,
@@ -3825,17 +4040,37 @@ function setupPlayback() {
 			// makeGetLayers. Core/compat GPU consume GPU title textures; Canvas2D
 			// reduced preview consumes title payloads and VideoFrames synchronously.
 			if (renderer) {
+				const { width: rw, height: rh } = renderer.size;
 				const stack: CompositeLayer[] = [];
 				for (const layer of layers) {
 					if (layer.meta.kind === 'title') {
 						const texture = titleCache?.get(layer.meta.clipId);
 						if (!texture) continue;
+						const au = layer.meta.animUniforms;
+						// Phase 30: apply caption animation uniforms at composite time.
+						// Pixel translation is converted to the 0-centred normalised coord space.
+						const transform: TransformParams =
+							au.opacity === 1 &&
+							au.scaleX === 1 &&
+							au.scaleY === 1 &&
+							au.translateXPx === 0 &&
+							au.translateYPx === 0
+								? layer.meta.transform
+								: {
+										...layer.meta.transform,
+										opacity: layer.meta.transform.opacity * au.opacity,
+										scale: layer.meta.transform.scale * ((au.scaleX + au.scaleY) / 2),
+										x: layer.meta.transform.x + au.translateXPx / rw,
+										y: layer.meta.transform.y + au.translateYPx / rh
+									};
+						// single-submit invariant: caption layers included here
 						stack.push({
 							kind: 'texture',
 							view: texture.view,
 							sourceWidth: texture.width,
 							sourceHeight: texture.height,
-							transform: layer.meta.transform,
+							transform,
+							uvCropMax: [au.cropRightFrac, 1.0],
 							transition: layer.meta.transition
 						});
 					} else if (layer.frame) {
@@ -4096,14 +4331,10 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
 			typeof crypto !== 'undefined' && 'randomUUID' in crypto
 				? crypto.randomUUID()
 				: `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-		exportCaptionTextureIds = exportCaptionTracksSnapshot.flatMap((track) =>
-			track.visible && track.burnedIn
-				? track.segments.map((segment) =>
-						exportCaptionTextureId(exportCaptionTextureGroupId, track.id, segment.id)
-					)
-				: []
+		exportCaptionTextureIds = rasterizeExportCaptionTextures(
+			exportCaptionTextureGroupId,
+			exportCaptionTracksSnapshot
 		);
-		rasterizeExportCaptionTextures(exportCaptionTextureGroupId, exportCaptionTracksSnapshot);
 		const videoHandle = firstExportVideoHandle();
 		const settings = normalizeExportSettings(
 			cmd.settings,
@@ -4134,18 +4365,36 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
 				// per title on the cold export path, never per frame.
 				titleTextureFor: (clip) =>
 					clip.title ? (titleCache?.ensure(clip.id, clip.title) ?? null) : null,
-				overlayTextureLayersAt: (timelineTime) =>
-					activeCaptionLayersAt(exportCaptionTracksSnapshot, timelineTime, (trackId, segmentId) =>
-						exportCaptionTextureId(exportCaptionTextureGroupId, trackId, segmentId)
+				overlayTextureLayersAt: (timelineTime) => {
+					const ew = settings.width,
+						eh = settings.height;
+					return activeCaptionLayersAt(exportCaptionTracksSnapshot, timelineTime, (editPathId) =>
+						remapToExportCaptionTextureId(exportCaptionTextureGroupId, editPathId)
 					)
 						.map((layer) => {
 							const texture = titleCache?.get(layer.clipId);
 							if (!texture) return null;
+							const au = layer.animUniforms;
+							const transform: TransformParams =
+								au.opacity === 1 &&
+								au.scaleX === 1 &&
+								au.scaleY === 1 &&
+								au.translateXPx === 0 &&
+								au.translateYPx === 0
+									? layer.transform
+									: {
+											...layer.transform,
+											opacity: layer.transform.opacity * au.opacity,
+											scale: layer.transform.scale * ((au.scaleX + au.scaleY) / 2),
+											x: layer.transform.x + au.translateXPx / ew,
+											y: layer.transform.y + au.translateYPx / eh
+										};
 							return {
 								view: texture.view,
 								sourceWidth: texture.width,
 								sourceHeight: texture.height,
-								transform: layer.transform
+								transform,
+								uvCropMax: [au.cropRightFrac, 1.0] as [number, number]
 							};
 						})
 						.filter(
@@ -4156,8 +4405,10 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
 								sourceWidth: number;
 								sourceHeight: number;
 								transform: TransformParams;
+								uvCropMax: [number, number];
 							} => layer !== null
-						)
+						);
+				}
 			});
 			post({ type: 'export-complete', fileName: outputHandle.name, mimeType: result.mimeType });
 		} else if (reducedRenderer) {
@@ -4178,8 +4429,8 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
 				transitions: audioTransitions,
 				hasVideoTransitions: transitions.length > 0,
 				overlayTitleLayersAt: (timelineTime) =>
-					activeCaptionLayersAt(exportCaptionTracksSnapshot, timelineTime, (trackId, segmentId) =>
-						exportCaptionTextureId(exportCaptionTextureGroupId, trackId, segmentId)
+					activeCaptionLayersAt(exportCaptionTracksSnapshot, timelineTime, (editPathId) =>
+						remapToExportCaptionTextureId(exportCaptionTextureGroupId, editPathId)
 					).map((layer) => ({
 						content: layer.content,
 						transform: layer.transform
@@ -4406,14 +4657,10 @@ async function runQueueJob(job: RenderQueueJob): Promise<void> {
 			typeof crypto !== 'undefined' && 'randomUUID' in crypto
 				? crypto.randomUUID()
 				: `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-		exportCaptionTextureIds = exportCaptionTracksSnapshot.flatMap((track) =>
-			track.visible && track.burnedIn
-				? track.segments.map((segment) =>
-						exportCaptionTextureId(exportCaptionTextureGroupId, track.id, segment.id)
-					)
-				: []
+		exportCaptionTextureIds = rasterizeExportCaptionTextures(
+			exportCaptionTextureGroupId,
+			exportCaptionTracksSnapshot
 		);
-		rasterizeExportCaptionTextures(exportCaptionTextureGroupId, exportCaptionTracksSnapshot);
 
 		const videoHandle = firstExportVideoHandle();
 		const jobSettings: ExportSettings = {
@@ -4451,18 +4698,36 @@ async function runQueueJob(job: RenderQueueJob): Promise<void> {
 			transitions: audioTransitions,
 			titleTextureFor: (clip) =>
 				clip.title ? (titleCache?.ensure(clip.id, clip.title) ?? null) : null,
-			overlayTextureLayersAt: (timelineTime) =>
-				activeCaptionLayersAt(exportCaptionTracksSnapshot, timelineTime, (trackId, segmentId) =>
-					exportCaptionTextureId(exportCaptionTextureGroupId, trackId, segmentId)
+			overlayTextureLayersAt: (timelineTime) => {
+				const ew = settings.width,
+					eh = settings.height;
+				return activeCaptionLayersAt(exportCaptionTracksSnapshot, timelineTime, (editPathId) =>
+					remapToExportCaptionTextureId(exportCaptionTextureGroupId, editPathId)
 				)
 					.map((layer) => {
 						const texture = titleCache?.get(layer.clipId);
 						if (!texture) return null;
+						const au = layer.animUniforms;
+						const transform: TransformParams =
+							au.opacity === 1 &&
+							au.scaleX === 1 &&
+							au.scaleY === 1 &&
+							au.translateXPx === 0 &&
+							au.translateYPx === 0
+								? layer.transform
+								: {
+										...layer.transform,
+										opacity: layer.transform.opacity * au.opacity,
+										scale: layer.transform.scale * ((au.scaleX + au.scaleY) / 2),
+										x: layer.transform.x + au.translateXPx / ew,
+										y: layer.transform.y + au.translateYPx / eh
+									};
 						return {
 							view: texture.view,
 							sourceWidth: texture.width,
 							sourceHeight: texture.height,
-							transform: layer.transform
+							transform,
+							uvCropMax: [au.cropRightFrac, 1.0] as [number, number]
 						};
 					})
 					.filter(
@@ -4473,8 +4738,10 @@ async function runQueueJob(job: RenderQueueJob): Promise<void> {
 							sourceWidth: number;
 							sourceHeight: number;
 							transform: TransformParams;
+							uvCropMax: [number, number];
 						} => layer !== null
-					)
+					);
+			}
 		});
 
 		const elapsedSeconds = (performance.now() - startTime) / 1000;
@@ -5605,6 +5872,18 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			break;
 		case 'snap-caption-segment':
 			handleSnapCaptionSegment(cmd);
+			break;
+		case 'caption-import-custom-preset':
+			handleCaptionImportCustomPreset(cmd);
+			break;
+		case 'caption-delete-custom-preset':
+			handleCaptionDeleteCustomPreset(cmd);
+			break;
+		case 'caption-set-anim-style':
+			handleCaptionSetAnimStyle(cmd);
+			break;
+		case 'caption-set-words':
+			handleCaptionSetWords(cmd);
 			break;
 		case 'preset-save':
 			handlePresetSave(cmd);

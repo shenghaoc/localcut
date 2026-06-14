@@ -23,6 +23,8 @@ import {
 	type CaptionStyle,
 	type CaptionTrack
 } from './captions/types';
+import type { CaptionAnimStylePreset } from './captions/anim-style';
+import { validateCaptionAnimPreset } from './captions/anim-style';
 import {
 	DEFAULT_CLIP_AUDIO_FADES,
 	DEFAULT_MASTER_GAIN,
@@ -45,7 +47,7 @@ import { cloneClipLut, parsePersistedClipLut } from './lut';
 import { normalizeSkinMask } from './skin-smooth';
 import { parseExportPresetDoc } from './export-presets';
 
-export const PROJECT_SCHEMA_VERSION = 12;
+export const PROJECT_SCHEMA_VERSION = 13;
 const DURATION_MATCH_TOLERANCE_S = 0.25;
 const TIMING_MATCH_TOLERANCE_S = 0.05;
 
@@ -57,6 +59,8 @@ export interface ProjectDoc {
 	savedAt: string;
 	timeline: Timeline;
 	captionTracks: CaptionTrack[];
+	/** Phase 30: user-imported caption animation style presets. */
+	customAnimCaptionPresets?: CaptionAnimStylePreset[];
 	transitions: TimelineTransition[];
 	markers: TimelineMarker[];
 	sources: SourceDescriptor[];
@@ -72,6 +76,7 @@ export interface SerializeProjectOptions {
 	projectId: string;
 	timeline: Timeline;
 	captionTracks?: readonly CaptionTrack[];
+	customAnimCaptionPresets?: readonly CaptionAnimStylePreset[];
 	transitions?: readonly TimelineTransition[];
 	markers?: readonly TimelineMarker[];
 	sources: readonly SourceDescriptor[];
@@ -396,6 +401,9 @@ export function serializeProject(options: SerializeProjectOptions): ProjectDoc {
 	if (options.liveAudioChainConfig) {
 		doc.liveAudioChainConfig = cloneLiveAudioChainConfig(options.liveAudioChainConfig);
 	}
+	if (options.customAnimCaptionPresets && options.customAnimCaptionPresets.length > 0) {
+		doc.customAnimCaptionPresets = options.customAnimCaptionPresets.map((p) => ({ ...p }));
+	}
 	return doc;
 }
 
@@ -500,9 +508,12 @@ function parseCaptionStyle(value: unknown): CaptionStyle | null {
 	if (value === undefined || value === null) return normalizeCaptionStyle({});
 	if (!isRecord(value)) return null;
 	return normalizeCaptionStyle({
+		// Accept any non-empty string as presetId — built-in IDs and custom
+		// preset UUIDs are both valid. normalizeCaptionStyle handles unknown
+		// IDs by falling back to the subtitle layout while preserving the ID.
 		presetId:
-			value.presetId === 'subtitle' || value.presetId === 'lower-third' || value.presetId === 'note'
-				? value.presetId
+			typeof value.presetId === 'string' && value.presetId.length > 0
+				? (value.presetId as CaptionStyle['presetId'])
 				: undefined,
 		overrides: isRecord(value.overrides)
 			? (value.overrides as Partial<CaptionTrackSnapshot['defaultStyle']['overrides']>)
@@ -537,12 +548,38 @@ function parseCaptionSegment(value: unknown): CaptionSegment | null {
 		return null;
 	const style = parseCaptionStyle(value.style);
 	if (style === null) return null;
+	// Phase 30: karaoke word timings. Optional; round-tripped verbatim. Each
+	// entry is normalised on the next normalizeCaptionSegment pass, so we only
+	// need to reject malformed array entries here — anything non-array or
+	// undefined collapses to `undefined`, which the segment validator already
+	// tolerates.
+	let words: CaptionSegment['words'];
+	if (Array.isArray(value.words)) {
+		const parsed: { text: string; startS: number; endS: number }[] = [];
+		let allValid = true;
+		for (const item of value.words) {
+			if (!isRecord(item)) {
+				allValid = false;
+				break;
+			}
+			const wText = typeof item.text === 'string' ? item.text : null;
+			const startS = finiteNumber(item.startS);
+			const endS = finiteNumber(item.endS);
+			if (wText === null || startS === null || endS === null) {
+				allValid = false;
+				break;
+			}
+			parsed.push({ text: wText, startS, endS });
+		}
+		if (allValid && parsed.length > 0) words = parsed;
+	}
 	return {
 		id,
 		start,
 		duration,
 		text,
-		style: value.style === undefined || value.style === null ? undefined : style
+		style: value.style === undefined || value.style === null ? undefined : style,
+		...(words ? { words } : {})
 	};
 }
 
@@ -1282,6 +1319,37 @@ function deserializeV10(value: Record<string, unknown>): DeserializeProjectResul
 	};
 }
 
+/** Parse customAnimCaptionPresets from a raw project document. */
+function parseCustomAnimCaptionPresets(value: unknown): CaptionAnimStylePreset[] | undefined {
+	if (!Array.isArray(value)) return undefined;
+	const presets: CaptionAnimStylePreset[] = [];
+	for (const item of value) {
+		const result = validateCaptionAnimPreset(item);
+		// validateCaptionAnimPreset preserves the raw `id` (a non-empty string)
+		// because `segment.style.presetId` references it. Drop entries whose id
+		// failed validation — the validator yields `''` for raw records missing
+		// the field, and a preset without an id can't be looked up.
+		if (!result.ok || result.value.id.length === 0) continue;
+		presets.push(result.value);
+	}
+	return presets.length > 0 ? presets : undefined;
+}
+
+function deserializeV13(value: Record<string, unknown>): DeserializeProjectResult {
+	const result = deserializeV10(value);
+	if (!result.ok) return result;
+	// v13 (Phase 30): optional customAnimCaptionPresets; absent/invalid → undefined.
+	const customPresets = parseCustomAnimCaptionPresets(value.customAnimCaptionPresets);
+	return {
+		ok: true,
+		doc: {
+			...result.doc,
+			schemaVersion: PROJECT_SCHEMA_VERSION,
+			customAnimCaptionPresets: customPresets
+		}
+	};
+}
+
 export function deserializeProject(value: unknown): DeserializeProjectResult {
 	if (!isRecord(value)) return { ok: false, reason: 'Project document is not an object.' };
 	const schemaVersion = finiteNumber(value.schemaVersion);
@@ -1315,6 +1383,11 @@ export function deserializeProject(value: unknown): DeserializeProjectResult {
 			// v12 adds skinSmoothStrength + skinMask (Phase 32a).
 			// Both fields are optional with factory defaults; v10/v11 docs deserialize fine.
 			return deserializeV10(value);
+		case 13:
+			// v13 (Phase 30): adds customAnimCaptionPresets (optional; absent in
+			// v10/v11/v12). Originally targeted v12, but Phase 32a (Skin Smoothing)
+			// claimed v12 first, so Phase 30 ships as v13.
+			return deserializeV13(value);
 		default:
 			return { ok: false, reason: `Unsupported project schemaVersion ${schemaVersion}.` };
 	}

@@ -13,6 +13,9 @@ struct Transform {
   m : vec4<f32>,
   params : vec4<f32>,
   card : vec4<f32>,
+  // Phase 30: UV crop max for typewriter reveal. Default (1.0, 1.0) = no crop.
+  // Only U (x) is typically cropped; V (y) stays at 1.0.
+  cropMax : vec2<f32>,
 }
 
 @group(0) @binding(0) var<uniform> u : Transform;
@@ -36,6 +39,13 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
 
   let inside = l.x >= 0.0 && l.x <= 1.0 && l.y >= 0.0 && l.y <= 1.0;
   if (inside) {
+    // Phase 30: typewriter UV crop. Texels right of cropMax must be transparent
+    // (the line is being "typed" in), NOT the clamped boundary sample — clamping
+    // would smear the edge texel (often opaque text) across the un-revealed area.
+    if (l.x > u.cropMax.x || l.y > u.cropMax.y) {
+      textureStore(dstTexture, coord, vec4<f32>(0.0, 0.0, 0.0, 0.0));
+      return;
+    }
     let c = textureSampleLevel(srcTexture, srcSampler, l, 0.0);
     let a = c.a * u.params.z;
     textureStore(dstTexture, coord, vec4<f32>(c.rgb * a, a));

@@ -1,0 +1,443 @@
+import { describe, expect, it } from 'vite-plus/test';
+import {
+	activeCaptionPayloadsAt,
+	captionTextureId,
+	enumerateCaptionRasterTargets,
+	KARAOKE_VARIANT_CAP_PER_SEGMENT,
+	mapWordToWrappedLine,
+	type CaptionTextureIdMaker
+} from './render';
+import { createCaptionTrack } from './types';
+import type { CaptionTrack } from './types';
+import { CAPTION_ANIM_IDENTITY } from './animation-curves';
+import { ANIM_CAPTION_PRESETS } from './anim-style';
+
+/** Helper: a single-segment track active at t=0..5 */
+function trackWithSegment(
+	extras: {
+		presetId?: string;
+		words?: readonly { text: string; startS: number; endS: number }[];
+	} = {}
+): CaptionTrack {
+	return createCaptionTrack({
+		id: 'trk',
+		burnedIn: true,
+		segments: [
+			{
+				id: 'seg',
+				start: 0,
+				duration: 5,
+				text: 'Hello world',
+				style: extras.presetId ? { presetId: extras.presetId as never } : undefined,
+				words: extras.words
+			}
+		]
+	});
+}
+
+describe('activeCaptionPayloadsAt (Phase 30)', () => {
+	it('returns empty array when no segment is active', () => {
+		const track = trackWithSegment();
+		expect(activeCaptionPayloadsAt([track], 10)).toHaveLength(0);
+	});
+
+	it('returns identity uniforms for a no-animation preset (subtitle)', () => {
+		const track = trackWithSegment({ presetId: 'subtitle' });
+		const [payload] = activeCaptionPayloadsAt([track], 2.5, []);
+		expect(payload).toBeDefined();
+		expect(payload!.animUniforms).toEqual(CAPTION_ANIM_IDENTITY);
+	});
+
+	it('returns non-identity uniforms inside enter window for pop-card', () => {
+		const track = trackWithSegment({ presetId: 'pop-card' });
+		const preset = ANIM_CAPTION_PRESETS.find((p) => p.id === 'pop-card')!;
+		const dur = preset.animation!.durationS;
+		// At t = dur/2 we are inside the enter window. Pop overshoots to 1.15 so scaleX > 1.
+		const [payload] = activeCaptionPayloadsAt([track], dur / 2, []);
+		expect(payload).toBeDefined();
+		expect(payload!.animUniforms.opacity).toBeLessThan(1);
+		expect(payload!.animUniforms.scaleX).not.toEqual(1); // Animated — not identity scale.
+	});
+
+	it('returns identity uniforms during hold phase for pop-card', () => {
+		const track = trackWithSegment({ presetId: 'pop-card' });
+		const preset = ANIM_CAPTION_PRESETS.find((p) => p.id === 'pop-card')!;
+		const dur = preset.animation!.durationS;
+		// At t = dur + 0.5 we are in the hold phase.
+		const [payload] = activeCaptionPayloadsAt([track], dur + 0.5, []);
+		expect(payload!.animUniforms).toEqual(CAPTION_ANIM_IDENTITY);
+	});
+
+	it('returns non-identity uniforms during exit window for slide-news', () => {
+		const track = trackWithSegment({ presetId: 'slide-news' });
+		// Verify slide-news has an exit animation configured.
+		expect(ANIM_CAPTION_PRESETS.find((p) => p.id === 'slide-news')!.animation!.exit).not.toBe(
+			'none'
+		);
+		// At t = 4.9 (near segment end at 5s, inside exit window).
+		const [payload] = activeCaptionPayloadsAt([track], 4.9, []);
+		expect(payload!.animUniforms.opacity).toBeLessThan(1);
+	});
+
+	it('uses full-line texture id when words are absent', () => {
+		const track = trackWithSegment({ presetId: 'karaoke' });
+		const [payload] = activeCaptionPayloadsAt([track], 1.0, []);
+		expect(payload!.textureId).toBe(captionTextureId('trk', 'seg'));
+	});
+
+	it('switches to a per-word highlight texture id when currentTimeS is within a word range', () => {
+		const track = trackWithSegment({
+			presetId: 'karaoke',
+			words: [
+				{ text: 'Hello', startS: 0.5, endS: 1.5 },
+				{ text: 'world', startS: 1.5, endS: 2.5 }
+			]
+		});
+		// Word 0 is active at t=1.0.
+		const [first] = activeCaptionPayloadsAt([track], 1.0, []);
+		expect(first!.textureId).toBe(captionTextureId('trk', 'seg', 'highlight:0'));
+		// Word 1 is active at t=2.0 — a *distinct* cache slot so syncTitleRasters
+		// can pre-rasterise both without one stomping the other.
+		const [second] = activeCaptionPayloadsAt([track], 2.0, []);
+		expect(second!.textureId).toBe(captionTextureId('trk', 'seg', 'highlight:1'));
+	});
+
+	it('populates extras.highlightWord with the active word index for karaoke', () => {
+		const track = trackWithSegment({
+			presetId: 'karaoke',
+			words: [
+				{ text: 'Hello', startS: 0.5, endS: 1.5 },
+				{ text: 'world', startS: 1.5, endS: 2.5 }
+			]
+		});
+		// Second word is active at t=2.0.
+		const [payload] = activeCaptionPayloadsAt([track], 2.0, []);
+		expect(payload!.extras?.highlightWord).toBeDefined();
+		expect(payload!.extras!.highlightWord!.wordIndex).toBe(1);
+		expect(typeof payload!.extras!.highlightWord!.color).toBe('string');
+		expect(payload!.extras!.highlightWord!.color.length).toBeGreaterThan(0);
+	});
+
+	it('omits extras.highlightWord when outside word ranges', () => {
+		const track = trackWithSegment({
+			presetId: 'karaoke',
+			words: [{ text: 'Hello', startS: 1.0, endS: 2.0 }]
+		});
+		// t=0.5 is before the first word.
+		const [payload] = activeCaptionPayloadsAt([track], 0.5, []);
+		expect(payload!.extras?.highlightWord).toBeUndefined();
+	});
+
+	it('omits extras.highlightWord for non-karaoke presets even with words', () => {
+		const track = trackWithSegment({
+			presetId: 'subtitle',
+			words: [{ text: 'Hello', startS: 0.5, endS: 1.5 }]
+		});
+		const [payload] = activeCaptionPayloadsAt([track], 1.0, []);
+		expect(payload!.extras?.highlightWord).toBeUndefined();
+	});
+
+	it('uses full-line texture id when currentTimeS is outside all word ranges', () => {
+		const track = trackWithSegment({
+			presetId: 'karaoke',
+			words: [{ text: 'Hello', startS: 1.0, endS: 2.0 }]
+		});
+		// At t=0.5 — before the word.
+		const [payload] = activeCaptionPayloadsAt([track], 0.5, []);
+		expect(payload!.textureId).toBe(captionTextureId('trk', 'seg'));
+	});
+
+	it('uses full-line texture id for karaoke preset without words', () => {
+		const track = trackWithSegment({ presetId: 'karaoke' });
+		const [payload] = activeCaptionPayloadsAt([track], 1.0, []);
+		expect(payload!.textureId).toBe(captionTextureId('trk', 'seg'));
+	});
+
+	it('uses full-line texture id for non-karaoke preset even with words', () => {
+		const track = trackWithSegment({
+			presetId: 'subtitle',
+			words: [{ text: 'Hello', startS: 0.5, endS: 1.5 }]
+		});
+		const [payload] = activeCaptionPayloadsAt([track], 1.0, []);
+		expect(payload!.textureId).toBe(captionTextureId('trk', 'seg'));
+	});
+
+	it('lets track style.overrides win over preset.titleStyle (user font size wins)', () => {
+		// User picks neon-glow (cyan, default fontSizePx=64-ish) and overrides
+		// fontSize=128 in the TranscriptPanel. The merge must preserve their
+		// override on top of the preset's titleStyle.
+		const track = createCaptionTrack({
+			id: 'trk',
+			burnedIn: true,
+			defaultStyle: {
+				presetId: 'neon-glow',
+				overrides: { fontSizePx: 128 }
+			},
+			segments: [{ id: 'seg', start: 0, duration: 5, text: 'Hello' }]
+		});
+		const [payload] = activeCaptionPayloadsAt([track], 2.5, []);
+		expect(payload!.content.style.fontSizePx).toBe(128);
+	});
+
+	it('merges preset.titleStyle into the payload content (Phase 30 colour reaches raster)', () => {
+		const neonGlow = ANIM_CAPTION_PRESETS.find((p) => p.id === 'neon-glow')!;
+		const track = trackWithSegment({ presetId: 'neon-glow' });
+		const [payload] = activeCaptionPayloadsAt([track], 2.5, []);
+		expect(payload).toBeDefined();
+		// neon-glow preset.titleStyle.color is the cyan glow text colour. The
+		// payload content style must reflect it — otherwise the raster falls back
+		// to the layout-only CAPTION_PRESETS subtitle entry and renders white.
+		expect(payload!.content.style.color).toBe(neonGlow.titleStyle.color);
+	});
+
+	it('falls back to full-line texture when active word index is past the wrapped words', () => {
+		// Stale word timing: the third word slot is timed, but the segment text
+		// only has two words after wrap. The highlight variant must NOT be
+		// applied because there's no wrapped word to colour.
+		const track = trackWithSegment({
+			presetId: 'karaoke',
+			words: [
+				{ text: 'Hello', startS: 0.5, endS: 1.5 },
+				{ text: 'world', startS: 1.5, endS: 2.5 },
+				{ text: 'stale', startS: 2.5, endS: 3.5 }
+			]
+		});
+		const [payload] = activeCaptionPayloadsAt([track], 3.0, []);
+		expect(payload!.textureId).toBe(captionTextureId('trk', 'seg'));
+		expect(payload!.extras?.highlightWord).toBeUndefined();
+	});
+
+	it('resolves a custom preset passed via customPresets', () => {
+		const custom = {
+			...ANIM_CAPTION_PRESETS[0]!,
+			id: 'my-custom',
+			label: 'Custom',
+			builtIn: false,
+			animation: { enter: 'pop' as const, exit: 'none' as const, durationS: 0.3 }
+		};
+		const track = trackWithSegment({ presetId: 'my-custom' });
+		const [payload] = activeCaptionPayloadsAt([track], 0.1, [custom]);
+		// Inside enter window — should have non-identity uniforms.
+		expect(payload!.animUniforms.opacity).toBeLessThan(1);
+	});
+});
+
+describe('text wrapping (Phase 30)', () => {
+	it('wraps CJK text without spaces into multi-line content', () => {
+		// Long Chinese run with no whitespace: split(/\s+/) would emit one
+		// mega-line. Intl.Segmenter (or Array.from fallback) lets the wrapper
+		// break at grapheme boundaries.
+		const text = '你好世界你好世界你好世界你好世界你好世界你好世界';
+		const track = createCaptionTrack({
+			id: 'trk',
+			burnedIn: true,
+			defaultStyle: {
+				presetId: 'subtitle',
+				maxWidthPercent: 50,
+				overrides: { fontSizePx: 128 }
+			},
+			segments: [{ id: 'seg', start: 0, duration: 5, text }]
+		});
+		const [payload] = activeCaptionPayloadsAt([track], 2.5, []);
+		expect(payload).toBeDefined();
+		// Wrapped output must contain at least one newline (multi-line).
+		expect(payload!.content.text.split('\n').length).toBeGreaterThan(1);
+	});
+
+	it('keeps Latin space-delimited wrapping unchanged', () => {
+		const text = 'Hello world how are you';
+		const track = createCaptionTrack({
+			id: 'trk',
+			burnedIn: true,
+			defaultStyle: {
+				presetId: 'subtitle',
+				maxWidthPercent: 30,
+				overrides: { fontSizePx: 64 }
+			},
+			segments: [{ id: 'seg', start: 0, duration: 5, text }]
+		});
+		const [payload] = activeCaptionPayloadsAt([track], 2.5, []);
+		expect(payload).toBeDefined();
+		// Wrapped lines must still join cleanly when whitespace is removed.
+		expect(payload!.content.text.replace(/\n/g, ' ')).toBe(text);
+	});
+});
+
+describe('mapWordToWrappedLine', () => {
+	it('maps a word in the first line to (0, idx)', () => {
+		expect(mapWordToWrappedLine('Hello world\nFoo bar', 1)).toEqual({ lineIndex: 0, wordIndex: 1 });
+	});
+
+	it('maps a word in the second line to (1, idx)', () => {
+		expect(mapWordToWrappedLine('Hello world\nFoo bar', 2)).toEqual({ lineIndex: 1, wordIndex: 0 });
+		expect(mapWordToWrappedLine('Hello world\nFoo bar', 3)).toEqual({ lineIndex: 1, wordIndex: 1 });
+	});
+
+	it('returns null when the index is past the last word', () => {
+		expect(mapWordToWrappedLine('Hello world', 5)).toBeNull();
+	});
+
+	it('returns null for a negative index', () => {
+		expect(mapWordToWrappedLine('Hello world', -1)).toBeNull();
+	});
+
+	it('treats whitespace-only lines as zero words (does not advance the cursor)', () => {
+		expect(mapWordToWrappedLine('Hello\n\nworld', 1)).toEqual({ lineIndex: 2, wordIndex: 0 });
+	});
+});
+
+describe('enumerateCaptionRasterTargets (Phase 30 pre-rasterise orchestrator)', () => {
+	it('skips non-burned-in tracks (sidecar-only)', () => {
+		const track = createCaptionTrack({
+			id: 'trk',
+			burnedIn: false,
+			segments: [{ id: 'seg', start: 0, duration: 5, text: 'Hi' }]
+		});
+		expect(enumerateCaptionRasterTargets([track])).toHaveLength(0);
+	});
+
+	it('skips invisible tracks', () => {
+		const track = createCaptionTrack({
+			id: 'trk',
+			visible: false,
+			burnedIn: true,
+			segments: [{ id: 'seg', start: 0, duration: 5, text: 'Hi' }]
+		});
+		expect(enumerateCaptionRasterTargets([track])).toHaveLength(0);
+	});
+
+	it('emits one full-line target per burned-in segment (non-karaoke)', () => {
+		const track = createCaptionTrack({
+			id: 'trk',
+			burnedIn: true,
+			segments: [
+				{ id: 'a', start: 0, duration: 1, text: 'One' },
+				{ id: 'b', start: 1, duration: 1, text: 'Two' }
+			]
+		});
+		const targets = enumerateCaptionRasterTargets([track]);
+		expect(targets).toHaveLength(2);
+		expect(targets.map((t) => t.textureId)).toEqual([
+			captionTextureId('trk', 'a'),
+			captionTextureId('trk', 'b')
+		]);
+		// Non-karaoke segments should NOT carry highlightWord extras.
+		for (const t of targets) expect(t.extras?.highlightWord).toBeUndefined();
+	});
+
+	it('emits one full-line + N per-word variants for karaoke segments', () => {
+		const words = [
+			{ text: 'Hello', startS: 0.0, endS: 0.5 },
+			{ text: 'world', startS: 0.5, endS: 1.0 }
+		];
+		const track = createCaptionTrack({
+			id: 'trk',
+			burnedIn: true,
+			segments: [
+				{
+					id: 'seg',
+					start: 0,
+					duration: 1,
+					text: 'Hello world',
+					style: { presetId: 'karaoke' as never },
+					words
+				}
+			]
+		});
+		const targets = enumerateCaptionRasterTargets([track]);
+		// 1 full-line + 2 highlight variants.
+		expect(targets).toHaveLength(3);
+		expect(targets[0]!.textureId).toBe(captionTextureId('trk', 'seg'));
+		expect(targets[0]!.extras?.highlightWord).toBeUndefined();
+		expect(targets[1]!.textureId).toBe(captionTextureId('trk', 'seg', 'highlight:0'));
+		expect(targets[1]!.extras?.highlightWord?.wordIndex).toBe(0);
+		expect(targets[2]!.textureId).toBe(captionTextureId('trk', 'seg', 'highlight:1'));
+		expect(targets[2]!.extras?.highlightWord?.wordIndex).toBe(1);
+	});
+
+	it('namespaces textureIds via a custom idMaker (export-path remap)', () => {
+		const baseFor = (trackId: string, segmentId: string) => `export:${trackId}:${segmentId}`;
+		const idMaker: CaptionTextureIdMaker = Object.assign(baseFor, {
+			withVariant: (trackId: string, segmentId: string, variant: `highlight:${number}`) =>
+				`${baseFor(trackId, segmentId)}:${variant}`
+		});
+		const track = createCaptionTrack({
+			id: 'trk',
+			burnedIn: true,
+			segments: [
+				{
+					id: 'seg',
+					start: 0,
+					duration: 1,
+					text: 'Hello world',
+					style: { presetId: 'karaoke' as never },
+					words: [
+						{ text: 'Hello', startS: 0.0, endS: 0.5 },
+						{ text: 'world', startS: 0.5, endS: 1.0 }
+					]
+				}
+			]
+		});
+		const targets = enumerateCaptionRasterTargets([track], [], idMaker);
+		expect(targets[0]!.textureId).toBe('export:trk:seg');
+		expect(targets[1]!.textureId).toBe('export:trk:seg:highlight:0');
+		expect(targets[2]!.textureId).toBe('export:trk:seg:highlight:1');
+	});
+
+	it('caps karaoke variants at KARAOKE_VARIANT_CAP_PER_SEGMENT and warns', () => {
+		const wordCount = KARAOKE_VARIANT_CAP_PER_SEGMENT + 5;
+		const words = Array.from({ length: wordCount }, (_, i) => ({
+			text: `w${i}`,
+			startS: i * 0.01,
+			endS: (i + 1) * 0.01
+		}));
+		const track = createCaptionTrack({
+			id: 'trk',
+			burnedIn: true,
+			segments: [
+				{
+					id: 'seg',
+					start: 0,
+					duration: 5,
+					text: words.map((w) => w.text).join(' '),
+					style: { presetId: 'karaoke' as never },
+					words
+				}
+			]
+		});
+		const warnings: string[] = [];
+		const origWarn = console.warn;
+		console.warn = (msg: string) => warnings.push(msg);
+		try {
+			const targets = enumerateCaptionRasterTargets([track]);
+			// 1 full-line + cap variants.
+			expect(targets).toHaveLength(1 + KARAOKE_VARIANT_CAP_PER_SEGMENT);
+			expect(warnings.some((w) => w.includes('exceeds variant cap'))).toBe(true);
+		} finally {
+			console.warn = origWarn;
+		}
+	});
+
+	it('skips karaoke variants when the preset has no highlightColor', () => {
+		// 'subtitle' has no highlightColor — words are present but no per-word
+		// variants are generated.
+		const track = createCaptionTrack({
+			id: 'trk',
+			burnedIn: true,
+			segments: [
+				{
+					id: 'seg',
+					start: 0,
+					duration: 1,
+					text: 'Hello world',
+					words: [
+						{ text: 'Hello', startS: 0.0, endS: 0.5 },
+						{ text: 'world', startS: 0.5, endS: 1.0 }
+					]
+				}
+			]
+		});
+		const targets = enumerateCaptionRasterTargets([track]);
+		expect(targets).toHaveLength(1);
+	});
+});

@@ -15,6 +15,8 @@ import { serializeProjectDocForBundle } from './serialize-doc';
 import { importProjectBundle, validateProjectBundle } from './import';
 import { BUNDLE_SCHEMA_VERSION } from './types';
 import { createCaptionTrack } from '../captions/types';
+import { CAPTION_ANIM_SCHEMA_VERSION } from '../captions/anim-style';
+import type { CaptionAnimStylePreset } from '../captions/anim-style';
 
 function sourceFixture(overrides: Partial<SourceDescriptor> = {}): SourceDescriptor {
 	return {
@@ -242,6 +244,66 @@ describe('project bundle export/import', () => {
 		});
 		expect(result.boundSourceIds).toEqual([]);
 		expect(result.report.items.some((item) => item.code === 'fingerprint-mismatch')).toBe(true);
+	});
+
+	// R6.4: Phase 30 custom caption preset round-trip via the bundle path.
+	// Regression guard against the Codex P1 finding (worker context didn't
+	// thread customAnimCaptionPresets into serializeProject for bundles).
+	it('preserves customAnimCaptionPresets through bundle export and import', async () => {
+		const sink = createMemoryDirectorySink();
+		const customPreset: CaptionAnimStylePreset = {
+			captionStyleSchemaVersion: CAPTION_ANIM_SCHEMA_VERSION,
+			id: 'custom-bundle-test',
+			label: 'Round-trip preset',
+			builtIn: false,
+			anchor: 'bottom-center',
+			maxWidthPercent: 70,
+			lineWrap: 'balanced',
+			titleStyle: { color: '#ff00ff', fontSizePx: 48 },
+			animation: { enter: 'pop', exit: 'none', durationS: 0.3 }
+		};
+		const doc = serializeProject({
+			projectId: 'preset-roundtrip',
+			timeline: timelineFixture(),
+			captionTracks: [
+				createCaptionTrack({
+					id: 'captions-1',
+					burnedIn: true,
+					segments: [
+						{
+							id: 'seg-1',
+							start: 0,
+							duration: 1,
+							text: 'Hi',
+							style: { presetId: 'custom-bundle-test' }
+						}
+					]
+				})
+			],
+			sources: [sourceFixture()],
+			customAnimCaptionPresets: [customPreset]
+		});
+
+		await exportProjectBundle(sink, {
+			doc,
+			displayName: 'clip',
+			policy: { mode: 'reference-only' },
+			resolveSourceFile: async () => null,
+			collectLuts: () => []
+		});
+
+		const imported = await importProjectBundle(sink, {
+			attachSource: async () => ({ ok: true })
+		});
+		expect(imported.ok).toBe(true);
+		expect(imported.doc?.customAnimCaptionPresets).toHaveLength(1);
+		const restored = imported.doc?.customAnimCaptionPresets?.[0];
+		expect(restored?.id).toBe('custom-bundle-test');
+		expect(restored?.label).toBe('Round-trip preset');
+		expect(restored?.builtIn).toBe(false);
+		expect(restored?.animation?.enter).toBe('pop');
+		// Segment style still references the custom preset by ID.
+		expect(imported.doc?.captionTracks[0]?.segments[0]?.style?.presetId).toBe('custom-bundle-test');
 	});
 });
 

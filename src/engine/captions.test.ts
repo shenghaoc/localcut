@@ -284,3 +284,169 @@ describe('caption editing and export', () => {
 		expect(tracks[0]!.defaultStyle.anchor).toBe('bottom-left');
 	});
 });
+
+describe('CaptionSegment words validation (Phase 30)', () => {
+	it('accepts a valid ordered non-overlapping words array', () => {
+		const track = createCaptionTrack({
+			id: 'test',
+			segments: [
+				{
+					id: 'seg-1',
+					start: 0,
+					duration: 3,
+					text: 'Hello world foo',
+					words: [
+						{ text: 'Hello', startS: 0, endS: 1 },
+						{ text: 'world', startS: 1, endS: 2 },
+						{ text: 'foo', startS: 2, endS: 3 }
+					]
+				}
+			]
+		});
+		expect(track.segments[0]!.words).toHaveLength(3);
+	});
+
+	it('accepts undefined words (no error)', () => {
+		const track = createCaptionTrack({
+			id: 'test',
+			segments: [{ id: 'seg-1', start: 0, duration: 3, text: 'Hello' }]
+		});
+		expect(track.segments[0]!.words).toBeUndefined();
+	});
+
+	it('emits a warning (not a throw) for overlapping word ranges', () => {
+		const warnings: string[] = [];
+		const origWarn = console.warn;
+		console.warn = (msg: string) => warnings.push(msg);
+		try {
+			const track = createCaptionTrack({
+				id: 'test',
+				segments: [
+					{
+						id: 'seg-1',
+						start: 0,
+						duration: 3,
+						text: 'Hello world',
+						words: [
+							{ text: 'Hello', startS: 0, endS: 1.5 },
+							{ text: 'world', startS: 1, endS: 2 }
+						]
+					}
+				]
+			});
+			// Overlapping words are dropped (normalized away)
+			expect(track.segments[0]!.words).toBeUndefined();
+			expect(warnings.some((w) => w.includes('overlaps'))).toBe(true);
+		} finally {
+			console.warn = origWarn;
+		}
+	});
+
+	it('emits a warning for a word whose endS exceeds segment end', () => {
+		const warnings: string[] = [];
+		const origWarn = console.warn;
+		console.warn = (msg: string) => warnings.push(msg);
+		try {
+			createCaptionTrack({
+				id: 'test',
+				segments: [
+					{
+						id: 'seg-1',
+						start: 0,
+						duration: 2,
+						text: 'Hello world',
+						words: [
+							{ text: 'Hello', startS: 0, endS: 1 },
+							{ text: 'world', startS: 1, endS: 3 }
+						]
+					}
+				]
+			});
+			// Word extends outside segment — warning emitted, but words are kept
+			// since it's just a warning, not a validation failure.
+			expect(warnings.some((w) => w.includes('extends outside'))).toBe(true);
+		} finally {
+			console.warn = origWarn;
+		}
+	});
+});
+
+describe('Phase 30 — split/merge propagate karaoke words', () => {
+	it('partitions a segment-level words array along the split pivot', () => {
+		// "Hello world good morning friends" → 5 words; pivot = floor(5/2) = 2.
+		const id = 'seg-words';
+		const tracks = [
+			createCaptionTrack({
+				id: 'captions-1',
+				segments: [
+					{
+						id,
+						start: 0,
+						duration: 5,
+						text: 'Hello world good morning friends',
+						words: [
+							{ text: 'Hello', startS: 0.0, endS: 0.5 },
+							{ text: 'world', startS: 0.5, endS: 1.2 },
+							{ text: 'good', startS: 1.5, endS: 2.0 },
+							{ text: 'morning', startS: 2.0, endS: 2.5 },
+							{ text: 'friends', startS: 2.5, endS: 3.0 }
+						]
+					}
+				]
+			})
+		];
+		const split = splitCaptionSegment(tracks, 'captions-1', id, 2.0);
+		expect(split[0]!.segments).toHaveLength(2);
+		const [left, right] = split[0]!.segments;
+		// Left keeps the first 2 word records (matching the text pivot).
+		expect(left!.words?.map((w) => w.text)).toEqual(['Hello', 'world']);
+		// Right keeps the remaining 3 — no duplication of the original array.
+		expect(right!.words?.map((w) => w.text)).toEqual(['good', 'morning', 'friends']);
+	});
+
+	it('concatenates karaoke words when merging multiple segments', () => {
+		const a = 'seg-a';
+		const b = 'seg-b';
+		const tracks = [
+			createCaptionTrack({
+				id: 'captions-1',
+				segments: [
+					{
+						id: a,
+						start: 0,
+						duration: 1,
+						text: 'Hello',
+						words: [{ text: 'Hello', startS: 0.0, endS: 0.8 }]
+					},
+					{
+						id: b,
+						start: 1,
+						duration: 1,
+						text: 'world',
+						words: [{ text: 'world', startS: 1.0, endS: 1.8 }]
+					}
+				]
+			})
+		];
+		const merged = mergeCaptionSegments(tracks, 'captions-1', [a, b]);
+		expect(merged[0]!.segments).toHaveLength(1);
+		const segment = merged[0]!.segments[0]!;
+		expect(segment.words?.map((w) => w.text)).toEqual(['Hello', 'world']);
+	});
+
+	it('keeps words undefined when neither merged segment had karaoke timings', () => {
+		const a = 'seg-no-a';
+		const b = 'seg-no-b';
+		const tracks = [
+			createCaptionTrack({
+				id: 'captions-1',
+				segments: [
+					{ id: a, start: 0, duration: 1, text: 'Hi' },
+					{ id: b, start: 1, duration: 1, text: 'there' }
+				]
+			})
+		];
+		const merged = mergeCaptionSegments(tracks, 'captions-1', [a, b]);
+		expect(merged[0]!.segments[0]!.words).toBeUndefined();
+	});
+});

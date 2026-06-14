@@ -5,10 +5,10 @@ import {
 	captionSegmentEnd,
 	cloneCaptionTrack,
 	createCaptionTrack,
-	DEFAULT_CAPTION_STYLE,
 	effectiveCaptionStyle,
 	normalizeCaptionSegment,
 	sortCaptionSegments,
+	type CaptionPresetId,
 	type CaptionSegment,
 	type CaptionStyle,
 	type CaptionTrack
@@ -82,12 +82,10 @@ export function setCaptionTrackProps(
 		const stylePatch = patch.defaultStyle;
 		const presetChanged =
 			hasOwn(stylePatch, 'presetId') && stylePatch.presetId !== track.defaultStyle.presetId;
-		const nextPresetId =
-			stylePatch.presetId === 'subtitle' ||
-			stylePatch.presetId === 'lower-third' ||
-			stylePatch.presetId === 'note'
-				? stylePatch.presetId
-				: (DEFAULT_CAPTION_STYLE.presetId ?? 'subtitle');
+		const nextPresetId: CaptionPresetId =
+			typeof stylePatch.presetId === 'string' && stylePatch.presetId in CAPTION_PRESETS
+				? (stylePatch.presetId as CaptionPresetId)
+				: 'subtitle';
 		const presetDefaults = presetChanged ? CAPTION_PRESETS[nextPresetId] : null;
 		defaultStyle = {
 			...track.defaultStyle,
@@ -231,16 +229,29 @@ export function splitCaptionSegment(
 	const pivot = Math.max(1, Math.floor(pieces.length / 2));
 	const leftText = pieces.slice(0, pivot).join(' ');
 	const rightText = pieces.slice(pivot).join(' ');
+	// Phase 30: when karaoke word timings are present, partition them along the
+	// same pivot the text uses. Spreading the original `words` array into both
+	// halves (the prior bug) leaves the right half indexing past its own text,
+	// so `mapWordToWrappedLine` would return null and karaoke would silently
+	// stop working for the right segment after every split.
+	const leftWords = segment.words ? segment.words.slice(0, pivot) : undefined;
+	const rightWords = segment.words ? segment.words.slice(pivot) : undefined;
 	next[trackIndex]!.segments.splice(
 		segmentIndex,
 		1,
-		{ ...segment, duration: leftDuration, text: leftText },
+		{
+			...segment,
+			duration: leftDuration,
+			text: leftText,
+			...(leftWords && leftWords.length > 0 ? { words: leftWords } : { words: undefined })
+		},
 		{
 			...segment,
 			id: makeCaptionSegmentId(),
 			start: time,
 			duration: rightDuration,
-			text: rightText
+			text: rightText,
+			...(rightWords && rightWords.length > 0 ? { words: rightWords } : { words: undefined })
 		}
 	);
 	next[trackIndex]!.segments = sortCaptionSegments(next[trackIndex]!.segments);
@@ -259,12 +270,21 @@ export function mergeCaptionSegments(
 	const selected = next[trackIndex]!.segments.filter((segment) => segmentIds.includes(segment.id));
 	if (selected.length < 2) return tracks as CaptionTrack[];
 	selected.sort((a, b) => a.start - b.start);
+	// Phase 30: concatenate karaoke word timings in segment order so the merged
+	// segment's `words` array is the union of all selected segments' words.
+	// Dropping `words` here (the prior bug) silently broke karaoke highlighting
+	// for any merge involving an ASR-timed segment.
+	const anyHasWords = selected.some((s) => s.words && s.words.length > 0);
+	const mergedWords = anyHasWords
+		? selected.flatMap((s) => (s.words ? [...s.words] : []))
+		: undefined;
 	const merged: CaptionSegment = {
 		id: selected[0]!.id,
 		start: selected[0]!.start,
 		duration: captionSegmentEnd(selected[selected.length - 1]!) - selected[0]!.start,
 		text: selected.map((segment) => segment.text.trim()).join('\n'),
-		style: selected[0]!.style
+		style: selected[0]!.style,
+		...(mergedWords ? { words: mergedWords } : {})
 	};
 	next[trackIndex]!.segments = next[trackIndex]!.segments.filter(
 		(segment) => !segmentIds.includes(segment.id)

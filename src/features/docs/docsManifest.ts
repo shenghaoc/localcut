@@ -8,6 +8,7 @@ import gettingStartedContent from './content/getting-started.md?raw';
 import importingMediaContent from './content/importing-media.md?raw';
 import timelineEditingContent from './content/timeline-editing.md?raw';
 import exportingContent from './content/exporting.md?raw';
+import captionsContent from './content/captions.md?raw';
 import browserLimitationsContent from './content/browser-limitations.md?raw';
 import performanceContent from './content/performance.md?raw';
 import faqContent from './content/faq.md?raw';
@@ -32,6 +33,7 @@ export const DOC_SECTIONS: readonly DocSection[] = [
 	{ slug: 'importing-media', title: 'Importing media', content: importingMediaContent },
 	{ slug: 'timeline-editing', title: 'Timeline editing', content: timelineEditingContent },
 	{ slug: 'exporting', title: 'Exporting', content: exportingContent },
+	{ slug: 'captions', title: 'Captions', content: captionsContent },
 	{ slug: 'live-streaming', title: 'Live streaming', content: liveStreamingContent },
 	{
 		slug: 'browser-limitations',

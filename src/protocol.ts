@@ -688,7 +688,19 @@ export type CaptionAnchorSnapshot =
 	| 'top-center'
 	| 'custom';
 export type CaptionLineWrapSnapshot = 'balanced' | 'greedy';
-export type CaptionPresetIdSnapshot = 'subtitle' | 'lower-third' | 'note';
+// Phase 22 original three + Phase 30 extended preset IDs + custom-preset strings (UUIDs).
+export type CaptionPresetIdSnapshot =
+	| 'subtitle'
+	| 'lower-third'
+	| 'note'
+	| 'bold-outline'
+	| 'neon-glow'
+	| 'karaoke'
+	| 'cinematic'
+	| 'pop-card'
+	| 'bounce-card'
+	| 'slide-news'
+	| (string & Record<never, never>);
 
 export interface CaptionDiagnosticSnapshot {
 	code:
@@ -720,6 +732,8 @@ export interface CaptionSegmentSnapshot {
 	duration: number;
 	text: string;
 	style?: Partial<CaptionStyleSnapshot> | null;
+	/** Phase 30: optional per-word timing for karaoke highlight. */
+	words?: readonly { text: string; startS: number; endS: number }[];
 }
 
 export interface CaptionTrackSnapshot {
@@ -1300,6 +1314,64 @@ interface SnapCaptionSegmentCommand {
 	edge: 'start' | 'end' | 'both';
 }
 
+// Phase 30: Animated caption style commands.
+// Mirrors the engine's CaptionAnimKind union literally — kept here so that the
+// protocol boundary catches typos at compile time instead of routing them
+// through `string` and silently degrading to identity at the curve evaluator.
+export type CaptionAnimKindSnapshot =
+	| 'none'
+	| 'pop'
+	| 'bounce'
+	| 'slide-up'
+	| 'slide-down'
+	| 'typewriter';
+
+export interface CaptionAnimStylePresetSnapshot {
+	captionStyleSchemaVersion: 1;
+	id: string;
+	label: string;
+	builtIn: boolean;
+	anchor: CaptionAnchorSnapshot;
+	maxWidthPercent: number;
+	lineWrap: CaptionLineWrapSnapshot;
+	insetPx?: { x: number; y: number };
+	titleStyle: Partial<TitleStyleSnapshot>;
+	glow?: { color: string; blurPx: number };
+	pill?: {
+		paddingXPx: number;
+		paddingYPx: number;
+		radiusPx: number;
+		color: string;
+		opacity: number;
+	};
+	animation?: { enter: CaptionAnimKindSnapshot; exit: CaptionAnimKindSnapshot; durationS: number };
+	highlightColor?: string;
+}
+
+interface CaptionImportCustomPresetCommand {
+	type: 'caption-import-custom-preset';
+	preset: CaptionAnimStylePresetSnapshot;
+}
+
+interface CaptionDeleteCustomPresetCommand {
+	type: 'caption-delete-custom-preset';
+	presetId: string;
+}
+
+interface CaptionSetAnimStyleCommand {
+	type: 'caption-set-anim-style';
+	trackId: string;
+	segmentId?: string;
+	presetId: string;
+}
+
+interface CaptionSetWordsCommand {
+	type: 'caption-set-words';
+	trackId: string;
+	segmentId: string;
+	words: readonly { text: string; startS: number; endS: number }[] | null;
+}
+
 export type BundleSourcePolicySnapshot =
 	| { mode: 'embed-media' }
 	| { mode: 'reference-only' }
@@ -1600,6 +1672,10 @@ export type WorkerCommand =
 	| MergeCaptionSegmentsCommand
 	| DeleteCaptionSegmentsCommand
 	| SnapCaptionSegmentCommand
+	| CaptionImportCustomPresetCommand
+	| CaptionDeleteCustomPresetCommand
+	| CaptionSetAnimStyleCommand
+	| CaptionSetWordsCommand
 	| {
 			type: 'export-project-bundle';
 			jobId: string;
@@ -1785,6 +1861,14 @@ export type WorkerStateMessage =
 	  }
 	| { type: 'caption-import-result'; result: CaptionImportResultSnapshot }
 	| { type: 'caption-export-result'; files: readonly CaptionSidecarFileSnapshot[] }
+	| { type: 'caption-custom-presets-updated'; presets: readonly CaptionAnimStylePresetSnapshot[] }
+	| {
+			type: 'caption-custom-preset-import-failed';
+			/** Field name from the validator (e.g. `'animation.durationS'`). */
+			field: string;
+			/** Human-readable description of the failure, suitable for UI display. */
+			message: string;
+	  }
 	| { type: 'media-assets'; assets: MediaAssetSnapshot[] }
 	| {
 			type: 'thumbnail';

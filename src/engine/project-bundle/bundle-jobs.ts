@@ -19,6 +19,7 @@ export interface BundleWorkerContext {
 		masterGain: number;
 		exportSettings?: ProjectDoc['exportSettings'];
 		sources: ProjectDoc['sources'];
+		customAnimCaptionPresets?: ProjectDoc['customAnimCaptionPresets'];
 	};
 	resolveSourceFile: (sourceId: string) => Promise<File | null>;
 	collectLuts: () => readonly ClipLut[];
@@ -107,7 +108,8 @@ export async function runExportProjectBundle(
 		markers: state.markers,
 		sources: state.sources,
 		masterGain: state.masterGain,
-		exportSettings: state.exportSettings
+		exportSettings: state.exportSettings,
+		customAnimCaptionPresets: state.customAnimCaptionPresets
 	});
 
 	try {

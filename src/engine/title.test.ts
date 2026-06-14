@@ -105,3 +105,60 @@ describe('equality helpers', () => {
 		expect(titleContentsEqual(content({ text: 'X' }), content({ text: 'Y' }))).toBe(false);
 	});
 });
+
+describe('titleContentHash with extras (Phase 30)', () => {
+	const c = content();
+
+	it('returns the same hash when extras is undefined (backward-compatible)', () => {
+		expect(titleContentHash(c)).toBe(titleContentHash(c, undefined));
+	});
+
+	it('returns a different hash when glow.color changes', () => {
+		const base = titleContentHash(c);
+		const withGlow = titleContentHash(c, { glow: { color: '#ff0000', blurPx: 10 } });
+		expect(withGlow).not.toBe(base);
+	});
+
+	it('returns a different hash when glow.blurPx changes', () => {
+		const a = titleContentHash(c, { glow: { color: '#ff0000', blurPx: 10 } });
+		const b = titleContentHash(c, { glow: { color: '#ff0000', blurPx: 20 } });
+		expect(a).not.toBe(b);
+	});
+
+	it('returns a different hash when pill.radiusPx changes', () => {
+		const a = titleContentHash(c, {
+			pill: { paddingXPx: 12, paddingYPx: 6, radiusPx: 8, color: '#000', opacity: 1 }
+		});
+		const b = titleContentHash(c, {
+			pill: { paddingXPx: 12, paddingYPx: 6, radiusPx: 16, color: '#000', opacity: 1 }
+		});
+		expect(a).not.toBe(b);
+	});
+
+	it('returns stable hash for identical inputs', () => {
+		const extras = { glow: { color: '#00ff00', blurPx: 15 } };
+		expect(titleContentHash(c, extras)).toBe(titleContentHash(c, extras));
+	});
+
+	it('returns a different hash when highlightWord.wordIndex changes (karaoke)', () => {
+		const a = titleContentHash(c, { highlightWord: { wordIndex: 0, color: '#ffff00' } });
+		const b = titleContentHash(c, { highlightWord: { wordIndex: 1, color: '#ffff00' } });
+		expect(a).not.toBe(b);
+	});
+
+	it('returns a different hash when highlightWord.color changes', () => {
+		const a = titleContentHash(c, { highlightWord: { wordIndex: 0, color: '#ffff00' } });
+		const b = titleContentHash(c, { highlightWord: { wordIndex: 0, color: '#00ffff' } });
+		expect(a).not.toBe(b);
+	});
+
+	it('returns a different hash when highlightWord.lineIndex changes', () => {
+		const a = titleContentHash(c, {
+			highlightWord: { wordIndex: 0, color: '#ffff00', lineIndex: 0 }
+		});
+		const b = titleContentHash(c, {
+			highlightWord: { wordIndex: 0, color: '#ffff00', lineIndex: 1 }
+		});
+		expect(a).not.toBe(b);
+	});
+});

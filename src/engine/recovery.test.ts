@@ -77,7 +77,7 @@ describe('WorkerRecoveryMachine', () => {
 		const machine = createRecoveryMachine();
 		const checkpoint = {
 			projectDoc: {
-				schemaVersion: 12 as const,
+				schemaVersion: 13 as const,
 				projectId: 'test',
 				savedAt: '',
 				timeline: [],

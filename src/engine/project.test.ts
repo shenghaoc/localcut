@@ -785,3 +785,155 @@ describe('Phase 46 config persistence (schema v11)', () => {
 		expect(result.doc.liveAudioChainConfig).toBeUndefined();
 	});
 });
+
+describe('Phase 30 (v13) — customAnimCaptionPresets', () => {
+	const baseDoc = () => ({
+		schemaVersion: PROJECT_SCHEMA_VERSION,
+		projectId: 'p1',
+		savedAt: '2026-06-13T00:00:00.000Z',
+		timeline: timelineFixture(),
+		sources: [sourceFixture()],
+		captionTracks: []
+	});
+
+	it('v13 document without customAnimCaptionPresets deserializes with undefined field', () => {
+		const result = deserializeProject(baseDoc());
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.doc.customAnimCaptionPresets).toBeUndefined();
+	});
+
+	it('v13 document with a valid customAnimCaptionPresets array round-trips intact', () => {
+		const preset = {
+			captionStyleSchemaVersion: 1,
+			id: 'custom-abc',
+			label: 'My Preset',
+			builtIn: false,
+			anchor: 'bottom-center',
+			maxWidthPercent: 80,
+			lineWrap: 'balanced',
+			titleStyle: {}
+		};
+		const result = deserializeProject({ ...baseDoc(), customAnimCaptionPresets: [preset] });
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.doc.customAnimCaptionPresets).toHaveLength(1);
+		// `id` is preserved from the persisted doc (segment.style.presetId references it).
+		expect(result.doc.customAnimCaptionPresets![0]!.id).toBe('custom-abc');
+		expect(result.doc.customAnimCaptionPresets![0]!.label).toBe('My Preset');
+	});
+
+	it('v13 document with invalid presets skips them gracefully', () => {
+		const result = deserializeProject({
+			...baseDoc(),
+			customAnimCaptionPresets: [
+				{ notAPreset: true },
+				{
+					captionStyleSchemaVersion: 1,
+					id: 'valid',
+					label: 'Valid',
+					builtIn: false,
+					anchor: 'bottom-center',
+					maxWidthPercent: 80,
+					lineWrap: 'balanced',
+					titleStyle: {}
+				}
+			]
+		});
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		// Only the valid preset is kept.
+		expect(result.doc.customAnimCaptionPresets).toHaveLength(1);
+	});
+
+	it('existing caption tracks and segments survive v13 deserialization', () => {
+		const doc = {
+			...baseDoc(),
+			captionTracks: [
+				{
+					id: 'trk1',
+					kind: 'caption',
+					name: 'Track 1',
+					language: null,
+					visible: true,
+					burnedIn: false,
+					defaultStyle: {},
+					segments: [{ id: 'seg1', start: 0, duration: 3, text: 'Hello world' }]
+				}
+			]
+		};
+		const result = deserializeProject(doc);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.doc.captionTracks).toHaveLength(1);
+		expect(result.doc.captionTracks[0]!.segments[0]!.text).toBe('Hello world');
+	});
+
+	it('round-trips CaptionSegment.words through deserialize (karaoke timings survive reload)', () => {
+		const doc = {
+			...baseDoc(),
+			captionTracks: [
+				{
+					id: 'trk1',
+					kind: 'caption',
+					name: 'Track 1',
+					language: null,
+					visible: true,
+					burnedIn: false,
+					defaultStyle: {},
+					segments: [
+						{
+							id: 'seg1',
+							start: 0,
+							duration: 3,
+							text: 'Hello world',
+							words: [
+								{ text: 'Hello', startS: 0.5, endS: 1.5 },
+								{ text: 'world', startS: 1.5, endS: 2.5 }
+							]
+						}
+					]
+				}
+			]
+		};
+		const result = deserializeProject(doc);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		const segment = result.doc.captionTracks[0]!.segments[0]!;
+		expect(segment.words).toBeDefined();
+		expect(segment.words).toHaveLength(2);
+		expect(segment.words![0]!.text).toBe('Hello');
+		expect(segment.words![1]!.startS).toBe(1.5);
+	});
+
+	it('drops malformed words and keeps the segment otherwise valid', () => {
+		const doc = {
+			...baseDoc(),
+			captionTracks: [
+				{
+					id: 'trk1',
+					kind: 'caption',
+					name: 'Track 1',
+					language: null,
+					visible: true,
+					burnedIn: false,
+					defaultStyle: {},
+					segments: [
+						{
+							id: 'seg1',
+							start: 0,
+							duration: 3,
+							text: 'Hello',
+							words: [{ text: 'Hello', startS: 'nope', endS: 1 }]
+						}
+					]
+				}
+			]
+		};
+		const result = deserializeProject(doc);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.doc.captionTracks[0]!.segments[0]!.text).toBe('Hello');
+		expect(result.doc.captionTracks[0]!.segments[0]!.words).toBeUndefined();
+	});
+});

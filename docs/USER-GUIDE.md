@@ -279,6 +279,21 @@ Model assets are fetched only from this app's own origin or a small allowlist of
 
 Model: Whisper (MIT, OpenAI), compiled with LiteRT.js (Apache-2.0, Google) on WebNN, WebGPU, or the WASM accelerator.
 
+## Caption Styles and Animation
+
+Apply rich visual presets to caption tracks with glow effects, background pills,
+and enter/exit animations. See [Caption Styles and Animation](CAPTION-STYLES.md)
+for the full reference.
+
+- **Preset Picker**: Select from 10+ built-in presets (subtitle, lower-third,
+  neon-glow, karaoke, etc.) in the caption style inspector.
+- **Import/Export Presets**: Import `.caption-preset.json` files to add custom
+  presets, or export your favorites to share.
+- **Animations**: Presets can include pop, bounce, slide, or typewriter enter/exit
+  animations. Animations are applied at composite time — no re-rasterization per frame.
+- **Karaoke**: The karaoke preset highlights the active word when per-word timing
+  data is present (auto-populated by the Auto Captions ASR engine above).
+
 ## Replay Buffer
 
 Continuously record a screen capture into a rolling buffer and save the last moments as a timeline clip — without interrupting the recording.
