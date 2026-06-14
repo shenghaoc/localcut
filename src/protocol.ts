@@ -408,23 +408,8 @@ export interface SmartReframeProbeResult {
 /** Detection mode used during the last analysis. */
 export type ReframeAnalysisMode = 'face' | 'saliency' | 'mixed';
 
-/** LiteRT.js compile target for the face-detection model. */
-export type ReframeAccelerator = 'wasm' | 'webgpu' | 'webnn';
-
-/** Model manifest for the LiteRT.js face-detection model (TFLite). */
-export interface ReframeModelManifestSnapshot {
-	id: string;
-	version: string;
-	license: string;
-	source: string;
-	/** The TFLite model asset: URL + size + `sha256-` digest. */
-	model: { url: string; sizeBytes: number; checksum: string };
-	/** Square model input edge in px. */
-	inputSize: number;
-	/** Floats per detection row in the model's flat output (≥ 5). */
-	outputStride: number;
-	format: 'tflite';
-}
+/** Load state of the optional MediaPipe face-detection model. */
+export type ReframeFaceModelStatus = 'not-loaded' | 'loading' | 'loaded' | 'failed';
 
 /** Commands posted from the UI to the Smart Reframe worker. */
 export type SmartReframeWorkerCommand =
@@ -442,19 +427,12 @@ export type SmartReframeWorkerCommand =
 			velocityBound?: number;
 			accelerationBound?: number;
 			shotBoundaryThreshold?: number;
-			/** Optional face-detection model (R2). When omitted (the default in
-			 *  builds that ship no model catalogue entry), analysis runs
-			 *  saliency-only (R2.6 / R8.2). When present, the model is downloaded +
-			 *  digest-verified via the shared asset cache and compiled with
-			 *  LiteRT.js from `wasmPath`; a checksum/size mismatch is a hard error,
-			 *  never a silent fallback (R2.2). */
-			faceModel?: {
-				manifest: ReframeModelManifestSnapshot;
-				/** Directory the LiteRT.js WASM runtime loads from (same-origin). */
-				wasmPath: string;
-				accelerator: ReframeAccelerator;
-			};
 	  }
+	// Load the MediaPipe BlazeFace detector on the user's explicit action
+	// (Phase 28/29 pattern). The WASM fileset + `.tflite` model are fetched from
+	// remote on demand. Once loaded the worker reuses the detector for analyses;
+	// until then analysis is saliency-only (R2.6 / R8.2).
+	| { type: 'reframe-load-face-model'; wasmPath: string; modelUrl: string }
 	| { type: 'reframe-cancel' }
 	| { type: 'reframe-dispose' };
 
@@ -471,15 +449,10 @@ export type SmartReframeWorkerState =
 			keyframes: ClipKeyframesSnapshot;
 			stats: ReframeAnalysisStatsSnapshot;
 	  }
-	| {
-			type: 'reframe-error';
-			reason: string;
-			/** True when the failure is a model-integrity violation (checksum/size
-			 *  mismatch, R2.2) rather than a recoverable runtime issue. Integrity
-			 *  failures must never silently fall back to saliency. */
-			integrity?: boolean;
-	  }
-	| { type: 'reframe-cancelled' };
+	| { type: 'reframe-error'; reason: string }
+	| { type: 'reframe-cancelled' }
+	// Face-model load lifecycle (explicit user "Load face model" action).
+	| { type: 'reframe-face-model-status'; status: ReframeFaceModelStatus; message?: string };
 
 /** Analysis statistics returned with the reframe result. */
 export interface ReframeAnalysisStatsSnapshot {

@@ -34,12 +34,13 @@ confirmation before replacing them.
 
 - **Visual saliency** (always available) estimates the most prominent region of
   each frame from skin tone, edges, and local contrast — no machine-learning
-  model required. This build uses saliency for every clip.
-- **Face detection** runs on the same on-device LiteRT runtime as Auto Captions
-  and Audio Cleanup; it is the designed primary locator and falls back to
-  saliency for clips with no faces. The runtime and model loader are in place,
-  but no face-detection model is bundled in this build yet, so the Smart Reframe
-  panel notes that saliency is in use until a model ships.
+  model required. This is the default, used until you load the face model.
+- **Face detection** uses **MediaPipe BlazeFace**. Like Auto Captions and Audio
+  Cleanup, it is **click-to-load**: open Smart Reframe and click **Load face
+  model**, which fetches the MediaPipe runtime and model once from Google
+  (on-device after that; nothing is uploaded). Once loaded, analysis tracks
+  faces and falls back to saliency for frames with no face. The model stays
+  loaded for the session.
 
 A lightweight tracker follows one subject across the clip and smooths its path,
 and **shot-boundary detection** resets the tracker at hard cuts so the crop does

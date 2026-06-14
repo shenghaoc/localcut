@@ -51,19 +51,21 @@ confirm replacement first.
 - **Visual saliency** (always available, pure DSP) scores each downscaled
   analysis frame from a skin-tone mask (YCbCr), Sobel edge density, and local
   contrast, and takes the highest-scoring region as the subject centroid. This
-  build uses saliency for every clip.
-- **Face detection** (BlazeFace-class, via LiteRT.js) is the designed primary
-  locator and falls back to saliency for faceless footage. It reuses the same
-  on-device runtime and model pipeline as Auto Captions and Audio Cleanup: the
-  LiteRT.js runtime wrapper, the digest-verified model loader, and the output
-  decoder are implemented and unit-tested, but no face-detection model
-  catalogue entry is bundled yet — wiring the `.tflite` model is a separate
-  integration step (spec task T15). The model would download on demand from a
-  trusted host, digest-verified and OPFS-cached (no precache bloat), exactly
-  like the Whisper and DTLN models. Until then the panel and the **Smart
-  Reframe** capability row note that saliency is in use. A model-integrity
-  failure (checksum/size mismatch) is always a hard, user-visible error — never
-  a silent fallback.
+  is the default, used until the face model is loaded.
+- **Face detection** uses **MediaPipe Tasks Vision** (`@mediapipe/tasks-vision`,
+  BlazeFace), which performs the anchor decode + NMS internally. Like Auto
+  Captions and Audio Cleanup, it is **click-to-load** (R0.7): the panel shows a
+  **Load face model** button, and only on that explicit action does the worker
+  fetch the MediaPipe WASM runtime (from jsDelivr, pinned to the installed
+  version) and the BlazeFace `.tflite` (from Google's `storage.googleapis.com`
+  model store). Both are loaded **from remote on demand** — not vendored or
+  digest-pinned (the `latest` model URL is intentionally mutable; if Google
+  relocates it, only `src/engine/reframe/face-models.ts` needs updating). The
+  service worker runtime-caches both after first load, so later use is instant
+  and offline. Once loaded, the worker keeps the detector for the session;
+  analysis tracks the highest-confidence face and falls back to saliency for
+  frames with no face. If the load fails (offline, blocked), analysis stays
+  saliency-only with a notice (R2.6 / R8.2).
 
 A lightweight tracker (IoU association with one-euro smoothing) follows a single
 primary subject, and shot-boundary detection (chi-squared RGB histogram

@@ -1,17 +1,14 @@
 /**
- * Face detection interface and LiteRT.js (`@litertjs/core`) implementation.
- *
- * Mirrors the DTLN/Whisper LiteRT runtimes: the `@litertjs/core` module is
- * reached through the untyped `../asr/litert-loader` boundary so its global
- * TypedArray augmentation never enters the TypeScript program, the WASM is
- * served same-origin from `public/litert/`, and the accelerator falls back
- * (WebNN → WebGPU/WASM) on a per-device compile failure. The output-decode and
- * NMS are pure functions so they are unit-testable without the runtime.
+ * Face detection via MediaPipe Tasks Vision (`@mediapipe/tasks-vision`
+ * `FaceDetector`, BlazeFace). MediaPipe owns the model decode + NMS, so this
+ * module is a thin wrapper that maps its pixel-space detections to normalised
+ * boxes. The package is reached through the untyped {@link loadMediapipeVision}
+ * boundary; the WASM fileset and the `.tflite` model are loaded from remote on
+ * the user's explicit "Load face model" action (see the controller/panel),
+ * mirroring Phase 28/29.
  */
 
-import { loadLiteRtModule } from '../asr/litert-loader';
-import type { ReframeAccelerator } from '../../protocol';
-import type { ReframeModelManifest } from './model-manifest';
+import { loadMediapipeVision } from './mediapipe-loader';
 
 export interface FaceDetection {
 	/** Normalised left edge in [0,1]. */
@@ -30,243 +27,102 @@ export interface FaceDetector {
 	dispose(): void;
 }
 
-export interface FaceDetectorOptions {
-	/** Minimum (post-sigmoid) confidence to keep a detection. */
-	scoreThreshold: number;
-	/** IoU above which overlapping detections are merged by NMS. */
-	iouThreshold: number;
+export interface MediapipeFaceDetectorOptions {
+	/** Directory the tasks-vision WASM fileset loads from. */
+	wasmPath: string;
+	/** URL of the BlazeFace `.tflite` model. */
+	modelUrl: string;
+	/** Minimum detection confidence (default 0.5). */
+	minConfidence?: number;
 }
 
-export const DEFAULT_FACE_DETECTOR_OPTIONS: FaceDetectorOptions = {
-	scoreThreshold: 0.5,
-	iouThreshold: 0.3
-};
-
-/** LiteRT models are exported with a single default serving signature. */
-const SIGNATURE = 'serving_default';
-
-function sigmoid(x: number): number {
-	return 1 / (1 + Math.exp(-x));
+// ── Minimal local typings for the @mediapipe/tasks-vision surface we use ──
+interface MpBoundingBox {
+	originX: number;
+	originY: number;
+	width: number;
+	height: number;
 }
-
-/** IoU of two normalised left/top/width/height boxes. */
-function iouLTWH(a: FaceDetection, b: FaceDetection): number {
-	const ax2 = a.x + a.width;
-	const ay2 = a.y + a.height;
-	const bx2 = b.x + b.width;
-	const by2 = b.y + b.height;
-	const ix1 = Math.max(a.x, b.x);
-	const iy1 = Math.max(a.y, b.y);
-	const ix2 = Math.min(ax2, bx2);
-	const iy2 = Math.min(ay2, by2);
-	if (ix2 <= ix1 || iy2 <= iy1) return 0;
-	const inter = (ix2 - ix1) * (iy2 - iy1);
-	const union = a.width * a.height + b.width * b.height - inter;
-	return union > 0 ? inter / union : 0;
+interface MpDetection {
+	boundingBox?: MpBoundingBox;
+	categories?: Array<{ score: number }>;
 }
-
-/** Greedy non-maximum suppression, highest confidence first. */
-function nonMaxSuppression(boxes: FaceDetection[], iouThreshold: number): FaceDetection[] {
-	const sorted = [...boxes].sort((a, b) => b.confidence - a.confidence);
-	const kept: FaceDetection[] = [];
-	for (const box of sorted) {
-		if (kept.every((k) => iouLTWH(k, box) < iouThreshold)) kept.push(box);
-	}
-	return kept;
+interface MpFaceDetector {
+	detect(image: ImageData): { detections: MpDetection[] };
+	close(): void;
+}
+interface MpBaseOptions {
+	modelAssetPath: string;
+	delegate: 'GPU' | 'CPU';
+}
+interface MpVisionModule {
+	FilesetResolver: { forVisionTasks(wasmPath: string): Promise<unknown> };
+	FaceDetector: {
+		createFromOptions(
+			fileset: unknown,
+			options: { baseOptions: MpBaseOptions; runningMode: 'IMAGE'; minDetectionConfidence: number }
+		): Promise<MpFaceDetector>;
+	};
 }
 
 /**
- * Decode a single-stage face detector's output tensor into normalised
- * detections. The bundled TFLite model (T15.2) must conform to this contract: a
- * flat `Float32Array` shaped `[N, stride]` (a leading batch dim of 1 is allowed,
- * i.e. `[1, N, stride]`), `stride >= 5`, each row `[scoreLogit, cx, cy, w, h,
- * ...extra]` with `cx`/`cy`/`w`/`h` the box centre and size normalised to
- * `[0,1]` — i.e. a model exported with its anchor decode + NMS folded in. Scores
- * pass through a sigmoid; rows below `scoreThreshold` are dropped, and the
- * survivors are de-duplicated with greedy IoU NMS. Returns boxes in
- * left/top/width/height form.
+ * Load the MediaPipe runtime + BlazeFace model and return a {@link FaceDetector}.
+ * Tries the GPU delegate first, falling back to CPU (more robust inside a Web
+ * Worker). Heavy and network-bound — call only from the analysis worker on the
+ * user's explicit load action.
  */
-export function decodeFaceDetections(
-	output: Float32Array | number[],
-	dims: readonly number[],
-	options: FaceDetectorOptions = DEFAULT_FACE_DETECTOR_OPTIONS
-): FaceDetection[] {
-	// Collapse an optional leading batch dim of 1.
-	const shape = dims.length === 3 && dims[0] === 1 ? dims.slice(1) : dims;
-	if (shape.length !== 2 || shape[1] < 5) return [];
-	const count = shape[0];
-	const stride = shape[1];
-	const detections: FaceDetection[] = [];
-	for (let i = 0; i < count; i++) {
-		const base = i * stride;
-		const confidence = sigmoid(output[base]);
-		if (confidence < options.scoreThreshold) continue;
-		const cx = output[base + 1];
-		const cy = output[base + 2];
-		const w = output[base + 3];
-		const h = output[base + 4];
-		if (!(w > 0) || !(h > 0)) continue;
-		detections.push({
-			x: cx - w / 2,
-			y: cy - h / 2,
-			width: w,
-			height: h,
-			confidence
+export async function createMediapipeFaceDetector(
+	options: MediapipeFaceDetectorOptions
+): Promise<FaceDetector> {
+	const vision = (await loadMediapipeVision()) as MpVisionModule;
+	const fileset = await vision.FilesetResolver.forVisionTasks(options.wasmPath);
+	const minDetectionConfidence = options.minConfidence ?? 0.5;
+
+	let detector: MpFaceDetector;
+	try {
+		detector = await vision.FaceDetector.createFromOptions(fileset, {
+			baseOptions: { modelAssetPath: options.modelUrl, delegate: 'GPU' },
+			runningMode: 'IMAGE',
+			minDetectionConfidence
+		});
+	} catch {
+		detector = await vision.FaceDetector.createFromOptions(fileset, {
+			baseOptions: { modelAssetPath: options.modelUrl, delegate: 'CPU' },
+			runningMode: 'IMAGE',
+			minDetectionConfidence
 		});
 	}
-	return nonMaxSuppression(detections, options.iouThreshold);
-}
-
-/**
- * Resize an ImageData to a square `size × size` NHWC float32 tensor in [0,1]
- * (`[1, size, size, 3]`), the conventional input layout for TFLite vision
- * models. Browser-only (OffscreenCanvas); the analyser runs this in the worker.
- */
-export function toModelInput(imageData: ImageData, size: number): Float32Array {
-	const src = new OffscreenCanvas(imageData.width, imageData.height);
-	const srcCtx = src.getContext('2d');
-	const dst = new OffscreenCanvas(size, size);
-	const dstCtx = dst.getContext('2d');
-	if (!srcCtx || !dstCtx) throw new Error('Failed to acquire 2D context for model input.');
-	srcCtx.putImageData(imageData, 0, 0);
-	dstCtx.drawImage(src, 0, 0, size, size);
-	const { data } = dstCtx.getImageData(0, 0, size, size);
-	const out = new Float32Array(size * size * 3);
-	for (let p = 0; p < size * size; p++) {
-		out[p * 3] = data[p * 4] / 255;
-		out[p * 3 + 1] = data[p * 4 + 1] / 255;
-		out[p * 3 + 2] = data[p * 4 + 2] / 255;
-	}
-	return out;
-}
-
-// ── Minimal local typings for the @litertjs/core surface we use ──
-interface LiteRtTensor {
-	data(): Promise<ArrayLike<number>>;
-	delete(): void;
-}
-interface LiteRtCompiledModel {
-	run(signatureName: string, input: LiteRtTensor[]): Promise<LiteRtTensor[]>;
-	delete(): void;
-}
-interface LiteRtLoadOptions {
-	threads?: boolean;
-	jspi?: boolean;
-}
-interface LiteRtCompileOptions {
-	accelerator: string;
-	webNNOptions?: { devicePreference: string };
-}
-interface LiteRtApi {
-	loadLiteRt(path: string, options?: LiteRtLoadOptions): Promise<unknown>;
-	loadAndCompile(model: Uint8Array, options: LiteRtCompileOptions): Promise<LiteRtCompiledModel>;
-	Tensor: { fromTypedArray(data: Float32Array | Int32Array, shape: number[]): LiteRtTensor };
-}
-
-let liteRtLoaded = false;
-
-function loadOptions(acc: ReframeAccelerator): LiteRtLoadOptions {
-	return acc === 'webnn' ? { threads: false, jspi: true } : { threads: false };
-}
-
-function compileOptionCandidates(acc: ReframeAccelerator): LiteRtCompileOptions[] {
-	if (acc !== 'webnn') return [{ accelerator: acc }];
-	return (['npu', 'gpu', 'cpu'] as const).map((devicePreference) => ({
-		accelerator: acc,
-		webNNOptions: { devicePreference }
-	}));
-}
-
-export interface LiteRtFaceDetectorOptions {
-	/** Directory the LiteRT.js WASM runtime loads from (served same-origin). */
-	wasmPath: string;
-	accelerator: ReframeAccelerator;
-	/** Verified TFLite model file bytes (integrity checked by the caller). */
-	modelBytes: Uint8Array;
-	manifest: ReframeModelManifest;
-	detectorOptions?: FaceDetectorOptions;
-}
-
-/**
- * Compile a TFLite face-detection model into a {@link FaceDetector} via LiteRT.js,
- * trying the requested accelerator and transparently falling back to `wasm` if
- * accelerated compilation fails on this device. Heavy and side-effecting — call
- * only from the analysis worker after the model bytes are verified.
- */
-export async function createLiteRtFaceDetector(
-	options: LiteRtFaceDetectorOptions
-): Promise<FaceDetector> {
-	const api = (await loadLiteRtModule()) as LiteRtApi;
-
-	// Emscripten resolves the .wasm relative to the worker script unless given a
-	// locator; point it at the served WASM directory instead.
-	const wasmDir = options.wasmPath.endsWith('/') ? options.wasmPath : `${options.wasmPath}/`;
-	(globalThis as unknown as { Module?: unknown }).Module = {
-		locateFile: (file: string) =>
-			file.startsWith('/') || /^https?:/.test(file) ? file : `${wasmDir}${file}`
-	};
-
-	let accelerator = options.accelerator;
-	if (!liteRtLoaded) {
-		try {
-			await api.loadLiteRt(options.wasmPath, loadOptions(accelerator));
-			liteRtLoaded = true;
-		} catch (error) {
-			if (accelerator === 'wasm') throw error;
-			await api.loadLiteRt(options.wasmPath, loadOptions('wasm'));
-			accelerator = 'wasm';
-			liteRtLoaded = true;
-		}
-	}
-
-	let model: LiteRtCompiledModel | null = null;
-	let lastError: unknown;
-	for (const compileOpts of compileOptionCandidates(accelerator)) {
-		try {
-			model = await api.loadAndCompile(options.modelBytes, compileOpts);
-			break;
-		} catch (error) {
-			lastError = error;
-		}
-	}
-	if (!model) {
-		if (accelerator === 'wasm') throw lastError;
-		model = await api.loadAndCompile(options.modelBytes, { accelerator: 'wasm' });
-	}
-
-	const compiled = model;
-	const inputSize = options.manifest.inputSize;
-	const stride = options.manifest.outputStride;
-	const detectorOptions = options.detectorOptions ?? DEFAULT_FACE_DETECTOR_OPTIONS;
 
 	return {
 		async detect(imageData: ImageData): Promise<FaceDetection[]> {
-			const input = toModelInput(imageData, inputSize);
-			const inputTensor = api.Tensor.fromTypedArray(input, [1, inputSize, inputSize, 3]);
-			let outputs: LiteRtTensor[];
-			try {
-				outputs = await compiled.run(SIGNATURE, [inputTensor]);
-			} finally {
-				inputTensor.delete();
+			const { width, height } = imageData;
+			if (width === 0 || height === 0) return [];
+			// detect() is synchronous in MediaPipe; running it in the worker keeps
+			// the main thread free (R0.2).
+			const result = detector.detect(imageData);
+			const out: FaceDetection[] = [];
+			for (const d of result.detections) {
+				const bb = d.boundingBox;
+				if (!bb || !(bb.width > 0) || !(bb.height > 0)) continue;
+				out.push({
+					x: bb.originX / width,
+					y: bb.originY / height,
+					width: bb.width / width,
+					height: bb.height / height,
+					confidence: d.categories?.[0]?.score ?? 0
+				});
 			}
-			try {
-				const raw = await outputs[0]!.data();
-				const flat = raw instanceof Float32Array ? raw : Float32Array.from(raw);
-				const count = stride > 0 ? Math.floor(flat.length / stride) : 0;
-				return decodeFaceDetections(flat, [count, stride], detectorOptions);
-			} finally {
-				for (const t of outputs) t.delete();
-			}
+			return out;
 		},
 		dispose() {
-			compiled.delete();
+			detector.close();
 		}
 	};
 }
 
 /**
  * Create a face detector that returns canned detections keyed by frame index
- * (R11.2 injection seam) — no LiteRT runtime, for unit tests.
+ * (R11.2 injection seam) — no MediaPipe runtime, for unit tests.
  */
 export function createMockFaceDetector(detections: Map<string, FaceDetection[]>): FaceDetector {
 	let frameIndex = 0;

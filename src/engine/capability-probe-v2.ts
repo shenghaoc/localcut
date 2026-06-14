@@ -444,16 +444,14 @@ const unknownCapture: CaptureProbeResult = {
 
 /** Probe Smart Reframe capabilities. Saliency is always supported (pure DSP). */
 export function probeSmartReframe(): SmartReframeProbeResult {
-	// No face-detection model catalogue entry is bundled in this build, so face
-	// detection is unavailable and analysis runs saliency-only (R2.6 / R8.2).
-	// This is honest rather than 'unknown': the LiteRT.js detector, manifest
-	// verification, and worker gating all exist and activate once a model ships
-	// (spec task T15.2).
-	const faceDetection: FeatureSupport = 'unsupported';
-
 	// Analysis worker: the dedicated Smart Reframe worker needs the Worker ctor.
 	const analysisWorker: FeatureSupport =
 		typeof Worker !== 'undefined' ? 'supported' : 'unsupported';
+
+	// Face detection runs MediaPipe BlazeFace in that worker, loaded on the
+	// user's explicit action (WASM + model fetched from remote). It's available
+	// wherever the analysis worker is; the actual download happens on use.
+	const faceDetection: FeatureSupport = analysisWorker;
 
 	return {
 		faceDetection,

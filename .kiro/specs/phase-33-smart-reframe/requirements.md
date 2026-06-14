@@ -27,10 +27,12 @@ the target output frame.
 - **R0.6** No baked crop, hard-coded rectangle, or opaque transform is
   stored. The output is exclusively Phase 15 keyframe tracks with
   standard `KeyframeSnapshot` format (`{ t, value, easing }`).
-- **R0.7** Face detection model weights, if used, are served same-origin as
-  static assets and loaded only after explicit user action. Their
-  lifecycle follows the same checksum-verified manifest pattern as Phase
-  28 RNNoise weights.
+- **R0.7** Face detection weights and the MediaPipe runtime are loaded only
+  after an explicit user "Load face model" action — the same click-to-load
+  gesture as Phase 28 (RNNoise) and Phase 29 (Whisper). Per the project's
+  hobby-scope decision they load from remote (Google model store + jsDelivr)
+  rather than same-origin static assets, and are runtime-cached by the
+  service worker (not precached). They are not digest-pinned.
 
 ## R1 — Aspect Ratio Targets
 
@@ -52,15 +54,16 @@ the target output frame.
 ## R2 — Face Detection
 
 - **R2.1** Face detection uses a BlazeFace-class model (single-stage,
-  lightweight, ≤ 300 KB quantised) running in the Smart Reframe worker.
-  The model detects faces and returns bounding boxes with confidence
-  scores.
-- **R2.2** The face detection model is loaded lazily on first use and
-  cached for the session. Model weights are fetched once and validated
-  against the manifest checksum (SHA-256) and byte size before graph
-  construction; mismatch is a hard user-visible error — never a silent
-  fallback to saliency. Runtime unavailability (LiteRT runtime not loadable) falls
-  through to saliency with a notice; integrity failures do not.
+  lightweight) running in the Smart Reframe worker via MediaPipe Tasks
+  Vision (`FaceDetector`), which detects faces and returns bounding boxes
+  with confidence scores (anchor decode + NMS handled internally).
+- **R2.2** The face detection model is loaded on the user's explicit "Load
+  face model" action (R0.7 — Phase 28/29 click-to-load), then cached for
+  the worker session. Per the project's hobby-scope decision the model and
+  MediaPipe WASM are fetched from remote (Google model store + jsDelivr) and
+  are **not** vendored or digest-pinned — there is no checksum gate. A load
+  failure (offline, blocked, relocated `latest` URL) falls through to
+  saliency with a notice (R2.6 / R8.2).
 - **R2.3** Detection runs on downscaled analysis frames (longest edge ≤
   512 px) to bound compute cost. Detection results are mapped back to
   source-resolution coordinates.

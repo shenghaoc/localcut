@@ -36,9 +36,6 @@ import {
 	type TrajectoryPoint
 } from './keyframe-generator';
 import type { FaceDetector } from './face-detector';
-import { validateManifest } from './model-manifest';
-import { AssetIntegrityError, createOpfsAssetStore, loadVerifiedAsset } from '../asr/asset-cache';
-import { assertTrustedModelUrl } from '../asr/model-catalog';
 import { deriveMode, pickPrimaryFace } from './reframe-analysis';
 
 const MAX_ANALYSIS_EDGE = 512;
@@ -54,14 +51,44 @@ interface AnalysisState {
 }
 
 let currentAnalysis: AnalysisState | null = null;
+/** MediaPipe face detector, loaded once on the user's explicit action and
+ *  reused across analyses (null = saliency-only). */
+let faceDetector: FaceDetector | null = null;
+
+/** Load the MediaPipe BlazeFace detector on the user's explicit action. On
+ *  success the worker reuses it for subsequent analyses; on failure analysis
+ *  stays saliency-only (R2.6 / R8.2). */
+async function handleLoadFaceModel(
+	cmd: Extract<SmartReframeWorkerCommand, { type: 'reframe-load-face-model' }>
+): Promise<void> {
+	if (faceDetector) {
+		post({ type: 'reframe-face-model-status', status: 'loaded' });
+		return;
+	}
+	post({ type: 'reframe-face-model-status', status: 'loading' });
+	try {
+		// Lazy: keep MediaPipe (and its CDN WASM) out of the worker's eager graph.
+		const { createMediapipeFaceDetector } = await import('./face-detector');
+		faceDetector = await createMediapipeFaceDetector({
+			wasmPath: cmd.wasmPath,
+			modelUrl: cmd.modelUrl
+		});
+		post({ type: 'reframe-face-model-status', status: 'loaded' });
+	} catch (err) {
+		faceDetector = null;
+		post({
+			type: 'reframe-face-model-status',
+			status: 'failed',
+			message: err instanceof Error ? err.message : String(err)
+		});
+	}
+}
 
 async function handleStart(
 	cmd: Extract<SmartReframeWorkerCommand, { type: 'reframe-start' }>
 ): Promise<void> {
 	const state: AnalysisState = { cancelled: false };
 	currentAnalysis = state;
-	// Declared outside the try so the `finally` can release it on any exit path.
-	let faceDetector: FaceDetector | null = null;
 
 	try {
 		// Open the file with Mediabunny
@@ -92,39 +119,8 @@ async function handleStart(
 		const tracker = createSubjectTracker();
 		let prevHist: Float64Array | null = null;
 		const shotBoundaryThreshold = cmd.shotBoundaryThreshold ?? DEFAULT_SHOT_BOUNDARY_THRESHOLD;
-
-		// Face detection (R2): only when the caller provides a model. Absent one
-		// the analysis is saliency-only (R2.6 / R8.2). The model is downloaded +
-		// digest-verified via the shared asset cache, then compiled with LiteRT.js.
-		// Integrity failures (checksum/size) are hard errors and must not fall
-		// through to saliency (R2.2); ordinary load failures (network, runtime,
-		// untrusted host) do fall through.
-		if (cmd.faceModel) {
-			try {
-				const validation = validateManifest(cmd.faceModel.manifest);
-				if (!validation.ok) {
-					throw new Error(
-						`Invalid face model manifest: ${validation.error.field}: ${validation.error.reason}`
-					);
-				}
-				const manifest = validation.manifest;
-				assertTrustedModelUrl(manifest.model.url, self.location.origin);
-				const store = await createOpfsAssetStore('reframe-models');
-				const modelBytes = await loadVerifiedAsset(manifest.model, { store });
-				// Lazy: keep LiteRT.js out of the worker's eager graph (saliency path).
-				const { createLiteRtFaceDetector } = await import('./face-detector');
-				faceDetector = await createLiteRtFaceDetector({
-					wasmPath: cmd.faceModel.wasmPath,
-					accelerator: cmd.faceModel.accelerator,
-					modelBytes,
-					manifest
-				});
-			} catch (err) {
-				if (err instanceof AssetIntegrityError) throw err;
-				// Runtime unavailable / network / untrusted — saliency-only.
-				faceDetector = null;
-			}
-		}
+		// Face detection runs only if the user loaded the model (R2.6 / R8.2);
+		// otherwise the per-frame loop falls back to saliency.
 
 		// Track stats
 		let facesDetected = 0;
@@ -300,14 +296,10 @@ async function handleStart(
 			stats
 		});
 	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		post({
-			type: 'reframe-error',
-			reason: message,
-			integrity: err instanceof AssetIntegrityError
-		});
+		post({ type: 'reframe-error', reason: err instanceof Error ? err.message : String(err) });
 	} finally {
-		faceDetector?.dispose();
+		// The face detector persists across analyses (loaded once); it is only
+		// released on dispose.
 		if (currentAnalysis === state) {
 			currentAnalysis = null;
 		}
@@ -331,6 +323,10 @@ self.onmessage = (event: MessageEvent<SmartReframeWorkerCommand>) => {
 			void handleStart(cmd);
 			break;
 
+		case 'reframe-load-face-model':
+			void handleLoadFaceModel(cmd);
+			break;
+
 		case 'reframe-cancel':
 			if (currentAnalysis) {
 				currentAnalysis.cancelled = true;
@@ -342,6 +338,8 @@ self.onmessage = (event: MessageEvent<SmartReframeWorkerCommand>) => {
 			if (currentAnalysis) {
 				currentAnalysis.cancelled = true;
 			}
+			faceDetector?.dispose();
+			faceDetector = null;
 			self.close();
 			break;
 	}

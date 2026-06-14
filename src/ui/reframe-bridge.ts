@@ -3,10 +3,10 @@
  * only when the user triggers analysis, so nothing model/runtime-related enters
  * the startup module graph or spawns eagerly (R0.3).
  *
- * It is a **module** worker (matching `vite.config` `worker.format: 'es'`). The
- * shipped saliency path needs no `importScripts`; when a face-detection model is
- * bundled (task T15) the LiteRT WASM loader's `importScripts` requirement is
- * handled then, as the ASR/cleanup workers do.
+ * It is a **module** worker (matching `vite.config` `worker.format: 'es'`).
+ * Both the saliency path and the MediaPipe face detector load via ES dynamic
+ * `import()` (no `importScripts`); the face model is fetched only on the user's
+ * explicit "Load face model" action.
  */
 import type { SmartReframeWorkerCommand, SmartReframeWorkerState } from '../protocol';
 

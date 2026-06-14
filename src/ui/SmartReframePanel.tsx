@@ -29,6 +29,8 @@ export interface SmartReframePanelProps {
 	faceDetectionSupported: boolean;
 	workerAvailable: boolean;
 	onClose: () => void;
+	/** Download + initialise the MediaPipe face model (explicit user action). */
+	onLoadFaceModel: () => void;
 	onAnalyse: (settings: ReframeAnalyseSettings) => void;
 	onCancel: () => void;
 	onApply: () => void;
@@ -52,6 +54,7 @@ export const SmartReframePanel: Component<SmartReframePanelProps> = (props) => {
 
 	const status = () => props.state.status;
 	const busy = () => status() === 'resolving' || status() === 'analysing';
+	const faceModelStatus = () => props.state.faceModelStatus;
 
 	// ARIA modal dialog pattern: move focus into the panel when it opens.
 	createEffect(() => {
@@ -123,10 +126,36 @@ export const SmartReframePanel: Component<SmartReframePanelProps> = (props) => {
 						Analysis worker unavailable in this browser.
 					</p>
 				</Show>
-				<Show when={props.workerAvailable && !props.faceDetectionSupported}>
-					<p class="capability-panel-note">
-						Face detection unavailable; using visual saliency estimation.
-					</p>
+
+				{/* Face model — downloaded on explicit action (Phase 28/29 pattern). */}
+				<Show when={props.workerAvailable && props.faceDetectionSupported}>
+					<section class="diagnostics-section">
+						<h2>Face detection</h2>
+						<Show
+							when={faceModelStatus() === 'loaded'}
+							fallback={
+								<>
+									<p class="capability-panel-note">
+										{faceModelStatus() === 'loading'
+											? 'Loading the face model…'
+											: faceModelStatus() === 'failed'
+												? (props.state.faceModelError ?? 'Face model failed to load.')
+												: 'Using visual saliency. Load the BlazeFace model (MediaPipe, fetched once from Google) for face-aware reframing.'}
+									</p>
+									<Button
+										size="sm"
+										variant="secondary"
+										disabled={faceModelStatus() === 'loading'}
+										onClick={() => props.onLoadFaceModel()}
+									>
+										{faceModelStatus() === 'failed' ? 'Retry load' : 'Load face model'}
+									</Button>
+								</>
+							}
+						>
+							<p class="capability-panel-note">Face detection ready (MediaPipe BlazeFace).</p>
+						</Show>
+					</section>
 				</Show>
 
 				<section class="diagnostics-section">
@@ -197,7 +226,6 @@ export const SmartReframePanel: Component<SmartReframePanelProps> = (props) => {
 
 					<Show when={status() === 'error' && props.state.error}>
 						<p class="capability-panel-note" role="alert">
-							{props.state.integrityError ? 'Model integrity error: ' : ''}
 							{props.state.error}
 						</p>
 					</Show>

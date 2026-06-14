@@ -11,14 +11,13 @@ import {
 import { compatAdapterProbeResult, probeResultFor } from './compatibility/capability-fixtures';
 
 describe('probeSmartReframe', () => {
-	it('reports saliency supported, no bundled face model, and worker-gated analysis', () => {
+	it('reports saliency supported and face detection gated on the analysis worker', () => {
 		const probe = probeSmartReframe();
 		// Saliency is pure DSP — always available.
 		expect(probe.saliency).toBe('supported');
-		// No face-detection model catalogue entry is bundled in this build.
-		expect(probe.faceDetection).toBe('unsupported');
-		// Analysis worker availability follows the Worker constructor.
+		// MediaPipe face detection runs in the analysis worker, so it tracks it.
 		expect(['supported', 'unsupported']).toContain(probe.analysisWorker);
+		expect(probe.faceDetection).toBe(probe.analysisWorker);
 	});
 });
 

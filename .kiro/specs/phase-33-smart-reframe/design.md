@@ -1,13 +1,12 @@
 # Design: Phase 33 — Smart Reframe
 
-> Status: **Implemented (saliency-only v1)** — automatic crop-path generation
-> via saliency tracking, producing editable Phase 15 transform keyframes,
-> reviewed through a preview overlay and applied as a single undo step. Zero
-> server infrastructure; dedicated, lazily-spawned analysis worker. BlazeFace
-> face detection runs through the shared LiteRT.js runtime, but no face-model
-> catalogue entry is bundled yet — wiring the `.tflite` model is deferred to
-> task T15 (see *Third-party additions*), so the shipped build runs
-> saliency-only (R2.6 / R8.2).
+> Status: **Implemented** — automatic crop-path generation producing editable
+> Phase 15 transform keyframes, reviewed through a preview overlay and applied
+> as a single undo step. Zero server infrastructure; dedicated, lazily-spawned
+> analysis worker. Subject detection defaults to pure-DSP saliency; **MediaPipe
+> BlazeFace** face detection is available on an explicit "Load face model"
+> action (click-to-load, fetched from remote — Phase 28/29 pattern) and falls
+> back to saliency for frames with no face (R2.6 / R8.2).
 
 ## Goal
 
@@ -15,9 +14,10 @@ Given a clip and a target aspect ratio, generate a set of `x`, `y`, `scale`
 keyframe tracks that keep the primary subject centred in the output frame as
 the camera or subject moves. The keyframes are standard Phase 15 entries —
 the user can edit, delete, or extend them by hand after generation. The
-system detects faces via a lightweight BlazeFace-class model (LiteRT.js),
-falls back to a pure-DSP saliency estimator for faceless footage, and
-uses a One Euro–smoothed IoU tracker to follow one subject across the clip.
+system detects faces via MediaPipe BlazeFace (Tasks Vision), loaded on the
+user's explicit action, falls back to a pure-DSP saliency estimator for
+faceless footage, and uses a One Euro–smoothed IoU tracker to follow one
+subject across the clip.
 Shot boundaries are detected by histogram difference and reset the tracker.
 
 ## Non-goals
@@ -46,7 +46,7 @@ Shot boundaries are detected by histogram difference and reset the tracker.
   │  ├ target aspect      │  post    │  ├ FrameDecoder           │     │                │
   │  │ selector           │  Message │  │  (Mediabunny demux +   │     │ timeline model │
   │  ├ preview overlay    │ ──────►  │  │   VideoDecoder)        │     │ playback loop  │
-  │  │ (CSS/SVG on        │  start   │  ├ FaceDetector (LiteRT)   │     │ compositing    │
+  │  │ (CSS/SVG on        │  start   │  ├ FaceDetector (MediaPipe)   │     │ compositing    │
   │  │  monitor)          │  ◄─────  │  ├ SaliencyEstimator     │     │ export         │
   │  ├ apply / discard    │  result  │  ├ SubjectTracker         │     └────────────────┘
   │  │ / adjust           │  (done)  │  ├ ShotBoundaryDetector   │
@@ -86,7 +86,7 @@ The worker entry point. Receives a `ReframeCommand` (`start` / `cancel` /
 ```
 source file → demux → decode at 2fps → for each frame:
   ├─ shot boundary detector (histogram delta)
-  ├─ face detector (LiteRT) → bounding boxes
+  ├─ face detector (MediaPipe) → bounding boxes
   │   └─ if zero faces → saliency estimator → centroid
   └─ subject tracker (IoU + One Euro)
 → keyframe generator (trajectory → x/y/scale tracks with motion bounds)
@@ -140,7 +140,7 @@ interface ReframeAnalysisStats {
 
 ### `src/engine/reframe/face-detector.ts`
 
-Wraps LiteRT.js for BlazeFace-class face detection.
+Wraps MediaPipe Tasks Vision (BlazeFace) for face detection.
 
 ```typescript
 interface FaceDetection {
@@ -152,21 +152,28 @@ interface FaceDetection {
 }
 
 interface FaceDetector {
-  /** Run face detection on a downscaled ImageData. Async because LiteRT
-   *  inference is asynchronous. */
+  /** Run face detection on a downscaled ImageData. Async wrapper; MediaPipe detect runs synchronously in the worker. */
   detect(imageData: ImageData): Promise<FaceDetection[]>;
   dispose(): void;
 }
 
-interface FaceDetectorFactory {
-  create(modelUrl: string, manifest: ModelManifest): Promise<FaceDetector>;
+interface MediapipeFaceDetectorOptions {
+  wasmPath: string;   // FilesetResolver tasks-vision WASM (jsDelivr)
+  modelUrl: string;   // BlazeFace .tflite (Google model store)
+  minConfidence?: number;
 }
+
+// createMediapipeFaceDetector(options): Promise<FaceDetector>
+// createMockFaceDetector(detections): FaceDetector
 ```
 
-- Model loaded once, cached for the worker session (R2.2).
+- Created once on the user's explicit "Load face model" action, then cached
+  for the worker session (R2.2).
+- `createFromOptions` uses `delegate: 'GPU'` and falls back to `'CPU'`.
 - Inference on downscaled `ImageData` (longest edge ≤ 512 px, R2.3).
-- Results mapped back to normalised source coordinates.
-- The factory interface allows test injection with canned detections
+- MediaPipe's pixel bounding boxes are mapped back to normalised source
+  coordinates; degenerate boxes are dropped.
+- `createMockFaceDetector` allows test injection with canned detections
   (R11.2).
 
 ### `src/engine/reframe/saliency-estimator.ts`
@@ -357,66 +364,51 @@ CSS/SVG overlay on the programme monitor (R7.2).
 - No GPU passes, no Canvas2D readback — pure CSS `clip-path` or SVG
   `<rect>` positioned via CSS transforms (R7.4).
 
-### `src/engine/reframe/model-manifest.ts`
+### `src/engine/reframe/face-models.ts`
 
-Model manifest for the LiteRT.js face-detection model, following the Phase
-28/29 LiteRT manifest pattern (R0.7).
-
-```typescript
-interface ReframeModelManifest {
-  id: string;
-  version: string;
-  license: string;
-  source: string;              // upstream provenance URL
-  model: { url: string; sizeBytes: number; checksum: string }; // checksum: "sha256-…"
-  inputSize: number;           // square model input edge (e.g. 128)
-  outputStride: number;        // floats per detection row (≥ 5)
-  format: 'tflite';
-}
-```
-
-Validation is a pure function: unknown fields tolerated, missing/invalid
-required fields rejected with a specific reason. The model asset is downloaded
-and digest-verified via the shared `src/engine/asr/asset-cache.ts`
-(`loadVerifiedAsset` / `verifyAsset`), exactly like the Whisper and DTLN
-models.
+Light module (no MediaPipe import) holding the remote model + runtime URLs so
+both the UI and worker can read them without pulling MediaPipe into their
+graphs: the tasks-vision WASM path (jsDelivr, pinned to the installed version)
+and the BlazeFace short-/full-range `.tflite` URLs (Google's model store). Per
+the project's hobby-scope decision these load **from remote on demand** — not
+vendored or digest-pinned; the `latest` model URL is intentionally mutable.
 
 ## Modules
 
 | Module | Description |
 |--------|-------------|
-| `src/engine/reframe-analyzer.ts` | Smart Reframe worker entry; orchestrates decode → detect → track → generate. |
-| `src/engine/reframe/face-detector.ts` | LiteRT.js wrapper for BlazeFace-class detection. |
+| `src/engine/reframe-analyzer.ts` | Smart Reframe worker entry; orchestrates decode → detect → track → generate; holds the loaded face detector. |
+| `src/engine/reframe/face-detector.ts` | MediaPipe Tasks Vision (BlazeFace) wrapper + test mock. |
+| `src/engine/reframe/mediapipe-loader.js` | Untyped lazy boundary to `@mediapipe/tasks-vision`. |
+| `src/engine/reframe/face-models.ts` | Remote model + WASM URLs (light, no MediaPipe import). |
 | `src/engine/reframe/saliency-estimator.ts` | Pure-DSP saliency: skin-tone + edge density + local contrast. |
 | `src/engine/reframe/subject-tracker.ts` | IoU association + One Euro smoothing; single-subject tracking. |
 | `src/engine/reframe/shot-boundary-detector.ts` | Chi-squared histogram distance for cut detection. |
 | `src/engine/reframe/keyframe-generator.ts` | Trajectory → Phase 15 keyframe tracks with motion bounds. |
 | `src/engine/reframe/one-euro-filter.ts` | One Euro filter implementation (~60 lines). |
-| `src/engine/reframe/model-manifest.ts` | Manifest validation for face detection model weights. |
-| `src/ui/SmartReframePanel.tsx` | UI panel: aspect selector, progress, review actions. |
+| `src/engine/reframe/reframe-analysis.ts` | Pure helpers (`pickPrimaryFace`, `deriveMode`). |
+| `src/ui/SmartReframePanel.tsx` | UI panel: face-model load, aspect selector, progress, review actions. |
 | `src/ui/ReframeOverlay.tsx` | CSS/SVG crop preview overlay on programme monitor. |
-| `src/protocol.ts` | Extended with `ReframeCommand` / `ReframeWorkerMessage` types. |
+| `src/protocol.ts` | Extended with Smart Reframe command / state types. |
 | `src/engine/capability-probe-v2.ts` | Extended with Smart Reframe probes. |
 
 ## Third-party additions
 
-- **None.** Face detection reuses **LiteRT.js (`@litertjs/core`)**, already a
-  project dependency since the Phase 28 (DTLN audio cleanup) and Phase 29
-  (Whisper ASR) migrations off ONNX. The face detector is a thin wrapper over
-  the same runtime (`src/engine/asr/litert-loader.ts`), loads its model through
-  the same digest-verified asset cache (`src/engine/asr/asset-cache.ts`) and
-  trusted-host allowlist (`src/engine/asr/model-catalog.ts`), and runs the
-  LiteRT WASM served same-origin from `public/litert/` (copied by
-  `scripts/setup-litert-assets.mjs`, excluded from the PWA precache). No ONNX
-  runtime is used — `onnxruntime-web` is **not** a dependency (its ~26 MB WASM
-  cannot be precached by the PWA).
-
-  **Model bundling deferred to task T15 — no face-model catalogue entry ships
-  in the current build.** The LiteRT runtime wrapper, manifest verification,
-  and the output decoder are implemented and unit-tested, so adding a
-  digest-pinned `.tflite` model catalogue entry (T15.2) is an isolated change.
-  Until then Smart Reframe runs saliency-only (R2.6 / R8.2) and the capability
-  probe reports face detection as `unsupported`.
+- **`@mediapipe/tasks-vision`** (runtime dependency) — Google's official Tasks
+  Vision JS, providing `FaceDetector` (BlazeFace) with anchor decode + NMS done
+  internally, so no hand-rolled decoder. The package's ~300 KB JS is bundled
+  (lazy, worker-only); its ~11 MB WASM is **not** bundled — `FilesetResolver`
+  loads it from jsDelivr at runtime (pinned to the installed version), and the
+  `.tflite` model loads from Google's `storage.googleapis.com` model store.
+  Both load **from remote on the user's explicit "Load face model" action**
+  (R0.7) and are runtime-cached by the service worker for offline reuse; nothing
+  heavy enters the precache. Per the hobby-scope decision the model is **not**
+  vendored or digest-pinned (the `latest` URL is mutable). No ONNX runtime is
+  used. The model bytes are fetched by MediaPipe itself, so the `asset-cache`
+  digest path is not used here.
+- The One Euro filter, saliency estimator, histogram detector, IoU tracker, and
+  keyframe generator are hand-written TypeScript. Mediabunny is already a
+  project dependency.
 - The One Euro filter, saliency estimator, histogram detector, IoU tracker,
   and keyframe generator are all hand-written TypeScript (< 200 lines each).
   Mediabunny is already a project dependency.

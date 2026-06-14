@@ -1,33 +1,29 @@
 # Tasks: Phase 33 — Smart Reframe
 
-> Status: **Implemented (saliency-only v1)** — automatic crop-path generation
-> producing editable Phase 15 transform keyframes, reviewed via a preview
-> overlay and applied as a single undo step.
+> Status: **Implemented** — automatic crop-path generation producing editable
+> Phase 15 transform keyframes, reviewed via a preview overlay and applied as a
+> single undo step. Subject detection defaults to pure-DSP saliency; MediaPipe
+> BlazeFace face detection is available on an explicit, click-to-load action.
 
 ## Implementation status
 
 **Done:** protocol types + capability probe (T1); One Euro filter (T2); shot
 boundary detector (T3); saliency estimator (T4); subject tracker (T5); face
-detector interface, LiteRT.js runtime wrapper, manifest validation, and output
-decoder (T6.1/T6.2/T6.3/T6.4 — the model catalogue entry is deferred, below);
+detector via MediaPipe Tasks Vision (BlazeFace) with a test mock (T6);
 keyframe generator with per-shot velocity/acceleration bounds, hold keyframes at
 cuts, and safe-zone compliance (T7); worker orchestration with in-point-aware
-sampling, clip-local timestamps, and cancellation (T8); the Smart Reframe panel
+sampling, clip-local timestamps, cancellation, and a persistent click-to-load
+face detector (T8); the Smart Reframe panel with the "Load face model" control
 and review/apply flow (T9); the crop-preview overlay (T10); apply via the new
 `replace-keyframe-tracks` single-undo command and source-File resolution via
 `get-source-file` (R7.5 / file plumbing); the capability/diagnostics row (T12.1);
-unit tests including the new `face-detector.test.ts` and `replaceClipKeyframeTracks`
-coverage (T13); and docs in both `docs/SMART-REFRAME.md` and the in-app guide
-(T16.1/T16.1a).
+unit tests including `face-detector.test.ts` and `replaceClipKeyframeTracks`
+coverage (T13); face-model integration via MediaPipe loaded from remote on the
+user's explicit action (T15); and docs in both `docs/SMART-REFRAME.md` and the
+in-app guide (T16.1/T16.1a).
 
 **Deferred / not done:**
 
-- **T15 (face-detection model bundling)** — face detection runs through the
-  shared LiteRT.js runtime (already a project dependency; no ONNX), but no
-  `.tflite` model catalogue entry is bundled, so the model never downloads. The
-  runtime wrapper, digest-verified asset loading, and the decoder are
-  unit-tested; the shipped build runs saliency-only (R2.6 / R8.2) and the
-  capability probe reports face detection `unsupported`.
 - **T14 (deterministic media fixture)** — the fixture-based end-to-end test and
   the keyframe snapshot are pending (no media fixture is checked in). The motion
   bounds, hold keyframes, and compliance metric are covered by synthetic
@@ -44,7 +40,8 @@ coverage (T13); and docs in both `docs/SMART-REFRAME.md` and the in-app guide
   and `ReframeAnalysisStats`. All types structured-clone-safe.
 - [ ] **T1.2** Extend `src/engine/capability-probe-v2.ts` and
   `CapabilityProbeResult` with `SmartReframeProbeResult`: `faceDetection`
-  (LiteRT.js model availability), `saliency` (always `supported`),
+  (MediaPipe runs in the analysis worker, model loaded on action),
+  `saliency` (always `supported`),
   `analysisWorker` (Worker constructor). Follow the existing
   `FeatureSupport` pattern.
 - [ ] **T1.3** Add a Smart Reframe row to the capability/diagnostics panel
@@ -104,24 +101,27 @@ coverage (T13); and docs in both `docs/SMART-REFRAME.md` and the in-app guide
 
 ## T6 — Face detector (R2)
 
-- [ ] **T6.1** `src/engine/reframe/face-detector.ts`: define
-  `FaceDetector` interface (with `async detect()`) and
-  `FaceDetectorFactory` for test injection. `FaceDetection` type with
-  normalised coordinates and confidence.
-- [ ] **T6.2** LiteRT.js implementation (`createLiteRtFaceDetector`):
-  load the model bytes via the shared digest-verified asset cache
-  (`../asr/asset-cache`), compile the `.tflite` with `@litertjs/core`
-  through the `../asr/litert-loader` boundary (WebNN → WebGPU → WASM
-  fallback), run inference on the downscaled `ImageData`, and decode the
-  output to normalised source coordinates.
-- [ ] **T6.3** Model manifest: `src/engine/reframe/model-manifest.ts`
-  with `ReframeModelManifest` interface (TFLite model asset + `sha256-`
-  digest) and `validateManifest()` pure function. Ship a manifest JSON for
-  the BlazeFace TFLite model as a static asset under `public/models/`.
-- [ ] **T6.4** Unit tests: `validateManifest()` accepts a valid manifest,
-  rejects missing fields and a bad checksum/format; the LiteRT detector's
-  compile/fallback is tested via a mocked `loadLiteRtModule`, and the
-  output decoder via synthetic tensors (no real model in CI).
+- [x] **T6.1** `src/engine/reframe/face-detector.ts`: define the
+  `FaceDetector` interface (with `async detect()`), the `FaceDetection`
+  type (normalised coordinates + confidence), and `createMockFaceDetector`
+  for test injection.
+- [x] **T6.2** MediaPipe implementation (`createMediapipeFaceDetector`):
+  load `@mediapipe/tasks-vision` through the untyped `mediapipe-loader.js`
+  boundary, `FilesetResolver.forVisionTasks(wasmPath)`, then
+  `FaceDetector.createFromOptions` with `delegate: 'GPU'` falling back to
+  `'CPU'`; run `detect(image)` on the downscaled `ImageData` and map the
+  pixel bounding boxes to normalised source coordinates (dropping
+  degenerate boxes). MediaPipe does anchor-decode + NMS internally, so no
+  hand-rolled decoder is needed.
+- [x] **T6.3** Remote model + runtime URLs in
+  `src/engine/reframe/face-models.ts` (light module, no MediaPipe import):
+  the tasks-vision WASM path (jsDelivr, version-pinned) and the BlazeFace
+  short-/full-range `.tflite` URLs (Google model store). Loaded from remote
+  on demand per the hobby-scope decision — not vendored or digest-pinned.
+- [x] **T6.4** Unit tests (`face-detector.test.ts`): the loader is mocked;
+  tests cover pixel→normalised box mapping, degenerate-box drop, the
+  GPU→CPU delegate fallback, and `createMockFaceDetector` (no real model or
+  network in CI).
 
 ## T7 — Keyframe generator (R6)
 
@@ -249,8 +249,8 @@ coverage (T13); and docs in both `docs/SMART-REFRAME.md` and the in-app guide
   frame, edge-heavy frame (T4.2).
 - [ ] **T13.4** `subject-tracker.test.ts`: IoU association, coasting,
   face-over-saliency, reset, stationary trajectory (T5.3).
-- [ ] **T13.5** `face-detector.test.ts`: manifest validation, injected
-  factory with canned detections (T6.4).
+- [ ] **T13.5** `face-detector.test.ts`: pixel→normalised mapping,
+  degenerate-box drop, GPU→CPU fallback, mock detector (T6.4).
 - [ ] **T13.6** `keyframe-generator.test.ts`: scale/position for each
   aspect ratio, velocity clamping, acceleration clamping, safe zone
   widening, hold keyframes (T7.5).
@@ -274,19 +274,19 @@ coverage (T13); and docs in both `docs/SMART-REFRAME.md` and the in-app guide
 
 ## T15 — Face-model integration
 
-- [x] **T15.1** Reuse LiteRT.js (`@litertjs/core`) — already a project
-  dependency since the Phase 28/29 migrations off ONNX. No new runtime
-  dependency is added; the face detector loads via `../asr/litert-loader`
-  and the WASM served from `public/litert/`.
-- [ ] **T15.2** Add the BlazeFace `.tflite` model as a catalogue/manifest
-  entry under `public/models/reframe/` (digest-pinned, `sha256-`),
-  downloaded on demand from a trusted host and OPFS-cached — never
-  precached. Model must be ≤ 300 KB quantised. The output must conform to
-  the documented `decodeFaceDetections` contract (`[N, ≥5]`:
-  `[score, cx, cy, w, h, …]`).
-- [ ] **T15.3** PWA service worker must not precache model weights at
-  install; may cache after first successful load (same pattern as Phase
-  28 RNNoise weights).
+- [x] **T15.1** Add `@mediapipe/tasks-vision` as the face-detection runtime
+  (Google Tasks Vision, BlazeFace). Its ~300 KB JS is bundled lazily
+  (worker-only via `mediapipe-loader.js`); the ~11 MB WASM is **not**
+  bundled — `FilesetResolver` loads it from jsDelivr at runtime.
+- [x] **T15.2** Load the BlazeFace `.tflite` from Google's
+  `storage.googleapis.com` model store on the user's explicit "Load face
+  model" action (R0.7 / Phase 28/29 click-to-load). Per the hobby-scope
+  decision the model is **not** vendored or digest-pinned — the `latest`
+  URL is mutable; only `face-models.ts` changes if Google relocates it.
+- [x] **T15.3** PWA service worker must not precache model weights or the
+  MediaPipe WASM at install; both are runtime-cached (`CacheFirst`,
+  `ignoreVary`) after first successful load (`vite.config.ts` workbox
+  `runtimeCaching`), the same pattern as Phase 28 RNNoise weights.
 
 ## T16 — Docs + verification (R11)
 

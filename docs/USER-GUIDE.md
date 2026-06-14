@@ -311,7 +311,7 @@ The output is ordinary, **editable transform keyframes** — never a baked-in cr
 
 **Notes**:
 
-- Subject detection uses **visual saliency** (skin tone, edges, local contrast — pure DSP, always available). BlazeFace-class **face detection** is a planned enhancement; until a model is bundled the panel notes that saliency is in use, and the Capabilities panel shows a **Smart Reframe** row.
+- Subject detection defaults to **visual saliency** (skin tone, edges, local contrast — pure DSP, always available). For face-aware reframing, click **Load face model** in the panel to fetch **MediaPipe BlazeFace** once from Google (on-device after that; nothing uploaded) — the same click-to-load pattern as Audio Cleanup and Auto Captions. Once loaded, analysis tracks faces and falls back to saliency for frames with none. The Capabilities panel shows a **Smart Reframe** row.
 - Pan velocity and acceleration are bounded so generated motion never whips; the subject may briefly leave centre during fast moves. The panel reports safe-zone compliance.
 - Shot boundaries (hard cuts) are detected and reset tracking so the crop does not slide across an edit.
 - Limitations: one subject per clip, faces/saliency only (no object-class tracking), no automatic cutting, and offline only (no live-camera reframe).

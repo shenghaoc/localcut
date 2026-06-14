@@ -1,133 +1,86 @@
 import { afterEach, describe, it, expect, vi } from 'vite-plus/test';
-import { loadLiteRtModule } from '../asr/litert-loader';
+import { loadMediapipeVision } from './mediapipe-loader';
 import {
-	decodeFaceDetections,
-	createLiteRtFaceDetector,
+	createMediapipeFaceDetector,
 	createMockFaceDetector,
 	type FaceDetection
 } from './face-detector';
-import type { ReframeModelManifest } from './model-manifest';
 
-vi.mock('../asr/litert-loader', () => ({
-	loadLiteRtModule: vi.fn()
+vi.mock('./mediapipe-loader', () => ({
+	loadMediapipeVision: vi.fn()
 }));
 
-function manifest(over: Partial<ReframeModelManifest> = {}): ReframeModelManifest {
-	return {
-		id: 'm',
-		version: '1',
-		license: 'Apache-2.0',
-		source: 'https://example.com/m.tflite',
-		model: { url: '/models/reframe/m.tflite', sizeBytes: 4, checksum: `sha256-${'a'.repeat(64)}` },
-		inputSize: 128,
-		outputStride: 6,
-		format: 'tflite',
-		...over
+type DetectImpl = () => { detections: Array<Record<string, unknown>> };
+
+function fakeVision(detectImpl: DetectImpl, createImpl?: ReturnType<typeof vi.fn>) {
+	const detector = { detect: vi.fn(detectImpl), close: vi.fn() };
+	const createFromOptions = createImpl ?? vi.fn(async () => detector);
+	const vision = {
+		FilesetResolver: { forVisionTasks: vi.fn(async () => ({})) },
+		FaceDetector: { createFromOptions }
 	};
+	vi.mocked(loadMediapipeVision).mockResolvedValue(vision);
+	return { detector, createFromOptions };
 }
 
-function compiledModel() {
-	return { run: vi.fn(), delete: vi.fn() };
-}
-
-function fakeApi() {
-	const api = {
-		loadLiteRt: vi.fn(async () => undefined),
-		loadAndCompile: vi.fn(),
-		Tensor: { fromTypedArray: vi.fn() }
-	};
-	vi.mocked(loadLiteRtModule).mockResolvedValue(api);
-	return api;
+function img(width: number, height: number): ImageData {
+	return { data: new Uint8ClampedArray(4), width, height, colorSpace: 'srgb' } as ImageData;
 }
 
 afterEach(() => {
 	vi.restoreAllMocks();
 });
 
-describe('decodeFaceDetections', () => {
-	it('decodes [1,N,5] centre-form output with sigmoid score + threshold', () => {
-		const data = new Float32Array([
-			10,
-			0.5,
-			0.5,
-			0.2,
-			0.2, // strong detection (sigmoid(10) ≈ 1)
-			-10,
-			0.1,
-			0.1,
-			0.1,
-			0.1 // weak detection (sigmoid(-10) ≈ 0) → dropped
-		]);
-		const dets = decodeFaceDetections(data, [1, 2, 5]);
-		expect(dets).toHaveLength(1);
-		expect(dets[0]!.x).toBeCloseTo(0.4, 5); // cx - w/2
-		expect(dets[0]!.y).toBeCloseTo(0.4, 5);
-		expect(dets[0]!.width).toBeCloseTo(0.2, 5);
-		expect(dets[0]!.confidence).toBeGreaterThan(0.9);
-	});
-
-	it('accepts output without a leading batch dim', () => {
-		const data = new Float32Array([10, 0.5, 0.5, 0.4, 0.4]);
-		expect(decodeFaceDetections(data, [1, 5])).toHaveLength(1);
-	});
-
-	it('suppresses overlapping boxes via NMS, keeping the higher score', () => {
-		const data = new Float32Array([
-			5,
-			0.5,
-			0.5,
-			0.4,
-			0.4,
-			4,
-			0.51,
-			0.51,
-			0.4,
-			0.4 // heavy overlap with the first
-		]);
-		const dets = decodeFaceDetections(data, [1, 2, 5]);
-		expect(dets).toHaveLength(1);
-		expect(dets[0]!.confidence).toBeGreaterThan(0.98); // sigmoid(5)
-	});
-
-	it('returns [] for malformed output (stride < 5)', () => {
-		expect(decodeFaceDetections(new Float32Array([1, 2, 3]), [1, 1, 3])).toHaveLength(0);
-	});
-});
-
-describe('createLiteRtFaceDetector', () => {
-	it('compiles the TFLite model via LiteRT and disposes it', async () => {
-		const api = fakeApi();
-		const model = compiledModel();
-		api.loadAndCompile.mockResolvedValue(model);
-		const detector = await createLiteRtFaceDetector({
-			wasmPath: '/litert/',
-			accelerator: 'wasm',
-			modelBytes: new Uint8Array([1, 2, 3, 4]),
-			manifest: manifest()
+describe('createMediapipeFaceDetector', () => {
+	it('maps MediaPipe pixel boxes to normalised detections', async () => {
+		const { detector } = fakeVision(() => ({
+			detections: [
+				{
+					boundingBox: { originX: 128, originY: 72, width: 64, height: 36 },
+					categories: [{ score: 0.95 }]
+				}
+			]
+		}));
+		const fd = await createMediapipeFaceDetector({
+			wasmPath: '/wasm',
+			modelUrl: 'https://storage.googleapis.com/m.tflite'
 		});
-		expect(api.loadAndCompile).toHaveBeenCalledWith(expect.any(Uint8Array), {
-			accelerator: 'wasm'
-		});
-		detector.dispose();
-		expect(model.delete).toHaveBeenCalledTimes(1);
+		const out = await fd.detect(img(256, 144));
+		expect(out).toHaveLength(1);
+		expect(out[0]!.x).toBeCloseTo(0.5, 5); // 128/256
+		expect(out[0]!.y).toBeCloseTo(0.5, 5); // 72/144
+		expect(out[0]!.width).toBeCloseTo(0.25, 5); // 64/256
+		expect(out[0]!.height).toBeCloseTo(0.25, 5); // 36/144
+		expect(out[0]!.confidence).toBeCloseTo(0.95, 5);
+		fd.dispose();
+		expect(detector.close).toHaveBeenCalledTimes(1);
 	});
 
-	it('falls back to wasm when the accelerated compile fails', async () => {
-		const api = fakeApi();
-		const model = compiledModel();
-		api.loadAndCompile
-			.mockRejectedValueOnce(new Error('webgpu compile failed'))
-			.mockResolvedValueOnce(model);
-		const detector = await createLiteRtFaceDetector({
-			wasmPath: '/litert/',
-			accelerator: 'webgpu',
-			modelBytes: new Uint8Array([1]),
-			manifest: manifest()
-		});
-		expect(api.loadAndCompile).toHaveBeenLastCalledWith(expect.any(Uint8Array), {
-			accelerator: 'wasm'
-		});
-		detector.dispose();
+	it('drops detections with no/degenerate bounding box', async () => {
+		fakeVision(() => ({
+			detections: [
+				{ categories: [{ score: 0.9 }] }, // no boundingBox
+				{
+					boundingBox: { originX: 0, originY: 0, width: 0, height: 10 },
+					categories: [{ score: 0.9 }]
+				}
+			]
+		}));
+		const fd = await createMediapipeFaceDetector({ wasmPath: '/wasm', modelUrl: 'x' });
+		expect(await fd.detect(img(100, 100))).toHaveLength(0);
+	});
+
+	it('falls back to the CPU delegate when GPU creation fails', async () => {
+		const detector = { detect: vi.fn(() => ({ detections: [] })), close: vi.fn() };
+		const createFromOptions = vi
+			.fn()
+			.mockRejectedValueOnce(new Error('GPU unavailable'))
+			.mockResolvedValueOnce(detector);
+		fakeVision(() => ({ detections: [] }), createFromOptions);
+		await createMediapipeFaceDetector({ wasmPath: '/wasm', modelUrl: 'x' });
+		expect(createFromOptions).toHaveBeenCalledTimes(2);
+		expect(createFromOptions.mock.calls[0]![1].baseOptions.delegate).toBe('GPU');
+		expect(createFromOptions.mock.calls[1]![1].baseOptions.delegate).toBe('CPU');
 	});
 });
 
@@ -135,13 +88,7 @@ describe('createMockFaceDetector (R11.2 injection)', () => {
 	it('returns canned detections keyed by frame index', async () => {
 		const face: FaceDetection = { x: 0.4, y: 0.4, width: 0.2, height: 0.2, confidence: 0.9 };
 		const detector = createMockFaceDetector(new Map([['frame_0', [face]]]));
-		const img = {
-			data: new Uint8ClampedArray(4),
-			width: 1,
-			height: 1,
-			colorSpace: 'srgb'
-		} as ImageData;
-		expect(await detector.detect(img)).toEqual([face]);
-		expect(await detector.detect(img)).toEqual([]); // frame_1 absent
+		expect(await detector.detect(img(1, 1))).toEqual([face]);
+		expect(await detector.detect(img(1, 1))).toEqual([]); // frame_1 absent
 	});
 });

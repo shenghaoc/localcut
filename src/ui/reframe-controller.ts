@@ -1,8 +1,8 @@
 /**
  * Smart Reframe controller (Phase 33). Owns the lazily-spawned analysis worker
- * and exposes a single observable state to the UI. The worker module (and the
- * LiteRT.js runtime, only when a face model is used) loads on the first
- * analysis, never at startup (R0.3).
+ * and exposes a single observable state to the UI. The worker (and the MediaPipe
+ * face model, only when the user explicitly loads it) loads on demand, never at
+ * startup (R0.3).
  *
  * Flow: the App resolves the clip's source `File` from the pipeline worker,
  * calls {@link ReframeController.beginAnalysis} while it resolves, then
@@ -12,6 +12,7 @@
 import type {
 	ClipKeyframesSnapshot,
 	ReframeAnalysisStatsSnapshot,
+	ReframeFaceModelStatus,
 	SmartReframeWorkerCommand,
 	SmartReframeWorkerState
 } from '../protocol';
@@ -41,8 +42,9 @@ export interface ReframeControllerState {
 	readonly stats: ReframeAnalysisStatsSnapshot | null;
 	readonly result: ClipKeyframesSnapshot | null;
 	readonly error: string | null;
-	/** True when `error` is a model-integrity failure (R2.2), shown distinctly. */
-	readonly integrityError: boolean;
+	/** Load state of the optional MediaPipe face model (persists across analyses). */
+	readonly faceModelStatus: ReframeFaceModelStatus;
+	readonly faceModelError: string | null;
 	readonly context: ReframeContext | null;
 }
 
@@ -63,7 +65,8 @@ const INITIAL_STATE: ReframeControllerState = {
 	stats: null,
 	result: null,
 	error: null,
-	integrityError: false,
+	faceModelStatus: 'not-loaded',
+	faceModelError: null,
 	context: null
 };
 
@@ -109,10 +112,23 @@ export class ReframeController {
 			stats: null,
 			result: null,
 			error: null,
-			integrityError: false,
 			context: { ...context, runId }
 		});
 		return runId;
+	}
+
+	/** Load the MediaPipe face model on the user's explicit action (Phase 28/29
+	 *  pattern). Idempotent while loading/loaded. */
+	async loadFaceModel(wasmPath: string, modelUrl: string): Promise<void> {
+		if (this.state.faceModelStatus === 'loaded' || this.state.faceModelStatus === 'loading') return;
+		this.update({ faceModelStatus: 'loading', faceModelError: null });
+		try {
+			const worker = await this.ensureWorker();
+			if (this.disposed) return;
+			worker.send({ type: 'reframe-load-face-model', wasmPath, modelUrl });
+		} catch (error) {
+			this.update({ faceModelStatus: 'failed', faceModelError: messageOf(error) });
+		}
 	}
 
 	/** Spawn the worker (if needed) and post the start command. The source File
@@ -141,11 +157,13 @@ export class ReframeController {
 	}
 
 	/** Report a failure (File resolution, worker crash, analysis error). */
-	fail(message: string, integrity = false): void {
-		this.update({ status: 'error', error: message, integrityError: integrity, progress: 0 });
+	fail(message: string): void {
+		this.update({ status: 'error', error: message, progress: 0 });
 		this.ports.onError?.(message);
 	}
 
+	/** Reset analysis state. Leaves `faceModelStatus` intact — the loaded model
+	 *  persists across analyses (discard/cancel don't unload it). */
 	private reset(): void {
 		this.update({
 			status: 'idle',
@@ -155,7 +173,6 @@ export class ReframeController {
 			stats: null,
 			result: null,
 			error: null,
-			integrityError: false,
 			context: null
 		});
 	}
@@ -207,10 +224,17 @@ export class ReframeController {
 				this.update({ status: 'review', result: msg.keyframes, stats: msg.stats, progress: 1 });
 				break;
 			case 'reframe-error':
-				this.fail(msg.reason, msg.integrity ?? false);
+				this.fail(msg.reason);
 				break;
 			case 'reframe-cancelled':
 				this.reset();
+				break;
+			case 'reframe-face-model-status':
+				this.update({
+					faceModelStatus: msg.status,
+					faceModelError:
+						msg.status === 'failed' ? (msg.message ?? 'Face model failed to load.') : null
+				});
 				break;
 		}
 	}

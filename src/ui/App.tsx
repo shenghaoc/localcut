@@ -127,6 +127,7 @@ import { SmartReframePanel, type ReframeAnalyseSettings } from './SmartReframePa
 import { ReframeOverlay } from './ReframeOverlay';
 import { ReframeController, type ReframeControllerState } from './reframe-controller';
 import { spawnSmartReframeWorker } from './reframe-bridge';
+import { BLAZEFACE_SHORT_RANGE_URL, MEDIAPIPE_WASM_PATH } from '../engine/reframe/face-models';
 import { REFRAME_ASPECT_VALUES } from '../protocol';
 import PipelineWorker from '../engine/worker.ts?worker';
 
@@ -3395,6 +3396,9 @@ export function App() {
 							capabilityProbeV2()?.smartReframe?.faceDetection === 'supported'
 						}
 						workerAvailable={capabilityProbeV2()?.smartReframe?.analysisWorker !== 'unsupported'}
+						onLoadFaceModel={() =>
+							void reframeController.loadFaceModel(MEDIAPIPE_WASM_PATH, BLAZEFACE_SHORT_RANGE_URL)
+						}
 						onAnalyse={(settings) => void handleReframeAnalyse(settings)}
 						onCancel={() => reframeController.cancel()}
 						onApply={handleReframeApply}
