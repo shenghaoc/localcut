@@ -439,6 +439,11 @@ let captureVideoDecoderConfig: VideoDecoderConfig | null = null;
 let captureAudioDecoderConfig: AudioDecoderConfig | null = null;
 let replaySaveAbort: AbortController | null = null;
 
+// -- Phase 34: Beat Detection --
+const beatAnalysisCancels = new Map<string, AbortController>();
+const beatResultCache = new Map<string, import('./beat-analysis').BeatAnalysisResult>();
+let beatSettings = { enabledSourceIds: [] as string[], globalOffsetMs: 0 };
+
 function makeSourceId(): string {
 	return `source-${nextSourceId++}`;
 }
@@ -5215,9 +5220,234 @@ function handleVoiceCleanupUpdateSettings(settings: VoiceCleanupSettings): void 
 	postHistoryState();
 }
 
+// ---------------------------------------------------------------------------
+// Phase 34: Beat Analysis
+// ---------------------------------------------------------------------------
+
+async function handleAnalyzeBeats(sourceId: string): Promise<void> {
+	const { analyseBeatTimes } = await import('./beat-analysis');
+	const { readBeatCache, writeBeatCache } = await import('./beat-cache');
+
+	// Look up the media handle
+	const handle = sourceInputs.get(sourceId);
+	if (!handle?.audioSource) {
+		post({ type: 'beat-analysis-error', sourceId, message: 'Source not found or has no audio.' });
+		return;
+	}
+
+	// Check fingerprint for cache
+	const descriptor = sourceDescriptors.get(sourceId);
+	const fingerprint = descriptor?.fingerprint?.digest;
+
+	// Try cache first
+	if (fingerprint) {
+		const cached = await readBeatCache(fingerprint);
+		if (cached) {
+			beatResultCache.set(sourceId, cached);
+			post({
+				type: 'beat-analysis-result',
+				sourceId,
+				tempoBpm: cached.tempoBpm,
+				beatTimesMs: cached.beatTimesMs,
+				analyserVersion: cached.analyserVersion
+			});
+			return;
+		}
+	}
+
+	// Create abort controller
+	const controller = new AbortController();
+	beatAnalysisCancels.set(sourceId, controller);
+
+	try {
+		const duration = handle.duration ?? 0;
+		if (duration <= 0) {
+			post({ type: 'beat-analysis-error', sourceId, message: 'Source has no duration.' });
+			return;
+		}
+
+		const result = await analyseBeatTimes(handle.audioSource, duration, {
+			signal: controller.signal,
+			onProgress: (fraction) => {
+				post({ type: 'beat-analysis-progress', sourceId, fraction });
+			}
+		});
+
+		// Cache the result
+		if (fingerprint) {
+			await writeBeatCache(fingerprint, result);
+		}
+
+		beatResultCache.set(sourceId, result);
+		post({
+			type: 'beat-analysis-result',
+			sourceId,
+			tempoBpm: result.tempoBpm,
+			beatTimesMs: result.beatTimesMs,
+			analyserVersion: result.analyserVersion
+		});
+	} catch (err) {
+		if (controller.signal.aborted) {
+			// Explicit cancel -- no message
+			return;
+		}
+		post({
+			type: 'beat-analysis-error',
+			sourceId,
+			message: err instanceof Error ? err.message : 'Beat analysis failed.'
+		});
+	} finally {
+		beatAnalysisCancels.delete(sourceId);
+	}
+}
+
+function handleCancelBeatAnalysis(sourceId: string): void {
+	const controller = beatAnalysisCancels.get(sourceId);
+	if (controller) {
+		controller.abort();
+		beatAnalysisCancels.delete(sourceId);
+	}
+}
+
+function handleSetBeatSettings(enabledSourceIds: string[], globalOffsetMs: number): void {
+	beatSettings = {
+		enabledSourceIds,
+		globalOffsetMs: Math.max(-500, Math.min(500, globalOffsetMs))
+	};
+	scheduleAutosave();
+}
+
+async function handleBeatAutoCut(
+	mode: 'split' | 'align',
+	clipRefs: { trackId: string; clipId: string }[]
+): Promise<void> {
+	// Gather active beat times (from all enabled sources, with global offset)
+	const allBeatTimesMs: number[] = [];
+	for (const sourceId of beatSettings.enabledSourceIds) {
+		const result = beatResultCache.get(sourceId);
+		if (result) {
+			for (const ms of result.beatTimesMs) {
+				allBeatTimesMs.push(ms + beatSettings.globalOffsetMs);
+			}
+		}
+	}
+	if (allBeatTimesMs.length === 0) return;
+
+	// Deduplicate and sort
+	allBeatTimesMs.sort((a, b) => a - b);
+	const beatTimesS = [...new Set(allBeatTimesMs)].map((ms) => ms / 1000);
+
+	if (mode === 'split') {
+		// Split mode: split each clip at beat times inside its span
+		commitTimelineMutation(
+			() => {
+				let currentTimeline = timeline;
+				for (const { trackId, clipId } of clipRefs) {
+					const track = currentTimeline.find((t) => t.id === trackId);
+					if (!track) continue;
+					const clip = track.clips.find((c) => c.id === clipId);
+					if (!clip) continue;
+
+					const clipStart = clip.start;
+					const clipEnd = clip.start + clip.duration;
+
+					// Collect beats inside this clip's span
+					const beatsInside = beatTimesS.filter((t) => t > clipStart && t < clipEnd);
+					if (beatsInside.length === 0) continue;
+
+					// Sort beats and apply minimum segment guard
+					beatsInside.sort((a, b) => a - b);
+					let lastSplit = clipStart;
+					for (const beatTime of beatsInside) {
+						// Check minimum segment from last split point
+						if (beatTime - lastSplit < 0.2) continue;
+						// Check minimum segment to clip end
+						if (clipEnd - beatTime < 0.2) continue;
+
+						currentTimeline = splitClipAt(currentTimeline, trackId, beatTime);
+						lastSplit = beatTime;
+					}
+				}
+				return currentTimeline;
+			},
+			{ coalesceKey: undefined }
+		);
+	} else {
+		// Align mode: move each clip's start to nearest beat
+		commitTimelineMutation(
+			() => {
+				let currentTimeline = timeline;
+				// Sort clips by start time for overlap detection
+				const sortedRefs = [...clipRefs].sort((a, b) => {
+					const trackA = currentTimeline.find((t) => t.id === a.trackId);
+					const trackB = currentTimeline.find((t) => t.id === b.trackId);
+					const clipA = trackA?.clips.find((c) => c.id === a.clipId);
+					const clipB = trackB?.clips.find((c) => c.id === b.clipId);
+					return (clipA?.start ?? 0) - (clipB?.start ?? 0);
+				});
+
+				// Track moved clips per track for overlap detection
+				const movedClips = new Map<string, { start: number; end: number }[]>();
+
+				for (const { trackId, clipId } of sortedRefs) {
+					const track = currentTimeline.find((t) => t.id === trackId);
+					if (!track) continue;
+					const clip = track.clips.find((c) => c.id === clipId);
+					if (!clip) continue;
+
+					// Find nearest beat (earlier on tie)
+					let nearestBeat = beatTimesS[0];
+					let minDist = Math.abs(clip.start - nearestBeat);
+					for (const bt of beatTimesS) {
+						const dist = Math.abs(clip.start - bt);
+						if (dist < minDist) {
+							minDist = dist;
+							nearestBeat = bt;
+						} else if (dist === minDist && bt < nearestBeat) {
+							nearestBeat = bt; // earlier on tie
+						}
+					}
+
+					// Clamp to 0
+					const newStart = Math.max(0, nearestBeat);
+					const newEnd = newStart + clip.duration;
+
+					// Check for overlap with previously moved clips on same track
+					const trackMoved = movedClips.get(trackId) ?? [];
+					let overlaps = false;
+					for (const moved of trackMoved) {
+						if (newStart < moved.end && newEnd > moved.start) {
+							overlaps = true;
+							break;
+						}
+					}
+					if (overlaps) continue; // skip this clip
+
+					// Apply the move
+					if (newStart !== clip.start) {
+						currentTimeline = moveClips(currentTimeline, [
+							{ trackId, clipId, toTrackId: trackId, toStart: newStart }
+						]);
+					}
+
+					trackMoved.push({ start: newStart, end: newEnd });
+					movedClips.set(trackId, trackMoved);
+				}
+				return currentTimeline;
+			},
+			{ coalesceKey: undefined }
+		);
+	}
+}
+
 async function handleDispose(): Promise<void> {
 	restoreOfferGeneration += 1;
 	replaySaveAbort?.abort();
+	// Abort all in-flight beat analyses
+	for (const controller of beatAnalysisCancels.values()) {
+		controller.abort();
+	}
+	beatAnalysisCancels.clear();
 	if (capture) {
 		const finished = capture.finished;
 		requestCaptureStop();
@@ -6534,6 +6764,19 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			break;
 		case 'voice-cleanup-update-settings':
 			handleVoiceCleanupUpdateSettings(cmd.settings);
+			break;
+		// -- Phase 34: Beat Detection --
+		case 'analyze-beats':
+			void handleAnalyzeBeats(cmd.sourceId);
+			break;
+		case 'cancel-beat-analysis':
+			handleCancelBeatAnalysis(cmd.sourceId);
+			break;
+		case 'beat-auto-cut':
+			void handleBeatAutoCut(cmd.mode, cmd.clipRefs);
+			break;
+		case 'set-beat-settings':
+			handleSetBeatSettings(cmd.enabledSourceIds, cmd.globalOffsetMs);
 			break;
 		case 'dispose':
 			void handleDispose();

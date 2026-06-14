@@ -130,4 +130,38 @@ describe('timeline interaction helpers', () => {
 			{ trackId: 'video-track', clipId: 'b' }
 		]);
 	});
+
+	// Phase 34: Beat snap targets
+	it('builds snap targets with beat times', () => {
+		const targets = buildSnapTargets(timelineFixture(), [], [1.0, 2.0]);
+		const beatTargets = targets.filter((t) => t.kind === 'beat');
+		expect(beatTargets.length).toBe(2);
+		expect(beatTargets[0]).toMatchObject({
+			kind: 'beat',
+			time: 1.0,
+			id: 'beat-0',
+			label: 'Beat 1'
+		});
+		expect(beatTargets[1]).toMatchObject({
+			kind: 'beat',
+			time: 2.0,
+			id: 'beat-1',
+			label: 'Beat 2'
+		});
+	});
+
+	it('produces no beat targets when beatTimesSeconds is undefined', () => {
+		const targets = buildSnapTargets(timelineFixture(), []);
+		const beatTargets = targets.filter((t) => t.kind === 'beat');
+		expect(beatTargets.length).toBe(0);
+	});
+
+	it('resolves snap to beat target when closer', () => {
+		const targets = buildSnapTargets(timelineFixture(), [], [1.0, 5.0]);
+		// At time 0.99, beat at 1.0 is closer than clip-start at 2.0
+		const result = resolveSnap(0.99, 100, targets, 10);
+		expect(result.snapped).toBe(true);
+		expect(result.target?.kind).toBe('beat');
+		expect(result.time).toBe(1.0);
+	});
 });

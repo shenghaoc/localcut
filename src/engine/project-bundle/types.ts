@@ -13,7 +13,14 @@ export interface MediaFingerprint {
 	digest: string;
 }
 
-export type BundleAssetKind = 'media' | 'lut' | 'caption' | 'thumbnail' | 'waveform' | 'proxy';
+export type BundleAssetKind =
+	| 'media'
+	| 'lut'
+	| 'caption'
+	| 'thumbnail'
+	| 'waveform'
+	| 'proxy'
+	| 'beats';
 
 export interface BundleAsset {
 	assetId: string;
@@ -37,6 +44,7 @@ export interface BundleCacheManifest {
 	thumbnails?: { assetId: string; key: string }[];
 	waveforms?: { sourceId: string; assetId: string; bucketCount: number }[];
 	proxies?: { sourceId: string; assetId: string; width: number; height: number }[];
+	beats?: { sourceId: string; assetId: string }[];
 }
 
 export interface ProjectBundleManifest {

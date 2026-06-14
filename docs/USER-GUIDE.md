@@ -223,6 +223,38 @@ Audio runs through an AudioWorklet graph and is the master clock for A/V sync �
 
 When clips on the timeline use different audio sample rates (e.g. a 44.1 kHz MP3 alongside a 48 kHz video), the engine resamples all audio to the target output rate using a polyphase sinc filter. This happens transparently during both playback and export — no user action is needed. The source health panel shows a **Mixed audio sample rates** note as an informational reminder.
 
+## Beat Detection
+
+LocalCut can analyse any imported audio source to detect its tempo and beat positions. The analysis runs entirely on your device in the pipeline worker — no audio is uploaded, and no server is involved.
+
+### How to use it
+
+1. Import an audio source (MP3, AAC, WAV, etc.) into the Media Bin.
+2. Open the **Beat Detection** panel below the Media Bin.
+3. Click **Analyse** next to the audio source. A progress bar shows the analysis status.
+4. Once complete, the detected tempo (BPM) and beat count are displayed.
+5. Click **On** to enable the beat grid display on the timeline ruler. Beat ticks appear in purple (`#b06cff`); the first beat of each bar is taller.
+
+### Beat grid controls
+
+- **Offset nudge** (–500 ms to +500 ms): shifts all displayed beat times forward or backward in time. Use this to align the beat grid with the actual musical beats if the detected grid is slightly off.
+- **Snap to beats**: toggle the "Beat" button in the timeline toolbar (keyboard shortcut **B**) to include beat positions in the snap target set. When enabled, dragging clip edges or playhead snaps to the nearest beat.
+- **Auto-cut**: select one or more clips on the timeline, then click **Split** or **Align** in the Beat Detection panel:
+  - **Split mode**: splits each selected clip at every beat time that falls inside its span. Segments shorter than 0.2 seconds are skipped to avoid creating uneditable slivers.
+  - **Align mode**: moves each selected clip's start to the nearest beat time. Selected clips are sorted chronologically before alignment so that overlap-skip decisions are deterministic — if two clips on the same track would overlap after alignment, the later clip is left in place. Selected clips on locked tracks are skipped with a diagnostics finding. Linked A/V partners are moved together so audio and video stay in sync.
+
+### WASM acceleration
+
+The beat analysis uses a WASM SIMD-accelerated FFT when available for faster analysis. If WASM SIMD is not supported by your browser, a pure JavaScript fallback is used transparently — the results are the same on the same platform. The Capabilities panel shows the WASM status.
+
+### Technical notes
+
+- Analysis supports tempo detection in the range 60–200 BPM.
+- Beat times are derived from the analysis and are not stored as editable markers. They do not appear in the export markers range selector.
+- Analysis results are cached per source fingerprint. Re-importing the same audio file does not require re-analysis.
+- Analysis results are included in project bundles, so round-tripped projects retain their beat data.
+- Silent or near-silent audio is detected before grid generation and produces an empty beat list rather than a spurious dense grid.
+
 ## Portrait Matte (Experimental)
 
 Portrait Matte separates the foreground person from the background in video clips — "green screen without a green screen" — using an on-device, permissively licensed ML model. The deployed default is **MediaPipe Selfie Segmentation** (`.tflite`, Apache-2.0): a person/background _segmentation_ model (not a true alpha matte), so very fine edges like loose hair are approximate; its mask is smoothed over time for stability. The feature runs entirely in the browser on **LiteRT.js** (the same on-device ML runtime as Audio Cleanup and Auto Captions), using your GPU via WebGPU with no server-side processing. Do **not** deploy GPL-licensed model weights (e.g. RobustVideoMatting) at the model URL — this application is MIT-licensed and the project's licensing verdict on candidate models is recorded in the Phase 31 design document.
