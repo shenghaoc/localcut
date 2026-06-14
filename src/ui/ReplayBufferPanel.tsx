@@ -90,7 +90,14 @@ export function ReplayBufferPanel(props: ReplayBufferPanelProps) {
 								</div>
 								<div class="buffer-indicator">
 									<div class="buffer-bar-bg">
-										<div class="buffer-bar-fill" style={`width: ${bufferPercent()}%`} />
+										{/* Bolt ⚡: Use hardware-accelerated scaleX instead of width to avoid layout thrashing on every tick */}
+										<div
+											class="buffer-bar-fill"
+											style={{
+												transform: `scaleX(${bufferPercent() / 100})`,
+												'will-change': 'transform'
+											}}
+										/>
 									</div>
 									<span class="buffer-label">{bufferPercent().toFixed(0)}%</span>
 								</div>
