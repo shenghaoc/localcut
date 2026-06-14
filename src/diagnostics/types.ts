@@ -196,6 +196,19 @@ export interface ExportSettingsSummary {
 	readonly range: 'full' | { readonly startS: number; readonly endS: number };
 }
 
+export interface VoiceCleanupDiagnosticSummary {
+	readonly denoiserEnabledTrackCount: number;
+	readonly wasmProvenance: string;
+	readonly wasmSha256: string | null;
+	readonly wasmLoadStatus: 'not-loaded' | 'loading' | 'loaded' | 'error';
+	readonly wasmLoadTimeMs: number | null;
+	readonly workletLatencyMs: number;
+	readonly normalisationTargetLufs: number;
+	readonly normaliseGainDb: number;
+	readonly limiterCeilingDbtp: number;
+	readonly findings: readonly CapabilityFinding[];
+}
+
 export interface BrowserDiagnosticSummary {
 	readonly userAgentFamily: string;
 	readonly userAgentVersion: string;
@@ -222,6 +235,7 @@ export interface DiagnosticSnapshot {
 	readonly capability: CapabilityReport;
 	readonly storage: StorageDiagnosticSummary;
 	readonly proxyCache: ProxyCacheDiagnosticSummary;
+	readonly voiceCleanup: VoiceCleanupDiagnosticSummary;
 	readonly activeExportSettings: ExportSettingsSummary | null;
 	readonly performanceBudgets: readonly PerformanceBudget[];
 	readonly recentErrors: RecentErrorLog;
@@ -238,6 +252,7 @@ export interface CopyableDiagnosticReport {
 	readonly capability: CapabilityReport;
 	readonly storage: StorageDiagnosticSummary;
 	readonly proxyCache: ProxyCacheDiagnosticSummary;
+	readonly voiceCleanup: VoiceCleanupDiagnosticSummary;
 	readonly activeExportSettings: ExportSettingsSummary | null;
 	readonly performanceBudgets: readonly PerformanceBudget[];
 	readonly recentErrors: RecentErrorLog;

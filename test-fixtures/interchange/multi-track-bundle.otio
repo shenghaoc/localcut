@@ -3,7 +3,7 @@
   "metadata": {
     "localcut": {
       "projectId": "fixture-multi-track",
-      "projectSchemaVersion": 13,
+      "projectSchemaVersion": 14,
       "appVersion": "0.1.0",
       "savedAt": "2026-01-01T00:00:00.000Z",
       "masterGain": 1,

@@ -23,10 +23,12 @@ import {
 	type PreviewBackend,
 	DEFAULT_LIVE_AUDIO_CHAIN_CONFIG,
 	DEFAULT_RING_BUFFER_CONFIG,
+	DEFAULT_VOICE_CLEANUP_SETTINGS,
 	type CaptureSessionState,
 	type CaptureStreamSettings,
 	type LiveAudioChainConfig,
-	type SpillRange
+	type SpillRange,
+	type VoiceCleanupSettings
 } from '../protocol';
 import {
 	EncodedAudioPacketSource,
@@ -114,7 +116,6 @@ import {
 	revalidateTransitions,
 	resolveAllAt,
 	sharedSourceIncomingLayers,
-	resolveAudioAt,
 	setClipDuration,
 	setTransition,
 	splitClipAt,
@@ -172,7 +173,7 @@ import type { SourceVideoTrackInspection } from './media-adapters/types';
 import { sampleClipParamsAt } from './keyframes';
 import { clipLutFromCubeFile, cloneClipLut, lutSnapshot, type ClipLut } from './lut';
 import { normalizeSkinMask } from './skin-smooth';
-import { applyMixStageInPlace, type AudioTransitionCut } from './audio-mix';
+import { accumulateMix, applyMixStageInPlace, type AudioTransitionCut } from './audio-mix';
 import {
 	mapAudioRing,
 	ringFreeSamples,
@@ -187,7 +188,7 @@ import { openMediaFile, STILL_DEFAULT_DURATION_S, type MediaInputHandle } from '
 import { healthReportForHandle } from './media-adapters/mediabunny-adapter';
 import {
 	resolveSourceTimestamp,
-	unavailableAudioSilenceFrames
+	audioAvailabilityWindowFrames
 } from './media-adapters/source-timing';
 import { sourceHealthReportFromError } from './media-adapters/source-health';
 import { cleanedAudioMissing, cleanedAudioSubstitute } from './audio-cleanup/cleaned-audio';
@@ -250,6 +251,7 @@ import {
 	cloneCaptionTracksSnapshot,
 	cloneTimelineSnapshot,
 	cloneTransitionsSnapshot,
+	cloneVoiceCleanupSettings,
 	serializeProject,
 	sourceDescriptorMismatchReasons,
 	type ProjectDoc,
@@ -363,7 +365,6 @@ interface PendingCaptureSource {
 const pendingCaptureSources = new Map<string, PendingCaptureSource>();
 let audioWriteAnchor = 0;
 let audioWriteFrames = 0;
-let pcmRemainder: Float32Array | null = null;
 let audioPumpGen = 0;
 const AUTOSAVE_DEBOUNCE_MS = 300;
 
@@ -402,6 +403,9 @@ function cloneLiveChainConfig(config: LiveAudioChainConfig): LiveAudioChainConfi
 
 const replayRing: RingBuffer = createRingBuffer({ ...DEFAULT_RING_BUFFER_CONFIG });
 let liveChainConfig: LiveAudioChainConfig = cloneLiveChainConfig(DEFAULT_LIVE_AUDIO_CHAIN_CONFIG);
+// Phase 36: Voice Cleanup state
+let voiceCleanupSettings: VoiceCleanupSettings = { ...DEFAULT_VOICE_CLEANUP_SETTINGS };
+let analysisAbortController: AbortController | null = null;
 let capture: CaptureRuntime | null = null;
 /** Serializes OPFS spill writes/deletes so a file is never read or deleted mid-write. */
 let replaySpillChain: Promise<void> = Promise.resolve();
@@ -886,7 +890,153 @@ function trackAudible(trackId: string): number {
 	return track.gain;
 }
 
-/** Live preview pumps the first resolved audio clip only; export sums all audible tracks. */
+function voiceCleanupExportParams() {
+	return {
+		denoiserEnabledTracks: [...voiceCleanupSettings.denoiserEnabledTracks],
+		normaliseGainDb: voiceCleanupSettings.normaliseGainDb,
+		limiterCeilingDbtp: voiceCleanupSettings.limiterCeilingDbtp,
+		gateParams: voiceCleanupSettings.gateParams,
+		limiterParams: voiceCleanupSettings.limiterParams
+	};
+}
+
+async function createConfiguredVoiceCleanupState(): Promise<
+	import('./voice-cleanup/voice-cleanup-processor').VoiceCleanupChainState
+> {
+	const { createVoiceCleanupChainState, ensureDenoiserRings } =
+		await import('./voice-cleanup/voice-cleanup-processor');
+	const state = createVoiceCleanupChainState();
+	await ensureDenoiserRings(state, voiceCleanupSettings.denoiserEnabledTracks);
+	return state;
+}
+
+async function destroyConfiguredVoiceCleanupState(
+	state: import('./voice-cleanup/voice-cleanup-processor').VoiceCleanupChainState | null
+): Promise<void> {
+	if (!state) return;
+	const { destroyVoiceCleanupChainState } = await import('./voice-cleanup/voice-cleanup-processor');
+	destroyVoiceCleanupChainState(state);
+}
+
+function audioTrackIndex(trackId: string): number {
+	let index = 0;
+	for (const track of timeline) {
+		if (track.type !== 'audio') continue;
+		if (track.id === trackId) return index;
+		index += 1;
+	}
+	return -1;
+}
+
+function liveClipAt(track: Timeline[number], time: number): TimelineClip | null {
+	for (const clip of track.clips) {
+		if (time >= clip.start && time < clip.start + clip.duration) return clip;
+	}
+	return null;
+}
+
+function liveNextClipStart(track: Timeline[number], time: number): number {
+	let next = Number.POSITIVE_INFINITY;
+	for (const clip of track.clips) {
+		if (clip.start > time && clip.start < next) next = clip.start;
+	}
+	return next;
+}
+
+async function mixLiveMonitorWindow(
+	startTime: number,
+	frameCount: number,
+	sampleRate: number,
+	channels: number
+): Promise<{ mixed: Float32Array; stems: Map<number, Float32Array> }> {
+	const mixed = new Float32Array(frameCount * channels);
+	const stems = new Map<number, Float32Array>();
+	if (frameCount <= 0 || channels <= 0) return { mixed, stems };
+
+	for (const track of timeline) {
+		if (track.type !== 'audio') continue;
+		const gain = trackAudible(track.id);
+		if (gain <= 0) continue;
+		const trackIndex = audioTrackIndex(track.id);
+		if (trackIndex < 0) continue;
+		let stem: Float32Array | null = null;
+		let offsetFrames = 0;
+		while (offsetFrames < frameCount) {
+			const timelineTime = startTime + offsetFrames / sampleRate;
+			const clip = liveClipAt(track, timelineTime);
+			if (!clip) {
+				const nextStart = liveNextClipStart(track, timelineTime);
+				const skipUntil = Math.min(
+					startTime + frameCount / sampleRate,
+					Number.isFinite(nextStart) ? nextStart : Number.POSITIVE_INFINITY
+				);
+				const skipFrames = Number.isFinite(skipUntil)
+					? Math.max(1, Math.floor((skipUntil - timelineTime) * sampleRate))
+					: frameCount - offsetFrames;
+				offsetFrames += Math.min(frameCount - offsetFrames, skipFrames);
+				continue;
+			}
+
+			const substitute = cleanedAudioSubstitute(clip, sourceInputs);
+			const audioClip = substitute?.clip ?? clip;
+			const handle = substitute?.handle ?? sourceInputs.get(clip.sourceId);
+			const clipEnd = clip.start + clip.duration;
+			const runFrames = Math.max(
+				1,
+				Math.min(frameCount - offsetFrames, Math.ceil((clipEnd - timelineTime) * sampleRate))
+			);
+			if (!handle?.audioSource) {
+				offsetFrames += runFrames;
+				continue;
+			}
+
+			const sourceTimestamp = resolveSourceTimestamp({
+				clip: audioClip,
+				timelineTime,
+				trackKind: 'audio',
+				timing: handle.timing
+			});
+			const availableRunFrames = audioAvailabilityWindowFrames({
+				resolution: sourceTimestamp,
+				timing: handle.timing,
+				clip: audioClip,
+				timelineTime,
+				sampleRate,
+				maxFrames: runFrames
+			});
+			if (!sourceTimestamp.available) {
+				offsetFrames += availableRunFrames;
+				continue;
+			}
+
+			const pcm = await handle.audioSource.pcmWindowAt(
+				sourceTimestamp.adapterTimestampS,
+				availableRunFrames,
+				channels,
+				sampleRate
+			);
+			applyMixStageInPlace(pcm, channels, {
+				gain,
+				pan: track.pan,
+				fadeInS: clip.audioFadeIn,
+				fadeOutS: clip.audioFadeOut,
+				clipOffsetS: timelineTime - clip.start,
+				clipDurationS: clip.duration,
+				sampleRate
+			});
+			const offsetSamples = offsetFrames * channels;
+			accumulateMix(mixed, pcm, offsetSamples);
+			stem ??= new Float32Array(frameCount * channels);
+			accumulateMix(stem, pcm, offsetSamples);
+			stems.set(trackIndex, stem);
+			offsetFrames += availableRunFrames;
+		}
+	}
+
+	return { mixed, stems };
+}
+
+/** Live preview pumps a bounded all-audible-track monitor mix into the AudioWorklet. */
 async function pumpAudioOnce(): Promise<void> {
 	if (!audioRing || !clockView) return;
 	if (Atomics.load(audioRing.header, RingHeader.STATE) !== RingState.PLAYING) return;
@@ -895,83 +1045,16 @@ async function pumpAudioOnce(): Promise<void> {
 
 	const sampleRate = Atomics.load(audioRing.header, RingHeader.SAMPLE_RATE) || 48_000;
 	const timelineTime = audioWriteAnchor + audioWriteFrames / sampleRate;
-	const resolved = resolveAudioAt(timeline, timelineTime);
-	if (!resolved) {
-		const channels = Math.max(1, Atomics.load(audioRing.header, RingHeader.CHANNELS));
-		const silenceFrames = Math.min(freeFrames, 1024);
-		const written = writeRingPcm(audioRing, new Float32Array(silenceFrames * channels));
-		audioWriteFrames += written;
-		return;
-	}
-	// Cleaned-audio routing (Phase 27): substitute the derived denoised asset
-	// when applied and still covering the clip range; otherwise play original.
-	const substitute = cleanedAudioSubstitute(resolved.clip, sourceInputs);
-	const audioClip = substitute?.clip ?? resolved.clip;
-	const handle = substitute?.handle ?? sourceInputs.get(resolved.clip.sourceId);
-	if (!handle?.audioSource) {
-		const channels = Math.max(1, Atomics.load(audioRing.header, RingHeader.CHANNELS));
-		const silenceFrames = Math.min(freeFrames, 1024);
-		const written = writeRingPcm(audioRing, new Float32Array(silenceFrames * channels));
-		audioWriteFrames += written;
-		return;
-	}
-
 	const channels = Math.max(1, Atomics.load(audioRing.header, RingHeader.CHANNELS));
-	let pcm: Float32Array | null;
-	if (pcmRemainder) {
-		pcm = pcmRemainder;
-		pcmRemainder = null;
-	} else {
-		const sourceTimestamp = resolveSourceTimestamp({
-			clip: audioClip,
-			timelineTime,
-			trackKind: 'audio',
-			timing: handle.timing
-		});
-		if (!sourceTimestamp.available) {
-			const silenceFrames = unavailableAudioSilenceFrames({
-				resolution: sourceTimestamp,
-				timing: handle.timing,
-				clip: audioClip,
-				timelineTime,
-				sampleRate,
-				maxFrames: Math.min(freeFrames, 1024)
-			});
-			const written = writeRingPcm(audioRing, new Float32Array(silenceFrames * channels));
-			audioWriteFrames += written;
-			return;
-		}
-		pcm = await handle.audioSource.pcmAt(sourceTimestamp.adapterTimestampS, channels, sampleRate);
-		if (!pcm) {
-			const silenceFrames = Math.min(freeFrames, 1024);
-			const written = writeRingPcm(audioRing, new Float32Array(silenceFrames * channels));
-			audioWriteFrames += written;
-			return;
-		}
-	}
-
-	const track = timeline.find((item) => item.id === resolved.trackId);
-	const gain = trackAudible(resolved.trackId);
-	if (gain <= 0 || !track) {
-		pcm.fill(0);
-	} else {
-		const clipOffsetS = timelineTime - resolved.clip.start;
-		applyMixStageInPlace(pcm, channels, {
-			gain,
-			pan: track.pan,
-			fadeInS: resolved.clip.audioFadeIn,
-			fadeOutS: resolved.clip.audioFadeOut,
-			clipOffsetS,
-			clipDurationS: resolved.clip.duration,
-			sampleRate
-		});
-	}
-	const written = writeRingPcm(audioRing, pcm);
+	const frameCount = Math.min(freeFrames, 1024);
+	const { mixed, stems } = await mixLiveMonitorWindow(
+		timelineTime,
+		frameCount,
+		sampleRate,
+		channels
+	);
+	const written = writeRingPcm(audioRing, mixed, -1, stems);
 	audioWriteFrames += written;
-	const totalFrames = pcm.length / channels;
-	if (written < totalFrames) {
-		pcmRemainder = pcm.subarray(written * channels);
-	}
 }
 
 function startAudioPump(): void {
@@ -1000,7 +1083,6 @@ function resetAudioRingForSeek(time: number): void {
 	resetRingPointers(audioRing);
 	audioWriteAnchor = time;
 	audioWriteFrames = 0;
-	pcmRemainder = null;
 	if (clockView) {
 		clockView[ClockIndex.AUDIO_CLOCK] = time;
 		clockView[ClockIndex.CURRENT_TIME] = time;
@@ -1139,7 +1221,8 @@ async function persistCurrentProject(): Promise<void> {
 		exportPresets: exportPresets.filter((p) => !p.builtIn),
 		renderQueueHistory: serializeQueueHistory(queueState),
 		replayBufferConfig: replayRing.getConfig(),
-		liveAudioChainConfig: liveChainConfig
+		liveAudioChainConfig: liveChainConfig,
+		voiceCleanup: voiceCleanupSettings
 	});
 	await saveStoredProject(doc);
 }
@@ -1438,7 +1521,8 @@ function historySnapshot() {
 		timeline,
 		captionTracks,
 		transitions,
-		markers
+		markers,
+		voiceCleanup: voiceCleanupSettings
 	};
 }
 
@@ -1939,8 +2023,10 @@ async function handleNewProject(): Promise<void> {
 	if (capture) requestCaptureStop();
 	replayRing.updateConfig({ ...DEFAULT_RING_BUFFER_CONFIG });
 	liveChainConfig = cloneLiveChainConfig(DEFAULT_LIVE_AUDIO_CHAIN_CONFIG);
+	voiceCleanupSettings = { ...DEFAULT_VOICE_CLEANUP_SETTINGS };
 	postReplayBufferState();
 	postLiveChainState();
+	postVoiceCleanupState();
 	ensureClockAndTimeline();
 	postMediaAssets();
 	postHistoryState();
@@ -3772,11 +3858,15 @@ function applyHistoryRestore(next: {
 	captionTracks?: CaptionTrack[];
 	transitions: TimelineTransition[];
 	markers: TimelineMarker[];
+	voiceCleanup?: VoiceCleanupSettings;
 }): void {
 	timeline = cloneTimelineSnapshot(next.timeline);
 	captionTracks = cloneCaptionTracksSnapshot(next.captionTracks ?? []);
 	transitions = reconcileTransitions(timeline, next.transitions);
 	markers = cloneMarkersSnapshot(next.markers);
+	voiceCleanupSettings = cloneVoiceCleanupSettings(
+		next.voiceCleanup ?? DEFAULT_VOICE_CLEANUP_SETTINGS
+	);
 	syncTimelineLuts();
 	// Undo can resurrect clips of a source that was removed from the bin. Re-add
 	// any still-described source the restored timeline references so the asset
@@ -3789,6 +3879,7 @@ function applyHistoryRestore(next: {
 		}
 	}
 	afterTimelineMutation();
+	postVoiceCleanupState();
 	if (binChanged) postMediaAssets();
 }
 
@@ -4324,6 +4415,9 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
 	exportAbort = controller;
 
 	let exportCaptionTextureIds: string[] = [];
+	let exportCleanupState:
+		| import('./voice-cleanup/voice-cleanup-processor').VoiceCleanupChainState
+		| null = null;
 	try {
 		const exportTimelineSnapshot = cloneTimelineForExport();
 		const exportCaptionTracksSnapshot = cloneCaptionTracksSnapshot(captionTracks);
@@ -4349,6 +4443,7 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
 		if (renderer) {
 			const outputHandle = cmd.output;
 			if (!outputHandle) throw new Error('Accelerated export requires a file destination.');
+			exportCleanupState = await createConfiguredVoiceCleanupState();
 			const result = await exportTimeline({
 				timeline: exportTimelineSnapshot,
 				sources: sourceInputs,
@@ -4361,6 +4456,8 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
 				masterGain,
 				transitions: audioTransitions,
 				videoTransitions: transitions,
+				voiceCleanupSettings: voiceCleanupExportParams(),
+				cleanupState: exportCleanupState,
 				// Title layers composite from the cached raster; `ensure` (re)rasters once
 				// per title on the cold export path, never per frame.
 				titleTextureFor: (clip) =>
@@ -4416,6 +4513,7 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
 				projectDisplayName()
 					.replace(/[^a-z0-9._-]+/gi, '-')
 					.replace(/^-+|-+$/g, '') || 'localcut-reduced';
+			exportCleanupState = await createConfiguredVoiceCleanupState();
 			const result = await exportTimelineReduced({
 				timeline: exportTimelineSnapshot,
 				sources: sourceInputs,
@@ -4427,6 +4525,8 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
 				onProgress: (progress) => post({ type: 'export-progress', progress }),
 				masterGain,
 				transitions: audioTransitions,
+				voiceCleanupSettings: voiceCleanupExportParams(),
+				cleanupState: exportCleanupState,
 				hasVideoTransitions: transitions.length > 0,
 				overlayTitleLayersAt: (timelineTime) =>
 					activeCaptionLayersAt(exportCaptionTracksSnapshot, timelineTime, (editPathId) =>
@@ -4466,6 +4566,7 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
 			post({ type: 'export-error', message });
 		}
 	} finally {
+		await destroyConfiguredVoiceCleanupState(exportCleanupState);
 		releaseRetainedOverlayTextures(exportCaptionTextureIds);
 		syncTitleRasters();
 		exportAbort = null;
@@ -4650,6 +4751,9 @@ async function runQueueJob(job: RenderQueueJob): Promise<void> {
 
 	let exportCaptionTextureIds: string[] = [];
 	let finalizingSaved = false;
+	let exportCleanupState:
+		| import('./voice-cleanup/voice-cleanup-processor').VoiceCleanupChainState
+		| null = null;
 	try {
 		const exportTimelineSnapshot = cloneTimelineForExport();
 		const exportCaptionTracksSnapshot = cloneCaptionTracksSnapshot(captionTracks);
@@ -4675,6 +4779,7 @@ async function runQueueJob(job: RenderQueueJob): Promise<void> {
 			getTimelineDuration(exportTimelineSnapshot)
 		);
 
+		exportCleanupState = await createConfiguredVoiceCleanupState();
 		await exportTimeline({
 			timeline: exportTimelineSnapshot,
 			sources: sourceInputs,
@@ -4696,6 +4801,8 @@ async function runQueueJob(job: RenderQueueJob): Promise<void> {
 			},
 			masterGain,
 			transitions: audioTransitions,
+			voiceCleanupSettings: voiceCleanupExportParams(),
+			cleanupState: exportCleanupState,
 			titleTextureFor: (clip) =>
 				clip.title ? (titleCache?.ensure(clip.id, clip.title) ?? null) : null,
 			overlayTextureLayersAt: (timelineTime) => {
@@ -4770,6 +4877,7 @@ async function runQueueJob(job: RenderQueueJob): Promise<void> {
 			post({ type: 'queue-job-failed', jobId: job.id, error: message });
 		}
 	} finally {
+		await destroyConfiguredVoiceCleanupState(exportCleanupState);
 		releaseRetainedOverlayTextures(exportCaptionTextureIds);
 		syncTitleRasters();
 		queueJobAbort = null;
@@ -4807,6 +4915,104 @@ async function handleQueueStart() {
 	});
 	postQueueState();
 	scheduleAutosave();
+}
+
+// ── Phase 36: Voice Cleanup handlers ──
+
+async function handleVoiceCleanupAnalyseLoudness(
+	cmd: Extract<WorkerCommand, { type: 'voice-cleanup-analyse-loudness' }>
+): Promise<void> {
+	if (analysisAbortController) {
+		post({ type: 'voice-cleanup-analysis-error', message: 'Analysis already in progress.' });
+		return;
+	}
+	if (timeline.length === 0) {
+		post({ type: 'voice-cleanup-analysis-error', message: 'Timeline is empty.' });
+		return;
+	}
+
+	analysisAbortController = new AbortController();
+	const { signal } = analysisAbortController;
+	const durationS = getTimelineDuration(timeline);
+	const sampleRate = audioRing
+		? Atomics.load(audioRing.header, RingHeader.SAMPLE_RATE) || 48_000
+		: 48_000;
+	const channels = audioRing ? Math.max(1, Atomics.load(audioRing.header, RingHeader.CHANNELS)) : 2;
+	let cleanupState: Awaited<ReturnType<typeof createConfiguredVoiceCleanupState>> | null = null;
+
+	try {
+		cleanupState = await createConfiguredVoiceCleanupState();
+		const { analyseLoudness } = await import('./voice-cleanup/loudness-analysis');
+		const result = await analyseLoudness(
+			{
+				timeline,
+				sources: sourceInputs,
+				sampleRate,
+				channels,
+				timelineDurationS: durationS,
+				targetLufs: cmd.targetLufs,
+				masterGain,
+				voiceCleanup: voiceCleanupExportParams(),
+				cleanupState
+			},
+			(fraction) => {
+				post({
+					type: 'voice-cleanup-analysis-progress',
+					fraction,
+					currentWindowS: fraction * durationS
+				});
+			},
+			signal
+		);
+		post({
+			type: 'voice-cleanup-analysis-result',
+			measuredLufs: result.measuredLufs,
+			normalisationGainDb: result.normalisationGainDb,
+			normalisedLufs: Number.isFinite(result.measuredLufs)
+				? result.measuredLufs + result.normalisationGainDb
+				: result.measuredLufs
+		});
+	} catch (err) {
+		if (err instanceof DOMException && err.name === 'AbortError') {
+			post({ type: 'voice-cleanup-analysis-cancelled' });
+		} else {
+			post({
+				type: 'voice-cleanup-analysis-error',
+				message: err instanceof Error ? err.message : String(err)
+			});
+		}
+	} finally {
+		await destroyConfiguredVoiceCleanupState(cleanupState);
+		analysisAbortController = null;
+	}
+}
+
+function handleVoiceCleanupCancelAnalysis(): void {
+	analysisAbortController?.abort();
+	// Don't clear the controller here — the running analysis handler's finally
+	// block will clear it. This avoids a race where a new analysis starts before
+	// the old one has observed the abort.
+}
+
+function handleVoiceCleanupApplyNormalisation(normalisationGainDb: number): void {
+	const before = historySnapshot();
+	voiceCleanupSettings = { ...voiceCleanupSettings, normaliseGainDb: normalisationGainDb };
+	history.push(before);
+	scheduleAutosave();
+	post({ type: 'voice-cleanup-applied', normalisationGainDb });
+	postVoiceCleanupState();
+	postHistoryState();
+}
+
+function handleVoiceCleanupUpdateSettings(settings: VoiceCleanupSettings): void {
+	const before = historySnapshot();
+	voiceCleanupSettings = { ...settings };
+	history.push(before);
+	scheduleAutosave();
+	// SAB write for denoiser bypass bitmasks happens on the main thread
+	// (the worker doesn't have access to the meter SAB).
+	postVoiceCleanupState();
+	postHistoryState();
 }
 
 async function handleDispose(): Promise<void> {
@@ -4857,6 +5063,7 @@ async function handleDiagnosticSnapshot(requestId: string): Promise<void> {
 		activeExportSettings: lastExportSettings,
 		recentErrors,
 		sources,
+		voiceCleanup: voiceCleanupSettings,
 		livePublish: currentCapabilityProbe?.livePublish ?? null
 	});
 	post({ type: 'diagnostic-snapshot', requestId, snapshot });
@@ -4876,15 +5083,24 @@ function postLiveChainState(): void {
 	post({ type: 'live-chain-latency', latencyMs: chainLatencyS(liveChainConfig) * 1000 });
 }
 
-/** Applies (or defaults) the persisted Phase 46 configs from a project doc. */
+function postVoiceCleanupState(): void {
+	post({ type: 'voice-cleanup-settings', settings: { ...voiceCleanupSettings } });
+}
+
+/** Applies (or defaults) the persisted Phase 46/36 configs from a project doc. */
 function applyProjectPhase46Config(doc: ProjectDoc): void {
 	if (capture) requestCaptureStop();
 	replayRing.updateConfig(doc.replayBufferConfig ?? { ...DEFAULT_RING_BUFFER_CONFIG });
 	liveChainConfig = cloneLiveChainConfig(
 		doc.liveAudioChainConfig ?? DEFAULT_LIVE_AUDIO_CHAIN_CONFIG
 	);
+	// Phase 36: restore voice cleanup settings from project doc
+	voiceCleanupSettings = doc.voiceCleanup
+		? { ...doc.voiceCleanup }
+		: { ...DEFAULT_VOICE_CLEANUP_SETTINGS };
 	postReplayBufferState();
 	postLiveChainState();
+	postVoiceCleanupState();
 }
 
 function queueSpillWrite(entries: RingBufferEntry[], range: SpillRange): void {
@@ -6085,6 +6301,19 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 		case 'capture-recovery-discard':
 			// TODO: Phase 41 — T7 crash recovery: discard orphaned session
 			void cmd;
+			break;
+		// Phase 36: Voice Cleanup
+		case 'voice-cleanup-analyse-loudness':
+			void handleVoiceCleanupAnalyseLoudness(cmd);
+			break;
+		case 'voice-cleanup-cancel-analysis':
+			handleVoiceCleanupCancelAnalysis();
+			break;
+		case 'voice-cleanup-apply-normalisation':
+			handleVoiceCleanupApplyNormalisation(cmd.normalisationGainDb);
+			break;
+		case 'voice-cleanup-update-settings':
+			handleVoiceCleanupUpdateSettings(cmd.settings);
 			break;
 		case 'dispose':
 			void handleDispose();

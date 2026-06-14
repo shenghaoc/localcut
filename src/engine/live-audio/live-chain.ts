@@ -1,5 +1,7 @@
 import {
 	DEFAULT_LIVE_AUDIO_CHAIN_CONFIG,
+	DENOISER_BYPASS_TRACKS_0_15,
+	DENOISER_BYPASS_TRACKS_16_31,
 	type LiveAudioChainConfig,
 	LiveChainMeterIndex
 } from '../../protocol';
@@ -45,6 +47,31 @@ export function writeChainParamsToSab(sab: Float32Array, config: LiveAudioChainC
 	sab[LiveChainMeterIndex.LIMITER_RELEASE] = config.limiter.releaseMs;
 
 	sab[LiveChainMeterIndex.DENOISER_BYPASS] = config.denoiserBypass ? 1 : 0;
+}
+
+/**
+ * Write per-track denoiser bypass bitmasks to the SAB (Phase 36).
+ * Two 16-bit float-safe integers: tracks 0–15 in SAB[35], tracks 16–31 in SAB[36].
+ * Call from the main thread when voiceCleanup.denoiserEnabledTracks changes.
+ */
+export function writeDenoiserBypassToSab(
+	sab: Float32Array,
+	trackIds: readonly string[],
+	enabledTracks: readonly string[]
+): void {
+	let mask0 = 0; // tracks 0–15
+	let mask1 = 0; // tracks 16–31
+	for (let i = 0; i < trackIds.length && i < 32; i++) {
+		if (enabledTracks.includes(trackIds[i])) {
+			if (i < 16) {
+				mask0 |= 1 << i;
+			} else {
+				mask1 |= 1 << (i - 16);
+			}
+		}
+	}
+	sab[DENOISER_BYPASS_TRACKS_0_15] = mask0;
+	sab[DENOISER_BYPASS_TRACKS_16_31] = mask1;
 }
 
 export function anyInsertActive(config: LiveAudioChainConfig): boolean {

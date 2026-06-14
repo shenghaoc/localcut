@@ -14,7 +14,7 @@ export const ClockIndex = {
 
 /** Meter SAB layout: peak/RMS pairs written by the AudioWorklet (single writer). */
 export const METER_FIELD_COUNT = 4;
-export const METER_BUFFER_BYTES = METER_FIELD_COUNT * Float32Array.BYTES_PER_ELEMENT;
+export const METER_BUFFER_BYTES = 48 * Float32Array.BYTES_PER_ELEMENT;
 
 export const MeterIndex = {
 	PEAK_L: 0,
@@ -1761,6 +1761,11 @@ export type WorkerCommand =
 	| { type: 'capture-recovery-discard'; sessionId: string }
 	| { type: 'set-skin-mask'; trackId: string; clipId: string; mask: SkinMaskSnapshot }
 	| { type: 'set-skin-smooth-bypass'; trackId: string; clipId: string; bypass: boolean }
+	// Phase 36: Voice Cleanup
+	| { type: 'voice-cleanup-analyse-loudness'; targetLufs: number }
+	| { type: 'voice-cleanup-cancel-analysis' }
+	| { type: 'voice-cleanup-apply-normalisation'; normalisationGainDb: number }
+	| { type: 'voice-cleanup-update-settings'; settings: VoiceCleanupSettings }
 	| { type: 'dispose' };
 
 /** A measured preview resolution tier (adaptive downscale of the decode path). */
@@ -1996,6 +2001,18 @@ export type WorkerStateMessage =
 			sessionId: string;
 			trackIds: string[];
 	  }
+	// Phase 36: Voice Cleanup
+	| { type: 'voice-cleanup-analysis-progress'; fraction: number; currentWindowS: number }
+	| {
+			type: 'voice-cleanup-analysis-result';
+			measuredLufs: number;
+			normalisationGainDb: number;
+			normalisedLufs: number;
+	  }
+	| { type: 'voice-cleanup-analysis-cancelled' }
+	| { type: 'voice-cleanup-analysis-error'; message: string }
+	| { type: 'voice-cleanup-applied'; normalisationGainDb: number }
+	| { type: 'voice-cleanup-settings'; settings: VoiceCleanupSettings }
 	| { type: 'error'; message: string };
 
 // ── Phase 46: Replay Buffer + Live Audio Chain ──
@@ -2139,12 +2156,39 @@ export const DEFAULT_LIVE_AUDIO_CHAIN_CONFIG: LiveAudioChainConfig = {
 	printToRecording: false
 };
 
+// ── Phase 36: Voice Cleanup ──
+
+export interface VoiceCleanupSettings {
+	denoiserEnabledTracks: string[];
+	normalisationTargetLufs: number;
+	normaliseGainDb: number;
+	limiterCeilingDbtp: number;
+	gateParams: GateParams;
+	limiterParams: LimiterParams;
+}
+
+export const DEFAULT_VOICE_CLEANUP_SETTINGS: VoiceCleanupSettings = {
+	denoiserEnabledTracks: [],
+	normalisationTargetLufs: -14,
+	normaliseGainDb: 0,
+	limiterCeilingDbtp: -1,
+	gateParams: { ...DEFAULT_GATE_PARAMS },
+	limiterParams: { ...DEFAULT_LIMITER_PARAMS }
+};
+
 // Extended SAB layout for live audio chain (appended to Phase 16 meter SAB).
 // Used by the future monitor-path AudioWorklet; the v1 print-to-recording
 // path runs the chain in the pipeline worker and does not touch this SAB.
 export const LIVE_CHAIN_METER_OFFSET = 4; // After Phase 16 meters [0..3]
-// Indices 4..34 are assigned below; 35..47 (13 slots) are reserved for the
-// Phase 36 denoiser parameters so adding them won't resize existing SABs.
+// Phase 36 per-track denoiser bypass bitmasks (SAB[35..36]).
+// Two 16-bit float-safe integers: tracks 0–15 in SAB[35], tracks 16–31 in SAB[36].
+// Read via Math.round(sab[index]) + bitwise extract. Avoids NaN canonicalization.
+export const DENOISER_BYPASS_TRACKS_0_15 = 35;
+export const DENOISER_BYPASS_TRACKS_16_31 = 36;
+export const VOICE_CLEANUP_NORMALISE_GAIN_DB = 37;
+// Indices 4..34 are assigned below; 35..47 (13 slots) are allocated for
+// Phase 36 denoiser parameters. 35-36 used for bypass bitmasks; 37 for
+// normalisation gain; 38..47 spare.
 export const LIVE_CHAIN_METER_FIELD_COUNT = 44; // Indices 4..47
 export const LIVE_CHAIN_TOTAL_FIELDS = METER_FIELD_COUNT + LIVE_CHAIN_METER_FIELD_COUNT;
 

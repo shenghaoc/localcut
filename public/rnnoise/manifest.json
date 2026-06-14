@@ -1,0 +1,13 @@
+{
+	"provenance": "@jitsi/rnnoise-wasm@0.2.1",
+	"npmPackage": "@jitsi/rnnoise-wasm",
+	"npmVersion": "0.2.1",
+	"npmTarballSha256": "c80b015b69701699868086a30015e5e680bee41a68df4c8ad2daed8b1bbc1173",
+	"sourceRepository": "https://github.com/jitsi/rnnoise-wasm",
+	"license": "Apache-2.0 wrapper, BSD-3-Clause RNNoise core",
+	"emscriptenVersion": "upstream-prebuilt",
+	"rnnoiseCommit": "upstream-package",
+	"simd": false,
+	"sizeBytes": 112141,
+	"checksum": "sha256-677147b9248aedc0a00de79dc090d1ecead37c08c8bb773a790da16109d2c487"
+}

@@ -62,6 +62,11 @@ web_modules/
 # Output of 'npm pack'
 *.tgz
 
+# Phase 36 checked-in RNNoise WASM artifact.
+!src/engine/voice-cleanup/rnnoise.wasm
+!src/engine/voice-cleanup/rnnoise-wasm-b64.ts
+!src/engine/voice-cleanup/rnnoise-wasm-manifest.json
+
 # Yarn Integrity file
 .yarn-integrity
 

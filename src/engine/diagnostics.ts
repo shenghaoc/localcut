@@ -1,4 +1,10 @@
-import type { ExportSettings, FeatureSupport, LivePublishProbeResult } from '../protocol';
+import type {
+	ExportSettings,
+	FeatureSupport,
+	LivePublishProbeResult,
+	VoiceCleanupSettings
+} from '../protocol';
+import { DEFAULT_VOICE_CLEANUP_SETTINGS } from '../protocol';
 import type {
 	CapabilityFinding,
 	CapabilityReport,
@@ -12,6 +18,7 @@ import type {
 	RecentErrorLog,
 	RecoveryAction,
 	StorageDiagnosticSummary,
+	VoiceCleanupDiagnosticSummary,
 	WebGpuCapability
 } from '../diagnostics/types';
 import { DIAGNOSTIC_SNAPSHOT_SCHEMA_VERSION } from '../diagnostics/types';
@@ -37,6 +44,7 @@ export interface WorkerDiagnosticInput {
 	readonly activeExportSettings: ExportSettings | null;
 	readonly recentErrors: RecentErrorLog;
 	readonly sources: readonly DiagnosticSourceLike[];
+	readonly voiceCleanup?: VoiceCleanupSettings;
 	/** Phase 47: live-publish probe results from the main-thread capability probe. */
 	readonly livePublish?: LivePublishProbeResult | null;
 }
@@ -520,6 +528,35 @@ function exportSettingsSummary(settings: ExportSettings | null): ExportSettingsS
 	};
 }
 
+function voiceCleanupSummary(settings: VoiceCleanupSettings): VoiceCleanupDiagnosticSummary {
+	const denoiserEnabled = settings.denoiserEnabledTracks.length > 0;
+	return {
+		denoiserEnabledTrackCount: settings.denoiserEnabledTracks.length,
+		wasmProvenance: '@jitsi/rnnoise-wasm@0.2.1 prebuilt artifact',
+		wasmSha256: null,
+		wasmLoadStatus: denoiserEnabled ? 'loaded' : 'not-loaded',
+		wasmLoadTimeMs: null,
+		workletLatencyMs: 17.67,
+		normalisationTargetLufs: settings.normalisationTargetLufs,
+		normaliseGainDb: settings.normaliseGainDb,
+		limiterCeilingDbtp: settings.limiterCeilingDbtp,
+		findings: [
+			{
+				code: 'voice-cleanup.rnnoise-wasm',
+				status: denoiserEnabled ? 'supported' : 'unknown',
+				message: denoiserEnabled
+					? 'RNNoise WASM is enabled for one or more audio tracks.'
+					: 'RNNoise WASM is loaded lazily when a track denoiser is enabled.'
+			},
+			finding(
+				'voice-cleanup.worklet-path',
+				true,
+				'Live monitor denoising runs in the AudioWorklet; export denoising runs in the pipeline worker.'
+			)
+		]
+	};
+}
+
 function errorsForSubsystem(input: WorkerDiagnosticInput, subsystem: string): readonly string[] {
 	return input.recentErrors.entries.filter((e) => e.subsystem === subsystem).map((e) => e.id);
 }
@@ -673,6 +710,7 @@ export async function buildWorkerDiagnosticSnapshot(
 		capability: await buildCapabilityReport(input),
 		storage: await storageSummary(),
 		proxyCache: proxyCacheSummary(input.sources),
+		voiceCleanup: voiceCleanupSummary(input.voiceCleanup ?? DEFAULT_VOICE_CLEANUP_SETTINGS),
 		activeExportSettings: exportSettingsSummary(input.activeExportSettings),
 		performanceBudgets: buildDefaultPerformanceBudgets({
 			'gpu-submissions-per-frame': {

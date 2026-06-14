@@ -11,8 +11,10 @@ import type {
 	SourceFrameRateModeSnapshot,
 	SourceHealthReportSnapshot,
 	SourceHealthWarningSnapshot,
-	SourceTrackTimingSnapshot
+	SourceTrackTimingSnapshot,
+	VoiceCleanupSettings
 } from '../protocol';
+import { DEFAULT_VOICE_CLEANUP_SETTINGS } from '../protocol';
 import {
 	DEFAULT_CAPTION_STYLE,
 	cloneCaptionTrack,
@@ -47,7 +49,7 @@ import { cloneClipLut, parsePersistedClipLut } from './lut';
 import { normalizeSkinMask } from './skin-smooth';
 import { parseExportPresetDoc } from './export-presets';
 
-export const PROJECT_SCHEMA_VERSION = 13;
+export const PROJECT_SCHEMA_VERSION = 14;
 const DURATION_MATCH_TOLERANCE_S = 0.25;
 const TIMING_MATCH_TOLERANCE_S = 0.05;
 
@@ -70,6 +72,7 @@ export interface ProjectDoc {
 	renderQueueHistory?: PersistedQueueJob[];
 	replayBufferConfig?: RingBufferConfig;
 	liveAudioChainConfig?: LiveAudioChainConfig;
+	voiceCleanup?: VoiceCleanupSettings;
 }
 
 export interface SerializeProjectOptions {
@@ -87,6 +90,7 @@ export interface SerializeProjectOptions {
 	renderQueueHistory?: readonly PersistedQueueJob[];
 	replayBufferConfig?: RingBufferConfig;
 	liveAudioChainConfig?: LiveAudioChainConfig;
+	voiceCleanup?: VoiceCleanupSettings;
 }
 
 export type DeserializeProjectResult =
@@ -404,6 +408,9 @@ export function serializeProject(options: SerializeProjectOptions): ProjectDoc {
 	if (options.customAnimCaptionPresets && options.customAnimCaptionPresets.length > 0) {
 		doc.customAnimCaptionPresets = options.customAnimCaptionPresets.map((p) => ({ ...p }));
 	}
+	if (options.voiceCleanup) {
+		doc.voiceCleanup = cloneVoiceCleanupSettings(options.voiceCleanup);
+	}
 	return doc;
 }
 
@@ -414,6 +421,17 @@ function cloneLiveAudioChainConfig(config: LiveAudioChainConfig): LiveAudioChain
 		limiter: { ...config.limiter },
 		denoiserBypass: config.denoiserBypass,
 		printToRecording: config.printToRecording
+	};
+}
+
+export function cloneVoiceCleanupSettings(settings: VoiceCleanupSettings): VoiceCleanupSettings {
+	return {
+		denoiserEnabledTracks: [...settings.denoiserEnabledTracks],
+		normalisationTargetLufs: settings.normalisationTargetLufs,
+		normaliseGainDb: settings.normaliseGainDb,
+		limiterCeilingDbtp: settings.limiterCeilingDbtp,
+		gateParams: { ...settings.gateParams },
+		limiterParams: { ...settings.limiterParams }
 	};
 }
 
@@ -1299,6 +1317,42 @@ function parseLiveAudioChainConfig(value: unknown): LiveAudioChainConfig | undef
 	};
 }
 
+function parseVoiceCleanupSettings(value: unknown): VoiceCleanupSettings | undefined {
+	if (!isRecord(value)) return undefined;
+	const gateParams = parseInsertNumbers(value.gateParams, [
+		'thresholdDb',
+		'rangeDb',
+		'attackMs',
+		'holdMs',
+		'releaseMs'
+	]);
+	const limiterParams = parseInsertNumbers(value.limiterParams, [
+		'ceilingDb',
+		'attackUs',
+		'releaseMs'
+	]);
+	if (!gateParams || !limiterParams) return undefined;
+	const normalisationTargetLufs = finiteNumber(value.normalisationTargetLufs);
+	const normaliseGainDb = finiteNumber(value.normaliseGainDb);
+	const limiterCeilingDbtp = finiteNumber(value.limiterCeilingDbtp);
+	if (normalisationTargetLufs === null || normaliseGainDb === null || limiterCeilingDbtp === null)
+		return undefined;
+	let denoiserEnabledTracks: string[] = DEFAULT_VOICE_CLEANUP_SETTINGS.denoiserEnabledTracks;
+	if (Array.isArray(value.denoiserEnabledTracks)) {
+		denoiserEnabledTracks = value.denoiserEnabledTracks.filter(
+			(t): t is string => typeof t === 'string'
+		);
+	}
+	return {
+		denoiserEnabledTracks,
+		normalisationTargetLufs,
+		normaliseGainDb,
+		limiterCeilingDbtp,
+		gateParams,
+		limiterParams
+	};
+}
+
 function deserializeV10(value: Record<string, unknown>): DeserializeProjectResult {
 	const result = deserializeV9(value);
 	if (!result.ok) return result;
@@ -1350,6 +1404,22 @@ function deserializeV13(value: Record<string, unknown>): DeserializeProjectResul
 	};
 }
 
+function deserializeV14(value: Record<string, unknown>): DeserializeProjectResult {
+	const result = deserializeV13(value);
+	if (!result.ok) return result;
+	// v14 (Phase 36): adds optional voiceCleanup on top of v13. Invalid/absent
+	// falls back to DEFAULT_VOICE_CLEANUP_SETTINGS at the consumer, so v10-v13
+	// docs parse unchanged.
+	return {
+		ok: true,
+		doc: {
+			...result.doc,
+			schemaVersion: PROJECT_SCHEMA_VERSION,
+			voiceCleanup: parseVoiceCleanupSettings(value.voiceCleanup)
+		}
+	};
+}
+
 export function deserializeProject(value: unknown): DeserializeProjectResult {
 	if (!isRecord(value)) return { ok: false, reason: 'Project document is not an object.' };
 	const schemaVersion = finiteNumber(value.schemaVersion);
@@ -1388,6 +1458,11 @@ export function deserializeProject(value: unknown): DeserializeProjectResult {
 			// v10/v11/v12). Originally targeted v12, but Phase 32a (Skin Smoothing)
 			// claimed v12 first, so Phase 30 ships as v13.
 			return deserializeV13(value);
+		case 14:
+			// v14 (Phase 36): adds optional voiceCleanup on top of v13. Phase 36
+			// originally targeted v12, but v12 (Phase 32a) and v13 (Phase 30) were
+			// claimed first, so Phase 36 ships as v14.
+			return deserializeV14(value);
 		default:
 			return { ok: false, reason: `Unsupported project schemaVersion ${schemaVersion}.` };
 	}

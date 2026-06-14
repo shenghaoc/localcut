@@ -8,7 +8,8 @@ import {
 	type ExportSettingsSummary,
 	type ProxyCacheDiagnosticSummary,
 	type RecentErrorLog,
-	type StorageDiagnosticSummary
+	type StorageDiagnosticSummary,
+	type VoiceCleanupDiagnosticSummary
 } from '../diagnostics/types';
 import { buildDefaultPerformanceBudgets } from '../diagnostics/performance-budgets';
 import type { CapabilitySnapshot, CapabilityTier } from './capabilities';
@@ -223,6 +224,42 @@ function proxyCacheSummary(assets: readonly MediaAssetSnapshot[]): ProxyCacheDia
 	};
 }
 
+function voiceCleanupSummary(
+	input?: UiDiagnosticInput['voiceCleanup']
+): VoiceCleanupDiagnosticSummary {
+	const status = input?.wasmLoadStatus ?? 'not-loaded';
+	return {
+		denoiserEnabledTrackCount: input?.denoiserEnabledTrackCount ?? 0,
+		wasmProvenance: '@jitsi/rnnoise-wasm@0.2.1 prebuilt artifact',
+		wasmSha256: input?.wasmSha256 ?? null,
+		wasmLoadStatus: status,
+		wasmLoadTimeMs: input?.wasmLoadTimeMs ?? null,
+		workletLatencyMs: input?.workletLatencyMs ?? 17.67,
+		normalisationTargetLufs: input?.normalisationTargetLufs ?? -14,
+		normaliseGainDb: input?.normaliseGainDb ?? 0,
+		limiterCeilingDbtp: input?.limiterCeilingDbtp ?? -1,
+		findings: [
+			{
+				code: 'voice-cleanup.rnnoise-wasm',
+				status: status === 'loaded' ? 'supported' : status === 'error' ? 'unavailable' : 'unknown',
+				message:
+					status === 'loaded'
+						? 'RNNoise WASM loaded and checksum verification succeeded.'
+						: status === 'error'
+							? `RNNoise WASM failed to load: ${input?.unavailableReason || 'unknown error'}`
+							: 'RNNoise WASM is loaded lazily when a track denoiser is enabled.'
+			},
+			{
+				code: 'voice-cleanup.worklet-latency',
+				status: 'supported',
+				message: `Monitor latency budget is ${(input?.workletLatencyMs ?? 17.67).toFixed(
+					2
+				)} ms for quantum + denoiser ring + limiter lookahead.`
+			}
+		]
+	};
+}
+
 export async function storageSummary(): Promise<StorageDiagnosticSummary> {
 	const estimate = navigator.storage?.estimate
 		? await navigator.storage.estimate().catch(() => null)
@@ -260,6 +297,17 @@ export interface UiDiagnosticInput {
 	readonly assets: readonly MediaAssetSnapshot[];
 	readonly recentErrors: RecentErrorLog;
 	readonly workerSnapshot?: DiagnosticSnapshot | null;
+	readonly voiceCleanup?: {
+		readonly denoiserEnabledTrackCount: number;
+		readonly wasmLoadStatus: VoiceCleanupDiagnosticSummary['wasmLoadStatus'];
+		readonly wasmLoadTimeMs: number | null;
+		readonly wasmSha256: string | null;
+		readonly unavailableReason: string;
+		readonly workletLatencyMs: number;
+		readonly normalisationTargetLufs: number;
+		readonly normaliseGainDb: number;
+		readonly limiterCeilingDbtp: number;
+	};
 }
 
 export async function buildUiDiagnosticSnapshot(
@@ -278,6 +326,9 @@ export async function buildUiDiagnosticSnapshot(
 			capabilityReport(input.capabilities, input.tier, input.runtimeIssue, input.webgpuReady),
 		storage: worker?.storage ?? (await storageSummary()),
 		proxyCache: worker?.proxyCache ?? proxyCacheSummary(input.assets),
+		voiceCleanup: input.voiceCleanup
+			? voiceCleanupSummary(input.voiceCleanup)
+			: (worker?.voiceCleanup ?? voiceCleanupSummary()),
 		activeExportSettings: exportSettingsSummary(input.exportSettings),
 		performanceBudgets: worker?.performanceBudgets ?? buildDefaultPerformanceBudgets(),
 		recentErrors: input.recentErrors,

@@ -13,6 +13,12 @@ import { ClockIndex, METER_BUFFER_BYTES } from '../protocol';
 
 const WORKLET_URL = `${import.meta.env.BASE_URL}audio-playback.worklet.js`;
 
+export type VoiceCleanupWorkletStatus = { status: 'ready' } | { status: 'error'; reason: string };
+
+export interface AudioEngineOptions {
+	onVoiceCleanupStatus?: (status: VoiceCleanupWorkletStatus) => void;
+}
+
 export class AudioEngine {
 	private context: AudioContext | null = null;
 	private worklet: AudioWorkletNode | null = null;
@@ -26,6 +32,8 @@ export class AudioEngine {
 		audioSab: SharedArrayBuffer | null;
 		meterSab: SharedArrayBuffer | null;
 	}> | null = null;
+
+	constructor(private readonly options: AudioEngineOptions = {}) {}
 
 	async init(
 		clockSab: SharedArrayBuffer,
@@ -46,6 +54,10 @@ export class AudioEngine {
 
 	getMeterSab(): SharedArrayBuffer | null {
 		return this.meterSab;
+	}
+
+	getSampleRate(): number {
+		return this.context?.sampleRate ?? 48_000;
 	}
 
 	/**
@@ -87,6 +99,17 @@ export class AudioEngine {
 		this.worklet?.port.postMessage({ type: 'master-gain', gain: value });
 	}
 
+	configureVoiceCleanup(enabled: boolean, wasmBytes?: ArrayBuffer): void {
+		if (!this.worklet) return;
+		if (!enabled) {
+			this.worklet.port.postMessage({ type: 'voice-cleanup-disable' });
+			return;
+		}
+		if (wasmBytes) {
+			this.worklet.port.postMessage({ type: 'voice-cleanup-wasm', bytes: wasmBytes });
+		}
+	}
+
 	private async setup(
 		clockSab: SharedArrayBuffer,
 		sampleRate: number,
@@ -113,6 +136,20 @@ export class AudioEngine {
 			});
 
 			this.worklet.connect(this.context.destination);
+			this.worklet.port.onmessage = (event: MessageEvent) => {
+				if (event.data?.type === 'voice-cleanup-wasm-ready') {
+					this.options.onVoiceCleanupStatus?.({ status: 'ready' });
+				}
+				if (event.data?.type === 'voice-cleanup-wasm-error') {
+					this.options.onVoiceCleanupStatus?.({
+						status: 'error',
+						reason:
+							typeof event.data.message === 'string'
+								? event.data.message
+								: 'RNNoise WASM failed to load in the AudioWorklet.'
+					});
+				}
+			};
 			this.worklet.port.postMessage({ type: 'master-gain', gain: this.masterGainValue });
 			return { audioSab: this.ringSab, meterSab: this.meterSab };
 		} catch (error) {

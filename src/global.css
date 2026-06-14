@@ -4647,6 +4647,25 @@ button.status-badge:hover {
 	border-top: 1px solid var(--border);
 }
 
+.live-audio-chain-panel .latency-budget-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: var(--text-xs);
+	color: var(--text-muted);
+	font-variant-numeric: tabular-nums;
+}
+
+.live-audio-chain-panel .latency-budget-table th,
+.live-audio-chain-panel .latency-budget-table td {
+	padding: 0.2rem 0.25rem;
+	border-bottom: 1px solid var(--border);
+	text-align: right;
+}
+
+.live-audio-chain-panel .latency-budget-table th:first-child {
+	text-align: left;
+}
+
 .live-audio-chain-panel .slider-control label {
 	display: grid;
 	grid-template-columns: 72px minmax(0, 1fr) 64px;

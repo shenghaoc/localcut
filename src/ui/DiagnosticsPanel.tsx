@@ -291,6 +291,53 @@ export function DiagnosticsPanel(props: DiagnosticsPanelProps) {
 							</section>
 
 							<section class="diagnostics-section">
+								<h2>Voice Cleanup</h2>
+								<dl class="diagnostics-grid">
+									<div>
+										<dt>Denoiser tracks</dt>
+										<dd>{snapshot().voiceCleanup.denoiserEnabledTrackCount}</dd>
+									</div>
+									<div>
+										<dt>WASM</dt>
+										<dd>{snapshot().voiceCleanup.wasmProvenance}</dd>
+									</div>
+									<div>
+										<dt>WASM status</dt>
+										<dd>{snapshot().voiceCleanup.wasmLoadStatus}</dd>
+									</div>
+									<div>
+										<dt>Checksum</dt>
+										<dd>{snapshot().voiceCleanup.wasmSha256 ?? 'not verified yet'}</dd>
+									</div>
+									<div>
+										<dt>Latency</dt>
+										<dd>{snapshot().voiceCleanup.workletLatencyMs.toFixed(2)} ms</dd>
+									</div>
+									<div>
+										<dt>Target</dt>
+										<dd>{snapshot().voiceCleanup.normalisationTargetLufs} LUFS</dd>
+									</div>
+									<div>
+										<dt>Ceiling</dt>
+										<dd>{snapshot().voiceCleanup.limiterCeilingDbtp} dBTP</dd>
+									</div>
+								</dl>
+								<ul class="diagnostics-list">
+									<For each={snapshot().voiceCleanup.findings}>
+										{(finding) => (
+											<li
+												class={`diagnostics-row ${finding.status === 'supported' ? 'is-ok' : 'is-muted'}`}
+											>
+												<span>{finding.code}</span>
+												<strong>{finding.status}</strong>
+												<p>{finding.message}</p>
+											</li>
+										)}
+									</For>
+								</ul>
+							</section>
+
+							<section class="diagnostics-section">
 								<h2>Export</h2>
 								<Show
 									when={snapshot().activeExportSettings}

@@ -250,6 +250,59 @@ LocalCut Studio can reduce background noise in audio clips entirely on your devi
 
 Model: DTLN (Nils L. Westhausen, Interspeech 2020 — MIT), from [breizhn/DTLN](https://github.com/breizhn/DTLN).
 
+## Voice Cleanup
+
+Voice Cleanup provides everyday audio-quality tools that work in every browser without WebNN or a cloud service. Open the **Voice Cleanup** panel from the mixer/inspector area.
+
+### Denoiser
+
+The WASM RNNoise denoiser runs on the monitor bus (live during editing) and in the export chain. It targets broadband stationary noise (fan hum, room tone, hiss) and is designed for speech.
+
+- **Enable per track**: check the tracks you want denoised. The denoiser runs on each track's audio individually before mixing, so music and sound effects on un-checked tracks are unaffected.
+- **Bypass A/B**: toggle the denoiser off to compare. A 10 ms crossfade prevents clicks.
+- **Positioning vs Phase 28 cleanup**: Phase 28 (WebNN) produces a permanent cleaned-audio asset per clip — use it for surgical, per-clip cleanup. Phase 36 denoises the monitor and export buses in real time — use it for everyday recording cleanup without a processing step.
+
+### Loudness Normalisation
+
+Measures the integrated loudness of your project (EBU R128 / ITU-R BS.1770-4) and applies a static makeup-gain correction.
+
+1. Select a target: **−14 LUFS** (streaming), **−16 LUFS** (podcast), **−23 LUFS** (broadcast), or enter a custom value.
+2. Click **Analyse & Normalise**. The analysis runs in the background; progress is shown as a fraction.
+3. Review the measured loudness and proposed correction, then click **Apply** to confirm.
+4. Use **Reset** to remove the correction at any time. Normalisation is undoable.
+
+A limiter on the master bus enforces a true-peak ceiling (default −1 dBTP) after the gain correction.
+
+### Gate
+
+A noise gate on the master bus. Attenuates audio below the threshold.
+
+- **Threshold** (default −40 dB): signal level below which the gate closes.
+- **Range** (default −80 dB): amount of attenuation when the gate is closed.
+- **Attack / Hold / Release**: timing controls for the gate envelope.
+- Recommended starting point for voice-over: threshold −40 dB, hold 20 ms, release 50 ms.
+
+### Limiter
+
+A brickwall lookahead limiter on the master bus. Prevents peaks from exceeding the ceiling.
+
+- **Ceiling** (default −1 dBTP): maximum true-peak level.
+- **Attack / Release**: timing controls.
+- The limiter adds 5 ms of latency to the monitor path (lookahead).
+
+### Latency Budget
+
+With all inserts active at 48 kHz / 128-sample quantum:
+
+| Stage                | Latency        |
+| -------------------- | -------------- |
+| AudioWorklet quantum | 2.67 ms        |
+| Denoiser ring        | 10.00 ms       |
+| Limiter lookahead    | 5.00 ms        |
+| **Total**            | **≈ 17.67 ms** |
+
+When all inserts are bypassed, latency is 0 ms (pass-through).
+
 ## Captions & Subtitles
 
 Import, edit, and export caption tracks:

@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
-import type { ExportSettings, ThroughputProbe } from '../protocol';
+import {
+	DEFAULT_GATE_PARAMS,
+	DEFAULT_LIMITER_PARAMS,
+	type ExportSettings,
+	type ThroughputProbe
+} from '../protocol';
 import {
 	buildExportPlan,
 	defaultExportSettings,
@@ -23,6 +28,8 @@ import {
 } from './timeline';
 import type { MediaInputHandle } from './media-io';
 import { defaultNormalizedSourceTiming } from './media-adapters/source-timing';
+import { createVoiceCleanupChainState } from './voice-cleanup/voice-cleanup-processor';
+import type { RnnoiseRing } from './voice-cleanup/rnnoise-processor';
 
 function audioTrack(
 	partial: Partial<Omit<TimelineTrack, 'type' | 'clips'>> & {
@@ -479,6 +486,178 @@ describe('mixAudioWindow', () => {
 		expect([...mixed]).toEqual([0.75, 0.75]);
 	});
 
+	it('applies Phase 36 denoising to enabled track PCM before summation', async () => {
+		const enabled = sourceWith(1);
+		const dry = sourceWith(0.5);
+		const sources = new Map<string, MediaInputHandle>([
+			[
+				'enabled',
+				mediaHandle({
+					sourceId: 'enabled',
+					audioSource: enabled as unknown as MediaInputHandle['audioSource']
+				})
+			],
+			[
+				'dry',
+				mediaHandle({
+					sourceId: 'dry',
+					audioSource: dry as unknown as MediaInputHandle['audioSource']
+				})
+			]
+		]);
+		const edit: Timeline = [
+			audioTrack({
+				id: 'voice-track',
+				clips: [
+					defaultTimelineClip({
+						id: 'voice',
+						sourceId: 'enabled',
+						start: 0,
+						duration: 1,
+						inPoint: 0
+					})
+				]
+			}),
+			audioTrack({
+				id: 'music-track',
+				clips: [
+					defaultTimelineClip({ id: 'music', sourceId: 'dry', start: 0, duration: 1, inPoint: 0 })
+				]
+			})
+		];
+		const cleanupState = createVoiceCleanupChainState();
+		cleanupState.denoiserRings.set('voice-track', {
+			push(input: Float32Array): Float32Array {
+				return input.map((sample) => sample * 0.25);
+			},
+			drain(): Float32Array {
+				return new Float32Array();
+			},
+			destroy(): void {}
+		} as unknown as RnnoiseRing);
+
+		const mixed = await mixAudioWindow(edit, sources, 0, 2, 4, 1, {
+			voiceCleanup: {
+				denoiserEnabledTracks: ['voice-track'],
+				normaliseGainDb: 0,
+				limiterCeilingDbtp: -1,
+				gateParams: { ...DEFAULT_GATE_PARAMS, bypass: true },
+				limiterParams: { ...DEFAULT_LIMITER_PARAMS, bypass: true }
+			},
+			cleanupState
+		});
+
+		expect([...mixed]).toEqual([0.75, 0.75]);
+	});
+
+	it('preserves stereo channel balance when denoising interleaved export PCM', async () => {
+		const stereoSource = {
+			pcmWindowAt: vi.fn(async (_time: number, frames: number, channels: number) => {
+				const pcm = new Float32Array(frames * channels);
+				for (let frame = 0; frame < frames; frame += 1) {
+					const base = frame * channels;
+					pcm[base] = 0.5;
+					pcm[base + 1] = -0.25;
+				}
+				return pcm;
+			})
+		};
+		const sources = new Map<string, MediaInputHandle>([
+			[
+				'voice',
+				mediaHandle({
+					sourceId: 'voice',
+					audioSource: stereoSource as unknown as MediaInputHandle['audioSource']
+				})
+			]
+		]);
+		const edit: Timeline = [
+			audioTrack({
+				id: 'voice-track',
+				clips: [
+					defaultTimelineClip({ id: 'voice', sourceId: 'voice', start: 0, duration: 1, inPoint: 0 })
+				]
+			})
+		];
+		const cleanupState = createVoiceCleanupChainState();
+		cleanupState.denoiserRings.set('voice-track', {
+			push(input: Float32Array): Float32Array {
+				return input.map((sample) => sample * 0.5);
+			},
+			drain(): Float32Array {
+				return new Float32Array();
+			},
+			destroy(): void {}
+		} as unknown as RnnoiseRing);
+
+		const mixed = await mixAudioWindow(edit, sources, 0, 1, 4, 2, {
+			voiceCleanup: {
+				denoiserEnabledTracks: ['voice-track'],
+				normaliseGainDb: 0,
+				limiterCeilingDbtp: -1,
+				gateParams: { ...DEFAULT_GATE_PARAMS, bypass: true },
+				limiterParams: { ...DEFAULT_LIMITER_PARAMS, bypass: true }
+			},
+			cleanupState
+		});
+
+		expect([...mixed]).toEqual([0.25, -0.125]);
+	});
+
+	it('preserves anti-phase stereo when the mono denoiser input cancels out', async () => {
+		const stereoSource = {
+			pcmWindowAt: vi.fn(async (_time: number, frames: number, channels: number) => {
+				const pcm = new Float32Array(frames * channels);
+				for (let frame = 0; frame < frames; frame += 1) {
+					const base = frame * channels;
+					pcm[base] = 0.5;
+					pcm[base + 1] = -0.5;
+				}
+				return pcm;
+			})
+		};
+		const sources = new Map<string, MediaInputHandle>([
+			[
+				'voice',
+				mediaHandle({
+					sourceId: 'voice',
+					audioSource: stereoSource as unknown as MediaInputHandle['audioSource']
+				})
+			]
+		]);
+		const edit: Timeline = [
+			audioTrack({
+				id: 'voice-track',
+				clips: [
+					defaultTimelineClip({ id: 'voice', sourceId: 'voice', start: 0, duration: 1, inPoint: 0 })
+				]
+			})
+		];
+		const cleanupState = createVoiceCleanupChainState();
+		cleanupState.denoiserRings.set('voice-track', {
+			push(input: Float32Array): Float32Array {
+				return input.map(() => 0);
+			},
+			drain(): Float32Array {
+				return new Float32Array();
+			},
+			destroy(): void {}
+		} as unknown as RnnoiseRing);
+
+		const mixed = await mixAudioWindow(edit, sources, 0, 1, 4, 2, {
+			voiceCleanup: {
+				denoiserEnabledTracks: ['voice-track'],
+				normaliseGainDb: 0,
+				limiterCeilingDbtp: -1,
+				gateParams: { ...DEFAULT_GATE_PARAMS, bypass: true },
+				limiterParams: { ...DEFAULT_LIMITER_PARAMS, bypass: true }
+			},
+			cleanupState
+		});
+
+		expect([...mixed]).toEqual([0.5, -0.5]);
+	});
+
 	it('routes a clip with applied cleanup through its derived asset (Phase 27)', async () => {
 		const original = sourceWith(1);
 		const cleaned = sourceWith(0.25);
@@ -660,6 +839,67 @@ describe('mixAudioWindow', () => {
 		expect(mixed[2]!).toBeGreaterThan(mixed[1]!);
 		expect(mixed[3]!).toBeGreaterThan(mixed[2]!);
 		expect(incoming.pcmWindowAt).toHaveBeenCalledWith(0.25, 3, 1, 4);
+	});
+
+	it('denoises outgoing and incoming PCM separately so the crossfade does not dim speech', async () => {
+		const outgoing = sourceWith(0.25);
+		const incoming = sourceWith(0.75);
+		const sources = new Map<string, MediaInputHandle>([
+			[
+				'out',
+				mediaHandle({
+					sourceId: 'out',
+					audioSource: outgoing as unknown as MediaInputHandle['audioSource']
+				})
+			],
+			[
+				'in',
+				mediaHandle({
+					sourceId: 'in',
+					audioSource: incoming as unknown as MediaInputHandle['audioSource']
+				})
+			]
+		]);
+		const edit: Timeline = [
+			audioTrack({
+				id: 'a-track',
+				clips: [
+					defaultTimelineClip({ id: 'out', sourceId: 'out', start: 0, duration: 1, inPoint: 0 }),
+					defaultTimelineClip({ id: 'in', sourceId: 'in', start: 1, duration: 1, inPoint: 0.5 })
+				]
+			})
+		];
+		const push = vi.fn((input: Float32Array) => input);
+		const cleanupState = createVoiceCleanupChainState();
+		cleanupState.denoiserRings.set('a-track', {
+			push,
+			drain(): Float32Array {
+				return new Float32Array();
+			},
+			destroy(): void {}
+		} as unknown as RnnoiseRing);
+
+		const mixed = await mixAudioWindow(edit, sources, 0.5, 4, 4, 1, {
+			transitions: [{ trackId: 'a-track', fromClipId: 'out', toClipId: 'in', durationS: 1 }],
+			voiceCleanup: {
+				denoiserEnabledTracks: ['a-track'],
+				normaliseGainDb: 0,
+				limiterCeilingDbtp: -1,
+				gateParams: { ...DEFAULT_GATE_PARAMS, bypass: true },
+				limiterParams: { ...DEFAULT_LIMITER_PARAMS, bypass: true }
+			},
+			cleanupState
+		});
+
+		// Denoise outgoing and incoming separately BEFORE the crossfade. Denoising
+		// the blended PCM caused a volume dip because the equal-power crossfade
+		// pulls each source down ~3 dB at the midpoint and RNNoise then over-
+		// suppresses the dimmer speech. Two pushes through the per-track ring is
+		// the right shape; the brief GRU artifact at the boundary is documented.
+		expect(push).toHaveBeenCalledTimes(2);
+		expect(push.mock.calls[0]?.[0]).toHaveLength(4);
+		expect(push.mock.calls[1]?.[0]).toHaveLength(4);
+		expect(mixed.every((sample) => Number.isFinite(sample))).toBe(true);
 	});
 
 	it('clamps mixed audio to the valid sample range', async () => {

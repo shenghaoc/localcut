@@ -6,12 +6,17 @@ import {
 	interleavedPcmToF32Planes,
 	LIMITER_LOOKAHEAD_S,
 	pcmPlaneToF32,
+	writeDenoiserBypassToSab,
 	writeChainParamsToSab
 } from './live-chain';
 import {
 	DEFAULT_LIVE_AUDIO_CHAIN_CONFIG,
+	DENOISER_BYPASS_TRACKS_0_15,
+	DENOISER_BYPASS_TRACKS_16_31,
 	LIVE_CHAIN_TOTAL_FIELDS,
+	METER_BUFFER_BYTES,
 	LiveChainMeterIndex,
+	VOICE_CLEANUP_NORMALISE_GAIN_DB,
 	type LiveAudioChainConfig
 } from '../../protocol';
 
@@ -61,6 +66,24 @@ describe('live chain helpers', () => {
 		expect(Math.max(...(Object.values(LiveChainMeterIndex) as number[]))).toBeLessThan(
 			LIVE_CHAIN_TOTAL_FIELDS
 		);
+	});
+
+	it('allocated meter SAB covers Phase 36 extended live-chain fields', () => {
+		const sab = new Float32Array(new SharedArrayBuffer(METER_BUFFER_BYTES));
+		expect(sab.length).toBeGreaterThan(VOICE_CLEANUP_NORMALISE_GAIN_DB);
+		sab[VOICE_CLEANUP_NORMALISE_GAIN_DB] = 3;
+		expect(sab[VOICE_CLEANUP_NORMALISE_GAIN_DB]).toBe(3);
+	});
+
+	it('writes float-safe per-track denoiser masks for the monitor worklet', () => {
+		const sab = new Float32Array(LIVE_CHAIN_TOTAL_FIELDS);
+		const trackIds = Array.from({ length: 32 }, (_, index) => `audio-${index}`);
+		writeDenoiserBypassToSab(sab, trackIds, ['audio-0', 'audio-15', 'audio-16', 'audio-31']);
+
+		expect(sab[DENOISER_BYPASS_TRACKS_0_15]).toBe((1 << 0) | (1 << 15));
+		expect(sab[DENOISER_BYPASS_TRACKS_16_31]).toBe((1 << 0) | (1 << 15));
+		expect(sab[DENOISER_BYPASS_TRACKS_0_15]).toBeLessThan(2 ** 24);
+		expect(sab[DENOISER_BYPASS_TRACKS_16_31]).toBeLessThan(2 ** 24);
 	});
 });
 
