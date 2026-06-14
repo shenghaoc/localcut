@@ -10,12 +10,12 @@ function validManifestInput(): Record<string, unknown> {
 		source: 'https://example.invalid/dtln',
 		sizeBytes: 2000,
 		model1: {
-			url: '/_model/hf/breizhn/DTLN/model_1.tflite',
+			url: '/_model/gh/breizhn/DTLN/master/model_1.tflite',
 			sizeBytes: 1000,
 			checksum: 'sha256-' + 'a'.repeat(64)
 		},
 		model2: {
-			url: '/_model/hf/breizhn/DTLN/model_2.tflite',
+			url: '/_model/gh/breizhn/DTLN/master/model_2.tflite',
 			sizeBytes: 1000,
 			checksum: 'sha256-' + 'b'.repeat(64)
 		},

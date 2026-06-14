@@ -5,12 +5,12 @@
 	"source": "https://github.com/breizhn/DTLN",
 	"sizeBytes": 3538944,
 	"model1": {
-		"url": "/_model/hf/breizhn/DTLN/resolve/main/pretrained_model/model_1.tflite",
+		"url": "/_model/gh/breizhn/DTLN/master/pretrained_model/model_1.tflite",
 		"sizeBytes": 1769472,
 		"checksum": "sha256-0000000000000000000000000000000000000000000000000000000000000000"
 	},
 	"model2": {
-		"url": "/_model/hf/breizhn/DTLN/resolve/main/pretrained_model/model_2.tflite",
+		"url": "/_model/gh/breizhn/DTLN/master/pretrained_model/model_2.tflite",
 		"sizeBytes": 1769472,
 		"checksum": "sha256-0000000000000000000000000000000000000000000000000000000000000000"
 	},
