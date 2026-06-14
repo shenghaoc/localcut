@@ -142,6 +142,7 @@ export const PIPELINE_ORDER: ColorPipelineStage[] = [
 	'source-normalization',
 	'base-correction',
 	'lut-apply',
+	'skin-smoothing',
 	'opacity',
 	'transform',
 	'compositing',
@@ -152,6 +153,7 @@ export type ColorPipelineStage =
 	| 'source-normalization' // container space → working linear
 	| 'base-correction' // brightness/contrast/saturation/temperature
 	| 'lut-apply' // 3D LUT (Phase 15)
+	| 'skin-smoothing' // edge-preserving skin smoothing (Phase 32a)
 	| 'opacity' // per-layer alpha multiply
 	| 'transform' // position/scale/rotation (Phase 12)
 	| 'compositing' // premultiplied "over" onto accumulator

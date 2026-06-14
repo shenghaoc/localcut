@@ -50,6 +50,8 @@ export interface TimelineClip {
 	transform: TransformParams;
 	keyframes?: ClipKeyframes;
 	lut?: ClipLut;
+	/** Phase 32a: optional skin-mask sidecar (per-clip chroma mask params). */
+	skinMask?: import('./skin-smooth').SkinMaskParams;
 	audioFadeIn: number;
 	audioFadeOut: number;
 	/** Text + style for `kind: 'title'` clips; absent otherwise (Phase 14). */
@@ -627,7 +629,8 @@ function cloneClip(clip: TimelineClip): TimelineClip {
 		audioFadeOut: clip.audioFadeOut,
 		title: clip.title ? cloneTitleContent(clip.title) : undefined,
 		linkedGroupId: clip.linkedGroupId,
-		cleanedAudio: clip.cleanedAudio ? { ...clip.cleanedAudio } : undefined
+		cleanedAudio: clip.cleanedAudio ? { ...clip.cleanedAudio } : undefined,
+		skinMask: clip.skinMask ? { ...clip.skinMask } : undefined
 	};
 	const keyframes = cloneClipKeyframes(clip.keyframes);
 	if (keyframes) cloned.keyframes = keyframes;
@@ -1213,6 +1216,20 @@ export function setClipLutStrength(
 	const clamped = finite(strength) ? clamp01(strength) : Number.NaN;
 	if (!finite(clamped)) return timeline;
 	return setClipEffectParam(timeline, trackId, clipId, 'lutStrength', clamped);
+}
+
+export function setSkinMask(
+	timeline: Timeline,
+	trackId: string,
+	clipId: string,
+	mask: import('./skin-smooth').SkinMaskParams
+): Timeline {
+	const loc = trackWithClip(timeline, trackId, clipId);
+	if (!loc) return timeline;
+	const next = cloneTimeline(timeline);
+	const clip = next[loc.trackIndex]!.clips[loc.clipIndex]!;
+	clip.skinMask = { ...mask };
+	return next;
 }
 
 export function defaultClipEffects(): ClipEffectParams {

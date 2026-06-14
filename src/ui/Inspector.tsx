@@ -1,5 +1,6 @@
-import { Show, For, createEffect, createSignal, onCleanup } from 'solid-js';
+import { Show, For, createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
 import { ChevronLeft, ChevronRight, Diamond, Upload } from 'lucide-solid';
+import { DEFAULT_SKIN_MASK } from '../protocol';
 import type {
 	ClipEffectParamsSnapshot,
 	ClipKeyframeParamSnapshot,
@@ -8,6 +9,7 @@ import type {
 	FitModeSnapshot,
 	KeyframeEasingSnapshot,
 	MediaMetadata,
+	SkinMaskSnapshot,
 	TitleAlignSnapshot,
 	TitleContentSnapshot,
 	TitleStyleSnapshot,
@@ -30,6 +32,7 @@ export interface SelectedClip {
 	transform: TransformParamsSnapshot;
 	keyframes?: ClipKeyframesSnapshot;
 	lut?: ClipLutSnapshot;
+	skinMask?: SkinMaskSnapshot;
 }
 
 export interface SelectedClipTransform {
@@ -121,6 +124,10 @@ interface InspectorProps {
 	) => void;
 	onTransitionDuration?: (transitionId: string, durationS: number) => void;
 	onRemoveTransition?: (transitionId: string) => void;
+	/** Phase 32a: skin-mask sidecar editing. */
+	onSkinMask?: (trackId: string, clipId: string, mask: SkinMaskSnapshot) => void;
+	/** Phase 32a: session-only A/B bypass toggle. */
+	onSkinSmoothBypass?: (trackId: string, clipId: string, bypass: boolean) => void;
 }
 
 type TransformSliderKey = 'x' | 'y' | 'scale' | 'rotation' | 'opacity';
@@ -284,6 +291,15 @@ const SLIDERS: SliderSpec[] = [
 	}
 ];
 
+const SKIN_SMOOTH_STRENGTH_SLIDER: SliderSpec = {
+	key: 'skinSmoothStrength',
+	label: 'Strength',
+	min: 0,
+	max: 1,
+	step: 0.01,
+	format: (v) => v.toFixed(2)
+};
+
 const LUT_STRENGTH_SLIDER: SliderSpec = {
 	key: 'lutStrength',
 	label: 'Strength',
@@ -292,6 +308,32 @@ const LUT_STRENGTH_SLIDER: SliderSpec = {
 	step: 0.01,
 	format: (v) => v.toFixed(2)
 };
+
+interface SkinMaskSliderSpec {
+	key: keyof SkinMaskSnapshot;
+	label: string;
+	min: number;
+	max: number;
+	step: number;
+	format: (v: number) => string;
+}
+
+const SKIN_MASK_SLIDERS: SkinMaskSliderSpec[] = [
+	{ key: 'cbMin', label: 'Cb min', min: -0.5, max: 0.5, step: 0.01, format: (v) => v.toFixed(2) },
+	{ key: 'cbMax', label: 'Cb max', min: -0.5, max: 0.5, step: 0.01, format: (v) => v.toFixed(2) },
+	{ key: 'crMin', label: 'Cr min', min: -0.5, max: 0.5, step: 0.01, format: (v) => v.toFixed(2) },
+	{ key: 'crMax', label: 'Cr max', min: -0.5, max: 0.5, step: 0.01, format: (v) => v.toFixed(2) },
+	{
+		key: 'softness',
+		label: 'Softness',
+		min: 0.005,
+		max: 0.15,
+		step: 0.005,
+		format: (v) => v.toFixed(3)
+	}
+];
+
+const SKIN_SMOOTH_NATURAL_MAX = 0.45;
 
 type MixDraft = Pick<SelectedTrackMix, 'gain' | 'pan'>;
 type FadeDraft = Pick<SelectedClipFades, 'audioFadeIn' | 'audioFadeOut'>;
@@ -320,6 +362,95 @@ export function Inspector(props: InspectorProps) {
 	const mixTarget = { trackId: '' };
 	const fadeTarget = { trackId: '', clipId: '' };
 	let lutInput: HTMLInputElement | undefined;
+
+	const [skinSmoothBypass, setSkinSmoothBypass] = createSignal(false);
+	const skinMaskPending = new Map<string, number>();
+	const skinMaskDebouncers = new Map<string, ReturnType<typeof setTimeout>>();
+	const skinMaskTarget = { trackId: '', clipId: '' };
+	const skinSmoothStrength = createMemo(
+		() => draft()?.skinSmoothStrength ?? props.selectedClip?.effects.skinSmoothStrength ?? 0
+	);
+	const skinSmoothKeyframed = createMemo(() =>
+		Boolean(props.selectedClip?.keyframes?.skinSmoothStrength?.length)
+	);
+	const skinMaskControlsEnabled = createMemo(
+		() => skinSmoothStrength() > 0 || skinSmoothKeyframed()
+	);
+	const skinSmoothIsStrong = createMemo(() => skinSmoothStrength() > SKIN_SMOOTH_NATURAL_MAX);
+	const skinSmoothStatus = createMemo(() => {
+		if (skinSmoothIsStrong()) return 'Strong smoothing';
+		if (skinSmoothStrength() > 0) return 'Preview active';
+		if (skinSmoothKeyframed()) return 'Keyframed';
+		return 'Inactive at 0.00 strength';
+	});
+	const skinSmoothNote = createMemo(() => {
+		if (!skinMaskControlsEnabled())
+			return 'Raise Skin Smoothing above 0.00 before tuning the mask.';
+		if (skinSmoothIsStrong()) {
+			return 'High strength can make faces look synthetic; start under 0.45 and A/B the result.';
+		}
+		if (skinSmoothKeyframed() && skinSmoothStrength() === 0) {
+			return 'Keyframed strength uses this mask wherever smoothing is active.';
+		}
+		return 'Natural range; mask edits update this clip.';
+	});
+
+	function currentSkinMask() {
+		const clip = props.selectedClip;
+		const mask = clip?.skinMask;
+		return {
+			cbMin: mask?.cbMin ?? DEFAULT_SKIN_MASK.cbMin,
+			cbMax: mask?.cbMax ?? DEFAULT_SKIN_MASK.cbMax,
+			crMin: mask?.crMin ?? DEFAULT_SKIN_MASK.crMin,
+			crMax: mask?.crMax ?? DEFAULT_SKIN_MASK.crMax,
+			softness: mask?.softness ?? DEFAULT_SKIN_MASK.softness
+		};
+	}
+
+	function flushSkinMaskPending() {
+		if (!skinMaskTarget.clipId || skinMaskPending.size === 0) return;
+		for (const handle of skinMaskDebouncers.values()) clearTimeout(handle);
+		skinMaskDebouncers.clear();
+		const mask = currentSkinMask();
+		for (const [k, v] of skinMaskPending) mask[k as keyof typeof mask] = v;
+		skinMaskPending.clear();
+		props.onSkinMask?.(skinMaskTarget.trackId, skinMaskTarget.clipId, {
+			cbMin: mask.cbMin,
+			cbMax: mask.cbMax,
+			crMin: mask.crMin,
+			crMax: mask.crMax,
+			softness: mask.softness
+		});
+	}
+
+	function scheduleSkinMaskParam(key: string, value: number) {
+		const clip = props.selectedClip;
+		if (!clip || !props.onSkinMask) return;
+		if (!skinMaskControlsEnabled()) return;
+		skinMaskTarget.trackId = clip.trackId;
+		skinMaskTarget.clipId = clip.clipId;
+		skinMaskPending.set(key, value);
+		const existing = skinMaskDebouncers.get(key);
+		if (existing) clearTimeout(existing);
+		const base = currentSkinMask();
+		skinMaskDebouncers.set(
+			key,
+			setTimeout(() => {
+				skinMaskDebouncers.delete(key);
+				for (const [k, v] of skinMaskPending) base[k as keyof typeof base] = v;
+				skinMaskPending.clear();
+				for (const [, timer] of skinMaskDebouncers) clearTimeout(timer);
+				skinMaskDebouncers.clear();
+				props.onSkinMask!(skinMaskTarget.trackId, skinMaskTarget.clipId, {
+					cbMin: base.cbMin,
+					cbMax: base.cbMax,
+					crMin: base.crMin,
+					crMax: base.crMax,
+					softness: base.softness
+				});
+			}, PARAM_DEBOUNCE_MS)
+		);
+	}
 
 	function currentLocalTime(): number | null {
 		const clip = props.selectedClip;
@@ -528,10 +659,8 @@ export function Inspector(props: InspectorProps) {
 			const base = { ...clip.effects };
 			if (!prev) return base;
 			const next = { ...base };
-			for (const spec of SLIDERS) {
-				if (pending.has(spec.key) || debouncers.has(spec.key)) {
-					next[spec.key] = prev[spec.key];
-				}
+			for (const key of new Set([...pending.keys(), ...debouncers.keys()])) {
+				next[key] = prev[key];
 			}
 			return next;
 		});
@@ -597,18 +726,26 @@ export function Inspector(props: InspectorProps) {
 			flushPending();
 			flushMixPending();
 			flushFadePending();
+			flushSkinMaskPending();
 			pendingTarget.trackId = '';
 			pendingTarget.clipId = '';
 			mixTarget.trackId = '';
 			fadeTarget.trackId = '';
 			fadeTarget.clipId = '';
+			skinMaskTarget.trackId = '';
+			skinMaskTarget.clipId = '';
 			setDraft(null);
 			setMixDraft(null);
 			setFadeDraft(null);
+			setSkinSmoothBypass(false);
 			return;
 		}
 		if (pendingTarget.clipId && pendingTarget.clipId !== clip.clipId) {
 			flushPending();
+		}
+		if (skinMaskTarget.clipId && skinMaskTarget.clipId !== clip.clipId) {
+			flushSkinMaskPending();
+			setSkinSmoothBypass(false);
 		}
 		pendingTarget.trackId = clip.trackId;
 		pendingTarget.clipId = clip.clipId;
@@ -722,6 +859,7 @@ export function Inspector(props: InspectorProps) {
 		flushMixPending();
 		flushFadePending();
 		flushTransformPending();
+		flushSkinMaskPending();
 		flushTitle();
 	});
 
@@ -1119,6 +1257,160 @@ export function Inspector(props: InspectorProps) {
 											</div>
 										)}
 									</For>
+									<div
+										class={`skin-smooth-panel${skinMaskControlsEnabled() ? ' is-active' : ' is-inactive'}${skinSmoothIsStrong() ? ' is-strong' : ''}`}
+										aria-disabled={skinMaskControlsEnabled() ? undefined : 'true'}
+									>
+										<div class="skin-smooth-status">
+											<span class="skin-smooth-status-copy">
+												<span class="skin-smooth-title">Skin Smoothing</span>
+												<span class="skin-smooth-status-text">{skinSmoothStatus()}</span>
+											</span>
+											<span
+												class={`skin-smooth-status-pill${skinMaskControlsEnabled() ? ' is-active' : ' is-inactive'}${skinSmoothIsStrong() ? ' is-warning' : ''}`}
+											>
+												{skinSmoothIsStrong()
+													? 'Strong'
+													: skinSmoothStrength() > 0
+														? 'On'
+														: skinSmoothKeyframed()
+															? 'Animated'
+															: 'Off'}
+											</span>
+										</div>
+										<div class="effect-slider skin-smooth-strength">
+											<div class="effect-slider-label">
+												<span>{SKIN_SMOOTH_STRENGTH_SLIDER.label}</span>
+												<span class="effect-slider-value tabular-nums">
+													{SKIN_SMOOTH_STRENGTH_SLIDER.format(effects().skinSmoothStrength)}
+												</span>
+											</div>
+											<div class="keyframe-slider-row">
+												<button
+													type="button"
+													class="keyframe-nav"
+													aria-label="Previous Skin Smoothing keyframe"
+													onClick={() => seekKeyframe(SKIN_SMOOTH_STRENGTH_SLIDER.key, -1)}
+													disabled={!props.selectedClip?.keyframes?.skinSmoothStrength?.length}
+												>
+													<ChevronLeft size={14} />
+												</button>
+												<button
+													type="button"
+													class={`keyframe-toggle${hasKeyframeAtPlayhead(SKIN_SMOOTH_STRENGTH_SLIDER.key) ? ' is-active' : ''}`}
+													aria-label="Toggle Skin Smoothing keyframe"
+													aria-pressed={hasKeyframeAtPlayhead(SKIN_SMOOTH_STRENGTH_SLIDER.key)}
+													onClick={() =>
+														toggleKeyframe(
+															SKIN_SMOOTH_STRENGTH_SLIDER.key,
+															effects().skinSmoothStrength
+														)
+													}
+													disabled={currentLocalTime() === null}
+												>
+													<Diamond size={13} />
+												</button>
+												<input
+													type="range"
+													min={SKIN_SMOOTH_STRENGTH_SLIDER.min}
+													max={SKIN_SMOOTH_STRENGTH_SLIDER.max}
+													step={SKIN_SMOOTH_STRENGTH_SLIDER.step}
+													value={effects().skinSmoothStrength}
+													onInput={(e) =>
+														scheduleParam(
+															SKIN_SMOOTH_STRENGTH_SLIDER.key,
+															Number((e.currentTarget as HTMLInputElement).value)
+														)
+													}
+												/>
+												<button
+													type="button"
+													class="keyframe-nav"
+													aria-label="Next Skin Smoothing keyframe"
+													onClick={() => seekKeyframe(SKIN_SMOOTH_STRENGTH_SLIDER.key, 1)}
+													disabled={!props.selectedClip?.keyframes?.skinSmoothStrength?.length}
+												>
+													<ChevronRight size={14} />
+												</button>
+											</div>
+										</div>
+										<p class={`skin-smooth-note${skinSmoothIsStrong() ? ' is-warning' : ''}`}>
+											{skinSmoothNote()}
+										</p>
+										<Show when={skinMaskControlsEnabled()}>
+											<div class="skin-smooth-bypass">
+												<button
+													type="button"
+													class={`bypass-toggle${skinSmoothBypass() ? ' is-active' : ''}`}
+													aria-pressed={skinSmoothBypass()}
+													aria-label="Bypass skin smoothing (A/B)"
+													onClick={() => {
+														const clip = props.selectedClip;
+														if (clip && props.onSkinSmoothBypass) {
+															const next = !skinSmoothBypass();
+															setSkinSmoothBypass(next);
+															props.onSkinSmoothBypass(clip.trackId, clip.clipId, next);
+														}
+													}}
+												>
+													A/B Bypass
+												</button>
+												<span>Preview only; export uses stored strength.</span>
+											</div>
+										</Show>
+										<details
+											class={`skin-mask-disclosure${skinMaskControlsEnabled() ? '' : ' is-disabled'}`}
+										>
+											<summary>
+												<span>Skin mask</span>
+												<span class="skin-mask-summary">Advanced</span>
+											</summary>
+											<div class="skin-mask-sliders">
+												<For each={SKIN_MASK_SLIDERS}>
+													{(spec) => (
+														<div class="effect-slider">
+															<div class="effect-slider-label">
+																<span>{spec.label}</span>
+																<span class="effect-slider-value tabular-nums">
+																	{spec.format(currentSkinMask()[spec.key])}
+																</span>
+															</div>
+															<input
+																type="range"
+																aria-label={spec.label}
+																min={spec.min}
+																max={spec.max}
+																step={spec.step}
+																value={currentSkinMask()[spec.key]}
+																disabled={!skinMaskControlsEnabled()}
+																onInput={(e) =>
+																	scheduleSkinMaskParam(
+																		spec.key,
+																		Number((e.currentTarget as HTMLInputElement).value)
+																	)
+																}
+															/>
+														</div>
+													)}
+												</For>
+												<button
+													type="button"
+													class="skin-mask-reset"
+													disabled={!skinMaskControlsEnabled()}
+													onClick={() => {
+														const clip = props.selectedClip;
+														if (clip && props.onSkinMask && skinMaskControlsEnabled()) {
+															props.onSkinMask(clip.trackId, clip.clipId, {
+																...DEFAULT_SKIN_MASK
+															});
+														}
+													}}
+												>
+													Reset mask
+												</button>
+											</div>
+										</details>
+									</div>
 									<div class="lut-controls">
 										<div class="lut-header">
 											<span class="effect-slider-label">

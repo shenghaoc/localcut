@@ -144,6 +144,7 @@ import {
 	shiftMarkers,
 	removeMarkersInRange,
 	expandLinkedGroup,
+	setSkinMask,
 	DEFAULT_MASTER_GAIN,
 	DEFAULT_TITLE_DURATION_S,
 	normalizeTransform,
@@ -160,6 +161,7 @@ import {
 import type { SourceVideoTrackInspection } from './media-adapters/types';
 import { sampleClipParamsAt } from './keyframes';
 import { clipLutFromCubeFile, cloneClipLut, lutSnapshot, type ClipLut } from './lut';
+import { normalizeSkinMask } from './skin-smooth';
 import { applyMixStageInPlace, type AudioTransitionCut } from './audio-mix';
 import {
 	mapAudioRing,
@@ -306,6 +308,8 @@ const sourceDescriptors = new Map<string, SourceDescriptor>();
  *  and persistence key off this set so unplaced assets survive. */
 const binSourceIds = new Set<string>();
 const clipboardLuts = new Map<string, ClipLut>();
+/** Phase 32a: session-only skin-smooth bypass flags (not serialised, not in undo history). */
+const skinSmoothBypassMap = new Map<string, boolean>();
 const restoringSourceIds = new Set<string>();
 let thumbnailGen: ThumbnailGenerator | null = null;
 const THUMBNAIL_WIDTH = 160;
@@ -584,7 +588,8 @@ function postTimelineState() {
 			audioFadeIn: clip.audioFadeIn,
 			audioFadeOut: clip.audioFadeOut,
 			offline: clip.kind === 'title' || sourceInputs.has(clip.sourceId) ? undefined : true,
-			linkedGroupId: clip.linkedGroupId
+			linkedGroupId: clip.linkedGroupId,
+			skinMask: clip.skinMask ? { ...clip.skinMask } : undefined
 		}))
 	}));
 	const captionSnapshot: CaptionTrackSnapshot[] = captionTracks.map((track) => ({
@@ -1388,6 +1393,12 @@ function afterTimelineMutation(
 	if (options.prune !== false) {
 		pruneUnusedSources();
 	}
+	if (skinSmoothBypassMap.size > 0) {
+		const liveIds = new Set(timeline.flatMap((t) => t.clips.map((c) => c.id)));
+		for (const id of skinSmoothBypassMap.keys()) {
+			if (!liveIds.has(id)) skinSmoothBypassMap.delete(id);
+		}
+	}
 	if (options.syncLuts !== false) {
 		syncTimelineLuts();
 	}
@@ -1969,6 +1980,7 @@ function teardownMedia() {
 	sourceInputs.clear();
 	binSourceIds.clear();
 	clipboardLuts.clear();
+	skinSmoothBypassMap.clear();
 	primaryHandle = null;
 	retainedOverlayTextureIds.clear();
 	// Release cached title textures: clearing the timeline here (new project,
@@ -2122,6 +2134,8 @@ type LayerMeta =
 			effects: ClipEffectParams;
 			transform: TransformParams;
 			lut?: ClipLut;
+			skinMask?: import('./skin-smooth').SkinMaskParams;
+			skinSmoothBypass?: boolean;
 			transition?: import('./timeline').TransitionResolveMeta;
 	  }
 	| {
@@ -2203,6 +2217,8 @@ function makeGetLayers() {
 						effects: sampled.effects,
 						transform: sampled.transform,
 						lut: layer.clip.lut,
+						skinMask: layer.clip.skinMask,
+						skinSmoothBypass: skinSmoothBypassMap.get(layer.clip.id) ?? false,
 						transition: layer.transition
 					}
 				});
@@ -2640,6 +2656,26 @@ function handleSetLutStrength(cmd: Extract<WorkerCommand, { type: 'set-lut-stren
 			syncLuts: false
 		}
 	);
+}
+
+function handleSetSkinMask(cmd: Extract<WorkerCommand, { type: 'set-skin-mask' }>) {
+	commitTimelineMutation(
+		() => setSkinMask(timeline, cmd.trackId, cmd.clipId, normalizeSkinMask(cmd.mask)),
+		{
+			coalesceKey: { clipId: cmd.clipId, key: 'skinMask' },
+			refreshPlayback: 'refresh',
+			prune: false,
+			syncLuts: false
+		}
+	);
+}
+
+function handleSetSkinSmoothBypass(
+	cmd: Extract<WorkerCommand, { type: 'set-skin-smooth-bypass' }>
+) {
+	skinSmoothBypassMap.set(cmd.clipId, cmd.bypass);
+	// Re-render the current frame (same pattern as set-effect-param with refreshPlayback: 'refresh').
+	playback?.refresh();
 }
 
 function handleSetTrackGain(cmd: Extract<WorkerCommand, { type: 'set-track-gain' }>) {
@@ -3809,6 +3845,8 @@ function setupPlayback() {
 							effects: layer.meta.effects,
 							transform: layer.meta.transform,
 							lut: layer.meta.lut,
+							skinMask: layer.meta.skinMask,
+							skinSmoothBypass: layer.meta.skinSmoothBypass,
 							transition: layer.meta.transition
 						});
 					}
@@ -5344,6 +5382,12 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			break;
 		case 'set-lut-strength':
 			handleSetLutStrength(cmd);
+			break;
+		case 'set-skin-mask':
+			handleSetSkinMask(cmd);
+			break;
+		case 'set-skin-smooth-bypass':
+			handleSetSkinSmoothBypass(cmd);
 			break;
 		case 'set-track-gain':
 			handleSetTrackGain(cmd);

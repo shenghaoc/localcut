@@ -641,6 +641,7 @@ export interface ClipEffectParamsSnapshot {
 	temperature: number;
 	temperatureStrength: number;
 	lutStrength: number;
+	skinSmoothStrength: number;
 }
 
 export type FitModeSnapshot = 'fill' | 'fit' | 'letterbox';
@@ -782,6 +783,22 @@ export interface ClipLutSnapshot {
 	size: number;
 }
 
+export interface SkinMaskSnapshot {
+	cbMin: number;
+	cbMax: number;
+	crMin: number;
+	crMax: number;
+	softness: number;
+}
+
+export const DEFAULT_SKIN_MASK: SkinMaskSnapshot = {
+	cbMin: -0.2,
+	cbMax: 0.0,
+	crMin: 0.05,
+	crMax: 0.2,
+	softness: 0.04
+};
+
 export interface TimelineClipSnapshot {
 	id: string;
 	/** Absent/`'video'` for source clips; `'title'` for source-less titles (Phase 14). */
@@ -794,6 +811,7 @@ export interface TimelineClipSnapshot {
 	transform: TransformParamsSnapshot;
 	keyframes?: ClipKeyframesSnapshot;
 	lut?: ClipLutSnapshot;
+	skinMask?: SkinMaskSnapshot;
 	audioFadeIn: number;
 	audioFadeOut: number;
 	offline?: boolean;
@@ -1665,6 +1683,8 @@ export type WorkerCommand =
 	| { type: 'capture-stop' }
 	| { type: 'capture-recovery-import'; sessionId: string }
 	| { type: 'capture-recovery-discard'; sessionId: string }
+	| { type: 'set-skin-mask'; trackId: string; clipId: string; mask: SkinMaskSnapshot }
+	| { type: 'set-skin-smooth-bypass'; trackId: string; clipId: string; bypass: boolean }
 	| { type: 'dispose' };
 
 /** A measured preview resolution tier (adaptive downscale of the decode path). */
