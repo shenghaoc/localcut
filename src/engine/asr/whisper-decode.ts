@@ -13,7 +13,7 @@
  * on real-world audio — the model's greedy decode is prone to early termination
  * or hallucinated repetition on noisy / multilingual / low-SNR material.
  */
-import type { AsrSpecialTokens, CaptionSegmentSnapshot } from '../../protocol';
+import type { AsrDecodeParams, AsrSpecialTokens, CaptionSegmentSnapshot } from '../../protocol';
 import {
 	DEFAULT_MEL_CONFIG,
 	extractMelSpectrogram,
@@ -358,13 +358,13 @@ export function compressionRatio(text: string): number {
  * decode. Higher temperatures are only reached when a window keeps failing the
  * compression-ratio / log-probability checks.
  */
-const TEMPERATURES = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0];
+const DEFAULT_TEMPERATURES = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0];
 /** Text with a compression ratio above this is considered degenerate. */
-const COMPRESSION_RATIO_THRESHOLD = 2.4;
+const DEFAULT_COMPRESSION_RATIO_THRESHOLD = 2.4;
 /** Average log-probability below this indicates low confidence. */
-const LOGPROB_THRESHOLD = -1.0;
+const DEFAULT_LOGPROB_THRESHOLD = -1.0;
 /** No-speech probability above this means the window is likely silence. */
-export const NO_SPEECH_THRESHOLD = 0.6;
+export const DEFAULT_NO_SPEECH_THRESHOLD = 0.6;
 
 export interface TranscribeWindowParams {
 	runtime: WhisperRuntime;
@@ -381,6 +381,8 @@ export interface TranscribeWindowParams {
 	chunkLengthS?: number;
 	language?: string | null;
 	shouldCancel?: () => boolean;
+	/** Model-specific decode quality thresholds from the manifest. */
+	decodeParams?: AsrDecodeParams | null;
 }
 
 export interface TranscribedWindow {
@@ -513,6 +515,13 @@ function padOrTrimPcm(pcm: Float32Array, samples: number): Float32Array {
  */
 export async function transcribeWindow(params: TranscribeWindowParams): Promise<TranscribedWindow> {
 	const melConfig = params.melConfig ?? DEFAULT_MEL_CONFIG;
+	const dp = params.decodeParams;
+	const logProbThreshold = dp?.logProbThreshold ?? DEFAULT_LOGPROB_THRESHOLD;
+	const noSpeechThreshold = dp?.noSpeechThreshold ?? DEFAULT_NO_SPEECH_THRESHOLD;
+	const compressionRatioThreshold =
+		dp?.compressionRatioThreshold ?? DEFAULT_COMPRESSION_RATIO_THRESHOLD;
+	const temperatures = dp?.temperatures ?? DEFAULT_TEMPERATURES;
+
 	const modelPcm =
 		params.chunkLengthS === undefined
 			? params.monoPcm
@@ -546,7 +555,7 @@ export async function transcribeWindow(params: TranscribeWindowParams): Promise<
 		// attempt is rejected do we fall back to a single untimestamped greedy pass
 		// (OpenAI's intent — without re-running the whole schedule twice).
 		const attempts: Array<{ timestamps: boolean; temperature: number }> = [
-			...TEMPERATURES.map((temperature) => ({ timestamps: true, temperature })),
+			...temperatures.map((temperature) => ({ timestamps: true, temperature })),
 			{ timestamps: false, temperature: 0 }
 		];
 		for (const { timestamps, temperature } of attempts) {
@@ -571,8 +580,8 @@ export async function transcribeWindow(params: TranscribeWindowParams): Promise<
 			// decodes with high confidence, avgLogProb ≈ 0) from being dropped.
 			if (
 				temperature === 0 &&
-				result.noSpeechProbability >= NO_SPEECH_THRESHOLD &&
-				result.avgLogProb < LOGPROB_THRESHOLD
+				result.noSpeechProbability >= noSpeechThreshold &&
+				result.avgLogProb < logProbThreshold
 			) {
 				return { segments: [], language: detectedLanguage, text: '' };
 			}
@@ -588,8 +597,8 @@ export async function transcribeWindow(params: TranscribeWindowParams): Promise<
 				.trim();
 
 			const ratio = compressionRatio(text);
-			const isDegenerate = ratio > COMPRESSION_RATIO_THRESHOLD;
-			const isLowConfidence = result.avgLogProb < LOGPROB_THRESHOLD && result.tokens.length > 0;
+			const isDegenerate = ratio > compressionRatioThreshold;
+			const isLowConfidence = result.avgLogProb < logProbThreshold && result.tokens.length > 0;
 			const isAcceptable = !isDegenerate && !isLowConfidence;
 
 			if (isAcceptable && text.length > 0) {

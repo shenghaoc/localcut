@@ -275,6 +275,27 @@ export interface AsrModelManifestSnapshot {
 	languages: string[];
 	/** Language forced when the user picks "auto", or null for model detection. */
 	defaultLanguage: string | null;
+	/** Model-specific decode quality thresholds. Smaller models need more
+	 *  permissive values to avoid the silence gate and temperature fallback
+	 *  misfiring on real speech. Omitted fields use built-in defaults. */
+	decode: AsrDecodeParams | null;
+}
+
+/** Per-model decode quality parameters. All fields are optional; the decode
+ *  loop falls back to built-in defaults (calibrated for whisper-base) when a
+ *  field is absent or the whole section is omitted. */
+export interface AsrDecodeParams {
+	/** Average log-probability below which a decode is considered low-confidence
+	 *  and retried at the next temperature. Default: -1.0. */
+	logProbThreshold?: number;
+	/** No-speech probability above which (combined with low logprob) the window
+	 *  is treated as silence. Default: 0.6. */
+	noSpeechThreshold?: number;
+	/** Compression ratio above which the text is considered degenerate repetition.
+	 *  Default: 2.4. */
+	compressionRatioThreshold?: number;
+	/** Temperature schedule for fallback. Default: [0, 0.2, 0.4, 0.6, 0.8, 1.0]. */
+	temperatures?: number[];
 }
 
 /** Metadata marker for auto-generated caption tracks. */

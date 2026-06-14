@@ -719,4 +719,228 @@ describe('transcribeWindow', () => {
 		).rejects.toBeInstanceOf(DecodeCancelledError);
 		expect(disposed).toBe(true);
 	});
+
+	it('respects model-specific decodeParams for the silence gate', async () => {
+		// The silence gate fires when noSpeechProb >= threshold AND avgLogProb < logProbThreshold.
+		// With default thresholds this window is silenced; with a permissive logProbThreshold
+		// the avgLogProb condition fails and the window produces output.
+		let call = 0;
+		const makeRuntime = (): WhisperRuntime => ({
+			async encode(mel): Promise<EncodedAudio> {
+				return { frames: mel.nFrames, dispose: () => undefined };
+			},
+			async decode() {
+				const logits = new Float32Array(VOCAB_SIZE);
+				if (call === 0) {
+					// Dominant no-speech → prob ≈ 1.0 (well above both 0.6 and 0.75)
+					logits[SPECIAL.noSpeech] = 20;
+					logits[SPECIAL.timestampBegin] = 8;
+				} else if (call === 1) {
+					logits[1] = 8; // "hello" — low-confidence
+				} else if (call === 2) {
+					logits[2] = 8; // "world" — distinct from token 1 to avoid hallucination filter
+				} else if (call === 3) {
+					logits[SPECIAL.timestampBegin + 50] = 100; // closing timestamp
+				} else {
+					logits[SPECIAL.endOfText] = 100;
+				}
+				call++;
+				return logits;
+			},
+			dispose() {}
+		});
+
+		// Without decodeParams (default logProbThreshold=-1.0) → silence gate fires
+		call = 0;
+		const silenced = await transcribeWindow({
+			runtime: makeRuntime(),
+			monoPcm: new Float32Array(16000),
+			vocab: VOCAB,
+			special: SPECIAL,
+			maxTokens: 128,
+			offsetS: 0,
+			language: 'en'
+		});
+		expect(silenced.segments).toEqual([]);
+
+		// With extremely permissive logProbThreshold → avgLogProb is above it, gate doesn't fire
+		call = 0;
+		const passed = await transcribeWindow({
+			runtime: makeRuntime(),
+			monoPcm: new Float32Array(16000),
+			vocab: VOCAB,
+			special: SPECIAL,
+			maxTokens: 128,
+			offsetS: 0,
+			language: 'en',
+			decodeParams: { logProbThreshold: -100 }
+		});
+		expect(passed.segments.length).toBeGreaterThan(0);
+	});
+
+	it('uses custom temperature schedule from decodeParams', async () => {
+		let decodeCallCount = 0;
+		const runtime: WhisperRuntime = {
+			async encode(mel): Promise<EncodedAudio> {
+				return { frames: mel.nFrames, dispose: () => undefined };
+			},
+			async decode() {
+				decodeCallCount++;
+				const logits = new Float32Array(VOCAB_SIZE);
+				// Produce repetitive output that will fail compression ratio check
+				logits[1] = 100;
+				return logits;
+			},
+			dispose() {}
+		};
+
+		// With default temperatures (6 temps) — more decode calls
+		decodeCallCount = 0;
+		await transcribeWindow({
+			runtime,
+			monoPcm: new Float32Array(16000),
+			vocab: VOCAB,
+			special: SPECIAL,
+			maxTokens: 10,
+			offsetS: 0,
+			language: 'en'
+		});
+		const defaultCalls = decodeCallCount;
+
+		// With reduced temperature schedule (2 temps) — fewer decode calls
+		decodeCallCount = 0;
+		await transcribeWindow({
+			runtime,
+			monoPcm: new Float32Array(16000),
+			vocab: VOCAB,
+			special: SPECIAL,
+			maxTokens: 10,
+			offsetS: 0,
+			language: 'en',
+			decodeParams: { temperatures: [0.0, 0.2] }
+		});
+		const reducedCalls = decodeCallCount;
+
+		expect(reducedCalls).toBeLessThan(defaultCalls);
+	});
+
+	it('respects custom noSpeechThreshold from decodeParams', async () => {
+		// A window where noSpeechProb ≈ 1.0 and avgLogProb is moderately low.
+		// With default noSpeechThreshold=0.6, the gate fires and returns empty.
+		// With a raised noSpeechThreshold=2.0 (impossible to reach), the gate never fires.
+		let call = 0;
+		const makeRuntime = (): WhisperRuntime => ({
+			async encode(mel): Promise<EncodedAudio> {
+				return { frames: mel.nFrames, dispose: () => undefined };
+			},
+			async decode() {
+				const logits = new Float32Array(VOCAB_SIZE);
+				if (call === 0) {
+					logits[SPECIAL.noSpeech] = 20; // noSpeechProb ≈ 1.0
+					logits[SPECIAL.timestampBegin] = 8;
+				} else if (call === 1) {
+					logits[1] = 8; // low-confidence
+				} else if (call === 2) {
+					logits[2] = 8;
+				} else if (call === 3) {
+					logits[SPECIAL.timestampBegin + 50] = 100;
+				} else {
+					logits[SPECIAL.endOfText] = 100;
+				}
+				call++;
+				return logits;
+			},
+			dispose() {}
+		});
+
+		// Default noSpeechThreshold=0.6 → gate fires (noSpeechProb ≈ 1.0 > 0.6)
+		call = 0;
+		const silenced = await transcribeWindow({
+			runtime: makeRuntime(),
+			monoPcm: new Float32Array(16000),
+			vocab: VOCAB,
+			special: SPECIAL,
+			maxTokens: 128,
+			offsetS: 0,
+			language: 'en'
+		});
+		expect(silenced.segments).toEqual([]);
+
+		// Raised noSpeechThreshold > 1.0 → gate can never fire
+		call = 0;
+		const passed = await transcribeWindow({
+			runtime: makeRuntime(),
+			monoPcm: new Float32Array(16000),
+			vocab: VOCAB,
+			special: SPECIAL,
+			maxTokens: 128,
+			offsetS: 0,
+			language: 'en',
+			decodeParams: { noSpeechThreshold: 1.1, logProbThreshold: -100 }
+		});
+		expect(passed.segments.length).toBeGreaterThan(0);
+	});
+
+	it('respects custom compressionRatioThreshold from decodeParams', async () => {
+		// Alternate tokens 1,2 to produce "hello world hello world..." — high
+		// compression ratio but not caught by the single-word hallucination filter.
+		// With a strict threshold the decode loop exhausts all attempts (more decode
+		// calls); with a permissive threshold it accepts on the first attempt (fewer).
+		let decodeCallCount = 0;
+		const makeRuntime = (): WhisperRuntime => {
+			let step = 0;
+			return {
+				async encode(mel): Promise<EncodedAudio> {
+					return { frames: mel.nFrames, dispose: () => undefined };
+				},
+				async decode() {
+					decodeCallCount++;
+					const logits = new Float32Array(VOCAB_SIZE);
+					logits[step % 2 === 0 ? 1 : 2] = 100;
+					step++;
+					return logits;
+				},
+				dispose() {}
+			};
+		};
+
+		// Strict compressionRatioThreshold=1.0 → text is "degenerate",
+		// runs through all attempts (many decode calls)
+		decodeCallCount = 0;
+		await transcribeWindow({
+			runtime: makeRuntime(),
+			monoPcm: new Float32Array(16000),
+			vocab: VOCAB,
+			special: SPECIAL,
+			maxTokens: 10,
+			offsetS: 0,
+			language: 'en',
+			decodeParams: {
+				logProbThreshold: -100,
+				compressionRatioThreshold: 1.0,
+				temperatures: [0]
+			}
+		});
+		const strictCalls = decodeCallCount;
+
+		// Permissive compressionRatioThreshold=100.0 → accepted on first attempt
+		decodeCallCount = 0;
+		await transcribeWindow({
+			runtime: makeRuntime(),
+			monoPcm: new Float32Array(16000),
+			vocab: VOCAB,
+			special: SPECIAL,
+			maxTokens: 10,
+			offsetS: 0,
+			language: 'en',
+			decodeParams: {
+				logProbThreshold: -100,
+				compressionRatioThreshold: 100.0,
+				temperatures: [0]
+			}
+		});
+		const permissiveCalls = decodeCallCount;
+
+		expect(permissiveCalls).toBeLessThan(strictCalls);
+	});
 });

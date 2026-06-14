@@ -223,7 +223,8 @@ async function handleTranscribe(
 			chunkLengthS: activeModel.manifest.audio.chunkLengthS,
 			offsetS: cmd.offsetS,
 			language: cmd.language ?? activeModel.manifest.defaultLanguage ?? undefined,
-			shouldCancel: () => job.cancelled
+			shouldCancel: () => job.cancelled,
+			decodeParams: activeModel.manifest.decode
 		});
 		if (job.cancelled) return;
 

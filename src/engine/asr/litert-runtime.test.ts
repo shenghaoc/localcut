@@ -39,7 +39,8 @@ const MANIFEST: AsrModelManifestSnapshot = {
 		language: { en: 6 }
 	},
 	languages: ['en'],
-	defaultLanguage: 'en'
+	defaultLanguage: 'en',
+	decode: null
 };
 
 interface FakeTensor {
