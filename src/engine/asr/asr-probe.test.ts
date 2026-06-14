@@ -1,38 +1,30 @@
 import { describe, expect, it } from 'vite-plus/test';
-import type { WebNNProbeResult } from '../../protocol';
 import { asrAvailable, probeAsr } from './asr-probe';
 
-const WEBNN_READY: WebNNProbeResult = {
-	mlPresent: true,
-	backends: { cpu: 'supported', gpu: 'unsupported', npu: 'unsupported' },
-	modelSupport: 'supported'
-};
-
-const WEBNN_ABSENT: WebNNProbeResult = {
-	mlPresent: false,
-	backends: { cpu: 'unsupported', gpu: 'unsupported', npu: 'unsupported' },
-	modelSupport: 'unknown'
-};
-
 describe('probeAsr', () => {
-	it('does not expose WebNN as an available engine until a real runtime lands', () => {
-		const result = probeAsr(WEBNN_READY);
+	it('recommends litert-whisper when WebAssembly is available', () => {
+		const result = probeAsr();
 
-		expect(result.webnn.modelSupport).toBe('supported');
-		expect(result.recommended).toBe('none');
-		expect(asrAvailable(result)).toBe(false);
+		// The test runtime (Node) always has WebAssembly.
+		expect(result.wasm).toBe('supported');
+		expect(result.recommended).toBe('litert-whisper');
+		expect(asrAvailable(result)).toBe(true);
 	});
 
-	it('reports unavailable when WebNN is absent', () => {
-		const result = probeAsr(WEBNN_ABSENT);
+	it('reports accelerated backends and cross-origin isolation as informational only', () => {
+		const result = probeAsr();
 
-		expect(result.recommended).toBe('none');
-		expect(asrAvailable(result)).toBe(false);
+		expect(['supported', 'unsupported', 'unknown']).toContain(result.webgpu);
+		expect(['supported', 'unsupported', 'unknown']).toContain(result.webnn);
+		expect(typeof result.crossOriginIsolated).toBe('boolean');
+		// These flags never gate availability — only `wasm` does.
+		expect(asrAvailable(result)).toBe(result.wasm === 'supported');
 	});
 
-	it('does not carry any Browser SpeechRecognition signal', () => {
-		// The removed Chrome Speech fallback must leave no probe surface behind.
-		const result = probeAsr(WEBNN_READY);
+	it('carries no Browser SpeechRecognition signal', () => {
+		// The removed Chrome Speech fallback must leave no surface behind on the
+		// LiteRT probe.
+		const result = probeAsr();
 
 		expect(Object.keys(result)).not.toContain('speechRecognition');
 	});

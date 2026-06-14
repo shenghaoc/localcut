@@ -268,9 +268,11 @@ function webnnRow(probe: CapabilityProbeResult): CapabilityRow {
 /** ASR probes gate only the experimental Auto Captions feature — never the tier. */
 function asrRow(probe: CapabilityProbeResult): CapabilityRow {
 	const asr = probe.asr;
+	const accelerator =
+		asr?.webnn === 'supported' ? 'WEBNN' : asr?.webgpu === 'supported' ? 'WEBGPU' : 'WASM';
 	const engineLabel = asr
-		? asr.recommended === 'webnn-whisper'
-			? 'WebNN Whisper'
+		? asr.recommended === 'litert-whisper'
+			? `LiteRT Whisper (${accelerator})`
 			: 'unavailable'
 		: 'unknown';
 	const supported = asr?.recommended !== 'none';
@@ -280,7 +282,7 @@ function asrRow(probe: CapabilityProbeResult): CapabilityRow {
 		active: false,
 		action: supported
 			? `Auto Captions (Experimental) available via ${engineLabel}.`
-			: 'Auto Captions need the on-device WebNN Whisper engine (LiteRT); there is no browser fallback.'
+			: 'On-device captions require WebAssembly support.'
 	};
 }
 

@@ -64,6 +64,8 @@ import { exportCaptionSidecars } from './captions/export';
 import { activeCaptionPayloadsAt, captionTextureId } from './captions/render';
 import {
 	buildCaptionSnapTargets,
+	deleteCaptionTrack,
+	deleteCaptionTracks,
 	makeCaptionSegmentId,
 	makeCaptionTrackId,
 	mergeCaptionSegments,
@@ -82,6 +84,7 @@ import {
 	type CaptionExportSettings,
 	type CaptionTrack
 } from './captions/types';
+import { createAsrCaptionTrack } from './asr/caption-track';
 import {
 	addMarker,
 	addTrack,
@@ -2868,25 +2871,13 @@ function handleRemoveAudioCleanup(
 function handleAsrCreateCaptionTrack(
 	cmd: Extract<WorkerCommand, { type: 'asr-create-caption-track' }>
 ): void {
-	const trackId = makeCaptionTrackId();
-	const segments = cmd.segments.map((segment) => ({
-		...segment,
-		id: makeCaptionSegmentId()
-	}));
-	const track = createCaptionTrack({
-		id: trackId,
-		name: cmd.trackName,
+	const track = createAsrCaptionTrack({
+		segments: cmd.segments,
+		trackName: cmd.trackName,
 		language: cmd.language ?? null,
-		burnedIn: false,
-		visible: true,
-		segments,
-		generatedBy: JSON.stringify({
-			generatedBy: 'auto-captions-phase-29',
-			engine: cmd.engine,
-			language: cmd.language,
-			phraseLevel: cmd.phraseLevel,
-			createdAt: new Date().toISOString()
-		})
+		engine: cmd.engine,
+		accelerator: cmd.accelerator,
+		phraseLevel: cmd.phraseLevel
 	});
 	commitCaptionMutation(() => [...captionTracks, track], {
 		refreshPlayback: 'refresh'
@@ -3415,6 +3406,22 @@ function handleSetCaptionTrack(cmd: Extract<WorkerCommand, { type: 'set-caption-
 		...(cmd.defaultStyle !== undefined ? { defaultStyle: cmd.defaultStyle } : {})
 	};
 	commitCaptionMutation(() => setCaptionTrackProps(captionTracks, cmd.trackId, patch), {
+		refreshPlayback: 'refresh'
+	});
+}
+
+function handleDeleteCaptionTrack(
+	cmd: Extract<WorkerCommand, { type: 'delete-caption-track' }>
+): void {
+	commitCaptionMutation(() => deleteCaptionTrack(captionTracks, cmd.trackId), {
+		refreshPlayback: 'refresh'
+	});
+}
+
+function handleDeleteCaptionTracks(
+	cmd: Extract<WorkerCommand, { type: 'delete-caption-tracks' }>
+): void {
+	commitCaptionMutation(() => deleteCaptionTracks(captionTracks, cmd.trackIds), {
 		refreshPlayback: 'refresh'
 	});
 }
@@ -5523,6 +5530,12 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 		}
 		case 'set-caption-track':
 			handleSetCaptionTrack(cmd);
+			break;
+		case 'delete-caption-track':
+			handleDeleteCaptionTrack(cmd);
+			break;
+		case 'delete-caption-tracks':
+			handleDeleteCaptionTracks(cmd);
 			break;
 		case 'set-caption-segment-text':
 			handleSetCaptionSegmentText(cmd);

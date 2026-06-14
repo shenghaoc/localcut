@@ -15,8 +15,14 @@ export async function spawnAsrWorker(
 	onState: (msg: AsrWorkerState) => void,
 	onCrash: (message: string) => void
 ): Promise<AsrWorkerPort> {
-	const { default: AsrWorker } = await import('../engine/asr/asr-worker.ts?worker');
-	const worker: Worker = new AsrWorker();
+	// Spawn as a **classic** worker: LiteRT.js loads its WASM via `importScripts`,
+	// which ES module workers forbid. Keep this on the `new URL()` entry path:
+	// Vite emits a classic-loadable chunk for this build target, while the rest of
+	// the app can keep `worker.format = 'es'` for `?worker` imports elsewhere. The
+	// URL is statically analysable, so the ASR bundle still code-splits lazily.
+	const worker = new Worker(new URL('../engine/asr/asr-worker.ts', import.meta.url), {
+		type: 'classic'
+	});
 	const handler = (event: MessageEvent<AsrWorkerState>) => {
 		onState(event.data);
 	};

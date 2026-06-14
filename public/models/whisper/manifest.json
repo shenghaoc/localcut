@@ -1,0 +1,41 @@
+{
+	"id": "whisper-base",
+	"version": "litert-community-2024",
+	"license": "Apache-2.0 (litert-community) / MIT (OpenAI Whisper)",
+	"source": "https://huggingface.co/litert-community/whisper-base",
+	"sizeBytes": 290918186,
+	"model": {
+		"url": "/_model/hf/litert-community/whisper-base/resolve/main/whisper_base_30s_f32.tflite",
+		"sizeBytes": 290082636,
+		"checksum": "sha256-83f90febae74f6db2b671d792ce844f93de5dfa6d6743cdba8c7a208c8dd708a"
+	},
+	"tokenizer": {
+		"url": "/_model/hf/openai/whisper-base/resolve/main/vocab.json",
+		"sizeBytes": 835550,
+		"checksum": "sha256-8f680bba319e01a653d2e8a5dbc17a9157179e0576e6ce74ce0c06356c6e24f9"
+	},
+	"audio": {
+		"sampleRate": 16000,
+		"channels": 1,
+		"hopLength": 160,
+		"nMel": 80,
+		"chunkLengthS": 30
+	},
+	"maxDecodeTokens": 128,
+	"vocabSize": 51865,
+	"encoderFramesPerSecond": 50,
+	"tokens": {
+		"startOfTranscript": 50258,
+		"endOfText": 50257,
+		"transcribe": 50359,
+		"noTimestamps": 50363,
+		"noSpeech": 50362,
+		"timestampBegin": 50364,
+		"language": {
+			"en": 50259,
+			"zh": 50260
+		}
+	},
+	"languages": ["en", "zh"],
+	"defaultLanguage": null
+}

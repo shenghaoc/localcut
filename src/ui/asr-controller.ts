@@ -1,16 +1,18 @@
 /**
- * Orchestration for Auto Captions (Phase 29). Framework-free state machine
- * between three parties:
+ * Orchestration for Auto Captions (Phase 29, LiteRT.js Whisper).
+ * Framework-free state machine between three parties:
  *
  *   pipeline worker  ──(extract-clip-audio PCM windows)──►  controller
- *   controller       ──(transcribe, transferred)──────────►  ASR worker  (WebNN only)
+ *   controller       ──(transcribe, transferred)──────────►  ASR worker (LiteRT)
  *   controller       ──(asr-create-caption-track)─────────►  pipeline worker
  *
- * There is no browser fallback. Chrome's SpeechRecognition service was removed
- * because it cannot consume extracted timeline PCM; the only path forward is
- * the on-device LiteRT-over-WebNN Whisper engine (PR94).
+ * The ASR worker owns LiteRT.js and all inference. The controller only extracts
+ * 16 kHz mono PCM from the selected clip/range, streams it to the worker, tracks
+ * progress, and turns the final result into a generated caption track. There is
+ * no Browser SpeechRecognition path: LiteRT Whisper is the only engine.
  */
 import type {
+	AsrAccelerator,
 	AsrModelStatus,
 	AsrProbeResult,
 	AsrRecommendedEngine,
@@ -19,16 +21,80 @@ import type {
 	WorkerStateMessage
 } from '../protocol';
 import { asrAvailable, ASR_UNAVAILABLE_MESSAGE, probeAsr } from '../engine/asr/asr-probe';
+import {
+	ASR_MODEL_CATALOG,
+	defaultModel,
+	modelById,
+	type AsrModelCatalogEntry
+} from '../engine/asr/model-catalog';
 import type { AsrWorkerPort } from './asr-bridge';
 
-export const ASR_PREVIEW_SECONDS = 30;
 export const ASR_EXTRACT_WINDOW_SECONDS = 30;
+/** Default length of the "transcribe timeline range" window from the playhead. */
+export const ASR_PREVIEW_SECONDS = 30;
 export const ASR_SAMPLE_RATE = 16_000;
 export const ASR_MAX_JOB_SECONDS = 1800; // 30 minutes
+/** Overlap between consecutive decode windows so boundary words keep context. */
+export const ASR_WINDOW_OVERLAP_SECONDS = 5;
+
+/** One planned decode window: the audio slice to extract and its de-overlap bounds. */
+export interface AsrWindowPlan {
+	offsetS: number;
+	windowS: number;
+	trustedFromS: number;
+	trustedToS: number;
+}
+
+/**
+ * Split a job duration into decode windows. When the duration exceeds one window,
+ * consecutive windows overlap by {@link ASR_WINDOW_OVERLAP_SECONDS} so a word
+ * straddling a window edge is decoded with full context by the later window. Each
+ * window's trusted range trims half the overlap from its internal edges, so the
+ * ranges tile `[0, durationS)` without overlap — every segment is claimed by
+ * exactly one window and none can be emitted twice.
+ */
+export function planAsrWindows(durationS: number): AsrWindowPlan[] {
+	const windowS = ASR_EXTRACT_WINDOW_SECONDS;
+	if (durationS <= windowS) {
+		return [{ offsetS: 0, windowS: durationS, trustedFromS: 0, trustedToS: durationS }];
+	}
+	const overlap = ASR_WINDOW_OVERLAP_SECONDS;
+	const stride = windowS - overlap;
+	const plan: AsrWindowPlan[] = [];
+	for (let start = 0; start < durationS; start += stride) {
+		const length = Math.min(windowS, durationS - start);
+		const isFirst = start === 0;
+		const isLast = start + length >= durationS - 1e-6;
+		plan.push({
+			offsetS: start,
+			windowS: length,
+			trustedFromS: isFirst ? 0 : start + overlap / 2,
+			trustedToS: isLast ? durationS : start + length - overlap / 2
+		});
+		if (isLast) break;
+	}
+	return plan;
+}
+const ASR_BUILD_SHA = typeof __BUILD_SHA__ === 'string' ? __BUILD_SHA__ : 'dev';
+export const ASR_WASM_PATH = `/litert/${ASR_BUILD_SHA}/`;
+/** Baseline accelerator; used when accelerated LiteRT backends are unavailable or fall back. */
+export const ASR_DEFAULT_ACCELERATOR: AsrAccelerator = 'wasm';
+
+/**
+ * Prefer WebNN when enabled by this Chromium session, then WebGPU when the
+ * browser exposes it; LiteRT falls back to WASM inside the worker when backend
+ * compilation fails on a specific device/driver.
+ */
+export function preferredAccelerator(probe: AsrProbeResult | null): AsrAccelerator {
+	if (probe?.webnn === 'supported') return 'webnn';
+	if (probe?.webgpu === 'supported') return 'webgpu';
+	return ASR_DEFAULT_ACCELERATOR;
+}
 
 export interface AsrClipTarget {
 	trackId: string;
 	clipId: string;
+	timelineStartS: number;
 	durationS: number;
 	fileName: string;
 }
@@ -54,8 +120,18 @@ export interface AsrControllerState {
 	probe: AsrProbeResult | null;
 	available: boolean;
 	recommendedEngine: AsrRecommendedEngine;
+	/** The catalog model the user has selected. */
+	model: AsrModelCatalogEntry;
+	/** All selectable models (for the picker). */
+	models: readonly AsrModelCatalogEntry[];
 	modelStatus: AsrModelStatus;
 	modelSizeBytes: number | null;
+	accelerator: AsrAccelerator | null;
+	/** Model download/compile progress in [0, 1] while loading, else null. */
+	downloadFraction: number | null;
+	downloadedBytes: number | null;
+	/** On `loaded`: true when the model came from the on-device cache (no download). */
+	cached: boolean | null;
 	job: AsrJobState | null;
 	lastDurationMs: number | null;
 	error: string | null;
@@ -70,19 +146,22 @@ export interface ClipAudioRequest {
 	sampleRate: number;
 }
 
+export interface CreateCaptionTrackRequest {
+	segments: CaptionSegmentSnapshot[];
+	language: string | null;
+	engine: 'litert-whisper';
+	accelerator: AsrAccelerator;
+	phraseLevel: boolean;
+	trackName: string;
+}
+
 export interface AsrControllerPorts {
 	spawnWorker(
 		onState: (msg: AsrWorkerState) => void,
 		onCrash: (message: string) => void
 	): Promise<AsrWorkerPort>;
 	requestClipAudio(request: ClipAudioRequest): void;
-	createCaptionTrack(request: {
-		segments: CaptionSegmentSnapshot[];
-		language: string | null;
-		engine: 'webnn-whisper';
-		phraseLevel: boolean;
-		trackName: string;
-	}): void;
+	createCaptionTrack(request: CreateCaptionTrackRequest): void;
 	onError?(message: string): void;
 }
 
@@ -97,11 +176,7 @@ interface ActiveJob {
 	clip: AsrClipTarget | null;
 	durationS: number;
 	cancelled: boolean;
-	allSegments: CaptionSegmentSnapshot[];
-	language: string | null;
-	phraseLevel: boolean;
 	startedAt: number;
-	abortController: AbortController;
 	resultResolve?: (msg: Extract<AsrWorkerState, { type: 'asr-result' }>) => void;
 	resultReject?: (error: Error) => void;
 }
@@ -119,8 +194,14 @@ export class AsrController {
 		probe: null,
 		available: false,
 		recommendedEngine: 'none',
+		model: defaultModel(),
+		models: ASR_MODEL_CATALOG,
 		modelStatus: 'not-loaded',
 		modelSizeBytes: null,
+		accelerator: null,
+		downloadFraction: null,
+		downloadedBytes: null,
+		cached: null,
 		job: null,
 		lastDurationMs: null,
 		error: null
@@ -128,10 +209,13 @@ export class AsrController {
 	private readonly listeners = new Set<(state: AsrControllerState) => void>();
 	private worker: AsrWorkerPort | null = null;
 	private workerSpawn: Promise<AsrWorkerPort> | null = null;
+	private workerSpawnGeneration = 0;
 	private nextJobId = 1;
 	private nextRequestId = 1;
 	private activeJob: ActiveJob | null = null;
 	private readonly pendingExtractions = new Map<string, PendingExtraction>();
+	private loadPromise: Promise<boolean> | null = null;
+	private loadResolve: ((ok: boolean) => void) | null = null;
 
 	constructor(ports: AsrControllerPorts) {
 		this.ports = ports;
@@ -156,8 +240,8 @@ export class AsrController {
 		for (const listener of this.listeners) listener(this.state);
 	}
 
-	setProbe(webnnProbe?: Parameters<typeof probeAsr>[0]): void {
-		const result = probeAsr(webnnProbe);
+	setProbe(): void {
+		const result = probeAsr();
 		this.update({
 			probe: result,
 			available: asrAvailable(result),
@@ -189,14 +273,26 @@ export class AsrController {
 		}
 	}
 
+	private settleLoad(ok: boolean): void {
+		this.loadResolve?.(ok);
+		this.loadResolve = null;
+		this.loadPromise = null;
+	}
+
 	private handleWorkerState(msg: AsrWorkerState): void {
 		switch (msg.type) {
 			case 'asr-model-status': {
 				this.update({
 					modelStatus: msg.status,
 					modelSizeBytes: msg.sizeBytes ?? this.state.modelSizeBytes,
+					accelerator: msg.accelerator ?? this.state.accelerator,
+					downloadFraction: msg.status === 'loading' ? (msg.fraction ?? 0) : null,
+					downloadedBytes: msg.status === 'loading' ? (msg.downloadedBytes ?? null) : null,
+					cached: msg.status === 'loaded' ? (msg.cached ?? null) : this.state.cached,
 					error: msg.status === 'failed' ? (msg.error ?? 'Model load failed.') : this.state.error
 				});
+				if (msg.status === 'loaded') this.settleLoad(true);
+				else if (msg.status === 'failed') this.settleLoad(false);
 				break;
 			}
 			case 'asr-progress': {
@@ -235,17 +331,19 @@ export class AsrController {
 				break;
 			}
 			case 'asr-probe-result':
-				this.setProbe(msg.result.webnn);
+				this.setProbe();
 				break;
 		}
 	}
 
 	private async ensureWorker(): Promise<AsrWorkerPort> {
 		if (this.worker) return this.worker;
+		const generation = this.workerSpawnGeneration;
 		this.workerSpawn ??= this.ports.spawnWorker(
 			(msg) => this.handleWorkerState(msg),
 			(message) => {
 				this.update({ modelStatus: 'not-loaded', job: null, error: message });
+				this.settleLoad(false);
 				if (this.activeJob) {
 					this.activeJob.cancelled = true;
 					this.activeJob.resultReject?.(new Error(message));
@@ -254,13 +352,14 @@ export class AsrController {
 				this.worker?.terminate();
 				this.worker = null;
 				this.workerSpawn = null;
+				this.workerSpawnGeneration++;
 				this.ports.onError?.(message);
 			}
 		);
 		const spawned = await this.workerSpawn;
-		if (this.workerSpawn === null) {
+		if (this.workerSpawn === null || generation !== this.workerSpawnGeneration) {
 			spawned.terminate();
-			throw new Error('Controller was disposed.');
+			throw new AsrCancelled();
 		}
 		this.worker = spawned;
 		return this.worker;
@@ -272,35 +371,68 @@ export class AsrController {
 			return false;
 		}
 		if (this.state.modelStatus === 'loaded') return true;
-		if (this.state.modelStatus === 'loading') return false;
+		if (this.loadPromise) return this.loadPromise;
 
-		this.update({ modelStatus: 'loading', error: null });
+		this.update({
+			modelStatus: 'loading',
+			error: null,
+			downloadFraction: 0,
+			downloadedBytes: null,
+			modelSizeBytes: this.state.model.sizeBytes,
+			cached: null
+		});
+		const pending = new Promise<boolean>((resolve) => {
+			this.loadResolve = resolve;
+		});
+		this.loadPromise = pending;
 		try {
 			const worker = await this.ensureWorker();
+			if (this.loadPromise !== pending || this.state.modelStatus !== 'loading') {
+				return pending;
+			}
 			worker.send({
 				type: 'asr-load-model',
-				manifest: {
-					id: 'whisper-tiny-bilingual',
-					version: '1.0.0',
-					license: 'MIT',
-					source: 'https://github.com/openai/whisper',
-					sizeBytes: 77_700_000,
-					checksum: 'sha256-0000000000000000000000000000000000000000000000000000000000000000',
-					audio: { sampleRate: 16000, channels: 1, hopLength: 160, nMel: 80 },
-					vocabSize: 51_866,
-					encoderFramesPerSecond: 50,
-					languages: ['zh', 'en']
-				},
-				weightsUrl: '/models/whisper/weights.bin',
-				vocabUrl: '/models/whisper/vocab.json',
-				preferredBackends: ['npu', 'gpu', 'cpu']
+				manifestUrl: this.state.model.manifestUrl,
+				accelerator: preferredAccelerator(this.state.probe),
+				wasmPath: ASR_WASM_PATH
 			});
-			return true;
 		} catch (error) {
+			if (this.loadPromise !== pending) return pending;
 			const message = error instanceof Error ? error.message : String(error);
 			this.update({ modelStatus: 'failed', error: message });
-			return false;
+			this.settleLoad(false);
 		}
+		return pending;
+	}
+
+	/**
+	 * Selects a different catalog model. Switching invalidates any model already
+	 * loaded in the worker, so the next transcription re-loads the new model.
+	 */
+	selectModel(id: string): void {
+		const entry = modelById(id);
+		if (this.state.job) return;
+		if (entry.id === this.state.model.id && this.state.modelStatus !== 'failed') return;
+		if (this.workerSpawn && !this.worker) {
+			this.workerSpawnGeneration++;
+			this.workerSpawn = null;
+		}
+		this.worker?.send({ type: 'asr-dispose' });
+		this.worker?.terminate();
+		this.worker = null;
+		this.workerSpawn = null;
+		this.workerSpawnGeneration++;
+		this.settleLoad(false);
+		this.update({
+			model: entry,
+			modelStatus: 'not-loaded',
+			modelSizeBytes: null,
+			accelerator: null,
+			downloadFraction: null,
+			downloadedBytes: null,
+			cached: null,
+			error: null
+		});
 	}
 
 	private requestExtraction(
@@ -330,6 +462,17 @@ export class AsrController {
 		return this.runTranscribe('timeline-range', null, language, range);
 	}
 
+	private offsetSegments(
+		segments: readonly CaptionSegmentSnapshot[],
+		offsetS: number
+	): CaptionSegmentSnapshot[] {
+		if (!Number.isFinite(offsetS) || Math.abs(offsetS) < 1e-6) return [...segments];
+		return segments.map((segment) => ({
+			...segment,
+			start: segment.start + offsetS
+		}));
+	}
+
 	private async runTranscribe(
 		kind: AsrJobKind,
 		clip: AsrClipTarget | null,
@@ -341,19 +484,11 @@ export class AsrController {
 
 		const durationS = clip
 			? Math.min(clip.durationS, ASR_MAX_JOB_SECONDS)
-			: Math.min(timelineRange?.durationS ?? ASR_PREVIEW_SECONDS, ASR_MAX_JOB_SECONDS);
-
-		// WebNN Whisper path — uses the dedicated ASR worker.
-		return this.runWebNNTranscribe(kind, clip, durationS, language);
-	}
-
-	private async runWebNNTranscribe(
-		kind: AsrJobKind,
-		clip: AsrClipTarget | null,
-		durationS: number,
-		language: string | undefined
-	): Promise<boolean> {
-		const engine = 'webnn-whisper' as const;
+			: Math.min(timelineRange?.durationS ?? 0, ASR_MAX_JOB_SECONDS);
+		if (durationS <= 0) {
+			this.update({ error: 'Nothing to transcribe in the selection.' });
+			return false;
+		}
 
 		const worker = await this.ensureWorker();
 		const jobId = this.nextJobId++;
@@ -363,11 +498,7 @@ export class AsrController {
 			clip,
 			durationS,
 			cancelled: false,
-			allSegments: [],
-			language: null,
-			phraseLevel: false,
-			startedAt: Date.now(),
-			abortController: new AbortController()
+			startedAt: performance.now()
 		};
 		this.activeJob = job;
 
@@ -392,34 +523,45 @@ export class AsrController {
 		result.catch(() => undefined);
 
 		try {
-			let offsetS = 0;
-			while (offsetS < durationS) {
+			const windows = planAsrWindows(durationS);
+			for (let i = 0; i < windows.length; i++) {
 				if (job.cancelled) throw new AsrCancelled();
-				const windowS = Math.min(ASR_EXTRACT_WINDOW_SECONDS, durationS - offsetS);
-				if (!clip) throw new AsrCancelled();
-				const window = await this.requestExtraction(clip, offsetS, windowS);
+				const { offsetS, windowS, trustedFromS, trustedToS } = windows[i];
+				const extractTarget =
+					clip ??
+					({
+						trackId: '',
+						clipId: '',
+						timelineStartS: timelineRange?.startS ?? 0,
+						durationS,
+						fileName: 'range'
+					} satisfies AsrClipTarget);
+				const startS = clip ? offsetS : (timelineRange?.startS ?? 0) + offsetS;
+				const window = await this.requestExtraction(extractTarget, startS, windowS);
 				if (job.cancelled) throw new AsrCancelled();
 
 				worker.send(
 					{
 						type: 'asr-transcribe',
 						jobId,
-						engine,
 						pcm: window.pcm,
 						sampleRate: window.sampleRate,
 						channels: window.channels,
 						offsetS,
 						totalDurationS: durationS,
-						language
+						language,
+						trustedFromS,
+						trustedToS,
+						isFinal: i === windows.length - 1
 					},
 					[window.pcm.buffer]
 				);
-				offsetS += windowS;
 			}
 
 			const finalResult = await result;
 			this.finishJob();
-			assertNonEmptyTranscript(finalResult.segments);
+			const segmentOffsetS = clip?.timelineStartS ?? timelineRange?.startS ?? 0;
+			const shiftedSegments = this.offsetSegments(finalResult.segments, segmentOffsetS);
 
 			const trackName = (() => {
 				const lang = finalResult.language ?? language ?? 'auto';
@@ -440,9 +582,10 @@ export class AsrController {
 			});
 
 			this.ports.createCaptionTrack({
-				segments: finalResult.segments,
+				segments: shiftedSegments,
 				language: finalResult.language,
-				engine,
+				engine: 'litert-whisper',
+				accelerator: this.state.accelerator ?? ASR_DEFAULT_ACCELERATOR,
 				phraseLevel: finalResult.phraseLevel,
 				trackName
 			});
@@ -464,14 +607,29 @@ export class AsrController {
 	}
 
 	cancel(): void {
+		if (this.state.modelStatus === 'loading') {
+			if (this.workerSpawn && !this.worker) {
+				this.workerSpawnGeneration++;
+				this.workerSpawn = null;
+			}
+			this.worker?.send({ type: 'asr-dispose' });
+			this.settleLoad(false);
+			this.update({
+				modelStatus: 'not-loaded',
+				accelerator: null,
+				downloadFraction: null,
+				downloadedBytes: null,
+				cached: null,
+				error: null
+			});
+		}
 		const job = this.activeJob;
 		if (job) {
-			job.abortController.abort();
 			job.cancelled = true;
 			this.worker?.send({ type: 'asr-cancel', jobId: job.jobId });
 			job.resultReject?.(new AsrCancelled());
 		}
-		for (const [requestId, pending] of [...this.pendingExtractions]) {
+		for (const [requestId, pending] of this.pendingExtractions) {
 			this.pendingExtractions.delete(requestId);
 			pending.reject(new AsrCancelled());
 		}
@@ -481,25 +639,19 @@ export class AsrController {
 
 	dispose(): void {
 		this.cancel();
+		this.settleLoad(false);
 		this.worker?.send({ type: 'asr-dispose' });
 		this.worker?.terminate();
 		this.worker = null;
 		this.workerSpawn = null;
+		this.workerSpawnGeneration++;
 		this.pendingExtractions.clear();
 		this.listeners.clear();
 	}
 }
 
 export const ASR_PRIVACY_STATEMENT =
-	'All speech recognition runs on this device. No audio leaves your browser. No cloud API.';
-export const ASR_EMPTY_TRANSCRIPT_MESSAGE =
-	'No speech was recognized. Try a clearer clip or a different language.';
-
-function assertNonEmptyTranscript(segments: readonly CaptionSegmentSnapshot[]): void {
-	if (!segments.some((segment) => segment.text.trim().length > 0)) {
-		throw new Error(ASR_EMPTY_TRANSCRIPT_MESSAGE);
-	}
-}
+	'All speech recognition runs on this device with LiteRT.js. No audio leaves your browser. No cloud API.';
 
 export interface AsrActionAvailability {
 	loadModel: { enabled: boolean; reason: string | null };
@@ -523,23 +675,27 @@ export function asrActionAvailability(
 	}
 	const busy = state.job !== null || state.modelStatus === 'loading';
 	const noClip = selectedClip === null;
-	const modelNeeded = state.recommendedEngine === 'webnn-whisper' && state.modelStatus !== 'loaded';
+	const modelNeeded = state.modelStatus !== 'loaded';
+	const busyReason = busy ? 'An ASR task is in progress.' : null;
 	const clipReason = noClip ? 'Select a clip on the timeline first.' : null;
-	const modelReason = modelNeeded ? 'Load the ASR model first.' : null;
-	const busyReason = busy ? 'A transcription is in progress.' : null;
+	const rangeReason =
+		'Timeline range transcription needs mixed timeline audio extraction; transcribe a selected clip for now.';
 	return {
 		loadModel: {
 			enabled: !busy && modelNeeded,
 			reason: busyReason ?? (modelNeeded ? null : 'Model already loaded.')
 		},
 		transcribeClip: {
-			enabled: !busy && !noClip && !modelNeeded,
-			reason: busyReason ?? clipReason ?? modelReason
+			enabled: !busy && !noClip,
+			reason: busyReason ?? clipReason
 		},
 		transcribeRange: {
-			enabled: !busy && !noClip && !modelNeeded,
-			reason: busyReason ?? clipReason ?? modelReason
+			enabled: false,
+			reason: busyReason ?? rangeReason
 		},
-		cancel: { enabled: busy, reason: busy ? null : 'Nothing to cancel.' }
+		cancel: {
+			enabled: busy,
+			reason: busy ? null : 'Nothing to cancel.'
+		}
 	};
 }

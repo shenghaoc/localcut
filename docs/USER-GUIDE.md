@@ -248,6 +248,23 @@ Import, edit, and export caption tracks:
 - **Style**: Set preset, font size, color, background, burn-in, and visibility per track. Individual segments can override color and background.
 - **Export**: Export captions as SRT or VTT files.
 
+### Auto Captions (experimental)
+
+LocalCut Studio can transcribe a clip's audio into a caption track entirely on your device, using [OpenAI Whisper](https://github.com/openai/whisper) compiled by [LiteRT.js](https://www.npmjs.com/package/@litertjs/core). Like Audio Cleanup, it is **experimental** and fully local — no microphone, no app-audio capture, and no cloud API.
+
+- **Choose a model**: The panel lists the available models with their provider, size, and a **Learn more** link to the model card. Today it ships **Whisper Base** (better accuracy, larger download) and **Whisper Tiny** (faster, smaller).
+- **Load model**: Click **Load model**. The model downloads once from a trusted source, is checksum-verified, and is stored on your device (OPFS) so later loads are instant and work offline — the network is touched at most once. Nothing downloads until you click, and the panel tells you when a model loaded straight from the device cache.
+- **Transcribe selected clip**: Select a clip on the timeline, optionally pick a language (Auto-detect / English / Chinese), and click **Transcribe selected clip**. The result becomes a normal, editable caption track positioned on the timeline where that clip lives.
+- **Burn in when needed**: Generated ASR tracks start as editable sidecar captions. Turn on **Burn-in** in the Transcript panel when you want them overlaid in preview/export.
+- **Transcribe timeline range**: The button is present in the panel, but timeline-range transcription is still disabled until mixed timeline audio extraction lands.
+- **Cancel** stops a running model load or transcription; a selection with no speech does not create an empty track.
+
+Model assets are fetched only from this app's own origin or a small allowlist of reputable hosts (Hugging Face, Kaggle / Google AI Edge, GitHub), and every file is verified against a published SHA-256 digest before use.
+
+**Requirements**: a browser with WebAssembly (effectively every modern browser). When experimental WebNN is enabled, LiteRT requests WebNN with the JSPI runtime first; otherwise it tries WebGPU, then falls back to the WASM accelerator — the panel shows which one actually compiled. The transcription runs in a dedicated worker, so the editor stays responsive. The model itself is downloaded on demand from Hugging Face (digest-verified, then OPFS-cached); if it can't be reached, **Load model** fails gracefully and the rest of the editor works exactly as before — there is no cloud _processing_ of any kind, only the one-time model download. The panel shows the detected engine (LiteRT Whisper), model size and download progress, and the last transcription duration; the Capabilities panel has an **Auto Captions (ASR)** row.
+
+Model: Whisper (MIT, OpenAI), compiled with LiteRT.js (Apache-2.0, Google) on WebNN, WebGPU, or the WASM accelerator.
+
 ## Replay Buffer
 
 Continuously record a screen capture into a rolling buffer and save the last moments as a timeline clip — without interrupting the recording.

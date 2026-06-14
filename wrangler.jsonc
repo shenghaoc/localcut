@@ -1,14 +1,21 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "browser-editor",
+	// Worker entry: serves the SPA from the ASSETS binding and reverse-proxies the
+	// on-device ASR model from Hugging Face same-origin (see src/worker/index.ts).
+	"main": "src/worker/index.ts",
 	"compatibility_date": "2026-06-05",
 	"observability": {
 		"enabled": true
 	},
 	"assets": {
 		"directory": "dist",
+		"binding": "ASSETS",
 		// SPA fallback so in-app routes (/docs and subsections) survive refresh and deep links.
-		"not_found_handling": "single-page-application"
+		"not_found_handling": "single-page-application",
+		// Run the Worker before the SPA fallback for the model proxy, so
+		// `/_model/*` reaches the proxy instead of being rewritten to index.html.
+		"run_worker_first": ["/_model/*"]
 	},
 	"compatibility_flags": ["nodejs_compat"]
 }

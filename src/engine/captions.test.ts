@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vite-plus/test';
 import { exportCaptionSidecars } from './captions/export';
 import {
 	buildCaptionSnapTargets,
+	deleteCaptionTrack,
+	deleteCaptionTracks,
 	makeCaptionSegmentId,
 	mergeCaptionSegments,
 	setCaptionSegmentStyle,
@@ -12,7 +14,11 @@ import {
 } from './captions/model';
 import { parseSrt, serializeSrt } from './captions/srt';
 import { parseWebVtt, serializeWebVtt } from './captions/webvtt';
-import { createCaptionTrack } from './captions/types';
+import {
+	DEFAULT_CAPTION_STYLE,
+	captionAnchorTransform,
+	createCaptionTrack
+} from './captions/types';
 
 describe('caption SRT parse/serialize', () => {
 	it('round-trips multiline cues', () => {
@@ -64,6 +70,52 @@ describe('caption WebVTT parse/serialize', () => {
 });
 
 describe('caption editing and export', () => {
+	it('places default subtitle rasters inside the preview frame', () => {
+		const transform = captionAnchorTransform(DEFAULT_CAPTION_STYLE);
+
+		expect(transform.anchorX).toBe(0.5);
+		expect(transform.anchorY).toBe(0.5);
+		expect(transform.fit).toBe('fit');
+		expect(0.5 + transform.x).toBeCloseTo(0.5);
+		expect(0.5 + transform.y).toBeCloseTo(1 - 56 / 540);
+	});
+
+	it('places top captions using transform offsets instead of screen coordinates', () => {
+		const transform = captionAnchorTransform({
+			...DEFAULT_CAPTION_STYLE,
+			anchor: 'top-center'
+		});
+
+		expect(transform.anchorX).toBe(0.5);
+		expect(transform.anchorY).toBe(0.5);
+		expect(0.5 + transform.y).toBeCloseTo(56 / 540);
+	});
+
+	it('deletes caption tracks without mutating the original list', () => {
+		const tracks = [
+			createCaptionTrack({ id: 'captions-1', name: 'Older ASR' }),
+			createCaptionTrack({ id: 'captions-2', name: 'Latest ASR' })
+		];
+
+		const next = deleteCaptionTrack(tracks, 'captions-1');
+
+		expect(next.map((track) => track.id)).toEqual(['captions-2']);
+		expect(tracks).toHaveLength(2);
+	});
+
+	it('deletes multiple caption tracks in one mutation', () => {
+		const tracks = [
+			createCaptionTrack({ id: 'captions-1', name: 'Older ASR' }),
+			createCaptionTrack({ id: 'captions-2', name: 'Also older ASR' }),
+			createCaptionTrack({ id: 'captions-3', name: 'Latest ASR' })
+		];
+
+		const next = deleteCaptionTracks(tracks, ['captions-1', 'captions-2']);
+
+		expect(next.map((track) => track.id)).toEqual(['captions-3']);
+		expect(tracks).toHaveLength(3);
+	});
+
 	it('splits, retimes, snaps, merges, and exports sidecars', () => {
 		const firstId = makeCaptionSegmentId();
 		const secondId = makeCaptionSegmentId();

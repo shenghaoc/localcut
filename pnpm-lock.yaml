@@ -27,6 +27,9 @@ importers:
       '@kobalte/core':
         specifier: ^0.13.11
         version: 0.13.11(solid-js@1.9.13)
+      '@litertjs/core':
+        specifier: ^2.5.2
+        version: 2.5.2
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -1162,6 +1165,12 @@ packages:
     resolution: {integrity: sha512-eeU60A3kprIiBDAfv9gUJX1tXGLuZiKMajUfSQURAF2pk4ZoMYiqIzmrMBvzcxP39xnYttgTyQEVLwiTZnrV4w==}
     peerDependencies:
       solid-js: ^1.8.8
+
+  '@litertjs/core@2.5.2':
+    resolution: {integrity: sha512-2O4p5Me8B3KbW9EPU9Xe6iKl2jZ5nZeGxRBvhm5x42Wj7qb3xk2CjibPLA0eSyt2HuELu2hCIZ+7gHZM5cipcw==}
+
+  '@litertjs/wasm-utils@2.5.0':
+    resolution: {integrity: sha512-zhMAqJRJ3ROi48flZxYx+K2MiMllJVuH7oeumpSIfQMBeOb6JyLV/7ltLbY6E+nERUAfNwzIBqjslWAeXcO6iQ==}
 
   '@oxc-project/runtime@0.133.0':
     resolution: {integrity: sha512-PkvjA1Lq5++V5S1E6Patr92ZVcieE6EalDr1VJTqv4BnjZdOUC4W3p8k1wMXSd5/2aFP4b/A6N5sg2Bkzcr9vQ==}
@@ -4746,6 +4755,12 @@ snapshots:
       '@solid-primitives/refs': 1.1.3(solid-js@1.9.13)
       '@solid-primitives/utils': 6.4.0(solid-js@1.9.13)
       solid-js: 1.9.13
+
+  '@litertjs/core@2.5.2':
+    dependencies:
+      '@litertjs/wasm-utils': 2.5.0
+
+  '@litertjs/wasm-utils@2.5.0': {}
 
   '@oxc-project/runtime@0.133.0': {}
 
