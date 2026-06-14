@@ -480,6 +480,13 @@ export interface MatteProbeResult {
 }
 
 /** Manifest document validated by the matte engine before any fetch. */
+/**
+ * Pixel normalization the model expects on its NHWC input:
+ * - `signed-unit`: [-1, 1] via `rgb * 2 - 1` (MODNet and most matting models).
+ * - `unit`: [0, 1] raw RGB (MediaPipe Selfie Segmentation).
+ */
+export type MatteInputRange = 'signed-unit' | 'unit';
+
 export interface MatteModelManifestSnapshot {
 	id: string;
 	version: string;
@@ -489,6 +496,8 @@ export interface MatteModelManifestSnapshot {
 	checksum: string;
 	inputWidth: number;
 	inputHeight: number;
+	/** Input normalization; defaults to `signed-unit` when the manifest omits it. */
+	inputRange: MatteInputRange;
 }
 
 /**

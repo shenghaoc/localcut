@@ -7,7 +7,7 @@
  *   VideoFrame → importExternalTexture → preprocess WGSL (resize/normalize,
  *   NHWC pack into a GPU buffer) → LiteRT.js (`@litertjs/core`) WebGPU model
  *   with GPU-buffer tensor IO (`new Tensor(gpuBuffer, …)` in,
- *   `tensor.toGpuBuffer()` out) → resolve WGSL (alpha buffer → r8 texture +
+ *   `tensor.toGpuBuffer()` out) → resolve WGSL (alpha buffer → rgba8unorm texture +
  *   EMA temporal smoothing) → matte-apply / matte-blur in the Phase 12
  *   compositor.
  *
@@ -18,8 +18,10 @@
  * on that device with no CPU pixel round-trip.
  *
  * Licensing: the engine is model-agnostic but the deployed default must be
- * permissively licensed (MODNet, Apache-2.0). GPL-family models are rejected —
- * see .kiro/specs/phase-31-portrait-matting/design.md.
+ * permissively licensed — currently MediaPipe Selfie Segmentation (Apache-2.0),
+ * a person/background segmenter (not a true alpha matte) whose single-channel
+ * confidence mask the EMA pass smooths over time. GPL-family models are rejected.
+ * See .kiro/specs/phase-31-portrait-matting/design.md.
  *
  * Everything is local-only: the `.tflite` model loads same-origin on demand,
  * is manifest-validated and SHA-256-verified (Phase 28 conventions); video
@@ -45,6 +47,38 @@ const TEMPORAL_SMOOTHING = 0.5;
 
 /** Reuse-cache budget. Correctness never depends on a hit (R3.3). */
 const MATTE_CACHE_BYTES = 32 * 1024 * 1024;
+
+/**
+ * Makes `importScripts` usable in an ES-module worker so LiteRT's wasm-utils
+ * loader can evaluate its emscripten glue. A module worker exposes
+ * `importScripts` but throws on call; we replace it with a synchronous fetch +
+ * indirect global `eval`, which evaluates the glue (plain UMD, not an ES module)
+ * in the worker's global scope exactly as a classic worker's `importScripts`
+ * would — so the glue's `var ModuleFactory` lands on the global where wasm-utils
+ * reads it. Idempotent; only touches this worker's global scope.
+ */
+function installModuleWorkerImportScripts(): void {
+	const scope = globalThis as unknown as {
+		importScripts?: (...urls: string[]) => void;
+		XMLHttpRequest?: typeof XMLHttpRequest;
+		__matteImportScriptsPatched?: boolean;
+	};
+	if (scope.__matteImportScriptsPatched || typeof scope.XMLHttpRequest !== 'function') return;
+	scope.importScripts = (...urls: string[]): void => {
+		for (const url of urls) {
+			const xhr = new scope.XMLHttpRequest!();
+			xhr.open('GET', url, false); // synchronous — only allowed off the main thread
+			xhr.send();
+			if (xhr.status >= 400) {
+				throw new Error(`importScripts polyfill: HTTP ${xhr.status} loading ${url}`);
+			}
+			// Indirect eval runs in global scope, so the glue's top-level `var`
+			// declarations become globals (matching importScripts semantics).
+			(0, eval)(xhr.responseText);
+		}
+	};
+	scope.__matteImportScriptsPatched = true;
+}
 
 // ── Minimal local typings for the @litertjs/core surface the engine uses ──
 // (Narrowed from the untyped `litert-loader` boundary so the package's global
@@ -108,6 +142,9 @@ interface LoadedModel {
 	width: number;
 	height: number;
 	modelKey: string;
+	/** Preprocess normalization `rgb * normScale + normBias`, derived from the manifest. */
+	normScale: number;
+	normBias: number;
 }
 
 export class MatteEngine {
@@ -291,6 +328,13 @@ export class MatteEngine {
 		this.postStatus();
 
 		const api = (await loadLiteRtModule()) as LiteRtApi;
+		// The pipeline worker is an ES-module worker (it must be, to share the
+		// compositor's GPUDevice for zero-copy IO). LiteRT's `@litertjs/wasm-utils`
+		// loads its emscripten glue with `importScripts(glueUrl)`, which throws in
+		// a module worker ("Module scripts don't support importScripts()"). Install
+		// a polyfill that evaluates the (UMD, non-module) glue the same way a classic
+		// worker's importScripts would, before loadLiteRt reaches that path.
+		installModuleWorkerImportScripts();
 		// LiteRT loads its WASM through an emscripten module that resolves the
 		// `.wasm` relative to the worker script URL by default; point `locateFile`
 		// at the deployed runtime directory so the binary is fetched there.
@@ -353,7 +397,9 @@ export class MatteEngine {
 			width = inputShape[2];
 		}
 
-		this.model = { compiled, width, height, modelKey: manifest.id };
+		// Map the declared input range to a linear `rgb * scale + bias` normalize.
+		const [normScale, normBias] = manifest.inputRange === 'unit' ? [1, 0] : [2, -1]; // unit [0,1] vs signed-unit [-1,1]
+		this.model = { compiled, width, height, modelKey: manifest.id, normScale, normBias };
 		this.modelStatus = 'loaded';
 		this.postStatus();
 	}
@@ -376,7 +422,8 @@ export class MatteEngine {
 			}
 		});
 		this.preprocessUniform = device.createBuffer({
-			size: 8,
+			// 2×u32 (dims) + 2×f32 (normScale, normBias).
+			size: 16,
 			usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
 		});
 		this.resolveUniform = device.createBuffer({
@@ -397,7 +444,9 @@ export class MatteEngine {
 			const model = this.model!;
 			const history = this.device.createTexture({
 				size: { width: model.width, height: model.height },
-				format: 'r8unorm',
+				// Must match alphaTexture's format for copyTextureToTexture; rgba8unorm
+				// because r8unorm cannot be a storage texture (the resolve write target).
+				format: 'rgba8unorm',
 				usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC
 			});
 			session = { history, historyView: history.createView(), lastSourceTimeS: null };
@@ -447,11 +496,10 @@ export class MatteEngine {
 		}
 
 		// 1. Preprocess: external texture → normalized NHWC GPU buffer.
-		device.queue.writeBuffer(
-			this.preprocessUniform!,
-			0,
-			new Uint32Array([model.width, model.height])
-		);
+		const preUniform = new ArrayBuffer(16);
+		new Uint32Array(preUniform, 0, 2).set([model.width, model.height]);
+		new Float32Array(preUniform, 8, 2).set([model.normScale, model.normBias]);
+		device.queue.writeBuffer(this.preprocessUniform!, 0, preUniform);
 		const external = device.importExternalTexture({ source: request.frame });
 		const preEncoder = device.createCommandEncoder();
 		const prePass = preEncoder.beginComputePass();
@@ -495,12 +543,16 @@ export class MatteEngine {
 		}
 		const alphaTensor = outputs[0];
 		if (!alphaTensor) throw new Error('Matte model produced no output tensor.');
+		// The LiteRT output buffer (STORAGE | COPY_SRC | COPY_DST) binds directly as
+		// the resolve pass's read-only storage input — no intermediate copy needed.
 		const alphaBuffer = alphaTensor.toGpuBuffer();
 
-		// 3. Resolve: raw alpha buffer + history → smoothed r8 alpha texture.
+		// 3. Resolve: raw alpha buffer + history → smoothed alpha texture.
 		const alphaTexture = device.createTexture({
 			size: { width: model.width, height: model.height },
-			format: 'r8unorm',
+			// rgba8unorm, not r8unorm: r8unorm is not a storage-capable format, so it
+			// cannot be the resolve pass's STORAGE_BINDING write target. Alpha is .r.
+			format: 'rgba8unorm',
 			usage:
 				GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC
 		});

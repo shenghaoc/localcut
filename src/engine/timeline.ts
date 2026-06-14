@@ -44,9 +44,10 @@ export type ClipMatte = ClipMatteSnapshot;
 export const DEFAULT_MATTE: ClipMatte = {
 	enabled: true,
 	mode: 'remove',
-	// Model pin: MODNet (Apache-2.0). GPL-family models (e.g. RVM) are rejected —
-	// see .kiro/specs/phase-31-portrait-matting/design.md for the license verdict.
-	modelKey: 'modnet-v1',
+	// Model pin: the deployed default is MediaPipe Selfie Segmentation (Apache-2.0).
+	// GPL-family models (e.g. RVM) are rejected — see
+	// .kiro/specs/phase-31-portrait-matting/design.md for the license verdict.
+	modelKey: 'mediapipe-selfie-general',
 	strength: 1.0
 };
 

@@ -49,7 +49,7 @@ import { cloneClipLut, parsePersistedClipLut } from './lut';
 import { normalizeSkinMask } from './skin-smooth';
 import { parseExportPresetDoc } from './export-presets';
 
-export const PROJECT_SCHEMA_VERSION = 14;
+export const PROJECT_SCHEMA_VERSION = 15;
 const DURATION_MATCH_TOLERANCE_S = 0.25;
 const TIMING_MATCH_TOLERANCE_S = 0.05;
 
@@ -514,7 +514,8 @@ function parseClip(value: unknown): TimelineClip | null {
 			value.matte.mode === 'replace' || value.matte.mode === 'blur' ? value.matte.mode : 'remove';
 		// Model pin survives round-trip verbatim (P23); mismatches against the
 		// deployed model surface a warning at load, never a silent switch.
-		const modelKey = typeof value.matte.modelKey === 'string' ? value.matte.modelKey : 'modnet-v1';
+		const modelKey =
+			typeof value.matte.modelKey === 'string' ? value.matte.modelKey : 'mediapipe-selfie-general';
 		const strength = finiteNumber(value.matte.strength);
 		const blurRadius = finiteNumber(value.matte.blurRadius);
 		clip.matte = {
@@ -1472,17 +1473,16 @@ export function deserializeProject(value: unknown): DeserializeProjectResult {
 			// Both fields are optional with factory defaults; v10/v11 docs deserialize fine.
 			return deserializeV10(value);
 		case 13:
-		case 14:
 			// v13 (Phase 30): adds customAnimCaptionPresets (optional; absent in
 			// v10/v11/v12). Originally targeted v12, but Phase 32a (Skin Smoothing)
 			// claimed v12 first, so Phase 30 ships as v13.
-			// v14 (Phase 31): adds the optional clip `matte` (mode/strength/blurRadius);
-			// the shared clip parser handles it, so v13 docs deserialize fine.
 			return deserializeV13(value);
 		case 14:
-			// v14 (Phase 36): adds optional voiceCleanup on top of v13. Phase 36
-			// originally targeted v12, but v12 (Phase 32a) and v13 (Phase 30) were
-			// claimed first, so Phase 36 ships as v14.
+		case 15:
+			// v14 (Phase 36): adds optional voiceCleanup on top of v13.
+			// v15 (Phase 31): adds the optional per-clip `matte` (mode/strength/
+			// blurRadius), handled by the shared clip parser, on top of v14 — so
+			// deserializeV14 covers both (matte is parsed if present at any version).
 			return deserializeV14(value);
 		default:
 			return { ok: false, reason: `Unsupported project schemaVersion ${schemaVersion}.` };

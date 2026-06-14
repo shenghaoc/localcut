@@ -34,14 +34,24 @@ obligations onto every deployer.
 | Candidate | Temporal stability | Edge quality | Throughput (WebGPU-class) | License | Verdict |
 |---|---|---|---|---|---|
 | **RVM** (RobustVideoMatting, MobileNetV3) | Best — recurrent hidden state across frames | High (true matting) | Good (~512² recurrent pass) | **GPL-3.0** | **Rejected on license.** Technically the strongest candidate; unusable as a default in an MIT app. |
-| **MODNet** | None built in — single-frame; needs an external temporal smoothing pass | High (true matting, trimap-free) | Good (~512² single pass) | **Apache-2.0** | **Primary.** Apache-licensed true matting; temporal stability restored by our EMA smoothing pass (below). |
-| **MediaPipe Selfie Segmentation** (`@mediapipe/tasks-vision`) | Moderate (per-frame, but stable masks in practice) | Lower — segmentation mask, not matting; soft edges only via feathering | Excellent (built for realtime) | **Apache-2.0** | **Fallback** for reduced/WASM-only environments where MODNet inference can't hold realtime. |
+| **MODNet** | None built in — single-frame; needs an external temporal smoothing pass | High (true matting, trimap-free) | Good (~512² single pass) | **Apache-2.0** | Ideal true-matting upgrade, but **no reliably-hostable `.tflite` weights** exist (the published checkpoints are PyTorch/ONNX). Aspirational, not deployed. |
+| **MediaPipe Selfie Segmentation** (`selfie_segmentation.tflite`) | Moderate (per-frame, but stable masks in practice) | Lower — segmentation mask, not matting; soft edges only via feathering | Excellent (built for realtime) | **Apache-2.0** | **Deployed default.** Google-hosted `.tflite` (256×256×3 → 256×256×1 confidence mask), proven on real portraits; temporal stability via our EMA pass. |
 
-**Recorded verdict: MODNet (Apache-2.0) primary, served as a `.tflite` model and run on
-LiteRT.js (`@litertjs/core`, Apache-2.0) with the WebGPU accelerator; MediaPipe selfie
-segmenter (Apache-2.0) as the labeled reduced-quality fallback; RVM rejected solely on
-GPL-3.0 licensing.** If a permissively licensed RVM-class recurrent model appears later,
-the recurrent-state policy below already covers it.
+**Recorded verdict: MediaPipe Selfie Segmentation (Apache-2.0) is the deployed default** —
+Google's official `selfie_segmentation.tflite`, run on LiteRT.js (`@litertjs/core`,
+Apache-2.0) with the WebGPU accelerator. It is *segmentation, not true alpha matting*: a
+single-channel person/background confidence mask, smoothed over time by the EMA pass. It
+was chosen because it is the best **hosted, reliable, dependency-free `.tflite`** available
+now — MODNet (the stronger true-matting model) has no hostable `.tflite` weights, and RVM
+is GPL-3.0. If a permissively licensed MODNet/RVM-class `.tflite` appears later, the
+recurrent-state policy below and the manifest's `inputRange` field already cover the swap.
+
+**Loading path.** The weights are Google-hosted (`storage.googleapis.com/mediapipe-assets/`),
+so they cannot be fetched cross-origin under `COEP: require-corp`. They load through the
+same-origin **`/_model/gcs/` reverse proxy** (the Cloudflare Worker / Vite-dev twin of the
+existing `/_model/hf/` and `/_model/gh/` proxies), then go through the shared Phase 29
+asset cache (OPFS, SHA-256 + size verified). The manifest (`/models/matte/manifest.json`)
+declares `inputRange: "unit"` ([0,1] normalization; MODNet-style models use `signed-unit`).
 
 The runtime is **LiteRT.js**, the same on-device ML runtime Phase 28 (audio cleanup) and
 Phase 29 (auto-captions) already use — so the matte inherits the project's established
@@ -68,7 +78,7 @@ VideoFrame (pipeline worker decode, per displayed frame)
   → preprocess WGSL pass (resize to model input, normalize, NHWC pack into GPU buffer)
   → LiteRT.js WebGPU model.run with GPU-buffer tensor IO
       (input: new Tensor(gpuBuffer, …); output: tensor.toGpuBuffer())
-  → alpha tensor (GPU buffer) → alpha texture (r8unorm)
+  → alpha tensor (GPU buffer) → alpha texture (rgba8unorm, alpha in .r)
   → temporal-smooth WGSL pass (EMA over previous alpha; recurrent surrogate)
   → [export only] guided-upsample WGSL pass (joint bilateral, guided by full-res luma)
   → matte-apply pass in the Phase 12 compositor (remove / replace / blur variants)
@@ -82,6 +92,20 @@ Consequences:
   can dynamic-`import('@litertjs/core')` lazily) and `setWebGpuDevice(device)` shares the
   compositor's device, so the input buffer the preprocess pass fills and the alpha buffer
   the model returns all live on one device — no readback.
+
+Two non-obvious constraints this path imposes (both verified the hard way — matte never
+loaded a real model until the MediaPipe weights landed, so neither had bitten before):
+
+- **`importScripts` in an ES-module worker.** LiteRT's `@litertjs/wasm-utils` loads its
+  emscripten glue with `importScripts(glueUrl)`, which throws in a module worker
+  ("Module scripts don't support importScripts()"). The engine installs a one-time
+  polyfill (synchronous fetch + indirect global `eval`) that evaluates the UMD glue the
+  way a classic worker's `importScripts` would, so `var ModuleFactory` lands on the global.
+- **The alpha texture is `rgba8unorm`, not `r8unorm`.** The temporal-smooth pass writes
+  its output as a `STORAGE_BINDING` storage texture, and `r8unorm` is **not** a
+  storage-capable format in core WebGPU — creating it fails validation, the write is a
+  no-op, and the alpha reads back all-zero (everything removed). `rgba8unorm` is the
+  smallest core storage format; the alpha lives in `.r` and the compositor samples `.r`.
 - **Inference is per-frame at playback/export time, not an offline batch job.** The
   alpha-texture LRU cache remains as a *reuse* cache (paused playhead, scrubbing
   back over recent frames), not as the source of truth. Export never has "missing matte"
@@ -163,8 +187,9 @@ what the acceptance test asserts; without the flag, runtime behavior may adapt f
 
 ## Persistence and portability
 
-- `ClipMatte` serializes with a `schemaVersion` bump; absent field = no matting
-  (backward compatible).
+- `ClipMatte` serializes at project **schema v15** (Phase 36 Voice Cleanup took v14);
+  the per-clip `matte` is parsed by the shared clip parser, so an absent field = no
+  matting and older docs deserialize fine (backward compatible).
 - **Model pin survives the bundle round-trip** (P23): `modelKey` resolves through the
   model manifest (id, version, SHA-256). Re-opening a bundle on another machine with a
   different deployed model version keeps the clip's pin and surfaces a mismatch warning

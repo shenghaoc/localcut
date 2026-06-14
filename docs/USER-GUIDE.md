@@ -225,7 +225,7 @@ When clips on the timeline use different audio sample rates (e.g. a 44.1 kHz MP3
 
 ## Portrait Matte (Experimental)
 
-Portrait Matte separates the foreground person from the background in video clips — "green screen without a green screen" — using an on-device, permissively licensed ML matting model (MODNet-class `.tflite`, Apache-2.0). The feature runs entirely in the browser on **LiteRT.js** (the same on-device ML runtime as Audio Cleanup and Auto Captions), using your GPU via WebGPU with no server-side processing. Do **not** deploy GPL-licensed model weights (e.g. RobustVideoMatting) at the model URL — this application is MIT-licensed and the project's licensing verdict on candidate models is recorded in the Phase 31 design document.
+Portrait Matte separates the foreground person from the background in video clips — "green screen without a green screen" — using an on-device, permissively licensed ML model. The deployed default is **MediaPipe Selfie Segmentation** (`.tflite`, Apache-2.0): a person/background _segmentation_ model (not a true alpha matte), so very fine edges like loose hair are approximate; its mask is smoothed over time for stability. The feature runs entirely in the browser on **LiteRT.js** (the same on-device ML runtime as Audio Cleanup and Auto Captions), using your GPU via WebGPU with no server-side processing. Do **not** deploy GPL-licensed model weights (e.g. RobustVideoMatting) at the model URL — this application is MIT-licensed and the project's licensing verdict on candidate models is recorded in the Phase 31 design document.
 
 > Runs on this device. No upload. No API key. No server inference.
 

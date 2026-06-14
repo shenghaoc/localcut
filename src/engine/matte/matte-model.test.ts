@@ -54,9 +54,9 @@ function matteOf(timeline: TimelineTrack[]): TimelineClip['matte'] {
 describe('matte model ops (Phase 31)', () => {
 	it('defaults to remove mode with the permissively licensed model pin', () => {
 		expect(DEFAULT_MATTE.mode).toBe('remove');
-		// The license verdict (design.md): MODNet primary; GPL-family pins like
-		// RVM must never be the default.
-		expect(DEFAULT_MATTE.modelKey).toBe('modnet-v1');
+		// The license verdict (design.md): the deployed default is MediaPipe Selfie
+		// Segmentation (Apache-2.0); GPL-family pins like RVM must never be the default.
+		expect(DEFAULT_MATTE.modelKey).toBe('mediapipe-selfie-general');
 		expect(/rvm/i.test(DEFAULT_MATTE.modelKey)).toBe(false);
 	});
 

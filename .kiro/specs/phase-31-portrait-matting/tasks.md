@@ -1,15 +1,26 @@
 # Tasks: Phase 31 — Portrait Video Matting
 
-> Status: **Corrected re-plan.** The earlier "foundations" (PR #80) implemented an
-> offline CPU pre-computation pipeline around a GPL-licensed model. Corrections land
-> first (license + architecture), then the realtime build-out. Keep the branch green
-> after every group.
+> Status: **Deployed and verified.** A real model is wired and confirmed working
+> end to end (Chrome, hardware WebGPU): Google's **MediaPipe Selfie Segmentation**
+> (`selfie_segmentation.tflite`, Apache-2.0) loads via the same-origin `/_model/gcs/`
+> proxy + OPFS cache, runs zero-copy on the shared `GPUDevice`, and "Remove
+> background" cleanly keeps the person. Project schema is **v15** (Phase 36 took v14).
+> Two latent bugs were found and fixed in the process — see design.md "Two
+> non-obvious constraints": the ES-module-worker `importScripts` polyfill, and the
+> `rgba8unorm` (not `r8unorm`) alpha-texture storage format.
+>
+> Earlier history: the original "foundations" (PR #80) implemented an offline CPU
+> pre-computation pipeline around a GPL-licensed model; that was corrected (license +
+> architecture) before the realtime build-out below. Keep the branch green after
+> every group.
 
 ## T0 — Corrections to existing foundations (do first)
 
 - [x] **T0.1** **License purge**: remove RVM as the default/primary everywhere — code
-      comments, manifest examples, docs, UI copy. Record MODNet (Apache-2.0) as primary
-      and the RVM GPL-3.0 rejection in design.md (done) and `docs/USER-GUIDE.md`.
+      comments, manifest examples, docs, UI copy. The verdict (design.md) was later
+      revised: **MediaPipe Selfie Segmentation (Apache-2.0) is the deployed default**
+      (MODNet has no hostable `.tflite` weights; RVM is GPL-3.0 and rejected). Recorded
+      in design.md and `docs/USER-GUIDE.md`.
 - [x] **T0.2** Delete the CPU preprocessing path in `src/engine/matte/matte-inference.ts`
       (`createImageBitmap`/`OffscreenCanvas`/`getImageData`) and the packed-alpha
       `postMessage` hops; delete the offline batch orchestration
@@ -57,9 +68,11 @@
 
 ## T2 — Zero-copy inference passes
 
-- [x] **T2.1** `matte-preprocess.wgsl`: external texture → resized/normalized NCHW
-      float32 GPU buffer at model input resolution (consumes the P19 proxy-resolution
-      decode feed in preview).
+- [x] **T2.1** `matte-preprocess.wgsl`: external texture → resized/normalized **NHWC**
+      float32 GPU buffer at model input resolution (TFLite/LiteRT models are NHWC). The
+      normalization is manifest-parameterized (`inputRange`: `unit` [0,1] for MediaPipe
+      Selfie, `signed-unit` [-1,1] for MODNet-style). Consumes the P19 proxy-resolution
+      decode feed in preview.
 - [x] **T2.2** Run inference per displayed frame with GPU IO binding; alpha tensor →
       `r8unorm` alpha texture without CPU contact.
 - [x] **T2.3** `matte-temporal.wgsl`: EMA smoothing pass over the previous alpha
@@ -88,9 +101,15 @@
 
 ## T4 — Fallback + chroma key
 
-- [ ] **T4.1** MediaPipe selfie segmenter (Apache-2.0) fallback for non-WebGPU
-      environments; visibly labeled "segmentation, not matting — reduced edge quality";
-      same `ClipMatte` model, same compositor consumption.
+- [x] **T4.0 — Deploy a real model.** MediaPipe Selfie Segmentation
+      (`selfie_segmentation.tflite`, Apache-2.0) is the deployed default: manifest at
+      `/models/matte/manifest.json`, weights fetched via the new same-origin
+      `/_model/gcs/` proxy (Cloudflare Worker + Vite dev), OPFS-cached + SHA-256
+      verified. UI is labeled "(Experimental)" and the model is documented as
+      "segmentation, not matting". **Verified working end to end in Chrome.**
+- [ ] **T4.1** Non-WebGPU labeled reduced-tier UX. The deployed segmenter already runs
+      on the WASM accelerator if WebGPU is unavailable; what remains is the explicit
+      capability-tier surface ("segmentation, not matting — reduced edge quality").
 - [ ] **T4.2** `chroma-key.wgsl` (+ `.f16`): standalone non-ML effect — key color,
       tolerance, softness uniforms; Inspector controls; tests for uniform packing.
 

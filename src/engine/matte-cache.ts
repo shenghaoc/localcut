@@ -17,9 +17,13 @@ export interface CachedMatteRef {
 	bytes: number;
 }
 
-/** Estimate bytes for an r8unorm alpha texture at the given dimensions (1 byte/pixel). */
+/**
+ * Estimate bytes for an rgba8unorm alpha texture at the given dimensions
+ * (4 bytes/pixel). The matte alpha lives in the `.r` channel, but the texture is
+ * rgba8unorm because r8unorm is not a storage-capable format for the resolve pass.
+ */
 function estimateBytes(width: number, height: number): number {
-	return width * height;
+	return width * height * 4;
 }
 
 export function makeMatteCacheKey(clipId: string, sourceTime: number): string {

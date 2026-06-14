@@ -1,7 +1,9 @@
 # Requirements: Phase 31 — Portrait Video Matting
 
-> Supersedes the earlier Phase 31 requirements. Normative model: MODNet (Apache-2.0)
-> primary, MediaPipe selfie segmenter (Apache-2.0) fallback, RVM rejected (GPL-3.0).
+> Supersedes the earlier Phase 31 requirements. Normative model (as deployed):
+> **MediaPipe Selfie Segmentation (Apache-2.0)** — the best hosted, reliable `.tflite`;
+> MODNet (Apache-2.0) is the aspirational true-matting upgrade but has no hostable
+> `.tflite` weights; RVM rejected (GPL-3.0). The model is permissive and pluggable.
 
 ## R1 — Clip Matte Model
 

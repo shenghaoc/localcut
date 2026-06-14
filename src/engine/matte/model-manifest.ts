@@ -5,7 +5,7 @@
  * byte-for-byte before an inference session is created.
  */
 
-import type { MatteModelManifestSnapshot } from '../../protocol';
+import type { MatteInputRange, MatteModelManifestSnapshot } from '../../protocol';
 
 export class ManifestError extends Error {
 	constructor(message: string) {
@@ -46,6 +46,14 @@ export function validateManifest(value: unknown): MatteModelManifestSnapshot {
 	}
 	const inputWidth = requirePositiveInt(value.inputWidth, 'inputWidth');
 	const inputHeight = requirePositiveInt(value.inputHeight, 'inputHeight');
+	const inputRange = parseInputRange(value.inputRange);
 
-	return { id, version, license, source, sizeBytes, checksum, inputWidth, inputHeight };
+	return { id, version, license, source, sizeBytes, checksum, inputWidth, inputHeight, inputRange };
+}
+
+/** Optional; defaults to `signed-unit` (MODNet) when absent for backward compatibility. */
+function parseInputRange(value: unknown): MatteInputRange {
+	if (value === undefined || value === null) return 'signed-unit';
+	if (value === 'signed-unit' || value === 'unit') return value;
+	throw new ManifestError('"inputRange" must be "signed-unit" or "unit"');
 }
