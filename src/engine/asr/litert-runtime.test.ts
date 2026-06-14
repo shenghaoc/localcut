@@ -160,6 +160,32 @@ describe('LiteRT accelerator options', () => {
 		expect(api.loadAndCompile).toHaveBeenCalledWith(bytes, { accelerator: 'wasm' });
 	});
 
+	it('reloads the non-JSPI WASM runtime when WebNN JSPI loads but all WebNN compiles fail', async () => {
+		const { api } = fakeApi();
+		const bytes = new Uint8Array([7, 7, 7]);
+		const wasmModel = { run: vi.fn(), delete: vi.fn() };
+		api.loadAndCompile
+			.mockRejectedValueOnce(new Error('NPU compile failed'))
+			.mockRejectedValueOnce(new Error('GPU compile failed'))
+			.mockRejectedValueOnce(new Error('CPU compile failed'))
+			.mockResolvedValueOnce(wasmModel);
+
+		const runtime = await createLiteRtWhisperRuntime({
+			wasmPath: '/litert/',
+			accelerator: 'webnn',
+			modelBytes: bytes,
+			manifest: MANIFEST
+		});
+
+		expect(runtime.accelerator).toBe('wasm');
+		expect(api.loadLiteRt).toHaveBeenNthCalledWith(1, '/litert/', {
+			threads: false,
+			jspi: true
+		});
+		expect(api.loadLiteRt).toHaveBeenNthCalledWith(2, '/litert/', { threads: false });
+		expect(api.loadAndCompile).toHaveBeenNthCalledWith(4, bytes, { accelerator: 'wasm' });
+	});
+
 	it('falls back to WASM when an accelerated compile fails', async () => {
 		const { api } = fakeApi();
 		api.loadAndCompile

@@ -94,6 +94,10 @@ export function liteRtLoadOptionsForAccelerator(accelerator: AsrAccelerator): Li
 	return accelerator === 'webnn' ? { threads: false, jspi: true } : { threads: false };
 }
 
+function sameLoadOptions(a: LiteRtLoadOptions, b: LiteRtLoadOptions): boolean {
+	return a.threads === b.threads && a.jspi === b.jspi;
+}
+
 export function liteRtCompileOptionsForAccelerator(
 	accelerator: AsrAccelerator
 ): LiteRtCompileOptions {
@@ -238,11 +242,13 @@ export async function createLiteRtWhisperRuntime(
 	// available, so this harness choice is not a hot path. WebNN additionally
 	// requires the JSPI build per LiteRT.js.
 	let loadedAccelerator = options.accelerator;
+	let loadedOptions = liteRtLoadOptionsForAccelerator(options.accelerator);
 	try {
-		await api.loadLiteRt(options.wasmPath, liteRtLoadOptionsForAccelerator(options.accelerator));
+		await api.loadLiteRt(options.wasmPath, loadedOptions);
 	} catch (error) {
 		if (options.accelerator !== 'webnn') throw error;
-		await api.loadLiteRt(options.wasmPath, liteRtLoadOptionsForAccelerator('wasm'));
+		loadedOptions = liteRtLoadOptionsForAccelerator('wasm');
+		await api.loadLiteRt(options.wasmPath, loadedOptions);
 		loadedAccelerator = 'wasm';
 	}
 
@@ -267,6 +273,11 @@ export async function createLiteRtWhisperRuntime(
 		throw lastError;
 	} catch (error) {
 		if (loadedAccelerator === 'wasm') throw error;
+		const wasmOptions = liteRtLoadOptionsForAccelerator('wasm');
+		if (!sameLoadOptions(loadedOptions, wasmOptions)) {
+			await api.loadLiteRt(options.wasmPath, wasmOptions);
+			loadedOptions = wasmOptions;
+		}
 		model = await api.loadAndCompile(
 			options.modelBytes,
 			liteRtCompileOptionsForAccelerator('wasm')
