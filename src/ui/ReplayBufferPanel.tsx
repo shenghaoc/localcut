@@ -94,7 +94,7 @@ export function ReplayBufferPanel(props: ReplayBufferPanelProps) {
 										<div
 											class="buffer-bar-fill"
 											style={{
-												transform: `scaleX(${bufferPercent() / 100})`,
+												transform: `scaleX(${(bufferPercent() || 0) / 100})`,
 												'will-change': 'transform'
 											}}
 										/>
