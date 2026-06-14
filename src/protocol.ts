@@ -381,6 +381,43 @@ export interface AsrCreateCaptionTrackCommand {
 	trackName: string;
 }
 
+// ── Phase 31: Portrait Matting ──
+
+export type MatteBackend = 'webgpu' | 'wasm' | 'none';
+
+export type MatteModelStatus = 'not-loaded' | 'loading' | 'loaded' | 'failed';
+
+/** Probe result for the LiteRT matte backend availability. */
+export interface MatteProbeResult {
+	webgpu: FeatureSupport;
+	wasm: FeatureSupport;
+	/** Best available backend after probe. */
+	backend: MatteBackend;
+}
+
+/** Manifest document validated by the matte engine before any fetch. */
+export interface MatteModelManifestSnapshot {
+	id: string;
+	version: string;
+	license: string;
+	source: string;
+	sizeBytes: number;
+	checksum: string;
+	inputWidth: number;
+	inputHeight: number;
+}
+
+/**
+ * Phase 31 matte status, posted by the pipeline worker (the matte engine lives
+ * there, on the compositor's GPUDevice — there is no separate inference worker).
+ */
+export interface MatteEngineStatusSnapshot {
+	probe: MatteProbeResult | null;
+	modelStatus: MatteModelStatus;
+	backend: MatteBackend | null;
+	error?: string;
+}
+
 export interface WorkerInit {
 	type: 'init';
 	canvas: OffscreenCanvas;
@@ -813,6 +850,22 @@ export const DEFAULT_SKIN_MASK: SkinMaskSnapshot = {
 	softness: 0.04
 };
 
+/** Phase 31: user-facing matte modes — remove (background → transparency),
+ *  replace (a background source placed beneath; a UI composition recipe),
+ *  blur (mask-driven background blur). */
+export type MatteMode = 'remove' | 'replace' | 'blur';
+
+/** Phase 31: per-clip portrait matte configuration. */
+export interface ClipMatteSnapshot {
+	enabled: boolean;
+	mode: MatteMode;
+	/** Model pin: manifest id + version; survives bundle round-trip (P23). */
+	modelKey: string;
+	strength: number;
+	/** Blur mode only — background blur radius in px at compositor resolution. */
+	blurRadius?: number;
+}
+
 export interface TimelineClipSnapshot {
 	id: string;
 	/** Absent/`'video'` for source clips; `'title'` for source-less titles (Phase 14). */
@@ -826,6 +879,8 @@ export interface TimelineClipSnapshot {
 	keyframes?: ClipKeyframesSnapshot;
 	lut?: ClipLutSnapshot;
 	skinMask?: SkinMaskSnapshot;
+	/** Phase 31: optional portrait matte configuration. */
+	matte?: ClipMatteSnapshot;
 	audioFadeIn: number;
 	audioFadeOut: number;
 	offline?: boolean;
@@ -1113,6 +1168,34 @@ interface SetLutStrengthCommand {
 	trackId: string;
 	clipId: string;
 	strength: number;
+}
+
+interface SetMatteEnabledCommand {
+	type: 'set-matte-enabled';
+	trackId: string;
+	clipId: string;
+	enabled: boolean;
+}
+
+interface SetMatteStrengthCommand {
+	type: 'set-matte-strength';
+	trackId: string;
+	clipId: string;
+	strength: number;
+}
+
+interface SetMatteModeCommand {
+	type: 'set-matte-mode';
+	trackId: string;
+	clipId: string;
+	mode: MatteMode;
+}
+
+interface SetMatteBlurRadiusCommand {
+	type: 'set-matte-blur-radius';
+	trackId: string;
+	clipId: string;
+	blurRadius: number;
 }
 
 interface SetTrackGainCommand {
@@ -1642,6 +1725,10 @@ export type WorkerCommand =
 	| DeleteKeyframeCommand
 	| ImportLutCommand
 	| SetLutStrengthCommand
+	| SetMatteEnabledCommand
+	| SetMatteStrengthCommand
+	| SetMatteModeCommand
+	| SetMatteBlurRadiusCommand
 	| SetTrackGainCommand
 	| SetTrackMuteCommand
 	| SetTrackSoloCommand
@@ -1995,6 +2082,11 @@ export type WorkerStateMessage =
 			type: 'capture-landed';
 			sessionId: string;
 			trackIds: string[];
+	  }
+	| {
+			/** Phase 31: matte engine status (probe, model load state, backend). */
+			type: 'matte-status';
+			status: MatteEngineStatusSnapshot;
 	  }
 	| { type: 'error'; message: string };
 
