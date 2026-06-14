@@ -23,8 +23,7 @@
 		"setup:litert": "node scripts/setup-litert-assets.mjs",
 		"test:e2e": "playwright test",
 		"postinstall": "node scripts/setup-litert-assets.mjs",
-		"prepare": "vp config",
-		"typecheck:tsc": "tsc --noEmit"
+		"prepare": "vp config"
 	},
 	"dependencies": {
 		"@fontsource/dm-sans": "^5.2.8",

@@ -8,7 +8,7 @@ The deployment assumption is intentionally cheap: Cloudflare serves static asset
 
 ## Stack
 
-- SolidJS + Vite + TypeScript 6 + TypeScript 7 native preview (`tsgo`)
+- SolidJS + Vite + TypeScript (strict)
 - Mediabunny — lazy `BlobSource` demux/mux
 - WebGPU + WebCodecs accelerated engine (pipeline worker)
 - Static PWA on Cloudflare static hosting; no server media pipeline
@@ -45,18 +45,12 @@ See [docs/ALPHA.md](docs/ALPHA.md) for the alpha support boundary — what is su
 ```bash
 vp install         # Clean install from the lockfile
 vp dev             # http://localhost:5173 — check status bar for COOP/COEP OK
-vp run check       # Full quality gate: format:check + lint + tsgo typecheck + test + build
-vp run typecheck   # Preferred TypeScript 7 native-preview check via tsgo
-vp run typecheck:tsc # Compatibility check via TypeScript 6 tsc
+vp run check       # Full quality gate: format:check + lint + typecheck + test + build
 vp build
 vp test run
 vp lint .
 vp fmt .
 ```
-
-### TypeScript 6/7 transition
-
-TypeScript 6 is installed as the `typescript` package (peer dependency for tooling), while the TypeScript 7 native preview CLI (`tsgo` from `@typescript/native-preview`) is used for day-to-day type-checking. Prefer `vp run typecheck` / `tsgo --noEmit` for local validation and CI-like checks; use `vp run typecheck:tsc` when comparing against the TypeScript 6 compiler or investigating a native-preview discrepancy.
 
 ### Testing
 
