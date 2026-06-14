@@ -1799,6 +1799,11 @@ async function handleInit(
 				};
 				lastGpuUnavailableReason = `GPU device lost: ${info.message || info.reason}`;
 				playback?.pause();
+				// Dispose the matte engine before the renderer: it holds GPU
+				// resources on the lost device, and a stale engine would otherwise
+				// survive into reinit with a dead `GPUDevice`.
+				void matteEngine?.dispose();
+				matteEngine = null;
 				renderer?.destroy();
 				renderer = null;
 				previewBackend = 'none';
@@ -5225,7 +5230,7 @@ async function handleDispose(): Promise<void> {
 	await handlePublishTapStop();
 	titleCache?.destroy();
 	titleCache = null;
-	matteEngine?.dispose();
+	void matteEngine?.dispose();
 	matteEngine = null;
 	renderer?.destroy();
 	renderer = null;

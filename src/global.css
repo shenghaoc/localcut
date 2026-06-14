@@ -3331,6 +3331,8 @@ body {
 
 .skin-mask-disclosure input[type='range']:disabled {
 	cursor: not-allowed;
+}
+
 /* Phase 31: Portrait Matte controls */
 .matte-controls {
 	display: flex;

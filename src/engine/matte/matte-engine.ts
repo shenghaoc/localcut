@@ -30,8 +30,11 @@ import mattePreprocessSource from '../shaders/matte-preprocess.wgsl?raw';
 import matteResolveSource from '../shaders/matte-resolve.wgsl?raw';
 import type { MatteEngineStatusSnapshot, MatteModelStatus } from '../../protocol';
 import { MatteCache, makeMatteCacheKey } from '../matte-cache';
-import { validateManifest, verifyWeights } from './model-manifest';
+import { validateManifest } from './model-manifest';
 import { loadLiteRtModule } from './litert-loader';
+import { createOpfsAssetStore, loadVerifiedAsset } from '../asr/asset-cache';
+
+type AssetStore = Awaited<ReturnType<typeof createOpfsAssetStore>>;
 
 /** Same-origin manifest describing the deployed `.tflite` model. */
 const MATTE_MANIFEST_URL = '/models/matte/manifest.json';
@@ -124,6 +127,7 @@ export class MatteEngine {
 	private loadError: string | undefined;
 	private loadPromise: Promise<void> | null = null;
 	private pinWarned = new Set<string>();
+	private assetStorePromise: Promise<AssetStore> | null = null;
 
 	private preprocessPipeline: GPUComputePipeline | null = null;
 	private resolvePipeline: GPUComputePipeline | null = null;
@@ -215,8 +219,17 @@ export class MatteEngine {
 		this.cache.deleteByClip(clipId);
 	}
 
-	dispose(): void {
+	async dispose(): Promise<void> {
 		this.disposed = true;
+		// Set `disposed` first (blocks new inference at the matteViewFor guard),
+		// then let any in-flight runInference finish its GPU submission and drain
+		// the queue, so destroying buffers/textures never races an executing pass.
+		await this.running?.catch(() => {});
+		try {
+			await this.device.queue.onSubmittedWorkDone();
+		} catch {
+			// Device may be lost; its resources are already invalid — tear down anyway.
+		}
 		for (const session of this.sessions.values()) {
 			session.history.destroy();
 		}
@@ -236,6 +249,14 @@ export class MatteEngine {
 	/** Re-reads load state after awaits (defeats control-flow narrowing). */
 	private isLoaded(): boolean {
 		return this.modelStatus === 'loaded';
+	}
+
+	/** Lazily opens the OPFS asset store once; null when OPFS is unavailable. */
+	private ensureAssetStore(): Promise<AssetStore> {
+		if (!this.assetStorePromise) {
+			this.assetStorePromise = createOpfsAssetStore('matte-models');
+		}
+		return this.assetStorePromise;
 	}
 
 	private postStatus(): void {
@@ -306,14 +327,21 @@ export class MatteEngine {
 		if (weightsUrl.origin !== self.location.origin) {
 			throw new Error('Matte model weights must be same-origin.');
 		}
-		const weights = await fetch(weightsUrl);
-		if (!weights.ok) {
-			throw new Error(`Matte model weights fetch failed: HTTP ${weights.status}`);
-		}
-		const bytes = await weights.arrayBuffer();
-		await verifyWeights(manifest, bytes);
+		// Verified, OPFS-cached load via the shared Phase 29 asset cache: same-origin
+		// fetch, SHA-256 + size verification, cross-session reuse (no re-download).
+		const store = await this.ensureAssetStore();
+		const bytes = await loadVerifiedAsset(
+			{ url: weightsUrl.toString(), sizeBytes: manifest.sizeBytes, checksum: manifest.checksum },
+			{ store }
+		);
 
-		const compiled = await api.loadAndCompile(new Uint8Array(bytes), { accelerator: 'webgpu' });
+		const compiled = await api.loadAndCompile(bytes, { accelerator: 'webgpu' });
+		// dispose() may have run during any of the awaits above; don't strand the
+		// compiled model on a dead engine (it would never be released).
+		if (this.disposed) {
+			compiled.delete();
+			return;
+		}
 
 		// Derive H/W from the model's NHWC input ([1, H, W, 3]); fall back to the
 		// manifest. The model is authoritative — the preprocess pass must match it.
