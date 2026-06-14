@@ -28,16 +28,39 @@ export interface MelSpectrogram {
 	nMel: number;
 }
 
-/** Generate a Hann window of given length. */
+/** Generate a periodic Hann window (matches `torch.hann_window`, periodic=True). */
 export function hannWindow(length: number): Float32Array {
 	const w = new Float32Array(length);
 	for (let i = 0; i < length; i++) {
-		w[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (length - 1)));
+		w[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / length));
 	}
 	return w;
 }
 
-/** Compute the mel filterbank matrix (nMel × nFft/2+1). */
+// Slaney mel scale (librosa htk=False — what Whisper's mel filters use).
+const MEL_F_SP = 200 / 3;
+const MEL_MIN_LOG_HZ = 1000;
+const MEL_MIN_LOG_MEL = MEL_MIN_LOG_HZ / MEL_F_SP;
+const MEL_LOGSTEP = Math.log(6.4) / 27;
+
+function hzToMel(hz: number): number {
+	return hz < MEL_MIN_LOG_HZ
+		? hz / MEL_F_SP
+		: MEL_MIN_LOG_MEL + Math.log(hz / MEL_MIN_LOG_HZ) / MEL_LOGSTEP;
+}
+
+function melToHz(mel: number): number {
+	return mel < MEL_MIN_LOG_MEL
+		? MEL_F_SP * mel
+		: MEL_MIN_LOG_HZ * Math.exp(MEL_LOGSTEP * (mel - MEL_MIN_LOG_MEL));
+}
+
+/**
+ * Slaney-normalized triangular mel filterbank (nMel × nFft/2+1) — matches
+ * librosa.filters.mel (htk=False, norm='slaney'), which is what OpenAI Whisper's
+ * `mel_filters` are built with. Triangles are formed in Hz over the FFT bin
+ * frequencies and area-normalized so each band integrates to ~1.
+ */
 export function melFilterbank(
 	nMel: number,
 	nFft: number,
@@ -47,41 +70,30 @@ export function melFilterbank(
 ): Float32Array {
 	const fMaxVal = fMax ?? sampleRate / 2;
 	const nFreq = nFft / 2 + 1;
+	const fftFreqs = new Float32Array(nFreq);
+	for (let k = 0; k < nFreq; k++) fftFreqs[k] = (k * sampleRate) / nFft;
+
 	const melMin = hzToMel(fMin);
 	const melMax = hzToMel(fMaxVal);
-	const melPoints = new Float32Array(nMel + 2);
+	const hzPoints = new Float32Array(nMel + 2);
 	for (let i = 0; i < nMel + 2; i++) {
-		melPoints[i] = melMin + (i * (melMax - melMin)) / (nMel + 1);
-	}
-
-	const fftFreqs = new Float32Array(nFreq);
-	for (let i = 0; i < nFreq; i++) {
-		fftFreqs[i] = (i * sampleRate) / nFft;
+		hzPoints[i] = melToHz(melMin + (i * (melMax - melMin)) / (nMel + 1));
 	}
 
 	const filterbank = new Float32Array(nMel * nFreq);
 	for (let m = 0; m < nMel; m++) {
+		const lower = hzPoints[m];
+		const center = hzPoints[m + 1];
+		const upper = hzPoints[m + 2];
+		const enorm = 2 / (upper - lower);
 		for (let k = 0; k < nFreq; k++) {
-			const freq = fftFreqs[k];
-			const mel = hzToMel(freq);
-			const left = melPoints[m];
-			const center = melPoints[m + 1];
-			const right = melPoints[m + 2];
-
-			let weight = 0;
-			if (mel >= left && mel <= center) {
-				weight = (mel - left) / (center - left);
-			} else if (mel >= center && mel <= right) {
-				weight = (right - mel) / (right - center);
-			}
-			filterbank[m * nFreq + k] = weight;
+			const f = fftFreqs[k];
+			const down = (f - lower) / (center - lower);
+			const up = (upper - f) / (upper - center);
+			filterbank[m * nFreq + k] = Math.max(0, Math.min(down, up)) * enorm;
 		}
 	}
 	return filterbank;
-}
-
-function hzToMel(hz: number): number {
-	return 2595 * Math.log10(1 + hz / 700);
 }
 
 /** Compute power spectrum from real-valued PCM frame. */
@@ -96,14 +108,15 @@ export function powerSpectrum(
 	for (let i = 0; i < n; i++) {
 		real[i] = frame[i] * window[i];
 	}
-	// DFT (not FFT for simplicity — nFft=400 is small enough for a direct DFT
-	// in unit-testable code; a real FFT would be used in production via wasm or
-	// a future optimisation).
+	// Keep this direct DFT intentionally conservative. A previous mixed-radix
+	// rewrite was faster but changed real-world Whisper output quality; ASR
+	// correctness matters more than this local preprocessing speed.
 	dft(real, imag, nFft);
 	const nFreq = nFft / 2 + 1;
 	const power = new Float32Array(nFreq);
 	for (let i = 0; i < nFreq; i++) {
-		power[i] = (real[i] * real[i] + imag[i] * imag[i]) / nFft;
+		// |STFT|² (matches torch.stft magnitudes — no 1/N scaling).
+		power[i] = real[i] * real[i] + imag[i] * imag[i];
 	}
 	return power;
 }
@@ -144,8 +157,7 @@ function getMelStatics(config: MelSpectrogramConfig): {
 	return statics;
 }
 
-/** DFT (O(n²)) with cached sine/cosine tables. For nFft=400
- *  the tables are ~3.2 KB and eliminate all trig calls from the inner loop. */
+/** DFT (O(n²)) with cached sine/cosine tables. */
 function dft(real: Float32Array, imag: Float32Array, n: number): void {
 	const resultReal = new Float32Array(n);
 	const resultImag = new Float32Array(n);
@@ -169,54 +181,63 @@ function dft(real: Float32Array, imag: Float32Array, n: number): void {
 	imag.set(resultImag);
 }
 
-/** Extract log-mel spectrogram from mono audio PCM at 16 kHz. */
+/** Reflect-pad a signal by `pad` samples each side (numpy 'reflect' / torch center). */
+function reflectPad(pcm: Float32Array, pad: number): Float32Array {
+	const n = pcm.length;
+	const out = new Float32Array(n + 2 * pad);
+	out.set(pcm, pad);
+	for (let i = 0; i < pad; i++) {
+		out[pad - 1 - i] = pcm[Math.min(i + 1, n - 1)];
+		out[pad + n + i] = pcm[Math.max(n - 2 - i, 0)];
+	}
+	return out;
+}
+
+/**
+ * Extract the log-mel spectrogram exactly as OpenAI Whisper does: reflect-center
+ * the audio, STFT with a periodic Hann window, apply the slaney mel filterbank,
+ * and take `log10` with a 1e-10 floor. Frame count matches `len / hop` (the
+ * centered STFT drops its trailing frame).
+ */
 export function extractMelSpectrogram(
 	pcm: Float32Array,
 	config: MelSpectrogramConfig = DEFAULT_MEL_CONFIG
 ): MelSpectrogram {
 	const { hopLength, nFft, nMel } = config;
 	const nFreq = nFft / 2 + 1;
-	const nFrames = Math.max(1, Math.floor((pcm.length - nFft) / hopLength) + 1);
 	const { window, filterbank } = getMelStatics(config);
 
-	const melData = new Float32Array(nFrames * nMel);
+	const padded = reflectPad(pcm, nFft / 2);
+	const nFrames = Math.max(1, Math.floor((padded.length - nFft) / hopLength)); // drop trailing frame
 
+	const melData = new Float32Array(nFrames * nMel);
 	for (let frame = 0; frame < nFrames; frame++) {
 		const start = frame * hopLength;
-		const frameData = pcm.slice(start, start + nFft);
+		const frameData = padded.subarray(start, start + nFft);
 		const power = powerSpectrum(frameData, window, nFft);
-
-		// Apply mel filterbank
 		for (let m = 0; m < nMel; m++) {
 			let sum = 0;
-			for (let k = 0; k < nFreq; k++) {
-				sum += power[k] * Math.max(0, filterbank[m * nFreq + k]);
-			}
-			melData[frame * nMel + m] = Math.max(Math.log(sum + 1e-10), 0);
+			for (let k = 0; k < nFreq; k++) sum += power[k] * filterbank[m * nFreq + k];
+			melData[frame * nMel + m] = Math.log10(Math.max(sum, 1e-10));
 		}
 	}
 
 	return { data: melData, nFrames, nMel };
 }
 
-/** Apply mean-variance normalisation across all frames (Whisper-style). */
+/**
+ * Whisper's log-mel normalisation: clamp to `[max − 8, max]`, then `(x + 4) / 4`,
+ * giving roughly `[-1, 1]` features the encoder was trained on.
+ */
 export function normaliseMelSpectrogram(mel: MelSpectrogram): Float32Array {
 	const { data } = mel;
+	let maxVal = -Infinity;
+	for (let i = 0; i < data.length; i++) if (data[i] > maxVal) maxVal = data[i];
+	const floor = maxVal - 8;
 	const normalised = new Float32Array(data.length);
-
-	// Global mean and std
-	let sum = 0;
-	for (let i = 0; i < data.length; i++) sum += data[i];
-	const mean = sum / data.length;
-
-	let sqSum = 0;
-	for (let i = 0; i < data.length; i++) sqSum += (data[i] - mean) ** 2;
-	const std = Math.sqrt(sqSum / data.length) || 1;
-
 	for (let i = 0; i < data.length; i++) {
-		normalised[i] = (data[i] - mean) / (std * 2);
+		normalised[i] = (Math.max(data[i], floor) + 4) / 4;
 	}
-
 	return normalised;
 }
 
@@ -261,6 +282,33 @@ export function chunkAndExtractMel(
 		chunkIndex++;
 	}
 	return chunks;
+}
+
+export class AudioContractError extends Error {
+	constructor(reason: string) {
+		super(`ASR audio contract violated: ${reason}`);
+		this.name = 'AudioContractError';
+	}
+}
+
+/**
+ * Validates the audio contract and returns 16 kHz mono PCM. The pipeline worker
+ * already resamples each extracted window to the requested rate, so a rate
+ * mismatch here is a programming error, not a recoverable condition.
+ */
+export function prepareMonoPcm(
+	pcm: Float32Array,
+	channels: number,
+	sampleRate: number,
+	expectedSampleRate = 16000
+): Float32Array {
+	if (sampleRate !== expectedSampleRate) {
+		throw new AudioContractError(`expected ${expectedSampleRate} Hz PCM, got ${sampleRate} Hz`);
+	}
+	if (!Number.isInteger(channels) || channels < 1) {
+		throw new AudioContractError(`channel count must be a positive integer, got ${channels}`);
+	}
+	return downmixToMono(pcm, channels);
 }
 
 /** Downmix multi-channel PCM to mono (equal-power). */

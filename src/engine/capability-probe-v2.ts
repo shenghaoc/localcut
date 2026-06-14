@@ -513,6 +513,6 @@ export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 		...probeWithoutTier,
 		tier: deriveCapabilityTierV2(probeWithoutTier),
 		webnn,
-		asr: probeAsr(webnn)
+		asr: probeAsr()
 	};
 }

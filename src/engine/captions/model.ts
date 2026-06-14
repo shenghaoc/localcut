@@ -120,6 +120,22 @@ export function setCaptionTrackProps(
 	return next;
 }
 
+export function deleteCaptionTrack(
+	tracks: readonly CaptionTrack[],
+	trackId: string
+): CaptionTrack[] {
+	return cloneCaptionTracks(tracks).filter((track) => track.id !== trackId);
+}
+
+export function deleteCaptionTracks(
+	tracks: readonly CaptionTrack[],
+	trackIds: readonly string[]
+): CaptionTrack[] {
+	const deleteIds = new Set(trackIds);
+	if (deleteIds.size === 0) return tracks as CaptionTrack[];
+	return cloneCaptionTracks(tracks).filter((track) => !deleteIds.has(track.id));
+}
+
 export function setCaptionSegmentText(
 	tracks: readonly CaptionTrack[],
 	trackId: string,

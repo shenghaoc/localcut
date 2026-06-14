@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, For, on, Show } from 'solid-js';
+import { Trash2 } from 'lucide-solid';
 import { TRANSCRIPT_WINDOW_RADIUS, computeSegmentWindow } from './transcript-window';
 import type {
 	CaptionDiagnosticSnapshot,
@@ -18,6 +19,8 @@ interface TranscriptPanelProps {
 	onSelectSegmentIds: (segmentIds: string[]) => void;
 	onImport: (file: File, trackId?: string) => void;
 	onExport: (settings: CaptionExportSettingsSnapshot) => void;
+	onDeleteTrack: (trackId: string) => void;
+	onDeleteTracks: (trackIds: readonly string[]) => void;
 	onSetTrack: (
 		trackId: string,
 		patch: {
@@ -56,6 +59,63 @@ function parseTime(value: string, fallback: number): number {
 	if (trimmed === '') return fallback;
 	const parsed = Number(trimmed);
 	return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function cueLabel(count: number): string {
+	return `${count} cue${count === 1 ? '' : 's'}`;
+}
+
+function trackMeta(track: CaptionTrackSnapshot): string {
+	const language = track.language ? track.language.toUpperCase() : 'AUTO';
+	const subtitleState = track.burnedIn ? 'subtitles on' : 'sidecar';
+	const visibility = track.visible ? 'visible' : 'hidden';
+	return `${cueLabel(track.segments.length)} · ${language} · ${subtitleState} · ${visibility}`;
+}
+
+interface GeneratedTrackInfo {
+	createdAt: Date | null;
+	label: string;
+}
+
+function generatedTrackInfo(track: CaptionTrackSnapshot): GeneratedTrackInfo | null {
+	if (!track.generatedBy) return null;
+	try {
+		const parsed = JSON.parse(track.generatedBy) as {
+			generatedBy?: unknown;
+			engine?: unknown;
+			createdAt?: unknown;
+		};
+		if (parsed.generatedBy !== 'auto-captions-phase-29') return null;
+		const createdAt =
+			typeof parsed.createdAt === 'string' && Number.isFinite(Date.parse(parsed.createdAt))
+				? new Date(parsed.createdAt)
+				: null;
+		const engine = typeof parsed.engine === 'string' ? parsed.engine : 'auto captions';
+		return {
+			createdAt,
+			label: engine === 'litert-whisper' ? 'Auto captions' : engine
+		};
+	} catch {
+		return null;
+	}
+}
+
+function formatGeneratedAt(info: GeneratedTrackInfo | null): string {
+	if (!info?.createdAt) return 'Generated';
+	return `Generated ${info.createdAt.toLocaleString([], {
+		month: 'short',
+		day: 'numeric',
+		hour: '2-digit',
+		minute: '2-digit'
+	})}`;
+}
+
+function trackDuration(track: CaptionTrackSnapshot): string {
+	const end = track.segments.reduce(
+		(max, segment) => Math.max(max, segment.start + segment.duration),
+		0
+	);
+	return end > 0 ? `${end.toFixed(1)} s` : '0.0 s';
 }
 
 export function TranscriptPanel(props: TranscriptPanelProps) {
@@ -145,6 +205,24 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
 		if (!track) return 'captions';
 		return track.name.trim().replace(/\s+/g, '-').toLowerCase() || 'captions';
 	});
+	const autoCaptionTracks = createMemo(() =>
+		props.captionTracks
+			.map((track, index) => ({ track, index, info: generatedTrackInfo(track) }))
+			.filter((entry) => entry.info !== null)
+	);
+	const olderAutoCaptionTrackIds = createMemo(() => {
+		const tracks = autoCaptionTracks();
+		if (tracks.length < 2) return [];
+		let latest = tracks[0]!;
+		for (const entry of tracks.slice(1)) {
+			const entryTime = entry.info?.createdAt?.getTime() ?? entry.index;
+			const latestTime = latest.info?.createdAt?.getTime() ?? latest.index;
+			if (entryTime > latestTime) latest = entry;
+		}
+		return tracks
+			.filter((entry) => entry.track.id !== latest.track.id)
+			.map((entry) => entry.track.id);
+	});
 
 	createEffect(() => {
 		setDraftText(activeSegment()?.text ?? '');
@@ -161,12 +239,22 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
 		<section class="panel transcript-panel">
 			<div class="transcript-header">
 				<div>
-					<h2 class="panel-title">Captions</h2>
-					<p class="transcript-subtitle">
-						Structured timed text with sidecar export and optional burn-in.
-					</p>
+					<h2 class="panel-title">Transcript</h2>
+					<p class="transcript-subtitle">Caption tracks and timing</p>
 				</div>
 				<div class="transcript-actions">
+					<Show when={olderAutoCaptionTrackIds().length > 0}>
+						<button
+							type="button"
+							class="button danger transcript-bulk-delete"
+							title={`Delete ${olderAutoCaptionTrackIds().length} older auto-caption track${olderAutoCaptionTrackIds().length === 1 ? '' : 's'} and keep the newest run`}
+							aria-label={`Delete ${olderAutoCaptionTrackIds().length} older auto-caption track${olderAutoCaptionTrackIds().length === 1 ? '' : 's'} and keep the newest run`}
+							onClick={() => props.onDeleteTracks(olderAutoCaptionTrackIds())}
+						>
+							<Trash2 size={14} aria-hidden="true" />
+							Keep latest ({olderAutoCaptionTrackIds().length})
+						</button>
+					</Show>
 					<button type="button" class="button secondary" onClick={() => importInput?.click()}>
 						Import
 					</button>
@@ -204,21 +292,85 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
 				when={props.captionTracks.length > 0}
 				fallback={<p class="placeholder-text">Import SRT or WebVTT to start a caption track.</p>}
 			>
+				<Show when={activeTrack()}>
+					{(track) => {
+						const info = () => generatedTrackInfo(track());
+						return (
+							<div class="transcript-active-summary">
+								<div class="transcript-active-copy">
+									<span class="transcript-kicker">Active track</span>
+									<strong>{track().name}</strong>
+									<span class="transcript-active-meta">
+										<span>
+											{cueLabel(track().segments.length)} · {trackDuration(track())} ·{' '}
+											{track().language ? track().language!.toUpperCase() : 'AUTO'}
+										</span>
+										<Show when={autoCaptionTracks().length > 1}>
+											<span>
+												{autoCaptionTracks().length} generated runs ·{' '}
+												{olderAutoCaptionTrackIds().length} older
+											</span>
+										</Show>
+									</span>
+								</div>
+								<div class="transcript-active-badges">
+									<Show when={info()}>
+										{(generated) => (
+											<>
+												<span class="transcript-pill">{generated().label}</span>
+												<span class="transcript-muted">{formatGeneratedAt(generated())}</span>
+											</>
+										)}
+									</Show>
+								</div>
+							</div>
+						);
+					}}
+				</Show>
+
 				<div class="transcript-track-list">
 					<For each={props.captionTracks}>
-						{(track) => (
-							<button
-								type="button"
-								class={`transcript-track-chip${activeTrack()?.id === track.id ? ' is-active' : ''}`}
-								onClick={() => {
-									props.onSelectTrack(track.id);
-									props.onSelectSegmentIds(track.segments[0] ? [track.segments[0].id] : []);
-								}}
-							>
-								<span>{track.name}</span>
-								<span>{track.segments.length}</span>
-							</button>
-						)}
+						{(track) => {
+							const info = () => generatedTrackInfo(track);
+							return (
+								<div
+									class={`transcript-track-card${activeTrack()?.id === track.id ? ' is-active' : ''}`}
+								>
+									<button
+										type="button"
+										class="transcript-track-main"
+										onClick={() => {
+											props.onSelectTrack(track.id);
+											props.onSelectSegmentIds(track.segments[0] ? [track.segments[0].id] : []);
+										}}
+									>
+										<span class="transcript-track-name">
+											{track.name}
+											<Show when={info()}>
+												<span class="transcript-track-chip">{info()!.label}</span>
+											</Show>
+										</span>
+										<span class="transcript-track-meta">
+											{trackMeta(track)} · {trackDuration(track)}
+										</span>
+										<Show when={info()}>
+											{(generated) => (
+												<span class="transcript-track-meta">{formatGeneratedAt(generated())}</span>
+											)}
+										</Show>
+									</button>
+									<button
+										type="button"
+										class="transcript-icon-button danger"
+										title={`Delete ${track.name}`}
+										aria-label={`Delete ${track.name}`}
+										onClick={() => props.onDeleteTrack(track.id)}
+									>
+										<Trash2 size={14} aria-hidden="true" />
+									</button>
+								</div>
+							);
+						}}
 					</For>
 				</div>
 
@@ -253,7 +405,7 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
 											props.onSetTrack(track().id, { burnedIn: event.currentTarget.checked })
 										}
 									/>
-									<span>Burn in</span>
+									<span>Subtitles</span>
 								</label>
 								<label class="transcript-inline-check">
 									<input
@@ -303,195 +455,218 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
 								</label>
 							</div>
 
-							<div class="transcript-segment-list">
-								<Show when={segmentWindow().before > 0}>
-									<button
-										type="button"
-										class="transcript-window-hint"
-										onClick={() => pageWindow(-1)}
-									>
-										Show {segmentWindow().before} earlier segment
-										{segmentWindow().before === 1 ? '' : 's'}
-									</button>
-								</Show>
-								<For each={visibleSegments()}>
-									{(segment) => (
-										<div
-											class={`transcript-row${selectedIdSet().has(segment.id) ? ' is-selected' : ''}`}
-										>
-											<label class="transcript-row-check-label">
-												<input
-													type="checkbox"
-													checked={selectedIdSet().has(segment.id)}
-													onChange={(event) =>
-														toggleSegment(segment.id, event.currentTarget.checked)
-													}
-												/>
-												<span class="transcript-time">
-													{formatTime(segment.start)} -{' '}
-													{formatTime(segment.start + segment.duration)}
-												</span>
-												<span class="transcript-text">{segment.text}</span>
-											</label>
-											<button
-												type="button"
-												class="transcript-row-main"
-												onClick={(event) => {
-													event.preventDefault();
-													props.onSelectTrack(track().id);
-													props.onSelectSegmentIds([segment.id]);
-													setDraftText(segment.text);
-												}}
-											>
-												Edit
-											</button>
-										</div>
-									)}
-								</For>
-								<Show when={segmentWindow().after > 0}>
-									<button
-										type="button"
-										class="transcript-window-hint"
-										onClick={() => pageWindow(1)}
-									>
-										Show {segmentWindow().after} later segment
-										{segmentWindow().after === 1 ? '' : 's'}
-									</button>
-								</Show>
-							</div>
-
-							<Show when={activeSegment()}>
-								{(segment) => (
-									<div class="transcript-editor">
-										<label>
-											<span>Text</span>
-											<textarea
-												value={draftText()}
-												rows={5}
-												onInput={(event) => setDraftText(event.currentTarget.value)}
-												onBlur={() => props.onSetSegmentText(track().id, segment().id, draftText())}
-											/>
-										</label>
-										<div class="transcript-timing-grid">
-											<label>
-												<span>Start</span>
-												<input
-													value={formatTime(segment().start)}
-													onChange={(event) =>
-														props.onSetSegmentTiming(
-															track().id,
-															segment().id,
-															parseTime(event.currentTarget.value, segment().start),
-															segment().start + segment().duration
-														)
-													}
-												/>
-											</label>
-											<label>
-												<span>End</span>
-												<input
-													value={formatTime(segment().start + segment().duration)}
-													onChange={(event) =>
-														props.onSetSegmentTiming(
-															track().id,
-															segment().id,
-															segment().start,
-															parseTime(
-																event.currentTarget.value,
-																segment().start + segment().duration
-															)
-														)
-													}
-												/>
-											</label>
-											<label>
-												<span>Color</span>
-												<input
-													type="color"
-													value={
-														segment().style?.overrides?.color ??
-														track().defaultStyle.overrides?.color ??
-														'#ffffff'
-													}
-													onChange={(event) =>
-														props.onSetSegmentStyle(track().id, segment().id, {
-															overrides: { color: event.currentTarget.value }
-														})
-													}
-												/>
-											</label>
-											<label>
-												<span>Background</span>
-												<input
-													type="color"
-													value={
-														segment().style?.overrides?.backgroundColor ??
-														track().defaultStyle.overrides?.backgroundColor ??
-														'#000000'
-													}
-													onChange={(event) =>
-														props.onSetSegmentStyle(track().id, segment().id, {
-															overrides: { backgroundColor: event.currentTarget.value }
-														})
-													}
-												/>
-											</label>
-										</div>
-										<div class="transcript-editor-actions">
-											<button
-												type="button"
-												class="button secondary"
-												onClick={() => props.onSplit(track().id, segment().id, props.playheadTime)}
-											>
-												Split at playhead
-											</button>
-											<button
-												type="button"
-												class="button secondary"
-												disabled={props.selectedSegmentIds.length < 2}
-												onClick={() => props.onMerge(track().id, props.selectedSegmentIds)}
-											>
-												Merge selected
-											</button>
-											<button
-												type="button"
-												class="button secondary"
-												onClick={() => props.onSnap(track().id, segment().id, 'start')}
-											>
-												Snap start
-											</button>
-											<button
-												type="button"
-												class="button secondary"
-												onClick={() => props.onSnap(track().id, segment().id, 'end')}
-											>
-												Snap end
-											</button>
-											<button
-												type="button"
-												class="button secondary"
-												onClick={() => props.onSnap(track().id, segment().id, 'both')}
-											>
-												Snap both
-											</button>
-											<button
-												type="button"
-												class="button danger"
-												onClick={() =>
-													props.onDelete(
-														track().id,
-														props.selectedSegmentIds.length > 0
-															? props.selectedSegmentIds
-															: [segment().id]
-													)
-												}
-											>
-												Delete
-											</button>
-										</div>
+							<div class="transcript-workspace">
+								<div class="transcript-list-pane">
+									<div class="transcript-section-header">
+										<span>Segments</span>
+										<span>{cueLabel(track().segments.length)}</span>
 									</div>
-								)}
-							</Show>
+									<div class="transcript-segment-list">
+										<Show when={segmentWindow().before > 0}>
+											<button
+												type="button"
+												class="transcript-window-hint"
+												onClick={() => pageWindow(-1)}
+											>
+												Show {segmentWindow().before} earlier
+											</button>
+										</Show>
+										<For each={visibleSegments()}>
+											{(segment, index) => (
+												<div
+													class={`transcript-row${selectedIdSet().has(segment.id) ? ' is-selected' : ''}`}
+												>
+													<input
+														class="transcript-row-select"
+														type="checkbox"
+														aria-label={`Select segment ${segmentWindow().start + index() + 1}`}
+														checked={selectedIdSet().has(segment.id)}
+														onChange={(event) =>
+															toggleSegment(segment.id, event.currentTarget.checked)
+														}
+													/>
+													<button
+														type="button"
+														class="transcript-row-main"
+														onClick={() => {
+															props.onSelectTrack(track().id);
+															props.onSelectSegmentIds([segment.id]);
+															setDraftText(segment.text);
+														}}
+													>
+														<span class="transcript-row-index">
+															#{segmentWindow().start + index() + 1}
+														</span>
+														<span class="transcript-time">
+															{formatTime(segment.start)} -{' '}
+															{formatTime(segment.start + segment.duration)}
+														</span>
+														<span class="transcript-text">{segment.text}</span>
+													</button>
+												</div>
+											)}
+										</For>
+										<Show when={segmentWindow().after > 0}>
+											<button
+												type="button"
+												class="transcript-window-hint"
+												onClick={() => pageWindow(1)}
+											>
+												Show {segmentWindow().after} later
+											</button>
+										</Show>
+									</div>
+								</div>
+
+								<div class="transcript-editor-pane">
+									<Show
+										when={activeSegment()}
+										fallback={<p class="placeholder-text">No segment selected.</p>}
+									>
+										{(segment) => (
+											<div class="transcript-editor">
+												<div class="transcript-section-header">
+													<span>Edit segment</span>
+													<span>
+														{formatTime(segment().start)} -{' '}
+														{formatTime(segment().start + segment().duration)}
+													</span>
+												</div>
+												<label>
+													<span>Text</span>
+													<textarea
+														value={draftText()}
+														rows={5}
+														onInput={(event) => setDraftText(event.currentTarget.value)}
+														onBlur={() =>
+															props.onSetSegmentText(track().id, segment().id, draftText())
+														}
+													/>
+												</label>
+												<div class="transcript-timing-grid">
+													<label>
+														<span>Start</span>
+														<input
+															value={formatTime(segment().start)}
+															onChange={(event) =>
+																props.onSetSegmentTiming(
+																	track().id,
+																	segment().id,
+																	parseTime(event.currentTarget.value, segment().start),
+																	segment().start + segment().duration
+																)
+															}
+														/>
+													</label>
+													<label>
+														<span>End</span>
+														<input
+															value={formatTime(segment().start + segment().duration)}
+															onChange={(event) =>
+																props.onSetSegmentTiming(
+																	track().id,
+																	segment().id,
+																	segment().start,
+																	parseTime(
+																		event.currentTarget.value,
+																		segment().start + segment().duration
+																	)
+																)
+															}
+														/>
+													</label>
+													<label>
+														<span>Color</span>
+														<input
+															type="color"
+															value={
+																segment().style?.overrides?.color ??
+																track().defaultStyle.overrides?.color ??
+																'#ffffff'
+															}
+															onChange={(event) =>
+																props.onSetSegmentStyle(track().id, segment().id, {
+																	overrides: { color: event.currentTarget.value }
+																})
+															}
+														/>
+													</label>
+													<label>
+														<span>Background</span>
+														<input
+															type="color"
+															value={
+																segment().style?.overrides?.backgroundColor ??
+																track().defaultStyle.overrides?.backgroundColor ??
+																'#000000'
+															}
+															onChange={(event) =>
+																props.onSetSegmentStyle(track().id, segment().id, {
+																	overrides: { backgroundColor: event.currentTarget.value }
+																})
+															}
+														/>
+													</label>
+												</div>
+												<div class="transcript-editor-actions">
+													<button
+														type="button"
+														class="button secondary"
+														onClick={() =>
+															props.onSplit(track().id, segment().id, props.playheadTime)
+														}
+													>
+														Split at playhead
+													</button>
+													<button
+														type="button"
+														class="button secondary"
+														disabled={props.selectedSegmentIds.length < 2}
+														onClick={() => props.onMerge(track().id, props.selectedSegmentIds)}
+													>
+														Merge selected
+													</button>
+													<button
+														type="button"
+														class="button secondary"
+														onClick={() => props.onSnap(track().id, segment().id, 'start')}
+													>
+														Snap start
+													</button>
+													<button
+														type="button"
+														class="button secondary"
+														onClick={() => props.onSnap(track().id, segment().id, 'end')}
+													>
+														Snap end
+													</button>
+													<button
+														type="button"
+														class="button secondary"
+														onClick={() => props.onSnap(track().id, segment().id, 'both')}
+													>
+														Snap both
+													</button>
+													<button
+														type="button"
+														class="button danger"
+														onClick={() =>
+															props.onDelete(
+																track().id,
+																props.selectedSegmentIds.length > 0
+																	? props.selectedSegmentIds
+																	: [segment().id]
+															)
+														}
+													>
+														Delete
+													</button>
+												</div>
+											</div>
+										)}
+									</Show>
+								</div>
+							</div>
 						</>
 					)}
 				</Show>

@@ -1,8 +1,13 @@
 import { defineConfig } from 'vite-plus';
 import { execSync } from 'node:child_process';
+import { copyFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import solid from 'vite-plugin-solid';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
+
+const repoRoot = dirname(fileURLToPath(import.meta.url));
 
 function gitSha(): string {
 	try {
@@ -13,6 +18,46 @@ function gitSha(): string {
 	} catch {
 		return 'dev';
 	}
+}
+
+const BUILD_SHA = gitSha();
+
+function copyLiteRtRuntimeAssets(): void {
+	const sourceDir = join(repoRoot, 'node_modules', '@litertjs', 'core', 'wasm');
+	const targetDirs = [
+		join(repoRoot, 'public', 'litert'),
+		join(repoRoot, 'public', 'litert', BUILD_SHA)
+	];
+	if (!existsSync(sourceDir)) {
+		throw new Error(
+			'LiteRT WASM runtime assets are missing. Run `vp install` before building Auto Captions.'
+		);
+	}
+
+	let copied = 0;
+	for (const targetDir of targetDirs) {
+		mkdirSync(targetDir, { recursive: true });
+		for (const entry of readdirSync(sourceDir, { withFileTypes: true })) {
+			if (!entry.isFile()) continue;
+			copyFileSync(join(sourceDir, entry.name), join(targetDir, entry.name));
+			copied += 1;
+		}
+	}
+	if (copied === 0) {
+		throw new Error(`LiteRT WASM runtime asset directory is empty: ${sourceDir}`);
+	}
+}
+
+function litertRuntimeAssetsPlugin() {
+	return {
+		name: 'localcut-litert-runtime-assets',
+		configResolved(config: { command: string }): void {
+			if (config.command === 'build') copyLiteRtRuntimeAssets();
+		},
+		configureServer(): void {
+			copyLiteRtRuntimeAssets();
+		}
+	};
 }
 
 export default defineConfig({
@@ -188,9 +233,10 @@ export default defineConfig({
 		ignorePatterns: ['dist', 'dev-dist', 'coverage', '.kiro/', '.claude/', '.jules/']
 	},
 	define: {
-		__BUILD_SHA__: JSON.stringify(gitSha())
+		__BUILD_SHA__: JSON.stringify(BUILD_SHA)
 	},
 	plugins: [
+		litertRuntimeAssetsPlugin(),
 		tailwindcss(),
 		solid(),
 		VitePWA({
@@ -209,15 +255,37 @@ export default defineConfig({
 			},
 			workbox: {
 				globPatterns: ['**/*.{js,css,html,wasm,wgsl,woff,woff2}'],
-				// Phase 27: model weights must never precache at install — startup
-				// stays model-free. They enter the runtime cache only after the user
-				// explicitly loads the model, so later loads work offline.
-				globIgnores: ['**/models/**'],
+				// Phase 27/29: model weights and the multi-megabyte LiteRT WASM must
+				// never precache at install — startup stays model-free, and the SW
+				// precache stays small. They enter the runtime cache only after the
+				// user explicitly loads a model, so later loads work offline.
+				globIgnores: ['**/models/**', '**/litert/**'],
 				runtimeCaching: [
 					{
 						urlPattern: /\/models\/rnnoise\//,
 						handler: 'CacheFirst',
 						options: { cacheName: 'rnnoise-model' }
+					},
+					{
+						// The Whisper model itself is fetched cross-origin (Hugging Face)
+						// and cached in OPFS by the app, so this same-origin rule only
+						// covers the small `manifest.json`. It MUST be NetworkFirst, not
+						// CacheFirst: the manifest's schema changes between app versions,
+						// and a CacheFirst copy would be served stale forever (e.g. an old
+						// `encoder`/`decoder` manifest failing today's validator). Network
+						// when online, cached copy as an offline fallback.
+						urlPattern: /\/models\/whisper\//,
+						handler: 'NetworkFirst',
+						options: { cacheName: 'whisper-manifest' }
+					},
+					{
+						urlPattern: /\/litert\//,
+						handler: 'CacheFirst',
+						options: {
+							cacheName: 'litert-runtime-v2',
+							// LiteRT WASM variants are ~9 MB each; allow them in the cache.
+							matchOptions: { ignoreVary: true }
+						}
 					}
 				]
 			}

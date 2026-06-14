@@ -160,3 +160,11 @@ dev.env
 !.dev.vars.example
 test-results/
 playwright-report/
+
+# LiteRT.js WASM runtime — vendored from @litertjs/core via `pnpm setup:litert`
+public/litert/
+
+# Large ASR (Whisper) model binaries — provisioned per public/models/whisper/README.md
+public/models/whisper/*.tflite
+public/models/whisper/*.bin
+public/models/whisper/vocab.json

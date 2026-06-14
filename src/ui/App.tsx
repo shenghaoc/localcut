@@ -615,6 +615,7 @@ export function App() {
 			return {
 				trackId: track.id,
 				clipId: clip.id,
+				timelineStartS: clip.start,
 				durationS: clip.duration,
 				fileName: asset?.fileName ?? clip.sourceId
 			};
@@ -950,7 +951,7 @@ export function App() {
 				setCapabilityProbeV2(msg.result);
 				setExportCodecs([...exportConstraintsForProbe(msg.result)]);
 				cleanupController.setWebNNProbe(msg.result.webnn ?? null);
-				asrController.setProbe(msg.result.webnn ?? null);
+				asrController.setProbe();
 				break;
 			case 'clip-audio':
 			case 'clip-audio-error':
@@ -2135,7 +2136,7 @@ export function App() {
 			setCapabilityProbeV2(probe);
 			setExportCodecs([...exportConstraintsForProbe(probe)]);
 			cleanupController.setWebNNProbe(probe.webnn ?? null);
-			asrController.setProbe(probe.webnn ?? null);
+			asrController.setProbe();
 			if (pendingInitCanvas) {
 				const canvas = pendingInitCanvas;
 				pendingInitCanvas = null;
@@ -2814,6 +2815,12 @@ export function App() {
 													onSetTrack={(trackId, patch) =>
 														captionBridge().send({ type: 'set-caption-track', trackId, ...patch })
 													}
+													onDeleteTrack={(trackId) =>
+														captionBridge().send({ type: 'delete-caption-track', trackId })
+													}
+													onDeleteTracks={(trackIds) => {
+														captionBridge().send({ type: 'delete-caption-tracks', trackIds });
+													}}
 													onSetSegmentText={(trackId, segmentId, text) =>
 														captionBridge().send({
 															type: 'set-caption-segment-text',
@@ -3106,6 +3113,7 @@ export function App() {
 						state={asrState()}
 						selectedClip={selectedAsrClip()}
 						onLoadModel={() => void asrController.loadModel()}
+						onSelectModel={(id) => asrController.selectModel(id)}
 						onTranscribeClip={(language) => {
 							const clip = selectedAsrClip();
 							if (!clip) return;
