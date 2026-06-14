@@ -48,4 +48,4 @@ Manual only — no automated headless runner for GPU work:
 
 ## Quality Gate
 
-`vp test run` must stay green with no test count regression before merging any non-trivial logic change. `vp build` (strict `tsgo`) is a prerequisite for every merge regardless of test scope.
+`vp test run` must stay green with no test count regression before merging any non-trivial logic change. `vp run check` (format, lint, `tsgo --noEmit`, tests, production build) is the prerequisite for every merge regardless of test scope.
