@@ -8,7 +8,7 @@
 ## T1 — Capability probe & types
 
 - [ ] **T1.1** Add `AiAvailability`, `LanguageToolsProbeResult`, and `languageToolsSurfaceVisible()` to `src/protocol.ts` (R1.1).
-- [ ] **T1.2** Create `src/engine/language-tools/probe.ts`: `probeLanguageTools(scope?)` — feature-detect (`'Translator'|'LanguageDetector'|'Summarizer'|'LanguageModel' in self`) then `await X.availability(...)`; check Translator for `en->zh` and `zh->en`; never `create()`/download (R1.2, R1.4).
+- [ ] **T1.2** Create `src/engine/language-tools/probe.ts`: `probeLanguageTools(scope?)` — feature-detect (`'translation' in self` and `'ai' in self`) then check availability via `translation.canTranslate()`, `ai.summarizer.capabilities()`, and `ai.languageModel.capabilities()`; check Translator for `en->zh` and `zh->en`; never `create()`/download (R1.2, R1.4).
 - [ ] **T1.3** Attach `languageTools` to the capability-probe result for display only; confirm with a test that `deriveCapabilityTierV2` ignores it (R1.3) — mirror the `cleanup`/`asr` feature-probe precedent.
 - [ ] **T1.4** Unit-test the probe with mocked globals: each API absent/present × each availability state → correct result + `surfaceVisible`; `'unknown'` when undefined (R8.1).
 
@@ -21,7 +21,7 @@
 ## T3 — Translation controller
 
 - [ ] **T3.1** Create `src/ui/language-tools/translation-controller.ts`: framework-free state machine owning Translator/LanguageDetector sessions, with `translateTrack(source, target?, signal)`.
-- [ ] **T3.2** Direction: run `LanguageDetector.detect` over a sample of source segments → dominant {zh|en} → default target = the other; allow user override (R3.2, R8.4).
+- [ ] **T3.2** Direction: create a `LanguageDetector` session via `translation.createDetector()`, run `detector.detect` over a sample of source segments → dominant {zh|en} → default target = the other; allow user override (R3.2, R8.4).
 - [ ] **T3.3** Per-segment translate, copying `start`/`duration` verbatim; preserve count/order; `await` per item and yield (R3.3, R0.8, R0.10).
 - [ ] **T3.4** Download lifecycle: when `downloadable`/`downloading`, `create({ monitor })` on the user gesture; surface `downloadprogress` and the stated approx size before/while downloading (R3.4, R5.1–R5.3).
 - [ ] **T3.5** `AbortSignal` cancellation: prompt stop, no track, sessions reusable; `destroy()` on dispose (R3.5, R8.7).
@@ -43,8 +43,8 @@
 ## T6 — Draft controller
 
 - [ ] **T6.1** Create `src/ui/language-tools/draft-controller.ts` owning Summarizer + `LanguageModel` sessions.
-- [ ] **T6.2** Assemble transcript from a chosen track; chunk to `measureInputUsage`/`inputQuota`; hierarchical Summarizer condense for long transcripts (R4.1, R4.2, R0.11).
-- [ ] **T6.3** Summarizer description (`type` default `key-points`/`tldr`, `format:'plain-text'`); `LanguageModel.promptStreaming` for N titles + hashtags + 文案 (zh/en) with defensive parsing (R4.3, R4.4).
+- [ ] **T6.2** Assemble transcript from a chosen track; chunk using `countTokens()` against the model's token limits; hierarchical Summarizer condense for long transcripts (R4.1, R4.2, R0.11).
+- [ ] **T6.3** Summarizer description via `summarizer.summarize()` (`type` default `key-points`/`tldr`, `format:'plain-text'`); `languageModel.promptStreaming()` for N titles + hashtags + 文案 (zh/en) with simple delimited prompts and defensive parsing (R4.3, R4.4).
 - [ ] **T6.4** Stream output, cancellable via `AbortSignal`; `destroy()` sessions on dispose (R4.5, R8.7).
 - [ ] **T6.5** Put prompt builders + parsing in `src/engine/language-tools/draft-prompts.ts` (pure); unit-test draft assembly from a mocked streaming `LanguageModel` (R8.6) and chunk/quota + hierarchical summarise from a mocked Summarizer (R8.5).
 
@@ -58,7 +58,7 @@
 
 ## T8 — Ambient types & feature detection
 
-- [ ] **T8.1** Hand-author `src/types/chromium-ai.d.ts` for the subset used (`Translator`, `LanguageDetector`, `Summarizer`, `LanguageModel`: `availability`, `create` + `monitor`/`downloadprogress`, `translate`/`detect`/`summarize`/`prompt` + streaming, `measureInputUsage`/`inputQuota`, `destroy`, `AbortSignal`). No dependency added (R0.4).
+- [ ] **T8.1** Hand-author `src/types/chromium-ai.d.ts` for the subset used (`translation` namespace: `canTranslate`, `createDetector`/`createTranslator` + `monitor`/`downloadprogress`, `translate`/`detect`; `ai` namespace: `summarizer.capabilities`/`create`, `languageModel.capabilities`/`create`, `summarize`/`prompt` + streaming, `countTokens`/`maxTokens`, `destroy`, `AbortSignal`). No dependency added (R0.4).
 - [ ] **T8.2** Confirm strict `tsc` passes with the new globals declared on `self`/`window`.
 
 ## T9 — Diagnostics (optional, display-only)

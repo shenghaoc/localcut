@@ -12,7 +12,7 @@
 ## R0 — Hard Constraints
 
 - **R0.1** No cloud LLM/translation/summarisation calls, no API key, no account, no telemetry, and no upload of captions, transcript text, or media anywhere. All inference runs on the user's device through Chrome's built-in AI.
-- **R0.2** No model is fetched, created, or instantiated at app startup. Boot must be byte-identical in network and storage behaviour whether or not this feature exists. The capability probe performs feature-detection + `availability()` only — never `create()`, never a download.
+- **R0.2** No model is fetched, created, or instantiated at app startup. Boot must be byte-identical in network and storage behaviour whether or not this feature exists. The capability probe performs feature-detection + capability/availability checks only — never `create()`, never a download.
 - **R0.3** A model download (Translator / LanguageDetector / Summarizer / `LanguageModel`) is triggered **only** by an explicit user action carrying transient user activation.
 - **R0.4** Zero new npm **runtime** dependency. Phase 40 uses browser-native APIs; the only added source is hand-authored, same-origin ambient TypeScript typings (no third-party CDN, no bundled weights).
 - **R0.5** **Entirely hidden when unavailable.** When the probe reports no usable API, nothing renders: no side-rail tab, no toolbar button, no panel, no bilingual-export affordance, and no diagnostic nag. Zero console errors and zero visible Language Tools UI.
@@ -25,8 +25,8 @@
 
 ## R1 — Capability Probe (`LanguageToolsProbeResult`)
 
-- **R1.1** Add a `LanguageToolsProbeResult` reporting, per API, a lifecycle state mapped directly from `availability()`: `'available' | 'downloadable' | 'downloading' | 'unavailable'`, plus `'unknown'` when the API is not feature-detected (e.g. SSR/Node test). Covers: `translator` (keyed by language pair), `languageDetector`, `summarizer`, `languageModel`.
-- **R1.2** The probe is cheap and side-effect-free: synchronous feature detection (`'Translator' in self`, `'LanguageDetector' in self`, `'Summarizer' in self`, `'LanguageModel' in self`) followed by `await X.availability(...)`. It never calls `create()`, never downloads, never opens a session.
+- **R1.1** Add a `LanguageToolsProbeResult` reporting, per API, a lifecycle state mapped from each API's capability/availability check (`translation.canTranslate()`, `ai.summarizer.capabilities()`, `ai.languageModel.capabilities()`): `'available' | 'downloadable' | 'downloading' | 'unavailable'`, plus `'unknown'` when the API is not feature-detected (e.g. SSR/Node test). Covers: `translator` (keyed by language pair), `languageDetector`, `summarizer`, `languageModel`.
+- **R1.2** The probe is cheap and side-effect-free: synchronous feature detection (`'translation' in self` and `'ai' in self`) followed by `await translation.canTranslate(...)`, `await ai.summarizer.capabilities()`, and `await ai.languageModel.capabilities()`. It never calls `create()`, never downloads, never opens a session.
 - **R1.3** The probe **does not** feed `deriveCapabilityTierV2` or any pipeline path — display/feature-gate only, matching the Phase 28 (`cleanup`) and Phase 29 (`asr`) feature-probe precedent.
 - **R1.4** Translator availability is checked for the concrete pairs the feature uses (`en→zh`, `zh→en`), and results are keyed by pair so direction selection is accurate.
 - **R1.5** The probe is re-runnable without side effects so a state can move `downloadable → downloading → available` across a session (e.g. another tab finished the download).
@@ -52,7 +52,7 @@
 ## R4 — Draft Panel (titles / hashtags / 文案)
 
 - **R4.1** The draft source is the concatenated, ordered, trimmed segment text of a chosen caption/transcript track.
-- **R4.2** Long transcripts are chunked to the model's input quota (`measureInputUsage`/`inputQuota`) and condensed hierarchically (Summarizer over chunks, then over the summaries) before any prompt, keeping inputs bounded (R0.11).
+- **R4.2** Long transcripts are chunked to the model's input quota (using `countTokens()` against the model's `maxTokens` or `tokensLeft` limits) and condensed hierarchically (Summarizer over chunks, then over the summaries) before any prompt, keeping inputs bounded (R0.11).
 - **R4.3** Summarizer produces a short description/summary (`type` configurable — default `key-points` or `tldr`; `format: 'plain-text'`).
 - **R4.4** `LanguageModel` (Prompt API) produces N title options, a hashtag set, and a 文案 (social caption) in zh and/or en. Output is parsed defensively (robust to plain text even if structured output is requested).
 - **R4.5** Output streams into the panel where supported (`summarizeStreaming` / `promptStreaming`) and is cancellable.
@@ -62,9 +62,9 @@
 
 ## R5 — Download / Availability UX
 
-- **R5.1** Map `availability()` to UI: `available` → ready (act immediately, offline); `downloadable` → a one-time "Download model" affordance stating the approximate size; `downloading` → live progress; `unavailable` → hidden (R0.5).
+- **R5.1** Map availability state to UI: `available` → ready (act immediately, offline); `downloadable` → a one-time "Download model" affordance stating the approximate size; `downloading` → live progress; `unavailable` → hidden (R0.5).
 - **R5.2** State the approximate download size **before** any fetch: translation language packs are on the order of tens of MB (Chrome-managed); Summarizer/Prompt share Gemini Nano — multiple GB, downloaded once by Chrome and reused across all sites.
-- **R5.3** Live progress comes from the `downloadprogress` event on the `monitor` (`e.loaded`, 0..1).
+- **R5.3** Live progress comes from the `downloadprogress` event on the `monitor` (computed as `e.loaded / e.total` to get a fraction from 0 to 1).
 - **R5.4** After a model is `available`, all calls work offline. Phase 40 neither fetches nor caches weights itself — Chrome owns the model lifecycle (so the OPFS/digest model-cache rules used by the Phase 28/29 LiteRT.js runtime do not apply here; see design).
 
 ## R6 — Threading & Architecture Compliance
@@ -80,11 +80,11 @@
 
 ## R8 — Tests
 
-- **R8.1** Unit-test the probe with mocked globals: each API present/absent and each `availability()` state → correct `LanguageToolsProbeResult` and `surfaceVisible`.
+- **R8.1** Unit-test the probe with mocked globals: each API present/absent and each availability state → correct `LanguageToolsProbeResult` and `surfaceVisible`.
 - **R8.2** Unit-test that startup performs zero `create()` calls and zero downloads (spies on the AI globals; module-graph assertion that the controller isn't imported at boot).
 - **R8.3** Unit-test the per-segment timing invariant: with a mocked Translator, output segments copy `start`/`duration` exactly and preserve count/order (R0.8).
 - **R8.4** Unit-test direction selection from a mocked LanguageDetector, including user override.
-- **R8.5** Unit-test transcript assembly + chunk-to-quota (mocked `measureInputUsage`) + hierarchical summarisation (mocked Summarizer).
+- **R8.5** Unit-test transcript assembly + chunk-to-quota (mocked `countTokens`) + hierarchical summarisation (mocked Summarizer).
 - **R8.6** Unit-test draft assembly from a mocked `LanguageModel` (streaming), and the copy helper.
 - **R8.7** Unit-test cancellation (`AbortSignal`) mid-translate and mid-draft: prompt stop, no track, sessions reusable.
 - **R8.8** Unit-test the empty-result guard (no track created).
