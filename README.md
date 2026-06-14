@@ -8,7 +8,7 @@ The deployment assumption is intentionally cheap: Cloudflare serves static asset
 
 ## Stack
 
-- SolidJS + Vite + TypeScript (strict)
+- SolidJS + Vite + TypeScript 6 compatibility package plus TypeScript 7 native preview (`tsgo`)
 - Mediabunny — lazy `BlobSource` demux/mux
 - WebGPU + WebCodecs accelerated engine (pipeline worker)
 - Static PWA on Cloudflare static hosting; no server media pipeline
@@ -45,12 +45,20 @@ See [docs/ALPHA.md](docs/ALPHA.md) for the alpha support boundary — what is su
 ```bash
 vp install         # Clean install from the lockfile
 vp dev             # http://localhost:5173 — check status bar for COOP/COEP OK
-vp run check       # Full quality gate: format:check + lint + typecheck + test + build
+vp run check       # Full quality gate: format:check + lint + tsgo typecheck + test + build
+vp run typecheck   # Preferred TypeScript 7 native-preview check via tsgo
+vp run typecheck:tsc6 # Compatibility check via TypeScript 6 tsc6
 vp build
 vp test run
 vp lint .
 vp fmt .
 ```
+
+### TypeScript 6/7 transition
+
+This project keeps the JavaScript-based TypeScript 6 compatibility package installed as the `typescript` peer dependency, while using the TypeScript 7 native preview CLI for day-to-day type-checking. Prefer `vp run typecheck` / `tsgo --noEmit` for local validation and CI-like checks; use `vp run typecheck:tsc6` when comparing against the TypeScript 6 compatibility compiler or investigating a native-preview discrepancy.
+
+The setup follows Microsoft's TypeScript 7 beta migration path: `@typescript/native-preview` supplies `tsgo`, while `typescript` is aliased to `@typescript/typescript6` so ecosystem tools that import `typescript` still see the TypeScript 6 API during the transition.
 
 ### Testing
 

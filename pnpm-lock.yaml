@@ -58,6 +58,9 @@ importers:
       '@playwright/test':
         specifier: 1.60.0
         version: 1.60.0
+      '@typescript/native-preview':
+        specifier: beta
+        version: 7.0.0-beta
       '@tailwindcss/vite':
         specifier: ^4.3.0
         version: 4.3.0(@voidzero-dev/vite-plus-core@0.1.24(@types/node@25.9.3)(esbuild@0.27.3)(jiti@2.7.0)(terser@5.48.0)(typescript@5.8.3))
@@ -77,8 +80,8 @@ importers:
         specifier: ^4.3.0
         version: 4.3.0
       typescript:
-        specifier: ~5.8.3
-        version: 5.8.3
+        specifier: npm:@typescript/typescript6@^6.0.0
+        version: '@typescript/typescript6@6.0.1'
       vite:
         specifier: npm:@voidzero-dev/vite-plus-core@0.1.24
         version: '@voidzero-dev/vite-plus-core@0.1.24(@types/node@25.9.3)(esbuild@0.27.3)(jiti@2.7.0)(terser@5.48.0)(typescript@5.8.3)'

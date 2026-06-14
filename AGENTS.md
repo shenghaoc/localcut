@@ -101,8 +101,15 @@ vp run test:browser     # Vitest Browser Mode (real Chromium, component/integrat
 vp run test:e2e         # Playwright E2E (full user-flow tests)
 vp lint .          # Lint
 vp fmt .           # Format
-vp run typecheck   # tsc --noEmit
+vp run typecheck   # tsgo --noEmit (preferred TypeScript 7 native-preview check)
+vp run typecheck:tsc6 # tsc6 --noEmit compatibility check
 ```
+
+## TypeScript 6/7 transition
+
+- Prefer `vp run typecheck` / `tsgo --noEmit` for day-to-day and CI-like type-checking while TypeScript 7 ships through `@typescript/native-preview`.
+- Keep `typescript` aliased to `@typescript/typescript6` so peer-dependent tooling continues to import the TypeScript 6 API during the transition.
+- Use `vp run typecheck:tsc6` only as a compatibility check or when investigating a `tsgo` native-preview discrepancy.
 
 ## Architectural boundaries (hard gates)
 
@@ -115,7 +122,7 @@ vp run typecheck   # tsc --noEmit
 
 ## Quality gate
 
-1. `vp run check` → green (format:check + lint + `tsc --noEmit` + Vitest + production build). This is what CI runs after `vp install`.
+1. `vp run check` → green (format:check + lint + `tsgo --noEmit` + Vitest + production build). This is what CI runs after `vp install`. Keep `vp run typecheck:tsc6` available for TypeScript 6 compatibility comparisons.
 2. Test count must not decrease for non-trivial logic changes.
 3. Full-performance dev and production must keep COOP/COEP so `crossOriginIsolated === true`; missing isolation must show the limited capability tier rather than crashing the shell.
 4. Every `VideoFrame` `.close()`d exactly once in engine code paths.
