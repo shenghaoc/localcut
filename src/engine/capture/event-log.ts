@@ -56,7 +56,8 @@ export function shouldRecordKey(event: KeyboardEvent): boolean {
 /**
  * Formats a KeyboardEvent into a canonical combo string (R3.2).
  * Modifiers sorted alphabetically: Alt, Ctrl, Meta, Shift.
- * Space character normalised to 'Space'.
+ * Space character normalised to 'Space'. Single-letter keys normalised to
+ * uppercase (e.g. 'z' → 'Z') to match the spec's canonical form.
  */
 export function formatKeyCombo(event: KeyboardEvent): string {
 	const parts: string[] = [];
@@ -64,7 +65,11 @@ export function formatKeyCombo(event: KeyboardEvent): string {
 	if (event.ctrlKey) parts.push('Ctrl');
 	if (event.metaKey) parts.push('Meta');
 	if (event.shiftKey) parts.push('Shift');
-	const key = event.key === ' ' ? 'Space' : event.key;
+	let key = event.key === ' ' ? 'Space' : event.key;
+	// Normalise single-letter keys to uppercase for canonical form.
+	if (key.length === 1 && key >= 'a' && key <= 'z') {
+		key = key.toUpperCase();
+	}
 	parts.push(key);
 	return parts.join('+');
 }

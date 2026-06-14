@@ -3835,6 +3835,7 @@ export function App() {
 								return () => worker.removeEventListener('message', listener);
 							}}
 							onApplyRegion={(region) => {
+								// Collect clips that overlap the silence region.
 								const clipsToDelete: import('../protocol').TimelineClipReference[] = [];
 								for (const track of timeline()) {
 									for (const clip of track.clips) {
@@ -3845,23 +3846,30 @@ export function App() {
 									}
 								}
 								if (clipsToDelete.length > 0) {
+									// One ripple-delete → one Phase 9 undo step.
 									bridge?.send({ type: 'ripple-delete', clips: clipsToDelete });
 								}
 							}}
 							onApplyAll={(regions) => {
+								// Batch all clips from all regions into a single ripple-delete
+								// to avoid stale-position bugs from sequential deletions.
+								const seen = new Set<string>();
+								const clipsToDelete: import('../protocol').TimelineClipReference[] = [];
 								for (const region of regions) {
-									const clipsToDelete: import('../protocol').TimelineClipReference[] = [];
 									for (const track of timeline()) {
 										for (const clip of track.clips) {
+											const key = `${track.id}:${clip.id}`;
+											if (seen.has(key)) continue;
 											const clipEnd = clip.start + clip.duration;
 											if (clip.start < region.endS && clipEnd > region.startS) {
+												seen.add(key);
 												clipsToDelete.push({ trackId: track.id, clipId: clip.id });
 											}
 										}
 									}
-									if (clipsToDelete.length > 0) {
-										bridge?.send({ type: 'ripple-delete', clips: clipsToDelete });
-									}
+								}
+								if (clipsToDelete.length > 0) {
+									bridge?.send({ type: 'ripple-delete', clips: clipsToDelete });
 								}
 							}}
 							onClose={() => setSilenceReviewOpen(false)}

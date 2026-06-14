@@ -75,10 +75,9 @@ describe('shouldRecordKey', () => {
 });
 
 describe('formatKeyCombo', () => {
-	it('produces Ctrl+Shift+z from event with ctrlKey+shiftKey+key "z"', () => {
+	it('produces Ctrl+Shift+Z from event with ctrlKey+shiftKey+key "z"', () => {
 		const event = mockKeyboardEvent('z', { ctrlKey: true, shiftKey: true });
-		// Key is used as-is from event.key (lowercase 'z').
-		expect(formatKeyCombo(event)).toBe('Ctrl+Shift+z');
+		expect(formatKeyCombo(event)).toBe('Ctrl+Shift+Z');
 	});
 
 	it('produces "Space" for bare space key', () => {
@@ -93,8 +92,7 @@ describe('formatKeyCombo', () => {
 
 	it('sorts modifiers alphabetically', () => {
 		const event = mockKeyboardEvent('s', { metaKey: true, altKey: true });
-		// Key is used as-is from event.key (lowercase 's').
-		expect(formatKeyCombo(event)).toBe('Alt+Meta+s');
+		expect(formatKeyCombo(event)).toBe('Alt+Meta+S');
 	});
 });
 

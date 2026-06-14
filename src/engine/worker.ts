@@ -5586,6 +5586,25 @@ async function handleQueueStart() {
 
 // ── Phase 44: Silence Detection handler ──
 
+/** Merge overlapping silence regions from multiple tracks. */
+function mergeOverlappingRegions(
+	regions: import('./silence-detector').SilenceRegion[]
+): import('./silence-detector').SilenceRegion[] {
+	if (regions.length <= 1) return regions;
+	const merged: import('./silence-detector').SilenceRegion[] = [];
+	for (const r of regions) {
+		const last = merged[merged.length - 1];
+		if (last && r.startS <= last.endS) {
+			// Overlapping — extend the previous region.
+			last.endS = Math.max(last.endS, r.endS);
+			last.peakDb = Math.max(last.peakDb, r.peakDb);
+		} else {
+			merged.push({ ...r });
+		}
+	}
+	return merged;
+}
+
 async function handleDetectSilence(
 	cmd: Extract<WorkerCommand, { type: 'detect-silence' }>
 ): Promise<void> {
@@ -5598,14 +5617,19 @@ async function handleDetectSilence(
 			const trackId = trackIds[i]!;
 			const track = timeline.find((t) => t.id === trackId);
 			if (!track) continue;
-			// Collect all clips on this track that have audio.
-			const pcmChunks: Float32Array[] = [];
 			const trackDuration = getTimelineDuration([track]);
 			if (trackDuration <= 0) continue;
 			const targetSampleRate = params.sampleRate;
-			// Iterate clips and collect PCM for the full track.
-			for (const clip of track.clips) {
-				if (clip.kind === 'title') continue;
+			const totalFrames = Math.ceil(trackDuration * targetSampleRate);
+			// Allocate a full-track buffer; gaps between clips are naturally
+			// zero-filled (silence), so region timestamps map 1:1 to timeline time.
+			const mono = new Float32Array(totalFrames);
+			// Sort clips by start time so PCM lands at correct offsets.
+			const sortedClips = [...track.clips]
+				.filter((c) => c.kind !== 'title')
+				.sort((a, b) => a.start - b.start);
+			for (const clip of sortedClips) {
+				if (!inFlightSilenceRequests.has(requestId)) return; // Cancelled.
 				const handle = sourceInputs.get(clip.sourceId);
 				if (!handle?.audioSource) continue;
 				const channels = Math.max(1, handle.audioChannels || 1);
@@ -5617,39 +5641,33 @@ async function handleDetectSilence(
 					targetSampleRate
 				);
 				if (!inFlightSilenceRequests.has(requestId)) return; // Cancelled.
-				// Mono mix: average all channels.
-				if (channels > 1) {
-					const mono = new Float32Array(frames);
-					for (let f = 0; f < frames; f++) {
+				// Compute the sample offset for this clip's timeline position.
+				const clipStartFrame = Math.round(clip.start * targetSampleRate);
+				// Mono mix: average all channels, write into the correct offset.
+				for (let f = 0; f < frames; f++) {
+					const targetIdx = clipStartFrame + f;
+					if (targetIdx >= totalFrames) break;
+					if (channels > 1) {
 						let sum = 0;
 						for (let ch = 0; ch < channels; ch++) {
 							sum += pcm[f * channels + ch]!;
 						}
-						mono[f] = sum / channels;
+						mono[targetIdx] = sum / channels;
+					} else {
+						mono[targetIdx] = pcm[f]!;
 					}
-					pcmChunks.push(mono);
-				} else {
-					pcmChunks.push(pcm);
 				}
 			}
-			if (pcmChunks.length === 0) continue;
-			// Concatenate into one Float32Array.
-			const totalLen = pcmChunks.reduce((s, c) => s + c.length, 0);
-			const mono = new Float32Array(totalLen);
-			let offset = 0;
-			for (const chunk of pcmChunks) {
-				mono.set(chunk, offset);
-				offset += chunk.length;
-			}
-			// Run silence detection.
+			// Run silence detection — timestamps are now in timeline time.
 			const trackRegions = detectSilence(mono, params);
 			allRegions.push(...trackRegions);
 			post({ type: 'silence-progress', requestId, progressFraction: (i + 1) / trackIds.length });
 		}
 		if (!inFlightSilenceRequests.has(requestId)) return; // Cancelled.
-		// Sort by start time and deduplicate overlapping regions across tracks.
+		// Sort by start time and merge overlapping regions across tracks.
 		allRegions.sort((a, b) => a.startS - b.startS);
-		post({ type: 'silence-result', requestId, regions: allRegions });
+		const merged = mergeOverlappingRegions(allRegions);
+		post({ type: 'silence-result', requestId, regions: merged });
 	} catch (error) {
 		const message = error instanceof Error ? error.message : 'Unknown error';
 		post({ type: 'silence-error', requestId, message });
@@ -5666,14 +5684,12 @@ function handleGenerateKeyOverlay(
 	const { clips } = cmd;
 	if (clips.length === 0) return;
 	commitTimelineMutation(() => {
-		// Find or create a topmost video track for keystroke overlay clips.
-		// TimelineTrack has no `name` field; the overlay track is the topmost video track.
-		let overlayTrack = timeline.find((t) => t.type === 'video');
-		let nextTimeline = timeline;
-		if (!overlayTrack) {
-			nextTimeline = addTrack(nextTimeline, 'video');
-			overlayTrack = nextTimeline[nextTimeline.length - 1]!;
-		}
+		// R3.4: Create a dedicated overlay track at the top for keystroke clips.
+		// Always create a new track so overlay clips never interleave with footage.
+		let nextTimeline = addTrack(timeline, 'video');
+		const overlayTrackId = nextTimeline[nextTimeline.length - 1]!.id;
+		// Move the new track to index 0 (top of the track list).
+		nextTimeline = reorderTrack(nextTimeline, overlayTrackId, 0);
 		// Insert title clips for each overlay entry.
 		for (const clip of clips) {
 			const titleClip = defaultTitleClip({
@@ -5681,12 +5697,11 @@ function handleGenerateKeyOverlay(
 				start: clip.startS,
 				duration: clip.durationS
 			});
-			const withClip = insertClip(nextTimeline, overlayTrack!.id, titleClip);
+			const withClip = insertClip(nextTimeline, overlayTrackId, titleClip);
 			if (withClip !== nextTimeline) {
 				nextTimeline = withClip;
 				// Set the title text and style.
-				const insertedId = titleClip.id;
-				nextTimeline = setTitleContent(nextTimeline, overlayTrack!.id, insertedId, {
+				nextTimeline = setTitleContent(nextTimeline, overlayTrackId, titleClip.id, {
 					text: clip.text,
 					style: clip.style
 				});
