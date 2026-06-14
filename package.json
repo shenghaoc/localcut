@@ -24,8 +24,7 @@
 		"test:e2e": "playwright test",
 		"postinstall": "node scripts/setup-litert-assets.mjs",
 		"prepare": "vp config",
-		"typecheck:tsc6": "tsc6 --noEmit",
-		"typecheck:tsgo": "tsgo --noEmit"
+		"typecheck:tsc6": "tsc6 --noEmit"
 	},
 	"dependencies": {
 		"@fontsource/dm-sans": "^5.2.8",
