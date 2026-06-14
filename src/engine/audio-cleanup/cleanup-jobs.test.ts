@@ -4,6 +4,8 @@ import {
 	CleanupJobProcessor,
 	concatPcm,
 	downmixToMono,
+	DTLN_WARMUP_SAMPLES,
+	trimDtlnOutputToInput,
 	type CleanupInferenceRunner
 } from './cleanup-jobs';
 import { DTLN_BLOCK_LEN, DTLN_BLOCK_SHIFT, DtlnDsp } from './dtln-dsp';
@@ -109,6 +111,19 @@ describe('CleanupJobProcessor', () => {
 		await processor.push(ramp(DTLN_BLOCK_SHIFT));
 		processor.abort();
 		await expect(processor.finalize()).rejects.toThrow(CleanupCancelledError);
+	});
+
+	it('trims DTLN warm-up and flush padding back to the original input length', () => {
+		const inputSamples = 5;
+		const raw = new Float32Array(DTLN_WARMUP_SAMPLES + inputSamples + DTLN_BLOCK_SHIFT);
+		for (let i = 0; i < raw.length; i++) raw[i] = i;
+
+		const trimmed = trimDtlnOutputToInput(raw, inputSamples);
+
+		expect([...trimmed]).toEqual(
+			Array.from({ length: inputSamples }, (_, i) => DTLN_WARMUP_SAMPLES + i)
+		);
+		expect(trimmed.length).toBe(inputSamples);
 	});
 });
 

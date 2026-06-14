@@ -110,8 +110,14 @@ export class DtlnRuntime {
 		}
 		if (!compiled1 || !compiled2) {
 			if (accelerator === 'wasm') throw lastError;
-			compiled1 = await api.loadAndCompile(options.model1Bytes, { accelerator: 'wasm' });
-			compiled2 = await api.loadAndCompile(options.model2Bytes, { accelerator: 'wasm' });
+			try {
+				compiled1 = await api.loadAndCompile(options.model1Bytes, { accelerator: 'wasm' });
+				compiled2 = await api.loadAndCompile(options.model2Bytes, { accelerator: 'wasm' });
+			} catch (error) {
+				compiled1?.delete();
+				compiled2?.delete();
+				throw error;
+			}
 			accelerator = 'wasm';
 		}
 

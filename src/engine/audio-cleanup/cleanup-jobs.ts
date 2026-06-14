@@ -4,10 +4,11 @@
  * accounting, and cancellation are unit-testable with a fake runtime.
  */
 
-import { DTLN_BLOCK_SHIFT } from './dtln-dsp';
+import { DTLN_BLOCK_LEN, DTLN_BLOCK_SHIFT } from './dtln-dsp';
 import type { DtlnDsp, DtlnFrameData } from './dtln-dsp';
 
 export const CLEANUP_BATCH_FRAMES = 100;
+export const DTLN_WARMUP_SAMPLES = DTLN_BLOCK_LEN - DTLN_BLOCK_SHIFT;
 
 export interface CleanupInferenceRunner {
 	runModel1(magnitude: Float32Array): Promise<Float32Array>;
@@ -176,4 +177,14 @@ export function concatPcm(chunks: readonly Float32Array[]): Float32Array {
 		offset += chunk.length;
 	}
 	return out;
+}
+
+export function trimDtlnOutputToInput(
+	rawPcm: Float32Array,
+	inputSampleCount: number
+): Float32Array {
+	if (inputSampleCount <= 0) return new Float32Array(0);
+	const start = Math.min(DTLN_WARMUP_SAMPLES, rawPcm.length);
+	const end = Math.min(start + inputSampleCount, rawPcm.length);
+	return rawPcm.subarray(start, end);
 }
