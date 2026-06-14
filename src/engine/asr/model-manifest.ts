@@ -105,25 +105,43 @@ function validateDecodeParams(value: unknown): AsrDecodeParams | null {
 	if (!isObject(value)) throw new AsrManifestError('decode must be an object or null');
 	const params: AsrDecodeParams = {};
 	if (value['logProbThreshold'] !== undefined) {
-		if (!isFiniteNumber(value['logProbThreshold']))
-			throw new AsrManifestError('decode.logProbThreshold must be a finite number');
+		if (!isFiniteNumber(value['logProbThreshold']) || value['logProbThreshold'] > 0)
+			throw new AsrManifestError('decode.logProbThreshold must be a non-positive finite number');
 		params.logProbThreshold = value['logProbThreshold'];
 	}
 	if (value['noSpeechThreshold'] !== undefined) {
-		if (!isFiniteNumber(value['noSpeechThreshold']))
-			throw new AsrManifestError('decode.noSpeechThreshold must be a finite number');
+		if (
+			!isFiniteNumber(value['noSpeechThreshold']) ||
+			value['noSpeechThreshold'] < 0 ||
+			value['noSpeechThreshold'] > 1
+		)
+			throw new AsrManifestError(
+				'decode.noSpeechThreshold must be a finite number between 0 and 1'
+			);
 		params.noSpeechThreshold = value['noSpeechThreshold'];
 	}
 	if (value['compressionRatioThreshold'] !== undefined) {
-		if (!isFiniteNumber(value['compressionRatioThreshold']))
-			throw new AsrManifestError('decode.compressionRatioThreshold must be a finite number');
+		if (
+			!isFiniteNumber(value['compressionRatioThreshold']) ||
+			value['compressionRatioThreshold'] <= 0
+		)
+			throw new AsrManifestError(
+				'decode.compressionRatioThreshold must be a positive finite number'
+			);
 		params.compressionRatioThreshold = value['compressionRatioThreshold'];
 	}
 	if (value['temperatures'] !== undefined) {
-		if (!Array.isArray(value['temperatures']) || !value['temperatures'].every(isFiniteNumber))
-			throw new AsrManifestError('decode.temperatures must be an array of finite numbers');
+		if (
+			!Array.isArray(value['temperatures']) ||
+			!value['temperatures'].every((t: unknown) => isFiniteNumber(t) && (t as number) >= 0)
+		)
+			throw new AsrManifestError(
+				'decode.temperatures must be an array of non-negative finite numbers'
+			);
 		if (value['temperatures'].length === 0)
 			throw new AsrManifestError('decode.temperatures must not be empty');
+		if (value['temperatures'][0] !== 0)
+			throw new AsrManifestError('decode.temperatures must start with 0.0 (greedy decoding)');
 		params.temperatures = value['temperatures'];
 	}
 	return params;
