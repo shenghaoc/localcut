@@ -6,7 +6,7 @@ import {
 	downmixToMono,
 	type CleanupInferenceRunner
 } from './cleanup-jobs';
-import { DTLN_BLOCK_SHIFT, DtlnDsp } from './dtln-dsp';
+import { DTLN_BLOCK_LEN, DTLN_BLOCK_SHIFT, DtlnDsp } from './dtln-dsp';
 
 function passthrough(): CleanupInferenceRunner & { model1Calls: number; model2Calls: number } {
 	return {
@@ -44,8 +44,9 @@ describe('CleanupJobProcessor', () => {
 		outputs.push(await processor.push(input.subarray(cursor)));
 		outputs.push(await processor.finalize());
 		const out = concatPcm(outputs);
-		const expectedFrames = Math.ceil(input.length / DTLN_BLOCK_SHIFT);
-		expect(out.length).toBe(expectedFrames * DTLN_BLOCK_SHIFT);
+		const inputFrames = Math.ceil(input.length / DTLN_BLOCK_SHIFT);
+		const olaFlushFrames = DTLN_BLOCK_LEN / DTLN_BLOCK_SHIFT - 1;
+		expect(out.length).toBe((inputFrames + olaFlushFrames) * DTLN_BLOCK_SHIFT);
 		expect(runner.model1Calls).toBeGreaterThan(0);
 		expect(runner.model2Calls).toBe(runner.model1Calls);
 	});

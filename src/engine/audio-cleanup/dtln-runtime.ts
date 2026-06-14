@@ -131,11 +131,7 @@ export class DtlnRuntime {
 	}
 
 	async runModel1(magnitude: Float32Array): Promise<Float32Array> {
-		const inputTensor = this.api.Tensor.fromTypedArray(new Float32Array(magnitude), [
-			1,
-			1,
-			DTLN_FREQ_BINS
-		]);
+		const inputTensor = this.api.Tensor.fromTypedArray(magnitude, [1, 1, DTLN_FREQ_BINS]);
 		const stateTensor = this.api.Tensor.fromTypedArray(
 			new Float32Array(this.state1),
 			this.stateShape
@@ -164,11 +160,7 @@ export class DtlnRuntime {
 	}
 
 	async runModel2(estimated: Float32Array): Promise<Float32Array> {
-		const inputTensor = this.api.Tensor.fromTypedArray(new Float32Array(estimated), [
-			1,
-			1,
-			DTLN_BLOCK_LEN
-		]);
+		const inputTensor = this.api.Tensor.fromTypedArray(estimated, [1, 1, DTLN_BLOCK_LEN]);
 		const stateTensor = this.api.Tensor.fromTypedArray(
 			new Float32Array(this.state2),
 			this.stateShape

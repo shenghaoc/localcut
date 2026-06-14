@@ -141,6 +141,9 @@ export class CleanupJobProcessor {
 			await this.processFrame(frame, outputs);
 		}
 
+		const flush = this.dsp.flushOverlapAdd();
+		if (flush.length > 0) outputs.push(flush);
+
 		if (this.batchedFrameCount > 0) {
 			this.processedFrames += this.batchedFrameCount;
 			this.batchedFrameCount = 0;

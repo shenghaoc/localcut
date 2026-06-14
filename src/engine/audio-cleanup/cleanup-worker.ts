@@ -92,26 +92,33 @@ async function handleLoadModel(
 
 		const store = await createOpfsAssetStore('cleanup-models');
 
+		const combinedTotal = manifest.model1.sizeBytes + manifest.model2.sizeBytes;
+		let received1 = 0;
+		let received2 = 0;
+		const postDownloadProgress = () => {
+			const pct = Math.round(((received1 + received2) / combinedTotal) * 100);
+			post({
+				type: 'cleanup-model-status',
+				status: 'loading',
+				sizeBytes: manifest.sizeBytes,
+				error: `Downloading models… ${pct}%`
+			});
+		};
+
 		const [model1Bytes, model2Bytes] = await Promise.all([
 			loadVerifiedAsset(manifest.model1, {
 				store,
-				onProgress: (p) =>
-					post({
-						type: 'cleanup-model-status',
-						status: 'loading',
-						sizeBytes: manifest.sizeBytes,
-						error: `Downloading model 1… ${Math.round((p.receivedBytes / p.totalBytes) * 100)}%`
-					})
+				onProgress: (p) => {
+					received1 = p.receivedBytes;
+					postDownloadProgress();
+				}
 			}),
 			loadVerifiedAsset(manifest.model2, {
 				store,
-				onProgress: (p) =>
-					post({
-						type: 'cleanup-model-status',
-						status: 'loading',
-						sizeBytes: manifest.sizeBytes,
-						error: `Downloading model 2… ${Math.round((p.receivedBytes / p.totalBytes) * 100)}%`
-					})
+				onProgress: (p) => {
+					received2 = p.receivedBytes;
+					postDownloadProgress();
+				}
 			})
 		]);
 		if (generation !== loadGeneration) return;

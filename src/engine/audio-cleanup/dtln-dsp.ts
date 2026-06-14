@@ -126,4 +126,15 @@ export class DtlnDsp {
 		}
 		return this.outBuffer.slice(0, DTLN_BLOCK_SHIFT);
 	}
+
+	flushOverlapAdd(): Float32Array {
+		const tailFrames = DTLN_BLOCK_LEN / DTLN_BLOCK_SHIFT - 1;
+		const out = new Float32Array(tailFrames * DTLN_BLOCK_SHIFT);
+		for (let i = 0; i < tailFrames; i++) {
+			this.outBuffer.copyWithin(0, DTLN_BLOCK_SHIFT);
+			this.outBuffer.fill(0, DTLN_BLOCK_LEN - DTLN_BLOCK_SHIFT);
+			out.set(this.outBuffer.subarray(0, DTLN_BLOCK_SHIFT), i * DTLN_BLOCK_SHIFT);
+		}
+		return out;
+	}
 }
