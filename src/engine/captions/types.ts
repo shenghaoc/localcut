@@ -246,7 +246,7 @@ export function cloneCaptionSegment(segment: CaptionSegment): CaptionSegment {
 }
 
 export function sortCaptionSegments(segments: readonly CaptionSegment[]): CaptionSegment[] {
-	return [...segments].sort((a, b) =>
+	return segments.toSorted((a, b) =>
 		a.start === b.start ? a.id.localeCompare(b.id) : a.start - b.start
 	);
 }

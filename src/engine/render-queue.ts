@@ -259,7 +259,7 @@ export function createJobsFromMarkers(
 	outputTemplate: string | null
 ): RenderQueueJob[] {
 	if (markers.length < 2) return [];
-	const sorted = [...markers].sort((a, b) => a.time - b.time);
+	const sorted = markers.toSorted((a, b) => a.time - b.time);
 	const jobs: RenderQueueJob[] = [];
 	for (let i = 0; i < sorted.length - 1; i++) {
 		const start = sorted[i]!;

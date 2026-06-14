@@ -3150,7 +3150,7 @@ function handleRippleDelete(cmd: Extract<WorkerCommand, { type: 'ripple-delete' 
 		const nextTimeline = rippleDelete(timeline, cmd.clips, syncLockedTrackIds);
 		if (nextTimeline === timeline) return { timeline, captionTracks, transitions, markers };
 		let nextMarkers: TimelineMarker[] = markers as TimelineMarker[];
-		const sorted = [...removedRegions].sort((a, b) => a.start - b.start);
+		const sorted = removedRegions.toSorted((a, b) => a.start - b.start);
 		const merged: { start: number; end: number }[] = [];
 		for (const r of sorted) {
 			if (merged.length > 0 && r.start <= merged[merged.length - 1]!.end + TIMELINE_EPSILON) {

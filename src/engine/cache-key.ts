@@ -244,11 +244,11 @@ export function renderCacheEntryMatchesKey(
 }
 
 function sortStrings(values: readonly string[]): string[] {
-	return [...values].sort();
+	return values.toSorted();
 }
 
 function sortSources(values: readonly SourceDependencyKey[]): SourceDependencyKey[] {
-	return [...values].sort((a, b) => {
+	return values.toSorted((a, b) => {
 		const source = a.sourceId.localeCompare(b.sourceId);
 		if (source !== 0) return source;
 		return a.fingerprint.localeCompare(b.fingerprint);
@@ -256,7 +256,7 @@ function sortSources(values: readonly SourceDependencyKey[]): SourceDependencyKe
 }
 
 function sortClips(values: readonly ClipDependencyKey[]): ClipDependencyKey[] {
-	return [...values].sort((a, b) => {
+	return values.toSorted((a, b) => {
 		const track = a.trackId.localeCompare(b.trackId);
 		if (track !== 0) return track;
 		const start = a.startS - b.startS;

@@ -279,7 +279,7 @@ export function resolveAllAt(
 			const track = timeline.find((t) => t.id === transition.trackId);
 			if (!track || track.type !== 'video') continue;
 
-			const sorted = [...track.clips].sort((a, b) => a.start - b.start);
+			const sorted = track.clips.toSorted((a, b) => a.start - b.start);
 			const fromIdx = sorted.findIndex((c) => c.id === transition.fromClipId);
 			if (fromIdx < 0 || fromIdx + 1 >= sorted.length) continue;
 			const toIdx = fromIdx + 1;
@@ -645,7 +645,7 @@ function cloneWithNewId(clip: TimelineClip): TimelineClip {
 }
 
 function sortByStart(clips: readonly TimelineClip[]): TimelineClip[] {
-	return [...clips].sort((a, b) => {
+	return clips.toSorted((a, b) => {
 		const startDiff = a.start - b.start;
 		if (startDiff !== 0) return startDiff;
 		return a.id.localeCompare(b.id);
@@ -1529,7 +1529,7 @@ export function deleteMarker(
 }
 
 export function sortMarkers(markers: readonly TimelineMarker[]): TimelineMarker[] {
-	return [...markers].sort((a, b) => {
+	return markers.toSorted((a, b) => {
 		const timeDiff = a.time - b.time;
 		if (timeDiff !== 0) return timeDiff;
 		return a.id.localeCompare(b.id);

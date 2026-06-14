@@ -258,7 +258,7 @@ function buildTrackChildren(
 	const children: OtioTrackChild[] = [];
 	const placed = new Map<string, PlacedClip>();
 	const dropped = new Set<string>();
-	const sorted = [...track.clips].sort((a, b) => a.start - b.start || compareStrings(a.id, b.id));
+	const sorted = track.clips.toSorted((a, b) => a.start - b.start || compareStrings(a.id, b.id));
 	let cursor = 0;
 	for (const clip of sorted) {
 		const startFrames = snapToFrames(clip.start, rate);

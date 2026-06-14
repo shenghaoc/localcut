@@ -106,7 +106,7 @@ export function serializeTimelineToEdl(
 
 		const reels = new ReelNames();
 		const recordOffset = RECORD_START_HOURS * 3600 * fps;
-		const sorted = [...track.clips].sort((a, b) => a.start - b.start || compareStrings(a.id, b.id));
+		const sorted = track.clips.toSorted((a, b) => a.start - b.start || compareStrings(a.id, b.id));
 		let eventNumber = 0;
 		for (const clip of sorted) {
 			const recIn = snapToFrames(clip.start, fps);
