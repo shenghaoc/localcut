@@ -50,6 +50,8 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 
 - [**Phase 27: Local Audio Cleanup with WebNN RNNoise**](.kiro/specs/phase-27-webnn-audio-cleanup/tasks.md) — optional/experimental on-device noise suppression; WebNN probe + capability row; lazy, cancellable Audio Cleanup worker separate from the pipeline worker; checksummed RNNoise weights loaded only on explicit user action; TypeScript DSP port + WebNN GRU graph; undoable cleaned-audio assets through playback/export. Foundation implemented; Inspector badge + manual browser matrix pending.
 
+- [**Bugfix: Phase 28 LiteRT DTLN Audio Cleanup**](.kiro/specs/bugfix-phase-28-litert-dtln/tasks.md) — migrate Audio Cleanup from WebNN RNNoise to LiteRT.js DTLN; two-model TFLite inference via WASM; GitHub proxy (`/_model/gh/`); SHA-256-verified OPFS-cached assets from breizhn/DTLN; 16 kHz DTLN DSP (FFT/iFFT + overlap-add); delete RNNoise graph/DSP/probe (~1100 lines); WASM-gated availability (was WebNN).
+
 - [**Phase 23: Project packaging + portability**](.kiro/specs/phase-23-project-packaging/tasks.md) — directory bundles, fingerprint dedup, integrity validation, collect media, import/export.
 
 - [**Phase 41: Capture Engine**](.kiro/specs/phase-41-capture-engine/tasks.md) — recording as a first-class source: `getDisplayMedia`/`getUserMedia` acquisition; MSTP → WebCodecs realtime encode in the worker; crash-safe fragmented-MP4 chunks to OPFS via `SyncAccessHandle` + chunk manifest; boot recovery scan; screen/webcam/mic/system-audio as separate VFR-honest tracks; quota preflight + graceful stop; accelerated-tier gated.
