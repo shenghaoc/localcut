@@ -5,9 +5,21 @@ import {
 	anyVideoDecodeSupported,
 	anyVideoEncodeSupported,
 	deriveCapabilityTierV2,
-	exportConstraintsForProbe
+	exportConstraintsForProbe,
+	probeSmartReframe
 } from './capability-probe-v2';
 import { compatAdapterProbeResult, probeResultFor } from './compatibility/capability-fixtures';
+
+describe('probeSmartReframe', () => {
+	it('reports saliency supported and face detection gated on the analysis worker', () => {
+		const probe = probeSmartReframe();
+		// Saliency is pure DSP — always available.
+		expect(probe.saliency).toBe('supported');
+		// MediaPipe face detection runs in the analysis worker, so it tracks it.
+		expect(['supported', 'unsupported']).toContain(probe.analysisWorker);
+		expect(probe.faceDetection).toBe(probe.analysisWorker);
+	});
+});
 
 describe('deriveCapabilityTierV2', () => {
 	it('derives all fixture tiers', () => {

@@ -347,6 +347,30 @@ for the full reference.
 - **Karaoke**: The karaoke preset highlights the active word when per-word timing
   data is present (auto-populated by the Auto Captions ASR engine above).
 
+## Smart Reframe (Experimental)
+
+Automatically generate a crop path when converting a clip between aspect ratios (for example 16:9 → 9:16), keeping the main subject in frame. This feature is **experimental** and fully local:
+
+> Runs on this device. No upload. No API key. No server inference.
+
+The output is ordinary, **editable transform keyframes** — never a baked-in crop. After applying, you can edit, delete, or extend any of them in the Inspector, and one undo removes the whole reframe.
+
+**How to use it**:
+
+1. Select a video clip on the timeline and click **Smart Reframe** in the toolbar.
+2. Choose a **target aspect ratio** (9:16, 1:1, 4:5, 16:9, or 4:3).
+3. Click **Analyse**. A dedicated worker scans the clip (cancel any time). When it finishes, the program monitor shows a preview overlay of the proposed crop and its action-safe zone at the playhead.
+4. **Apply** writes the keyframes, **Discard** throws the result away, and **Adjust** exposes the velocity/acceleration bounds for a re-analysis.
+
+**Notes**:
+
+- Subject detection defaults to **visual saliency** (skin tone, edges, local contrast — pure DSP, always available). For face-aware reframing, click **Load face model** in the panel to fetch **MediaPipe BlazeFace** once from Google (on-device after that; nothing uploaded) — the same click-to-load pattern as Audio Cleanup and Auto Captions. Once loaded, analysis tracks faces and falls back to saliency for frames with none. The Capabilities panel shows a **Smart Reframe** row.
+- Pan velocity and acceleration are bounded so generated motion never whips; the subject may briefly leave centre during fast moves. The panel reports safe-zone compliance.
+- Shot boundaries (hard cuts) are detected and reset tracking so the crop does not slide across an edit.
+- Limitations: one subject per clip, faces/saliency only (no object-class tracking), no automatic cutting, and offline only (no live-camera reframe).
+
+Full details are in the [Smart Reframe guide](SMART-REFRAME.md).
+
 ## Replay Buffer
 
 Continuously record a screen capture into a rolling buffer and save the last moments as a timeline clip — without interrupting the recording.

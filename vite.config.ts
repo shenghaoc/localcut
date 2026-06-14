@@ -286,6 +286,26 @@ export default defineConfig({
 							// LiteRT WASM variants are ~9 MB each; allow them in the cache.
 							matchOptions: { ignoreVary: true }
 						}
+					},
+					{
+						// Phase 33 Smart Reframe: MediaPipe tasks-vision WASM (~11 MB) is
+						// loaded from jsdelivr on the user's explicit face-model action;
+						// cache it so later loads are instant / offline.
+						urlPattern: /^https:\/\/cdn\.jsdelivr\.net\/npm\/@mediapipe\/tasks-vision/,
+						handler: 'CacheFirst',
+						options: {
+							cacheName: 'mediapipe-vision-runtime',
+							matchOptions: { ignoreVary: true }
+						}
+					},
+					{
+						// MediaPipe BlazeFace model from Google's model store.
+						urlPattern: /^https:\/\/storage\.googleapis\.com\/mediapipe-models\//,
+						handler: 'CacheFirst',
+						options: {
+							cacheName: 'mediapipe-models',
+							matchOptions: { ignoreVary: true }
+						}
 					}
 				]
 			}

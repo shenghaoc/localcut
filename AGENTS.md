@@ -36,6 +36,8 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 
 - [**Phase 48: OpenTimelineIO export**](.kiro/specs/phase-48-otio-export/tasks.md) — TypeScript `ProjectDoc` → `.otio` serialiser (tracks, gaps, clips with P23 fingerprints, markers, transitions); `metadata.localcut` round-trip namespace; `project.otio` in the bundle root beside authoritative `project.json`; cuts-only CMX3600 EDL; documented `otioconvert` path for AAF/FCPXML.
 
+- [**Phase 33: Smart Reframe**](.kiro/specs/phase-33-smart-reframe/tasks.md) — automatic crop-path generation between aspect ratios (16:9 ↔ 9:16, 1:1, 4:5); BlazeFace face detection via MediaPipe Tasks Vision (click-to-load, fetched from remote) in a lazy-loaded dedicated worker; pure-DSP saliency fallback (and default until the model is loaded); IoU-tracked primary subject with One Euro smoothing; shot-boundary detection via histogram difference; output as editable Phase 15 transform keyframes with velocity/acceleration bounds; review/apply overlay.
+
 - [**Bugfix: IMG_6213.mov media handling**](.kiro/specs/bugfix-img-6213-media-issues/tasks.md) — apply rotation metadata on placement, rotation-aware fit rect, VFR-aware frame cadence, codec-named warnings, Media Bin details popover, user-guide updates.
 
 - [**Bugfix: Phase 29 LiteRT WASM Whisper**](.kiro/specs/bugfix-phase-29-litert-wasm-whisper/tasks.md) — real on-device Auto Captions: LiteRT.js Whisper on the WASM accelerator (only engine; Browser SpeechRecognition removed); manifest-declared, SHA-256-verified, OPFS-cached, click-to-load TFLite encoder/decoder + tokenizer; worker-side log-mel → encode → greedy decode → timestamped caption segments; untyped LiteRT loader boundary; self-hosted WASM via `pnpm setup:litert`.
