@@ -32,7 +32,11 @@ fn linear_to_srgb(l : f32) -> f32 {
 
 // Hermite smoothstep: 3t² − 2t³, clamped to [0,1].
 fn sstep(edge0 : f32, edge1 : f32, x : f32) -> f32 {
-  let t = clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
+  let d = edge1 - edge0;
+  if (d == 0.0) {
+    return select(0.0, 1.0, x >= edge1);
+  }
+  let t = clamp((x - edge0) / d, 0.0, 1.0);
   return t * t * (3.0 - 2.0 * t);
 }
 

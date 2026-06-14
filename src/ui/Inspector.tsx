@@ -1,5 +1,6 @@
 import { Show, For, createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
 import { ChevronLeft, ChevronRight, Diamond, Upload } from 'lucide-solid';
+import { DEFAULT_SKIN_MASK } from '../protocol';
 import type {
 	ClipEffectParamsSnapshot,
 	ClipKeyframeParamSnapshot,
@@ -331,14 +332,6 @@ const SKIN_MASK_SLIDERS: SkinMaskSliderSpec[] = [
 		format: (v) => v.toFixed(3)
 	}
 ];
-
-const DEFAULT_SKIN_MASK: SkinMaskSnapshot = {
-	cbMin: -0.2,
-	cbMax: 0.0,
-	crMin: 0.05,
-	crMax: 0.2,
-	softness: 0.04
-};
 
 const SKIN_SMOOTH_NATURAL_MAX = 0.45;
 

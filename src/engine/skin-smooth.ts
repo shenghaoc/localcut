@@ -5,6 +5,10 @@
  *  imported by gpu.ts and the worker at runtime.
  */
 
+import { DEFAULT_SKIN_MASK } from '../protocol';
+
+export { DEFAULT_SKIN_MASK } from '../protocol';
+
 // ─── Constants (mirrored literally in WGSL) ─────────────────────────────
 
 export const SKIN_SMOOTH_EPSILON = 0.01;
@@ -22,14 +26,6 @@ export interface SkinMaskParams {
 	crMax: number;
 	softness: number;
 }
-
-export const DEFAULT_SKIN_MASK: SkinMaskParams = {
-	cbMin: -0.2,
-	cbMax: 0.0,
-	crMin: 0.05,
-	crMax: 0.2,
-	softness: 0.04
-};
 
 // ─── Helpers ────────────────────────────────────────────────────────────
 

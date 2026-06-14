@@ -206,6 +206,7 @@ export class PreviewRenderer {
 	private skinScratch1View: GPUTextureView | null = null;
 	private skinBoxUniformH: GPUBuffer | null = null;
 	private skinBoxUniformV: GPUBuffer | null = null;
+	private skinBoxUniformHeight: number | null = null;
 	private readonly skinApplyUniforms: GPUBuffer[] = [];
 
 	// Phase 21: scopes SAB reference (set by worker for scope output).
@@ -821,6 +822,25 @@ export class PreviewRenderer {
 		return dstView;
 	}
 
+	private ensureSkinBoxUniforms(): void {
+		if (!this.skinBoxUniformH) {
+			this.skinBoxUniformH = this.device.createBuffer({
+				size: 16,
+				usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+			});
+			this.skinBoxUniformV = this.device.createBuffer({
+				size: 16,
+				usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+			});
+			this.skinBoxUniformHeight = null;
+		}
+		if (this.skinBoxUniformHeight === this.height) return;
+		const radius = radiusForHeight(this.height);
+		this.device.queue.writeBuffer(this.skinBoxUniformH, 0, packSkinBoxUniform(radius, true));
+		this.device.queue.writeBuffer(this.skinBoxUniformV!, 0, packSkinBoxUniform(radius, false));
+		this.skinBoxUniformHeight = this.height;
+	}
+
 	/** Phase 32a: skin-smoothing — 7-pass guided filter on luma, gated by chroma mask. */
 	private encodeSkinSmooth(
 		encoder: GPUCommandEncoder,
@@ -844,6 +864,7 @@ export class PreviewRenderer {
 
 		const s0 = this.skinScratch0View!;
 		const s1 = this.skinScratch1View!;
+		this.ensureSkinBoxUniforms();
 
 		// Pass 1: prepare — compute (Y, Y²) from source
 		{
@@ -860,21 +881,6 @@ export class PreviewRenderer {
 			pass.dispatchWorkgroups(wgX, wgY);
 			pass.end();
 		}
-
-		// Box uniform buffers (frame-global, written once per frame before first smoothed layer)
-		if (!this.skinBoxUniformH) {
-			this.skinBoxUniformH = this.device.createBuffer({
-				size: 16,
-				usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
-			});
-			this.skinBoxUniformV = this.device.createBuffer({
-				size: 16,
-				usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
-			});
-		}
-		const radius = radiusForHeight(this.height);
-		this.device.queue.writeBuffer(this.skinBoxUniformH, 0, packSkinBoxUniform(radius, true));
-		this.device.queue.writeBuffer(this.skinBoxUniformV!, 0, packSkinBoxUniform(radius, false));
 
 		// Pass 2: box-H on (Y, Y²)
 		{
@@ -973,6 +979,7 @@ export class PreviewRenderer {
 
 		// Pass 7: apply — compose with mask and strength
 		{
+			// Destination is one of the chain's rgba8unorm ping-pong storage textures.
 			const bg = this.device.createBindGroup({
 				layout: this.skinSmoothApplyGroupLayout,
 				entries: [
@@ -1164,6 +1171,7 @@ export class PreviewRenderer {
 		this.skinBoxUniformH = null;
 		this.skinBoxUniformV?.destroy();
 		this.skinBoxUniformV = null;
+		this.skinBoxUniformHeight = null;
 		for (const buffer of this.skinApplyUniforms) buffer.destroy();
 		this.skinApplyUniforms.length = 0;
 		this.presentBindGroup = null;

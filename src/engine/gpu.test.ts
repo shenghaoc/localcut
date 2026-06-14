@@ -18,6 +18,7 @@ beforeAll(() => {
  */
 function fakeDevice() {
 	const submit = vi.fn();
+	const writeBuffer = vi.fn();
 	const pass = {
 		setPipeline: vi.fn(),
 		setBindGroup: vi.fn(),
@@ -38,17 +39,20 @@ function fakeDevice() {
 		createSampler: () => ({}),
 		createBindGroup: () => ({}),
 		createTexture: () => ({ createView: () => ({}), destroy: vi.fn() }),
-		createBuffer: () => ({ destroy: vi.fn() }),
+		createBuffer: (descriptor: { size?: number } = {}) => ({
+			size: descriptor.size,
+			destroy: vi.fn()
+		}),
 		createCommandEncoder: () => encoder,
 		importExternalTexture: () => ({}),
 		queue: {
 			submit,
-			writeBuffer: vi.fn(),
+			writeBuffer,
 			onSubmittedWorkDone: () => Promise.resolve()
 		},
 		destroy: vi.fn()
 	} as unknown as GPUDevice;
-	return { device, submit };
+	return { device, submit, writeBuffer };
 }
 
 function fakeContext(): GPUCanvasContext {
@@ -273,5 +277,23 @@ describe('Phase 32a: skin-smooth pass count', () => {
 		]);
 		expect(submit).toHaveBeenCalledTimes(2);
 		expect(dispatch.mock.calls.length - baselineDispatches).toBe(14);
+	});
+
+	it('writes frame-global skin box uniforms once for multiple smoothed layers', () => {
+		const { device, writeBuffer } = fakeDevice();
+		const renderer = new PreviewRenderer(device, fakeContext(), 'rgba8unorm', fakeCanvas(), false);
+		renderer.setPreviewSize(64, 64);
+
+		const smoothedEffects = { ...DEFAULT_CLIP_EFFECTS, skinSmoothStrength: 0.5 };
+		writeBuffer.mockClear();
+		renderer.present([
+			layer(1920, 1080, undefined, { effects: smoothedEffects }),
+			layer(1920, 1080, undefined, { effects: smoothedEffects })
+		]);
+
+		const boxUniformWrites = writeBuffer.mock.calls.filter(
+			([buffer]) => (buffer as { size?: number }).size === 16
+		);
+		expect(boxUniformWrites).toHaveLength(2);
 	});
 });

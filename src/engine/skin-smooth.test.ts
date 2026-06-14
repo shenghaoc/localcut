@@ -358,6 +358,13 @@ describe('WGSL/TS constant sync', () => {
 		expect(source).toContain('0.564');
 		expect(source).toContain('0.713');
 	});
+
+	it('apply shader guards degenerate smoothstep ranges', async () => {
+		const source = await import('./shaders/skin-smooth-apply.wgsl?raw').then((m) => m.default);
+		expect(source).toContain('let d = edge1 - edge0;');
+		expect(source).toContain('if (d == 0.0)');
+		expect(source).toContain('x >= edge1');
+	});
 });
 
 // Helper: compute variance of a Float32Array

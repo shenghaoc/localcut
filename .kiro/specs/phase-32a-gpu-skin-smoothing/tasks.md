@@ -101,9 +101,9 @@
   Embed literal `0.01` for epsilon. No f16 variant.
 - [ ] **T5.4** Create `src/engine/shaders/skin-smooth-apply.wgsl`: pass 7.
   Bindings: `@group(0) @binding(0) var<uniform> u: SkinApplyUniform` (32 bytes),
-  `@group(0) @binding(1) var src: texture_storage_2d<rgba32float, read>`,
-  `@group(0) @binding(2) var meanCoeffs: texture_storage_2d<rg32float, read>`,
-  `@group(0) @binding(3) var dst: texture_storage_2d<rgba32float, write>`.
+  `@group(0) @binding(1) var src: texture_2d<f32>`,
+  `@group(0) @binding(2) var meanCoeffs: texture_2d<f32>`,
+  `@group(0) @binding(3) var dst: texture_storage_2d<rgba8unorm, write>`.
   Per pixel: compute `Y = dot(rgb, LUMA_BT709)`, `Yprime = meanCoeffs.r*Y + meanCoeffs.g`,
   gamma-encode `rgb` with sRGB OETF to get `rgbG`, compute `Y601 = dot(rgbG, LUMA_BT601)`,
   `Cb = (rgbG.b − Y601) * CB_SCALE`, `Cr = (rgbG.r − Y601) * CR_SCALE`, `m = band(...)*band(...)`,

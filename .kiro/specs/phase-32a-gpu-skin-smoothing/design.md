@@ -111,7 +111,7 @@ main thread
 | 4 — coefficients | `skinScratch0` + `src` | `skinScratch1` rg32float (`a`, `b`) | `skin-smooth-coeffs.wgsl` | none |
 | 5 — box-H | `skinScratch1` | `skinScratch0` rg32float | `skin-smooth-box.wgsl` | `SkinBoxUniform` (`radius`, `dirX=1`, `dirY=0`) |
 | 6 — box-V | `skinScratch0` | `skinScratch1` rg32float → (`meanA`, `meanB`) | `skin-smooth-box.wgsl` | `SkinBoxUniform` (`radius`, `dirX=0`, `dirY=1`) |
-| 7 — apply | `skinScratch1` + `src` | next ping-pong storage slot (rgba32float/16) | `skin-smooth-apply.wgsl` | `SkinApplyUniform` (per layer) |
+| 7 — apply | `skinScratch1` + `src` | next ping-pong chain storage slot (`rgba8unorm`) | `skin-smooth-apply.wgsl` | `SkinApplyUniform` (per layer) |
 
 All passes use `@workgroup_size(8, 8, 1)`, dispatch `ceil(width/8) × ceil(height/8)`,
 and bounds-check every texel access using the same pattern as `saturation.wgsl`.
@@ -141,10 +141,10 @@ struct SkinApplyUniform {
 };
 ```
 
-The box-uniform values are frame-global (radius depends only on frame height;
-direction is fixed per pass). Two `SkinBoxUniform` GPU buffers are allocated
-once (H-pass and V-pass), updated with `queue.writeBuffer` before the first
-skin-smooth layer in a frame, and reused for every subsequent smoothed layer.
+The box-uniform values are preview-size-global (radius depends only on frame
+height; direction is fixed per pass). Two `SkinBoxUniform` GPU buffers are
+allocated once (H-pass and V-pass), updated with `queue.writeBuffer` when the
+preview height changes, and reused for every subsequent smoothed layer.
 
 The `SkinApplyUniform` is written once **per layer slot** (like `EffectChain`'s
 existing per-slot buffers) because `queue.writeBuffer` is queue-ordered: a
@@ -293,9 +293,9 @@ Computes `let m = textureLoad(moments, coord); let variance = max(0.0, m.g - m.r
 
 Pass 7. Bindings:
 `@group(0) @binding(0) var<uniform> u: SkinApplyUniform`,
-`@group(0) @binding(1) var src: texture_storage_2d<rgba32float, read>` — working-linear pixels,
-`@group(0) @binding(2) var meanCoeffs: texture_storage_2d<rg32float, read>` — `(meanA, meanB)`,
-`@group(0) @binding(3) var dst: texture_storage_2d<rgba32float, write>` — next ping-pong slot.
+`@group(0) @binding(1) var src: texture_2d<f32>` — working-linear pixels,
+`@group(0) @binding(2) var meanCoeffs: texture_2d<f32>` — `(meanA, meanB)`,
+`@group(0) @binding(3) var dst: texture_storage_2d<rgba8unorm, write>` — next chain ping-pong slot.
 
 Algorithm per pixel:
 

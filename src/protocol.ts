@@ -791,6 +791,14 @@ export interface SkinMaskSnapshot {
 	softness: number;
 }
 
+export const DEFAULT_SKIN_MASK: SkinMaskSnapshot = {
+	cbMin: -0.2,
+	cbMax: 0.0,
+	crMin: 0.05,
+	crMax: 0.2,
+	softness: 0.04
+};
+
 export interface TimelineClipSnapshot {
 	id: string;
 	/** Absent/`'video'` for source clips; `'title'` for source-less titles (Phase 14). */
