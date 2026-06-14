@@ -112,6 +112,9 @@ export interface CapabilityProbeResult {
 	/** Phase 37 (frame interpolation): display/feature-gate only — never
 	 *  consulted by tier derivation or any pipeline code path. */
 	interpolation?: InterpolationProbeResult;
+	/** Phase 40 (On-Device Language Tools): display/feature-gate only — never
+	 *  consulted by tier derivation or any pipeline code path. */
+	languageTools?: LanguageToolsProbeResult;
 }
 
 // ── Phase 28: Local Audio Cleanup (LiteRT DTLN) ──
@@ -561,6 +564,53 @@ export interface MatteEngineStatusSnapshot {
 	modelStatus: MatteModelStatus;
 	backend: MatteBackend | null;
 	error?: string;
+}
+
+// ── Phase 40: On-Device Language Tools ──
+
+/** Lifecycle state of a Chrome built-in AI API, mapped from the raw API
+ *  capability/availability return values to a normalized set. */
+export type AiAvailability =
+	| 'available' // ready now; works offline
+	| 'downloadable' // supported, model not yet fetched (needs user gesture)
+	| 'downloading' // fetch in progress
+	| 'unavailable' // not supported on this browser/hardware, or blocked
+	| 'unknown'; // not feature-detected (SSR / Node test env)
+
+/** Per zh↔en pair, keyed 'en->zh' | 'zh->en'. */
+export type TranslatorAvailabilityMap = Record<string, AiAvailability>;
+
+export interface LanguageToolsProbeResult {
+	translator: TranslatorAvailabilityMap;
+	languageDetector: AiAvailability;
+	summarizer: AiAvailability;
+	/** Prompt API; often 'unavailable' on the public web without an OT token. */
+	languageModel: AiAvailability;
+}
+
+/** True when any sub-tool is at least downloadable — the only thing the UI
+ *  gates the surface on. */
+export function languageToolsSurfaceVisible(p: LanguageToolsProbeResult): boolean {
+	const anyTranslator = Object.values(p.translator).some(
+		a => a !== 'unavailable' && a !== 'unknown'
+	);
+	return (
+		anyTranslator ||
+		(p.languageDetector !== 'unavailable' && p.languageDetector !== 'unknown') ||
+		(p.summarizer !== 'unavailable' && p.summarizer !== 'unknown') ||
+		(p.languageModel !== 'unavailable' && p.languageModel !== 'unknown')
+	);
+}
+
+/** Timeline command: create a translated caption track from Language Tools. */
+export interface AddTranslatedCaptionTrackCommand {
+	type: 'add-translated-caption-track';
+	sourceTrackId: string;
+	name: string;
+	/** Target IETF language tag. */
+	language: string;
+	segments: CaptionSegmentSnapshot[];
+	generatedBy: 'language-tools-phase-40';
 }
 
 export interface WorkerInit {
@@ -2072,6 +2122,7 @@ export type WorkerCommand =
 	| ApplyAudioCleanupCommand
 	| RemoveAudioCleanupCommand
 	| AsrCreateCaptionTrackCommand
+	| AddTranslatedCaptionTrackCommand
 	| { type: 'toggle-scopes'; enabled: boolean }
 	| { type: 'toggle-zebra'; enabled: boolean }
 	| { type: 'preset-save'; preset: ExportPresetDoc }
@@ -2357,6 +2408,11 @@ export type WorkerStateMessage =
 			type: 'asr-caption-track-created';
 			trackId: string;
 			track: CaptionTrackSnapshot;
+	  }
+	// Phase 40: translated caption track created by Language Tools.
+	| {
+			type: 'translated-caption-track-created';
+			trackId: string;
 	  }
 	| { type: 'diagnostic-snapshot'; requestId?: string; snapshot: DiagnosticSnapshot }
 	| { type: 'recent-error'; error: RecentError }

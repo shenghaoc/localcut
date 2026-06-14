@@ -10,6 +10,7 @@ import type {
 } from '../protocol';
 import type { CleanupProbeResult } from '../protocol';
 import { probeAsr } from './asr/asr-probe';
+import { probeLanguageTools } from './language-tools/probe';
 
 type VideoCodecProbeName = 'h264' | 'vp9' | 'av1';
 type AudioCodecProbeName = 'aac' | 'opus';
@@ -550,6 +551,9 @@ export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 		tier: deriveCapabilityTierV2(probeWithoutTier),
 		cleanup,
 		asr: probeAsr(),
-		smartReframe: probeSmartReframe()
+		smartReframe: probeSmartReframe(),
+		languageTools: await probeLanguageTools().catch(
+			(): undefined => undefined
+		)
 	};
 }

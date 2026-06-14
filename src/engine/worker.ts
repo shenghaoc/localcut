@@ -100,6 +100,7 @@ import {
 	type CaptionTrack
 } from './captions/types';
 import { createAsrCaptionTrack } from './asr/caption-track';
+import { createTranslatedCaptionTrack } from './language-tools/caption-track';
 import {
 	addMarker,
 	addTrack,
@@ -3816,6 +3817,42 @@ function handleAsrCreateCaptionTrack(
 	});
 }
 
+function handleAddTranslatedCaptionTrack(
+	cmd: Extract<WorkerCommand, { type: 'add-translated-caption-track' }>
+): void {
+	// Defence-in-depth: assert segment count and per-segment timing were not
+	// altered in transit. The UI copies start/duration verbatim from the source.
+	for (const seg of cmd.segments) {
+		if (typeof seg.start !== 'number' || typeof seg.duration !== 'number') {
+			post({
+				type: 'translated-caption-track-created',
+				trackId: ''
+			});
+			return;
+		}
+	}
+	if (cmd.segments.length === 0) {
+		post({
+			type: 'translated-caption-track-created',
+			trackId: ''
+		});
+		return;
+	}
+	const track = createTranslatedCaptionTrack({
+		segments: cmd.segments,
+		trackName: cmd.name,
+		language: cmd.language,
+		sourceTrackId: cmd.sourceTrackId
+	});
+	commitCaptionMutation(() => [...captionTracks, track], {
+		refreshPlayback: 'refresh'
+	});
+	post({
+		type: 'translated-caption-track-created',
+		trackId: track.id
+	});
+}
+
 function handleAddTransition(cmd: Extract<WorkerCommand, { type: 'add-transition' }>) {
 	commitTransitionMutation(() =>
 		addTransition(timeline, transitions, transitionSourceDurations(), {
@@ -7414,6 +7451,9 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			break;
 		case 'asr-create-caption-track':
 			handleAsrCreateCaptionTrack(cmd);
+			break;
+		case 'add-translated-caption-track':
+			handleAddTranslatedCaptionTrack(cmd);
 			break;
 		case 'add-transition':
 			handleAddTransition(cmd);

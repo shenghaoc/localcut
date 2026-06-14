@@ -144,6 +144,11 @@ import { ReframeController, type ReframeControllerState } from './reframe-contro
 import { spawnSmartReframeWorker } from './reframe-bridge';
 import { BLAZEFACE_SHORT_RANGE_URL, MEDIAPIPE_WASM_PATH } from '../engine/reframe/face-models';
 import { REFRAME_ASPECT_VALUES } from '../protocol';
+// Phase 40: On-Device Language Tools
+import { LanguageToolsPanel } from './LanguageToolsPanel';
+import { TranslationController, type TranslationControllerState } from './language-tools/translation-controller';
+import { DraftController, type DraftControllerState } from './language-tools/draft-controller';
+import { languageToolsSurfaceVisible } from '../protocol';
 import PipelineWorker from '../engine/worker.ts?worker';
 
 const VIDEO_ACCEPT =
@@ -796,6 +801,49 @@ export function App() {
 	const [asrState, setAsrState] = createSignal<AsrControllerState>(asrController.getState());
 	asrController.subscribe(setAsrState);
 
+	// ── Phase 40: On-Device Language Tools ──
+	const translationController = new TranslationController({
+		createTranslatedTrack: (request) => {
+			if (!bridge) throw new Error('Media pipeline is not ready.');
+			bridge.send({
+				type: 'add-translated-caption-track',
+				sourceTrackId: request.sourceTrackId,
+				name: request.name,
+				language: request.language,
+				segments: request.segments,
+				generatedBy: 'language-tools-phase-40'
+			});
+		},
+		onTranslatedTrackCreated: (_trackId) => {
+			setStatusLine(`Translated caption track created`);
+		},
+		onError: (message) => {
+			setRecentErrorLog((prev) =>
+				addRecentError(
+					prev,
+					createRecentError({
+						code: 'language-tools.translate_error',
+						subsystem: 'language-tools',
+						severity: 'error',
+						message
+					})
+				)
+			);
+		}
+	});
+	const [translationState, setTranslationState] = createSignal<TranslationControllerState>(
+		translationController.getState()
+	);
+	translationController.subscribe(setTranslationState);
+
+	const draftController = new DraftController();
+	const [draftState, setDraftState] = createSignal<DraftControllerState>(
+		draftController.getState()
+	);
+	draftController.subscribe(setDraftState);
+
+	const [languageToolsPanelOpen, setLanguageToolsPanelOpen] = createSignal(false);
+
 	const selectedAsrClip = createMemo<AsrClipTarget | null>(() => {
 		for (const ref of selectedClipRefs()) {
 			const track = timeline().find((item) => item.id === ref.trackId);
@@ -1367,6 +1415,10 @@ export function App() {
 				setExportCodecs([...exportConstraintsForProbe(msg.result)]);
 				cleanupController.setCleanupProbe(msg.result.cleanup ?? null);
 				asrController.setProbe();
+				if (msg.result.languageTools) {
+					translationController.setProbe(msg.result.languageTools);
+					draftController.setProbe(msg.result.languageTools);
+				}
 				break;
 			case 'clip-audio':
 			case 'clip-audio-error':
@@ -1435,6 +1487,9 @@ export function App() {
 			case 'time-remap-updated':
 				setStatusLine(`Speed ramp applied (new duration: ${msg.outputDurationS.toFixed(2)}s)`);
 				setRuntimeIssue(null);
+				break;
+			case 'translated-caption-track-created':
+				translationController.onTranslatedTrackCreated(msg.trackId);
 				break;
 			case 'clock-update':
 				// Reduced tiers without SAB: the worker drives the clock over postMessage.
@@ -2845,6 +2900,8 @@ export function App() {
 			asrController.dispose();
 			reframeController.dispose();
 			drainPendingSourceFileRequests('Smart Reframe was torn down.');
+			translationController.dispose();
+			draftController.dispose();
 			if (worker && bridge) {
 				const workerToDispose = worker;
 				workerToDispose.removeEventListener('error', handleWorkerCrash);
@@ -2917,6 +2974,12 @@ export function App() {
 					onOpenSilenceReview={() => setSilenceReviewOpen(true)}
 					onImportKeystrokeOverlay={() => setKeystrokeOverlayOpen(true)}
 					keystrokeOverlayAvailable={true}
+					onOpenLanguageTools={
+						capabilityProbeV2()?.languageTools &&
+						languageToolsSurfaceVisible(capabilityProbeV2()!.languageTools!)
+							? () => setLanguageToolsPanelOpen(true)
+							: undefined
+					}
 					onOpenPublish={() => setPublishPanelOpen(true)}
 					publishLive={publishBusy()}
 					masterGain={masterGain()}
@@ -3992,6 +4055,39 @@ export function App() {
 							onClose={() => setKeystrokeOverlayOpen(false)}
 						/>
 					</Show>
+					<LanguageToolsPanel
+						open={languageToolsPanelOpen()}
+						translationState={translationState()}
+						draftState={draftState()}
+						captionTracks={captionTracks()}
+						onTranslate={(trackId, targetLang) => {
+							const track = captionTracks().find(t => t.id === trackId);
+							if (!track) return;
+							pauseFromKeyboard();
+							void translationController.translateTrack(
+								{
+									id: track.id,
+									name: track.name,
+									language: track.language ?? undefined,
+									segments: track.segments
+								},
+								targetLang
+							);
+						}}
+						onCancelTranslate={() => translationController.cancel()}
+						onGenerateDraft={(trackId) => {
+							const track = captionTracks().find(t => t.id === trackId);
+							if (!track) return;
+							pauseFromKeyboard();
+							void draftController.generateDraft(track.segments);
+						}}
+						onCancelDraft={() => draftController.cancel()}
+						onExportBilingual={(_sourceTrackId, _translatedTrackId) => {
+							// TODO T5: Wire bilingual export through the existing caption export path
+							setStatusLine('Bilingual export — coming soon');
+						}}
+						onClose={() => setLanguageToolsPanelOpen(false)}
+					/>
 					<PublishPanel
 						open={publishPanelOpen()}
 						probe={capabilityProbeV2()}
