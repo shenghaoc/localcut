@@ -1,21 +1,11 @@
-/**
- * DTLN DSP: radix-2 FFT/iFFT and overlap-add framing for the DTLN two-model
- * noise suppression pipeline. Stateful per-job instance.
- *
- * Per 128-sample step (8 ms @ 16 kHz):
- *   1. Shift input buffer, append 128 new samples
- *   2. 512-point real FFT → 257 magnitude + phase
- *   3. Model 1(magnitude, state₁) → mask
- *   4. Apply mask × magnitude × exp(j·phase), iFFT → 512 estimated
- *   5. Model 2(estimated, state₂) → 512 enhanced
- *   6. Overlap-add enhanced into output buffer
- *   7. Extract first 128 samples as output
- */
-
-export const DTLN_BLOCK_LEN = 512;
-export const DTLN_BLOCK_SHIFT = 128;
-export const DTLN_FREQ_BINS = 257;
-export const DTLN_SAMPLE_RATE = 16_000;
+import { describe, expect, it } from 'vite-plus/test';
+import {
+	DTLN_BLOCK_LEN,
+	DTLN_BLOCK_SHIFT,
+	DTLN_FREQ_BINS,
+	DtlnDsp,
+	type DtlnFrameData
+} from './dtln-dsp';
 
 function fft(re: Float32Array, im: Float32Array, n: number, inverse: boolean): void {
 	let j = 0;
@@ -73,20 +63,12 @@ function fft(re: Float32Array, im: Float32Array, n: number, inverse: boolean): v
 	}
 }
 
-export interface DtlnFrameData {
-	magnitude: Float32Array;
-	phase: Float32Array;
-}
-
-export class DtlnDsp {
+class ReferenceDtlnDsp {
 	private readonly inBuffer = new Float32Array(DTLN_BLOCK_LEN);
 	private readonly outBuffer = new Float32Array(DTLN_BLOCK_LEN);
 	private readonly fftRe = new Float32Array(DTLN_BLOCK_LEN);
 	private readonly fftIm = new Float32Array(DTLN_BLOCK_LEN);
-	private readonly magnitude = new Float32Array(DTLN_FREQ_BINS);
-	private readonly phase = new Float32Array(DTLN_FREQ_BINS);
 
-	/** Returned buffers are scratch views reused on the next forwardStep call. */
 	forwardStep(newSamples: Float32Array): DtlnFrameData {
 		this.inBuffer.copyWithin(0, DTLN_BLOCK_SHIFT);
 		this.inBuffer.set(newSamples, DTLN_BLOCK_LEN - DTLN_BLOCK_SHIFT);
@@ -95,13 +77,15 @@ export class DtlnDsp {
 		this.fftIm.fill(0);
 		fft(this.fftRe, this.fftIm, DTLN_BLOCK_LEN, false);
 
+		const magnitude = new Float32Array(DTLN_FREQ_BINS);
+		const phase = new Float32Array(DTLN_FREQ_BINS);
 		for (let i = 0; i < DTLN_FREQ_BINS; i++) {
 			const re = this.fftRe[i]!;
 			const im = this.fftIm[i]!;
-			this.magnitude[i] = Math.sqrt(re * re + im * im);
-			this.phase[i] = Math.atan2(im, re);
+			magnitude[i] = Math.sqrt(re * re + im * im);
+			phase[i] = Math.atan2(im, re);
 		}
-		return { magnitude: this.magnitude, phase: this.phase };
+		return { magnitude, phase };
 	}
 
 	applyMaskAndIfft(mask: Float32Array, frame: DtlnFrameData): Float32Array {
@@ -139,3 +123,47 @@ export class DtlnDsp {
 		return out;
 	}
 }
+
+function makeFrame(seed: number): Float32Array {
+	const frame = new Float32Array(DTLN_BLOCK_SHIFT);
+	for (let i = 0; i < frame.length; i++) {
+		frame[i] =
+			Math.sin((2 * Math.PI * (seed + 3) * i) / frame.length) +
+			0.25 * Math.cos((2 * Math.PI * (seed + 7) * i) / frame.length);
+	}
+	return frame;
+}
+
+function makeMask(seed: number): Float32Array {
+	const mask = new Float32Array(DTLN_FREQ_BINS);
+	for (let i = 0; i < mask.length; i++) {
+		mask[i] = 0.3 + ((i + seed) % 17) / 20;
+	}
+	return mask;
+}
+
+describe('DtlnDsp', () => {
+	it('matches the pre-reuse reference output bit-for-bit across multiple frames', () => {
+		const actual = new DtlnDsp();
+		const reference = new ReferenceDtlnDsp();
+
+		for (let seed = 0; seed < 4; seed++) {
+			const samples = makeFrame(seed);
+			const actualFrame = actual.forwardStep(samples);
+			const referenceFrame = reference.forwardStep(samples);
+			expect(actualFrame.magnitude).toEqual(referenceFrame.magnitude);
+			expect(actualFrame.phase).toEqual(referenceFrame.phase);
+
+			const mask = makeMask(seed);
+			const actualEstimated = actual.applyMaskAndIfft(mask, actualFrame);
+			const referenceEstimated = reference.applyMaskAndIfft(mask, referenceFrame);
+			expect(actualEstimated).toEqual(referenceEstimated);
+
+			const actualOverlap = actual.overlapAdd(actualEstimated);
+			const referenceOverlap = reference.overlapAdd(referenceEstimated);
+			expect(actualOverlap).toEqual(referenceOverlap);
+		}
+
+		expect(actual.flushOverlapAdd()).toEqual(reference.flushOverlapAdd());
+	});
+});

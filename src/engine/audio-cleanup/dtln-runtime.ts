@@ -38,7 +38,7 @@ interface LiteRtApi {
 }
 
 const SIGNATURE = 'serving_default';
-let liteRtLoaded = false;
+let loadedRuntimeConfig: { wasmPath: string; options: LiteRtLoadOptions } | null = null;
 
 export interface DtlnRuntimeOptions {
 	wasmPath: string;
@@ -52,12 +52,41 @@ function loadOptions(acc: CleanupAccelerator): LiteRtLoadOptions {
 	return acc === 'webnn' ? { threads: false, jspi: true } : { threads: false };
 }
 
+function sameLoadOptions(a: LiteRtLoadOptions, b: LiteRtLoadOptions): boolean {
+	return a.threads === b.threads && a.jspi === b.jspi;
+}
+
 function compileOptionCandidates(acc: CleanupAccelerator): LiteRtCompileOptions[] {
 	if (acc !== 'webnn') return [{ accelerator: acc }];
 	return (['npu', 'gpu', 'cpu'] as const).map((devicePreference) => ({
 		accelerator: acc,
 		webNNOptions: { devicePreference }
 	}));
+}
+
+async function ensureLiteRtLoaded(
+	api: LiteRtApi,
+	wasmPath: string,
+	accelerator: CleanupAccelerator
+): Promise<CleanupAccelerator> {
+	const requestedOptions = loadOptions(accelerator);
+	const needsReload =
+		loadedRuntimeConfig === null ||
+		loadedRuntimeConfig.wasmPath !== wasmPath ||
+		!sameLoadOptions(loadedRuntimeConfig.options, requestedOptions);
+	if (!needsReload) return accelerator;
+
+	try {
+		await api.loadLiteRt(wasmPath, requestedOptions);
+		loadedRuntimeConfig = { wasmPath, options: requestedOptions };
+		return accelerator;
+	} catch (error) {
+		if (accelerator === 'wasm') throw error;
+		const fallbackOptions = loadOptions('wasm');
+		await api.loadLiteRt(wasmPath, fallbackOptions);
+		loadedRuntimeConfig = { wasmPath, options: fallbackOptions };
+		return 'wasm';
+	}
 }
 
 export class DtlnRuntime {
@@ -81,18 +110,9 @@ export class DtlnRuntime {
 		};
 
 		let accelerator = options.accelerator;
-		if (!liteRtLoaded) {
-			try {
-				await api.loadLiteRt(options.wasmPath, loadOptions(accelerator));
-				liteRtLoaded = true;
-			} catch {
-				if (accelerator !== 'wasm') {
-					await api.loadLiteRt(options.wasmPath, loadOptions('wasm'));
-					accelerator = 'wasm';
-					liteRtLoaded = true;
-				}
-			}
-		}
+		// LiteRT's runtime is process-global, but the JSPI/non-JSPI load harness is
+		// part of the requested accelerator contract. Reload when those options differ.
+		accelerator = await ensureLiteRtLoaded(api, options.wasmPath, accelerator);
 
 		let compiled1: LiteRtCompiledModel | null = null;
 		let compiled2: LiteRtCompiledModel | null = null;
@@ -111,6 +131,7 @@ export class DtlnRuntime {
 		if (!compiled1 || !compiled2) {
 			if (accelerator === 'wasm') throw lastError;
 			try {
+				accelerator = await ensureLiteRtLoaded(api, options.wasmPath, 'wasm');
 				compiled1 = await api.loadAndCompile(options.model1Bytes, { accelerator: 'wasm' });
 				compiled2 = await api.loadAndCompile(options.model2Bytes, { accelerator: 'wasm' });
 			} catch (error) {
@@ -118,7 +139,6 @@ export class DtlnRuntime {
 				compiled2?.delete();
 				throw error;
 			}
-			accelerator = 'wasm';
 		}
 
 		const stateSize = options.stateShape.reduce((a, b) => a * b, 1);

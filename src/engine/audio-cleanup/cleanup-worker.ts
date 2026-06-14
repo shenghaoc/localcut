@@ -215,6 +215,7 @@ async function handleEnd(
 	cmd: Extract<CleanupWorkerCommand, { type: 'cleanup-end' }>
 ): Promise<void> {
 	if (!job || job.jobId !== cmd.jobId) return;
+	const generation = loadGeneration;
 	const active = job;
 	const startedAt = performance.now();
 	try {
@@ -222,10 +223,18 @@ async function handleEnd(
 			const tail = active.resampler.flush();
 			if (tail.length > 0) {
 				const out = await active.processor.push(tail);
+				if (generation !== loadGeneration) {
+					dropJob();
+					return;
+				}
 				if (out.length > 0) active.outputs.push(out);
 			}
 		}
 		const finalOut = await active.processor.finalize();
+		if (generation !== loadGeneration) {
+			dropJob();
+			return;
+		}
 		if (finalOut.length > 0) active.outputs.push(finalOut);
 		const rawPcm = concatPcm(active.outputs);
 		const pcm = trimDtlnOutputToInput(rawPcm, active.processor.inputSampleCount);

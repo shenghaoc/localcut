@@ -32,6 +32,7 @@ import {
 	transcribeWindow
 } from './whisper-decode';
 import { createLiteRtWhisperRuntime, type LiteRtWhisperRuntime } from './litert-runtime';
+import { appendSerialTask } from './serial-task-queue';
 
 interface LoadedModel {
 	runtime: LiteRtWhisperRuntime;
@@ -67,10 +68,13 @@ function errorText(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
-function enqueue(task: () => Promise<void>): void {
-	chain = chain.then(task).catch((error) => {
+function enqueue(
+	task: () => Promise<void>,
+	onError: (error: unknown) => void = (error) => {
 		post({ type: 'asr-error', message: errorText(error) });
-	});
+	}
+): void {
+	chain = appendSerialTask(chain, task, onError);
 }
 
 async function handleLoad(
@@ -315,7 +319,12 @@ self.onmessage = (event: MessageEvent<AsrWorkerCommand>) => {
 			enqueue(() => handleLoad(cmd));
 			break;
 		case 'asr-transcribe':
-			enqueue(() => handleTranscribe(cmd));
+			enqueue(
+				() => handleTranscribe(cmd),
+				(error) => {
+					post({ type: 'asr-error', jobId: cmd.jobId, message: errorText(error) });
+				}
+			);
 			break;
 		case 'asr-cancel':
 			handleCancel(cmd);

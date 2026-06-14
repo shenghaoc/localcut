@@ -182,8 +182,9 @@ function dft(real: Float32Array, imag: Float32Array, n: number): void {
 }
 
 /** Reflect-pad a signal by `pad` samples each side (numpy 'reflect' / torch center). */
-function reflectPad(pcm: Float32Array, pad: number): Float32Array {
+export function reflectPad(pcm: Float32Array, pad: number): Float32Array {
 	const n = pcm.length;
+	if (n === 0) return new Float32Array(2 * pad);
 	const out = new Float32Array(n + 2 * pad);
 	out.set(pcm, pad);
 	for (let i = 0; i < pad; i++) {

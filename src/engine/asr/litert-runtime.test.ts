@@ -160,6 +160,32 @@ describe('LiteRT accelerator options', () => {
 		expect(api.loadAndCompile).toHaveBeenCalledWith(bytes, { accelerator: 'wasm' });
 	});
 
+	it('reloads the non-JSPI WASM runtime when WebNN JSPI loads but all WebNN compiles fail', async () => {
+		const { api } = fakeApi();
+		const bytes = new Uint8Array([7, 7, 7]);
+		const wasmModel = { run: vi.fn(), delete: vi.fn() };
+		api.loadAndCompile
+			.mockRejectedValueOnce(new Error('NPU compile failed'))
+			.mockRejectedValueOnce(new Error('GPU compile failed'))
+			.mockRejectedValueOnce(new Error('CPU compile failed'))
+			.mockResolvedValueOnce(wasmModel);
+
+		const runtime = await createLiteRtWhisperRuntime({
+			wasmPath: '/litert/',
+			accelerator: 'webnn',
+			modelBytes: bytes,
+			manifest: MANIFEST
+		});
+
+		expect(runtime.accelerator).toBe('wasm');
+		expect(api.loadLiteRt).toHaveBeenNthCalledWith(1, '/litert/', {
+			threads: false,
+			jspi: true
+		});
+		expect(api.loadLiteRt).toHaveBeenNthCalledWith(2, '/litert/', { threads: false });
+		expect(api.loadAndCompile).toHaveBeenNthCalledWith(4, bytes, { accelerator: 'wasm' });
+	});
+
 	it('falls back to WASM when an accelerated compile fails', async () => {
 		const { api } = fakeApi();
 		api.loadAndCompile
@@ -177,6 +203,47 @@ describe('LiteRT accelerator options', () => {
 		expect(api.loadAndCompile).toHaveBeenNthCalledWith(2, new Uint8Array([1]), {
 			accelerator: 'wasm'
 		});
+	});
+
+	it('deletes a compiled model when runtime construction throws', async () => {
+		const { api, model } = fakeApi();
+		api.Tensor.fromTypedArray.mockImplementationOnce(() => {
+			throw new Error('mask allocation failed');
+		});
+
+		await expect(
+			createLiteRtWhisperRuntime({
+				wasmPath: '/litert/',
+				accelerator: 'wasm',
+				modelBytes: new Uint8Array([9]),
+				manifest: MANIFEST
+			})
+		).rejects.toThrow('mask allocation failed');
+
+		expect(model.delete).toHaveBeenCalledTimes(1);
+	});
+
+	it('deletes an accelerated compiled model before falling back to wasm construction', async () => {
+		const { api } = fakeApi();
+		const acceleratedModel = { run: vi.fn(), delete: vi.fn() };
+		const wasmModel = { run: vi.fn(), delete: vi.fn() };
+		api.loadAndCompile.mockResolvedValueOnce(acceleratedModel).mockResolvedValueOnce(wasmModel);
+		api.Tensor.fromTypedArray
+			.mockImplementationOnce(() => {
+				throw new Error('accelerated constructor failed');
+			})
+			.mockImplementation(() => tensor());
+
+		const runtime = await createLiteRtWhisperRuntime({
+			wasmPath: '/litert/',
+			accelerator: 'webgpu',
+			modelBytes: new Uint8Array([5]),
+			manifest: MANIFEST
+		});
+
+		expect(runtime.accelerator).toBe('wasm');
+		expect(acceleratedModel.delete).toHaveBeenCalledTimes(1);
+		expect(wasmModel.delete).not.toHaveBeenCalled();
 	});
 
 	it('deletes decode outputs even when reading logits rejects', async () => {

@@ -61,6 +61,22 @@ function supportFromBoolean(value: boolean): FeatureSupport {
 	return value ? 'supported' : 'unsupported';
 }
 
+function preferredCleanupAcceleratorFromPlatform(): CleanupProbeResult['accelerator'] {
+	try {
+		const nav =
+			typeof navigator === 'undefined' ? null : (navigator as Navigator & { ml?: unknown });
+		if (nav?.ml !== undefined) return 'webnn';
+	} catch {
+		// fall through to the next cheaper accelerator check
+	}
+	try {
+		if (typeof navigator !== 'undefined' && 'gpu' in navigator) return 'webgpu';
+	} catch {
+		// fall back to the baseline runtime
+	}
+	return 'wasm';
+}
+
 function hasSharedArrayBuffer(): FeatureSupport {
 	if (typeof SharedArrayBuffer !== 'function') return 'unsupported';
 	try {
@@ -471,7 +487,7 @@ export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 	]);
 	const cleanup: CleanupProbeResult = {
 		wasmAvailable: typeof WebAssembly !== 'undefined',
-		accelerator: 'wasm'
+		accelerator: preferredCleanupAcceleratorFromPlatform()
 	};
 	const codecs = await probeCodecs().catch(() => unknownCodecs);
 	// One transfer attempt feeds both the publish and capture probe groups, so
