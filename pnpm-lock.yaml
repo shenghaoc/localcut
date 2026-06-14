@@ -65,7 +65,7 @@ importers:
         specifier: ^25.9.3
         version: 25.9.3
       '@typescript/native-preview':
-        specifier: beta
+        specifier: 7.0.0-dev.20260421.2
         version: 7.0.0-dev.20260421.2
       '@webgpu/types':
         specifier: ^0.1.70

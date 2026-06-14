@@ -101,12 +101,12 @@ vp run test:browser     # Vitest Browser Mode (real Chromium, component/integrat
 vp run test:e2e         # Playwright E2E (full user-flow tests)
 vp lint .          # Lint
 vp fmt .           # Format
-vp run typecheck   # tsgo --noEmit (preferred TypeScript 7 native-preview check)
+vp run typecheck   # tsgo --noEmit
 ```
 
 ## TypeScript 6/7 transition
 
-- Prefer `vp run typecheck` / `tsgo --noEmit` for day-to-day and CI-like type-checking while TypeScript 7 ships through `@typescript/native-preview`.
+- Prefer `vp run typecheck` / `tsgo --noEmit` for day-to-day type-checking while TypeScript 7 is in preview. Once TypeScript 7 is stable and installed as `typescript`, `tsgo` becomes `tsc` and `@typescript/native-preview` can be dropped.
 - Keep `typescript` at 6.x so peer-dependent tooling continues to import the TypeScript 6 API during the transition.
 
 ## Architectural boundaries (hard gates)
