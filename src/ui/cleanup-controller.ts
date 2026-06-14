@@ -28,6 +28,9 @@ export const CLEANUP_BLOCK_SHIFT = 128;
 /** Mirrors the cleanup worker's per-job bound (12 min @ 16 kHz / 128-sample shift). */
 export const CLEANUP_MAX_JOB_SECONDS = 720;
 
+const CLEANUP_BUILD_SHA = typeof __BUILD_SHA__ === 'string' ? __BUILD_SHA__ : 'dev';
+export const CLEANUP_WASM_PATH = `/litert/${CLEANUP_BUILD_SHA}/`;
+
 export const CLEANUP_UNAVAILABLE_MESSAGE = 'WebAssembly is required for local audio cleanup.';
 
 export interface CleanupClipTarget {

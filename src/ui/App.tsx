@@ -108,6 +108,7 @@ import { AppErrorBoundary } from './ErrorBoundary';
 import { AudioCleanupPanel, type AppliedCleanupInfo } from './AudioCleanupPanel';
 import {
 	CleanupController,
+	CLEANUP_WASM_PATH,
 	type CleanupClipTarget,
 	type CleanupControllerState
 } from './cleanup-controller';
@@ -518,7 +519,7 @@ export function App() {
 			});
 		},
 		manifestUrl: `${import.meta.env.BASE_URL}models/dtln/manifest.json`,
-		wasmPath: `${import.meta.env.BASE_URL}litert/`,
+		wasmPath: CLEANUP_WASM_PATH,
 		onError: (message) => {
 			setRecentErrorLog((prev) =>
 				addRecentError(

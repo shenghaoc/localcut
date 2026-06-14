@@ -226,7 +226,11 @@ async function handleEnd(
 		}
 		const finalOut = await active.processor.finalize();
 		if (finalOut.length > 0) active.outputs.push(finalOut);
-		const pcm = concatPcm(active.outputs);
+		const rawPcm = concatPcm(active.outputs);
+		const pcm =
+			rawPcm.length > active.processor.inputSampleCount
+				? rawPcm.subarray(0, active.processor.inputSampleCount)
+				: rawPcm;
 		job = null;
 		const durationMs = performance.now() - startedAt;
 		if (cmd.output === 'wav') {

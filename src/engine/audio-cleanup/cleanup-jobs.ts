@@ -59,6 +59,7 @@ export class CleanupJobProcessor {
 	private pendingCount = 0;
 	private batchedFrameCount = 0;
 	private processedFrames = 0;
+	private totalInputSamples = 0;
 	private aborted = false;
 	private finalized = false;
 
@@ -96,9 +97,14 @@ export class CleanupJobProcessor {
 		}
 	}
 
+	get inputSampleCount(): number {
+		return this.totalInputSamples;
+	}
+
 	async push(pcm: Float32Array): Promise<Float32Array> {
 		this.throwIfAborted();
 		if (this.finalized) throw new Error('CleanupJobProcessor already finalized');
+		this.totalInputSamples += pcm.length;
 		const outputs: Float32Array[] = [];
 		let cursor = 0;
 
