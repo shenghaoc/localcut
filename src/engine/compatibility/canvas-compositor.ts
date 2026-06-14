@@ -111,7 +111,7 @@ export function drawLayers(
 	try {
 		target.clearRect(0, 0, width, height);
 		for (const layer of layers) {
-			target.globalAlpha = Math.max(0, Math.min(1, layer.opacity));
+			target.globalAlpha = clamp01(layer.opacity);
 			target.drawImage(layer.bitmap, layer.x, layer.y, layer.width, layer.height);
 		}
 	} finally {

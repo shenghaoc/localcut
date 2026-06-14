@@ -1,4 +1,4 @@
-import { isFiniteNumber as finite } from '../lib/math';
+import { clamp, clamp01, isFiniteNumber as finite } from '../lib/math';
 import { KEYFRAME_EPSILON } from '../protocol';
 import type {
 	ClipEffectParamsSnapshot,
@@ -216,7 +216,7 @@ export function moveKeyframe(
 }
 
 function easeAmount(easing: KeyframeEasing, amount: number): number {
-	const t = Math.min(1, Math.max(0, amount));
+	const t = clamp01(amount);
 	if (easing === 'hold') return 0;
 	if (easing === 'ease') return t * t * (3 - 2 * t);
 	return t;
@@ -248,7 +248,7 @@ export function sampleKeyframes(
 
 function clipLocalTime(clip: KeyframedClip, timelineTime: number): number {
 	if (!finite(timelineTime)) return 0;
-	return Math.min(Math.max(0, timelineTime - clip.start), Math.max(0, clip.duration));
+	return clamp(timelineTime - clip.start, 0, Math.max(0, clip.duration));
 }
 
 export function sampleClipParamsAt(clip: KeyframedClip, timelineTime: number): SampledClipParams {
