@@ -786,7 +786,7 @@ describe('Phase 46 config persistence (schema v11)', () => {
 	});
 });
 
-describe('Phase 30 (v12) — customAnimCaptionPresets', () => {
+describe('Phase 30 (v13) — customAnimCaptionPresets', () => {
 	const baseDoc = () => ({
 		schemaVersion: PROJECT_SCHEMA_VERSION,
 		projectId: 'p1',
@@ -796,14 +796,14 @@ describe('Phase 30 (v12) — customAnimCaptionPresets', () => {
 		captionTracks: []
 	});
 
-	it('v12 document without customAnimCaptionPresets deserializes with undefined field', () => {
+	it('v13 document without customAnimCaptionPresets deserializes with undefined field', () => {
 		const result = deserializeProject(baseDoc());
 		expect(result.ok).toBe(true);
 		if (!result.ok) return;
 		expect(result.doc.customAnimCaptionPresets).toBeUndefined();
 	});
 
-	it('v12 document with a valid customAnimCaptionPresets array round-trips intact', () => {
+	it('v13 document with a valid customAnimCaptionPresets array round-trips intact', () => {
 		const preset = {
 			captionStyleSchemaVersion: 1,
 			id: 'custom-abc',
@@ -823,7 +823,7 @@ describe('Phase 30 (v12) — customAnimCaptionPresets', () => {
 		expect(result.doc.customAnimCaptionPresets![0]!.label).toBe('My Preset');
 	});
 
-	it('v12 document with invalid presets skips them gracefully', () => {
+	it('v13 document with invalid presets skips them gracefully', () => {
 		const result = deserializeProject({
 			...baseDoc(),
 			customAnimCaptionPresets: [
@@ -846,7 +846,7 @@ describe('Phase 30 (v12) — customAnimCaptionPresets', () => {
 		expect(result.doc.customAnimCaptionPresets).toHaveLength(1);
 	});
 
-	it('existing caption tracks and segments survive v12 deserialization', () => {
+	it('existing caption tracks and segments survive v13 deserialization', () => {
 		const doc = {
 			...baseDoc(),
 			captionTracks: [

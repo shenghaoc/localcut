@@ -47,7 +47,7 @@ import { cloneClipLut, parsePersistedClipLut } from './lut';
 import { normalizeSkinMask } from './skin-smooth';
 import { parseExportPresetDoc } from './export-presets';
 
-export const PROJECT_SCHEMA_VERSION = 12;
+export const PROJECT_SCHEMA_VERSION = 13;
 const DURATION_MATCH_TOLERANCE_S = 0.25;
 const TIMING_MATCH_TOLERANCE_S = 0.05;
 
@@ -1335,10 +1335,10 @@ function parseCustomAnimCaptionPresets(value: unknown): CaptionAnimStylePreset[]
 	return presets.length > 0 ? presets : undefined;
 }
 
-function deserializeV12(value: Record<string, unknown>): DeserializeProjectResult {
+function deserializeV13(value: Record<string, unknown>): DeserializeProjectResult {
 	const result = deserializeV10(value);
 	if (!result.ok) return result;
-	// v12 (Phase 30): optional customAnimCaptionPresets; absent/invalid → undefined.
+	// v13 (Phase 30): optional customAnimCaptionPresets; absent/invalid → undefined.
 	const customPresets = parseCustomAnimCaptionPresets(value.customAnimCaptionPresets);
 	return {
 		ok: true,
@@ -1383,9 +1383,11 @@ export function deserializeProject(value: unknown): DeserializeProjectResult {
 			// v12 adds skinSmoothStrength + skinMask (Phase 32a).
 			// Both fields are optional with factory defaults; v10/v11 docs deserialize fine.
 			return deserializeV10(value);
-		case 12:
-			// v12 (Phase 30): adds customAnimCaptionPresets (optional; absent in v10/v11).
-			return deserializeV12(value);
+		case 13:
+			// v13 (Phase 30): adds customAnimCaptionPresets (optional; absent in
+			// v10/v11/v12). Originally targeted v12, but Phase 32a (Skin Smoothing)
+			// claimed v12 first, so Phase 30 ships as v13.
+			return deserializeV13(value);
 		default:
 			return { ok: false, reason: `Unsupported project schemaVersion ${schemaVersion}.` };
 	}
