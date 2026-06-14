@@ -2974,6 +2974,188 @@ body {
 	font-variant-numeric: tabular-nums lining-nums;
 }
 
+.skin-smooth-panel {
+	display: flex;
+	flex-direction: column;
+	gap: 0.55rem;
+	margin-top: 0.35rem;
+	padding: 0.7rem;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-md);
+	background: color-mix(in srgb, var(--muted) 78%, transparent);
+}
+
+.skin-smooth-panel.is-inactive {
+	border-style: dashed;
+	background: color-mix(in srgb, var(--muted) 50%, transparent);
+}
+
+.skin-smooth-panel.is-strong {
+	border-color: color-mix(in srgb, var(--warn) 42%, var(--border));
+}
+
+.skin-smooth-status {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.65rem;
+}
+
+.skin-smooth-status-copy {
+	display: flex;
+	min-width: 0;
+	flex-direction: column;
+	gap: 0.1rem;
+}
+
+.skin-smooth-title {
+	font-size: var(--text-xs);
+	font-weight: 700;
+	color: var(--text);
+}
+
+.skin-smooth-status-text {
+	font-size: var(--text-2xs);
+	font-weight: 700;
+	color: var(--text-muted);
+}
+
+.skin-smooth-status-pill {
+	flex: none;
+	padding: 0.12rem 0.38rem;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-xs);
+	font-size: var(--text-2xs);
+	font-weight: 800;
+	text-transform: uppercase;
+	letter-spacing: var(--tracking-wide);
+	color: var(--text-muted);
+	background: var(--secondary);
+}
+
+.skin-smooth-status-pill.is-active {
+	border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+	color: color-mix(in srgb, var(--accent) 88%, var(--text));
+	background: color-mix(in srgb, var(--accent-soft) 70%, transparent);
+}
+
+.skin-smooth-status-pill.is-warning {
+	border-color: color-mix(in srgb, var(--warn) 54%, var(--border));
+	color: color-mix(in srgb, var(--warn) 92%, var(--text));
+	background: color-mix(in srgb, var(--warn) 16%, var(--secondary));
+}
+
+.skin-smooth-strength {
+	padding-top: 0.05rem;
+}
+
+.skin-smooth-note {
+	margin: -0.25rem 0 0;
+	font-size: var(--text-xs);
+	line-height: 1.35;
+	color: var(--text-muted);
+}
+
+.skin-smooth-note.is-warning {
+	color: color-mix(in srgb, var(--warn) 86%, var(--text));
+}
+
+.skin-smooth-bypass {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	align-items: center;
+	gap: 0.55rem;
+	padding-top: 0.1rem;
+}
+
+.skin-smooth-bypass span {
+	font-size: var(--text-xs);
+	line-height: 1.35;
+	color: var(--text-muted);
+}
+
+.bypass-toggle,
+.skin-mask-reset {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 26px;
+	padding: 0.22rem 0.55rem;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+	background: var(--secondary);
+	color: var(--text);
+	font: inherit;
+	font-size: var(--text-xs);
+	font-weight: 700;
+	cursor: pointer;
+}
+
+.bypass-toggle:hover,
+.skin-mask-reset:hover {
+	border-color: var(--border-strong);
+	background: var(--bg-control-hover);
+}
+
+.bypass-toggle:focus-visible,
+.skin-mask-reset:focus-visible,
+.skin-mask-disclosure summary:focus-visible {
+	outline: none;
+	box-shadow: var(--focus-ring);
+}
+
+.bypass-toggle.is-active {
+	border-color: color-mix(in srgb, var(--warn) 54%, var(--border));
+	color: color-mix(in srgb, var(--warn) 92%, var(--text));
+	background: color-mix(in srgb, var(--warn) 16%, var(--secondary));
+}
+
+.skin-mask-reset:disabled {
+	cursor: not-allowed;
+	opacity: 0.46;
+}
+
+.skin-mask-disclosure {
+	border-top: 1px solid var(--border);
+	padding-top: 0.5rem;
+}
+
+.skin-mask-disclosure summary {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.6rem;
+	min-height: 26px;
+	border-radius: var(--radius-sm);
+	color: var(--text);
+	font-size: var(--text-xs);
+	font-weight: 700;
+	cursor: pointer;
+}
+
+.skin-mask-summary {
+	color: var(--text-muted);
+	font-size: var(--text-2xs);
+	font-weight: 800;
+	text-transform: uppercase;
+	letter-spacing: var(--tracking-wide);
+}
+
+.skin-mask-sliders {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	margin-top: 0.55rem;
+}
+
+.skin-mask-disclosure.is-disabled .skin-mask-sliders {
+	opacity: 0.58;
+}
+
+.skin-mask-disclosure input[type='range']:disabled {
+	cursor: not-allowed;
+}
+
 .sr-only {
 	position: absolute;
 	width: 1px;

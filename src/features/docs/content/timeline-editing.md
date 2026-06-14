@@ -51,8 +51,8 @@ Select a clip to edit it in the **Inspector** (right sidebar):
 
 The **Skin Smoothing** slider in the Inspector applies an edge-preserving beauty filter to the selected clip. It uses a guided filter on luma gated by a chroma-based skin mask, so edges (hair, eyes, jawline) stay sharp while skin texture is softened.
 
-- **Strength** (0–1): controls how much smoothing is applied. The parameter is keyframable.
-- **Skin Mask**: expand the disclosure to tune which colours the filter treats as skin. The five sliders (Cb min/max, Cr min/max, softness) adjust the chroma band-pass. The defaults work for most skin tones; widen the range for darker or lighter subjects.
+- **Strength** (0–1): controls how much smoothing is applied. The parameter is keyframable; moderate values usually look more natural than pushing the slider near 1.00.
+- **Skin Mask**: expand the disclosure to tune which colours the filter treats as skin. The five sliders (Cb min/max, Cr min/max, softness) adjust the chroma band-pass. The defaults are a starting point; narrow or widen the range for the subject and lighting.
 - **A/B Bypass**: toggles the effect on and off in the preview without changing the stored strength. Export always uses the stored value.
 
 Skin smoothing requires the WebGPU accelerated effect chain. On capability tiers without WebGPU the slider has no effect on preview or export.
