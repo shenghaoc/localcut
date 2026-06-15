@@ -60,6 +60,8 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 
 - [**Phase 41: Capture Engine**](.kiro/specs/phase-41-capture-engine/tasks.md) — recording as a first-class source: `getDisplayMedia`/`getUserMedia` acquisition; MSTP → WebCodecs realtime encode in the worker; crash-safe fragmented-MP4 chunks to OPFS via `SyncAccessHandle` + chunk manifest; boot recovery scan; screen/webcam/mic/system-audio as separate VFR-honest tracks; quota preflight + graceful stop; accelerated-tier gated.
 
+- [**Phase 35: Time Remapping**](.kiro/specs/phase-35-time-remapping/tasks.md) — per-clip keyframed speed curves (0.25×–4×) with Hermite-smoothstep easing; pre-sampled monotone LUT (1/120 s steps, Simpson integration) for O(1) output→source time lookup; WSOLA pitch-preserving time-stretch in the worker; VFR-correct frame scheduling on real timestamps; Phase 19 render-cache invalidation via `timeRemapHash`; preview/export parity through one shared time-mapping module.
+
 - [**In-app User Guide**](.kiro/specs/feature-in-app-user-guide/tasks.md) — routed, user-facing guide at `/docs` replacing the modal HelpPanel; ten bundled markdown sections with `marked` + isolated DOMPurify sanitisation; lightweight `pushState`/`popstate` routing in App; declarative `inert` on editor shell while guide is open; contextual links from Toolbar, Export, Capability, Diagnostics, source-health, empty preview, and Publish panels; `wrangler.jsonc` SPA fallback for deep links.
 
 **Completed:**

@@ -6,14 +6,16 @@
   `REMAP_SPEED_MAX = 4.0`, `REMAP_LUT_STEP_S = 1/120`; define `RemapKeyframe`,
   `RemapLUT` interfaces; export `buildRemapLUT(keyframes, sourceDurationS,
   stepS?)` that integrates the speed curve using composite Simpson's rule across
-  bezier-eased intervals (reusing the bezier easing formula from
-  `src/engine/keyframes.ts`) into two `Float64Array`s (`outTimesS`, `srcTimesS`)
+  eased intervals (reusing the `easeAmount` Hermite smoothstep from
+  `src/engine/keyframes.ts` for `'ease'` easing) into two `Float64Array`s
+  (`outTimesS`, `srcTimesS`)
   and returns `{ outTimesS, srcTimesS, outputDurationS }`.
 - [ ] **T1.2** Export `remapOutputToSource(lut: RemapLUT, outTimeS: number):
   number` in `src/engine/time-remap.ts`: binary-search `lut.outTimesS` for the
   enclosing interval; linearly interpolate `lut.srcTimesS`; clamp result to
-  `[0, sourceDurationS]` at boundaries. Maintain a per-call sequential hint
-  (`lastIdx`) to achieve O(1) in the sequential case.
+  `[0, sourceDurationS]` at boundaries. Accept an optional `hint?: { lastIdx:
+  number }` parameter (mutated in place for sequential callers) to achieve O(1)
+  in the common playback-forward case.
 - [ ] **T1.3** Implement `hold` easing in `buildRemapLUT`: between two keyframes
   where the first has `easing: 'hold'`, the speed is constant at `keyframes[i].speed`
   for the entire interval `[keyframes[i].outTimeS, keyframes[i+1].outTimeS]`,
@@ -34,7 +36,8 @@
   number, outputFrames: number): Float32Array`: for each output block, find the
   best-matching analysis position by normalised cross-correlation within
   `WSOLA_SEARCH_RADIUS_SAMPLES`, overlap-add with the stored buffer, advance the
-  analysis pointer by `outputFrames * speedRatio` samples. Return interleaved
+  analysis pointer by `outputFrames / speedRatio` source samples (slower speed
+  consumes more source material per output frame). Return interleaved
   output of length `outputFrames * channels`.
 - [ ] **T2.3** Implement `WsolaStretcher.reset()` in `src/engine/wsola.ts`: zero the
   overlap buffer and reset the analysis position. Call this on seek, clip change,
@@ -48,7 +51,7 @@
 - [ ] **T3.1** Add `TimeRemapKeyframeSnapshot` and `TimeRemapSnapshot` interfaces to
   `src/protocol.ts` following the existing snapshot naming convention:
   `TimeRemapKeyframeSnapshot { outTimeS: number; speed: number; easing: 'linear' |
-  'ease-in' | 'ease-out' | 'ease-in-out' | 'hold' }` and `TimeRemapSnapshot {
+  'ease' | 'hold' }` and `TimeRemapSnapshot {
   keyframes: TimeRemapKeyframeSnapshot[]; pitchPreserve: boolean }`.
 - [ ] **T3.2** Add `timeRemap?: TimeRemapSnapshot` to `TimelineClipSnapshot` in
   `src/protocol.ts` as an optional field (backward-compatible).
@@ -95,12 +98,15 @@
   timestamps remain real seconds (µs precision), never frame indices.
 - [ ] **T5.2** In the render loop audio path in `src/engine/worker.ts`, derive
   the audio `adapterTimestampS` from the same `t_src` as video (R2.3, A/V sync).
-  If `clip.timeRemap.pitchPreserve === true`, pass the raw PCM from `pcmAt` into
+  If `clip.timeRemap.pitchPreserve === true`, fetch the required input samples
+  via `pcmWindowAt(t_src, inputFrameCount, channels, nativeSampleRate)` where
+  `inputFrameCount` covers at least `WSOLA_WINDOW_SAMPLES` plus the current
+  speed-scaled frame count, then pass the raw PCM into
   `WsolaStretcher.stretch(pcm, currentSpeedRatio, outputFrameSamples)` before
   handing to the mix ring; cache the `WsolaStretcher` instance per `clipId` in a
   `Map<string, WsolaStretcher>` local to the render controller, resetting it on
   any seek. If `pitchPreserve === false`, pass `targetSampleRate = nativeSampleRate / speedRatio`
-  to `pcmAt` so `WasmAudioResampler` handles the rate change directly.
+  to `pcmWindowAt` so `WasmAudioResampler` handles the rate change directly.
 - [ ] **T5.3** Store the LUT alongside the clip's remap in the worker's live
   timeline (a `Map<string, RemapLUT>` keyed by `clipId` rebuilt on every
   `set-time-remap` and cleared on `clear-time-remap`). Do not rebuild the LUT
@@ -144,8 +150,10 @@
 
 ## T8 — Persistence (R7)
 
-- [ ] **T8.1** In `src/engine/project.ts`, add `timeRemap?: TimeRemapSnapshot` to
-  the internal `TimelineClip` type (parallel to `keyframes` and `lut`). In
+- [ ] **T8.1** In `src/engine/timeline.ts`, add `timeRemap?: TimeRemapSnapshot` to
+  the `TimelineClip` interface (parallel to `keyframes` and `lut`). In
+  `src/engine/project.ts`, update `serializeClip` and `deserializeClip` to
+  handle the new field. In
   `serializeClip`, emit `timeRemap` when present. In `deserializeClip`, call
   `parseClipTimeRemap(raw.timeRemap)` — returns `TimeRemapSnapshot | null`; null
   is treated as no remap and logged as `'time-remap-parse-failed'` in the
@@ -154,11 +162,11 @@
   in `src/engine/project.ts` using `isRecord`, `finiteNumber`, and `requiredString`
   (existing helpers): validate `keyframes` is an array with each entry having a
   finite `outTimeS`, `speed` in `[0.25, 4.0]`, and `easing` in `{ 'linear',
-  'ease-in', 'ease-out', 'ease-in-out', 'hold' }`; validate `pitchPreserve` is
+  'ease', 'hold' }`; validate `pitchPreserve` is
   a boolean; return null on any validation failure.
-- [ ] **T8.3** Bump `PROJECT_SCHEMA_VERSION` in `src/engine/project.ts` to the next
-  unused integer (check current value and any open PRs — Phase 46 PR #63 claims
-  v11; use the first unused value after all merged and in-flight claims).
+- [ ] **T8.3** Bump `PROJECT_SCHEMA_VERSION` in `src/engine/project.ts` (currently
+  15) to the next unused integer (confirm no in-flight PRs claim the same
+  version).
   Older schema versions load successfully with `clip.timeRemap` absent (identity
   default). Update the version constant and all snapshot serializers that
   reference it.
@@ -245,7 +253,7 @@
 ## T11 — Docs (R11)
 
 - [ ] **T11.1** Create `docs/TIME-REMAPPING.md` with: speed curve model overview,
-  supported easing types (`linear`, `ease-in`, `ease-out`, `ease-in-out`, `hold`)
+  supported easing types (`linear`, `ease`, `hold`)
   with descriptions, speed range limits (0.25×–4×), explanation of how output
   duration changes with the ramp, WSOLA pitch-preserve behaviour, and why reverse
   playback is not supported in v1.
@@ -255,7 +263,7 @@
   speed curve, the Pitch Preserve toggle, how to clear a ramp, and how to read
   the output duration badge. Link to `docs/TIME-REMAPPING.md` for technical
   detail.
-- [ ] **T11.3** Confirm `npm run build` completes with no TypeScript errors
-  (strict mode) and `npm test` passes with a net-positive test count increase
+- [ ] **T11.3** Confirm `vp run build` completes with no TypeScript errors
+  (strict mode) and `vp test run` passes with a net-positive test count increase
   (at least the new tests in T10.1–T10.4 counted). No existing test suite may
   lose coverage or reduce its assertion count.

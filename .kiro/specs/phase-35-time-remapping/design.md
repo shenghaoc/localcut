@@ -4,7 +4,7 @@
 
 ## Goal
 
-Allow per-clip keyframed speed curves (0.25×–4×) with bezier easing, evaluated
+Allow per-clip keyframed speed curves (0.25×–4×) with Hermite smoothstep easing, evaluated
 through a shared LUT module that is identical between preview and export. Audio
 follows the remap via WSOLA time-stretch in the worker. Phase 19 proxy and
 render-cache keys are extended with a `timeRemapHash` field so cache
@@ -12,8 +12,8 @@ invalidation is surgical. No new third-party runtime libraries are required.
 
 ## Why a LUT (not on-the-fly integral evaluation)
 
-The cumulative integral of a bezier-eased speed curve has no closed form in
-general. Options considered:
+The cumulative integral of an eased speed curve has no closed form in general.
+Options considered:
 
 1. **On-the-fly numerical integration per frame** — works for simple curves,
    but introduces floating-point drift over long clips when accumulated frame by
@@ -21,7 +21,7 @@ general. Options considered:
    from 0 to `t`, an O(n) operation in the number of prior frames).
 
 2. **Pre-sampled monotone LUT** — integrate once at `1/120 s` steps using
-   Simpson's rule across each bezier segment; store as two parallel
+   Simpson's rule across each eased segment; store as two parallel
    `Float64Array`s (`outTimeS`, `srcTimeS`). Per-frame lookup is O(log n) via
    binary search (with a cached last-position hint making it O(1) in the common
    sequential case). Deterministic: same input → same output, bit-for-bit
@@ -77,7 +77,7 @@ FFT dependency, streaming-friendly. The implementation is a self-contained
   remap-baked derivatives.
 - **Remap on audio-only clips** — the time-remap model is meaningful primarily
   for video (frame selection). Audio-only clips support pitch-preserve varispeed
-  but not the bezier curve UI, which assumes a video timeline. The Speed section
+  but not the speed curve UI, which assumes a video timeline. The Speed section
   is hidden for audio-only clips in the Inspector.
 
 ## Architecture: data flow
@@ -134,7 +134,7 @@ Shared pure module — imported by `worker.ts`, `export.ts`,
 export interface RemapKeyframe {
   outTimeS: number;
   speed: number;
-  easing: 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out' | 'hold';
+  easing: 'linear' | 'ease' | 'hold';
 }
 
 /** Pre-sampled monotone piecewise-linear LUT. */
@@ -184,15 +184,16 @@ export const REMAP_LUT_STEP_S = 1 / 120;
 Implementation notes:
 
 - `buildRemapLUT` integrates the speed curve using composite Simpson's rule
-  across each step interval (uses the bezier easing to evaluate speed at the
+  across each step interval (uses the Hermite smoothstep easing to evaluate speed at the
   interval endpoints and midpoint). For `hold` easing the speed is constant
   from the current keyframe until the next, so the integral over `[t_a, t_b]`
   is `speed_a * (t_b - t_a)`.
 - The LUT terminates when `srcTimeS` reaches `sourceDurationS`; the final
   `outputDurationS` is the `outTimeS` at that point (interpolated linearly
   between the last two LUT entries).
-- Bezier easing for `ease-in`, `ease-out`, `ease-in-out` follows the same cubic
-  Bezier formula used by `sampleClipParamsAt` in `src/engine/keyframes.ts`,
+- Easing types are `'linear'`, `'ease'`, and `'hold'` — the same set supported by
+  `sampleClipParamsAt` in `src/engine/keyframes.ts`. The `'ease'` easing applies
+  the Hermite smoothstep `t² * (3 - 2t)` from `easeAmount` in `keyframes.ts`,
   reused directly to ensure identical easing between the two systems.
 
 ### `src/engine/wsola.ts` (new)
@@ -240,7 +241,7 @@ union pattern:
 export interface TimeRemapKeyframeSnapshot {
   outTimeS: number;
   speed: number;
-  easing: 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out' | 'hold';
+  easing: 'linear' | 'ease' | 'hold';
 }
 
 export interface TimeRemapSnapshot {
@@ -263,7 +264,8 @@ backward-compatible).
 
 ### `src/engine/project.ts` (extended)
 
-- `TimelineClip` (internal type) gains `timeRemap?: TimeRemapSnapshot`.
+- `TimelineClip` (internal type, defined in `src/engine/timeline.ts`) gains
+  `timeRemap?: TimeRemapSnapshot`.
 - `serializeClip` emits `timeRemap` when present.
 - `parseClipTimeRemap(raw: unknown): TimeRemapSnapshot | null` validates using
   the existing `isRecord` / `finiteNumber` / `requiredString` pattern:
@@ -274,10 +276,9 @@ backward-compatible).
 - `deserializeProject` calls `parseClipTimeRemap` for each clip; null result
   is logged to the diagnostics ring (`'time-remap-parse-failed'`) and the clip
   is loaded without remap.
-- `PROJECT_SCHEMA_VERSION` is bumped to the next unused integer after confirming
-  the current value in `src/engine/project.ts` and the Phase 46 PR claim (v11).
+- `PROJECT_SCHEMA_VERSION` (currently 15) is bumped to the next unused integer.
   Do **not** hardcode; write "bump to next unused" and let the implementer
-  increment.
+  increment after confirming no in-flight PRs claim the same version.
 
 ### `src/engine/cache-types.ts` (extended)
 
@@ -312,7 +313,8 @@ the same scope as `byKeyframeHash` invalidation — the full affected clip range
 
 ### `src/engine/worker.ts` (extended)
 
-- `handleCommand` gains cases for `set-time-remap` and `clear-time-remap`.
+- The `switch (cmd.type)` in the worker message listener gains cases for
+  `set-time-remap` and `clear-time-remap`.
 - `set-time-remap` handler:
   1. Validates speed range and duplicate keyframes; sends `time-remap-error` on
      failure and returns.
@@ -442,10 +444,9 @@ optional fields, the pattern is established. The schema version bump follows the
 hand-rolled validation approach in `src/engine/project.ts`: absent field = no
 remap (backward compatible with projects written at the old version).
 
-The Phase 46 PR (#63) claims schema v11. The implementer must check the current
-`PROJECT_SCHEMA_VERSION` in `src/engine/project.ts` and bump to the next unused
-version — this spec does not hardcode the number to avoid conflicting with
-in-flight PRs.
+The current `PROJECT_SCHEMA_VERSION` in `src/engine/project.ts` is 15. The
+implementer must bump to the next unused version after confirming no in-flight
+PRs claim the same number.
 
 ## Third-party additions
 
@@ -453,7 +454,7 @@ No new runtime npm dependencies. `wsola.ts` and `time-remap.ts` are
 self-contained TypeScript modules. The WSOLA algorithm requires only basic array
 arithmetic; no FFT library is needed. All dependencies are from the existing
 `src/engine/audio-resampler-wasm.ts` (used for the non-pitch-preserve path) and
-`src/engine/keyframes.ts` (bezier easing reuse) which are already in the
+`src/engine/keyframes.ts` (Hermite smoothstep easing reuse) which are already in the
 dependency graph.
 
 ## Validation
@@ -488,5 +489,5 @@ dependency graph.
 - Set a ramp that would extend the clip past its neighbour; confirm the cap is
   applied and the `remap-capped` message appears in the diagnostics.
 
-**Quality gate:** `npm run build` green (strict TypeScript), `npm test` green,
+**Quality gate:** `vp run build` green (strict TypeScript), `vp test run` green,
 test count grows.

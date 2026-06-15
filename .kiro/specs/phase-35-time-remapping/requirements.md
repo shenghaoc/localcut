@@ -2,7 +2,7 @@
 
 Per-clip speed ramps let creators slow down, speed up, or smoothly accelerate
 through any segment of a clip without rendering to a new file. The speed curve
-is authored in the Inspector as a bezier keyframe track — reusing Phase 15's
+is authored in the Inspector as a keyframe track with Hermite smoothstep easing — reusing Phase 15's
 keyframe editor — and evaluated at preview and export via a shared
 `src/engine/time-remap.ts` module so both paths produce bit-identical output
 mapping. Audio follows the remap via WSOLA time-stretch in the pipeline worker,
@@ -14,21 +14,22 @@ module.
 ## R1 — Speed curve model
 
 - **R1.1** Each clip optionally carries a `timeRemap` sidecar in `ProjectDoc`
-  containing an array of bezier keyframes over clip-local output time (in
+  containing an array of speed keyframes over clip-local output time (in
   seconds, 0 = clip start in output, clamped to `[0, clip.duration]`) and a
   `pitchPreserve: boolean` flag. Absence of the sidecar means constant 1× speed
   (identity pass-through with zero processing overhead).
 - **R1.2** Each keyframe stores `{ outTimeS: number; speed: number; easing:
-  'linear' | 'ease-in' | 'ease-out' | 'ease-in-out' | 'hold' }`. Speed values
+  'linear' | 'ease' | 'hold' }`. Speed values
   are clamped to `[0.25, 4.0]` on write; out-of-range inputs are rejected by
   the worker with a `time-remap-error` message. Keyframes are sorted by
   `outTimeS` and the array must have no duplicate `outTimeS` values (within
   `1e-4 s` tolerance); the worker enforces this invariant on every
   `set-time-remap` command.
-- **R1.3** Between keyframes the speed value is interpolated using bezier easing
-  on the speed axis (matching the Phase 15 `sampleClipParamsAt` easing
-  semantics). A `hold` easing keeps the speed of the preceding keyframe
-  constant until the next keyframe; `linear` interpolates speed linearly.
+- **R1.3** Between keyframes the speed value is interpolated using the same
+  easing semantics as Phase 15's `sampleClipParamsAt`. `'ease'` applies the
+  Hermite smoothstep `t² * (3 - 2t)` from `easeAmount` in `keyframes.ts`;
+  `'hold'` keeps the speed of the preceding keyframe constant until the next
+  keyframe; `'linear'` interpolates speed linearly.
 - **R1.4** The speed curve is strictly positive at all output times — clamping
   speed to `[0.25, 4.0]` guarantees this. This ensures source time is a
   monotone-increasing function of output time, so the decoder always reads
@@ -148,7 +149,7 @@ module.
   interface TimeRemapKeyframeSnapshot {
     outTimeS: number;
     speed: number;
-    easing: 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out' | 'hold';
+    easing: 'linear' | 'ease' | 'hold';
   }
   interface TimeRemapSnapshot {
     keyframes: TimeRemapKeyframeSnapshot[];
@@ -175,9 +176,8 @@ module.
   `project.json` inside project bundles and IndexedDB autosaves. No separate
   sidecar file is needed — the remap data is small (a handful of keyframe
   objects) and travels with the project document.
-- **R7.2** The `ProjectDoc` schema version is bumped to the next unused version
-  number (after checking `src/engine/project.ts` — v10 is current, v11 is
-  claimed by Phase 46 PR #63; use the next available). Bumping follows the
+- **R7.2** The `ProjectDoc` schema version (currently 15) is bumped to the next
+  unused version number. Bumping follows the
   existing hand-rolled validation pattern: `parseTimeRemap(raw)` returns `null`
   on malformed input; absent/null is treated as identity (no remap). Older
   schema versions with no `timeRemap` field are loaded successfully with the
@@ -195,12 +195,13 @@ module.
   At constant 1× (no remap), it shows a single speed input field and an "Add
   Ramp" button. Clicking "Add Ramp" sets an initial remap with two keyframes:
   `{ outTimeS: 0, speed: 1 }` and `{ outTimeS: clip.duration, speed: 1 }`,
-  opening the bezier curve editor.
+  opening the speed curve editor.
 - **R8.2** The curve editor is a reuse of the Phase 15 keyframe editor
   componentry (`src/ui/KeyframeEditor.tsx` or equivalent). The X-axis is
   clip-local output time (0 to current `outputDurationS`); the Y-axis is speed
   (0.25 to 4.0, displayed with a log-scale grid at 0.25×, 0.5×, 1×, 2×, 4×).
-  Bezier handles control the easing between keyframes.
+  Easing between keyframes uses the same `linear`/`ease`/`hold` selector as
+  Phase 15 (no cubic bezier handles).
 - **R8.3** The Inspector shows the computed output clip duration (in
   `HH:MM:SS:FF` timecode at the project frame rate) live as the user drags
   keyframes, derived from `outputDurationS` in the `time-remap-updated`
@@ -230,10 +231,12 @@ module.
 - **R9.3** The render queue (Phase 24) and export presets (Phase 17) require no
   structural changes. Jobs that span remapped clips automatically include the
   full output duration of each remapped clip in their time range.
-- **R9.4** The OTIO exporter (Phase 48, `src/engine/otio-export.ts`) must emit
-  the remapped output duration for each remapped clip and include ramp metadata
-  in the `metadata.localcut` namespace. This is the extent of Phase 48
-  integration required; OTIO native speed ramps are out of scope.
+- **R9.4** *(Future — blocked on Phase 48)* The OTIO exporter
+  (`src/engine/otio-export.ts`, not yet implemented) should emit the remapped
+  output duration for each remapped clip and include ramp metadata in the
+  `metadata.localcut` namespace. OTIO native speed ramps are out of scope.
+  This requirement is documented for forward compatibility but is not part of
+  the Phase 35 implementation scope.
 
 ## R10 — Bounded memory
 
@@ -245,8 +248,8 @@ module.
   lazily on demand and discarded when the remap is cleared or the clip is
   removed.
 - **R10.2** The WSOLA stretcher holds at most
-  `(WSOLA_WINDOW_SAMPLES + WSOLA_SEARCH_RADIUS_SAMPLES) * channels * 4` bytes
-  per active clip (≤ 46 080 bytes for stereo at 48 kHz). Instances are created
+  `(WSOLA_OVERLAP_SAMPLES + 2 * WSOLA_SEARCH_RADIUS_SAMPLES + 1) * channels * 4`
+  bytes per active clip (≤ 23 040 bytes for stereo at 48 kHz). Instances are created
   per active clip in the render loop and released on clip exit, seek, or remap
   edit. No unbounded audio buffer growth is possible.
 - **R10.3** No `VideoFrame` is held beyond the current render tick for remap
@@ -271,7 +274,7 @@ module.
     `timeRemapHash` produces a different key hash; absent `timeRemapHash` is
     stable.
 - **R11.2** The Vitest test count must not decrease for any existing test suite.
-  `npm run build` and `npm test` must remain green.
+  `vp run build` and `vp test run` must remain green.
 - **R11.3** `docs/USER-GUIDE.md` is updated with a "Speed Ramps" section
   describing how to add, edit, and clear a ramp, the pitch-preserve toggle, and
   the output duration display. `docs/TIME-REMAPPING.md` is created with a
