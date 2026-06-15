@@ -259,7 +259,10 @@ export default defineConfig({
 				// never precache at install — startup stays model-free, and the SW
 				// precache stays small. They enter the runtime cache only after the
 				// user explicitly loads a model, so later loads work offline.
-				globIgnores: ['**/models/**', '**/litert/**'],
+				// The ORT foundation adds the same exclusion for its lazily-imported
+				// runtime chunks (`*onnxruntime*`), so the ORT runtime is never
+				// downloaded at service-worker install (its WASM is proxied at runtime).
+				globIgnores: ['**/models/**', '**/litert/**', '**/*onnxruntime*'],
 				runtimeCaching: [
 					{
 						urlPattern: /\/models\/dtln\//,
@@ -286,6 +289,23 @@ export default defineConfig({
 							// LiteRT WASM variants are ~9 MB each; allow them in the cache.
 							matchOptions: { ignoreVary: true }
 						}
+					},
+					{
+						// ORT WASM, proxied same-origin from jsDelivr via the Worker's
+						// `/_ort/` route (version-pinned upstream). ~26 MB; cached only after
+						// the first ORT feature use, so later loads work offline.
+						urlPattern: /\/_ort\//,
+						handler: 'CacheFirst',
+						options: {
+							cacheName: 'ort-runtime-v1',
+							matchOptions: { ignoreVary: true }
+						}
+					},
+					{
+						// The lazily-imported ORT JS runtime chunk (hash-named, immutable).
+						urlPattern: /onnxruntime/,
+						handler: 'CacheFirst',
+						options: { cacheName: 'ort-runtime-chunks-v1' }
 					},
 					{
 						// Phase 33 Smart Reframe: MediaPipe tasks-vision WASM (~11 MB) is
@@ -330,6 +350,14 @@ export default defineConfig({
 				target: 'https://storage.googleapis.com',
 				changeOrigin: true,
 				rewrite: (path) => path.replace(/^\/_model\/gcs\//, '/')
+			},
+			// ORT WASM runtime, proxied from the jsDelivr npm CDN (mirrors the
+			// Worker's `/_ort/` route). Keep the pinned version in sync with the
+			// onnxruntime-web version in package.json and src/worker/index.ts.
+			'/_ort': {
+				target: 'https://cdn.jsdelivr.net',
+				changeOrigin: true,
+				rewrite: (path) => path.replace(/^\/_ort\//, '/npm/onnxruntime-web@1.26.0/dist/')
 			}
 		},
 		headers: {

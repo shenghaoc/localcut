@@ -1,3 +1,9 @@
+import type {
+	OrtDeviceOwner,
+	OrtExecutionProvider,
+	OrtTensorLocation
+} from '../engine/ml/ort/ort-types';
+
 export const DIAGNOSTIC_SNAPSHOT_SCHEMA_VERSION = 1;
 
 export type DiagnosticCapabilityTier = 'accelerated' | 'limited' | 'starting' | 'blocked';
@@ -210,6 +216,21 @@ export interface VoiceCleanupDiagnosticSummary {
 	readonly findings: readonly CapabilityFinding[];
 }
 
+/**
+ * ML runtime diagnostics. The foundation introduces ONNX Runtime Web (`ort`)
+ * alongside the existing LiteRT path; this summary reports which runtime is in use
+ * and, for ORT, the resolved execution provider, tensor location, and which
+ * subsystem owns the compute device. The fields are optional so a snapshot from a
+ * LiteRT-only build (today's default) simply reports `mlRuntime: 'litert'` without
+ * the ORT-specific detail. See docs/ML-RUNTIME.md.
+ */
+export interface MlRuntimeDiagnosticSummary {
+	readonly mlRuntime: 'litert' | 'ort';
+	readonly ortEp?: OrtExecutionProvider;
+	readonly tensorLocation?: OrtTensorLocation;
+	readonly deviceOwner?: OrtDeviceOwner;
+}
+
 export interface BrowserDiagnosticSummary {
 	readonly userAgentFamily: string;
 	readonly userAgentVersion: string;
@@ -237,6 +258,8 @@ export interface DiagnosticSnapshot {
 	readonly storage: StorageDiagnosticSummary;
 	readonly proxyCache: ProxyCacheDiagnosticSummary;
 	readonly voiceCleanup: VoiceCleanupDiagnosticSummary;
+	/** Which ML runtime is active (LiteRT today; ORT as features migrate). */
+	readonly mlRuntime?: MlRuntimeDiagnosticSummary;
 	readonly activeExportSettings: ExportSettingsSummary | null;
 	readonly performanceBudgets: readonly PerformanceBudget[];
 	readonly recentErrors: RecentErrorLog;
@@ -254,6 +277,7 @@ export interface CopyableDiagnosticReport {
 	readonly storage: StorageDiagnosticSummary;
 	readonly proxyCache: ProxyCacheDiagnosticSummary;
 	readonly voiceCleanup: VoiceCleanupDiagnosticSummary;
+	readonly mlRuntime?: MlRuntimeDiagnosticSummary;
 	readonly activeExportSettings: ExportSettingsSummary | null;
 	readonly performanceBudgets: readonly PerformanceBudget[];
 	readonly recentErrors: RecentErrorLog;

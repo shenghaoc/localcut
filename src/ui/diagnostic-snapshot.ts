@@ -329,6 +329,7 @@ export async function buildUiDiagnosticSnapshot(
 		voiceCleanup: input.voiceCleanup
 			? voiceCleanupSummary(input.voiceCleanup)
 			: (worker?.voiceCleanup ?? voiceCleanupSummary()),
+		mlRuntime: worker?.mlRuntime ?? { mlRuntime: 'litert' },
 		activeExportSettings: exportSettingsSummary(input.exportSettings),
 		performanceBudgets: worker?.performanceBudgets ?? buildDefaultPerformanceBudgets(),
 		recentErrors: input.recentErrors,

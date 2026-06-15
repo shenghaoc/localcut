@@ -33,6 +33,29 @@ const GH_ORIGIN = 'https://raw.githubusercontent.com';
 const GCS_PROXY_PREFIX = '/_model/gcs/';
 const GCS_ORIGIN = 'https://storage.googleapis.com';
 
+/**
+ * Same-origin path prefix that proxies ONNX Runtime Web's WASM runtime from the
+ * jsDelivr npm CDN. ORT's `ort-wasm-simd-threaded.jsep.wasm` is ~26 MB — over
+ * Cloudflare Workers' 25 MiB per-file static-asset limit, so it cannot be
+ * vendored like the smaller LiteRT runtime. Proxying keeps the fetch same-origin
+ * (COEP: require-corp) and pins the version. Keep `ORT_RUNTIME_BASE` in sync with
+ * the `onnxruntime-web` version in package.json.
+ *
+ * `ORT_ALLOWED_FILES` pins the exact set the runtime fetches at this version: the
+ * `.bundle.` build variants we use embed the emscripten `.mjs` glue inline, so
+ * only the `.wasm` binaries are fetched at runtime (`.wasm` for the CPU build,
+ * `.jsep.wasm` for the WebGPU + `all` builds). Any other path under the pinned
+ * upstream is rejected — defence in depth against the proxy becoming an open
+ * jsDelivr-bouncer.
+ */
+const ORT_PROXY_PREFIX = '/_ort/';
+const JSDELIVR_ORIGIN = 'https://cdn.jsdelivr.net';
+const ORT_RUNTIME_BASE = '/npm/onnxruntime-web@1.26.0/dist/';
+const ORT_ALLOWED_FILES: ReadonlySet<string> = new Set([
+	'ort-wasm-simd-threaded.wasm',
+	'ort-wasm-simd-threaded.jsep.wasm'
+]);
+
 const FORWARDED_RESPONSE_HEADERS = [
 	'content-type',
 	'content-length',
@@ -54,6 +77,13 @@ export default {
 		if (url.pathname.startsWith(GCS_PROXY_PREFIX)) {
 			return proxyModel(url, request, GCS_PROXY_PREFIX, GCS_ORIGIN);
 		}
+		if (url.pathname.startsWith(ORT_PROXY_PREFIX)) {
+			const file = url.pathname.slice(ORT_PROXY_PREFIX.length);
+			if (!ORT_ALLOWED_FILES.has(file)) {
+				return new Response('Not found', { status: 404 });
+			}
+			return proxyModel(url, request, ORT_PROXY_PREFIX, JSDELIVR_ORIGIN, ORT_RUNTIME_BASE);
+		}
 		return env.ASSETS.fetch(request);
 	}
 };
@@ -62,13 +92,14 @@ async function proxyModel(
 	url: URL,
 	request: Request,
 	prefix: string,
-	origin: string
+	origin: string,
+	basePath = '/'
 ): Promise<Response> {
 	if (request.method !== 'GET' && request.method !== 'HEAD') {
 		return new Response('Method not allowed', { status: 405 });
 	}
 	const path = url.pathname.slice(prefix.length);
-	const target = new URL(path + url.search, `${origin}/`);
+	const target = new URL(basePath + path + url.search, origin);
 	if (target.origin !== origin) {
 		return new Response('Bad proxy target', { status: 400 });
 	}

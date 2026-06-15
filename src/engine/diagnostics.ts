@@ -711,6 +711,10 @@ export async function buildWorkerDiagnosticSnapshot(
 		storage: await storageSummary(),
 		proxyCache: proxyCacheSummary(input.sources),
 		voiceCleanup: voiceCleanupSummary(input.voiceCleanup ?? DEFAULT_VOICE_CLEANUP_SETTINGS),
+		// The shipped ML features (DTLN, Whisper, matte) still run on LiteRT; the
+		// ORT foundation is infrastructure-only until features migrate. Report the
+		// active runtime honestly so a future ORT path is visible in diagnostics.
+		mlRuntime: { mlRuntime: 'litert' },
 		activeExportSettings: exportSettingsSummary(input.activeExportSettings),
 		performanceBudgets: buildDefaultPerformanceBudgets({
 			'gpu-submissions-per-frame': {
