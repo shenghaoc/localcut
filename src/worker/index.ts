@@ -40,10 +40,21 @@ const GCS_ORIGIN = 'https://storage.googleapis.com';
  * vendored like the smaller LiteRT runtime. Proxying keeps the fetch same-origin
  * (COEP: require-corp) and pins the version. Keep `ORT_RUNTIME_BASE` in sync with
  * the `onnxruntime-web` version in package.json.
+ *
+ * `ORT_ALLOWED_FILES` pins the exact set the runtime fetches at this version: the
+ * `.bundle.` build variants we use embed the emscripten `.mjs` glue inline, so
+ * only the `.wasm` binaries are fetched at runtime (`.wasm` for the CPU build,
+ * `.jsep.wasm` for the WebGPU + `all` builds). Any other path under the pinned
+ * upstream is rejected — defence in depth against the proxy becoming an open
+ * jsDelivr-bouncer.
  */
 const ORT_PROXY_PREFIX = '/_ort/';
 const JSDELIVR_ORIGIN = 'https://cdn.jsdelivr.net';
 const ORT_RUNTIME_BASE = '/npm/onnxruntime-web@1.26.0/dist/';
+const ORT_ALLOWED_FILES: ReadonlySet<string> = new Set([
+	'ort-wasm-simd-threaded.wasm',
+	'ort-wasm-simd-threaded.jsep.wasm'
+]);
 
 const FORWARDED_RESPONSE_HEADERS = [
 	'content-type',
@@ -67,6 +78,10 @@ export default {
 			return proxyModel(url, request, GCS_PROXY_PREFIX, GCS_ORIGIN);
 		}
 		if (url.pathname.startsWith(ORT_PROXY_PREFIX)) {
+			const file = url.pathname.slice(ORT_PROXY_PREFIX.length);
+			if (!ORT_ALLOWED_FILES.has(file)) {
+				return new Response('Not found', { status: 404 });
+			}
 			return proxyModel(url, request, ORT_PROXY_PREFIX, JSDELIVR_ORIGIN, ORT_RUNTIME_BASE);
 		}
 		return env.ASSETS.fetch(request);
