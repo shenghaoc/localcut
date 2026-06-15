@@ -299,3 +299,39 @@ export function invalidateSourceChange(timeline: Timeline, sourceId: string): Ca
 		reasons: ['source-changed']
 	});
 }
+
+/**
+ * Phase 37 T5.2: invalidate cache entries when interpolation settings change.
+ *
+ * When mode, factor, target fps, ramp curve, model, tiling profile, or
+ * motion-blur changes, all interpolated cache ranges are stale. For
+ * ambiguous changes, invalidation is conservative (R6.2).
+ *
+ * @param affectedRanges - The time ranges affected by the interpolation change.
+ *   Pass the full timeline range when the change affects all interpolated spans.
+ * @param reason - Human-readable reason for the invalidation.
+ */
+export function invalidateInterpolationChange(
+	affectedRanges: readonly TimeRange[],
+	reason: string
+): CacheInvalidation {
+	return invalidation({
+		ranges: [...affectedRanges],
+		reasons: [`interpolation-${reason}`]
+	});
+}
+
+/**
+ * Phase 37 T5.2: invalidate all interpolated cache entries for a timeline.
+ * Used when toggling interpolation off, changing the model, or other
+ * wholesale changes that affect every interpolated span.
+ */
+export function invalidateAllInterpolation(timeline: Timeline): CacheInvalidation {
+	const endS = getTimelineDuration(timeline);
+	if (endS <= 0) return EMPTY_INVALIDATION;
+	return invalidation({
+		ranges: [{ startS: 0, endS }],
+		fullTimeline: true,
+		reasons: ['interpolation-settings-changed']
+	});
+}

@@ -264,6 +264,21 @@ export interface DiagnosticSnapshot {
 	readonly performanceBudgets: readonly PerformanceBudget[];
 	readonly recentErrors: RecentErrorLog;
 	readonly recoveryActions: readonly RecoveryAction[];
+	/** Phase 37: Frame Interpolation diagnostics (display-only). */
+	readonly interpolation?: InterpolationDiagnosticSummary;
+}
+
+/** Phase 37: Interpolation diagnostic summary. */
+export interface InterpolationDiagnosticSummary {
+	readonly available: boolean;
+	readonly accelerator: string | null;
+	readonly modelStatus: 'not-loaded' | 'loading' | 'loaded' | 'failed';
+	readonly modelSizeBytes: number | null;
+	readonly cacheSource: 'cache' | 'network' | null;
+	readonly lastEstimateMs: number | null;
+	readonly lastActualMs: number | null;
+	readonly lastRefusals: number;
+	readonly recentErrors: readonly string[];
 }
 
 export interface CopyableDiagnosticReport {

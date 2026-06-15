@@ -532,6 +532,75 @@ export function ExportDialog(props: ExportDialogProps) {
 								}}
 							/>
 						</label>
+						{/* Phase 37: Frame Interpolation controls */}
+						<Show when={props.capabilityProbeV2?.interpolation?.webgpuAvailable}>
+							<label class="export-field export-field--toggle">
+								<input
+									type="checkbox"
+									checked={!!settings().interpolation}
+									disabled={props.exporting}
+									onChange={(event) => {
+										setSettings((current) => ({
+											...current,
+											interpolation: event.currentTarget.checked
+												? {
+														mode: 'fps-upconvert',
+														factorCap: 4,
+														targetFps: Math.round(settings().fps * 2),
+														motionBlur: false
+													}
+												: undefined
+										}));
+										setSelectedPresetId(null);
+									}}
+								/>
+								<span>FPS upconvert (ML)</span>
+							</label>
+							<Show when={settings().interpolation}>
+								<label class="export-field">
+									<span>Target FPS</span>
+									<input
+										type="number"
+										min="1"
+										max="240"
+										value={settings().interpolation?.targetFps ?? Math.round(settings().fps * 2)}
+										disabled={props.exporting}
+										onInput={(event) => {
+											setSettings((current) => ({
+												...current,
+												interpolation: current.interpolation
+													? {
+															...current.interpolation,
+															targetFps: Math.max(
+																1,
+																Math.min(240, Number(event.currentTarget.value) || 60)
+															)
+														}
+													: undefined
+											}));
+											setSelectedPresetId(null);
+										}}
+									/>
+								</label>
+								<label class="export-field export-field--toggle">
+									<input
+										type="checkbox"
+										checked={settings().interpolation?.motionBlur ?? false}
+										disabled={props.exporting}
+										onChange={(event) => {
+											setSettings((current) => ({
+												...current,
+												interpolation: current.interpolation
+													? { ...current.interpolation, motionBlur: event.currentTarget.checked }
+													: undefined
+											}));
+											setSelectedPresetId(null);
+										}}
+									/>
+									<span>Motion blur</span>
+								</label>
+							</Show>
+						</Show>
 					</div>
 
 					{/* Range mode */}

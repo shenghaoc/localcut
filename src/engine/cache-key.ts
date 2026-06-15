@@ -274,11 +274,53 @@ export function canonicalExportSettingsForCache(settings: ExportSettings): Expor
 	if (settings.sourceMode === 'proxy') {
 		canonical.sourceMode = 'proxy';
 	}
+	if (settings.interpolation) {
+		canonical.interpolation = {
+			mode: settings.interpolation.mode,
+			factorCap: settings.interpolation.factorCap,
+			targetFps: settings.interpolation.targetFps,
+			motionBlur: settings.interpolation.motionBlur
+		};
+	}
 	return canonical;
 }
 
 export function exportSettingsHash(settings: ExportSettings): string {
 	return hashStableValue('export-settings', canonicalExportSettingsForCache(settings));
+}
+
+/**
+ * Phase 37: canonical interpolation cache input (R6.1). Changing any field
+ * invalidates affected render-cache ranges.
+ */
+export interface InterpolationCacheInput {
+	readonly mode: 'off' | 'slowmo' | 'fps-upconvert';
+	readonly factorCap: number;
+	readonly targetFps?: number;
+	readonly rampHash?: string;
+	readonly modelId: string;
+	readonly modelVersion: string;
+	readonly tilingProfileHash: string;
+	readonly motionBlur: boolean;
+}
+
+/**
+ * Phase 37: compute the interpolation hash for a render-cache key.
+ * Returns undefined when interpolation is off (canonicalises to no hash,
+ * avoiding avoidable misses).
+ */
+export function interpolationHash(input: InterpolationCacheInput): string | undefined {
+	if (input.mode === 'off') return undefined;
+	return hashStableValue('interpolation', {
+		mode: input.mode,
+		factorCap: input.factorCap,
+		targetFps: input.targetFps ?? null,
+		rampHash: input.rampHash ?? null,
+		modelId: input.modelId,
+		modelVersion: input.modelVersion,
+		tilingProfileHash: input.tilingProfileHash,
+		motionBlur: input.motionBlur
+	});
 }
 
 export function renderCacheKeyHash(key: RenderCacheKey): string {
@@ -339,6 +381,7 @@ export function canonicalRenderCacheKey(key: RenderCacheKey): RenderCacheKey {
 		transitionHashes: sortStrings(key.transitionHashes),
 		titleTextureHashes: sortStrings(key.titleTextureHashes),
 		lutHashes: sortStrings(key.lutHashes),
-		keyframeHashes: sortStrings(key.keyframeHashes)
+		keyframeHashes: sortStrings(key.keyframeHashes),
+		interpolationHash: key.interpolationHash
 	};
 }

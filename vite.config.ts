@@ -60,6 +60,22 @@ function litertRuntimeAssetsPlugin() {
 	};
 }
 
+function dropBundledOrtWasmPlugin() {
+	return {
+		// ORT's WASM (`ort-wasm-*.wasm`, up to ~26 MB) is served at runtime from the
+		// `/_ort/` proxy (ort-session sets `env.wasm.wasmPaths`), never these bundled
+		// copies. Drop them from the build so it stays under Cloudflare's 25 MiB
+		// per-asset static limit and out of the service-worker precache.
+		name: 'localcut-drop-bundled-ort-wasm',
+		apply: 'build' as const,
+		generateBundle(_options: unknown, bundle: Record<string, unknown>): void {
+			for (const fileName of Object.keys(bundle)) {
+				if (/ort-wasm-.*\.wasm$/.test(fileName)) delete bundle[fileName];
+			}
+		}
+	};
+}
+
 export default defineConfig({
 	staged: {
 		'*': 'vp check --fix'
@@ -237,6 +253,7 @@ export default defineConfig({
 	},
 	plugins: [
 		litertRuntimeAssetsPlugin(),
+		dropBundledOrtWasmPlugin(),
 		tailwindcss(),
 		solid(),
 		VitePWA({
@@ -262,7 +279,16 @@ export default defineConfig({
 				// The ORT foundation adds the same exclusion for its lazily-imported
 				// runtime chunks (`*onnxruntime*`), so the ORT runtime is never
 				// downloaded at service-worker install (its WASM is proxied at runtime).
-				globIgnores: ['**/models/**', '**/litert/**', '**/*onnxruntime*'],
+				// ORT's WASM is emitted as `ort-wasm-*.wasm` (not `*onnxruntime*`), each
+				// > 2 MiB and up to ~26 MB — it must never precache (and is served at
+				// runtime from the `/_ort/` proxy, not these bundled copies).
+				globIgnores: [
+					'**/models/**',
+					'**/litert/**',
+					'**/*onnxruntime*',
+					'**/ort-wasm-*.wasm',
+					'**/ort-*.mjs'
+				],
 				runtimeCaching: [
 					{
 						urlPattern: /\/models\/dtln\//,
@@ -280,6 +306,14 @@ export default defineConfig({
 						urlPattern: /\/models\/whisper\//,
 						handler: 'NetworkFirst',
 						options: { cacheName: 'whisper-manifest' }
+					},
+					{
+						// Phase 37: interpolation model manifest. NetworkFirst for the
+						// same reason as whisper — the manifest schema changes between
+						// app versions, and a CacheFirst copy would serve stale data.
+						urlPattern: /\/models\/interpolation\//,
+						handler: 'NetworkFirst',
+						options: { cacheName: 'interpolation-manifest' }
 					},
 					{
 						urlPattern: /\/litert\//,

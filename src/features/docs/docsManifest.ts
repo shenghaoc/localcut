@@ -20,6 +20,7 @@ import performanceContent from './content/performance.md?raw';
 import faqContent from './content/faq.md?raw';
 import troubleshootingContent from './content/troubleshooting.md?raw';
 import liveStreamingContent from './content/live-streaming.md?raw';
+import frameInterpolationContent from './content/frame-interpolation.md?raw';
 
 export interface DocSection {
 	/** URL segment under /docs; the index section maps to /docs itself. */
@@ -58,6 +59,7 @@ export const DOC_SECTIONS: readonly DocSection[] = [
 	},
 	{ slug: 'exporting', title: 'Exporting', content: exportingContent },
 	{ slug: 'captions', title: 'Captions', content: captionsContent },
+	{ slug: 'frame-interpolation', title: 'Frame interpolation', content: frameInterpolationContent },
 	{ slug: 'live-streaming', title: 'Live streaming', content: liveStreamingContent },
 	{
 		slug: 'browser-limitations',

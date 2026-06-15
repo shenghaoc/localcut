@@ -1,13 +1,17 @@
 /**
- * Digest-verified, offline-reusable asset loading for the ASR model (Phase 29).
+ * Digest-verified, offline-reusable asset loading for ML models (Phases 28/29/37).
  *
  * Every model asset is fetched same-origin, verified byte-for-byte against the
  * manifest's SHA-256 digest, and cached so the (tens-of-megabytes) download
  * happens only once. The verification and cache-coordination logic is pure and
  * injectable: the worker supplies an OPFS-backed {@link AssetStore} and the real
  * `fetch`, while tests supply in-memory fakes.
+ *
+ * This module is feature-agnostic: it works with any asset descriptor that has
+ * `url`, `sizeBytes`, and `checksum` fields (the `ModelAssetSnapshot` shape).
+ * ASR, interpolation, and audio cleanup all reuse these functions.
  */
-import type { AsrModelAssetSnapshot } from '../../protocol';
+import type { ModelAssetSnapshot } from '../ml/asset-types';
 
 /** Persistent byte store keyed by an opaque string (the asset checksum). */
 export interface AssetStore {
@@ -60,7 +64,7 @@ export async function sha256Hex(bytes: Uint8Array): Promise<string> {
 }
 
 /** Throws unless `bytes` matches the asset's declared size and SHA-256 digest. */
-export async function verifyAsset(bytes: Uint8Array, asset: AsrModelAssetSnapshot): Promise<void> {
+export async function verifyAsset(bytes: Uint8Array, asset: ModelAssetSnapshot): Promise<void> {
 	if (bytes.byteLength !== asset.sizeBytes) {
 		throw new AssetIntegrityError(
 			`size mismatch for ${asset.url}: expected ${asset.sizeBytes} bytes, got ${bytes.byteLength}`
@@ -77,7 +81,7 @@ function throwIfAborted(signal: AbortSignal | undefined): void {
 }
 
 async function fetchWithProgress(
-	asset: AsrModelAssetSnapshot,
+	asset: ModelAssetSnapshot,
 	deps: LoadAssetDeps
 ): Promise<Uint8Array> {
 	const doFetch = deps.fetch ?? ((url, init) => fetch(url, init));
@@ -145,7 +149,7 @@ async function fetchWithProgress(
  * hard error — never a fall-through to an unverified source.
  */
 export async function loadVerifiedAsset(
-	asset: AsrModelAssetSnapshot,
+	asset: ModelAssetSnapshot,
 	deps: LoadAssetDeps = {}
 ): Promise<Uint8Array> {
 	throwIfAborted(deps.signal);
