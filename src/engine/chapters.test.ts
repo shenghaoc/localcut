@@ -146,6 +146,54 @@ describe('generateChapterText', () => {
 			expect(result.text).toContain('02:00:00 Hour 3');
 		}
 	});
+
+	it('drops markers past the program end when totalDurationS is given', () => {
+		const markers = [
+			{ time: 0, label: 'Intro' },
+			{ time: 30, label: 'Part 1' },
+			{ time: 60, label: 'Part 2' },
+			{ time: 9999, label: 'Past End' }
+		];
+		const result = generateChapterText(markers, 80);
+		expect(result.valid).toBe(true);
+		if (result.valid) {
+			expect(result.entries.map((e) => e.label)).not.toContain('Past End');
+		}
+	});
+
+	it('rejects when the final chapter is within 10 s of the program end', () => {
+		const markers = [
+			{ time: 0, label: 'Intro' },
+			{ time: 30, label: 'Part 1' },
+			{ time: 90, label: 'Final' }
+		];
+		const result = generateChapterText(markers, 95);
+		expect(result.valid).toBe(false);
+		if (!result.valid) {
+			expect(result.reason).toContain('Final');
+			expect(result.reason).toContain('10 seconds before');
+		}
+	});
+
+	it('accepts a valid list with a duration that leaves headroom', () => {
+		const markers = [
+			{ time: 0, label: 'Intro' },
+			{ time: 30, label: 'Part 1' },
+			{ time: 60, label: 'Part 2' }
+		];
+		const result = generateChapterText(markers, 120);
+		expect(result.valid).toBe(true);
+	});
+
+	it('skips the final-headroom check when totalDurationS is omitted', () => {
+		const markers = [
+			{ time: 0, label: 'Intro' },
+			{ time: 30, label: 'Part 1' },
+			{ time: 60, label: 'Part 2' }
+		];
+		const result = generateChapterText(markers);
+		expect(result.valid).toBe(true);
+	});
 });
 
 describe('generateChaptersJson', () => {

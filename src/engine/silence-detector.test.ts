@@ -1,7 +1,14 @@
 /** Silence detector unit tests — Phase 44 T9.1. */
 
 import { describe, it, expect } from 'vite-plus/test';
-import { detectSilence, SILENCE_DEFAULTS, type SilenceDetectionParams } from './silence-detector';
+import {
+	detectSilence,
+	SILENCE_DEFAULTS,
+	SilenceStreamDetector,
+	intersectSilenceRegions,
+	type SilenceDetectionParams,
+	type SilenceRegion
+} from './silence-detector';
 
 /** Generate synthetic PCM: speech (amplitude) + silence (near-zero) + speech. */
 function makeSyntheticPcm(
@@ -112,5 +119,78 @@ describe('detectSilence', () => {
 		}
 		const regions = detectSilence(pcm, SILENCE_DEFAULTS);
 		expect(regions).toHaveLength(0);
+	});
+});
+
+describe('SilenceStreamDetector', () => {
+	it('streaming push matches single-buffer detect for the same input', () => {
+		const pcm = makeSyntheticPcm(1.0, 0.8, 1.0);
+		const single = detectSilence(pcm, SILENCE_DEFAULTS);
+
+		const stream = new SilenceStreamDetector(SILENCE_DEFAULTS);
+		// 100 ms chunks at 48 kHz.
+		const chunkSize = 4800;
+		for (let off = 0; off < pcm.length; off += chunkSize) {
+			stream.pushChunk(pcm.subarray(off, Math.min(pcm.length, off + chunkSize)));
+		}
+		const streamed = stream.finalize();
+
+		expect(streamed.length).toBe(single.length);
+		for (let i = 0; i < streamed.length; i++) {
+			expect(streamed[i]!.startS).toBeCloseTo(single[i]!.startS, 5);
+			expect(streamed[i]!.endS).toBeCloseTo(single[i]!.endS, 5);
+		}
+	});
+
+	it('odd chunk sizes do not change the result', () => {
+		const pcm = makeSyntheticPcm(1.0, 0.8, 1.0);
+		const single = detectSilence(pcm, SILENCE_DEFAULTS);
+
+		const stream = new SilenceStreamDetector(SILENCE_DEFAULTS);
+		// Awkward chunk sizes that split mid-window and mid-hop.
+		const sizes = [137, 8191, 191, 4321];
+		let off = 0;
+		let i = 0;
+		while (off < pcm.length) {
+			const size = sizes[i % sizes.length]!;
+			stream.pushChunk(pcm.subarray(off, Math.min(pcm.length, off + size)));
+			off += size;
+			i++;
+		}
+		const streamed = stream.finalize();
+
+		expect(streamed.length).toBe(single.length);
+		for (let k = 0; k < streamed.length; k++) {
+			expect(streamed[k]!.startS).toBeCloseTo(single[k]!.startS, 5);
+			expect(streamed[k]!.endS).toBeCloseTo(single[k]!.endS, 5);
+		}
+	});
+});
+
+describe('intersectSilenceRegions', () => {
+	it('returns the overlapping portions of two region lists', () => {
+		const a: SilenceRegion[] = [
+			{ startS: 0.0, endS: 1.0, peakDb: -50 },
+			{ startS: 2.0, endS: 3.0, peakDb: -50 }
+		];
+		const b: SilenceRegion[] = [{ startS: 0.5, endS: 2.5, peakDb: -50 }];
+		const intersect = intersectSilenceRegions(a, b);
+		expect(intersect).toHaveLength(2);
+		expect(intersect[0]!.startS).toBe(0.5);
+		expect(intersect[0]!.endS).toBe(1.0);
+		expect(intersect[1]!.startS).toBe(2.0);
+		expect(intersect[1]!.endS).toBe(2.5);
+	});
+
+	it('returns empty when there is no overlap', () => {
+		const a: SilenceRegion[] = [{ startS: 0.0, endS: 1.0, peakDb: -50 }];
+		const b: SilenceRegion[] = [{ startS: 2.0, endS: 3.0, peakDb: -50 }];
+		expect(intersectSilenceRegions(a, b)).toHaveLength(0);
+	});
+
+	it('returns empty when either input is empty', () => {
+		const a: SilenceRegion[] = [{ startS: 0.0, endS: 1.0, peakDb: -50 }];
+		expect(intersectSilenceRegions(a, [])).toHaveLength(0);
+		expect(intersectSilenceRegions([], a)).toHaveLength(0);
 	});
 });

@@ -25,6 +25,17 @@ export const KEY_MERGE_THRESHOLD_S = 0.3;
 /** Default overlay clip display duration. */
 export const KEY_OVERLAY_DURATION_S = 1.2;
 
+/** Hard cap on the number of combos joined into one merged clip. Prevents
+ *  continuous typing (one shortcut every 200 ms) from collapsing into a
+ *  single massive clip that masks later actions. */
+export const KEY_MERGE_MAX_COMBOS = 4;
+
+/** Hard cap on the span (s) from the first combo to the last in one group.
+ *  Forces a split even when each adjacent gap is below
+ *  {@link KEY_MERGE_THRESHOLD_S} so the overlay stays aligned with the
+ *  source action timing. */
+export const KEY_MERGE_MAX_SPAN_S = 1.0;
+
 /** Keycap TitleStyle override applied to all generated clips (R3.3). */
 export const KEYCAP_STYLE: Partial<TitleStyle> = {
 	fontFamily: "'Courier New', Courier, monospace",
@@ -70,8 +81,16 @@ export function generateKeyOverlayClips(
 	for (let i = 1; i < keyEntries.length; i++) {
 		const prev = keyEntries[i - 1]!;
 		const curr = keyEntries[i]!;
-		// t is in seconds (Phase 43 convention). Merge if gap < threshold.
-		if (curr.t - prev.t < KEY_MERGE_THRESHOLD_S) {
+		// Three independent reasons to break the group:
+		//   - Gap to previous event is at/above the merge threshold (300 ms).
+		//   - Adding this combo would exceed the max combo count (4).
+		//   - Span from the group's first combo would exceed the max span (1 s).
+		// All three guards are needed: without the latter two, rapid sustained
+		// typing collapses into one degenerate clip that hides later actions.
+		const gapOk = curr.t - prev.t < KEY_MERGE_THRESHOLD_S;
+		const sizeOk = groupCombos.length < KEY_MERGE_MAX_COMBOS;
+		const spanOk = curr.t - groupTimeS <= KEY_MERGE_MAX_SPAN_S;
+		if (gapOk && sizeOk && spanOk) {
 			groupCombos.push(curr.combo);
 		} else {
 			// Flush the current group.

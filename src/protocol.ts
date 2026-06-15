@@ -2022,6 +2022,14 @@ export type WorkerCommand =
 			params: SilenceDetectionParams;
 	  }
 	| { type: 'cancel-silence-detection'; requestId: string }
+	// Phase 44: Apply silence regions atomically (split-at-boundaries + ripple).
+	// One command = one Phase 9 undo step regardless of how many clips it touches.
+	| {
+			type: 'apply-silence-cuts';
+			regions: SilenceRegion[];
+			/** Tracks the regions came from — restricts which tracks get split. */
+			trackIds: string[];
+	  }
 	// Phase 44: Keystroke overlay
 	| {
 			type: 'generate-key-overlay';

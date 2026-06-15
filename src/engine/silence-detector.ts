@@ -50,6 +50,179 @@ export const SILENCE_DEFAULTS: SilenceDetectionParams = {
 /** dBFS conversion floor to avoid −Infinity from log10(0). */
 const DB_FLOOR = 1e-9;
 
+/** Pre-padding candidate region used by the streaming detector. */
+interface SilenceCandidate {
+	startS: number;
+	endS: number;
+	peakDb: number;
+}
+
+/**
+ * Streaming silence detector. Maintains hysteresis state across PCM chunks
+ * so a long timeline can be analysed without allocating one buffer for the
+ * entire program. Call {@link SilenceStreamDetector.pushChunk} with bounded
+ * Float32Array chunks, then call {@link SilenceStreamDetector.finalize}
+ * once to produce the final region list.
+ *
+ * The carry between chunks is `windowSamples - 1` samples — enough to let
+ * the next chunk start a sliding window straddling the seam without losing
+ * coverage.
+ */
+export class SilenceStreamDetector {
+	private readonly params: SilenceDetectionParams;
+	private readonly candidates: SilenceCandidate[] = [];
+	/** Carry buffer. Length always ≤ `windowSamples - 1`. */
+	private carry: Float32Array;
+	private carryLen = 0;
+	/** Cursor over the absolute stream (chunks + carry). */
+	private absoluteSamples = 0;
+	private state: 'CLOSED' | 'OPEN' = 'CLOSED';
+	private openStartS = 0;
+	private openPeakDb = 0;
+
+	constructor(params: SilenceDetectionParams) {
+		this.params = params;
+		this.carry = new Float32Array(Math.max(0, params.windowSamples - 1));
+	}
+
+	pushChunk(chunk: Float32Array): void {
+		const { windowSamples, hopSamples, sampleRate, openThreshold, closeThreshold } = this.params;
+		if (closeThreshold < openThreshold) return;
+		if (chunk.length === 0) return;
+
+		// Stitch carry + chunk so the sliding window can span the seam.
+		const work = new Float32Array(this.carryLen + chunk.length);
+		work.set(this.carry.subarray(0, this.carryLen), 0);
+		work.set(chunk, this.carryLen);
+		const workLen = work.length;
+
+		// Sample index in the global stream at work[0].
+		const workStartAbs = this.absoluteSamples - this.carryLen;
+
+		let nextWindowOffset = 0;
+		while (nextWindowOffset + windowSamples <= workLen) {
+			let sumSq = 0;
+			for (let i = 0; i < windowSamples; i++) {
+				const v = work[nextWindowOffset + i]!;
+				sumSq += v * v;
+			}
+			const rms = Math.sqrt(sumSq / windowSamples);
+			const db = 20 * Math.log10(Math.max(rms, DB_FLOOR));
+			const startS = (workStartAbs + nextWindowOffset) / sampleRate;
+			this.feedWindow(startS, db);
+			nextWindowOffset += hopSamples;
+		}
+
+		// Carry the un-windowed tail forward — it strictly fits in
+		// `windowSamples - 1` because if it were larger we'd have evaluated
+		// another window.
+		const newCarryLen = workLen - nextWindowOffset;
+		if (newCarryLen > this.carry.length) {
+			// Defensive: only happens if params change mid-stream, which we
+			// don't support — allocate up.
+			this.carry = new Float32Array(newCarryLen);
+		}
+		this.carry.set(work.subarray(nextWindowOffset, workLen), 0);
+		this.carryLen = newCarryLen;
+		this.absoluteSamples += chunk.length;
+	}
+
+	private feedWindow(startS: number, db: number): void {
+		const { openThreshold, closeThreshold } = this.params;
+		if (this.state === 'CLOSED') {
+			if (db < openThreshold) {
+				this.state = 'OPEN';
+				this.openStartS = startS;
+				this.openPeakDb = db;
+			}
+		} else {
+			if (db >= closeThreshold) {
+				const duration = startS - this.openStartS;
+				if (duration >= this.params.minSilence) {
+					this.candidates.push({
+						startS: this.openStartS,
+						endS: startS,
+						peakDb: this.openPeakDb
+					});
+				}
+				this.state = 'CLOSED';
+			} else if (db > this.openPeakDb) {
+				this.openPeakDb = db;
+			}
+		}
+	}
+
+	finalize(): SilenceRegion[] {
+		const { sampleRate, minSilence, keepPadding, minKeptSegment } = this.params;
+		const pcmDurationS = this.absoluteSamples / sampleRate;
+		if (this.state === 'OPEN') {
+			const duration = pcmDurationS - this.openStartS;
+			if (duration >= minSilence) {
+				this.candidates.push({
+					startS: this.openStartS,
+					endS: pcmDurationS,
+					peakDb: this.openPeakDb
+				});
+			}
+		}
+
+		let regions: SilenceRegion[] = this.candidates
+			.map((c) => ({
+				startS: c.startS + keepPadding,
+				endS: c.endS - keepPadding,
+				peakDb: c.peakDb
+			}))
+			.filter((r) => r.endS > r.startS);
+
+		let merged = true;
+		while (merged) {
+			merged = false;
+			const next: SilenceRegion[] = [];
+			for (let i = 0; i < regions.length; i++) {
+				const current = regions[i]!;
+				if (i + 1 < regions.length) {
+					const following = regions[i + 1]!;
+					const gap = following.startS - current.endS;
+					if (gap < minKeptSegment) {
+						next.push({
+							startS: current.startS,
+							endS: following.endS,
+							peakDb: Math.max(current.peakDb, following.peakDb)
+						});
+						i++;
+						merged = true;
+						continue;
+					}
+				}
+				next.push(current);
+			}
+			regions = next;
+		}
+		return regions;
+	}
+}
+
+/** Intersect two sorted-and-disjoint region lists, producing the regions that
+ *  appear in BOTH (i.e. silent on every selected track simultaneously). Used
+ *  to combine per-track results without false-positive dead air. */
+export function intersectSilenceRegions(a: SilenceRegion[], b: SilenceRegion[]): SilenceRegion[] {
+	const out: SilenceRegion[] = [];
+	let i = 0;
+	let j = 0;
+	while (i < a.length && j < b.length) {
+		const ai = a[i]!;
+		const bj = b[j]!;
+		const startS = Math.max(ai.startS, bj.startS);
+		const endS = Math.min(ai.endS, bj.endS);
+		if (endS > startS) {
+			out.push({ startS, endS, peakDb: Math.max(ai.peakDb, bj.peakDb) });
+		}
+		if (ai.endS < bj.endS) i++;
+		else j++;
+	}
+	return out;
+}
+
 /**
  * Detect silent regions in pre-mixed mono PCM at 48 kHz.
  *

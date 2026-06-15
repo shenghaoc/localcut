@@ -495,6 +495,35 @@ export const ANIM_CAPTION_PRESETS: readonly CaptionAnimStylePreset[] = Object.fr
 			animation: { enter: 'slide-up', exit: 'slide-down', durationS: 0.3 },
 			pill: { paddingXPx: 20, paddingYPx: 8, radiusPx: 4, color: 'rgba(30,30,30,0.9)', opacity: 1 }
 		}
+	),
+	// 11. screencast — Phase 44 R5.1, tutorial-friendly monospace caption.
+	makePreset(
+		'screencast',
+		'Screencast',
+		'bottom-center',
+		64,
+		'greedy',
+		{
+			fontFamily: "'Courier New', Courier, monospace",
+			fontSizePx: 52,
+			color: '#FFFFFF',
+			outlineColor: '#FFFFFF',
+			outlineWidthPx: 0,
+			shadowColor: '#000000',
+			shadowBlurPx: 0,
+			shadowOffsetXPx: 0,
+			shadowOffsetYPx: 0,
+			align: 'center'
+		},
+		{
+			pill: {
+				paddingXPx: 18,
+				paddingYPx: 10,
+				radiusPx: 8,
+				color: 'rgba(26,26,26,0.85)',
+				opacity: 1
+			}
+		}
 	)
 ]);
 

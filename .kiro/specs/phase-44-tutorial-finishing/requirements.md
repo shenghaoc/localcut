@@ -27,8 +27,9 @@ introduce AI speech recognition, filler-word removal, or LMS/SCORM packaging
   silent region (inward contraction of the region boundaries). Any region
   reduced to ≤ 0 s by padding is discarded. Any kept segment shorter than
   0.3 s (the minimum-kept-segment floor) that would result between two applied
-  cuts is also discarded (both bounding regions are merged into one to preserve
-  the segment).
+  cuts is also discarded — the two bounding silence regions are merged into
+  one so that the sub-floor kept segment is removed alongside the surrounding
+  silence (avoiding a visibly choppy cut).
 - **R1.4** All detection parameters are user-tunable with the defaults from
   R1.2–R1.3: `openThreshold` (range −60 to −20 dBFS, default −42),
   `closeThreshold` (range −60 to −20 dBFS, default −36, must be ≥

@@ -115,6 +115,7 @@ import { createRecoveryMachine, type WorkerRecoveryState } from '../engine/recov
 import { AppErrorBoundary } from './ErrorBoundary';
 import { AudioCleanupPanel, type AppliedCleanupInfo } from './AudioCleanupPanel';
 import { SilenceReviewPanel } from './SilenceReviewPanel';
+import { KeystrokeOverlayPanel } from './KeystrokeOverlayPanel';
 import {
 	CleanupController,
 	CLEANUP_WASM_PATH,
@@ -319,6 +320,7 @@ export function App() {
 	const [asrPanelOpen, setAsrPanelOpen] = createSignal(false);
 	const [smartReframeOpen, setSmartReframeOpen] = createSignal(false);
 	const [silenceReviewOpen, setSilenceReviewOpen] = createSignal(false);
+	const [keystrokeOverlayOpen, setKeystrokeOverlayOpen] = createSignal(false);
 	const [diagnosticSnapshot, setDiagnosticSnapshot] = createSignal<DiagnosticSnapshot | null>(null);
 	const [recentErrorLog, setRecentErrorLog] = createSignal(createEmptyRecentErrorLog());
 	const [compatibilityPreview, setCompatibilityPreview] =
@@ -2809,6 +2811,9 @@ export function App() {
 					onOpenAudioCleanup={() => setAudioCleanupOpen(true)}
 					onOpenAutoCaptions={() => setAsrPanelOpen(true)}
 					onOpenSmartReframe={() => setSmartReframeOpen(true)}
+					onOpenSilenceReview={() => setSilenceReviewOpen(true)}
+					onImportKeystrokeOverlay={() => setKeystrokeOverlayOpen(true)}
+					keystrokeOverlayAvailable={true}
 					onOpenPublish={() => setPublishPanelOpen(true)}
 					publishLive={publishBusy()}
 					masterGain={masterGain()}
@@ -3814,65 +3819,69 @@ export function App() {
 						}}
 					/>
 					<Show when={silenceReviewOpen()}>
-						<SilenceReviewPanel
-							trackIds={timeline()
-								.filter((track) => track.type === 'audio')
-								.map((track) => track.id)}
-							sendCommand={(cmd) => bridge?.send(cmd)}
-							onWorkerMessage={(handler) => {
-								const wrapped = (msg: import('../protocol').WorkerStateMessage) => {
-									if (
-										msg.type === 'silence-progress' ||
-										msg.type === 'silence-result' ||
-										msg.type === 'silence-error'
-									) {
-										handler(msg);
-									}
-								};
-								const worker = ensureWorker().worker;
-								const listener = (e: MessageEvent) => wrapped(e.data);
-								worker.addEventListener('message', listener);
-								return () => worker.removeEventListener('message', listener);
-							}}
-							onApplyRegion={(region) => {
-								// Collect clips that overlap the silence region.
-								const clipsToDelete: import('../protocol').TimelineClipReference[] = [];
-								for (const track of timeline()) {
-									for (const clip of track.clips) {
-										const clipEnd = clip.start + clip.duration;
-										if (clip.start < region.endS && clipEnd > region.startS) {
-											clipsToDelete.push({ trackId: track.id, clipId: clip.id });
-										}
-									}
-								}
-								if (clipsToDelete.length > 0) {
-									// One ripple-delete → one Phase 9 undo step.
-									bridge?.send({ type: 'ripple-delete', clips: clipsToDelete });
-								}
-							}}
-							onApplyAll={(regions) => {
-								// Batch all clips from all regions into a single ripple-delete
-								// to avoid stale-position bugs from sequential deletions.
-								const seen = new Set<string>();
-								const clipsToDelete: import('../protocol').TimelineClipReference[] = [];
-								for (const region of regions) {
-									for (const track of timeline()) {
-										for (const clip of track.clips) {
-											const key = `${track.id}:${clip.id}`;
-											if (seen.has(key)) continue;
-											const clipEnd = clip.start + clip.duration;
-											if (clip.start < region.endS && clipEnd > region.startS) {
-												seen.add(key);
-												clipsToDelete.push({ trackId: track.id, clipId: clip.id });
+						{(() => {
+							// Prefer the audio tracks of currently-selected clips so dead-air
+							// detection respects the user's targeting; fall back to every
+							// audio track only when nothing is selected. The worker
+							// intersects per-track results, so even the fallback only
+							// proposes ranges silent on every selected track.
+							const selectedAudioTrackIds = () => {
+								const selectedTracks = new Set<string>();
+								for (const ref of selectedClipRefs()) selectedTracks.add(ref.trackId);
+								return timeline()
+									.filter((t) => t.type === 'audio' && selectedTracks.has(t.id))
+									.map((t) => t.id);
+							};
+							const silenceTrackIds = () => {
+								const sel = selectedAudioTrackIds();
+								if (sel.length > 0) return sel;
+								return timeline()
+									.filter((track) => track.type === 'audio')
+									.map((track) => track.id);
+							};
+							return (
+								<SilenceReviewPanel
+									trackIds={silenceTrackIds()}
+									selectionScope={selectedAudioTrackIds().length > 0 ? 'selection' : 'all-audio'}
+									sendCommand={(cmd) => bridge?.send(cmd)}
+									onWorkerMessage={(handler) => {
+										const wrapped = (msg: import('../protocol').WorkerStateMessage) => {
+											if (
+												msg.type === 'silence-progress' ||
+												msg.type === 'silence-result' ||
+												msg.type === 'silence-error'
+											) {
+												handler(msg);
 											}
-										}
-									}
-								}
-								if (clipsToDelete.length > 0) {
-									bridge?.send({ type: 'ripple-delete', clips: clipsToDelete });
-								}
-							}}
-							onClose={() => setSilenceReviewOpen(false)}
+										};
+										const worker = ensureWorker().worker;
+										const listener = (e: MessageEvent) => wrapped(e.data);
+										worker.addEventListener('message', listener);
+										return () => worker.removeEventListener('message', listener);
+									}}
+									onApplyRegion={(region) => {
+										bridge?.send({
+											type: 'apply-silence-cuts',
+											regions: [region],
+											trackIds: silenceTrackIds()
+										});
+									}}
+									onApplyAll={(regions) => {
+										bridge?.send({
+											type: 'apply-silence-cuts',
+											regions,
+											trackIds: silenceTrackIds()
+										});
+									}}
+									onClose={() => setSilenceReviewOpen(false)}
+								/>
+							);
+						})()}
+					</Show>
+					<Show when={keystrokeOverlayOpen()}>
+						<KeystrokeOverlayPanel
+							sendCommand={(cmd) => bridge?.send(cmd)}
+							onClose={() => setKeystrokeOverlayOpen(false)}
 						/>
 					</Show>
 					<PublishPanel

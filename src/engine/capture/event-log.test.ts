@@ -72,6 +72,27 @@ describe('shouldRecordKey', () => {
 		const event = mockKeyboardEvent('s', { ctrlKey: true, target: pwd });
 		expect(shouldRecordKey(event)).toBe(false);
 	});
+
+	it('rejects Shift+letter (capitalised text entry, not a shortcut)', () => {
+		// Shift+a → "A" must not be recorded — it's plain capitalised typing.
+		const event = mockKeyboardEvent('A', { shiftKey: true });
+		expect(shouldRecordKey(event)).toBe(false);
+	});
+
+	it('rejects Shift+digit (e.g. Shift+1 → "!") for the same reason', () => {
+		const event = mockKeyboardEvent('!', { shiftKey: true });
+		expect(shouldRecordKey(event)).toBe(false);
+	});
+
+	it('accepts Ctrl+Shift+S (a real shortcut combo)', () => {
+		const event = mockKeyboardEvent('S', { ctrlKey: true, shiftKey: true });
+		expect(shouldRecordKey(event)).toBe(true);
+	});
+
+	it('accepts Alt+Shift+letter (Alt is a non-Shift modifier)', () => {
+		const event = mockKeyboardEvent('A', { altKey: true, shiftKey: true });
+		expect(shouldRecordKey(event)).toBe(true);
+	});
 });
 
 describe('formatKeyCombo', () => {
@@ -138,5 +159,37 @@ describe('generateKeyOverlayClips', () => {
 		const entries: CaptureEventLogEntry[] = [{ kind: 'key', combo: 'Ctrl+S', t: 5.0 }];
 		const clips = generateKeyOverlayClips(entries, 10.0);
 		expect(clips[0]!.startS).toBe(15.0);
+	});
+
+	it('splits when the merged group reaches the max combo count', () => {
+		// 6 combos 200 ms apart — gap is below threshold, but the 4-combo cap
+		// forces a split into [4 combos, 2 combos].
+		const entries: CaptureEventLogEntry[] = Array.from({ length: 6 }, (_, i) => ({
+			kind: 'key' as const,
+			combo: `Ctrl+${String.fromCharCode(65 + i)}`,
+			t: 1.0 + i * 0.2
+		}));
+		const clips = generateKeyOverlayClips(entries, 0);
+		expect(clips).toHaveLength(2);
+		expect(clips[0]!.text.split(' · ')).toHaveLength(4);
+		expect(clips[1]!.text.split(' · ')).toHaveLength(2);
+	});
+
+	it('splits when the merged span would exceed the max span', () => {
+		// Combos 250 ms apart — each gap is below threshold (300 ms), the
+		// combo count stays under 4, but the cumulative span hits the 1 s
+		// cap on the 5th event (t = 2.0, group started at t = 1.0).
+		const entries: CaptureEventLogEntry[] = [
+			{ kind: 'key', combo: 'Ctrl+1', t: 1.0 },
+			{ kind: 'key', combo: 'Ctrl+2', t: 1.25 },
+			{ kind: 'key', combo: 'Ctrl+3', t: 1.5 },
+			{ kind: 'key', combo: 'Ctrl+4', t: 1.75 },
+			{ kind: 'key', combo: 'Ctrl+5', t: 2.05 } // 1.05 s from start of group
+		];
+		const clips = generateKeyOverlayClips(entries, 0);
+		expect(clips.length).toBeGreaterThan(1);
+		// The first group includes at most the first four combos because
+		// either the combo cap or the span cap kicks in first.
+		expect(clips[0]!.text.split(' · ').length).toBeLessThanOrEqual(4);
 	});
 });

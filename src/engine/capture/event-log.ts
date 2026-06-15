@@ -16,7 +16,9 @@ export type CaptureEventLogEntry =
  * recording gate (R3.1):
  * - Reject events from <input>, <textarea>, <select>, [contenteditable], or
  *   elements with type="password".
- * - Reject bare printable characters without modifier keys.
+ * - Reject single printable characters unless Ctrl, Alt, or Meta is held —
+ *   Shift alone does NOT unlock recording (capitalised text entry like
+ *   Shift+a → 'A' must stay private).
  * - Accept everything else (modifier combos, function keys, Escape, etc.).
  */
 export function shouldRecordKey(event: KeyboardEvent): boolean {
@@ -40,14 +42,10 @@ export function shouldRecordKey(event: KeyboardEvent): boolean {
 		if (typeof t.getAttribute === 'function' && t.getAttribute('type') === 'password') return false;
 		if (t.isContentEditable) return false;
 	}
-	// No modifiers held AND key is a single printable character → reject.
-	if (
-		!event.ctrlKey &&
-		!event.metaKey &&
-		!event.altKey &&
-		!event.shiftKey &&
-		event.key.length === 1
-	) {
+	// Single printable character with no non-Shift modifier → reject.
+	// Shift is intentionally excluded from the unlock set: Shift+letter is
+	// just capitalised text, not a recordable shortcut.
+	if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key.length === 1) {
 		return false;
 	}
 	return true;

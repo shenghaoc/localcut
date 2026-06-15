@@ -263,8 +263,11 @@ replaced with `'Space'`. Example: `'Ctrl+Shift+Z'`, `'Meta+S'`, `'F5'`,
 `keydown` listener — Phase 43's own-tab capture code):
 - Event is from an `<input>`, `<textarea>`, `[contenteditable]`, or
   `<select>` element, or any element with `type="password"` → discard.
-- No modifier keys held AND key is a single printable character (i.e.
-  `event.key.length === 1`) → discard.
+- Key is a single printable character (i.e. `event.key.length === 1`) AND
+  no non-Shift modifier is held (i.e. `!ctrlKey && !altKey && !metaKey`)
+  → discard. **Shift alone does not unlock recording** — capitalised text
+  entry (e.g. `Shift+a` → `'A'`) must stay private. Only Ctrl/Alt/Meta
+  (with or without Shift) qualify a single-character key as a shortcut.
 - Otherwise → record if "Record shortcuts" opt-in is active.
 
 This gate is defined precisely in Phase 44 because Phase 43 reserves the
@@ -300,6 +303,16 @@ export const KEY_MERGE_THRESHOLD_S = 0.3;
 
 /** Default overlay clip display duration. */
 export const KEY_OVERLAY_DURATION_S = 1.2;
+
+/** Hard cap on the number of combos joined into one merged clip — protects
+ * the overlay from continuous typing degenerating into one massive group. */
+export const KEY_MERGE_MAX_COMBOS = 4;
+
+/** Hard cap on the span from the first merged combo to the last (s) — even
+ * when each adjacent gap is below {@link KEY_MERGE_THRESHOLD_S}, a long
+ * run of shortcuts splits at this boundary so the overlay text stays
+ * readable and aligned with the source action. */
+export const KEY_MERGE_MAX_SPAN_S = 1.0;
 
 /** Keycap TitleStyle override applied to all generated clips. */
 export const KEYCAP_STYLE: Partial<TitleStyle> = {
@@ -377,13 +390,22 @@ export function formatChapterTimestamp(s: number): string
 1. Filter `markers` to those with `label.trim().length > 0`.
 2. Sort ascending by `time`.
 3. If no entry has `time === 0`, prepend `{ time: 0, label: 'Intro' }`.
-4. Check `entries.length >= 3`; if not, return `{ valid: false, reason:
+4. Drop any entry where `time > totalDurationS` (a marker past the program
+   end can never appear as a YouTube chapter; emitting it would create a
+   chapter the viewer cannot reach).
+5. Check `entries.length >= 3`; if not, return `{ valid: false, reason:
    'YouTube requires at least 3 chapters. Add more markers.' }`.
-5. Check each adjacent pair satisfies `entries[i+1].time - entries[i].time >=
+6. Check each adjacent pair satisfies `entries[i+1].time - entries[i].time >=
    10`; if any pair fails, return `{ valid: false, reason: 'Chapters must be
    at least 10 seconds apart. Chapter "X" is too close to the previous.' }`
    naming the offending chapter.
-6. Produce text: one line per entry, `${formatChapterTimestamp(time)} ${label}`
+7. Check `totalDurationS - entries[entries.length - 1].time >= 10`; if the
+   final chapter sits within 10 s of the program end, return `{ valid: false,
+   reason: 'The last chapter must leave at least 10 seconds before the end
+   of the video. Move "X" earlier or extend the program.' }` naming the
+   offending chapter (YouTube hides chapters whose runtime is shorter than
+   10 s).
+8. Produce text: one line per entry, `${formatChapterTimestamp(time)} ${label}`
    joined by `'\n'`.
 
 `formatChapterTimestamp`: `Math.floor(s / 3600)` padded to 2 digits, `':'`,

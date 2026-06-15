@@ -16,8 +16,13 @@ import type {
 import { SILENCE_DEFAULTS } from '../engine/silence-detector';
 
 export interface SilenceReviewPanelProps {
-	/** Currently selected audio track IDs. */
+	/** Currently selected audio track IDs (or every audio track if no
+	 *  selection — see {@link SilenceReviewPanelProps.selectionScope}). */
 	trackIds: string[];
+	/** Where {@link SilenceReviewPanelProps.trackIds} came from. Drives the
+	 *  status line so users understand why they're seeing regions from tracks
+	 *  they may not have intentionally selected. */
+	selectionScope?: 'selection' | 'all-audio';
 	/** Send a command to the pipeline worker. */
 	sendCommand: (cmd: WorkerCommand) => void;
 	/** Register a handler for worker state messages; returns an unsubscribe function. */
@@ -84,19 +89,29 @@ export function SilenceReviewPanel(props: SilenceReviewPanelProps) {
 		}
 	});
 
-	// Close guard: warn if unreviewed regions remain.
-	onCleanup(() => {
+	/** True when at least one detected region has neither been applied nor
+	 *  explicitly skipped. */
+	function hasUnreviewed(): boolean {
 		const r = regions();
-		if (r.length > 0) {
-			const a = applied();
-			const s = skipped();
-			const unreviewed = r.some((_, i) => !a.has(i) && !s.has(i));
-			if (unreviewed) {
-				// eslint-disable-next-line no-alert
-				window.confirm('You have unreviewed silence regions. Discard them?');
-			}
+		if (r.length === 0) return false;
+		const a = applied();
+		const s = skipped();
+		return r.some((_, i) => !a.has(i) && !s.has(i));
+	}
+
+	/** Wraps `props.onClose` with a confirmation dialog when unreviewed regions
+	 *  remain. The previous implementation ran the prompt inside `onCleanup`,
+	 *  which fires AFTER the panel has already been removed — the boolean
+	 *  result was ignored, so "Cancel" did nothing. Pushing the guard into the
+	 *  close handler means the panel only unmounts when the user confirms. */
+	function requestClose(): void {
+		if (hasUnreviewed()) {
+			// eslint-disable-next-line no-alert
+			const proceed = window.confirm('You have unreviewed silence regions. Discard them?');
+			if (!proceed) return;
 		}
-	});
+		props.onClose?.();
+	}
 
 	function handleDetect() {
 		if (detecting()) return;
@@ -138,13 +153,25 @@ export function SilenceReviewPanel(props: SilenceReviewPanelProps) {
 
 	function handleApply(index: number) {
 		const r = regions();
-		if (!r[index]) return;
-		props.onApplyRegion(r[index]!);
+		const target = r[index];
+		if (!target) return;
+		props.onApplyRegion(target);
 		setApplied((prev: Set<number>) => {
 			const next = new Set<number>(prev);
 			next.add(index);
 			return next;
 		});
+		// Every applied region shifts the timeline left by its (endS - startS).
+		// Without rebasing, the next Apply searches the post-ripple timeline
+		// with stale pre-ripple timestamps and removes the wrong clips
+		// (or none). Subtract this region's length from every LATER region's
+		// startS/endS so subsequent Applies hit the right material.
+		const shift = target.endS - target.startS;
+		setRegions((prev) =>
+			prev.map((region, i) =>
+				i > index ? { ...region, startS: region.startS - shift, endS: region.endS - shift } : region
+			)
+		);
 	}
 
 	function handleApplyAll() {
@@ -182,7 +209,7 @@ export function SilenceReviewPanel(props: SilenceReviewPanelProps) {
 						type="button"
 						class="silence-review-close"
 						aria-label="Close panel"
-						onClick={props.onClose}
+						onClick={requestClose}
 					>
 						×
 					</button>
@@ -276,6 +303,13 @@ export function SilenceReviewPanel(props: SilenceReviewPanelProps) {
 				>
 					{detecting() ? 'Detecting…' : 'Detect Silence'}
 				</Button>
+				<Show when={!audioDisabled()}>
+					<span class="silence-scope-hint">
+						{props.selectionScope === 'selection'
+							? `Scanning ${props.trackIds.length} selected audio track${props.trackIds.length === 1 ? '' : 's'}.`
+							: `No audio selection — scanning all ${props.trackIds.length} audio track${props.trackIds.length === 1 ? '' : 's'}. Select an audio clip to narrow.`}
+					</span>
+				</Show>
 			</div>
 
 			{/* Progress bar */}
