@@ -60,6 +60,52 @@ function litertRuntimeAssetsPlugin() {
 	};
 }
 
+/**
+ * Vendors ONNX Runtime Web's WASM artifacts same-origin under `public/ort/`
+ * (flat + a build-SHA subdir), mirroring the LiteRT `/litert/` layout. ORT's
+ * `env.wasm.wasmPaths` is pointed at `/ort/<sha>/` (see `ortWasmBasePath()`), so
+ * the multi-megabyte `.wasm` is fetched same-origin — never a cross-origin CDN,
+ * which COEP: require-corp would block and the model-host policy forbids.
+ */
+function copyOrtRuntimeAssets(): void {
+	const sourceDir = join(repoRoot, 'node_modules', 'onnxruntime-web', 'dist');
+	const targetDirs = [join(repoRoot, 'public', 'ort'), join(repoRoot, 'public', 'ort', BUILD_SHA)];
+	if (!existsSync(sourceDir)) {
+		throw new Error(
+			'onnxruntime-web dist is missing. Run `vp install` before building ORT-backed features.'
+		);
+	}
+
+	let copied = 0;
+	for (const targetDir of targetDirs) {
+		mkdirSync(targetDir, { recursive: true });
+		for (const entry of readdirSync(sourceDir, { withFileTypes: true })) {
+			if (!entry.isFile()) continue;
+			// Only the variants our loaders use: the WebGPU/WebNN (`all`) builds load
+			// the `.jsep` binary + glue; the plain WASM build loads the base name. The
+			// jspi/asyncify variants are unused, so they are not vendored.
+			if (!/^ort-wasm-simd-threaded(\.jsep)?\.(wasm|mjs)$/.test(entry.name)) continue;
+			copyFileSync(join(sourceDir, entry.name), join(targetDir, entry.name));
+			copied += 1;
+		}
+	}
+	if (copied === 0) {
+		throw new Error(`No ORT WASM runtime assets found in ${sourceDir}`);
+	}
+}
+
+function ortRuntimeAssetsPlugin() {
+	return {
+		name: 'localcut-ort-runtime-assets',
+		configResolved(config: { command: string }): void {
+			if (config.command === 'build') copyOrtRuntimeAssets();
+		},
+		configureServer(): void {
+			copyOrtRuntimeAssets();
+		}
+	};
+}
+
 export default defineConfig({
 	staged: {
 		'*': 'vp check --fix'
@@ -237,6 +283,7 @@ export default defineConfig({
 	},
 	plugins: [
 		litertRuntimeAssetsPlugin(),
+		ortRuntimeAssetsPlugin(),
 		tailwindcss(),
 		solid(),
 		VitePWA({
@@ -259,7 +306,10 @@ export default defineConfig({
 				// never precache at install — startup stays model-free, and the SW
 				// precache stays small. They enter the runtime cache only after the
 				// user explicitly loads a model, so later loads work offline.
-				globIgnores: ['**/models/**', '**/litert/**'],
+				// The ORT foundation adds the same exclusion for its vendored WASM
+				// (`/ort/`) and its lazily-imported runtime chunks (`*onnxruntime*`),
+				// so the ORT runtime is never downloaded at service-worker install.
+				globIgnores: ['**/models/**', '**/litert/**', '**/ort/**', '**/*onnxruntime*'],
 				runtimeCaching: [
 					{
 						urlPattern: /\/models\/dtln\//,
@@ -286,6 +336,23 @@ export default defineConfig({
 							// LiteRT WASM variants are ~9 MB each; allow them in the cache.
 							matchOptions: { ignoreVary: true }
 						}
+					},
+					{
+						// ORT WASM is vendored same-origin under `/ort/<sha>/`; the path is
+						// build-scoped so CacheFirst never serves a stale runtime after a
+						// deploy. ~26 MB binaries, cached only after the first ORT feature use.
+						urlPattern: /\/ort\//,
+						handler: 'CacheFirst',
+						options: {
+							cacheName: 'ort-runtime-v1',
+							matchOptions: { ignoreVary: true }
+						}
+					},
+					{
+						// The lazily-imported ORT JS runtime chunk (hash-named, immutable).
+						urlPattern: /onnxruntime/,
+						handler: 'CacheFirst',
+						options: { cacheName: 'ort-runtime-chunks-v1' }
 					},
 					{
 						// Phase 33 Smart Reframe: MediaPipe tasks-vision WASM (~11 MB) is

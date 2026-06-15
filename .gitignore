@@ -169,6 +169,9 @@ playwright-report/
 # LiteRT.js WASM runtime — vendored from @litertjs/core via `pnpm setup:litert`
 public/litert/
 
+# ONNX Runtime Web WASM runtime — vendored from onnxruntime-web by the Vite plugin
+public/ort/
+
 # Large ASR (Whisper) model binaries — provisioned per public/models/whisper/README.md
 public/models/whisper/*.tflite
 public/models/whisper/*.bin

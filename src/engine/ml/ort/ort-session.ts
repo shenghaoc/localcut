@@ -23,7 +23,13 @@ import type {
 	OrtTensorLocation
 } from './ort-types';
 import { resolveExecutionProviders } from './ep-policy';
-import { loadOrtWasm, loadOrtWebGpu, loadOrtWebNN, type OrtModule } from './ort-loader';
+import {
+	loadOrtWasm,
+	loadOrtWebGpu,
+	loadOrtWebNN,
+	ortWasmBasePath,
+	type OrtModule
+} from './ort-loader';
 
 export interface CreateOrtSessionOptions {
 	/** The validated ONNX model bytes (already digest-verified). */
@@ -126,6 +132,10 @@ export async function createOrtSession(
 	});
 	const primaryEp = eps[0]!;
 	const ort = await loadOrtFor(eps);
+
+	// Point ORT at its same-origin, vendored WASM (no cross-origin CDN fetch under
+	// COEP). Idempotent; must be set before the first session is created.
+	ort.env.wasm.wasmPaths = ortWasmBasePath();
 
 	const deviceOwner = resolveDeviceOwner(
 		primaryEp,

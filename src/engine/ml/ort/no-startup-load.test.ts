@@ -12,6 +12,7 @@ import { describe, expect, it, vi } from 'vite-plus/test';
 import entrySource from '../../../index.tsx?raw';
 import appSource from '../../../ui/App.tsx?raw';
 import workerSource from '../../worker.ts?raw';
+import viteConfigSource from '../../../../vite.config.ts?raw';
 import loaderSource from './ort-loader.ts?raw';
 import sessionSource from './ort-session.ts?raw';
 import typesSource from './ort-types.ts?raw';
@@ -52,6 +53,16 @@ describe('ORT runtime is lazy (module graph)', () => {
 		expect(sessionSource).not.toMatch(STATIC_ORT_IMPORT);
 		// Its only ORT specifier reference is the erased `import type`.
 		expect(sessionSource).toMatch(/^import type\s+\{[^}]*\}\s+from\s+'onnxruntime-web';/m);
+	});
+
+	it('keeps ORT WASM and runtime chunks out of the PWA precache', () => {
+		// The vendored WASM (`/ort/`) and the lazily-imported ORT JS chunks
+		// (`*onnxruntime*`) must be excluded from the Workbox precache, or the
+		// service worker would download the ORT runtime at install — defeating the
+		// no-startup-load guarantee. They are runtime-cached instead.
+		expect(viteConfigSource).toMatch(/globIgnores:[^\]]*'\*\*\/ort\/\*\*'/);
+		expect(viteConfigSource).toMatch(/globIgnores:[^\]]*'\*\*\/\*onnxruntime\*'/);
+		expect(viteConfigSource).toMatch(/urlPattern:\s*\/\\\/ort\\\/\//);
 	});
 
 	it('the pure foundation modules do not import onnxruntime-web', () => {

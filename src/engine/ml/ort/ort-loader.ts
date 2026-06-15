@@ -21,6 +21,18 @@
 /** The `onnxruntime-web` module namespace (all subpaths re-export the same API). */
 export type OrtModule = typeof import('onnxruntime-web');
 
+/**
+ * Same-origin, build-scoped directory ORT's WASM artifacts are served from,
+ * mirroring the LiteRT `/litert/<sha>/` layout. The Vite plugin
+ * (`copyOrtRuntimeAssets`) vendors the `.wasm`/`.mjs` files here; the session
+ * wrapper sets `env.wasm.wasmPaths` to this path so ORT never fetches its runtime
+ * from a cross-origin CDN (blocked by COEP, and against the model-host policy).
+ */
+export function ortWasmBasePath(): string {
+	const sha = typeof __BUILD_SHA__ === 'string' ? __BUILD_SHA__ : 'dev';
+	return `/ort/${sha}/`;
+}
+
 /** Loads the WebGPU build (WebGPU EP, primary for full-frame/video models). */
 export function loadOrtWebGpu(): Promise<OrtModule> {
 	return import('onnxruntime-web/webgpu');

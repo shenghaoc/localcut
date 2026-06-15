@@ -94,6 +94,18 @@ loaded under the same trust rules as the LiteRT assets:
   dynamic imports in `ort-loader.ts`, so the WebGPU/WebNN/WASM runtimes
   code-split out of the initial bundle and load on first use. The
   `no-startup-load.test.ts` guard enforces this at the module-graph level.
+- **The ORT runtime WASM is vendored same-origin.** ORT fetches a ~26 MB
+  `ort-wasm-simd-threaded.jsep.wasm` (plus its `.mjs` glue) at runtime. A Vite
+  plugin (`copyOrtRuntimeAssets`) vendors these under `public/ort/<build-sha>/`
+  — mirroring the LiteRT `/litert/` layout — and `createOrtSession()` sets
+  `ort.env.wasm.wasmPaths` to `/ort/<sha>/` (see `ortWasmBasePath()`). ORT
+  therefore never fetches its runtime from a cross-origin CDN, which COEP
+  (`require-corp`) would block and the host policy forbids.
+- **The ORT runtime never precaches.** Both the vendored WASM (`/ort/`) and the
+  lazily-imported ORT JS chunks (`*onnxruntime*`) are excluded from the Workbox
+  precache and served via runtime caching instead, so the service worker does
+  not download the ORT runtime at install. `no-startup-load.test.ts` asserts the
+  exclusion in `vite.config.ts`.
 
 ## Diagnostics
 
