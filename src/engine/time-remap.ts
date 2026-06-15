@@ -42,7 +42,7 @@ function easeHermite(t: number): number {
  * Evaluate the speed at a given output time between two keyframes.
  * Uses Hermite smoothstep for `'ease'`, constant for `'hold'`, linear otherwise.
  */
-function evalSpeed(keyframes: readonly RemapKeyframe[], outTimeS: number): number {
+export function sampleRemapSpeed(keyframes: readonly RemapKeyframe[], outTimeS: number): number {
 	if (keyframes.length === 0) return 1;
 	if (keyframes.length === 1) return keyframes[0]!.speed;
 
@@ -110,9 +110,9 @@ export function buildRemapLUT(
 	const maxOutTime = sourceDurationS / REMAP_SPEED_MIN + stepS;
 
 	while (cumulativeSrc < sourceDurationS && outTime < maxOutTime) {
-		const speedAtStart = evalSpeed(keyframes, outTime);
-		const speedAtMid = evalSpeed(keyframes, outTime + stepS * 0.5);
-		const speedAtEnd = evalSpeed(keyframes, outTime + stepS);
+		const speedAtStart = sampleRemapSpeed(keyframes, outTime);
+		const speedAtMid = sampleRemapSpeed(keyframes, outTime + stepS * 0.5);
+		const speedAtEnd = sampleRemapSpeed(keyframes, outTime + stepS);
 
 		// Simpson's rule: integral ≈ (h/6) * (f(a) + 4*f(mid) + f(b))
 		const srcDelta = (stepS / 6) * (speedAtStart + 4 * speedAtMid + speedAtEnd);

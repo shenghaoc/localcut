@@ -970,6 +970,7 @@ export interface TimeRemapKeyframeSnapshot {
 export interface TimeRemapSnapshot {
 	keyframes: TimeRemapKeyframeSnapshot[];
 	pitchPreserve: boolean;
+	sourceDurationS: number;
 }
 
 export interface TimelineClipSnapshot {

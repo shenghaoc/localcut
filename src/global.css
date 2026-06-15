@@ -3006,6 +3006,67 @@ body {
 	gap: 0.65rem;
 }
 
+.remap-info,
+.remap-keyframes {
+	display: flex;
+	flex-direction: column;
+	gap: 0.55rem;
+}
+
+.remap-keyframe {
+	display: flex;
+	flex-direction: column;
+	gap: 0.45rem;
+	padding: 0.6rem;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+	background: var(--bg-control);
+}
+
+.remap-keyframe-title {
+	font-size: var(--text-xs);
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: var(--tracking-eyebrow);
+	color: var(--text-muted);
+}
+
+.remap-control-row,
+.remap-pitch-preserve {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	font-size: var(--text-sm);
+	color: var(--text-muted);
+}
+
+.remap-control-label {
+	flex: 0 0 3.4rem;
+}
+
+.remap-speed-slider,
+.remap-select,
+.remap-number-input {
+	min-width: 0;
+	flex: 1;
+}
+
+.remap-number-input,
+.remap-select {
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+	background: var(--bg);
+	color: var(--text);
+	padding: 0.25rem 0.35rem;
+}
+
+.remap-speed-value,
+.remap-unit {
+	flex: 0 0 auto;
+	font-family: var(--font-mono);
+	color: var(--text);
+}
+
 .title-controls {
 	display: flex;
 	flex-direction: column;

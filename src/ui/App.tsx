@@ -1345,6 +1345,13 @@ export function App() {
 				asrController.handlePipelineMessage(msg);
 				setStatusLine(`Auto-caption track "${msg.track.name}" created`);
 				break;
+			case 'time-remap-error':
+				setRuntimeIssue(`Speed ramp failed: ${msg.reason}`);
+				break;
+			case 'time-remap-updated':
+				setStatusLine(`Speed ramp applied (new duration: ${msg.outputDurationS.toFixed(2)}s)`);
+				setRuntimeIssue(null);
+				break;
 			case 'clock-update':
 				// Reduced tiers without SAB: the worker drives the clock over postMessage.
 				clock.applyUpdate(msg);

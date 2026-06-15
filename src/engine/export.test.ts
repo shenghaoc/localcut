@@ -388,8 +388,9 @@ describe('codec probing', () => {
 describe('mixAudioWindow', () => {
 	function sourceWith(value: number) {
 		return {
-			pcmWindowAt: vi.fn(async (_time: number, frames: number, channels: number) =>
-				new Float32Array(frames * channels).fill(value)
+			pcmWindowAt: vi.fn(
+				async (_time: number, frames: number, channels: number, _targetSampleRate?: number) =>
+					new Float32Array(frames * channels).fill(value)
 			)
 		};
 	}
@@ -791,6 +792,86 @@ describe('mixAudioWindow', () => {
 
 		expect([...mixed]).toEqual([0, 0, 0.5, 0.5]);
 		expect(source.pcmWindowAt).toHaveBeenCalledWith(0.5, 2, 1, 4);
+	});
+
+	it('uses speed-adjusted resampling for remapped audio when pitch preserve is off', async () => {
+		const source = sourceWith(0.5);
+		const sources = new Map<string, MediaInputHandle>([
+			[
+				'a',
+				mediaHandle({
+					sourceId: 'a',
+					audioSource: source as unknown as MediaInputHandle['audioSource']
+				})
+			]
+		]);
+		const edit: Timeline = [
+			audioTrack({
+				id: 'a-track',
+				clips: [
+					defaultTimelineClip({
+						id: 'a',
+						sourceId: 'a',
+						start: 0,
+						duration: 0.5,
+						inPoint: 0,
+						timeRemap: {
+							keyframes: [{ outTimeS: 0, speed: 2, easing: 'hold' }],
+							pitchPreserve: false,
+							sourceDurationS: 1
+						}
+					})
+				]
+			})
+		];
+
+		const mixed = await mixAudioWindow(edit, sources, 0, 2, 4, 1);
+
+		expect([...mixed]).toEqual([0.5, 0.5]);
+		expect(source.pcmWindowAt).toHaveBeenCalledWith(0, 2, 1, 2);
+	});
+
+	it('stretches remapped audio before mixing when pitch preserve is on', async () => {
+		const source = sourceWith(0.5);
+		const sources = new Map<string, MediaInputHandle>([
+			[
+				'a',
+				mediaHandle({
+					sourceId: 'a',
+					audioSource: source as unknown as MediaInputHandle['audioSource']
+				})
+			]
+		]);
+		const edit: Timeline = [
+			audioTrack({
+				id: 'a-track',
+				clips: [
+					defaultTimelineClip({
+						id: 'a',
+						sourceId: 'a',
+						start: 0,
+						duration: 0.5,
+						inPoint: 0,
+						timeRemap: {
+							keyframes: [{ outTimeS: 0, speed: 2, easing: 'hold' }],
+							pitchPreserve: true,
+							sourceDurationS: 1
+						}
+					})
+				]
+			})
+		];
+
+		const mixed = await mixAudioWindow(edit, sources, 0, 2, 4, 1, {
+			wsolaStretchers: new Map()
+		});
+		const firstCall = source.pcmWindowAt.mock.calls[0];
+
+		expect(mixed).toHaveLength(2);
+		expect(firstCall?.[0]).toBe(0);
+		expect(firstCall?.[1]).toBeGreaterThan(2);
+		expect(firstCall?.[2]).toBe(1);
+		expect(firstCall?.[3]).toBe(4);
 	});
 
 	it('splits transition audio when an incoming track becomes available mid-window', async () => {

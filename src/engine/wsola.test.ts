@@ -67,7 +67,7 @@ describe('WsolaStretcher', () => {
 			const out1 = stretcher.stretch(input, 2.0, outputFrames);
 			expect(out1.length).toBe(outputFrames * 2);
 
-			// Second call — pointer has advanced by outputFrames / 2.0 per hop,
+			// Second call — pointer has advanced by outputFrames * 2.0 per hop,
 			// so it consumed more source material than at speed 1.0 but still
 			// produces the same number of output frames.
 			const out2 = stretcher.stretch(input, 2.0, outputFrames);

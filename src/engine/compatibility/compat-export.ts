@@ -16,6 +16,7 @@ import type {
 	ExportProgress,
 	ExportSettings,
 	ExportVideoCodec,
+	TimeRemapSnapshot,
 	ThroughputProbe
 } from '../../protocol';
 import { exportConstraintsForProbe } from '../capability-probe-v2';
@@ -44,7 +45,7 @@ import {
 	type SourceTimestampResolution
 } from '../media-adapters/source-timing';
 import type { NormalizedSourceTiming } from '../media-adapters/types';
-import { buildRemapLUT, remapOutputToSource, type RemapKeyframe } from '../time-remap';
+import { buildRemapLUT, remapOutputToSource, type RemapLUT } from '../time-remap';
 import type { AudioTransitionCut } from '../audio-mix';
 import type { TitleContent } from '../title';
 import type { TransformParams } from '../transform';
@@ -226,7 +227,18 @@ interface RemapCapableClip {
 	readonly inPoint: number;
 	readonly start: number;
 	readonly duration: number;
-	readonly timeRemap?: { readonly keyframes: readonly RemapKeyframe[] };
+	readonly timeRemap?: TimeRemapSnapshot;
+}
+
+const compatExportRemapLutCache = new WeakMap<RemapCapableClip, RemapLUT>();
+
+function getOrBuildRemapLut(clip: RemapCapableClip): RemapLUT | null {
+	if (!clip.timeRemap) return null;
+	const cached = compatExportRemapLutCache.get(clip);
+	if (cached) return cached;
+	const lut = buildRemapLUT(clip.timeRemap.keyframes, clip.timeRemap.sourceDurationS);
+	compatExportRemapLutCache.set(clip, lut);
+	return lut;
 }
 
 function resolveSourceTimestampWithRemap(options: {
@@ -235,10 +247,10 @@ function resolveSourceTimestampWithRemap(options: {
 	trackKind: 'video' | 'audio';
 	timing: NormalizedSourceTiming;
 }): SourceTimestampResolution {
-	if (options.clip.timeRemap) {
-		const lut = buildRemapLUT(options.clip.timeRemap.keyframes, options.clip.duration);
+	const lut = getOrBuildRemapLut(options.clip);
+	if (lut) {
 		const clipLocalOutTimeS = options.timelineTime - options.clip.start;
-		const remappedSourceS = remapOutputToSource(lut, clipLocalOutTimeS);
+		const remappedSourceS = remapOutputToSource(lut, clipLocalOutTimeS) + options.clip.inPoint;
 		return resolveNormalizedSourceTimestamp(options.timing, options.trackKind, remappedSourceS);
 	}
 	return resolveSourceTimestamp(options as Parameters<typeof resolveSourceTimestamp>[0]);

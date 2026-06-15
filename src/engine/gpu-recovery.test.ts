@@ -24,7 +24,7 @@ describe('GPU unavailable / device-lost recovery paths', () => {
 		setupMachine();
 		machine.setCheckpoint({
 			projectDoc: {
-				schemaVersion: 16 as const,
+				schemaVersion: 17 as const,
 				projectId: 'test-preview',
 				savedAt: new Date().toISOString(),
 				timeline: [],
@@ -57,7 +57,7 @@ describe('GPU unavailable / device-lost recovery paths', () => {
 		};
 		machine.setCheckpoint({
 			projectDoc: {
-				schemaVersion: 16 as const,
+				schemaVersion: 17 as const,
 				projectId: 'test-export',
 				savedAt: new Date().toISOString(),
 				timeline: [],

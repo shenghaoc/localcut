@@ -19,6 +19,7 @@ import {
 	type TimelineTransitionSnapshot,
 	type WorkerCommand,
 	type WorkerStateMessage,
+	type TimeRemapSnapshot,
 	type ExportBackend,
 	type PreviewBackend,
 	DEFAULT_LIVE_AUDIO_CHAIN_CONFIG,
@@ -195,9 +196,11 @@ import { healthReportForHandle } from './media-adapters/mediabunny-adapter';
 import {
 	resolveSourceTimestamp,
 	resolveNormalizedSourceTimestamp,
-	audioAvailabilityWindowFrames
+	audioAvailabilityWindowFrames,
+	type SourceTimestampResolution
 } from './media-adapters/source-timing';
-import { buildRemapLUT, remapOutputToSource, type RemapLUT } from './time-remap';
+import { buildRemapLUT, remapOutputToSource, sampleRemapSpeed, type RemapLUT } from './time-remap';
+import { WsolaStretcher, WSOLA_SEARCH_RADIUS_SAMPLES, WSOLA_WINDOW_SAMPLES } from './wsola';
 import { sourceHealthReportFromError } from './media-adapters/source-health';
 import { cleanedAudioMissing, cleanedAudioSubstitute } from './audio-cleanup/cleaned-audio';
 import { ThumbnailGenerator } from './thumbnails';
@@ -352,6 +355,9 @@ const clipboardLuts = new Map<string, ClipLut>();
 const skinSmoothBypassMap = new Map<string, boolean>();
 /** Phase 35: per-clip remap LUTs (rebuilt on set-time-remap, cleared on clear-time-remap). */
 const remapLUTs = new Map<string, RemapLUT>();
+const remapLUTSignatures = new Map<string, string>();
+const liveWsolaStretchers = new Map<string, WsolaStretcher>();
+const WSOLA_INPUT_PAD_FRAMES = WSOLA_WINDOW_SAMPLES + WSOLA_SEARCH_RADIUS_SAMPLES;
 const restoringSourceIds = new Set<string>();
 let thumbnailGen: ThumbnailGenerator | null = null;
 const THUMBNAIL_WIDTH = 160;
@@ -640,7 +646,10 @@ function postTimelineState() {
 			audioFadeOut: clip.audioFadeOut,
 			offline: clip.kind === 'title' || sourceInputs.has(clip.sourceId) ? undefined : true,
 			linkedGroupId: clip.linkedGroupId,
-			skinMask: clip.skinMask ? { ...clip.skinMask } : undefined
+			skinMask: clip.skinMask ? { ...clip.skinMask } : undefined,
+			timeRemap: clip.timeRemap
+				? { ...clip.timeRemap, keyframes: [...clip.timeRemap.keyframes] }
+				: undefined
 		}))
 	}));
 	const captionSnapshot: CaptionTrackSnapshot[] = captionTracks.map((track) => ({
@@ -1045,12 +1054,16 @@ async function mixLiveMonitorWindow(
 				continue;
 			}
 
-			const pcm = await handle.audioSource.pcmWindowAt(
-				sourceTimestamp.adapterTimestampS,
-				availableRunFrames,
+			const pcm = await pcmWindowForRemap({
+				handle,
+				clip: audioClip,
+				timelineTime,
+				sourceTime: sourceTimestamp,
+				frameCount: availableRunFrames,
 				channels,
-				sampleRate
-			);
+				sampleRate,
+				wsola: liveWsolaForClip(audioClip, channels)
+			});
 			applyMixStageInPlace(pcm, channels, {
 				gain,
 				pan: track.pan,
@@ -1115,6 +1128,7 @@ function stopAudioPump(): void {
 
 function resetAudioRingForSeek(time: number): void {
 	if (!audioRing) return;
+	liveWsolaStretchers.clear();
 	bumpRingGeneration(audioRing);
 	resetRingPointers(audioRing);
 	audioWriteAnchor = time;
@@ -1143,24 +1157,49 @@ function syncTimelineLuts(): void {
 	renderer.pruneLuts(activeKeys);
 }
 
-/** Phase 35: Rebuild remap LUTs from the current timeline clips (called on undo/redo). */
+function timeRemapSourceDuration(
+	remap: TimeRemapSnapshot | undefined,
+	fallbackDurationS: number
+): number {
+	if (remap && Number.isFinite(remap.sourceDurationS) && remap.sourceDurationS >= 0) {
+		return remap.sourceDurationS;
+	}
+	return Math.max(0, fallbackDurationS);
+}
+
+function remapLutSignature(clip: TimelineClip): string | null {
+	if (!clip.timeRemap) return null;
+	return JSON.stringify({
+		duration: clip.duration,
+		inPoint: clip.inPoint,
+		sourceDurationS: timeRemapSourceDuration(clip.timeRemap, clip.duration),
+		keyframes: clip.timeRemap.keyframes,
+		pitchPreserve: clip.timeRemap.pitchPreserve
+	});
+}
+
+/** Phase 35: Rebuild remap LUTs from the current timeline clips. */
 function syncRemapLuts(): void {
 	const activeClipIds = new Set<string>();
 	for (const track of timeline) {
 		for (const clip of track.clips) {
-			if (clip.timeRemap) {
-				activeClipIds.add(clip.id);
-				if (!remapLUTs.has(clip.id)) {
-					const lut = buildRemapLUT(clip.timeRemap.keyframes, clip.duration);
-					remapLUTs.set(clip.id, lut);
-				}
-			}
+			const signature = remapLutSignature(clip);
+			if (!clip.timeRemap || !signature) continue;
+			activeClipIds.add(clip.id);
+			if (remapLUTSignatures.get(clip.id) === signature) continue;
+			const lut = buildRemapLUT(
+				clip.timeRemap.keyframes,
+				timeRemapSourceDuration(clip.timeRemap, clip.duration)
+			);
+			remapLUTs.set(clip.id, lut);
+			remapLUTSignatures.set(clip.id, signature);
 		}
 	}
-	// Remove LUTs for clips that no longer have remap
 	for (const clipId of remapLUTs.keys()) {
 		if (!activeClipIds.has(clipId)) {
 			remapLUTs.delete(clipId);
+			remapLUTSignatures.delete(clipId);
+			deleteLiveWsolaForClip(clipId);
 		}
 	}
 }
@@ -1562,6 +1601,7 @@ function afterTimelineMutation(
 	if (options.syncLuts !== false) {
 		syncTimelineLuts();
 	}
+	syncRemapLuts();
 	// Refresh title rasters (no-op on unchanged content) before re-rendering so
 	// the cached texture is current when playback refreshes the frame.
 	syncTitleRasters();
@@ -2019,6 +2059,7 @@ async function handleRestoreProject(): Promise<void> {
 	captionTracks = cloneCaptionTracksSnapshot(doc.captionTracks);
 	markers = cloneMarkersSnapshot(doc.markers);
 	syncTimelineLuts();
+	syncRemapLuts();
 	lastExportSettings = doc.exportSettings ?? null;
 	exportPresets = (doc.exportPresets ?? []).filter((p) => !p.builtIn);
 	customAnimCaptionPresets = doc.customAnimCaptionPresets ?? [];
@@ -2165,6 +2206,9 @@ function teardownMedia() {
 	binSourceIds.clear();
 	clipboardLuts.clear();
 	skinSmoothBypassMap.clear();
+	remapLUTs.clear();
+	remapLUTSignatures.clear();
+	liveWsolaStretchers.clear();
 	primaryHandle = null;
 	retainedOverlayTextureIds.clear();
 	// Release cached title textures: clearing the timeline here (new project,
@@ -3080,19 +3124,84 @@ function resolveSourceTimestampWithRemap(options: {
 	timelineTime: number;
 	trackKind: 'video' | 'audio';
 	timing: import('./media-adapters/types').NormalizedSourceTiming;
-}): import('./media-adapters/source-timing').SourceTimestampResolution {
+}): SourceTimestampResolution {
 	const { clip, timelineTime, trackKind, timing } = options;
 
 	if (clip.timeRemap) {
 		const lut = remapLUTs.get(clip.id);
 		if (lut) {
 			const clipLocalOutTimeS = timelineTime - clip.start;
-			const remappedSourceS = remapOutputToSource(lut, clipLocalOutTimeS);
+			const remappedSourceS = remapOutputToSource(lut, clipLocalOutTimeS) + clip.inPoint;
 			return resolveNormalizedSourceTimestamp(timing, trackKind, remappedSourceS);
 		}
 	}
 
 	return resolveSourceTimestamp({ clip, timelineTime, trackKind, timing });
+}
+
+function speedRatioForRemap(clip: TimelineClip, timelineTime: number): number {
+	if (!clip.timeRemap) return 1;
+	return sampleRemapSpeed(clip.timeRemap.keyframes, timelineTime - clip.start);
+}
+
+function deleteLiveWsolaForClip(clipId: string): void {
+	for (const key of liveWsolaStretchers.keys()) {
+		if (key === clipId || key.startsWith(`${clipId}:`)) {
+			liveWsolaStretchers.delete(key);
+		}
+	}
+}
+
+function liveWsolaForClip(clip: TimelineClip, channels: number): WsolaStretcher | undefined {
+	if (!clip.timeRemap?.pitchPreserve) return undefined;
+	const key = `${clip.id}:${channels}`;
+	let stretcher = liveWsolaStretchers.get(key);
+	if (!stretcher) {
+		stretcher = new WsolaStretcher(channels);
+		liveWsolaStretchers.set(key, stretcher);
+	}
+	return stretcher;
+}
+
+async function pcmWindowForRemap(options: {
+	handle: MediaInputHandle;
+	clip: TimelineClip;
+	timelineTime: number;
+	sourceTime: SourceTimestampResolution;
+	frameCount: number;
+	channels: number;
+	sampleRate: number;
+	wsola?: WsolaStretcher;
+}): Promise<Float32Array> {
+	const { handle, clip, timelineTime, sourceTime, frameCount, channels, sampleRate, wsola } =
+		options;
+	const audioSource = handle.audioSource;
+	if (!audioSource) return new Float32Array(Math.max(0, frameCount) * channels);
+	if (!clip.timeRemap) {
+		return audioSource.pcmWindowAt(sourceTime.adapterTimestampS, frameCount, channels, sampleRate);
+	}
+
+	const speedRatio = speedRatioForRemap(clip, timelineTime);
+	if (!clip.timeRemap.pitchPreserve) {
+		return audioSource.pcmWindowAt(
+			sourceTime.adapterTimestampS,
+			frameCount,
+			channels,
+			sampleRate / speedRatio
+		);
+	}
+
+	const inputFrames = Math.max(
+		WSOLA_WINDOW_SAMPLES,
+		Math.ceil(frameCount * Math.max(1, speedRatio)) + WSOLA_INPUT_PAD_FRAMES
+	);
+	const input = await audioSource.pcmWindowAt(
+		sourceTime.adapterTimestampS,
+		inputFrames,
+		channels,
+		sampleRate
+	);
+	return (wsola ?? new WsolaStretcher(channels)).stretch(input, speedRatio, frameCount);
 }
 
 /** Find a clip and its track in the authoritative timeline. */
@@ -3120,6 +3229,26 @@ function maxAllowedDurationForClip(track: TimelineTrack, clipIndex: number): num
 	return 21600;
 }
 
+interface TimeRemapTarget {
+	track: TimelineTrack;
+	clip: TimelineClip;
+	clipIndex: number;
+}
+
+function timeRemapTargetsFor(root: TimelineClip): TimeRemapTarget[] {
+	const targets: TimeRemapTarget[] = [];
+	for (const track of timeline) {
+		for (let clipIndex = 0; clipIndex < track.clips.length; clipIndex += 1) {
+			const clip = track.clips[clipIndex]!;
+			const matches =
+				clip.id === root.id ||
+				(root.linkedGroupId !== undefined && clip.linkedGroupId === root.linkedGroupId);
+			if (matches) targets.push({ track, clip, clipIndex });
+		}
+	}
+	return targets;
+}
+
 function handleSetTimeRemap(cmd: Extract<WorkerCommand, { type: 'set-time-remap' }>) {
 	const found = findClipInTimeline(cmd.trackId, cmd.clipId);
 	if (!found) {
@@ -3132,7 +3261,7 @@ function handleSetTimeRemap(cmd: Extract<WorkerCommand, { type: 'set-time-remap'
 		return;
 	}
 
-	const { track, clip, clipIndex } = found;
+	const { clip } = found;
 	const remap = cmd.remap;
 
 	// Validate speed range
@@ -3165,36 +3294,44 @@ function handleSetTimeRemap(cmd: Extract<WorkerCommand, { type: 'set-time-remap'
 
 	// Sort keyframes by outTimeS
 	const sortedKeyframes = [...remap.keyframes].sort((a, b) => a.outTimeS - b.outTimeS);
-
-	// Compute source in/out duration
-	const sourceDurationS = clip.duration;
-	const lut = buildRemapLUT(sortedKeyframes, sourceDurationS);
-	let outputDurationS = lut.outputDurationS;
-
-	// Cap to max allowed duration
-	const maxAllowed = maxAllowedDurationForClip(track, clipIndex);
+	const targetStates = timeRemapTargetsFor(clip).map((target) => {
+		const sourceDurationS = timeRemapSourceDuration(target.clip.timeRemap, target.clip.duration);
+		const lut = buildRemapLUT(sortedKeyframes, sourceDurationS);
+		const maxAllowed = maxAllowedDurationForClip(target.track, target.clipIndex);
+		const outputDurationS = Math.min(lut.outputDurationS, maxAllowed);
+		return {
+			...target,
+			timeRemap: {
+				keyframes: sortedKeyframes,
+				pitchPreserve: remap.pitchPreserve,
+				sourceDurationS
+			} satisfies TimeRemapSnapshot,
+			outputDurationS,
+			capped: outputDurationS < lut.outputDurationS
+		};
+	});
+	const targetIds = new Set(targetStates.map((target) => target.clip.id));
+	const selectedState = targetStates.find((target) => target.clip.id === cmd.clipId);
 	let capped = false;
-	if (outputDurationS > maxAllowed) {
-		outputDurationS = maxAllowed;
-		capped = true;
+	for (const target of targetStates) {
+		if (target.capped) capped = true;
+		deleteLiveWsolaForClip(target.clip.id);
 	}
-
-	// Store the LUT
-	remapLUTs.set(cmd.clipId, lut);
 
 	// Apply the mutation
 	commitTimelineMutation(
 		() => {
 			return timeline.map((t) => {
-				if (t.id !== cmd.trackId) return t;
 				return {
 					...t,
 					clips: t.clips.map((c) => {
-						if (c.id !== cmd.clipId) return c;
+						if (!targetIds.has(c.id)) return c;
+						const state = targetStates.find((target) => target.clip.id === c.id);
+						if (!state) return c;
 						return {
 							...c,
-							timeRemap: { keyframes: sortedKeyframes, pitchPreserve: remap.pitchPreserve },
-							duration: outputDurationS
+							timeRemap: state.timeRemap,
+							duration: state.outputDurationS
 						};
 					})
 				};
@@ -3212,7 +3349,7 @@ function handleSetTimeRemap(cmd: Extract<WorkerCommand, { type: 'set-time-remap'
 		type: 'time-remap-updated',
 		trackId: cmd.trackId,
 		clipId: cmd.clipId,
-		outputDurationS
+		outputDurationS: selectedState?.outputDurationS ?? clip.duration
 	});
 
 	if (capped) {
@@ -3229,28 +3366,36 @@ function handleClearTimeRemap(cmd: Extract<WorkerCommand, { type: 'clear-time-re
 	const found = findClipInTimeline(cmd.trackId, cmd.clipId);
 	if (!found) return;
 
-	const { track, clip, clipIndex } = found;
-	const originalDuration = clip.duration;
-
-	// Remove the LUT
-	remapLUTs.delete(cmd.clipId);
-
-	// Compute restored duration (original source duration, capped)
-	const maxAllowed = maxAllowedDurationForClip(track, clipIndex);
-	const restoredDuration = Math.min(originalDuration, maxAllowed);
+	const { clip } = found;
+	const targetStates = timeRemapTargetsFor(clip).map((target) => {
+		const sourceDurationS = timeRemapSourceDuration(target.clip.timeRemap, target.clip.duration);
+		const maxAllowed = maxAllowedDurationForClip(target.track, target.clipIndex);
+		return {
+			...target,
+			restoredDuration: Math.min(sourceDurationS, maxAllowed)
+		};
+	});
+	const targetIds = new Set(targetStates.map((target) => target.clip.id));
+	const selectedState = targetStates.find((target) => target.clip.id === cmd.clipId);
+	for (const target of targetStates) {
+		remapLUTs.delete(target.clip.id);
+		remapLUTSignatures.delete(target.clip.id);
+		deleteLiveWsolaForClip(target.clip.id);
+	}
 
 	commitTimelineMutation(
 		() => {
 			return timeline.map((t) => {
-				if (t.id !== cmd.trackId) return t;
 				return {
 					...t,
 					clips: t.clips.map((c) => {
-						if (c.id !== cmd.clipId) return c;
+						if (!targetIds.has(c.id)) return c;
+						const state = targetStates.find((target) => target.clip.id === c.id);
+						if (!state) return c;
 						return {
 							...c,
 							timeRemap: undefined,
-							duration: restoredDuration
+							duration: state.restoredDuration
 						};
 					})
 				};
@@ -3268,7 +3413,7 @@ function handleClearTimeRemap(cmd: Extract<WorkerCommand, { type: 'clear-time-re
 		type: 'time-remap-updated',
 		trackId: cmd.trackId,
 		clipId: cmd.clipId,
-		outputDurationS: restoredDuration
+		outputDurationS: selectedState?.restoredDuration ?? clip.duration
 	});
 }
 
@@ -3403,12 +3548,15 @@ async function handleExtractClipAudio(
 		if (!resolution.available) return fail('Audio is unavailable at the requested time.');
 		const channels = Math.max(1, Math.min(2, handle.audioChannels || 1));
 		const frameCount = Math.max(1, Math.round(durationS * sampleRate));
-		const pcm = await handle.audioSource.pcmWindowAt(
-			resolution.adapterTimestampS,
+		const pcm = await pcmWindowForRemap({
+			handle,
+			clip,
+			timelineTime,
+			sourceTime: resolution,
 			frameCount,
 			channels,
 			sampleRate
-		);
+		});
 		self.postMessage(
 			{
 				type: 'clip-audio',
@@ -4395,6 +4543,7 @@ async function applyImportedDoc(doc: ProjectDoc): Promise<void> {
 	captionTracks = cloneCaptionTracksSnapshot(doc.captionTracks);
 	markers = cloneMarkersSnapshot(doc.markers);
 	syncTimelineLuts();
+	syncRemapLuts();
 	lastExportSettings = doc.exportSettings ?? null;
 	exportPresets = (doc.exportPresets ?? []).filter((p) => !p.builtIn);
 	customAnimCaptionPresets = doc.customAnimCaptionPresets ?? [];
@@ -4688,6 +4837,7 @@ async function runProbeOnce(handle: MediaInputHandle) {
 function handlePlay() {
 	playback?.play();
 	if (audioRing) {
+		liveWsolaStretchers.clear();
 		audioWriteAnchor = clockView?.[ClockIndex.CURRENT_TIME] ?? 0;
 		audioWriteFrames = 0;
 		Atomics.store(audioRing.header, RingHeader.STATE, RingState.PLAYING);

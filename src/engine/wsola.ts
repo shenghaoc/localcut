@@ -41,7 +41,8 @@ export class WsolaStretcher {
 	 * @param input Interleaved PCM (Float32Array), at least
 	 *   `WSOLA_WINDOW_SAMPLES * channels` samples.
 	 * @param speedRatio Current playback speed (> 0). The analysis pointer
-	 *   advances by `outputFrames / speedRatio` source samples per call.
+	 *   advances by output frames multiplied by this ratio, so 2× consumes twice
+	 *   as much source material as 1× and 0.5× consumes half as much.
 	 * @param outputFrames Number of output sample frames to produce.
 	 * @returns Interleaved Float32Array of length `outputFrames * channels`.
 	 */
@@ -54,6 +55,11 @@ export class WsolaStretcher {
 		const output = new Float32Array(outLen);
 
 		if (speedRatio <= 0 || outputFrames <= 0) return output;
+
+		// Each caller-provided pcmWindowAt buffer starts at the current remapped
+		// source timestamp. Keep the overlap for continuity, but make analysis
+		// offsets local to that window so consecutive blocks do not double-advance.
+		this.analysisPos = 0;
 
 		const inputLen = input.length / ch;
 		let outOffset = 0;
@@ -100,8 +106,7 @@ export class WsolaStretcher {
 				}
 			}
 
-			// Advance analysis pointer: slower speed = more source material consumed
-			this.analysisPos += blockFrames / speedRatio;
+			this.analysisPos += blockFrames * speedRatio;
 			outOffset += blockFrames * ch;
 		}
 
