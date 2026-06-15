@@ -79,7 +79,16 @@ async function runAppDoublePass(device: GPUDevice, input: GPUBuffer): Promise<Fl
 
 describe('ORT-WebGPU device ownership spike', () => {
 	it('shares one GPUBuffer (on ORT-owned device) between an app pass and ORT', async (ctx) => {
-		if (typeof navigator === 'undefined' || !('gpu' in navigator)) {
+		// `navigator.gpu` can exist while no adapter is actually available (e.g.
+		// headless/software-rendered CI). Probe for a real adapter — not just the
+		// API surface — so the spike skips instead of failing where ORT cannot get
+		// a GPU device.
+		if (typeof navigator === 'undefined' || !navigator.gpu) {
+			ctx.skip();
+			return;
+		}
+		const probeAdapter = await navigator.gpu.requestAdapter();
+		if (!probeAdapter) {
 			ctx.skip();
 			return;
 		}
