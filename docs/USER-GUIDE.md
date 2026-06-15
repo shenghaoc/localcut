@@ -561,6 +561,60 @@ Process capture audio with a gate → compressor → limiter insert chain.
 - **Latency**: The panel header reports the chain's processing latency. The limiter's 5 ms lookahead is the only contributor; gate and compressor are zero-latency.
 - **Requirements**: The Live Audio Chain requires cross-origin isolation (the same requirement as full-performance playback). Chain settings persist with the project.
 
+## Look Packs
+
+Look packs are film-emulation presets that combine grain, halation, and vignette effects into a single portable JSON file. They can optionally reference a `.cube` LUT file for colour grading.
+
+### Applying a Look Preset
+
+1. Select a clip on the timeline.
+2. In the Inspector, click **Apply Look Preset…**.
+3. Pick a `.json` preset file. If the preset references a LUT, you can also select the corresponding `.cube` file in the same file picker.
+4. The preset's look parameters are applied to the clip immediately.
+
+### Exporting a Look Preset
+
+1. Select a clip that has non-default look parameters.
+2. In the Inspector, click **Export Look Preset…**.
+3. The preset JSON is saved to your downloads. If the clip has a LUT, a message reminds you to include the `.cube` file alongside the preset when sharing.
+
+### Look Parameters
+
+The Inspector's **Look** section (visible when look params are non-default) provides sliders for:
+
+- **Grain Strength** (0–1): Film grain intensity
+- **Grain Size** (0.5–4.0): Spatial scale of the grain pattern
+- **Halation Threshold** (0–1): Brightness threshold for the halation glow
+- **Halation Radius** (0–64): Blur radius of the halation effect
+- **Halation Tint** (R, G, B): Colour of the halation glow
+- **Vignette Amount** (0–1): Darkness of the vignette
+- **Vignette Feather** (0–1): Softness of the vignette edge
+- **Vignette Roundness** (0–2): Shape from circular (1.0) to rectangular (2.0)
+
+The pipeline order is fixed: colour grade → LUT → halation → grain → vignette.
+
+## Animated Overlays
+
+### Animated Images (WebP, AVIF, GIF)
+
+Animated WebP, AVIF, and GIF files can be imported as image sources. On browsers that support the `ImageDecoder` API (Chromium, Safari), animations play frame-accurately. On Firefox, only the first frame is displayed with a **"static (browser limitation)"** badge in the media bin.
+
+To use an animated image as an overlay, place it on a track above your main video. The compositor blends it automatically.
+
+### Lottie Animations
+
+Plain `.json` Lottie files (exported from After Effects, LottieFiles, etc.) can be imported as overlay sources. The animation plays frame-accurately in the pipeline worker using lottie-web.
+
+**Note**: `.lottie` zip containers are not yet supported. Export plain `.json` from your Lottie tool.
+
+Lottie sources appear in the media bin with a **"Lottie"** badge. The animation duration and frame rate are shown in the details popover.
+
+### Alpha Video Overlays
+
+VP9 and AV1 video files with alpha channels can be used as overlays. Place the alpha video on a higher track; the compositor's premultiplied-alpha over-blend composites it automatically over lower tracks.
+
+If your browser cannot decode alpha (the VP9/AV1 decode probe is unsupported), the video will import as opaque with an **"Alpha channel not decoded"** warning in the media bin.
+
 ## Exporting
 
 ### Direct Export
