@@ -53,7 +53,9 @@
 - [ ] **T2.3** In `src/engine/beat-analysis.ts`, have `analyseBeatTimes`
   instantiate `WasmBeatAnalyser` and call its `processFrame` inside the STFT
   loop, falling back automatically when `init()` returns the JS path. The PCM
-  streaming loop requests `pcmWindowAt(windowStart, 480_000, 1, 48_000)` and
+  streaming loop requests `pcmWindowAt(windowStart, 938 * 512 /* = 480,256 */,
+  1, 48_000)` — an exact multiple of the 512-sample hop so the carry buffer is
+  always aligned —
   carries the last 512 samples across window boundaries. Check
   `options?.signal?.aborted` after each window and return early if set.
 
@@ -134,9 +136,11 @@
   - **split mode**: for each `clipRef`, collect beat times inside the clip
     span, enforce the 0.2 s minimum guard (skip offending beats), call
     `splitClip` for each retained beat time in order.
-  - **align mode**: for each `clipRef`, find nearest beat (earlier on tie),
-    clamp to 0, check for same-track overlap with adjacent clips; if overlap
-    detected, push a diagnostics finding and skip that clip's move.
+  - **align mode**: sort `clipRefs` by each clip's current `start` time
+    (ascending) before processing so overlap decisions are deterministic;
+    then for each ref find nearest beat (earlier on tie), clamp to 0, check
+    for same-track overlap with already-moved clips; if overlap detected, push
+    a diagnostics finding and skip that clip's move.
   Wrap all mutations in one `commitTimelineMutation` call with
   `coalesceKey: 'beat-auto-cut'`.
 

@@ -53,7 +53,7 @@ below is testable in isolation; where numbers appear they are not suggestions.
   - Onset peak-picking: moving-mean threshold with a **state window of 16
     frames**, a **multiplier of 1.3**, and a **minimum inter-onset gap of
     0.25 s**; a candidate frame is accepted as an onset if its flux exceeds
-    `max(threshold x moving_mean, 0.01)`.
+    `max(alpha x moving_mean, 0.01)` (where `alpha` = 1.3 is the multiplier).
   - Tempo: autocorrelation of the onset-strength envelope over **60-200 BPM**
     (lag range 0.3-1.0 s), with parabolic interpolation around the peak lag
     to obtain sub-frame tempo; the winning BPM is the one with highest
@@ -178,12 +178,14 @@ below is testable in isolation; where numbers appear they are not suggestions.
   unchanged.
 
 - **R5.3** **Align mode:** each selected clip's `start` is moved to the
-  nearest beat time. Tie-breaking: when a clip start is equidistant from two
-  beats, snap to the earlier beat. The move is clamped to `[0, inf)`. No clip is
-  moved if no beat time is available for any enabled source. If two selected
-  clips on the same track would overlap after alignment, the later clip's
-  alignment is skipped (the clip stays at its original position) and a
-  diagnostic warning is emitted.
+  nearest beat time. Clips are processed in chronological order (sorted
+  ascending by their current `start` time) so that overlap-skip decisions
+  are deterministic -- the earlier clip always takes priority. Tie-breaking:
+  when a clip start is equidistant from two beats, snap to the earlier beat.
+  The move is clamped to `[0, inf)`. No clip is moved if no beat time is
+  available for any enabled source. If two selected clips on the same track
+  would overlap after alignment, the later clip's alignment is skipped (the
+  clip stays at its original position) and a diagnostic warning is emitted.
 
 - **R5.4** The command is only available (enabled in the UI) when at least one
   clip is selected and at least one source has an analysis result available.
