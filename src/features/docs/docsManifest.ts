@@ -7,6 +7,7 @@ import indexContent from './content/index.md?raw';
 import gettingStartedContent from './content/getting-started.md?raw';
 import importingMediaContent from './content/importing-media.md?raw';
 import timelineEditingContent from './content/timeline-editing.md?raw';
+import beatDetectionContent from './content/beat-detection.md?raw';
 import smartReframeContent from './content/smart-reframe.md?raw';
 import exportingContent from './content/exporting.md?raw';
 import captionsContent from './content/captions.md?raw';
@@ -33,6 +34,7 @@ export const DOC_SECTIONS: readonly DocSection[] = [
 	{ slug: 'getting-started', title: 'Getting started', content: gettingStartedContent },
 	{ slug: 'importing-media', title: 'Importing media', content: importingMediaContent },
 	{ slug: 'timeline-editing', title: 'Timeline editing', content: timelineEditingContent },
+	{ slug: 'beat-detection', title: 'Beat detection', content: beatDetectionContent },
 	{ slug: 'smart-reframe', title: 'Smart Reframe', content: smartReframeContent },
 	{ slug: 'exporting', title: 'Exporting', content: exportingContent },
 	{ slug: 'captions', title: 'Captions', content: captionsContent },

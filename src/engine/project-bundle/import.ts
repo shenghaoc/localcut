@@ -18,6 +18,12 @@ export interface ImportBundleOptions {
 		descriptor: SourceDescriptor,
 		file: File
 	) => Promise<{ ok: true } | { ok: false; message: string }>;
+	/**
+	 * Optional: persist a bundle-embedded beat cache back into local storage
+	 * keyed by the source's media fingerprint. Phase 34 restore (R2.3) — best
+	 * effort; a failure here must not block the import.
+	 */
+	persistBeatCache?: (sourceFingerprintDigest: string, text: string) => Promise<void>;
 }
 
 async function loadManifestAndProject(sink: BundleDirectorySink): Promise<
@@ -215,6 +221,30 @@ export async function importProjectBundle(
 				assetId: asset.assetId
 			})
 		);
+	}
+
+	// Phase 34: restore embedded beat caches for bound sources. The
+	// cacheManifest entry maps sourceId -> beats asset; we look up each bound
+	// source's media fingerprint (in the source descriptor) to key the cache.
+	if (options.persistBeatCache && manifest.cacheManifest?.beats) {
+		const sourceById = new Map(manifest.sources.map((entry) => [entry.sourceId, entry]));
+		for (const beatEntry of manifest.cacheManifest.beats) {
+			if (!boundSourceIds.includes(beatEntry.sourceId)) continue;
+			const sourceEntry = sourceById.get(beatEntry.sourceId);
+			const fingerprint = sourceEntry?.descriptor.fingerprint;
+			if (!fingerprint) continue;
+			const asset = assetById.get(beatEntry.assetId);
+			if (!asset || asset.kind !== 'beats') continue;
+			const blob = await sink.readBlob(asset.relativePath);
+			if (!blob) continue;
+			const text = await blob.text();
+			try {
+				await options.persistBeatCache(fingerprint.digest, text);
+			} catch {
+				// best-effort -- caller may have OPFS quota issues; recompute
+				// on first use rather than failing the import.
+			}
+		}
 	}
 
 	const expectsEmbeddedMedia = manifest.sources.some((entry) => entry.status === 'embedded');

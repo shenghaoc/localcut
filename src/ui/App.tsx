@@ -1832,6 +1832,14 @@ export function App() {
 				});
 				setStatusLine(`Beat analysis failed: ${msg.message}`);
 				break;
+			case 'beat-settings':
+				// Worker is the source of truth on restore/import -- adopt the
+				// persisted settings without echoing back to avoid a feedback loop.
+				setBeatSettings({
+					enabledSourceIds: [...msg.enabledSourceIds],
+					globalOffsetMs: msg.globalOffsetMs
+				});
+				break;
 		}
 	}
 
@@ -2044,6 +2052,12 @@ export function App() {
 		thumbnailStore.clear();
 		setThumbnailVersion((v) => v + 1);
 		setHistoryState({ canUndo: false, canRedo: false });
+		// Phase 34: clear any stale beat results / progress / grid settings
+		// from the prior project so a new import doesn't inherit the BPM,
+		// grid, or in-flight progress of an unrelated source.
+		setBeatResults(new Map());
+		setBeatProgress(new Map());
+		setBeatSettings({ enabledSourceIds: [], globalOffsetMs: 0 });
 	}
 
 	function startNewProject() {
@@ -2977,7 +2991,19 @@ export function App() {
 								beatSettings={beatSettings}
 								analysisProgress={beatProgress}
 								onAnalyse={(sourceId) => bridge?.send({ type: 'analyze-beats', sourceId })}
-								onCancel={(sourceId) => bridge?.send({ type: 'cancel-beat-analysis', sourceId })}
+								onCancel={(sourceId) => {
+									bridge?.send({ type: 'cancel-beat-analysis', sourceId });
+									// The worker intentionally sends no terminal message for an
+									// explicit cancel (cancellation isn't an error). Clear the
+									// progress entry optimistically so the BeatPanel row exits
+									// the analysing state immediately.
+									setBeatProgress((prev) => {
+										if (!prev.has(sourceId)) return prev;
+										const next = new Map(prev);
+										next.delete(sourceId);
+										return next;
+									});
+								}}
 								onToggleSource={(sourceId, enabled) => {
 									const current = beatSettings();
 									const ids = enabled

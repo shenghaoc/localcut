@@ -122,6 +122,14 @@ export interface MediaInputHandle {
 	readonly createSecondaryFrameSource?: () => VideoFrameProvider | null;
 	/** Sequential decoded-audio source; null if none/undecodable. */
 	readonly audioSource: SequentialAudioSource | null;
+	/**
+	 * Opens an independent sequential audio source over the same primary audio
+	 * track. Used by long-running background work (e.g. Phase 34 beat analysis)
+	 * that must NOT seek the shared `audioSource` underneath playback/export.
+	 * Returns null when the source has no decodable audio. The caller owns the
+	 * returned source and must call `.dispose()` when done.
+	 */
+	readonly createSecondaryAudioSource?: () => SequentialAudioSource | null;
 	readonly audioChannels: number;
 	readonly audioSampleRate: number;
 	/** Source display dimensions (after rotation/aspect), or 0 when no video. */

@@ -812,17 +812,13 @@ export function Timeline(props: TimelineProps) {
 											</span>
 										)}
 									</For>
-									{/* Phase 34: beat tick overlay */}
-									<For
-										each={beatTickTimes().filter(
-											(t) =>
-												t >= (scrollEl ? scrollEl.scrollLeft / pxPerSecond() - 1 : 0) &&
-												t <=
-													(scrollEl
-														? (scrollEl.scrollLeft + scrollEl.clientWidth) / pxPerSecond() + 1
-														: Infinity)
-										)}
-									>
+									{/* Phase 34: beat tick overlay. Render every beat -- scroll position
+									 isn't a reactive signal, so a viewport filter using `scrollEl.scrollLeft`
+									 wouldn't update on drag. A 10-minute track at 200 BPM is ~2000 ticks,
+									 well within DOM cost; the For block is the same `position: absolute`
+									 pattern as `timeline-ruler-tick` so off-screen ticks paint as empty
+									 boxes outside the clipped viewport. */}
+									<For each={beatTickTimes()}>
 										{(beatTime, index) => (
 											<span
 												class="timeline-ruler-tick timeline-beat-tick"

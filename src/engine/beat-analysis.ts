@@ -247,6 +247,18 @@ export function decodeDeltaBeatTimes(delta: readonly number[]): number[] {
 	return result;
 }
 
+/**
+ * Silence detector for the full source. The mean |sample| threshold is
+ * conservative -- music with a typical commercial master sits well above
+ * 0.01, while studio-quality silence + light noise floor stays under.
+ */
+function isEffectivelySilent(absSampleSum: number, durationS: number): boolean {
+	const totalSamples = durationS * SAMPLE_RATE;
+	if (totalSamples <= 0) return true;
+	const meanAbs = absSampleSum / totalSamples;
+	return meanAbs < 0.001;
+}
+
 // ---------------------------------------------------------------------------
 // Main analysis function
 // ---------------------------------------------------------------------------
@@ -274,6 +286,13 @@ export async function analyseBeatTimes(
 	const allFlux: number[] = [];
 	let carryBuffer = new Float32Array(HOP_SAMPLES); // 512 samples overlap
 	let carryFilled = false;
+	// prevMagnitudes is carried ACROSS chunk boundaries so the first frame of
+	// each chunk is compared against the last frame of the previous chunk
+	// (not zeros). Otherwise an artificial spectral-flux spike was injected
+	// at every chunk boundary, skewing tempo phase on long sources.
+	let prevMagnitudes = new Float32Array(HALF_N + 1);
+	let havePrevMagnitudes = false;
+	let signalEnergy = 0; // accumulated abs amplitude across all PCM read; silence guard.
 
 	let windowIndex = 0;
 
@@ -286,6 +305,9 @@ export async function analyseBeatTimes(
 		// Read 10 seconds of mono PCM at 48 kHz
 		const pcm = await audioSource.pcmWindowAt(windowStart, WINDOW_FRAMES, 1, SAMPLE_RATE);
 
+		// Cheap silence detector: sum |sample| across all chunks (used after the loop).
+		for (let i = 0; i < pcm.length; i++) signalEnergy += Math.abs(pcm[i]);
+
 		// Prepend carry from previous window
 		let fullPcm: Float32Array;
 		if (carryFilled) {
@@ -296,8 +318,10 @@ export async function analyseBeatTimes(
 			fullPcm = pcm;
 		}
 
-		// Run STFT over this window
-		let prevMagnitudes = new Float32Array(HALF_N + 1);
+		// Run STFT over this window. prevMagnitudes persists across windows.
+		if (!havePrevMagnitudes) {
+			prevMagnitudes = new Float32Array(HALF_N + 1);
+		}
 		const frameCount = Math.floor((fullPcm.length - FFT_N) / HOP_SAMPLES) + 1;
 
 		for (let frame = 0; frame < frameCount; frame++) {
@@ -328,6 +352,7 @@ export async function analyseBeatTimes(
 			const flux = spectralFlux(magnitudes, prevMagnitudes);
 			allFlux.push(flux);
 			prevMagnitudes = new Float32Array(magnitudes);
+			havePrevMagnitudes = true;
 		}
 
 		// Save carry buffer (last HOP_SAMPLES samples)
@@ -345,8 +370,17 @@ export async function analyseBeatTimes(
 		windowStart += WINDOW_FRAMES / SAMPLE_RATE;
 	}
 
-	// Run the analysis pipeline on the accumulated flux
-	if (allFlux.length === 0) {
+	// Silence guard: if the input has essentially no energy OR no meaningful
+	// onsets, the autocorrelation/grid stage would still emit a dense ~200 BPM
+	// lattice from random noise floor. Return an empty grid in that case.
+	if (allFlux.length === 0 || isEffectivelySilent(signalEnergy, durationSeconds)) {
+		return { tempoBpm: 120, beatTimesMs: [], analyserVersion: 1 };
+	}
+
+	// Require at least 4 picked onsets before producing a beat grid -- below
+	// that threshold tempo estimation is dominated by FFT round-off noise.
+	const pickedOnsets = pickOnsets(allFlux, HOP_SECONDS);
+	if (pickedOnsets.length < 4) {
 		return { tempoBpm: 120, beatTimesMs: [], analyserVersion: 1 };
 	}
 

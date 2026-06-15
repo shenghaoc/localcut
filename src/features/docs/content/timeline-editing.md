@@ -29,6 +29,10 @@ The timeline is where you arrange clips. Each track holds one kind of media — 
 
 Use the **+** button in the timeline header to add video or audio tracks. Track headers offer **lock** (prevent edits), **visibility** (hide from preview/export), **sync lock**, and reordering. Markers added at the playhead show on the ruler and can bound export ranges.
 
+## Snapping to beats
+
+If your project has imported music, run beat analysis to overlay a detected beat grid on the ruler and snap edits to it. See [Beat detection](/docs/beat-detection).
+
 ## Transitions
 
 When two clips share a cut point on the same video track, a **diamond** appears at the boundary. Click it, then choose a kind (Cross Dissolve, Dip to Black, Wipe, Slide) and duration in the Inspector. The maximum duration reflects how much source headroom each clip has past the cut.

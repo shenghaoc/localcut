@@ -2258,6 +2258,12 @@ export type WorkerStateMessage =
 			analyserVersion: number;
 	  }
 	| { type: 'beat-analysis-error'; sourceId: string; message: string }
+	| {
+			/** Worker -> UI sync of the persisted beat grid settings on restore/import. */
+			type: 'beat-settings';
+			enabledSourceIds: string[];
+			globalOffsetMs: number;
+	  }
 	| { type: 'error'; message: string };
 
 // ── Phase 46: Replay Buffer + Live Audio Chain ──

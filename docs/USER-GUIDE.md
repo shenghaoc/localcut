@@ -251,8 +251,9 @@ The beat analysis uses a WASM SIMD-accelerated FFT when available for faster ana
 
 - Analysis supports tempo detection in the range 60–200 BPM.
 - Beat times are derived from the analysis and are not stored as editable markers. They do not appear in the export markers range selector.
-- Analysis results are cached per source fingerprint. Re-importing the same audio file does not require re-analysis.
-- Analysis results are included in project bundles, so round-tripped projects retain their beat data.
+- Analysis results are cached per source fingerprint in OPFS. Re-importing the same audio file in the same browser profile does not require re-analysis.
+- Beat-grid settings (enabled sources + global offset) ride in the project autosave/restore.
+- When you export a project bundle (Phase 23), the OPFS beat cache is embedded under `cache/beats/`; importing the bundle on another machine restores the cache so analysis does not re-run.
 - Silent or near-silent audio is detected before grid generation and produces an empty beat list rather than a spurious dense grid.
 
 ## Portrait Matte (Experimental)

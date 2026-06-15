@@ -1,24 +1,19 @@
 /**
- * WASM SIMD-accelerated beat analysis.
+ * WASM-accelerated beat analysis.
  *
- * Wraps a hand-written WAT->WASM module that uses wasm-simd128 intrinsics
- * for the 1024-point FFT butterfly hot path. Falls back transparently to
- * the pure-JS implementation when WASM or SIMD is unavailable.
+ * Wraps a hand-written WAT->WASM module that implements 1024-point
+ * radix-2 DIT FFT + Hann window + magnitude. The hot path is scalar
+ * (per-butterfly correct, mirrors the JS reference) -- earlier SIMD
+ * vectorisation was incorrect because each lane in a SIMD butterfly
+ * needs its own twiddle factor. The WASM is still faster than JS due
+ * to typed memory access and ahead-of-time compilation by the engine,
+ * but no longer requires SIMD support to compile.
  *
  * The WASM module handles: Hann windowing, FFT, magnitude computation.
  * Spectral flux and the rest of the DSP pipeline run in JS.
  */
 
 import { BEAT_ANALYSIS_WASM_B64 } from './beat-analysis-simd-wasm-b64';
-
-// ---------------------------------------------------------------------------
-// SIMD feature detection
-// ---------------------------------------------------------------------------
-
-const SIMD_TEST_BYTES = new Uint8Array([
-	0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 22, 1, 20, 0, 253, 12, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 11
-]);
 
 // Memory layout constants (must match beat-analysis-simd.wat)
 const HANN_PTR = 0; // 0x0000, 1024 * 4 = 4096 bytes
@@ -39,14 +34,6 @@ async function detectAndCompile(): Promise<void> {
 	if (typeof WebAssembly === 'undefined') return;
 
 	try {
-		let simdOk = false;
-		try {
-			simdOk = WebAssembly.validate(SIMD_TEST_BYTES);
-		} catch {
-			simdOk = false;
-		}
-		if (!simdOk) return;
-
 		const binaryString = atob(BEAT_ANALYSIS_WASM_B64);
 		const bytes = new Uint8Array(binaryString.length);
 		for (let i = 0; i < binaryString.length; i++) {
