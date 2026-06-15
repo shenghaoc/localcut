@@ -8,7 +8,9 @@ import {
 	TIMELINE_EPSILON,
 	type ExportPresetDoc,
 	type ExportSettings,
+	type InterpolationWorkerCommand,
 	type MediaAssetSnapshot,
+	type TimeRange,
 	type RenderQueueJob,
 	type RenderQueueState,
 	type ThroughputProbe,
@@ -222,6 +224,21 @@ import {
 import { probeEncodeThroughput } from './hardware-probe';
 import { FrameCache, makeFrameCacheKey } from './frame-cache';
 import { MatteEngine } from './matte/matte-engine';
+import {
+	DEFAULT_INTERPOLATION_MANIFEST_URL,
+	InterpolationEngine
+} from './interpolation/interpolation-engine';
+import { deriveInterpolationAvailability } from './interpolation/interpolation-availability';
+import {
+	estimateSynthesisMs,
+	type CalibrationProfile
+} from './interpolation/interpolation-estimate';
+import { planTiles, type ModelIoContract, type VramBudget } from './interpolation/tiling';
+import {
+	InterpolationManifestError,
+	toModelIoContract,
+	validateInterpolationManifest
+} from './interpolation/interpolation-model';
 import { SecondaryFrameSourcePool, type VideoFrameProvider } from './frame-source';
 import {
 	ExportCancelledError,
@@ -333,6 +350,55 @@ function ensureMatteEngine(): MatteEngine | null {
 	}
 	return matteEngine;
 }
+
+/** Phase 37 frame-interpolation engine — zero-copy ORT-WebGPU synthesis on
+ *  the renderer's device; created lazily on the first interpolation action. */
+let interpolationEngine: InterpolationEngine | null = null;
+
+function ensureInterpolationEngine(): InterpolationEngine | null {
+	if (!renderer) return null;
+	if (!interpolationEngine) {
+		interpolationEngine = new InterpolationEngine({
+			device: renderer.gpuDevice,
+			onStatus: (status, error) => {
+				const manifest = interpolationEngine?.getModelManifest();
+				post({
+					type: 'interp-model-status',
+					status,
+					accelerator: interpolationEngine?.getExecutionProvider() === 'webnn' ? 'webnn' : 'webgpu',
+					...(manifest ? { sizeBytes: manifest.model.sizeBytes } : {}),
+					...(error ? { error } : {})
+				});
+			}
+		});
+	}
+	return interpolationEngine;
+}
+
+/** Conservative default per-tile calibration until a real micro-benchmark
+ *  replaces it on first run (R5.2). */
+const INTERP_DEFAULT_CALIBRATION: CalibrationProfile = {
+	accelerator: 'webgpu',
+	msPerTile: 8,
+	tilePixels: 256 * 256,
+	overheadMs: 50
+};
+
+/** Model I/O used for tiling before a model is loaded (FILM-class default). */
+const INTERP_DEFAULT_IO: ModelIoContract = {
+	inputWidth: 256,
+	inputHeight: 256,
+	inputChannels: 3,
+	bytesPerElement: 2,
+	flowOutput: false,
+	maxDisplacement: 32
+};
+
+function interpVramBudget(): VramBudget {
+	const maxBuffer = renderer?.gpuDevice.limits.maxBufferSize ?? 256 * 1024 * 1024;
+	return { maxBytes: Math.min(maxBuffer, 1024 * 1024 * 1024), safety: 0.5 };
+}
+
 /** Shared empty set for dropping every cached title texture via `retain`. */
 const EMPTY_CLIP_IDS: ReadonlySet<string> = new Set<string>();
 /** Default preview/export geometry for title-only timelines (no video source). */
@@ -1891,6 +1957,8 @@ async function handleInit(
 				// survive into reinit with a dead `GPUDevice`.
 				void matteEngine?.dispose();
 				matteEngine = null;
+				void interpolationEngine?.dispose();
+				interpolationEngine = null;
 				renderer?.destroy();
 				renderer = null;
 				previewBackend = 'none';
@@ -6273,6 +6341,8 @@ async function handleDispose(): Promise<void> {
 	titleCache = null;
 	void matteEngine?.dispose();
 	matteEngine = null;
+	void interpolationEngine?.dispose();
+	interpolationEngine = null;
 	renderer?.destroy();
 	renderer = null;
 	reducedRenderer?.destroy();
@@ -6959,6 +7029,170 @@ async function handleReplaySaveLastN(nSeconds?: number): Promise<void> {
 	}
 }
 
+// ── Phase 37: Frame Interpolation handlers ──
+
+async function probeInterpolationManifest(): Promise<
+	{ configured: true; sizeBytes: number } | { configured: false; reason: string }
+> {
+	try {
+		const response = await fetch(DEFAULT_INTERPOLATION_MANIFEST_URL);
+		if (!response.ok) {
+			return {
+				configured: false,
+				reason: `Interpolation model manifest fetch failed: HTTP ${response.status}.`
+			};
+		}
+		const manifest = validateInterpolationManifest(await response.json());
+		return { configured: true, sizeBytes: manifest.model.sizeBytes };
+	} catch (error) {
+		if (error instanceof InterpolationManifestError) {
+			return { configured: false, reason: 'No compatible interpolation model configured.' };
+		}
+		return {
+			configured: false,
+			reason: error instanceof Error ? error.message : String(error)
+		};
+	}
+}
+
+async function handleInterpolationProbe(): Promise<void> {
+	// Availability is display/feature-gate only — it never feeds tier derivation
+	// (R1.1). A usable WebGPU renderer means ORT-WebGPU can share the renderer
+	// device; the model graph still must pass manifest validation before controls
+	// appear.
+	const tier = currentCapabilityProbe?.tier ?? 'shell-only';
+	const hasDevice = renderer !== null;
+	const baseAvailability = deriveInterpolationAvailability(tier, hasDevice, hasDevice);
+	if (baseAvailability.state === 'unavailable') {
+		post({ type: 'interp-availability', availability: baseAvailability });
+		return;
+	}
+
+	const manifestProbe = await probeInterpolationManifest();
+	if (!manifestProbe.configured) {
+		post({
+			type: 'interp-availability',
+			availability: { state: 'unavailable', reason: manifestProbe.reason }
+		});
+		post({
+			type: 'interp-model-status',
+			status: 'failed',
+			error: manifestProbe.reason
+		});
+		return;
+	}
+
+	post({
+		type: 'interp-availability',
+		availability: baseAvailability
+	});
+	post({
+		type: 'interp-model-status',
+		status: interpolationEngine?.getStatus() ?? 'not-loaded',
+		accelerator: 'webgpu',
+		sizeBytes: manifestProbe.sizeBytes
+	});
+}
+
+async function handleInterpolationLoadModel(
+	cmd: Extract<InterpolationWorkerCommand, { type: 'interp-load-model' }>
+): Promise<void> {
+	// Single deployed model in v1; `catalogId` is reserved for future selection.
+	void cmd.catalogId;
+	const engine = ensureInterpolationEngine();
+	if (!engine) {
+		post({
+			type: 'interp-model-status',
+			status: 'failed',
+			error: 'Frame interpolation requires the accelerated WebGPU renderer.'
+		});
+		return;
+	}
+	// Status (loading → loaded/failed, with size/error) flows from the engine's
+	// onStatus callback wired in ensureInterpolationEngine.
+	await engine.ensureModelLoaded();
+}
+
+/** Output frame count + bracketing tile plan for an estimate request. */
+function interpEstimateInputs(
+	cmd: Extract<InterpolationWorkerCommand, { type: 'interp-estimate' }>
+): {
+	frames: number;
+	range: TimeRange;
+} {
+	if (cmd.request.kind === 'preview') {
+		const seg = cmd.request.segment;
+		// Nominal source cadence for the preview estimate; the real per-frame cost
+		// comes from the tile plan + calibration below.
+		const frames = Math.max(0, Math.round((seg.endS - seg.startS) * 30));
+		return { frames, range: seg };
+	}
+	const settings = cmd.request.settings;
+	const range = settings.range ?? { startS: 0, endS: 0 };
+	const durationS = Math.max(0, range.endS - range.startS);
+	return { frames: Math.round(durationS * settings.fps), range };
+}
+
+async function handleInterpolationEstimate(
+	cmd: Extract<InterpolationWorkerCommand, { type: 'interp-estimate' }>
+): Promise<void> {
+	const engine = ensureInterpolationEngine();
+	const manifest = engine?.getModelManifest();
+	const io = manifest ? toModelIoContract(manifest.io) : INTERP_DEFAULT_IO;
+	const width = renderer?.size.width ?? 1920;
+	const height = renderer?.size.height ?? 1080;
+	const plan = planTiles(width, height, io, interpVramBudget());
+	const { frames, range } = interpEstimateInputs(cmd);
+	if ('refuse' in plan) {
+		post({ type: 'interp-refusal', reason: 'vram', range });
+		return;
+	}
+	const estimateMs = estimateSynthesisMs(frames, plan, INTERP_DEFAULT_CALIBRATION);
+	post({
+		type: 'interp-estimate-result',
+		estimateMs,
+		frames,
+		tilesPerFrame: plan.tiles.length,
+		cachedFraction: 0
+	});
+}
+
+async function handleInterpolationPreviewSegment(
+	cmd: Extract<InterpolationWorkerCommand, { type: 'interp-preview-segment' }>
+): Promise<void> {
+	const engine = ensureInterpolationEngine();
+	if (!engine) {
+		post({
+			type: 'interp-error',
+			message: 'Frame interpolation requires the accelerated WebGPU renderer.'
+		});
+		return;
+	}
+	if (engine.getStatus() !== 'loaded') await engine.ensureModelLoaded();
+	if (engine.getStatus() !== 'loaded') {
+		post({ type: 'interp-error', message: 'Interpolation model is not loaded.' });
+		return;
+	}
+	// The zero-copy synthesis engine (engine.synthesise) and render-cache keying
+	// are in place; bounded-preview frame generation feeds them from the
+	// DualStreamFrameSource decode path + presents through the render cache
+	// (tasks T3.4/T7.3). That decode→cache plumbing is the remaining integration
+	// slice and is not yet wired into preview.
+	post({
+		type: 'interp-error',
+		message: `Bounded interpolation preview for ${cmd.segment.startS.toFixed(2)}–${cmd.segment.endS.toFixed(2)}s needs the decode→cache integration (tasks T3.4/T7.3); the model is loaded and synthesis is ready.`
+	});
+}
+
+function handleInterpolationCancel(): void {
+	post({ type: 'interp-cancelled' });
+}
+
+function handleInterpolationDispose(): void {
+	void interpolationEngine?.dispose();
+	interpolationEngine = null;
+}
+
 self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 	const cmd = event.data;
 	switch (cmd.type) {
@@ -7627,6 +7861,25 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 		// Phase 44: Keystroke overlay
 		case 'generate-key-overlay':
 			handleGenerateKeyOverlay(cmd);
+			break;
+		// ── Phase 37: Frame Interpolation ──
+		case 'interp-probe':
+			void handleInterpolationProbe();
+			break;
+		case 'interp-load-model':
+			void handleInterpolationLoadModel(cmd);
+			break;
+		case 'interp-estimate':
+			void handleInterpolationEstimate(cmd);
+			break;
+		case 'interp-preview-segment':
+			void handleInterpolationPreviewSegment(cmd);
+			break;
+		case 'interp-cancel':
+			handleInterpolationCancel();
+			break;
+		case 'interp-dispose':
+			handleInterpolationDispose();
 			break;
 		case 'dispose':
 			void handleDispose();

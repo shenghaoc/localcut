@@ -115,6 +115,8 @@ export interface RenderCacheKey {
 	readonly keyframeHashes: readonly string[];
 	readonly exportSettingsHash?: string;
 	readonly previewSettingsHash?: string;
+	/** Phase 37: interpolation dependency hash. Set when interpolation is enabled. */
+	readonly interpolationHash?: string;
 }
 
 export interface RenderCacheOutputDescriptor {

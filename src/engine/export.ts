@@ -429,6 +429,11 @@ export function normalizeExportSettings(
 	sourceFps: number,
 	timelineDuration: number
 ): ExportSettings {
+	if (settings.interpolation) {
+		throw new Error(
+			'Frame interpolation export is unavailable until the ONNX model and export synthesis bridge are validated.'
+		);
+	}
 	const { width, height } = deriveExportSize(sourceWidth, sourceHeight, {
 		width: settings.width,
 		height: settings.height

@@ -18,61 +18,14 @@
  *    SHA-256), so switching between them never re-downloads.
  */
 
-/**
- * Hostnames (besides this app's own origin) the model loader may fetch from. An
- * entry starting with `.` matches that domain and all subdomains. Hugging Face
- * `resolve` URLs 302-redirect to a signed Xet/LFS CDN, so those CDN hosts are
- * included too — the redirect is browser-followed (and would be enforced by any
- * future CSP `connect-src`, which applies to every hop).
- */
-export const ASR_TRUSTED_MODEL_HOSTS: readonly string[] = [
-	// Hugging Face model repos + their Xet/LFS CDNs (cas-bridge.xethub.hf.co,
-	// *.cdn.hf.co, cdn-lfs*.huggingface.co).
-	'.huggingface.co',
-	'.hf.co',
-	// Kaggle Models / Google AI Edge (LiteRT) assets are served from GCS.
-	'www.kaggle.com',
-	'storage.googleapis.com',
-	// GitHub repositories and raw content.
-	'github.com',
-	'raw.githubusercontent.com',
-	'objects.githubusercontent.com'
-];
-
-function hostMatches(host: string, entry: string): boolean {
-	return entry.startsWith('.') ? host === entry.slice(1) || host.endsWith(entry) : host === entry;
-}
-
-export class UntrustedModelHostError extends Error {
-	constructor(url: string) {
-		super(
-			`Refusing to fetch ASR model asset from an untrusted host: ${url}. ` +
-				`Allowed: this app's origin or one of [${ASR_TRUSTED_MODEL_HOSTS.join(', ')}].`
-		);
-		this.name = 'UntrustedModelHostError';
-	}
-}
-
-/**
- * True when `url` is safe to fetch a model asset from: same-origin (any scheme),
- * or an HTTPS URL whose hostname is in {@link ASR_TRUSTED_MODEL_HOSTS}.
- */
-export function isTrustedModelUrl(url: string, sameOrigin: string): boolean {
-	let parsed: URL;
-	try {
-		parsed = new URL(url, sameOrigin);
-	} catch {
-		return false;
-	}
-	if (parsed.origin === sameOrigin) return true;
-	if (parsed.protocol !== 'https:') return false;
-	return ASR_TRUSTED_MODEL_HOSTS.some((entry) => hostMatches(parsed.hostname, entry));
-}
-
-/** Throws {@link UntrustedModelHostError} unless `url` passes {@link isTrustedModelUrl}. */
-export function assertTrustedModelUrl(url: string, sameOrigin: string): void {
-	if (!isTrustedModelUrl(url, sameOrigin)) throw new UntrustedModelHostError(url);
-}
+// Re-export the shared trust machinery (Phase 37 T2.1 generalisation).
+// The ASR-specific names are preserved as aliases for backward compatibility.
+export {
+	TRUSTED_MODEL_HOSTS as ASR_TRUSTED_MODEL_HOSTS,
+	UntrustedModelHostError,
+	isTrustedModelUrl,
+	assertTrustedModelUrl
+} from '../ml/asset-types';
 
 /** A selectable on-device ASR model. */
 export interface AsrModelCatalogEntry {

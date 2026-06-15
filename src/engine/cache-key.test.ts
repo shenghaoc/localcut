@@ -6,6 +6,7 @@ import {
 	hashString,
 	hashStableValue,
 	hashTimeRemap,
+	interpolationHash,
 	proxySettingsHash,
 	renderCacheEntryMatchesKey,
 	renderCacheKeyHash,
@@ -307,5 +308,92 @@ describe('time remap cache integration', () => {
 		const keyA = renderKey({ clipDependencies: [baseDep] });
 		const keyB = renderKey({ clipDependencies: [remappedDep] });
 		expect(renderCacheKeyHash(keyA)).not.toBe(renderCacheKeyHash(keyB));
+	});
+});
+
+describe('interpolationHash', () => {
+	it('returns undefined when mode is off', () => {
+		expect(
+			interpolationHash({
+				mode: 'off',
+				factorCap: 4,
+				modelId: 'film-v1',
+				modelVersion: '1.0.0',
+				tilingProfileHash: 'abc',
+				motionBlur: false
+			})
+		).toBeUndefined();
+	});
+
+	it('returns a hash when mode is slowmo', () => {
+		const hash = interpolationHash({
+			mode: 'slowmo',
+			factorCap: 4,
+			rampHash: 'ramp-abc',
+			modelId: 'film-v1',
+			modelVersion: '1.0.0',
+			tilingProfileHash: 'abc',
+			motionBlur: false
+		});
+		expect(typeof hash).toBe('string');
+		expect(hash!.length).toBeGreaterThan(0);
+	});
+
+	it('returns a hash when mode is fps-upconvert', () => {
+		const hash = interpolationHash({
+			mode: 'fps-upconvert',
+			factorCap: 4,
+			targetFps: 60,
+			modelId: 'film-v1',
+			modelVersion: '1.0.0',
+			tilingProfileHash: 'abc',
+			motionBlur: false
+		});
+		expect(typeof hash).toBe('string');
+	});
+
+	it('changes when mode changes', () => {
+		const base = {
+			factorCap: 4,
+			modelId: 'film-v1',
+			modelVersion: '1.0.0',
+			tilingProfileHash: 'abc',
+			motionBlur: false
+		};
+		const hash1 = interpolationHash({ ...base, mode: 'slowmo' });
+		const hash2 = interpolationHash({ ...base, mode: 'fps-upconvert' });
+		expect(hash1).not.toBe(hash2);
+	});
+
+	it('changes when model changes', () => {
+		const base = {
+			mode: 'slowmo' as const,
+			factorCap: 4,
+			modelVersion: '1.0.0',
+			tilingProfileHash: 'abc',
+			motionBlur: false
+		};
+		const hash1 = interpolationHash({ ...base, modelId: 'film-v1' });
+		const hash2 = interpolationHash({ ...base, modelId: 'film-v2' });
+		expect(hash1).not.toBe(hash2);
+	});
+
+	it('changes when motion blur toggles', () => {
+		const base = {
+			mode: 'slowmo' as const,
+			factorCap: 4,
+			modelId: 'film-v1',
+			modelVersion: '1.0.0',
+			tilingProfileHash: 'abc'
+		};
+		const hash1 = interpolationHash({ ...base, motionBlur: false });
+		const hash2 = interpolationHash({ ...base, motionBlur: true });
+		expect(hash1).not.toBe(hash2);
+	});
+
+	it('interpolationHash in RenderCacheKey changes key hash', () => {
+		const key1 = renderKey({ interpolationHash: undefined });
+		const key2 = renderKey({ interpolationHash: 'interp-hash-123' });
+		expect(renderCacheKeyHash(key1)).not.toBe(renderCacheKeyHash(key2));
 	});
 });

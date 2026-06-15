@@ -109,6 +109,9 @@ export interface CapabilityProbeResult {
 	/** Phase 33 (Smart Reframe): display/feature-gate only — never
 	 *  consulted by tier derivation or any pipeline code path. */
 	smartReframe?: SmartReframeProbeResult;
+	/** Phase 37 (frame interpolation): display/feature-gate only — never
+	 *  consulted by tier derivation or any pipeline code path. */
+	interpolation?: InterpolationProbeResult;
 }
 
 // ── Phase 28: Local Audio Cleanup (LiteRT DTLN) ──
@@ -375,6 +378,52 @@ export type AsrWorkerState =
 	| { type: 'asr-cancelled'; jobId?: number }
 	| { type: 'asr-error'; jobId?: number; message: string };
 
+// ── Phase 37: Frame Interpolation worker protocol ──
+
+/** Commands sent from the UI to the pipeline worker for interpolation. */
+export type InterpolationWorkerCommand =
+	| { type: 'interp-probe' }
+	| { type: 'interp-load-model'; catalogId: string }
+	| {
+			type: 'interp-estimate';
+			request:
+				| { kind: 'preview'; segment: TimeRange }
+				| { kind: 'export'; settings: ExportSettings };
+	  }
+	| { type: 'interp-preview-segment'; segment: TimeRange }
+	| { type: 'interp-cancel' }
+	| { type: 'interp-dispose' };
+
+/** State messages posted from the pipeline worker back to the UI for interpolation. */
+export type InterpolationWorkerState =
+	| { type: 'interp-availability'; availability: InterpolationAvailability }
+	| {
+			type: 'interp-model-status';
+			status: InterpolationModelStatus;
+			accelerator?: InterpolationAccelerator;
+			sizeBytes?: number;
+			receivedBytes?: number;
+			source?: 'cache' | 'network';
+			error?: string;
+	  }
+	| {
+			type: 'interp-estimate-result';
+			estimateMs: number;
+			frames: number;
+			tilesPerFrame: number;
+			cachedFraction: number;
+	  }
+	| {
+			type: 'interp-progress';
+			fraction: number;
+			processedFrames: number;
+			totalFrames: number;
+	  }
+	| { type: 'interp-preview-ready'; segment: TimeRange }
+	| { type: 'interp-refusal'; reason: 'shot-boundary' | 'vram' | 'over-cap'; range: TimeRange }
+	| { type: 'interp-cancelled' }
+	| { type: 'interp-error'; message: string };
+
 /** Timeline command: create a caption track from ASR result. */
 export interface AsrCreateCaptionTrackCommand {
 	type: 'asr-create-caption-track';
@@ -542,11 +591,82 @@ export interface ExportSettings {
 	range?: ExportRange;
 	/** Original sources are the default. Proxy export requires explicit opt-in. */
 	sourceMode?: ExportSourceMode;
+	/** Phase 37: optional fps-upconvert interpolation. Default off; the default
+	 *  export path never branches on this unless explicitly enabled. */
+	interpolation?: InterpolationExportSettings;
 }
 
 export interface ExportCodecSupport {
 	codec: ExportVideoCodec;
 	container: ExportContainer;
+}
+
+// ── Phase 35: Speed Ramps (stub types for Phase 37 forward compatibility) ──
+
+/**
+ * Frame-handling mode for a retime segment (Phase 35).
+ * - `duplicate`: hold the nearest source frame (default, cheapest).
+ * - `blend`: cross-fade between bracketing source frames.
+ * - `synthesize`: generate intermediate frames via Phase 37 interpolation.
+ */
+export type RetimeFrameMode = 'duplicate' | 'blend' | 'synthesize';
+
+/**
+ * A retime segment stub (Phase 35). Phase 37 defines the `frameMode` field
+ * and the output-instants mapping; the full retime segment contract is
+ * extended when Phase 35 implements.
+ */
+export interface RetimeSegmentSnapshot {
+	readonly startS: number;
+	readonly durationS: number;
+	/** Playback speed multiplier (1.0 = normal, 0.5 = half speed, 2.0 = double). */
+	readonly speed: number;
+	/** Frame-handling mode. Default 'duplicate'. */
+	readonly frameMode: RetimeFrameMode;
+	/** Whether to apply motion blur when frameMode is 'synthesize'. */
+	readonly motionBlur: boolean;
+}
+
+// ── Phase 37: Frame Interpolation (ORT-WebGPU) ──
+
+export interface TimeRange {
+	readonly startS: number;
+	readonly endS: number;
+}
+
+/** Accelerator for frame interpolation. Only 'webgpu' is wired in v1. */
+export type InterpolationAccelerator = 'webgpu' | 'webnn';
+
+/** Interpolation availability state (R1.2). */
+export type InterpolationAvailability =
+	| { state: 'preview-and-export'; accelerator: 'webgpu' }
+	| { state: 'export-only'; accelerator: 'webgpu'; reason: string }
+	| { state: 'unavailable'; reason: string };
+
+/** Interpolation capability probe result (display/feature-gate only). */
+export interface InterpolationProbeResult {
+	/** Whether a usable WebGPU device was obtained. */
+	webgpuAvailable: boolean;
+	/** Whether ORT-WebGPU can run on the renderer-owned WebGPU device. */
+	ortWebgpuAvailable: boolean;
+	accelerator: InterpolationAccelerator;
+}
+
+export type InterpolationModelStatus = 'not-loaded' | 'loading' | 'loaded' | 'failed';
+
+/** Interpolation frame-handling mode for Phase 35 speed ramps. */
+export type InterpolationFrameMode = 'duplicate' | 'blend' | 'synthesize';
+
+/** Interpolation mode for export (R8). */
+export type InterpolationExportMode = 'fps-upconvert' | 'slowmo';
+
+/** Settings for interpolation in ExportSettings. */
+export interface InterpolationExportSettings {
+	mode: InterpolationExportMode;
+	factorCap: number;
+	/** Target output fps for fps-upconvert mode (e.g. 60). */
+	targetFps: number;
+	motionBlur: boolean;
 }
 
 // ── Phase 47: WHIP Publish ──
@@ -2041,6 +2161,7 @@ export type WorkerCommand =
 			}[];
 			sessionOffsetS: number;
 	  }
+	| InterpolationWorkerCommand
 	| { type: 'dispose' };
 
 /** A measured preview resolution tier (adaptive downscale of the decode path). */
@@ -2326,6 +2447,7 @@ export type WorkerStateMessage =
 	| { type: 'silence-progress'; requestId: string; progressFraction: number }
 	| { type: 'silence-result'; requestId: string; regions: SilenceRegion[] }
 	| { type: 'silence-error'; requestId: string; message: string }
+	| InterpolationWorkerState
 	| { type: 'error'; message: string };
 
 // ── Phase 46: Replay Buffer + Live Audio Chain ──

@@ -43,6 +43,14 @@ function observedBudgetValue(budget: PerformanceBudget): string {
 	return `${budget.observed.toFixed(Number.isInteger(budget.observed) ? 0 : 2)} ${budget.unit}`;
 }
 
+function formatMs(ms: number): string {
+	if (ms < 1000) return `${ms}ms`;
+	if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+	const minutes = Math.floor(ms / 60_000);
+	const seconds = Math.round((ms % 60_000) / 1000);
+	return `${minutes}m ${seconds}s`;
+}
+
 export function DiagnosticsPanel(props: DiagnosticsPanelProps) {
 	// eslint-disable-next-line eslint/no-unassigned-vars — SolidJS ref assigns via JSX
 	let panelRef: HTMLElement | undefined;
@@ -414,6 +422,73 @@ export function DiagnosticsPanel(props: DiagnosticsPanelProps) {
 									</ul>
 								</Show>
 							</section>
+
+							{/* Phase 37: Frame Interpolation diagnostics */}
+							<Show when={snapshot().interpolation}>
+								{(interp) => (
+									<section class="diagnostics-section">
+										<h2>Frame Interpolation (ML)</h2>
+										<dl class="diagnostics-grid">
+											<div>
+												<dt>Available</dt>
+												<dd>{interp().available ? 'Yes' : 'No'}</dd>
+											</div>
+											<Show when={interp().accelerator}>
+												<div>
+													<dt>Accelerator</dt>
+													<dd>{interp().accelerator}</dd>
+												</div>
+											</Show>
+											<div>
+												<dt>Model</dt>
+												<dd>{interp().modelStatus}</dd>
+											</div>
+											<Show when={interp().modelSizeBytes !== null}>
+												<div>
+													<dt>Model size</dt>
+													<dd>{formatBytes(interp().modelSizeBytes!)}</dd>
+												</div>
+											</Show>
+											<Show when={interp().cacheSource !== null}>
+												<div>
+													<dt>Cache source</dt>
+													<dd>{interp().cacheSource}</dd>
+												</div>
+											</Show>
+											<Show when={interp().lastEstimateMs !== null}>
+												<div>
+													<dt>Last estimate</dt>
+													<dd>{formatMs(interp().lastEstimateMs!)}</dd>
+												</div>
+											</Show>
+											<Show when={interp().lastActualMs !== null}>
+												<div>
+													<dt>Last actual</dt>
+													<dd>{formatMs(interp().lastActualMs!)}</dd>
+												</div>
+											</Show>
+											<Show when={interp().lastRefusals > 0}>
+												<div>
+													<dt>Shot-boundary refusals</dt>
+													<dd class="is-warn">{interp().lastRefusals}</dd>
+												</div>
+											</Show>
+										</dl>
+										<Show when={interp().recentErrors.length > 0}>
+											<h3>Recent errors</h3>
+											<ul class="diagnostics-list">
+												<For each={interp().recentErrors}>
+													{(error) => (
+														<li class="diagnostics-row is-warn">
+															<p>{error}</p>
+														</li>
+													)}
+												</For>
+											</ul>
+										</Show>
+									</section>
+								)}
+							</Show>
 
 							<section class="diagnostics-section">
 								<h2>Recovery Actions</h2>
