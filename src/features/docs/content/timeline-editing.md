@@ -51,6 +51,22 @@ Select a clip to edit it in the **Inspector** (right sidebar):
 - **Audio**: per-track gain, pan, mute, solo; per-clip fade-in/fade-out.
 - **Keyframes**: click the diamond next to a parameter to set a keyframe at the playhead, move the playhead, change the value — the parameter animates between keyframes. The same interpolation is used in preview and export.
 
+## Speed Ramps
+
+Speed ramps let you vary the playback speed of a clip over time -- slow-motion, fast-motion, or a smooth ramp between the two. The speed ramp is applied per-clip and affects both video and audio.
+
+1. Select a video or audio clip on the timeline. Title clips do not support speed ramps.
+2. In the Inspector, find the **Speed** section.
+3. Click **Add Ramp**. This creates a ramp with two keyframes at normal speed (1x).
+4. Adjust keyframe speeds and easing in the speed ramp editor. Speeds range from **0.25x** (4x slower) to **4x** (4x faster).
+5. The clip's timeline duration updates automatically to match the ramp -- slowing a clip down makes it longer, speeding it up makes it shorter.
+
+**Pitch Preserve**: When enabled (the default), audio is time-stretched using WSOLA to keep speech and music at their natural pitch. When disabled, audio is resampled directly, which changes the pitch along with the speed.
+
+**Clear Ramp**: Click **Clear Ramp** in the Speed section to remove the speed ramp and restore the clip to its original duration and playback speed.
+
+For the technical details -- easing types, the LUT-based curve evaluation, WSOLA parameters, and why reverse playback is not supported -- see [Time Remapping](/docs/time-remapping).
+
 ## Skin smoothing
 
 The **Skin Smoothing** slider in the Inspector applies an edge-preserving beauty filter to the selected clip. It uses a guided filter on luma gated by a chroma-based skin mask, so edges (hair, eyes, jawline) stay sharp while skin texture is softened.

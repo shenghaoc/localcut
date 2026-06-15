@@ -959,6 +959,20 @@ export interface ClipMatteSnapshot {
 	blurRadius?: number;
 }
 
+// ── Phase 35: Time Remapping ──
+
+export interface TimeRemapKeyframeSnapshot {
+	outTimeS: number;
+	speed: number;
+	easing: 'linear' | 'ease' | 'hold';
+}
+
+export interface TimeRemapSnapshot {
+	keyframes: TimeRemapKeyframeSnapshot[];
+	pitchPreserve: boolean;
+	sourceDurationS: number;
+}
+
 export interface TimelineClipSnapshot {
 	id: string;
 	/** Absent/`'video'` for source clips; `'title'` for source-less titles (Phase 14). */
@@ -982,6 +996,8 @@ export interface TimelineClipSnapshot {
 	linkedGroupId?: string;
 	/** Optional denoised audio routing (Phase 27); absent = original audio. */
 	cleanedAudio?: CleanedAudioRefSnapshot;
+	/** Phase 35: optional time-remap speed curve; absent = constant 1× speed. */
+	timeRemap?: TimeRemapSnapshot;
 }
 
 export interface TimelineTrackSnapshot {
@@ -1991,6 +2007,9 @@ export type WorkerCommand =
 			clipRefs: { trackId: string; clipId: string }[];
 	  }
 	| { type: 'set-beat-settings'; enabledSourceIds: string[]; globalOffsetMs: number }
+	// Phase 35: Time Remapping
+	| { type: 'set-time-remap'; trackId: string; clipId: string; remap: TimeRemapSnapshot }
+	| { type: 'clear-time-remap'; trackId: string; clipId: string }
 	| { type: 'dispose' };
 
 /** A measured preview resolution tier (adaptive downscale of the decode path). */
@@ -2263,6 +2282,14 @@ export type WorkerStateMessage =
 			type: 'beat-settings';
 			enabledSourceIds: string[];
 			globalOffsetMs: number;
+	  }
+	// Phase 35: Time Remapping
+	| { type: 'time-remap-updated'; trackId: string; clipId: string; outputDurationS: number }
+	| {
+			type: 'time-remap-error';
+			trackId: string;
+			clipId: string;
+			reason: 'speed-out-of-range' | 'duplicate-keyframe' | 'remap-capped';
 	  }
 	| { type: 'error'; message: string };
 

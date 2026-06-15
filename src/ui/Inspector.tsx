@@ -13,6 +13,8 @@ import type {
 	TitleAlignSnapshot,
 	TitleContentSnapshot,
 	TitleStyleSnapshot,
+	TimeRemapKeyframeSnapshot,
+	TimeRemapSnapshot,
 	TransformParamsSnapshot
 } from '../protocol';
 import { clipLocalTime, hasKeyframeTrack, keyframeAt, sortedKeyframes } from './keyframes';
@@ -26,6 +28,7 @@ export interface SelectedTitle {
 export interface SelectedClip {
 	trackId: string;
 	clipId: string;
+	kind?: import('../protocol').ClipKindSnapshot;
 	start: number;
 	duration: number;
 	effects: ClipEffectParamsSnapshot;
@@ -35,6 +38,8 @@ export interface SelectedClip {
 	skinMask?: SkinMaskSnapshot;
 	/** Phase 31: optional portrait matte configuration. */
 	matte?: import('../protocol').ClipMatteSnapshot;
+	/** Phase 35: optional time-remap speed curve. */
+	timeRemap?: import('../protocol').TimeRemapSnapshot;
 }
 
 export interface SelectedClipTransform {
@@ -137,6 +142,9 @@ interface InspectorProps {
 	onSkinMask?: (trackId: string, clipId: string, mask: SkinMaskSnapshot) => void;
 	/** Phase 32a: session-only A/B bypass toggle. */
 	onSkinSmoothBypass?: (trackId: string, clipId: string, bypass: boolean) => void;
+	/** Phase 35: time-remap callbacks. */
+	onSetTimeRemap?: (trackId: string, clipId: string, remap: TimeRemapSnapshot) => void;
+	onClearTimeRemap?: (trackId: string, clipId: string) => void;
 }
 
 type TransformSliderKey = 'x' | 'y' | 'scale' | 'rotation' | 'opacity';
@@ -170,6 +178,19 @@ const FIT_OPTIONS: { value: FitModeSnapshot; label: string }[] = [
 	{ value: 'fit', label: 'Fit' },
 	{ value: 'letterbox', label: 'Letterbox' }
 ];
+
+const TIME_REMAP_EASING_OPTIONS: {
+	value: TimeRemapKeyframeSnapshot['easing'];
+	label: string;
+}[] = [
+	{ value: 'linear', label: 'Linear' },
+	{ value: 'ease', label: 'Ease' },
+	{ value: 'hold', label: 'Hold' }
+];
+
+function coerceTimeRemapEasing(value: string): TimeRemapKeyframeSnapshot['easing'] {
+	return value === 'ease' || value === 'hold' ? value : 'linear';
+}
 
 type TitleNumberKey =
 	| 'fontSizePx'
@@ -903,6 +924,61 @@ export function Inspector(props: InspectorProps) {
 		);
 	}
 
+	function sendTimeRemap(remap: TimeRemapSnapshot): void {
+		const clip = props.selectedClip;
+		if (!clip) return;
+		props.onSetTimeRemap?.(clip.trackId, clip.clipId, remap);
+	}
+
+	function sortedRemapKeyframes(
+		keyframes: readonly TimeRemapKeyframeSnapshot[]
+	): TimeRemapKeyframeSnapshot[] {
+		return [...keyframes].sort((a, b) => a.outTimeS - b.outTimeS);
+	}
+
+	function updateRemapKeyframe(
+		remap: TimeRemapSnapshot,
+		index: number,
+		patch: Partial<TimeRemapKeyframeSnapshot>
+	): void {
+		const keyframes = remap.keyframes.map((kf, i) => (i === index ? { ...kf, ...patch } : kf));
+		sendTimeRemap({ ...remap, keyframes: sortedRemapKeyframes(keyframes) });
+	}
+
+	function addRemapKeyframe(remap: TimeRemapSnapshot): void {
+		const clip = props.selectedClip;
+		if (!clip) return;
+		const keyframes = sortedRemapKeyframes(remap.keyframes);
+		let outTimeS = clip.duration * 0.5;
+		let speed = 1;
+		if (keyframes.length > 0) {
+			speed = keyframes[Math.floor(keyframes.length / 2)]?.speed ?? 1;
+		}
+		if (keyframes.length > 1) {
+			let largestGap = -1;
+			for (let i = 0; i < keyframes.length - 1; i += 1) {
+				const left = keyframes[i];
+				const right = keyframes[i + 1];
+				if (!left || !right) continue;
+				const gap = right.outTimeS - left.outTimeS;
+				if (gap > largestGap) {
+					largestGap = gap;
+					outTimeS = left.outTimeS + gap * 0.5;
+					speed = (left.speed + right.speed) * 0.5;
+				}
+			}
+		}
+		const next = sortedRemapKeyframes([
+			...keyframes,
+			{
+				outTimeS: Number(outTimeS.toFixed(3)),
+				speed: Math.min(4, Math.max(0.25, speed)),
+				easing: 'ease'
+			}
+		]);
+		sendTimeRemap({ ...remap, keyframes: next });
+	}
+
 	return (
 		<aside class="inspector panel">
 			<h2 class="panel-title">Inspector</h2>
@@ -1206,6 +1282,145 @@ export function Inspector(props: InspectorProps) {
 									</label>
 								</div>
 							)}
+						</Show>
+						{/* Phase 35: Speed section — visible for non-title clips with time-remap support */}
+						<Show
+							when={
+								props.selectedClip && props.selectedClip.kind !== 'title' && props.onSetTimeRemap
+							}
+						>
+							<div class="effect-sliders">
+								<h3 class="panel-subtitle">Speed</h3>
+								<Show
+									when={props.selectedClip?.timeRemap}
+									fallback={
+										<button
+											type="button"
+											class="btn btn-secondary"
+											aria-label="Add speed ramp"
+											onClick={() => {
+												const selected = props.selectedClip;
+												if (!selected) return;
+												props.onSetTimeRemap?.(selected.trackId, selected.clipId, {
+													keyframes: [
+														{ outTimeS: 0, speed: 1, easing: 'linear' },
+														{ outTimeS: selected.duration, speed: 1, easing: 'linear' }
+													],
+													pitchPreserve: true,
+													sourceDurationS: selected.duration
+												});
+											}}
+										>
+											Add Ramp
+										</button>
+									}
+								>
+									{(remap) => (
+										<>
+											<div class="remap-info">
+												<div class="remap-keyframes">
+													<For each={remap().keyframes}>
+														{(kf, i) => (
+															<div class="remap-keyframe">
+																<div class="remap-keyframe-title">Keyframe {i() + 1}</div>
+																<label class="remap-control-row">
+																	<span class="remap-control-label">Time</span>
+																	<input
+																		class="remap-number-input"
+																		type="number"
+																		min="0"
+																		max={props.selectedClip?.duration ?? remap().sourceDurationS}
+																		step="0.01"
+																		value={kf.outTimeS}
+																		aria-label={`Speed ramp keyframe ${i() + 1} time`}
+																		onChange={(e) =>
+																			updateRemapKeyframe(remap(), i(), {
+																				outTimeS: Number(e.currentTarget.value)
+																			})
+																		}
+																	/>
+																	<span class="remap-unit">s</span>
+																</label>
+																<label class="remap-control-row">
+																	<span class="remap-control-label">Speed</span>
+																	<input
+																		class="remap-speed-slider"
+																		type="range"
+																		min="0.25"
+																		max="4"
+																		step="0.01"
+																		value={kf.speed}
+																		aria-label={`Speed ramp keyframe ${i() + 1} speed`}
+																		onChange={(e) =>
+																			updateRemapKeyframe(remap(), i(), {
+																				speed: Number(e.currentTarget.value)
+																			})
+																		}
+																	/>
+																	<span class="remap-speed-value">{kf.speed.toFixed(2)}x</span>
+																</label>
+																<label class="remap-control-row">
+																	<span class="remap-control-label">Easing</span>
+																	<select
+																		class="remap-select"
+																		value={kf.easing}
+																		aria-label={`Speed ramp keyframe ${i() + 1} easing`}
+																		onChange={(e) =>
+																			updateRemapKeyframe(remap(), i(), {
+																				easing: coerceTimeRemapEasing(e.currentTarget.value)
+																			})
+																		}
+																	>
+																		<For each={TIME_REMAP_EASING_OPTIONS}>
+																			{(option) => (
+																				<option value={option.value}>{option.label}</option>
+																			)}
+																		</For>
+																	</select>
+																</label>
+															</div>
+														)}
+													</For>
+												</div>
+												<button
+													type="button"
+													class="btn btn-secondary"
+													aria-label="Add speed ramp keyframe"
+													onClick={() => addRemapKeyframe(remap())}
+												>
+													Add Keyframe
+												</button>
+												<label class="remap-pitch-preserve">
+													<input
+														type="checkbox"
+														checked={remap().pitchPreserve}
+														aria-label="Pitch preserve"
+														onChange={(e) =>
+															sendTimeRemap({
+																...remap(),
+																pitchPreserve: e.currentTarget.checked
+															})
+														}
+													/>
+													<span>Pitch Preserve</span>
+												</label>
+											</div>
+											<button
+												type="button"
+												class="btn btn-secondary"
+												aria-label="Clear speed ramp"
+												onClick={() => {
+													const selected = props.selectedClip;
+													if (!selected) return;
+													props.onClearTimeRemap?.(selected.trackId, selected.clipId);
+												}}
+											>
+												Clear Ramp
+											</button>
+										</>
+									)}
+								</Show>
+							</div>
 						</Show>
 						<Show when={draft()}>
 							{(effects) => (

@@ -194,6 +194,7 @@ function clipLocalcutMetadata(clip: TimelineClip): Record<string, unknown> {
 	if (clip.lut) localcut.lut = { key: clip.lut.key, fileName: clip.lut.fileName };
 	if (clip.linkedGroupId) localcut.linkedGroupId = clip.linkedGroupId;
 	if (clip.kind === 'title' && clip.title) localcut.title = clip.title;
+	if (clip.timeRemap) localcut.timeRemap = clip.timeRemap;
 	return localcut;
 }
 

@@ -12,6 +12,7 @@ import type {
 	SourceHealthReportSnapshot,
 	SourceHealthWarningSnapshot,
 	SourceTrackTimingSnapshot,
+	TimeRemapSnapshot,
 	VoiceCleanupSettings
 } from '../protocol';
 import { DEFAULT_VOICE_CLEANUP_SETTINGS } from '../protocol';
@@ -49,7 +50,7 @@ import { cloneClipLut, parsePersistedClipLut } from './lut';
 import { normalizeSkinMask } from './skin-smooth';
 import { parseExportPresetDoc } from './export-presets';
 
-export const PROJECT_SCHEMA_VERSION = 15;
+export const PROJECT_SCHEMA_VERSION = 17;
 const DURATION_MATCH_TOLERANCE_S = 0.25;
 const TIMING_MATCH_TOLERANCE_S = 0.05;
 
@@ -216,11 +217,56 @@ function cloneClip(clip: TimelineClip): TimelineClip {
 	if (clip.cleanedAudio) cloned.cleanedAudio = { ...clip.cleanedAudio };
 	if (clip.skinMask) cloned.skinMask = { ...clip.skinMask };
 	if (clip.matte) cloned.matte = { ...clip.matte };
+	if (clip.timeRemap) cloned.timeRemap = cloneTimeRemap(clip.timeRemap);
 	const keyframes = cloneClipKeyframes(clip.keyframes);
 	if (keyframes) cloned.keyframes = keyframes;
 	const lut = cloneClipLut(clip.lut);
 	if (lut) cloned.lut = lut;
 	return cloned;
+}
+
+/** Deep-clone a TimeRemapSnapshot (Phase 35). */
+function cloneTimeRemap(remap: TimeRemapSnapshot): TimeRemapSnapshot {
+	return {
+		keyframes: remap.keyframes.map((kf) => ({ ...kf })),
+		pitchPreserve: remap.pitchPreserve,
+		sourceDurationS: remap.sourceDurationS
+	};
+}
+
+/**
+ * Phase 35: Parse an optional persisted time-remap sidecar. Invalid entries
+ * degrade to "no remap" (identity speed) rather than rejecting the whole clip.
+ */
+function parseClipTimeRemap(
+	value: unknown,
+	fallbackSourceDurationS?: number
+): TimeRemapSnapshot | undefined {
+	if (!isRecord(value)) return undefined;
+	const rawKeyframes = Array.isArray(value.keyframes) ? value.keyframes : undefined;
+	if (!rawKeyframes) return undefined;
+
+	const keyframes: TimeRemapSnapshot['keyframes'] = [];
+	for (const kf of rawKeyframes) {
+		if (!isRecord(kf)) return undefined;
+		const outTimeS = finiteNumber(kf.outTimeS);
+		const speed = finiteNumber(kf.speed);
+		const easing = kf.easing;
+		if (outTimeS === null || speed === null) return undefined;
+		if (speed < 0.25 || speed > 4.0) return undefined;
+		if (easing !== 'linear' && easing !== 'ease' && easing !== 'hold') return undefined;
+		keyframes.push({ outTimeS, speed, easing });
+	}
+
+	const pitchPreserve = typeof value.pitchPreserve === 'boolean' ? value.pitchPreserve : undefined;
+	if (pitchPreserve === undefined) return undefined;
+
+	const sourceDurationS = finiteNumber(value.sourceDurationS) ?? fallbackSourceDurationS;
+	if (sourceDurationS === undefined || sourceDurationS < 0 || !Number.isFinite(sourceDurationS)) {
+		return undefined;
+	}
+
+	return { keyframes, pitchPreserve, sourceDurationS };
 }
 
 /** Parses an optional persisted cleaned-audio reference (Phase 27). Invalid
@@ -550,6 +596,9 @@ function parseClip(value: unknown): TimelineClip | null {
 			softness: finiteNumber(value.skinMask.softness) ?? undefined
 		});
 	}
+	// Phase 35: parse optional time-remap sidecar (normalize invalid values, don't reject).
+	const timeRemap = parseClipTimeRemap(value.timeRemap, duration);
+	if (timeRemap) clip.timeRemap = timeRemap;
 	return clip;
 }
 
@@ -1506,10 +1555,15 @@ export function deserializeProject(value: unknown): DeserializeProjectResult {
 			return deserializeV13(value);
 		case 14:
 		case 15:
+		case 16:
+		case 17:
 			// v14 (Phase 36): adds optional voiceCleanup on top of v13.
 			// v15 (Phase 31): adds the optional per-clip `matte` (mode/strength/
 			// blurRadius), handled by the shared clip parser, on top of v14 — so
 			// deserializeV14 covers both (matte is parsed if present at any version).
+			// v16 (Phase 35): adds optional per-clip `timeRemap`, handled by the
+			// shared clip parser (absent = identity speed).
+			// v17: adds sourceDurationS to timeRemap for proper LUT rebuilding.
 			return deserializeV14(value);
 		default:
 			return { ok: false, reason: `Unsupported project schemaVersion ${schemaVersion}.` };

@@ -150,6 +150,22 @@ Most effect and transform parameters support keyframes for animated changes over
 - Move the playhead and adjust the value to create animation.
 - Delete individual keyframes by clicking them in the keyframe track.
 
+### Speed Ramps
+
+Speed ramps let you vary the playback speed of a clip over time -- slow-motion, fast-motion, or a smooth ramp between the two. The speed ramp is applied per-clip and affects both video and audio.
+
+1. Select a video or audio clip on the timeline. Title clips do not support speed ramps.
+2. In the Inspector, find the **Speed** section.
+3. Click **Add Ramp**. This creates a ramp with two keyframes at normal speed (1x).
+4. Adjust keyframe speeds and easing in the speed ramp editor. Speeds range from **0.25x** (4x slower) to **4x** (4x faster).
+5. The clip's timeline duration updates automatically to match the ramp -- slowing a clip down makes it longer, speeding it up makes it shorter.
+
+**Pitch Preserve**: When enabled (the default), audio is time-stretched using WSOLA to keep speech and music at their natural pitch. When disabled, audio is resampled directly, which changes the pitch along with the speed.
+
+**Clear Ramp**: Click **Clear Ramp** in the Speed section to remove the speed ramp and restore the clip to its original duration and playback speed.
+
+For the technical details -- easing types, the LUT-based curve evaluation, WSOLA parameters, and why reverse playback is not supported -- see [Time Remapping](TIME-REMAPPING.md).
+
 ## Effects & Color
 
 Effects are applied per-clip and processed in real-time on your GPU:

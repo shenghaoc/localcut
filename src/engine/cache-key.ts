@@ -5,7 +5,7 @@ import type {
 	RenderCacheEntry,
 	SourceDependencyKey
 } from './cache-types';
-import type { ExportSettings, SourceDescriptorSnapshot } from '../protocol';
+import type { ExportSettings, SourceDescriptorSnapshot, TimeRemapSnapshot } from '../protocol';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -196,6 +196,64 @@ export function sourceConformanceHash(source: SourceDescriptorSnapshot): string 
 export function proxySettingsHash(settings: ProxyGenerationSettings): string {
 	return hashStableValue('proxy-settings', settings);
 }
+
+/**
+ * Phase 35: Compute a deterministic hash of a TimeRemapSnapshot.
+ * Keyframes are sorted by outTimeS before stringifying to ensure determinism.
+ */
+export function hashTimeRemap(remap: TimeRemapSnapshot): string {
+	const canonical = {
+		keyframes: [...remap.keyframes]
+			.sort((a, b) => a.outTimeS - b.outTimeS)
+			.map((kf) => ({
+				outTimeS: kf.outTimeS,
+				speed: kf.speed,
+				easing: kf.easing
+			})),
+		pitchPreserve: remap.pitchPreserve
+	};
+	return hashStableValue('time-remap', canonical);
+}
+
+/**
+ * Phase 35: Build a {@link ClipDependencyKey} from its component hashes.
+ * Routes `timeRemap` through {@link hashTimeRemap} so remap-aware cache
+ * invalidation can key on the resulting `timeRemapHash` field.
+ */
+export function buildClipDependencyKey(input: {
+	trackId: string;
+	clipId: string;
+	sourceId: string;
+	startS: number;
+	durationS: number;
+	inPointS: number;
+	effectsHash: string;
+	transformHash: string;
+	lutHash?: string;
+	titleTextureHash?: string;
+	keyframeHash?: string;
+	audioHash?: string;
+	timeRemap?: TimeRemapSnapshot;
+}): ClipDependencyKey {
+	const key: Mutable<ClipDependencyKey> = {
+		trackId: input.trackId,
+		clipId: input.clipId,
+		sourceId: input.sourceId,
+		startS: input.startS,
+		durationS: input.durationS,
+		inPointS: input.inPointS,
+		effectsHash: input.effectsHash,
+		transformHash: input.transformHash
+	};
+	if (input.lutHash !== undefined) key.lutHash = input.lutHash;
+	if (input.titleTextureHash !== undefined) key.titleTextureHash = input.titleTextureHash;
+	if (input.keyframeHash !== undefined) key.keyframeHash = input.keyframeHash;
+	if (input.audioHash !== undefined) key.audioHash = input.audioHash;
+	if (input.timeRemap) key.timeRemapHash = hashTimeRemap(input.timeRemap);
+	return key;
+}
+
+type Mutable<T> = { -readonly [P in keyof T]: T[P] };
 
 export function canonicalExportSettingsForCache(settings: ExportSettings): ExportSettings {
 	const canonical: ExportSettings = {

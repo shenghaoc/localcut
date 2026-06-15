@@ -139,6 +139,23 @@ describe('serializeTimelineToOtio structure', () => {
 		expect(clipMeta.transform).toBeDefined();
 		expect(clipMeta.audioFadeIn).toBe(0);
 	});
+
+	it('preserves time-remap metadata in LocalCut clip metadata', () => {
+		const doc = buildMultiTrackFixtureDoc();
+		doc.timeline[0]!.clips[0]!.timeRemap = {
+			keyframes: [
+				{ outTimeS: 0, speed: 1, easing: 'linear' },
+				{ outTimeS: 2, speed: 0.5, easing: 'ease' }
+			],
+			pitchPreserve: true,
+			sourceDurationS: 4
+		};
+		const timeline = parse(serializeTimelineToOtio(doc, OPTIONS).text);
+		const clip = trackChildren(timeline, 0)[0] as OtioClip;
+		const clipMeta = clip.metadata.localcut as Record<string, unknown>;
+
+		expect(clipMeta.timeRemap).toEqual(doc.timeline[0]!.clips[0]!.timeRemap);
+	});
 });
 
 describe('serializeTimelineToOtio omission paths', () => {

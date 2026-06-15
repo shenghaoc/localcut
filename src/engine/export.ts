@@ -18,6 +18,7 @@ import type {
 	ExportProgress,
 	ExportSettings,
 	ExportVideoCodec,
+	TimeRemapSnapshot,
 	ThroughputProbe
 } from '../protocol';
 import type { CompositeLayer, PreviewRenderer } from './gpu';
@@ -48,9 +49,14 @@ import { sampleClipParamsAt } from './keyframes';
 import { cleanedAudioSubstitute } from './audio-cleanup/cleaned-audio';
 import {
 	audioAvailabilityWindowFrames,
+	resolveNormalizedSourceTimestamp,
 	resolveSourceTimestamp,
-	unavailableAudioSilenceFrames
+	unavailableAudioSilenceFrames,
+	type SourceTimestampResolution
 } from './media-adapters/source-timing';
+import type { NormalizedSourceTiming } from './media-adapters/types';
+import { buildRemapLUT, remapOutputToSource, sampleRemapSpeed, type RemapLUT } from './time-remap';
+import { WsolaStretcher, WSOLA_SEARCH_RADIUS_SAMPLES, WSOLA_WINDOW_SAMPLES } from './wsola';
 
 const AUDIO_BLOCK_FRAMES = 1024;
 const EXPORT_INTERLEAVE_SECONDS = 2;
@@ -58,6 +64,7 @@ const MAX_EXPORT_WIDTH = 1920;
 const MAX_EXPORT_HEIGHT = 1080;
 const MP4_CHUNK_BYTES = 4 * 1024 * 1024;
 const DEFAULT_EXPORT_FPS = 30;
+const WSOLA_INPUT_PAD_FRAMES = WSOLA_WINDOW_SAMPLES + WSOLA_SEARCH_RADIUS_SAMPLES;
 /** Default export geometry for title-only timelines (no decodable video). */
 const TITLE_ONLY_EXPORT_WIDTH = 1920;
 const TITLE_ONLY_EXPORT_HEIGHT = 1080;
@@ -67,6 +74,86 @@ const OPUS_CODEC = 'opus';
 const H264_CODEC = 'avc1.640028';
 const VP9_CODEC = 'vp09.00.10.08';
 const AV1_CODEC = 'av01.0.05M.08';
+
+// Phase 35: per-export LUT cache (keyed by clip object identity).
+const exportRemapLutCache = new WeakMap<object, RemapLUT>();
+
+interface RemapCapableClip {
+	readonly inPoint: number;
+	readonly start: number;
+	readonly duration: number;
+	readonly timeRemap?: TimeRemapSnapshot;
+}
+
+function getOrBuildRemapLut(clip: RemapCapableClip): RemapLUT | null {
+	if (!clip.timeRemap) return null;
+	const cached = exportRemapLutCache.get(clip);
+	if (cached) return cached;
+	const lut = buildRemapLUT(clip.timeRemap.keyframes, clip.timeRemap.sourceDurationS);
+	exportRemapLutCache.set(clip, lut);
+	return lut;
+}
+
+function speedRatioForRemap(clip: RemapCapableClip, timelineTime: number): number {
+	if (!clip.timeRemap) return 1;
+	return sampleRemapSpeed(clip.timeRemap.keyframes, timelineTime - clip.start);
+}
+
+async function pcmWindowForRemap(options: {
+	handle: MediaInputHandle;
+	clip: RemapCapableClip;
+	timelineTime: number;
+	sourceTime: SourceTimestampResolution;
+	frameCount: number;
+	channels: number;
+	sampleRate: number;
+	wsola?: WsolaStretcher;
+}): Promise<Float32Array> {
+	const { handle, clip, timelineTime, sourceTime, frameCount, channels, sampleRate, wsola } =
+		options;
+	const audioSource = handle.audioSource;
+	if (!audioSource) return new Float32Array(Math.max(0, frameCount) * channels);
+	if (!clip.timeRemap) {
+		return audioSource.pcmWindowAt(sourceTime.adapterTimestampS, frameCount, channels, sampleRate);
+	}
+
+	const speedRatio = speedRatioForRemap(clip, timelineTime);
+	if (!clip.timeRemap.pitchPreserve) {
+		return audioSource.pcmWindowAt(
+			sourceTime.adapterTimestampS,
+			frameCount,
+			channels,
+			sampleRate / speedRatio
+		);
+	}
+
+	const inputFrames = Math.max(
+		WSOLA_WINDOW_SAMPLES,
+		Math.ceil(frameCount * Math.max(1, speedRatio)) + WSOLA_INPUT_PAD_FRAMES
+	);
+	const input = await audioSource.pcmWindowAt(
+		sourceTime.adapterTimestampS,
+		inputFrames,
+		channels,
+		sampleRate
+	);
+	return (wsola ?? new WsolaStretcher(channels)).stretch(input, speedRatio, frameCount);
+}
+
+function resolveSourceTimestampWithRemap(options: {
+	clip: RemapCapableClip;
+	timelineTime: number;
+	trackKind: 'video' | 'audio';
+	timing: NormalizedSourceTiming;
+}): SourceTimestampResolution {
+	const lut = getOrBuildRemapLut(options.clip);
+	if (lut) {
+		const clipLocalOutTimeS = options.timelineTime - options.clip.start;
+		const remappedSourceS = remapOutputToSource(lut, clipLocalOutTimeS) + options.clip.inPoint;
+		return resolveNormalizedSourceTimestamp(options.timing, options.trackKind, remappedSourceS);
+	}
+	return resolveSourceTimestamp(options as Parameters<typeof resolveSourceTimestamp>[0]);
+}
 
 const CODEC_CANDIDATES: ReadonlyArray<{
 	codec: ExportVideoCodec;
@@ -496,6 +583,8 @@ function nextClipStart(track: TimelineTrack, time: number): number {
 export interface MixAudioWindowOptions {
 	masterGain?: number;
 	transitions?: readonly AudioTransitionCut[];
+	/** Export-owned WSOLA state, keyed by clip id and channel layout. */
+	wsolaStretchers?: Map<string, WsolaStretcher>;
 	/** If provided, master-bus inserts (gate, gain, limiter) are applied after mixing. */
 	voiceCleanup?: import('./voice-cleanup/voice-cleanup-processor').MasterCleanupChainParams;
 	/** Persistent voice cleanup state across blocks (denoiser/gate/limiter DSP state). */
@@ -516,6 +605,17 @@ export async function mixAudioWindow(
 
 	const masterGain = options.masterGain ?? DEFAULT_MASTER_GAIN;
 	const transitions = options.transitions ?? [];
+	const wsolaStretchers = options.wsolaStretchers;
+	const wsolaForClip = (clip: TimelineClip): WsolaStretcher | undefined => {
+		if (!clip.timeRemap?.pitchPreserve || !wsolaStretchers) return undefined;
+		const key = `${clip.id}:${channels}`;
+		let stretcher = wsolaStretchers.get(key);
+		if (!stretcher) {
+			stretcher = new WsolaStretcher(channels);
+			wsolaStretchers.set(key, stretcher);
+		}
+		return stretcher;
+	};
 
 	for (const track of timeline) {
 		if (track.type !== 'audio' || !trackIsAudible(track, timeline)) continue;
@@ -551,7 +651,7 @@ export async function mixAudioWindow(
 					const hasIn = Boolean(inHandle?.audioSource);
 					if (hasOut || hasIn) {
 						const outSourceTime = outHandle
-							? resolveSourceTimestamp({
+							? resolveSourceTimestampWithRemap({
 									clip: outgoingAudio,
 									timelineTime,
 									trackKind: 'audio',
@@ -559,7 +659,7 @@ export async function mixAudioWindow(
 								})
 							: null;
 						const inSourceTime = inHandle
-							? resolveSourceTimestamp({
+							? resolveSourceTimestampWithRemap({
 									clip: incomingAudio,
 									timelineTime,
 									trackKind: 'audio',
@@ -577,7 +677,8 @@ export async function mixAudioWindow(
 											clip: outgoingAudio,
 											timelineTime,
 											sampleRate,
-											maxFrames: baseRunFrames
+											maxFrames: baseRunFrames,
+											remapSpeedRatio: speedRatioForRemap(outgoingAudio, timelineTime)
 										})
 									: baseRunFrames,
 								inSourceTime && inHandle
@@ -587,28 +688,37 @@ export async function mixAudioWindow(
 											clip: incomingAudio,
 											timelineTime,
 											sampleRate,
-											maxFrames: baseRunFrames
+											maxFrames: baseRunFrames,
+											remapSpeedRatio: speedRatioForRemap(incomingAudio, timelineTime)
 										})
 									: baseRunFrames
 							)
 						);
 						const outPcm =
-							hasOut && outSourceTime?.available
-								? await outHandle!.audioSource!.pcmWindowAt(
-										outSourceTime.adapterTimestampS,
-										runFrames,
+							hasOut && outSourceTime?.available && outHandle
+								? await pcmWindowForRemap({
+										handle: outHandle,
+										clip: outgoingAudio,
+										timelineTime,
+										sourceTime: outSourceTime,
+										frameCount: runFrames,
 										channels,
-										sampleRate
-									)
+										sampleRate,
+										wsola: wsolaForClip(outgoingAudio)
+									})
 								: null;
 						const inPcm =
-							hasIn && inSourceTime?.available
-								? await inHandle!.audioSource!.pcmWindowAt(
-										inSourceTime.adapterTimestampS,
-										runFrames,
+							hasIn && inSourceTime?.available && inHandle
+								? await pcmWindowForRemap({
+										handle: inHandle,
+										clip: incomingAudio,
+										timelineTime,
+										sourceTime: inSourceTime,
+										frameCount: runFrames,
 										channels,
-										sampleRate
-									)
+										sampleRate,
+										wsola: wsolaForClip(incomingAudio)
+									})
 								: null;
 						// Denoise each source's PCM before the crossfade so the denoiser
 						// sees the natural per-source level. Blending first and denoising
@@ -729,7 +839,7 @@ export async function mixAudioWindow(
 				continue;
 			}
 
-			const sourceTime = resolveSourceTimestamp({
+			const sourceTime = resolveSourceTimestampWithRemap({
 				clip: audioClip,
 				timelineTime,
 				trackKind: 'audio',
@@ -741,18 +851,23 @@ export async function mixAudioWindow(
 				clip: audioClip,
 				timelineTime,
 				sampleRate,
-				maxFrames: runFrames
+				maxFrames: runFrames,
+				remapSpeedRatio: speedRatioForRemap(audioClip, timelineTime)
 			});
 			if (!sourceTime.available) {
 				offsetFrames += availableRunFrames;
 				continue;
 			}
-			const pcm = await handle.audioSource.pcmWindowAt(
-				sourceTime.adapterTimestampS,
-				availableRunFrames,
+			const pcm = await pcmWindowForRemap({
+				handle,
+				clip: audioClip,
+				timelineTime,
+				sourceTime,
+				frameCount: availableRunFrames,
 				channels,
-				sampleRate
-			);
+				sampleRate,
+				wsola: wsolaForClip(audioClip)
+			});
 			if (options.voiceCleanup?.denoiserEnabledTracks.includes(track.id) && options.cleanupState) {
 				const { denoiseInterleavedTrackPcm } =
 					await import('./voice-cleanup/voice-cleanup-processor');
@@ -949,7 +1064,7 @@ async function encodeVideoRange(
 					// Stop decoding video past the budget but keep scanning so source-less
 					// title layers above the budgeted stack still composite (preview parity).
 					if (decodedCount >= layerBudget) continue;
-					const sourceTimestamp = resolveSourceTimestamp({
+					const sourceTimestamp = resolveSourceTimestampWithRemap({
 						clip: layer.clip,
 						timelineTime,
 						trackKind: 'video',
@@ -1044,7 +1159,8 @@ async function encodeAudioRange(
 	audioSource: AudioSampleSource,
 	startedAt: number,
 	startFrame: number,
-	endFrame: number
+	endFrame: number,
+	wsolaStretchers: Map<string, WsolaStretcher>
 ): Promise<void> {
 	const { timeline, sources, signal, onProgress } = options;
 	let lastReport = 0;
@@ -1064,6 +1180,7 @@ async function encodeAudioRange(
 			{
 				masterGain: options.masterGain,
 				transitions: options.transitions,
+				wsolaStretchers,
 				voiceCleanup: options.voiceCleanupSettings,
 				cleanupState: options.cleanupState
 			}
@@ -1100,6 +1217,10 @@ async function encodeInterleaved(
 	const videoFramesPerSlice = Math.max(1, Math.round(plan.frameRate * EXPORT_INTERLEAVE_SECONDS));
 	const totalAudioFrames = Math.max(1, Math.ceil(plan.exportDuration * plan.audioSampleRate));
 	let audioCursor = 0;
+	// Phase 35: WSOLA state must persist across all audio slices for the whole
+	// export — resetting per slice creates ~2 s fade discontinuities on remapped
+	// clips when interleave boundaries fall inside a stretched region.
+	const wsolaStretchers = new Map<string, WsolaStretcher>();
 
 	for (let videoStart = 0; videoStart < plan.totalFrames; videoStart += videoFramesPerSlice) {
 		const videoEnd = Math.min(plan.totalFrames, videoStart + videoFramesPerSlice);
@@ -1108,13 +1229,29 @@ async function encodeInterleaved(
 		if (audioSource) {
 			const sliceEndTime = Math.min(plan.exportDuration, videoEnd / plan.frameRate);
 			const audioEnd = Math.min(totalAudioFrames, Math.ceil(sliceEndTime * plan.audioSampleRate));
-			await encodeAudioRange(options, plan, audioSource, startedAt, audioCursor, audioEnd);
+			await encodeAudioRange(
+				options,
+				plan,
+				audioSource,
+				startedAt,
+				audioCursor,
+				audioEnd,
+				wsolaStretchers
+			);
 			audioCursor = audioEnd;
 		}
 	}
 
 	if (audioSource && audioCursor < totalAudioFrames) {
-		await encodeAudioRange(options, plan, audioSource, startedAt, audioCursor, totalAudioFrames);
+		await encodeAudioRange(
+			options,
+			plan,
+			audioSource,
+			startedAt,
+			audioCursor,
+			totalAudioFrames,
+			wsolaStretchers
+		);
 	}
 }
 

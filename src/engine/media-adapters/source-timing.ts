@@ -35,6 +35,14 @@ export interface UnavailableAudioSilenceFramesOptions {
 	readonly timelineTime: number;
 	readonly sampleRate: number;
 	readonly maxFrames: number;
+	/**
+	 * Phase 35: output-to-source speed multiplier at this position. 1 means each
+	 * output frame consumes one source frame; 2 means each output frame consumes
+	 * two source frames (so the available *output* window before a track
+	 * boundary is halved). Caller passes `speedRatioForRemap(clip, timelineTime)`
+	 * when the clip is remapped, and `undefined` (or 1) otherwise.
+	 */
+	readonly remapSpeedRatio?: number;
 }
 
 export type AudioAvailabilityWindowFramesOptions = UnavailableAudioSilenceFramesOptions;
@@ -169,6 +177,11 @@ export function resolveSourceTimestamp(
 	return resolveNormalizedSourceTimestamp(options.timing, options.trackKind, normalizedSourceS);
 }
 
+function normalizedSpeedRatio(value: number | undefined): number {
+	if (value === undefined || !Number.isFinite(value) || value <= 0) return 1;
+	return value;
+}
+
 export function unavailableAudioSilenceFrames(
 	options: UnavailableAudioSilenceFramesOptions
 ): number {
@@ -183,11 +196,19 @@ export function unavailableAudioSilenceFrames(
 	) {
 		const normalizedTrackStartS =
 			options.timing.audio.firstTimestampS - options.timing.normalizedStartS;
-		const nextTimelineTime = options.clip.start + (normalizedTrackStartS - options.clip.inPoint);
-		const framesUntilTrackStart = Math.ceil(
-			(nextTimelineTime - options.timelineTime) * options.sampleRate
+		const sourceFramesUntilTrackStart = Math.ceil(
+			(normalizedTrackStartS - options.resolution.normalizedSourceS) * options.sampleRate
 		);
-		if (framesUntilTrackStart > 0) return Math.min(maxFrames, framesUntilTrackStart);
+		if (sourceFramesUntilTrackStart > 0) {
+			// Output frames before the track becomes available = source frames /
+			// speedRatio. The non-remap (or identity-1.0) path keeps the linear
+			// derivation and behaves exactly as before.
+			const speed = normalizedSpeedRatio(options.remapSpeedRatio);
+			const outputFramesUntilTrackStart = Math.ceil(sourceFramesUntilTrackStart / speed);
+			if (outputFramesUntilTrackStart > 0) {
+				return Math.min(maxFrames, outputFramesUntilTrackStart);
+			}
+		}
 	}
 
 	return maxFrames;
@@ -210,10 +231,20 @@ export function audioAvailabilityWindowFrames(
 		return maxFrames;
 	}
 
-	const framesUntilTrackEnd = Math.ceil(
+	const sourceFramesUntilTrackEnd = Math.ceil(
 		(track.lastTimestampS - options.resolution.adapterTimestampS) * options.sampleRate
 	);
-	if (framesUntilTrackEnd > 0) return Math.min(maxFrames, framesUntilTrackEnd);
+	if (sourceFramesUntilTrackEnd > 0) {
+		// At speedRatio > 1 every output frame consumes more than one source
+		// frame, so the available output window shrinks proportionally. At
+		// speedRatio = 1 (the default / non-remap case) the original behaviour is
+		// preserved bit-for-bit.
+		const speed = normalizedSpeedRatio(options.remapSpeedRatio);
+		const outputFramesUntilTrackEnd = Math.ceil(sourceFramesUntilTrackEnd / speed);
+		if (outputFramesUntilTrackEnd > 0) {
+			return Math.min(maxFrames, outputFramesUntilTrackEnd);
+		}
+	}
 	// Keep export/audio pumps moving if floating-point drift leaves an available
 	// timestamp exactly at or just past the track end.
 	return 1;

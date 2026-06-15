@@ -16,6 +16,7 @@ import type {
 	ExportProgress,
 	ExportSettings,
 	ExportVideoCodec,
+	TimeRemapSnapshot,
 	ThroughputProbe
 } from '../../protocol';
 import { exportConstraintsForProbe } from '../capability-probe-v2';
@@ -38,7 +39,13 @@ import {
 } from '../export';
 import { isTitleClip, resolveAllAt, type Timeline } from '../timeline';
 import { sampleClipParamsAt } from '../keyframes';
-import { resolveSourceTimestamp } from '../media-adapters/source-timing';
+import {
+	resolveNormalizedSourceTimestamp,
+	resolveSourceTimestamp,
+	type SourceTimestampResolution
+} from '../media-adapters/source-timing';
+import type { NormalizedSourceTiming } from '../media-adapters/types';
+import { buildRemapLUT, remapOutputToSource, type RemapLUT } from '../time-remap';
 import type { AudioTransitionCut } from '../audio-mix';
 import type { TitleContent } from '../title';
 import type { TransformParams } from '../transform';
@@ -215,6 +222,40 @@ async function reducedAudioSupported(
 	}
 }
 
+// Phase 35: resolve source timestamp with optional time-remap
+interface RemapCapableClip {
+	readonly inPoint: number;
+	readonly start: number;
+	readonly duration: number;
+	readonly timeRemap?: TimeRemapSnapshot;
+}
+
+const compatExportRemapLutCache = new WeakMap<RemapCapableClip, RemapLUT>();
+
+function getOrBuildRemapLut(clip: RemapCapableClip): RemapLUT | null {
+	if (!clip.timeRemap) return null;
+	const cached = compatExportRemapLutCache.get(clip);
+	if (cached) return cached;
+	const lut = buildRemapLUT(clip.timeRemap.keyframes, clip.timeRemap.sourceDurationS);
+	compatExportRemapLutCache.set(clip, lut);
+	return lut;
+}
+
+function resolveSourceTimestampWithRemap(options: {
+	clip: RemapCapableClip;
+	timelineTime: number;
+	trackKind: 'video' | 'audio';
+	timing: NormalizedSourceTiming;
+}): SourceTimestampResolution {
+	const lut = getOrBuildRemapLut(options.clip);
+	if (lut) {
+		const clipLocalOutTimeS = options.timelineTime - options.clip.start;
+		const remappedSourceS = remapOutputToSource(lut, clipLocalOutTimeS) + options.clip.inPoint;
+		return resolveNormalizedSourceTimestamp(options.timing, options.trackKind, remappedSourceS);
+	}
+	return resolveSourceTimestamp(options as Parameters<typeof resolveSourceTimestamp>[0]);
+}
+
 async function encodeReducedVideo(
 	options: ReducedTimelineExportOptions,
 	videoSource: VideoSampleSource,
@@ -267,7 +308,7 @@ async function encodeReducedVideo(
 				if (decodedCount >= layerBudget) continue;
 				const sourceHandle = options.sources.get(layer.clip.sourceId);
 				if (!sourceHandle?.frameSource) continue;
-				const sourceTimestamp = resolveSourceTimestamp({
+				const sourceTimestamp = resolveSourceTimestampWithRemap({
 					clip: layer.clip,
 					timelineTime,
 					trackKind: 'video',
