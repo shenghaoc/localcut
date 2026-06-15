@@ -110,6 +110,8 @@ export function validateOrtManifest(value: unknown): OrtModelManifest {
 			? undefined
 			: requirePositiveInt(value.opset, 'opset');
 
+	const tensorLocation = parseTensorLocation(value.tensorLocation);
+
 	return {
 		id: requireString(value.id, 'id'),
 		version: requireString(value.version, 'version'),
@@ -120,9 +122,7 @@ export function validateOrtManifest(value: unknown): OrtModelManifest {
 		executionProviders,
 		frameCoupled,
 		...(opset !== undefined ? { opset } : {}),
-		...(parseTensorLocation(value.tensorLocation) !== undefined
-			? { tensorLocation: parseTensorLocation(value.tensorLocation) }
-			: {}),
+		...(tensorLocation !== undefined ? { tensorLocation } : {}),
 		...(value.infoUrl !== undefined ? { infoUrl: requireString(value.infoUrl, 'infoUrl') } : {})
 	};
 }
