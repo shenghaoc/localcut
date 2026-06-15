@@ -32,7 +32,7 @@ const FFT_N = 1024;
 const HALF_N = 512;
 const HOP_SAMPLES = 512;
 const SAMPLE_RATE = 48_000;
-const WINDOW_FRAMES = 480_000; // 10 seconds at 48 kHz
+const WINDOW_FRAMES = 938 * HOP_SAMPLES; // 480,256 samples ≈ 10 s; exact multiple of hop so carry buffer is always aligned
 const HOP_SECONDS = HOP_SAMPLES / SAMPLE_RATE;
 
 // Onset peak-picking defaults
