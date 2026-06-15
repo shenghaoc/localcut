@@ -42,6 +42,9 @@ importers:
       dompurify:
         specifier: ^3.4.8
         version: 3.4.9
+      lottie-web:
+        specifier: ^5.13.0
+        version: 5.13.0
       lucide-solid:
         specifier: ^1.17.0
         version: 1.17.0(solid-js@1.9.13)
@@ -2975,6 +2978,9 @@ packages:
 
   long@5.3.2:
     resolution: {integrity: sha512-mNAgZ1GmyNhD7AuqnTG3/VQ26o760+ZYBPKjPvugO8+nLbYfX6TVpJPseBvopbdY+qpZ/lKUnmEc1LeZYS3QAA==}
+
+  lottie-web@5.13.0:
+    resolution: {integrity: sha512-+gfBXl6sxXMPe8tKQm7qzLnUy5DUPJPKIyRHwtpCpyUEYjHYRJC/5gjUvdkuO2c3JllrPtHXH5UJJK8LRYl5yQ==}
 
   lru-cache@11.5.1:
     resolution: {integrity: sha512-RPimw/7aMdv2oqRrxKwvZXcPfwBrn/JZ2xYcY9Hus/6LaS3VOAKVWKWgNLCFSiOm1ESXinjsDlidVU7JlnCN2A==}
@@ -6426,6 +6432,8 @@ snapshots:
   lodash.sortby@4.7.0: {}
 
   long@5.3.2: {}
+
+  lottie-web@5.13.0: {}
 
   lru-cache@11.5.1: {}
 

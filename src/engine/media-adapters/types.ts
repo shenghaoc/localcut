@@ -31,6 +31,7 @@ export type SourceHealthReport = SourceHealthReportSnapshot;
 export interface MediaAdapterOpenInput {
 	readonly sourceId: string;
 	readonly file: File;
+	readonly imageDecoder?: 'supported' | 'unsupported' | 'unknown';
 }
 
 export interface MediaAdapterInspectionResult {

@@ -87,6 +87,32 @@ export function sampleEffectsAt(
 			keyframes?.skinSmoothStrength,
 			localTime,
 			effects.skinSmoothStrength
+		),
+		grainStrength: sampleKeyframes(keyframes?.grainStrength, localTime, effects.grainStrength),
+		grainSize: sampleKeyframes(keyframes?.grainSize, localTime, effects.grainSize),
+		halationThreshold: sampleKeyframes(
+			keyframes?.halationThreshold,
+			localTime,
+			effects.halationThreshold
+		),
+		halationRadius: sampleKeyframes(
+			keyframes?.halationRadius,
+			localTime,
+			effects.halationRadius
+		),
+		halationTintR: sampleKeyframes(keyframes?.halationTintR, localTime, effects.halationTintR),
+		halationTintG: sampleKeyframes(keyframes?.halationTintG, localTime, effects.halationTintG),
+		halationTintB: sampleKeyframes(keyframes?.halationTintB, localTime, effects.halationTintB),
+		vignetteAmount: sampleKeyframes(keyframes?.vignetteAmount, localTime, effects.vignetteAmount),
+		vignetteFeather: sampleKeyframes(
+			keyframes?.vignetteFeather,
+			localTime,
+			effects.vignetteFeather
+		),
+		vignetteRoundness: sampleKeyframes(
+			keyframes?.vignetteRoundness,
+			localTime,
+			effects.vignetteRoundness
 		)
 	};
 }

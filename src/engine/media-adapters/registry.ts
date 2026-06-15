@@ -1,4 +1,5 @@
 import { mediabunnyAdapter } from './mediabunny-adapter';
+import type { FeatureSupport } from '../../protocol';
 import type { MediaAdapter, MediaInputHandle } from './types';
 
 export const ENABLE_EXPERIMENTAL_MEDIA_DIAGNOSTICS = false;
@@ -22,12 +23,13 @@ export function selectPrimaryMediaAdapter(
 export async function openMediaFile(
 	file: File,
 	sourceId: string,
-	adapters: readonly MediaAdapter[] = defaultMediaAdapters()
+	adapters: readonly MediaAdapter[] = defaultMediaAdapters(),
+	imageDecoder?: FeatureSupport
 ): Promise<MediaInputHandle> {
 	const adapter = selectPrimaryMediaAdapter(adapters, file);
 	if (!adapter?.open) {
 		throw new Error('No primary media adapter can inspect this file.');
 	}
-	const result = await adapter.open({ sourceId, file });
+	const result = await adapter.open({ sourceId, file, imageDecoder });
 	return result.handle;
 }

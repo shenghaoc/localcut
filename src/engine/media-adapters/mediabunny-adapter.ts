@@ -18,6 +18,7 @@ import type { MediaKind, MediaMetadata } from '../../protocol';
 import { SequentialAudioSource } from '../audio-source';
 import { SequentialFrameSource } from '../frame-source';
 import { StillFrameSource } from '../still-source';
+import { AnimatedImageFrameSource } from '../animated-image-source';
 import {
 	WebCodecsVideoDecoder,
 	WebCodecsAudioDecoder,
@@ -331,7 +332,61 @@ function imageInspection(
 	};
 }
 
-async function openImageFile(file: File, sourceId: string): Promise<PrimaryMediaAdapterOpenResult> {
+async function openImageFile(
+	file: File,
+	sourceId: string,
+	imageDecoder?: 'supported' | 'unsupported' | 'unknown'
+): Promise<PrimaryMediaAdapterOpenResult> {
+	const mimeType = file.type || 'image/*';
+	const isAnimated =
+		ANIMATED_IMAGE_MIME_TYPES.has(mimeType) &&
+		imageDecoder === 'supported' &&
+		typeof ImageDecoder !== 'undefined';
+
+	if (isAnimated) {
+		const animatedSource = new AnimatedImageFrameSource(file.stream(), mimeType);
+		const bitmap = await createImageBitmap(file);
+		const displayWidth = bitmap.width;
+		const displayHeight = bitmap.height;
+		bitmap.close();
+
+		const inspection = imageInspection(sourceId, file, displayWidth, displayHeight);
+		const primaryVideo = inspection.tracks[0] as SourceVideoTrackInspection;
+		const { conformance, warnings } = deriveConformance(inspection, primaryVideo, null);
+		const metadata = createMetadata(
+			file,
+			conformance.durationS,
+			inspection.mimeType,
+			inspection.tracks,
+			primaryVideo,
+			null
+		);
+		const handle: MediaInputHandle = {
+			sourceId,
+			kind: 'image',
+			adapterId: 'mediabunny',
+			metadata,
+			inspection,
+			conformance,
+			timing: conformance.timing,
+			warnings,
+			frameSource: animatedSource,
+			audioSource: null,
+			audioChannels: 0,
+			audioSampleRate: 0,
+			displayWidth,
+			displayHeight,
+			frameRate: animatedSource.effectiveFps,
+			duration: STILL_MAX_DURATION_S,
+			thumbnailAt: async () => {
+				const frame = await animatedSource.frameAt(0);
+				return frame ? frame.toVideoFrame() : null;
+			},
+			dispose: () => animatedSource.dispose()
+		};
+		return { handle, inspection, conformance, warnings };
+	}
+
 	const bitmap = await createImageBitmap(file);
 	const displayWidth = bitmap.width;
 	const displayHeight = bitmap.height;
@@ -387,6 +442,20 @@ async function openImageFile(file: File, sourceId: string): Promise<PrimaryMedia
 }
 
 const WEBCODECS_PREFERRED_WHEN_SUPPORTED = true;
+
+const ANIMATED_IMAGE_MIME_TYPES = new Set(['image/gif', 'image/webp', 'image/avif']);
+
+function isLottieFile(file: File, firstBytes: string): boolean {
+	return (
+		(file.name.endsWith('.json') || file.type === 'application/json') &&
+		firstBytes.includes('"v":') &&
+		firstBytes.includes('"layers"')
+	);
+}
+
+function isLottieZip(file: File): boolean {
+	return file.name.endsWith('.lottie');
+}
 
 async function tryCreateWebCodecsVideoSource(
 	primaryVideo: InputVideoTrack,
@@ -519,8 +588,87 @@ export const mediabunnyAdapter: MediaAdapter = {
 		}
 	},
 	async open(input: MediaAdapterOpenInput): Promise<PrimaryMediaAdapterOpenResult> {
+		if (isLottieZip(input.file)) {
+			const inspection = imageInspection(input.sourceId, input.file, 0, 0);
+			const conformance: SourceConformance = {
+				sourceId: input.sourceId,
+				adapterId: 'mediabunny',
+				kind: 'image',
+				durationS: 0,
+				timing: buildNormalizedSourceTiming({
+					durationS: 0,
+					video: undefined,
+					audio: undefined,
+					frameRateMode: 'unknown'
+				}),
+				health: 'blocked'
+			};
+			const warnings = [
+				{
+					code: 'lottie-zip-unsupported' as const,
+					severity: 'error' as const,
+					blocking: true,
+					sourceId: input.sourceId,
+					message:
+						'Lottie zip (.lottie) is not yet supported; export plain .json from your Lottie tool.',
+					details: {}
+				}
+			];
+			return { handle: null as unknown as MediaInputHandle, inspection, conformance, warnings };
+		}
+
 		if (isImageFile(input.file)) {
-			return openImageFile(input.file, input.sourceId);
+			return openImageFile(input.file, input.sourceId, input.imageDecoder);
+		}
+
+		// Lottie JSON sniff: check first 512 bytes for both "v": and "layers"
+		if (input.file.name.endsWith('.json') || input.file.type === 'application/json') {
+			const head = input.file.slice(0, 512);
+			const headText = await head.text();
+			if (isLottieFile(input.file, headText)) {
+				const { LottieFrameSource } = await import('../lottie-source');
+				const lottie = await import('lottie-web');
+				const data = await input.file.arrayBuffer();
+				const outputWidth = 1920;
+				const outputHeight = 1080;
+				const lottieSource = new LottieFrameSource(data, outputWidth, outputHeight, lottie.default as never);
+				const duration = lottieSource.totalFrames / lottieSource.frameRate;
+				const inspection = imageInspection(input.sourceId, input.file, outputWidth, outputHeight);
+				const primaryVideo = inspection.tracks[0] as SourceVideoTrackInspection;
+				const { conformance, warnings } = deriveConformance(inspection, primaryVideo, null);
+				const metadata = createMetadata(
+					input.file,
+					duration,
+					'application/lottie+json',
+					inspection.tracks,
+					primaryVideo,
+					null
+				);
+				const handle: MediaInputHandle = {
+					sourceId: input.sourceId,
+					kind: 'image',
+					adapterId: 'mediabunny',
+					metadata,
+					inspection,
+					conformance,
+					timing: conformance.timing,
+					warnings,
+					frameSource: lottieSource,
+					audioSource: null,
+					audioChannels: 0,
+					audioSampleRate: 0,
+					displayWidth: outputWidth,
+					displayHeight: outputHeight,
+					frameRate: lottieSource.frameRate,
+					duration,
+					thumbnailAt: async () => {
+						const frame = await lottieSource.frameAt(0);
+						return frame ? frame.toVideoFrame() : null;
+					},
+					dispose: () => lottieSource.dispose()
+				};
+				return { handle, inspection, conformance, warnings };
+			}
 		}
 
 		const source = new BlobSource(input.file);
@@ -629,11 +777,31 @@ export const mediabunnyAdapter: MediaAdapter = {
 			// Since we always attempt Mediabunny fallback for video, the
 			// unsupported-video-codec warning is informational when a frame source
 			// was successfully created.
-			const warnings = frameSource
+			let warnings = frameSource
 				? initialWarnings.map((w) =>
 						w.code === 'unsupported-video-codec' ? { ...w, blocking: false } : w
 					)
 				: initialWarnings;
+
+			// Alpha channel warning for VP9/AV1-alpha overlays (Phase 38b R5.4)
+			if (
+				primaryVideoInspection?.codec &&
+				/vp09|av01/.test(primaryVideoInspection.codec) &&
+				input.imageDecoder !== 'supported'
+			) {
+				warnings = [
+					...warnings,
+					{
+						code: 'alpha-not-decoded' as const,
+						severity: 'warning' as const,
+						blocking: false,
+						sourceId: input.sourceId,
+						message: 'Alpha channel not decoded on this browser/platform.',
+						details: { codec: primaryVideoInspection.codec }
+					}
+				];
+			}
+
 			const conformance: SourceConformance = frameSource
 				? {
 						...initialConformance,

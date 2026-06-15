@@ -36,6 +36,7 @@
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
 		"dompurify": "^3.4.8",
+		"lottie-web": "^5.13.0",
 		"lucide-solid": "^1.17.0",
 		"marked": "^18.0.5",
 		"mediabunny": "^1.46.0",

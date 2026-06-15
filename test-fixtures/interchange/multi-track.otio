@@ -3,7 +3,7 @@
   "metadata": {
     "localcut": {
       "projectId": "fixture-multi-track",
-      "projectSchemaVersion": 17,
+      "projectSchemaVersion": 18,
       "appVersion": "0.1.0",
       "savedAt": "2026-01-01T00:00:00.000Z",
       "masterGain": 1,
@@ -128,7 +128,17 @@
                   "temperature": 0,
                   "temperatureStrength": 0,
                   "lutStrength": 0,
-                  "skinSmoothStrength": 0
+                  "skinSmoothStrength": 0,
+                  "grainStrength": 0,
+                  "grainSize": 1,
+                  "halationThreshold": 0.75,
+                  "halationRadius": 0,
+                  "halationTintR": 1,
+                  "halationTintG": 0.3,
+                  "halationTintB": 0.1,
+                  "vignetteAmount": 0,
+                  "vignetteFeather": 0.5,
+                  "vignetteRoundness": 1
                 },
                 "transform": {
                   "x": 0,
@@ -230,7 +240,17 @@
                   "temperature": 0,
                   "temperatureStrength": 0,
                   "lutStrength": 0,
-                  "skinSmoothStrength": 0
+                  "skinSmoothStrength": 0,
+                  "grainStrength": 0,
+                  "grainSize": 1,
+                  "halationThreshold": 0.75,
+                  "halationRadius": 0,
+                  "halationTintR": 1,
+                  "halationTintG": 0.3,
+                  "halationTintB": 0.1,
+                  "vignetteAmount": 0,
+                  "vignetteFeather": 0.5,
+                  "vignetteRoundness": 1
                 },
                 "transform": {
                   "x": 0,
@@ -349,7 +369,17 @@
                   "temperature": 0,
                   "temperatureStrength": 0,
                   "lutStrength": 0,
-                  "skinSmoothStrength": 0
+                  "skinSmoothStrength": 0,
+                  "grainStrength": 0,
+                  "grainSize": 1,
+                  "halationThreshold": 0.75,
+                  "halationRadius": 0,
+                  "halationTintR": 1,
+                  "halationTintG": 0.3,
+                  "halationTintB": 0.1,
+                  "vignetteAmount": 0,
+                  "vignetteFeather": 0.5,
+                  "vignetteRoundness": 1
                 },
                 "transform": {
                   "x": 0,
@@ -481,7 +511,17 @@
                   "temperature": 0,
                   "temperatureStrength": 0,
                   "lutStrength": 0,
-                  "skinSmoothStrength": 0
+                  "skinSmoothStrength": 0,
+                  "grainStrength": 0,
+                  "grainSize": 1,
+                  "halationThreshold": 0.75,
+                  "halationRadius": 0,
+                  "halationTintR": 1,
+                  "halationTintG": 0.3,
+                  "halationTintB": 0.1,
+                  "vignetteAmount": 0,
+                  "vignetteFeather": 0.5,
+                  "vignetteRoundness": 1
                 },
                 "transform": {
                   "x": 0,

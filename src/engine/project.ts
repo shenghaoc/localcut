@@ -50,7 +50,7 @@ import { cloneClipLut, parsePersistedClipLut } from './lut';
 import { normalizeSkinMask } from './skin-smooth';
 import { parseExportPresetDoc } from './export-presets';
 
-export const PROJECT_SCHEMA_VERSION = 17;
+export const PROJECT_SCHEMA_VERSION = 18;
 const DURATION_MATCH_TOLERANCE_S = 0.25;
 const TIMING_MATCH_TOLERANCE_S = 0.05;
 
@@ -1557,6 +1557,7 @@ export function deserializeProject(value: unknown): DeserializeProjectResult {
 		case 15:
 		case 16:
 		case 17:
+		case 18:
 			// v14 (Phase 36): adds optional voiceCleanup on top of v13.
 			// v15 (Phase 31): adds the optional per-clip `matte` (mode/strength/
 			// blurRadius), handled by the shared clip parser, on top of v14 — so
@@ -1564,6 +1565,8 @@ export function deserializeProject(value: unknown): DeserializeProjectResult {
 			// v16 (Phase 35): adds optional per-clip `timeRemap`, handled by the
 			// shared clip parser (absent = identity speed).
 			// v17: adds sourceDurationS to timeRemap for proper LUT rebuilding.
+			// v18 (Phase 38): adds film-look params (grain, halation, vignette) to
+			// ClipEffectParams — backwards-compatible, filled by normalizeClipEffects.
 			return deserializeV14(value);
 		default:
 			return { ok: false, reason: `Unsupported project schemaVersion ${schemaVersion}.` };

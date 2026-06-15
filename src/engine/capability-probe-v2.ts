@@ -476,6 +476,13 @@ export function probeSmartReframe(): SmartReframeProbeResult {
 	};
 }
 
+/** Phase 38b: probe `ImageDecoder` API for animated image frame-accurate decoding. */
+function probeImageDecoder(): FeatureSupport {
+	return typeof (globalThis as unknown as Record<string, unknown>)['ImageDecoder'] === 'function'
+		? 'supported'
+		: 'unsupported';
+}
+
 /**
  * Whether recording is available: accelerated tier + all critical capture probes
  * are `'supported'`. Display audio is NOT critical (its absence only disables the
@@ -550,6 +557,7 @@ export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 		tier: deriveCapabilityTierV2(probeWithoutTier),
 		cleanup,
 		asr: probeAsr(),
-		smartReframe: probeSmartReframe()
+		smartReframe: probeSmartReframe(),
+		imageDecoder: probeImageDecoder()
 	};
 }
