@@ -68,14 +68,17 @@ function requiredString(obj: Record<string, unknown>, key: string): string | und
 	return typeof value === 'string' ? value : undefined;
 }
 
-function finiteNumber(obj: Record<string, unknown>, key: string): number | undefined {
-	const value = obj[key];
-	return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
-}
-
-function clampFinite(v: number | undefined, lo: number, hi: number, fallback: number): number {
-	if (v === undefined || !Number.isFinite(v)) return fallback;
-	return Math.max(lo, Math.min(hi, v));
+function clampOrReject(
+	obj: Record<string, unknown>,
+	key: keyof LookParams,
+	lo: number,
+	hi: number,
+	fallback: number
+): number | null {
+	const raw = obj[key];
+	if (raw === undefined || raw === null) return fallback;
+	if (typeof raw !== 'number' || !Number.isFinite(raw)) return null;
+	return Math.max(lo, Math.min(hi, raw));
 }
 
 const LOOK_PARAM_RANGES: Record<keyof LookParams, [number, number]> = {
@@ -99,57 +102,95 @@ export function parseLookPreset(json: unknown): LookPreset | null {
 	if (!isRecord(json.params)) return null;
 
 	const defaults = defaultLookParams();
+	const p = json.params as Record<string, unknown>;
+
+	const grainStrength = clampOrReject(
+		p,
+		'grainStrength',
+		...LOOK_PARAM_RANGES.grainStrength,
+		defaults.grainStrength
+	);
+	const grainSize = clampOrReject(
+		p,
+		'grainSize',
+		...LOOK_PARAM_RANGES.grainSize,
+		defaults.grainSize
+	);
+	const halationThreshold = clampOrReject(
+		p,
+		'halationThreshold',
+		...LOOK_PARAM_RANGES.halationThreshold,
+		defaults.halationThreshold
+	);
+	const halationRadius = clampOrReject(
+		p,
+		'halationRadius',
+		...LOOK_PARAM_RANGES.halationRadius,
+		defaults.halationRadius
+	);
+	const halationTintR = clampOrReject(
+		p,
+		'halationTintR',
+		...LOOK_PARAM_RANGES.halationTintR,
+		defaults.halationTintR
+	);
+	const halationTintG = clampOrReject(
+		p,
+		'halationTintG',
+		...LOOK_PARAM_RANGES.halationTintG,
+		defaults.halationTintG
+	);
+	const halationTintB = clampOrReject(
+		p,
+		'halationTintB',
+		...LOOK_PARAM_RANGES.halationTintB,
+		defaults.halationTintB
+	);
+	const vignetteAmount = clampOrReject(
+		p,
+		'vignetteAmount',
+		...LOOK_PARAM_RANGES.vignetteAmount,
+		defaults.vignetteAmount
+	);
+	const vignetteFeather = clampOrReject(
+		p,
+		'vignetteFeather',
+		...LOOK_PARAM_RANGES.vignetteFeather,
+		defaults.vignetteFeather
+	);
+	const vignetteRoundness = clampOrReject(
+		p,
+		'vignetteRoundness',
+		...LOOK_PARAM_RANGES.vignetteRoundness,
+		defaults.vignetteRoundness
+	);
+
+	if (
+		grainStrength === null ||
+		grainSize === null ||
+		halationThreshold === null ||
+		halationRadius === null ||
+		halationTintR === null ||
+		halationTintG === null ||
+		halationTintB === null ||
+		vignetteAmount === null ||
+		vignetteFeather === null ||
+		vignetteRoundness === null
+	) {
+		return null;
+	}
+
 	const params: LookParams = {
-		grainStrength: clampFinite(
-			finiteNumber(json.params, 'grainStrength'),
-			...LOOK_PARAM_RANGES.grainStrength,
-			defaults.grainStrength
-		),
-		grainSize: clampFinite(
-			finiteNumber(json.params, 'grainSize'),
-			...LOOK_PARAM_RANGES.grainSize,
-			defaults.grainSize
-		),
-		halationThreshold: clampFinite(
-			finiteNumber(json.params, 'halationThreshold'),
-			...LOOK_PARAM_RANGES.halationThreshold,
-			defaults.halationThreshold
-		),
-		halationRadius: clampFinite(
-			finiteNumber(json.params, 'halationRadius'),
-			...LOOK_PARAM_RANGES.halationRadius,
-			defaults.halationRadius
-		),
-		halationTintR: clampFinite(
-			finiteNumber(json.params, 'halationTintR'),
-			...LOOK_PARAM_RANGES.halationTintR,
-			defaults.halationTintR
-		),
-		halationTintG: clampFinite(
-			finiteNumber(json.params, 'halationTintG'),
-			...LOOK_PARAM_RANGES.halationTintG,
-			defaults.halationTintG
-		),
-		halationTintB: clampFinite(
-			finiteNumber(json.params, 'halationTintB'),
-			...LOOK_PARAM_RANGES.halationTintB,
-			defaults.halationTintB
-		),
-		vignetteAmount: clampFinite(
-			finiteNumber(json.params, 'vignetteAmount'),
-			...LOOK_PARAM_RANGES.vignetteAmount,
-			defaults.vignetteAmount
-		),
-		vignetteFeather: clampFinite(
-			finiteNumber(json.params, 'vignetteFeather'),
-			...LOOK_PARAM_RANGES.vignetteFeather,
-			defaults.vignetteFeather
-		),
-		vignetteRoundness: clampFinite(
-			finiteNumber(json.params, 'vignetteRoundness'),
-			...LOOK_PARAM_RANGES.vignetteRoundness,
-			defaults.vignetteRoundness
-		)
+		grainStrength,
+		grainSize,
+		halationThreshold,
+		halationRadius,
+		halationTintR,
+		halationTintG,
+		halationTintB,
+		vignetteAmount,
+		vignetteFeather,
+		vignetteRoundness
 	};
 
 	const result: LookPreset = { lookSchemaVersion: 1, name, params };

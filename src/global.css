@@ -3212,6 +3212,38 @@ body {
 	font-variant-numeric: tabular-nums lining-nums;
 }
 
+.look-controls {
+	display: flex;
+	flex-direction: column;
+	gap: 0.45rem;
+	margin-top: 0.3rem;
+	padding-top: 0.55rem;
+	border-top: 1px solid var(--border);
+}
+
+.look-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem;
+}
+
+.look-export-button {
+	margin-top: 0.3rem;
+	padding: 0.3rem 0.6rem;
+	font-size: var(--text-xs);
+	color: var(--text-muted);
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+	cursor: pointer;
+}
+
+.look-export-button:hover {
+	color: var(--text);
+	background: var(--surface-hover);
+}
+
 .skin-smooth-panel {
 	display: flex;
 	flex-direction: column;

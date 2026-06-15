@@ -145,6 +145,9 @@ interface InspectorProps {
 	/** Phase 35: time-remap callbacks. */
 	onSetTimeRemap?: (trackId: string, clipId: string, remap: TimeRemapSnapshot) => void;
 	onClearTimeRemap?: (trackId: string, clipId: string) => void;
+	/** Phase 38a: look preset callbacks. */
+	onImportLookPreset?: (trackId: string, clipId: string, presetFile: File, lutFile?: File) => void;
+	onExportLookPreset?: (trackId: string, clipId: string) => void;
 }
 
 type TransformSliderKey = 'x' | 'y' | 'scale' | 'rotation' | 'opacity';
@@ -339,6 +342,89 @@ const LUT_STRENGTH_SLIDER: SliderSpec = {
 	format: (v) => v.toFixed(2)
 };
 
+const LOOK_SLIDERS: SliderSpec[] = [
+	{
+		key: 'grainStrength',
+		label: 'Grain Strength',
+		min: 0,
+		max: 1,
+		step: 0.01,
+		format: (v) => v.toFixed(2)
+	},
+	{
+		key: 'grainSize',
+		label: 'Grain Size',
+		min: 0.5,
+		max: 4.0,
+		step: 0.1,
+		format: (v) => v.toFixed(1)
+	},
+	{
+		key: 'halationThreshold',
+		label: 'Halation Threshold',
+		min: 0,
+		max: 1,
+		step: 0.01,
+		format: (v) => v.toFixed(2)
+	},
+	{
+		key: 'halationRadius',
+		label: 'Halation Radius',
+		min: 0,
+		max: 64,
+		step: 1,
+		format: (v) => `${Math.round(v)}px`
+	},
+	{
+		key: 'halationTintR',
+		label: 'Tint R',
+		min: 0,
+		max: 1,
+		step: 0.01,
+		format: (v) => v.toFixed(2)
+	},
+	{
+		key: 'halationTintG',
+		label: 'Tint G',
+		min: 0,
+		max: 1,
+		step: 0.01,
+		format: (v) => v.toFixed(2)
+	},
+	{
+		key: 'halationTintB',
+		label: 'Tint B',
+		min: 0,
+		max: 1,
+		step: 0.01,
+		format: (v) => v.toFixed(2)
+	},
+	{
+		key: 'vignetteAmount',
+		label: 'Vignette Amount',
+		min: 0,
+		max: 1,
+		step: 0.01,
+		format: (v) => v.toFixed(2)
+	},
+	{
+		key: 'vignetteFeather',
+		label: 'Vignette Feather',
+		min: 0,
+		max: 1,
+		step: 0.01,
+		format: (v) => v.toFixed(2)
+	},
+	{
+		key: 'vignetteRoundness',
+		label: 'Vignette Roundness',
+		min: 0,
+		max: 2,
+		step: 0.01,
+		format: (v) => v.toFixed(2)
+	}
+];
+
 interface SkinMaskSliderSpec {
 	key: keyof SkinMaskSnapshot;
 	label: string;
@@ -392,6 +478,7 @@ export function Inspector(props: InspectorProps) {
 	const mixTarget = { trackId: '' };
 	const fadeTarget = { trackId: '', clipId: '' };
 	let lutInput: HTMLInputElement | undefined;
+	let lookPresetInput: HTMLInputElement | undefined;
 
 	const [skinSmoothBypass, setSkinSmoothBypass] = createSignal(false);
 	const skinMaskPending = new Map<string, number>();
@@ -423,6 +510,23 @@ export function Inspector(props: InspectorProps) {
 			return 'Keyframed strength uses this mask wherever smoothing is active.';
 		}
 		return 'Natural range; mask edits update this clip.';
+	});
+
+	const lookNeutral = createMemo(() => {
+		const e = draft() ?? props.selectedClip?.effects;
+		if (!e) return true;
+		return (
+			e.grainStrength === 0 &&
+			e.grainSize === 1.0 &&
+			e.halationThreshold === 0.75 &&
+			e.halationRadius === 0 &&
+			e.halationTintR === 1.0 &&
+			e.halationTintG === 0.3 &&
+			e.halationTintB === 0.1 &&
+			e.vignetteAmount === 0 &&
+			e.vignetteFeather === 0.5 &&
+			e.vignetteRoundness === 1.0
+		);
 	});
 
 	function currentSkinMask() {
@@ -1731,6 +1835,131 @@ export function Inspector(props: InspectorProps) {
 											</div>
 										</div>
 									</div>
+									{/* Phase 38a: Look presets section */}
+									<Show
+										when={!lookNeutral() || props.selectedClip?.lut || props.onImportLookPreset}
+									>
+										<div class="look-controls">
+											<div class="look-header">
+												<span class="effect-slider-label">Look</span>
+												<Show when={props.onImportLookPreset}>
+													<button
+														type="button"
+														class="lut-import-button"
+														aria-label="Apply Look Preset"
+														onClick={() => lookPresetInput?.click()}
+													>
+														<Upload size={14} />
+													</button>
+													<input
+														ref={(el) => {
+															lookPresetInput = el;
+														}}
+														class="sr-only"
+														type="file"
+														accept=".json,.cube"
+														multiple
+														onChange={(event) => {
+															const files = event.currentTarget.files;
+															if (
+																files &&
+																files.length > 0 &&
+																props.selectedClip &&
+																props.onImportLookPreset
+															) {
+																const jsonFile = Array.from(files).find((f) =>
+																	f.name.endsWith('.json')
+																);
+																const cubeFile = Array.from(files).find((f) =>
+																	f.name.endsWith('.cube')
+																);
+																if (jsonFile) {
+																	props.onImportLookPreset(
+																		props.selectedClip.trackId,
+																		props.selectedClip.clipId,
+																		jsonFile,
+																		cubeFile
+																	);
+																}
+															}
+															event.currentTarget.value = '';
+														}}
+													/>
+												</Show>
+											</div>
+											<Show when={!lookNeutral()}>
+												<For each={LOOK_SLIDERS}>
+													{(spec) => (
+														<div class="effect-slider">
+															<div class="effect-slider-label">
+																<span>{spec.label}</span>
+																<span class="effect-slider-value tabular-nums">
+																	{spec.format(effects()[spec.key])}
+																</span>
+															</div>
+															<div class="keyframe-slider-row">
+																<button
+																	type="button"
+																	class="keyframe-nav"
+																	aria-label={`Previous ${spec.label} keyframe`}
+																	onClick={() => seekKeyframe(spec.key, -1)}
+																	disabled={!props.selectedClip?.keyframes?.[spec.key]?.length}
+																>
+																	<ChevronLeft size={14} />
+																</button>
+																<button
+																	type="button"
+																	class={`keyframe-toggle${hasKeyframeAtPlayhead(spec.key) ? ' is-active' : ''}`}
+																	aria-label={`Toggle ${spec.label} keyframe`}
+																	aria-pressed={hasKeyframeAtPlayhead(spec.key)}
+																	onClick={() => toggleKeyframe(spec.key, effects()[spec.key])}
+																	disabled={currentLocalTime() === null}
+																>
+																	<Diamond size={13} />
+																</button>
+																<input
+																	type="range"
+																	min={spec.min}
+																	max={spec.max}
+																	step={spec.step}
+																	value={effects()[spec.key]}
+																	onInput={(e) =>
+																		scheduleParam(
+																			spec.key,
+																			Number((e.currentTarget as HTMLInputElement).value)
+																		)
+																	}
+																/>
+																<button
+																	type="button"
+																	class="keyframe-nav"
+																	aria-label={`Next ${spec.label} keyframe`}
+																	onClick={() => seekKeyframe(spec.key, 1)}
+																	disabled={!props.selectedClip?.keyframes?.[spec.key]?.length}
+																>
+																	<ChevronRight size={14} />
+																</button>
+															</div>
+														</div>
+													)}
+												</For>
+												<Show when={props.onExportLookPreset && props.selectedClip}>
+													<button
+														type="button"
+														class="look-export-button"
+														onClick={() =>
+															props.onExportLookPreset!(
+																props.selectedClip!.trackId,
+																props.selectedClip!.clipId
+															)
+														}
+													>
+														Export Look Preset…
+													</button>
+												</Show>
+											</Show>
+										</div>
+									</Show>
 									{/* Phase 31: Portrait Matte controls — shown only when wired */}
 									<Show when={props.onSetMatteEnabled}>
 										<div class="matte-controls">
