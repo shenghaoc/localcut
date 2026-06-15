@@ -10,6 +10,9 @@ import timelineEditingContent from './content/timeline-editing.md?raw';
 import beatDetectionContent from './content/beat-detection.md?raw';
 import timeRemappingContent from './content/time-remapping.md?raw';
 import smartReframeContent from './content/smart-reframe.md?raw';
+import silenceDetectionContent from './content/silence-detection.md?raw';
+import keystrokeOverlayContent from './content/keystroke-overlay.md?raw';
+import youtubeChaptersContent from './content/youtube-chapters.md?raw';
 import exportingContent from './content/exporting.md?raw';
 import captionsContent from './content/captions.md?raw';
 import browserLimitationsContent from './content/browser-limitations.md?raw';
@@ -38,6 +41,21 @@ export const DOC_SECTIONS: readonly DocSection[] = [
 	{ slug: 'beat-detection', title: 'Beat detection', content: beatDetectionContent },
 	{ slug: 'time-remapping', title: 'Time remapping', content: timeRemappingContent },
 	{ slug: 'smart-reframe', title: 'Smart Reframe', content: smartReframeContent },
+	{
+		slug: 'silence-detection',
+		title: 'Silence detection',
+		content: silenceDetectionContent
+	},
+	{
+		slug: 'keystroke-overlay',
+		title: 'Keystroke overlay',
+		content: keystrokeOverlayContent
+	},
+	{
+		slug: 'youtube-chapters',
+		title: 'YouTube chapters',
+		content: youtubeChaptersContent
+	},
 	{ slug: 'exporting', title: 'Exporting', content: exportingContent },
 	{ slug: 'captions', title: 'Captions', content: captionsContent },
 	{ slug: 'live-streaming', title: 'Live streaming', content: liveStreamingContent },

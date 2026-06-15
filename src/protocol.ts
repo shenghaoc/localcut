@@ -1,5 +1,8 @@
 /** Shared types for main ↔ pipeline worker messages. */
 import type { DiagnosticSnapshot, RecentError, RecoveryAction } from './diagnostics/types';
+import type { SilenceDetectionParams, SilenceRegion } from './engine/silence-detector';
+
+export type { SilenceDetectionParams, SilenceRegion };
 
 /** Clock SAB layout: [0] currentTime, [1] duration, [2] playState, [3] audioClock. */
 export const CLOCK_FIELD_COUNT = 4;
@@ -830,6 +833,7 @@ export type CaptionPresetIdSnapshot =
 	| 'pop-card'
 	| 'bounce-card'
 	| 'slide-news'
+	| 'screencast'
 	| (string & Record<never, never>);
 
 export interface CaptionDiagnosticSnapshot {
@@ -2010,6 +2014,33 @@ export type WorkerCommand =
 	// Phase 35: Time Remapping
 	| { type: 'set-time-remap'; trackId: string; clipId: string; remap: TimeRemapSnapshot }
 	| { type: 'clear-time-remap'; trackId: string; clipId: string }
+	// Phase 44: Silence Detection
+	| {
+			type: 'detect-silence';
+			requestId: string;
+			trackIds: string[];
+			params: SilenceDetectionParams;
+	  }
+	| { type: 'cancel-silence-detection'; requestId: string }
+	// Phase 44: Apply silence regions atomically (split-at-boundaries + ripple).
+	// One command = one Phase 9 undo step regardless of how many clips it touches.
+	| {
+			type: 'apply-silence-cuts';
+			regions: SilenceRegion[];
+			/** Tracks the regions came from — restricts which tracks get split. */
+			trackIds: string[];
+	  }
+	// Phase 44: Keystroke overlay
+	| {
+			type: 'generate-key-overlay';
+			clips: {
+				text: string;
+				startS: number;
+				durationS: number;
+				style: Partial<TitleStyleSnapshot>;
+			}[];
+			sessionOffsetS: number;
+	  }
 	| { type: 'dispose' };
 
 /** A measured preview resolution tier (adaptive downscale of the decode path). */
@@ -2291,6 +2322,10 @@ export type WorkerStateMessage =
 			clipId: string;
 			reason: 'speed-out-of-range' | 'duplicate-keyframe' | 'remap-capped';
 	  }
+	// Phase 44: Silence Detection
+	| { type: 'silence-progress'; requestId: string; progressFraction: number }
+	| { type: 'silence-result'; requestId: string; regions: SilenceRegion[] }
+	| { type: 'silence-error'; requestId: string; message: string }
 	| { type: 'error'; message: string };
 
 // ── Phase 46: Replay Buffer + Live Audio Chain ──

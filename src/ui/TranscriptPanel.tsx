@@ -57,7 +57,8 @@ interface TranscriptPanelProps {
 const PRESETS: { value: CaptionPresetIdSnapshot; label: string }[] = [
 	{ value: 'subtitle', label: 'Subtitle' },
 	{ value: 'lower-third', label: 'Lower Third' },
-	{ value: 'note', label: 'Note' }
+	{ value: 'note', label: 'Note' },
+	{ value: 'screencast', label: 'Screencast' }
 ];
 
 function formatTime(value: number): string {

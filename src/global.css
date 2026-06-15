@@ -4819,3 +4819,256 @@ button.status-badge:hover {
 	color: var(--text-muted);
 	line-height: 1.4;
 }
+
+/* ── Silence Review (Phase 44) ── */
+
+.silence-review-panel {
+	position: fixed;
+	top: 0;
+	right: 0;
+	z-index: 41;
+	width: min(460px, 100vw);
+	height: 100vh;
+	overflow: auto;
+	border-left: 1px solid var(--border);
+	background: color-mix(in srgb, var(--card) 92%, transparent);
+	padding: 1rem;
+	display: flex;
+	flex-direction: column;
+	gap: 0.85rem;
+}
+
+.silence-review-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+}
+
+.silence-review-header h3 {
+	margin: 0;
+	font-size: var(--text-md);
+	font-weight: 600;
+}
+
+.silence-review-close,
+.keystroke-overlay-close {
+	border: none;
+	background: transparent;
+	color: var(--text-muted);
+	font-size: 1.4rem;
+	line-height: 1;
+	cursor: pointer;
+	padding: 0.25rem 0.5rem;
+	border-radius: var(--radius-sm);
+}
+
+.silence-review-close:hover,
+.keystroke-overlay-close:hover {
+	background: var(--bg-elevated);
+	color: var(--text);
+}
+
+.silence-params {
+	display: grid;
+	grid-template-columns: 1fr;
+	gap: 0.65rem;
+}
+
+.silence-params label {
+	display: grid;
+	grid-template-columns: 9rem 1fr 3rem;
+	align-items: center;
+	gap: 0.5rem;
+	font-size: var(--text-sm);
+}
+
+.silence-params input[type='range'] {
+	width: 100%;
+}
+
+.silence-param-value {
+	font-variant-numeric: tabular-nums;
+	color: var(--text-muted);
+	text-align: right;
+}
+
+.silence-actions {
+	display: flex;
+	align-items: center;
+	gap: 0.65rem;
+	flex-wrap: wrap;
+}
+
+.silence-scope-hint {
+	color: var(--text-muted);
+	font-size: var(--text-xs);
+}
+
+.silence-progress {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	font-variant-numeric: tabular-nums;
+}
+
+.silence-progress progress {
+	flex: 1;
+}
+
+.silence-error {
+	padding: 0.75rem;
+	border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--border));
+	border-radius: var(--radius-md);
+	background: var(--bg-elevated);
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+}
+
+.silence-region-list {
+	display: flex;
+	flex-direction: column;
+	gap: 0.65rem;
+}
+
+.silence-region-list table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: var(--text-sm);
+}
+
+.silence-region-list th,
+.silence-region-list td {
+	padding: 0.4rem 0.3rem;
+	text-align: left;
+	border-bottom: 1px solid var(--border);
+	font-variant-numeric: tabular-nums;
+}
+
+.silence-region-list th {
+	font-weight: 600;
+	color: var(--text-muted);
+	font-size: var(--text-xs);
+	text-transform: uppercase;
+	letter-spacing: var(--tracking-eyebrow);
+}
+
+.silence-btn-apply,
+.silence-btn-skip {
+	border: 1px solid var(--border);
+	background: var(--bg-elevated);
+	color: var(--text);
+	border-radius: var(--radius-sm);
+	padding: 0.25rem 0.55rem;
+	margin-right: 0.35rem;
+	font-size: var(--text-xs);
+	cursor: pointer;
+}
+
+.silence-btn-apply:disabled,
+.silence-btn-skip:disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+
+.silence-apply-all {
+	display: flex;
+	justify-content: flex-end;
+}
+
+/* ── Keystroke Overlay (Phase 44) ── */
+
+.keystroke-overlay-panel {
+	position: fixed;
+	top: 0;
+	right: 0;
+	z-index: 41;
+	width: min(460px, 100vw);
+	height: 100vh;
+	overflow: auto;
+	border-left: 1px solid var(--border);
+	background: color-mix(in srgb, var(--card) 92%, transparent);
+	padding: 1rem;
+	display: flex;
+	flex-direction: column;
+	gap: 0.85rem;
+}
+
+.keystroke-overlay-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+}
+
+.keystroke-overlay-header h3 {
+	margin: 0;
+	font-size: var(--text-md);
+	font-weight: 600;
+}
+
+.keystroke-overlay-desc {
+	margin: 0;
+	color: var(--text-muted);
+	font-size: var(--text-sm);
+	line-height: 1.4;
+}
+
+.keystroke-overlay-optin {
+	display: inline-flex;
+	gap: 0.45rem;
+	align-items: center;
+	font-size: var(--text-sm);
+}
+
+.keystroke-overlay-actions {
+	display: flex;
+	gap: 0.65rem;
+	flex-wrap: wrap;
+}
+
+.keystroke-overlay-error {
+	padding: 0.7rem 0.75rem;
+	border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--border));
+	border-radius: var(--radius-md);
+	background: var(--bg-elevated);
+	font-size: var(--text-sm);
+}
+
+.keystroke-overlay-status {
+	padding: 0.6rem 0.75rem;
+	border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+	border-radius: var(--radius-md);
+	background: var(--bg-elevated);
+	font-size: var(--text-sm);
+}
+
+.keystroke-overlay-log {
+	border: 1px solid var(--border);
+	border-radius: var(--radius-md);
+	overflow: auto;
+	max-height: 50vh;
+}
+
+.keystroke-overlay-log table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: var(--text-sm);
+}
+
+.keystroke-overlay-log th,
+.keystroke-overlay-log td {
+	padding: 0.35rem 0.5rem;
+	border-bottom: 1px solid var(--border);
+	font-variant-numeric: tabular-nums;
+}
+
+.keystroke-overlay-combo {
+	font-family: 'JetBrains Mono', 'Courier New', Courier, monospace;
+	background: #1a1a1a;
+	color: #fff;
+	padding: 0.12rem 0.4rem;
+	border-radius: var(--radius-sm);
+	font-size: 0.85em;
+}

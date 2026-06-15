@@ -194,6 +194,11 @@ import {
 import { openMediaFile, STILL_DEFAULT_DURATION_S, type MediaInputHandle } from './media-io';
 import { healthReportForHandle } from './media-adapters/mediabunny-adapter';
 import {
+	SilenceStreamDetector,
+	intersectSilenceRegions,
+	type SilenceRegion as SilenceRegionT
+} from './silence-detector';
+import {
 	resolveSourceTimestamp,
 	resolveNormalizedSourceTimestamp,
 	audioAvailabilityWindowFrames,
@@ -359,6 +364,8 @@ const remapLUTSignatures = new Map<string, string>();
 const liveWsolaStretchers = new Map<string, WsolaStretcher>();
 const WSOLA_INPUT_PAD_FRAMES = WSOLA_WINDOW_SAMPLES + WSOLA_SEARCH_RADIUS_SAMPLES;
 const restoringSourceIds = new Set<string>();
+/** Phase 44: in-flight silence detection request IDs (cancellation set). */
+const inFlightSilenceRequests = new Set<string>();
 let thumbnailGen: ThumbnailGenerator | null = null;
 const THUMBNAIL_WIDTH = 160;
 const history = createTimelineHistory();
@@ -4003,6 +4010,96 @@ function handleRippleDelete(cmd: Extract<WorkerCommand, { type: 'ripple-delete' 
 	});
 }
 
+function handleApplySilenceCuts(cmd: Extract<WorkerCommand, { type: 'apply-silence-cuts' }>) {
+	const { regions, trackIds } = cmd;
+	if (regions.length === 0 || trackIds.length === 0) return;
+	const epsilon = 1e-6;
+	const sortedRegions = [...regions]
+		.filter((r) => r.endS - r.startS > epsilon)
+		.sort((a, b) => a.startS - b.startS);
+	if (sortedRegions.length === 0) return;
+	const targetTrackIds = new Set(trackIds);
+
+	commitEditMutation(() => {
+		// Step 1: split affected clips at every region boundary so the silent
+		// slices become their own clip IDs that ripple-delete can target.
+		// `splitClipAt` is a no-op at clip edges or outside any clip, so it's
+		// safe to call per (track × boundary).
+		let splitTimeline = timeline;
+		for (const region of sortedRegions) {
+			for (const trackId of trackIds) {
+				splitTimeline = splitClipAt(splitTimeline, trackId, region.startS);
+				splitTimeline = splitClipAt(splitTimeline, trackId, region.endS);
+			}
+		}
+
+		// Step 2: collect clip refs that sit fully inside any region.
+		const toDelete: { trackId: string; clipId: string }[] = [];
+		for (const track of splitTimeline) {
+			if (!targetTrackIds.has(track.id)) continue;
+			for (const clip of track.clips) {
+				const clipStart = clip.start;
+				const clipEnd = clip.start + clip.duration;
+				for (const region of sortedRegions) {
+					if (clipStart >= region.startS - epsilon && clipEnd <= region.endS + epsilon) {
+						toDelete.push({ trackId: track.id, clipId: clip.id });
+						break;
+					}
+				}
+			}
+		}
+
+		if (toDelete.length === 0) {
+			return { timeline, captionTracks, transitions, markers };
+		}
+
+		// Step 3: replay the ripple-delete bookkeeping on the split timeline.
+		const syncLockedTrackIds = getSyncLockedTrackIds();
+		const expanded = expandLinkedGroup(splitTimeline, toDelete);
+		const removedRegions: { start: number; end: number }[] = [];
+		for (const ref of expanded) {
+			const track = splitTimeline.find((t) => t.id === ref.trackId);
+			const clip = track?.clips.find((c) => c.id === ref.clipId);
+			if (clip) removedRegions.push({ start: clip.start, end: clip.start + clip.duration });
+		}
+		const finalTimeline = rippleDelete(splitTimeline, toDelete, syncLockedTrackIds);
+		if (finalTimeline === splitTimeline) {
+			return { timeline, captionTracks, transitions, markers };
+		}
+		let nextMarkers: TimelineMarker[] = markers as TimelineMarker[];
+		const sortedRemoved = removedRegions.toSorted((a, b) => a.start - b.start);
+		const mergedRanges: { start: number; end: number }[] = [];
+		for (const r of sortedRemoved) {
+			if (
+				mergedRanges.length > 0 &&
+				r.start <= mergedRanges[mergedRanges.length - 1]!.end + TIMELINE_EPSILON
+			) {
+				mergedRanges[mergedRanges.length - 1]!.end = Math.max(
+					mergedRanges[mergedRanges.length - 1]!.end,
+					r.end
+				);
+			} else {
+				mergedRanges.push({ start: r.start, end: r.end });
+			}
+		}
+		for (const r of mergedRanges) {
+			nextMarkers = removeMarkersInRange(nextMarkers, r.start, r.end);
+		}
+		let cumulativeDelta = 0;
+		for (const r of mergedRanges) {
+			const dur = r.end - r.start;
+			nextMarkers = shiftMarkers(nextMarkers, r.start - cumulativeDelta, -dur);
+			cumulativeDelta += dur;
+		}
+		return {
+			timeline: finalTimeline,
+			captionTracks,
+			transitions: reconcileTransitions(finalTimeline, transitions),
+			markers: nextMarkers
+		};
+	});
+}
+
 function handleRippleTrim(cmd: Extract<WorkerCommand, { type: 'ripple-trim' }>) {
 	const syncLockedTrackIds = getSyncLockedTrackIds();
 	const clip = timeline.find((t) => t.id === cmd.trackId)?.clips.find((c) => c.id === cmd.clipId);
@@ -5580,6 +5677,222 @@ async function handleQueueStart() {
 }
 
 // ── Phase 36: Voice Cleanup handlers ──
+
+// ── Phase 44: Silence Detection handler ──
+
+/** Streaming read chunk for `pcmWindowAt` — 0.5 s of audio (~96 KB mono) so
+ *  a 30-minute clip is processed as ~3600 bounded allocations instead of one
+ *  multi-hundred-MB buffer that can OOM the worker. */
+const SILENCE_READ_CHUNK_S = 0.5;
+
+/** Push `frames` of zero samples to a streaming detector in bounded chunks
+ *  (1 second per allocation) — used for timeline gaps between clips. */
+function pushSilenceGap(
+	detector: SilenceStreamDetector,
+	frames: number,
+	zeroScratch: Float32Array
+): void {
+	let remaining = frames;
+	while (remaining > 0) {
+		const take = Math.min(remaining, zeroScratch.length);
+		detector.pushChunk(zeroScratch.subarray(0, take));
+		remaining -= take;
+	}
+}
+
+async function detectSilenceForTrack(
+	track: TimelineTrack,
+	params: import('./silence-detector').SilenceDetectionParams,
+	requestId: string
+): Promise<SilenceRegionT[] | null> {
+	const trackDuration = getTimelineDuration([track]);
+	if (trackDuration <= 0) return [];
+	const targetSampleRate = params.sampleRate;
+	const detector = new SilenceStreamDetector(params);
+	const zeroScratch = new Float32Array(targetSampleRate); // 1 s of zeros, reused.
+	const chunkFrames = Math.max(1, Math.round(SILENCE_READ_CHUNK_S * targetSampleRate));
+
+	const sortedClips = [...track.clips]
+		.filter((c) => c.kind !== 'title')
+		.sort((a, b) => a.start - b.start);
+
+	let timelineCursorFrames = 0;
+	for (const clip of sortedClips) {
+		if (!inFlightSilenceRequests.has(requestId)) return null;
+
+		// Zero-fill the gap before this clip (timeline silence).
+		const clipStartFrame = Math.round(clip.start * targetSampleRate);
+		if (clipStartFrame > timelineCursorFrames) {
+			pushSilenceGap(detector, clipStartFrame - timelineCursorFrames, zeroScratch);
+			timelineCursorFrames = clipStartFrame;
+		}
+
+		const handle = sourceInputs.get(clip.sourceId);
+		const clipFrames = Math.max(1, Math.round(clip.duration * targetSampleRate));
+		if (!handle?.audioSource) {
+			// No audio source — treat as silence for the clip's duration.
+			pushSilenceGap(detector, clipFrames, zeroScratch);
+			timelineCursorFrames += clipFrames;
+			continue;
+		}
+
+		const channels = Math.max(1, handle.audioChannels || 1);
+		let framesEmitted = 0;
+		while (framesEmitted < clipFrames) {
+			if (!inFlightSilenceRequests.has(requestId)) return null;
+			const take = Math.min(chunkFrames, clipFrames - framesEmitted);
+			const timelineSeconds = clip.start + framesEmitted / targetSampleRate;
+			// Resolve adapter timestamps so sources with media-start offsets
+			// (e.g. trimmed MOV/MP4) read the right audio instead of fake
+			// leading silence.
+			const resolution = resolveSourceTimestamp({
+				clip,
+				timelineTime: timelineSeconds,
+				trackKind: 'audio',
+				timing: handle.timing
+			});
+			const availableRunFrames = audioAvailabilityWindowFrames({
+				resolution,
+				timing: handle.timing,
+				clip,
+				timelineTime: timelineSeconds,
+				sampleRate: targetSampleRate,
+				maxFrames: take
+			});
+			if (!resolution.available || availableRunFrames <= 0) {
+				// Outside the source's audio window → treat as gap-silence so
+				// we don't fabricate audible content.
+				const skip = availableRunFrames > 0 ? availableRunFrames : take;
+				pushSilenceGap(detector, skip, zeroScratch);
+				framesEmitted += skip;
+				continue;
+			}
+			const pcm = await handle.audioSource.pcmWindowAt(
+				resolution.adapterTimestampS,
+				availableRunFrames,
+				channels,
+				targetSampleRate
+			);
+			if (!inFlightSilenceRequests.has(requestId)) return null;
+			// Mono-mix into a small allocation per chunk.
+			const mono = new Float32Array(availableRunFrames);
+			if (channels > 1) {
+				for (let f = 0; f < availableRunFrames; f++) {
+					let sum = 0;
+					for (let ch = 0; ch < channels; ch++) sum += pcm[f * channels + ch]!;
+					mono[f] = sum / channels;
+				}
+			} else {
+				// pcm may already be mono; copy the slice we need.
+				mono.set(pcm.subarray(0, availableRunFrames));
+			}
+			detector.pushChunk(mono);
+			framesEmitted += availableRunFrames;
+		}
+		timelineCursorFrames += clipFrames;
+	}
+
+	// Trailing gap to track duration.
+	const totalFrames = Math.ceil(trackDuration * targetSampleRate);
+	if (totalFrames > timelineCursorFrames) {
+		pushSilenceGap(detector, totalFrames - timelineCursorFrames, zeroScratch);
+	}
+
+	if (!inFlightSilenceRequests.has(requestId)) return null;
+	return detector.finalize();
+}
+
+async function handleDetectSilence(
+	cmd: Extract<WorkerCommand, { type: 'detect-silence' }>
+): Promise<void> {
+	const { requestId, trackIds, params } = cmd;
+	inFlightSilenceRequests.add(requestId);
+	try {
+		const perTrack: SilenceRegionT[][] = [];
+		for (let i = 0; i < trackIds.length; i++) {
+			if (!inFlightSilenceRequests.has(requestId)) return;
+			const trackId = trackIds[i]!;
+			const track = timeline.find((t) => t.id === trackId);
+			if (!track) {
+				perTrack.push([]);
+			} else {
+				const regions = await detectSilenceForTrack(track, params, requestId);
+				if (regions === null) return; // Cancelled mid-stream.
+				perTrack.push(regions);
+			}
+			post({
+				type: 'silence-progress',
+				requestId,
+				progressFraction: (i + 1) / Math.max(1, trackIds.length)
+			});
+		}
+		if (!inFlightSilenceRequests.has(requestId)) return;
+		// Dead air is silence on EVERY selected track simultaneously — union
+		// would propose cuts where, say, the music bed is quiet but narration
+		// is mid-sentence. Intersection avoids those false positives.
+		let combined: SilenceRegionT[] = perTrack[0] ?? [];
+		for (let i = 1; i < perTrack.length; i++) {
+			combined = intersectSilenceRegions(combined, perTrack[i]!);
+		}
+		post({ type: 'silence-result', requestId, regions: combined });
+	} catch (error) {
+		const message = error instanceof Error ? error.message : 'Unknown error';
+		post({ type: 'silence-error', requestId, message });
+	} finally {
+		inFlightSilenceRequests.delete(requestId);
+	}
+}
+
+// ── Phase 44: Keystroke Overlay handler ──
+
+function handleGenerateKeyOverlay(
+	cmd: Extract<WorkerCommand, { type: 'generate-key-overlay' }>
+): void {
+	const { clips } = cmd;
+	if (clips.length === 0) return;
+	// The generator emits 1.2 s clips at each shortcut event; consecutive
+	// events 300 ms – 1.2 s apart therefore produce overlapping ranges that
+	// `insertClip` rejects (same-track overlap returns the original timeline,
+	// silently dropping the later clip). Truncate each clip so its end ≤ the
+	// next clip's start, preserving the per-event start while still letting
+	// every keycap appear.
+	const sorted = [...clips].sort((a, b) => a.startS - b.startS);
+	for (let i = 0; i < sorted.length - 1; i++) {
+		const cur = sorted[i]!;
+		const nxt = sorted[i + 1]!;
+		const maxEnd = nxt.startS;
+		if (cur.startS + cur.durationS > maxEnd) {
+			sorted[i] = { ...cur, durationS: Math.max(0, maxEnd - cur.startS) };
+		}
+	}
+
+	commitTimelineMutation(() => {
+		// R3.4: Create a dedicated overlay track at the top for keystroke clips.
+		// Always create a new track so overlay clips never interleave with footage.
+		let nextTimeline = addTrack(timeline, 'video');
+		const overlayTrackId = nextTimeline[nextTimeline.length - 1]!.id;
+		nextTimeline = reorderTrack(nextTimeline, overlayTrackId, 0);
+		for (const clip of sorted) {
+			if (clip.durationS <= 0) continue;
+			const titleClip = defaultTitleClip({
+				id: makeTitleClipId(),
+				start: clip.startS,
+				duration: clip.durationS
+			});
+			const withClip = insertClip(nextTimeline, overlayTrackId, titleClip);
+			if (withClip !== nextTimeline) {
+				nextTimeline = withClip;
+				nextTimeline = setTitleContent(nextTimeline, overlayTrackId, titleClip.id, {
+					text: clip.text,
+					style: clip.style
+				});
+			}
+		}
+		return nextTimeline;
+	});
+}
+
+// ── Phase 36: Voice Cleanup handlers (continued) ──
 
 async function handleVoiceCleanupAnalyseLoudness(
 	cmd: Extract<WorkerCommand, { type: 'voice-cleanup-analyse-loudness' }>
@@ -7300,6 +7613,20 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			break;
 		case 'clear-time-remap':
 			handleClearTimeRemap(cmd);
+			break;
+		// Phase 44: Silence Detection
+		case 'detect-silence':
+			void handleDetectSilence(cmd);
+			break;
+		case 'cancel-silence-detection':
+			inFlightSilenceRequests.delete(cmd.requestId);
+			break;
+		case 'apply-silence-cuts':
+			handleApplySilenceCuts(cmd);
+			break;
+		// Phase 44: Keystroke overlay
+		case 'generate-key-overlay':
+			handleGenerateKeyOverlay(cmd);
 			break;
 		case 'dispose':
 			void handleDispose();

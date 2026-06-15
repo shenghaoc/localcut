@@ -9,7 +9,7 @@ export type CaptionAnchor =
 	| 'top-center'
 	| 'custom';
 export type CaptionLineWrap = 'balanced' | 'greedy';
-// Phase 22 original three + Phase 30 extended preset IDs.
+// Phase 22 original three + Phase 30 extended preset IDs + Phase 44 screencast.
 export type CaptionPresetId =
 	| 'subtitle'
 	| 'lower-third'
@@ -20,7 +20,8 @@ export type CaptionPresetId =
 	| 'cinematic'
 	| 'pop-card'
 	| 'bounce-card'
-	| 'slide-news';
+	| 'slide-news'
+	| 'screencast';
 
 export interface CaptionDiagnostic {
 	code:
@@ -243,6 +244,27 @@ export const CAPTION_PRESETS: Record<
 		anchor: 'bottom-center',
 		maxWidthPercent: 72,
 		lineWrap: 'balanced'
+	},
+	// Phase 44: Screencast caption preset (R5.1).
+	screencast: {
+		label: 'Screencast',
+		style: {
+			fontFamily: "'Courier New', Courier, monospace",
+			fontSizePx: 52,
+			color: '#FFFFFF',
+			backgroundColor: '#1A1A1A',
+			backgroundOpacity: 0.8,
+			outlineColor: '#FFFFFF',
+			outlineWidthPx: 0,
+			shadowColor: '#000000',
+			shadowBlurPx: 0,
+			shadowOffsetXPx: 0,
+			shadowOffsetYPx: 0,
+			align: 'center'
+		},
+		anchor: 'bottom-center',
+		maxWidthPercent: 64,
+		lineWrap: 'greedy'
 	}
 };
 

@@ -6,6 +6,7 @@ import {
 	Crop,
 	FolderOpen,
 	Gauge,
+	Keyboard,
 	Languages,
 	CircleQuestionMark,
 	Info,
@@ -16,7 +17,8 @@ import {
 	ShieldCheck,
 	SkipBack,
 	SkipForward,
-	Undo2
+	Undo2,
+	VolumeX
 } from 'lucide-solid';
 import { cn } from '../lib/utils';
 import { Button } from './components/button';
@@ -50,6 +52,9 @@ interface ToolbarProps {
 	onOpenAudioCleanup?: () => void;
 	onOpenAutoCaptions?: () => void;
 	onOpenSmartReframe?: () => void;
+	onOpenSilenceReview?: () => void;
+	onImportKeystrokeOverlay?: () => void;
+	keystrokeOverlayAvailable?: boolean;
 	onOpenPublish?: () => void;
 	/** True while a publish session is connecting/live/reconnecting. */
 	publishLive?: boolean;
@@ -272,6 +277,26 @@ export function Toolbar(props: ToolbarProps) {
 					<Crop size={13} aria-hidden="true" />
 					Smart Reframe
 				</button>
+				<button
+					type="button"
+					class="pipeline-chip pipeline-chip-button"
+					onClick={() => props.onOpenSilenceReview?.()}
+					title="Silence Review — propose ripple-delete cuts at detected dead air"
+				>
+					<VolumeX size={13} aria-hidden="true" />
+					Silence Review
+				</button>
+				<Show when={props.keystrokeOverlayAvailable}>
+					<button
+						type="button"
+						class="pipeline-chip pipeline-chip-button"
+						onClick={() => props.onImportKeystrokeOverlay?.()}
+						title="Import recorded shortcuts from the active capture session as a keystroke overlay track"
+					>
+						<Keyboard size={13} aria-hidden="true" />
+						Keystroke Overlay
+					</button>
+				</Show>
 				<button
 					type="button"
 					class="pipeline-chip pipeline-chip-button"
