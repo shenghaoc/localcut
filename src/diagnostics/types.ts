@@ -88,7 +88,8 @@ export type DiagnosticSubsystem =
 	| 'cache'
 	| 'timeline'
 	| 'accessibility'
-	| 'performance';
+	| 'performance'
+	| 'matte';
 
 export type DiagnosticSeverity = 'info' | 'warning' | 'error' | 'critical';
 

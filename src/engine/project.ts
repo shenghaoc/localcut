@@ -49,7 +49,7 @@ import { cloneClipLut, parsePersistedClipLut } from './lut';
 import { normalizeSkinMask } from './skin-smooth';
 import { parseExportPresetDoc } from './export-presets';
 
-export const PROJECT_SCHEMA_VERSION = 14;
+export const PROJECT_SCHEMA_VERSION = 15;
 const DURATION_MATCH_TOLERANCE_S = 0.25;
 const TIMING_MATCH_TOLERANCE_S = 0.05;
 
@@ -209,6 +209,7 @@ function cloneClip(clip: TimelineClip): TimelineClip {
 	if (clip.linkedGroupId) cloned.linkedGroupId = clip.linkedGroupId;
 	if (clip.cleanedAudio) cloned.cleanedAudio = { ...clip.cleanedAudio };
 	if (clip.skinMask) cloned.skinMask = { ...clip.skinMask };
+	if (clip.matte) cloned.matte = { ...clip.matte };
 	const keyframes = cloneClipKeyframes(clip.keyframes);
 	if (keyframes) cloned.keyframes = keyframes;
 	const lut = cloneClipLut(clip.lut);
@@ -507,6 +508,24 @@ function parseClip(value: unknown): TimelineClip | null {
 	if (linkedGroupId) clip.linkedGroupId = linkedGroupId;
 	if (keyframes) clip.keyframes = keyframes;
 	if (lut) clip.lut = lut;
+	if (isRecord(value.matte)) {
+		const enabled = typeof value.matte.enabled === 'boolean' ? value.matte.enabled : true;
+		const mode =
+			value.matte.mode === 'replace' || value.matte.mode === 'blur' ? value.matte.mode : 'remove';
+		// Model pin survives round-trip verbatim (P23); mismatches against the
+		// deployed model surface a warning at load, never a silent switch.
+		const modelKey =
+			typeof value.matte.modelKey === 'string' ? value.matte.modelKey : 'mediapipe-selfie-general';
+		const strength = finiteNumber(value.matte.strength);
+		const blurRadius = finiteNumber(value.matte.blurRadius);
+		clip.matte = {
+			enabled,
+			mode,
+			modelKey,
+			strength: strength !== null && strength >= 0 && strength <= 1 ? strength : 1.0,
+			...(blurRadius !== null && blurRadius >= 0 ? { blurRadius: Math.min(64, blurRadius) } : {})
+		};
+	}
 	const cleanedAudio = isTitle ? undefined : parseCleanedAudio(value.cleanedAudio);
 	if (cleanedAudio) clip.cleanedAudio = cleanedAudio;
 	// Phase 32a: parse optional skin-mask sidecar (normalize invalid values, don't reject).
@@ -1459,9 +1478,11 @@ export function deserializeProject(value: unknown): DeserializeProjectResult {
 			// claimed v12 first, so Phase 30 ships as v13.
 			return deserializeV13(value);
 		case 14:
-			// v14 (Phase 36): adds optional voiceCleanup on top of v13. Phase 36
-			// originally targeted v12, but v12 (Phase 32a) and v13 (Phase 30) were
-			// claimed first, so Phase 36 ships as v14.
+		case 15:
+			// v14 (Phase 36): adds optional voiceCleanup on top of v13.
+			// v15 (Phase 31): adds the optional per-clip `matte` (mode/strength/
+			// blurRadius), handled by the shared clip parser, on top of v14 — so
+			// deserializeV14 covers both (matte is parsed if present at any version).
 			return deserializeV14(value);
 		default:
 			return { ok: false, reason: `Unsupported project schemaVersion ${schemaVersion}.` };

@@ -29,6 +29,10 @@ const HF_ORIGIN = 'https://huggingface.co';
 const GH_PROXY_PREFIX = '/_model/gh/';
 const GH_ORIGIN = 'https://raw.githubusercontent.com';
 
+/** Same-origin path prefix that proxies to Google Cloud Storage (mediapipe-assets). */
+const GCS_PROXY_PREFIX = '/_model/gcs/';
+const GCS_ORIGIN = 'https://storage.googleapis.com';
+
 const FORWARDED_RESPONSE_HEADERS = [
 	'content-type',
 	'content-length',
@@ -46,6 +50,9 @@ export default {
 		}
 		if (url.pathname.startsWith(GH_PROXY_PREFIX)) {
 			return proxyModel(url, request, GH_PROXY_PREFIX, GH_ORIGIN);
+		}
+		if (url.pathname.startsWith(GCS_PROXY_PREFIX)) {
+			return proxyModel(url, request, GCS_PROXY_PREFIX, GCS_ORIGIN);
 		}
 		return env.ASSETS.fetch(request);
 	}

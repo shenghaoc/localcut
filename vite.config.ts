@@ -325,6 +325,11 @@ export default defineConfig({
 				target: 'https://raw.githubusercontent.com',
 				changeOrigin: true,
 				rewrite: (path) => path.replace(/^\/_model\/gh\//, '/')
+			},
+			'/_model/gcs': {
+				target: 'https://storage.googleapis.com',
+				changeOrigin: true,
+				rewrite: (path) => path.replace(/^\/_model\/gcs\//, '/')
 			}
 		},
 		headers: {

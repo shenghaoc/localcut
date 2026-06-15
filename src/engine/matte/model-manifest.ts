@@ -1,0 +1,59 @@
+/**
+ * Matte-model manifest: declares the ONNX model asset (provenance, license,
+ * exact size, SHA-256 checksum, input dimensions). Weights are fetched
+ * same-origin only, never at app startup, and must match the manifest
+ * byte-for-byte before an inference session is created.
+ */
+
+import type { MatteInputRange, MatteModelManifestSnapshot } from '../../protocol';
+
+export class ManifestError extends Error {
+	constructor(message: string) {
+		super(`Invalid matte model manifest: ${message}`);
+		this.name = 'ManifestError';
+	}
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function requireString(value: unknown, field: string): string {
+	if (typeof value !== 'string' || value.length === 0) {
+		throw new ManifestError(`"${field}" must be a non-empty string`);
+	}
+	return value;
+}
+
+function requirePositiveInt(value: unknown, field: string): number {
+	if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+		throw new ManifestError(`"${field}" must be a positive integer`);
+	}
+	return value;
+}
+
+/** Validates an untrusted manifest document. Unknown fields are tolerated. */
+export function validateManifest(value: unknown): MatteModelManifestSnapshot {
+	if (!isRecord(value)) throw new ManifestError('manifest must be an object');
+	const id = requireString(value.id, 'id');
+	const version = requireString(value.version, 'version');
+	const license = requireString(value.license, 'license');
+	const source = requireString(value.source, 'source');
+	const sizeBytes = requirePositiveInt(value.sizeBytes, 'sizeBytes');
+	const checksum = requireString(value.checksum, 'checksum').toLowerCase();
+	if (!/^sha256-[0-9a-f]{64}$/.test(checksum)) {
+		throw new ManifestError('"checksum" must be "sha256-" followed by 64 hex digits');
+	}
+	const inputWidth = requirePositiveInt(value.inputWidth, 'inputWidth');
+	const inputHeight = requirePositiveInt(value.inputHeight, 'inputHeight');
+	const inputRange = parseInputRange(value.inputRange);
+
+	return { id, version, license, source, sizeBytes, checksum, inputWidth, inputHeight, inputRange };
+}
+
+/** Optional; defaults to `signed-unit` (MODNet) when absent for backward compatibility. */
+function parseInputRange(value: unknown): MatteInputRange {
+	if (value === undefined || value === null) return 'signed-unit';
+	if (value === 'signed-unit' || value === 'unit') return value;
+	throw new ManifestError('"inputRange" must be "signed-unit" or "unit"');
+}
