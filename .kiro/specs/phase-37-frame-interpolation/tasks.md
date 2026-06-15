@@ -11,13 +11,18 @@
 >
 > **Honest open items** (need resources this CI lacks, not more code):
 >
-> 1. **Model vendoring + R9 gate** — choose a permissive RIFE-class **ONNX** model (CAIN/MIT
->    recommended; FILM/Apache-2.0 for quality), verify license + size + SHA-256 + IO contract +
->    shapes, and confirm **every node runs on ORT-WebGPU** (any full-frame WASM/CPU fallback →
->    reject). Fill `public/models/interpolation/manifest.json` (currently a `template`, so the
->    feature is hidden). No GPU here to run the op-support harness.
-> 2. **UI bridge wiring** — `InterpolationControls.tsx` exists but is not mounted; `src/ui/` has
->    no `interp-*` command senders / state handlers (worker side is ready). Browser-verifiable.
+> 1. **Model vendoring + R9 gate** — first candidate is now **Practical-RIFE 4.25.lite** from
+>    upstream MIT trained-model links, exported to ONNX from source weights (not a third-party
+>    repost). Verify license + size + SHA-256 + IO contract + shapes, then confirm **every node
+>    runs on ORT-WebGPU** (any full-frame WASM/CPU fallback → reject). Fill
+>    `public/models/interpolation/manifest.json` only after the Chrome R9 gate passes. The
+>    2026-06-16 Chrome probe rejected `yuvraj108c/rife-onnx` as a source artifact: no
+>    README/licence/provenance, and `rife47_ensemble_True_scale_1_sim.onnx` stayed at
+>    ORT-WebGPU `create-session` beyond the validation threshold despite valid size/SHA and
+>    `img0`/`img1`/`timestep` IO.
+> 2. **UI bridge wiring** — `src/ui/` now consumes `interp-*` worker state, probes the
+>    manifest after worker `ready`, and feeds diagnostics. `InterpolationControls.tsx` still is
+>    not mounted because preview/export actions remain hidden until T6.2/T7.3 and a real model land.
 > 3. **Export-pipeline + bounded-preview synthesis** (R8.2/R7.4) — wire `synthesiseFrames` /
 >    `engine.synthesise` into export.ts and a decode→present preview path; GPU+model-verifiable.
 > 4. **Slow-motion `synthesize` (R7)** — needs the Phase 35 retime model (not in the repo).
@@ -93,10 +98,12 @@
 
 ## UI
 
-- [ ] **T8.1** Wire `InterpolationControls.tsx` into the Inspector + `src/ui/` bridge
-  (`interp-*` command senders + state signals + diagnostic-snapshot feed). Component exists,
-  not mounted; browser-verifiable.
-- [x] **T8.2** Export-dialog fps-upconvert control + motion-blur toggle (present).
+- [ ] **T8.1** Wire `InterpolationControls.tsx` into the Inspector + `src/ui/` bridge. **Partial:**
+  `interp-*` state handlers, manifest probe trigger, export guards, and diagnostic-snapshot feed
+  are wired. **Open:** mount controls once preview/export actions are real.
+- [x] **T8.2** Export-dialog fps-upconvert control + motion-blur toggle exist but are hidden behind
+  the explicit export-synthesis bridge flag so the checked-in template manifest cannot expose a
+  no-op export mode.
 - [x] **T8.3** "Frame Interpolation (ML)" diagnostics section (availability/EP/tensor-location/
   model status/estimate); reuse the foundation's `mlRuntime` summary.
 

@@ -224,14 +224,21 @@ import {
 import { probeEncodeThroughput } from './hardware-probe';
 import { FrameCache, makeFrameCacheKey } from './frame-cache';
 import { MatteEngine } from './matte/matte-engine';
-import { InterpolationEngine } from './interpolation/interpolation-engine';
+import {
+	DEFAULT_INTERPOLATION_MANIFEST_URL,
+	InterpolationEngine
+} from './interpolation/interpolation-engine';
 import { deriveInterpolationAvailability } from './interpolation/interpolation-availability';
 import {
 	estimateSynthesisMs,
 	type CalibrationProfile
 } from './interpolation/interpolation-estimate';
 import { planTiles, type ModelIoContract, type VramBudget } from './interpolation/tiling';
-import { toModelIoContract } from './interpolation/interpolation-model';
+import {
+	InterpolationManifestError,
+	toModelIoContract,
+	validateInterpolationManifest
+} from './interpolation/interpolation-model';
 import { SecondaryFrameSourcePool, type VideoFrameProvider } from './frame-source';
 import {
 	ExportCancelledError,
@@ -344,7 +351,7 @@ function ensureMatteEngine(): MatteEngine | null {
 	return matteEngine;
 }
 
-/** Phase 37 frame-interpolation engine — zero-copy LiteRT WebGPU synthesis on
+/** Phase 37 frame-interpolation engine — zero-copy ORT-WebGPU synthesis on
  *  the renderer's device; created lazily on the first interpolation action. */
 let interpolationEngine: InterpolationEngine | null = null;
 
@@ -7024,15 +7031,66 @@ async function handleReplaySaveLastN(nSeconds?: number): Promise<void> {
 
 // ── Phase 37: Frame Interpolation handlers ──
 
-function handleInterpolationProbe(): void {
+async function probeInterpolationManifest(): Promise<
+	{ configured: true; sizeBytes: number } | { configured: false; reason: string }
+> {
+	try {
+		const response = await fetch(DEFAULT_INTERPOLATION_MANIFEST_URL);
+		if (!response.ok) {
+			return {
+				configured: false,
+				reason: `Interpolation model manifest fetch failed: HTTP ${response.status}.`
+			};
+		}
+		const manifest = validateInterpolationManifest(await response.json());
+		return { configured: true, sizeBytes: manifest.model.sizeBytes };
+	} catch (error) {
+		if (error instanceof InterpolationManifestError) {
+			return { configured: false, reason: 'No compatible interpolation model configured.' };
+		}
+		return {
+			configured: false,
+			reason: error instanceof Error ? error.message : String(error)
+		};
+	}
+}
+
+async function handleInterpolationProbe(): Promise<void> {
 	// Availability is display/feature-gate only — it never feeds tier derivation
-	// (R1.1). A usable WebGPU renderer means the LiteRT webgpu accelerator path is
-	// available; the graph build on load is the ground truth.
+	// (R1.1). A usable WebGPU renderer means ORT-WebGPU can share the renderer
+	// device; the model graph still must pass manifest validation before controls
+	// appear.
 	const tier = currentCapabilityProbe?.tier ?? 'shell-only';
 	const hasDevice = renderer !== null;
+	const baseAvailability = deriveInterpolationAvailability(tier, hasDevice, hasDevice);
+	if (baseAvailability.state === 'unavailable') {
+		post({ type: 'interp-availability', availability: baseAvailability });
+		return;
+	}
+
+	const manifestProbe = await probeInterpolationManifest();
+	if (!manifestProbe.configured) {
+		post({
+			type: 'interp-availability',
+			availability: { state: 'unavailable', reason: manifestProbe.reason }
+		});
+		post({
+			type: 'interp-model-status',
+			status: 'failed',
+			error: manifestProbe.reason
+		});
+		return;
+	}
+
 	post({
 		type: 'interp-availability',
-		availability: deriveInterpolationAvailability(tier, hasDevice, hasDevice)
+		availability: baseAvailability
+	});
+	post({
+		type: 'interp-model-status',
+		status: interpolationEngine?.getStatus() ?? 'not-loaded',
+		accelerator: 'webgpu',
+		sizeBytes: manifestProbe.sizeBytes
 	});
 }
 
@@ -7806,7 +7864,7 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			break;
 		// ── Phase 37: Frame Interpolation ──
 		case 'interp-probe':
-			handleInterpolationProbe();
+			void handleInterpolationProbe();
 			break;
 		case 'interp-load-model':
 			void handleInterpolationLoadModel(cmd);

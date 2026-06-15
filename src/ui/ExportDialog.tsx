@@ -26,6 +26,7 @@ interface ExportDialogProps {
 	timelineDuration: number;
 	supportedCodecs: ExportCodecSupport[];
 	capabilityProbeV2: CapabilityProbeResult | null;
+	interpolationExportAvailable: boolean;
 	initialSettings: ExportSettings | null;
 	presets: ExportPresetDoc[];
 	markers: TimelineMarkerSnapshot[];
@@ -190,6 +191,11 @@ export function ExportDialog(props: ExportDialogProps) {
 		if (duration > 0 && rangeEnd() <= 0) {
 			setRangeEnd(duration);
 		}
+	});
+
+	createEffect(() => {
+		if (props.interpolationExportAvailable || !settings().interpolation) return;
+		setSettings((current) => ({ ...current, interpolation: undefined }));
 	});
 
 	const handleOpenChange = (next: boolean) => {
@@ -533,7 +539,7 @@ export function ExportDialog(props: ExportDialogProps) {
 							/>
 						</label>
 						{/* Phase 37: Frame Interpolation controls */}
-						<Show when={props.capabilityProbeV2?.interpolation?.webgpuAvailable}>
+						<Show when={props.interpolationExportAvailable}>
 							<label class="export-field export-field--toggle">
 								<input
 									type="checkbox"

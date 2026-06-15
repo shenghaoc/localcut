@@ -46,11 +46,11 @@ describe('deriveInterpolationAvailability', () => {
 		}
 	});
 
-	it('returns unavailable when LiteRT webgpu not available', () => {
+	it('returns unavailable when ORT-WebGPU is not available', () => {
 		const result = deriveInterpolationAvailability('core-webgpu', true, false);
 		expect(result.state).toBe('unavailable');
 		if (result.state === 'unavailable') {
-			expect(result.reason).toContain('LiteRT');
+			expect(result.reason).toContain('ORT-WebGPU');
 		}
 	});
 });

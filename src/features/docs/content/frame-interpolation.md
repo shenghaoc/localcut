@@ -1,7 +1,9 @@
 # Frame Interpolation
 
-Frame Interpolation synthesises new, plausible in-between frames from your footage
-using a machine-learning model running entirely on your device. It enables three uses:
+Frame Interpolation is planned to synthesise plausible in-between frames from your
+footage using a machine-learning model running entirely on your device. It is
+currently hidden until a license-verified ONNX model passes the WebGPU validation
+gate and the preview/export bridge is wired. When enabled, it supports three uses:
 
 1. **Smooth slow motion** — slow a clip without judder or ghosting by generating
    intermediate frames instead of duplicating or blending.
@@ -11,37 +13,43 @@ using a machine-learning model running entirely on your device. It enables three
 
 ## How it works
 
-The interpolation model is a RIFE-class learned interpolator (Google FILM,
-Apache-2.0 licensed) that runs on your GPU via
-[LiteRT.js](https://www.npmjs.com/package/@litertjs/core) with WebGPU acceleration.
-It takes a pair of adjacent frames and synthesises the frames in between.
+The interpolation model must be a RIFE-class ONNX interpolator running through
+ONNX Runtime Web on the WebGPU execution provider. The engine uses the same
+renderer-owned `GPUDevice` as preview/export, wraps inputs with GPU-buffer tensors,
+and keeps the output on-device. There is no full-frame WASM/CPU fallback.
+
+The checked-in manifest is a non-loadable template, so the app reports
+**"No compatible interpolation model configured"** and keeps the feature hidden.
 
 Everything runs locally on your device — no frames are uploaded, no cloud AI is used,
 and no account or API key is required.
 
 ## Availability
 
-Frame Interpolation requires WebGPU hardware acceleration:
+Frame Interpolation requires a compatible model and WebGPU hardware acceleration:
 
 | Browser tier                             | Interpolation capability               |
 | ---------------------------------------- | -------------------------------------- |
-| **Accelerated** (core-webgpu)            | Preview bounded segments + export      |
-| **Compatibility** (compatibility-webgpu) | Export only (slow, with time estimate) |
-| **Limited / Shell-only**                 | Feature hidden — requires WebGPU       |
+| **Accelerated** (core-webgpu)            | Hidden until model + bridge validation |
+| **Compatibility** (compatibility-webgpu) | Hidden until model + export bridge     |
+| **Limited / Shell-only**                 | Hidden — requires WebGPU               |
 
 ## Model download
 
-The first time you use interpolation, the model (~tens of MB) is downloaded and
-verified against its SHA-256 digest. After the first download, it is cached locally
-and works fully offline.
+After a real model is configured, the first use downloads the ONNX file and verifies
+it against its SHA-256 digest. After the first download, it is cached locally and
+works fully offline.
 
 - The download size is shown **before** any fetch begins.
 - The model is fetched from a trusted host through a same-origin proxy.
-- The model's license (Apache-2.0) and provenance are shown in the panel.
+- The model's license and provenance are shown in the panel.
 
 ## Using interpolation
 
 ### Slow motion (speed ramps)
+
+This section describes the intended workflow once the model and synthesis bridge
+land.
 
 1. Select a clip on the timeline.
 2. In the Inspector, find the speed/rate controls.
@@ -85,13 +93,16 @@ blur from the estimated optical flow. This is off by default.
 
 - **"Frame interpolation requires WebGPU"** — your browser or GPU doesn't support
   WebGPU. Use a Chromium-based browser with hardware acceleration enabled.
-- **"Model not loaded"** — click Load model to download the interpolation model.
+- **"No compatible interpolation model configured"** — the shipped manifest is still
+  a template; a real ONNX model has not passed validation yet.
+- **"Model not loaded"** — after a real manifest lands, click Load model to download
+  the interpolation model.
 - **"Factor exceeds 4× cap"** — reduce the slowdown factor or target fps ratio.
 - **Shot boundary refusal** — the engine detected a scene change and held the frame
   instead of synthesising. This is expected behaviour.
 
 ## Licensing
 
-- **Model:** Google FILM (Apache-2.0), fetched from Google AI Edge / Kaggle.
-- **Runtime:** LiteRT.js (`@litertjs/core`), already a dependency for Auto Captions
-  and Audio Cleanup.
+- **Model:** not yet selected. Candidates must have a permissive license, pinned
+  size/SHA-256, a documented I/O contract, and full ORT-WebGPU operator coverage.
+- **Runtime:** ONNX Runtime Web with the WebGPU execution provider.

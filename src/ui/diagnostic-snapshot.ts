@@ -6,6 +6,7 @@ import {
 	type DiagnosticCapabilityTier,
 	type DiagnosticSnapshot,
 	type ExportSettingsSummary,
+	type InterpolationDiagnosticSummary,
 	type ProxyCacheDiagnosticSummary,
 	type RecentErrorLog,
 	type StorageDiagnosticSummary,
@@ -297,6 +298,7 @@ export interface UiDiagnosticInput {
 	readonly assets: readonly MediaAssetSnapshot[];
 	readonly recentErrors: RecentErrorLog;
 	readonly workerSnapshot?: DiagnosticSnapshot | null;
+	readonly interpolation?: InterpolationDiagnosticSummary;
 	readonly voiceCleanup?: {
 		readonly denoiserEnabledTrackCount: number;
 		readonly wasmLoadStatus: VoiceCleanupDiagnosticSummary['wasmLoadStatus'];
@@ -333,6 +335,7 @@ export async function buildUiDiagnosticSnapshot(
 		activeExportSettings: exportSettingsSummary(input.exportSettings),
 		performanceBudgets: worker?.performanceBudgets ?? buildDefaultPerformanceBudgets(),
 		recentErrors: input.recentErrors,
-		recoveryActions: worker?.recoveryActions ?? []
+		recoveryActions: worker?.recoveryActions ?? [],
+		interpolation: input.interpolation ?? worker?.interpolation
 	};
 }

@@ -23,13 +23,28 @@ real model and replace the template (see below).
 - The ORT WASM/JSEP runtime (~26 MB) is served same-origin via the Worker reverse-proxy at
   `/_ort/` (version-pinned), not vendored. Model bytes are never embedded in the app bundle.
 
-## Model candidates (choose one; verify before shipping)
+## Model decision (2026-06-16 Chrome probe)
 
-| Model              | License                                         | Why / caveat                                                                                                                                                            |
-| ------------------ | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **CAIN** (AAAI'20) | **MIT**                                         | Flow-free (PixelShuffle + channel attention) → no `grid_sample`, most likely to pass the full-WebGPU op-support gate; midpoint-only (recurse for ≤4×). **Recommended.** |
-| **FILM** (Google)  | **Apache-2.0**                                  | Large-motion quality; native arbitrary `time` input; ONNX export via `ai-edge-torch`/community; warp ops carry WebGPU-op risk.                                          |
-| **RIFE / IFRNet**  | code MIT; **RIFE weights often non-commercial** | Published as ONNX; runs in browsers via ORT-Web elsewhere; clear RIFE's weights licence before shipping.                                                                |
+The first candidate to carry through R9 is **Practical-RIFE 4.25.lite**, exported from the
+upstream weights rather than a third-party ONNX repost. Practical-RIFE's model table states
+that the linked trained-model contents are under the same MIT licence as the project, and
+4.25.lite is the lower-compute variant recommended by the upstream table for most scenes.
+
+Do **not** ship `yuvraj108c/rife-onnx` from Hugging Face as-is. A Chrome probe against
+`rife47_ensemble_True_scale_1_sim.onnx` fetched successfully through `/_model/hf/`, with
+`sizeBytes = 21458882` and
+`sha256-0a3a52814d07d919b8336c6b66677baaeeec517bdd4ac4f6852d4bf2680ebb5a`, and the graph
+signature is usable (`img0`, `img1`, `timestep` -> `output`). However, the repository has no
+README/licence/provenance file, and ORT-WebGPU session creation in Chrome stayed at
+`create-session` beyond the validation threshold. Treat it as a rejected probe, not a
+vendored source of truth.
+
+| Model                         | License / source                                      | Decision                                                                                                                                              |
+| ----------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Practical-RIFE 4.25.lite**  | **MIT** upstream trained-model links                  | **Selected first conversion candidate.** Arbitrary timestep and lower-compute variant; must be exported to ONNX from source weights and R9-validated. |
+| **CAIN** (AAAI'20)            | **MIT** repo; pretrained links from upstream Dropbox  | Fallback if RIFE conversion/session creation still stalls. Flow-free graph lowers WebGPU-op risk, but midpoint-only recursion and ONNX export remain. |
+| **FILM** (Google)             | **Apache-2.0**                                        | Quality fallback only. Ships as TensorFlow SavedModel, so conversion and warp/gather op risk are higher.                                              |
+| Third-party RIFE ONNX reposts | Usually unclear unless explicitly documented per file | Reject unless licence/provenance, size/SHA, IO, and Chrome ORT-WebGPU session/run all pass.                                                           |
 
 ## To enable (the R9 validation gate)
 

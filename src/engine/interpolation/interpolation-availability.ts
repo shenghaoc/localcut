@@ -14,25 +14,25 @@ export type { InterpolationAvailability } from '../../protocol';
 /**
  * Derive interpolation availability from the capability tier.
  *
- * The `webgpu` accelerator is the only viable path for GPU-coupled
- * interpolation in v1 (R1.2). The `wasm` accelerator is not wired as a
- * fallback — it would be a multi-minute hang per frame.
+ * ORT-WebGPU is the only viable path for GPU-coupled interpolation in v1
+ * (R1.2). ORT-WASM/CPU is not wired as a fallback because it would be a
+ * multi-minute hang per frame.
  *
  * @param tier - The existing capability tier from the Phase 8/26 probe.
  * @param hasWebGpuDevice - Whether a usable WebGPU device was obtained.
- * @param hasUsableLiteRt - Whether LiteRT.js with the webgpu accelerator is available.
+ * @param hasUsableOrtWebGpu - Whether ORT-WebGPU is available for the shared renderer device.
  */
 export function deriveInterpolationAvailability(
 	tier: CapabilityTierV2,
 	hasWebGpuDevice: boolean = true,
-	hasUsableLiteRt: boolean = true
+	hasUsableOrtWebGpu: boolean = true
 ): InterpolationAvailability {
-	if (!hasWebGpuDevice || !hasUsableLiteRt) {
+	if (!hasWebGpuDevice || !hasUsableOrtWebGpu) {
 		return {
 			state: 'unavailable',
 			reason: !hasWebGpuDevice
 				? 'No WebGPU device available for frame interpolation.'
-				: 'LiteRT.js WebGPU accelerator not available.'
+				: 'ORT-WebGPU execution provider not available for frame interpolation.'
 		};
 	}
 

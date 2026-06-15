@@ -200,6 +200,25 @@ describe('export planning', () => {
 		).toThrow('Proxy export is not available until proxy source routing is implemented.');
 	});
 
+	it('rejects interpolation export until the synthesis bridge is implemented', () => {
+		expect(() =>
+			normalizeExportSettings(
+				qualitySettings({
+					interpolation: {
+						mode: 'fps-upconvert',
+						factorCap: 4,
+						targetFps: 60,
+						motionBlur: false
+					}
+				}),
+				1920,
+				1080,
+				30,
+				5
+			)
+		).toThrow('Frame interpolation export is unavailable');
+	});
+
 	it('plans a title-only export (no decodable video) over the default canvas', () => {
 		const titleTimeline: Timeline = [
 			{

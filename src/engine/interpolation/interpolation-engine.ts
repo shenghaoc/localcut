@@ -44,7 +44,7 @@ import {
 import type { Tile, TilePlan } from './tiling';
 
 /** Same-origin manifest describing the deployed interpolation ONNX model. */
-const DEFAULT_MANIFEST_URL = '/models/interpolation/manifest.json';
+export const DEFAULT_INTERPOLATION_MANIFEST_URL = '/models/interpolation/manifest.json';
 
 /** RIFE/FILM-class ONNX models take/produce unit-range [0,1] RGB. Pinned to the model. */
 const NORM_SCALE = 1;
@@ -90,7 +90,7 @@ export class InterpolationEngine {
 
 	constructor(options: InterpolationEngineOptions) {
 		this.device = options.device;
-		this.manifestUrl = options.manifestUrl ?? DEFAULT_MANIFEST_URL;
+		this.manifestUrl = options.manifestUrl ?? DEFAULT_INTERPOLATION_MANIFEST_URL;
 		this.onStatus = options.onStatus;
 	}
 
@@ -153,7 +153,7 @@ export class InterpolationEngine {
 			tensorLocation: 'gpu-buffer'
 		});
 		if (this.disposed) {
-			handle.session.release();
+			await handle.session.release();
 			return;
 		}
 		this.ort = ort;

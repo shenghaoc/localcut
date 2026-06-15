@@ -23,6 +23,8 @@ import {
 	type ExportProgress,
 	type ExportSettings,
 	type PreviewBackend,
+	type InterpolationAvailability,
+	type InterpolationModelStatus,
 	type RenderQueueState,
 	type BundleIntegrityReportSnapshot,
 	type BundleSourcePolicySnapshot,
@@ -48,7 +50,11 @@ import {
 	type VoiceCleanupSettings,
 	VOICE_CLEANUP_NORMALISE_GAIN_DB
 } from '../protocol';
-import type { DiagnosticSnapshot, DiagnosticSourceInput } from '../diagnostics/types';
+import type {
+	DiagnosticSnapshot,
+	DiagnosticSourceInput,
+	InterpolationDiagnosticSummary
+} from '../diagnostics/types';
 import {
 	createEmptyRecentErrorLog,
 	addRecentError,
@@ -156,6 +162,11 @@ const VIDEO_PICKER_TYPES = [
 ];
 
 const MEDIA_FILE_PATTERN = /\.(mp4|mov|webm|png|jpe?g|webp|gif|bmp|avif|mp3|m4a|wav|ogg)$/i;
+const INTERPOLATION_EXPORT_PIPELINE_WIRED = false;
+const INITIAL_INTERPOLATION_AVAILABILITY: InterpolationAvailability = {
+	state: 'unavailable',
+	reason: 'Frame interpolation has not been probed yet.'
+};
 
 type QueuePickerType = {
 	description?: string;
@@ -390,6 +401,21 @@ export function App() {
 	const [exportWarnings, setExportWarnings] = createSignal<string[]>([]);
 	const [exportCodecs, setExportCodecs] = createSignal<ExportCodecSupport[]>([]);
 	const [exportSettings, setExportSettings] = createSignal<ExportSettings | null>(null);
+	const [interpolationAvailability, setInterpolationAvailability] =
+		createSignal<InterpolationAvailability>(INITIAL_INTERPOLATION_AVAILABILITY);
+	const [interpolationModelStatus, setInterpolationModelStatus] =
+		createSignal<InterpolationModelStatus>('not-loaded');
+	const [interpolationModelSizeBytes, setInterpolationModelSizeBytes] = createSignal<number | null>(
+		null
+	);
+	const [interpolationModelCacheSource, setInterpolationModelCacheSource] = createSignal<
+		'cache' | 'network' | null
+	>(null);
+	const [interpolationEstimateMs, setInterpolationEstimateMs] = createSignal<number | null>(null);
+	const [interpolationRefusals, setInterpolationRefusals] = createSignal(0);
+	const [interpolationRecentErrors, setInterpolationRecentErrors] = createSignal<readonly string[]>(
+		[]
+	);
 	const [exportPresets, setExportPresets] = createSignal<ExportPresetDoc[]>(
 		BUILT_IN_PRESETS.map((preset) => ({ ...preset }))
 	);
@@ -1178,6 +1204,24 @@ export function App() {
 		...assets(),
 		...unresolvedSources().map((source) => ({ ...source, offline: true }))
 	]);
+	const interpolationDiagnostic = createMemo<InterpolationDiagnosticSummary>(() => {
+		const availability = interpolationAvailability();
+		return {
+			available: availability.state !== 'unavailable',
+			accelerator: availability.state === 'unavailable' ? null : availability.accelerator,
+			modelStatus: interpolationModelStatus(),
+			modelSizeBytes: interpolationModelSizeBytes(),
+			cacheSource: interpolationModelCacheSource(),
+			lastEstimateMs: interpolationEstimateMs(),
+			lastActualMs: null,
+			lastRefusals: interpolationRefusals(),
+			recentErrors: interpolationRecentErrors()
+		};
+	});
+
+	function recordInterpolationError(message: string): void {
+		setInterpolationRecentErrors((current) => [message, ...current].slice(0, 5));
+	}
 
 	async function refreshDiagnostics(workerSnapshot?: DiagnosticSnapshot | null) {
 		const snapshot = await buildUiDiagnosticSnapshot({
@@ -1206,7 +1250,8 @@ export function App() {
 				normalisationTargetLufs: voiceCleanupSettings().normalisationTargetLufs,
 				normaliseGainDb: voiceCleanupSettings().normaliseGainDb,
 				limiterCeilingDbtp: voiceCleanupSettings().limiterCeilingDbtp
-			}
+			},
+			interpolation: interpolationDiagnostic()
 		});
 		setDiagnosticSnapshot(snapshot);
 	}
@@ -1345,6 +1390,41 @@ export function App() {
 			case 'matte-status':
 				setMatteStatus(msg.status);
 				break;
+			case 'interp-availability':
+				setInterpolationAvailability(msg.availability);
+				break;
+			case 'interp-model-status':
+				setInterpolationModelStatus(msg.status);
+				if (msg.sizeBytes !== undefined) setInterpolationModelSizeBytes(msg.sizeBytes);
+				if (msg.source) setInterpolationModelCacheSource(msg.source);
+				if (msg.error) recordInterpolationError(msg.error);
+				break;
+			case 'interp-estimate-result':
+				setInterpolationEstimateMs(msg.estimateMs);
+				break;
+			case 'interp-progress':
+				setStatusLine(
+					`Frame interpolation · ${Math.round(msg.fraction * 100)}% (${msg.processedFrames}/${msg.totalFrames})`
+				);
+				break;
+			case 'interp-preview-ready':
+				setStatusLine(
+					`Frame interpolation preview ready · ${msg.segment.startS.toFixed(2)}-${msg.segment.endS.toFixed(2)}s`
+				);
+				break;
+			case 'interp-refusal':
+				setInterpolationRefusals((count) => count + 1);
+				recordInterpolationError(
+					`Refused ${msg.reason} at ${msg.range.startS.toFixed(2)}-${msg.range.endS.toFixed(2)}s`
+				);
+				break;
+			case 'interp-cancelled':
+				setStatusLine('Frame interpolation canceled');
+				break;
+			case 'interp-error':
+				recordInterpolationError(msg.message);
+				setStatusLine(`Frame interpolation unavailable: ${msg.message}`);
+				break;
 			case 'asr-caption-track-created':
 				asrController.handlePipelineMessage(msg);
 				setStatusLine(`Auto-caption track "${msg.track.name}" created`);
@@ -1400,6 +1480,7 @@ export function App() {
 								? 'Limited WebCodecs ready · Canvas2D preview/export'
 								: `Limited shell · ${msg.gpuUnavailableReason ?? 'preview unavailable'}`
 				);
+				bridge?.send({ type: 'interp-probe' });
 				break;
 			case 'import-progress':
 				setImporting(true);
@@ -1883,6 +1964,10 @@ export function App() {
 		setExporting(false);
 		setExportProgress(null);
 		setImporting(false);
+		setInterpolationAvailability(INITIAL_INTERPOLATION_AVAILABILITY);
+		setInterpolationModelStatus('not-loaded');
+		setInterpolationModelCacheSource(null);
+		setInterpolationEstimateMs(null);
 		// Do NOT zero the transport-clock SAB from the main thread: the worker is the
 		// sole writer of the transport clock. Instead detach the read-side so the UI
 		// stops surfacing the dead worker's stale (possibly playing) values. This also
@@ -2327,6 +2412,19 @@ export function App() {
 		bridge?.send({ type: 'preset-delete', presetId });
 	}
 
+	function interpolationExportUnavailableMessage(): string {
+		return INTERPOLATION_EXPORT_PIPELINE_WIRED
+			? 'Frame interpolation export requires a loaded, validated ONNX model.'
+			: 'Frame interpolation export is hidden until the ONNX model and export synthesis bridge are validated.';
+	}
+
+	function rejectUnavailableInterpolationExport(settings: ExportSettings): boolean {
+		if (!settings.interpolation) return false;
+		const message = interpolationExportUnavailableMessage();
+		setStatusLine(message);
+		return true;
+	}
+
 	function handleEnqueue(
 		settings: ExportSettings,
 		rangeMode: 'full' | 'range' | 'markers',
@@ -2339,6 +2437,7 @@ export function App() {
 			);
 			return;
 		}
+		if (rejectUnavailableInterpolationExport(settings)) return;
 		if (rangeMode === 'markers') {
 			const jobs = createJobsFromMarkers(markers(), settings, presetId, outputTemplate);
 			for (const job of jobs) {
@@ -2422,6 +2521,10 @@ export function App() {
 					? 'Export is unavailable because this browser tier has no export backend.'
 					: 'Waiting for preview canvas before export can start.'
 			);
+			return;
+		}
+		if (rejectUnavailableInterpolationExport(settings)) {
+			setExportError(interpolationExportUnavailableMessage());
 			return;
 		}
 		setExporting(true);
@@ -2865,6 +2968,11 @@ export function App() {
 								timelineDuration={clock.duration()}
 								supportedCodecs={exportCodecs()}
 								capabilityProbeV2={capabilityProbeV2()}
+								interpolationExportAvailable={
+									INTERPOLATION_EXPORT_PIPELINE_WIRED &&
+									interpolationAvailability().state !== 'unavailable' &&
+									interpolationModelStatus() === 'loaded'
+								}
 								initialSettings={exportSettings()}
 								presets={exportPresets()}
 								markers={markers()}

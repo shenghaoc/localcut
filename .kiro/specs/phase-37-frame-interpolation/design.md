@@ -77,12 +77,15 @@ and **full ORT-WebGPU operator support** are verified (R9). The shipped `manifes
 
 | Model | License | Notes | ORT-WebGPU op risk |
 |-------|---------|-------|--------------------|
-| **CAIN** | **MIT** | Flow-free (PixelShuffle + channel attention); midpoint t=0.5 → recurse for ≤4×. **No warping op** → most likely to pass the R9 full-WebGPU gate. | Low (convs + channel attention + depth-to-space). |
-| **FILM** | Apache-2.0 | Large-motion quality; native arbitrary `time` input. ONNX export via the community/`ai-edge-torch` path. | Medium (warp/gather ops). |
-| **RIFE / IFRNet** | code MIT; **RIFE weights often non-commercial** | Published as ONNX; runs in-browser via ORT-Web elsewhere. | Medium (flow warp); RIFE license must be cleared before shipping. |
+| **Practical-RIFE 4.25.lite** | **MIT** for upstream trained-model links | **Selected first conversion candidate** after the 2026-06-16 model pass. Use upstream weights, not a third-party ONNX repost; arbitrary `timestep` input and lower-compute variant. | Medium (flow warp / `GridSample` / dynamic-shape ops); must pass Chrome R9 before manifest enablement. |
+| **CAIN** | **MIT** repo; pretrained links from upstream Dropbox | Fallback if RIFE conversion/session creation still stalls. Flow-free (PixelShuffle + channel attention); midpoint t=0.5 → recurse for ≤4×. | Low (convs + channel attention + depth-to-space), but no ready ONNX/provenance bundle. |
+| **FILM** | Apache-2.0 | Large-motion quality; native arbitrary `time` input. Ships as TensorFlow SavedModel, so ONNX export is extra work. | Medium (warp/gather ops). |
 
-Recommendation: **CAIN** for the best chance of passing the op-support gate with a clean
-license; FILM for quality if its ops convert. The choice is finalised at R9 vendor time.
+Rejected probe: `yuvraj108c/rife-onnx` on Hugging Face has convenient ONNX files and the
+`rife47_ensemble_True_scale_1_sim.onnx` graph has the right `img0`/`img1`/`timestep` ->
+`output` contract, but it lacks README/licence/provenance and Chrome ORT-WebGPU session
+creation stayed at `create-session` beyond the validation threshold. Do not fill the manifest
+from that repost.
 
 ## Architecture
 

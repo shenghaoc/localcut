@@ -627,7 +627,7 @@ export interface RetimeSegmentSnapshot {
 	readonly motionBlur: boolean;
 }
 
-// ── Phase 37: Frame Interpolation (LiteRT.js WebGPU) ──
+// ── Phase 37: Frame Interpolation (ORT-WebGPU) ──
 
 export interface TimeRange {
 	readonly startS: number;
@@ -647,8 +647,8 @@ export type InterpolationAvailability =
 export interface InterpolationProbeResult {
 	/** Whether a usable WebGPU device was obtained. */
 	webgpuAvailable: boolean;
-	/** Whether LiteRT.js with the webgpu accelerator is available. */
-	litertWebgpuAvailable: boolean;
+	/** Whether ORT-WebGPU can run on the renderer-owned WebGPU device. */
+	ortWebgpuAvailable: boolean;
 	accelerator: InterpolationAccelerator;
 }
 
