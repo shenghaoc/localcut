@@ -15,6 +15,7 @@ import keystrokeOverlayContent from './content/keystroke-overlay.md?raw';
 import youtubeChaptersContent from './content/youtube-chapters.md?raw';
 import exportingContent from './content/exporting.md?raw';
 import captionsContent from './content/captions.md?raw';
+import languageToolsContent from './content/language-tools.md?raw';
 import browserLimitationsContent from './content/browser-limitations.md?raw';
 import performanceContent from './content/performance.md?raw';
 import faqContent from './content/faq.md?raw';
@@ -60,6 +61,7 @@ export const DOC_SECTIONS: readonly DocSection[] = [
 	{ slug: 'exporting', title: 'Exporting', content: exportingContent },
 	{ slug: 'captions', title: 'Captions', content: captionsContent },
 	{ slug: 'frame-interpolation', title: 'Frame interpolation', content: frameInterpolationContent },
+	{ slug: 'language-tools', title: 'Language tools', content: languageToolsContent },
 	{ slug: 'live-streaming', title: 'Live streaming', content: liveStreamingContent },
 	{
 		slug: 'browser-limitations',

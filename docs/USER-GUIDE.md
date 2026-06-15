@@ -517,6 +517,28 @@ The output is ordinary, **editable transform keyframes** — never a baked-in cr
 
 Full details are in the [Smart Reframe guide](SMART-REFRAME.md).
 
+## On-Device Language Tools (Chrome only)
+
+An optional bonus built on Chrome's built-in AI. It runs **entirely on-device** — nothing is
+uploaded, and there is **no cloud fallback**. On browsers that don't expose these APIs (Firefox,
+Safari, most Chromium derivatives, or hardware below Chrome's floor), the **Language Tools** button
+does not appear and nothing else changes. See [Language tools](../src/features/docs/content/language-tools.md)
+for the in-app guide.
+
+- **Requirements**: recent desktop Chrome with the built-in AI models. Each tool needs a one-time,
+  Chrome-managed model download (translation packs are tens of MB; drafting uses Gemini Nano, a
+  multi-GB model Chrome downloads once and shares across sites). Download progress is shown the
+  first time; after that the tools work offline. We never host or cache these models — Chrome does.
+- **Translate captions**: pick a caption track and a target (Auto-detect / English / Chinese) to
+  produce a **second, timing-identical** caption track (each cue is translated individually, so
+  `start`/`duration` are preserved exactly). Export the source and translated tracks as separate
+  SRT/VTT sidecars for bilingual subtitles.
+- **Draft (titles / hashtags / 文案)**: turn a track's transcript into copyable title options,
+  hashtags, and a short social caption. Output is **read-only and never written into your
+  project** — copy what you want.
+- **Privacy**: all translation and drafting stay on your device. No captions, transcripts, or
+  media leave the browser, and there is no cloud API.
+
 ## Replay Buffer
 
 Continuously record a screen capture into a rolling buffer and save the last moments as a timeline clip — without interrupting the recording.

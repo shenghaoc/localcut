@@ -1,7 +1,7 @@
 /**
  * Phase 40: Translation controller — framework-free state machine.
  *
- * Orchestrates Chrome's built-in Translator and LanguageDetector APIs to
+ * Orchestrates Chrome's built-in `Translator` and `LanguageDetector` globals to
  * translate a caption track segment-by-segment, preserving timing exactly.
  *
  * Runs on the main thread (Chrome offloads inference to its own process).
@@ -50,11 +50,11 @@ export interface TranslateJobState {
 export interface TranslationControllerState {
 	/** Current probe result, or null if not yet probed. */
 	probe: LanguageToolsProbeResult | null;
-	/** Whether any translator pair is at least downloadable. */
+	/** Whether at least one translator language pair is usable. */
 	available: boolean;
 	/** Per-pair availability from the probe. */
 	translatorAvailability: TranslatorAvailabilityMap;
-	/** LanguageDetector availability. */
+	/** LanguageDetector availability (gates auto-direction only). */
 	languageDetectorAvailability: AiAvailability;
 	/** Current translation job, or null if idle. */
 	job: TranslateJobState | null;
@@ -82,29 +82,8 @@ export interface TranslationControllerPorts {
 	onError?(message: string): void;
 }
 
-// ── Ambient API shapes (match the .d.ts declarations) ──
-
-interface TranslatorSession {
-	translate(input: string, options?: { signal?: AbortSignal }): Promise<string>;
-	destroy(): void;
-}
-
-interface DetectorSession {
-	detect(input: string): Promise<{ detectedLanguage: string; confidence: number }>;
-	destroy(): void;
-}
-
-interface TranslationAPI {
-	canTranslate(options: {
-		sourceLanguage: string;
-		targetLanguage: string;
-	}): Promise<'readily' | 'after-download' | 'no'>;
-	createTranslator(options: {
-		sourceLanguage: string;
-		targetLanguage: string;
-		monitor?: EventTarget;
-	}): Promise<TranslatorSession>;
-	createDetector(options?: { monitor?: EventTarget }): Promise<DetectorSession>;
+function isUsable(a: AiAvailability | undefined): boolean {
+	return a === 'available' || a === 'downloadable' || a === 'downloading';
 }
 
 // ── Controller ──
@@ -113,8 +92,8 @@ export class TranslationController {
 	private readonly ports: TranslationControllerPorts;
 	private state: TranslationControllerState;
 	private readonly listeners = new Set<(state: TranslationControllerState) => void>();
-	private translator: TranslatorSession | null = null;
-	private detector: DetectorSession | null = null;
+	private translator: Translator | null = null;
+	private detector: LanguageDetector | null = null;
 	private abortController: AbortController | null = null;
 
 	constructor(ports: TranslationControllerPorts) {
@@ -149,11 +128,10 @@ export class TranslationController {
 	}
 
 	/** Update the probe result (called from the UI when the capability probe
-	 *  completes or is re-run). */
+	 *  completes or is re-run). Translate is gated on an actual translator pair —
+	 *  a usable LanguageDetector alone is not enough to translate anything. */
 	setProbe(probe: LanguageToolsProbeResult): void {
-		const available =
-			Object.values(probe.translator).some((a) => a !== 'unavailable' && a !== 'unknown') ||
-			(probe.languageDetector !== 'unavailable' && probe.languageDetector !== 'unknown');
+		const available = Object.values(probe.translator).some(isUsable);
 		this.update({
 			probe,
 			available,
@@ -162,50 +140,50 @@ export class TranslationController {
 		});
 	}
 
-	/** Get the translation API from the global scope. */
-	private getTranslationApi(): TranslationAPI | null {
-		try {
-			const ns = (globalThis as Record<string, unknown>).translation;
-			if (ns && typeof ns === 'object') return ns as TranslationAPI;
-		} catch {
-			// not available
-		}
-		return null;
+	private get translatorStatic(): typeof Translator | undefined {
+		return (globalThis as { Translator?: typeof Translator }).Translator;
+	}
+
+	private get detectorStatic(): typeof LanguageDetector | undefined {
+		return (globalThis as { LanguageDetector?: typeof LanguageDetector }).LanguageDetector;
 	}
 
 	/** Check if a specific translator pair is ready (available or downloadable). */
 	isPairReady(source: 'zh' | 'en', target: 'zh' | 'en'): boolean {
-		const key = `${source}->${target}`;
-		const avail = this.state.translatorAvailability[key];
-		return avail === 'available' || avail === 'downloadable' || avail === 'downloading';
+		return isUsable(this.state.translatorAvailability[`${source}->${target}`]);
 	}
 
 	/** Translate a caption track.
 	 *
-	 *  1. Detect language from a sample of segments
-	 *  2. Create translator session (with download progress if needed)
+	 *  1. Resolve direction (auto-detect via LanguageDetector, or from the target)
+	 *  2. Create the translator session (with download progress if needed)
 	 *  3. Translate each segment, copying timing verbatim
-	 *  4. Send result to worker for undoable insertion
+	 *  4. Send the result to the worker for undoable insertion
 	 */
 	async translateTrack(
 		track: CaptionTrackInfo,
 		targetLang?: 'zh' | 'en',
 		signal?: AbortSignal
 	): Promise<void> {
-		const api = this.getTranslationApi();
-		if (!api) {
+		const failJob = (message: string): void => {
 			this.update({
 				job: {
 					phase: 'error',
 					current: 0,
-					total: 0,
+					total: track.segments.length,
 					downloadFraction: null,
 					detectedSource: null,
 					targetLang: targetLang ?? 'en',
 					durationMs: null,
-					error: 'Translation API not available.'
+					error: message
 				}
 			});
+			this.ports.onError?.(message);
+		};
+
+		const TranslatorApi = this.translatorStatic;
+		if (!TranslatorApi) {
+			failJob('Translation is unavailable in this browser.');
 			return;
 		}
 
@@ -216,7 +194,7 @@ export class TranslationController {
 			: this.abortController.signal;
 
 		try {
-			// Phase 1: detect language
+			// Phase 1: resolve direction.
 			this.update({
 				job: {
 					phase: 'detecting',
@@ -232,100 +210,92 @@ export class TranslationController {
 
 			let sourceLang: 'zh' | 'en';
 			if (targetLang) {
-				// User specified target; source is the opposite
+				// User picked a target; source is the opposite.
 				sourceLang = oppositeLanguage(targetLang);
 			} else {
-				// Auto-detect from a sample
+				// Auto-detect from a sample of segment text.
+				const DetectorApi = this.detectorStatic;
+				if (!DetectorApi) {
+					failJob('Cannot auto-detect language in this browser — choose a target language.');
+					return;
+				}
 				if (!this.detector) {
-					this.detector = await api.createDetector();
+					this.detector = await DetectorApi.create();
 				}
 				const sampleSize = Math.min(5, track.segments.length);
-				const detections = await Promise.all(
-					track.segments.slice(0, sampleSize).map((seg) =>
-						this.detector!.detect(seg.text).catch(() => ({
-							detectedLanguage: 'en',
-							confidence: 0
-						}))
-					)
+				const tops = await Promise.all(
+					track.segments.slice(0, sampleSize).map(async (seg) => {
+						const results = await this.detector!.detect(seg.text).catch(
+							() => [] as LanguageDetectionResult[]
+						);
+						return results[0] ?? { detectedLanguage: 'en', confidence: 0 };
+					})
 				);
-				sourceLang = dominantLanguage(detections);
+				sourceLang = dominantLanguage(tops);
 			}
 			const resolvedTarget = targetLang ?? oppositeLanguage(sourceLang);
 
-			this.updateJob({
-				detectedSource: sourceLang,
-				targetLang: resolvedTarget
-			});
+			this.updateJob({ detectedSource: sourceLang, targetLang: resolvedTarget });
 
-			// Phase 2: create translator (may trigger download)
+			// Guard the exact pair before create() so an unavailable direction
+			// fails with a clear message instead of throwing inside create().
+			if (!this.isPairReady(sourceLang, resolvedTarget)) {
+				failJob(
+					`Translation for ${sourceLang} → ${resolvedTarget} is not available in this browser.`
+				);
+				return;
+			}
+
+			// Phase 2: create the translator (may trigger a one-time download).
 			this.updateJob({ phase: 'downloading' });
-
 			if (this.translator) {
 				this.translator.destroy();
 				this.translator = null;
 			}
-
-			// Create monitor for download progress
-			const monitor = new EventTarget();
-			monitor.addEventListener('downloadprogress', ((e: Event) => {
-				const pe = e as ProgressEvent;
-				const fraction = pe.total > 0 ? pe.loaded / pe.total : null;
-				this.updateJob({ downloadFraction: fraction });
-			}) as EventListener);
-
-			this.translator = await api.createTranslator({
+			this.translator = await TranslatorApi.create({
 				sourceLanguage: sourceLang,
 				targetLanguage: resolvedTarget,
-				monitor
+				signal: combinedSignal,
+				monitor: (m) => {
+					m.addEventListener('downloadprogress', (e) => {
+						// e.loaded is a fraction in [0, 1]; there is no e.total.
+						this.updateJob({ downloadFraction: e.loaded });
+					});
+				}
 			});
 
-			// Phase 3: translate each segment
-			this.updateJob({
-				phase: 'translating',
-				downloadFraction: null
-			});
+			// Phase 3: translate each segment, copying timing verbatim.
+			this.updateJob({ phase: 'translating', downloadFraction: null });
 
 			const translatedTexts: string[] = [];
 			for (let i = 0; i < track.segments.length; i++) {
-				if (combinedSignal.aborted) {
-					throw new TranslationCancelledError();
-				}
+				if (combinedSignal.aborted) throw new TranslationCancelledError();
 				this.updateJob({ current: i + 1 });
 				const text = track.segments[i].text.trim();
 				if (!text) {
 					translatedTexts.push('');
 					continue;
 				}
-				const translated = await this.translator.translate(text, {
-					signal: combinedSignal
-				});
+				const translated = await this.translator.translate(text, { signal: combinedSignal });
 				translatedTexts.push(translated);
-				// Yield to keep the UI responsive
+				// Yield to keep the UI responsive between segments.
 				await new Promise((resolve) => setTimeout(resolve, 0));
 			}
 
-			// Build translated segments with timing copied verbatim
 			const translatedSegments = buildTranslatedSegments(track.segments, translatedTexts);
-
-			// Check for empty result
-			const hasContent = translatedSegments.some((s) => s.text.trim().length > 0);
-			if (!hasContent) {
+			if (!translatedSegments.some((s) => s.text.trim().length > 0)) {
 				throw new Error('Translation produced no text. The source track may be empty.');
 			}
 
-			// Phase 4: send to worker
-			const trackName = `${track.name} (${resolvedTarget})`;
+			// Phase 4: hand off to the worker for undoable insertion.
 			this.ports.createTranslatedTrack({
 				sourceTrackId: track.id,
-				name: trackName,
+				name: `${track.name} (${resolvedTarget})`,
 				language: resolvedTarget,
 				segments: translatedSegments
 			});
 
-			this.updateJob({
-				phase: 'done',
-				durationMs: Date.now() - startedAt
-			});
+			this.updateJob({ phase: 'done', durationMs: Date.now() - startedAt });
 		} catch (err) {
 			if (err instanceof TranslationCancelledError) {
 				this.updateJob({ phase: 'idle' });

@@ -44,8 +44,13 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 	// eslint-disable-next-line eslint/no-unassigned-vars — SolidJS ref assigns via JSX
 	let panelRef: HTMLElement | undefined;
 	const [selectedTrackId, setSelectedTrackId] = createSignal<string>('');
-	const [targetLang, setTargetLang] = createSignal<'zh' | 'en'>('en');
+	const [targetLang, setTargetLang] = createSignal<'auto' | 'zh' | 'en'>('auto');
 	const [copiedField, setCopiedField] = createSignal<string | null>(null);
+
+	const detectorUsable = () => {
+		const a = props.translationState.languageDetectorAvailability;
+		return a === 'available' || a === 'downloadable' || a === 'downloading';
+	};
 
 	createEffect(() => {
 		if (props.open) {
@@ -54,6 +59,9 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 			if (!selectedTrackId() && props.captionTracks.length > 0) {
 				setSelectedTrackId(props.captionTracks[0].id);
 			}
+			// Default to auto-detect when the detector is usable; otherwise the
+			// user must pick a target explicitly.
+			setTargetLang(detectorUsable() ? 'auto' : 'en');
 		}
 	});
 
@@ -72,7 +80,11 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 
 	const canGenerateDraft = () => {
 		const job = draftJob();
-		if (job && (job.phase === 'summarizing' || job.phase === 'generating')) return false;
+		if (
+			job &&
+			(job.phase === 'preparing' || job.phase === 'summarizing' || job.phase === 'generating')
+		)
+			return false;
 		return selectedTrackId() && props.draftState.available;
 	};
 
@@ -164,9 +176,12 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 							<label style={{ 'font-size': '0.85em' }}>Target:</label>
 							<select
 								value={targetLang()}
-								onChange={(e) => setTargetLang(e.currentTarget.value as 'zh' | 'en')}
+								onChange={(e) => setTargetLang(e.currentTarget.value as 'auto' | 'zh' | 'en')}
 								aria-label="Target language"
 							>
+								<Show when={detectorUsable()}>
+									<option value="auto">Auto-detect</option>
+								</Show>
 								<option value="en">English (en)</option>
 								<option value="zh">Chinese (zh)</option>
 							</select>
@@ -179,7 +194,9 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 								disabled={!canTranslate()}
 								onClick={() => {
 									const id = selectedTrackId();
-									if (id) props.onTranslate(id, targetLang());
+									if (!id) return;
+									const t = targetLang();
+									props.onTranslate(id, t === 'auto' ? undefined : t);
 								}}
 							>
 								Translate
@@ -253,7 +270,11 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 								Generate Draft
 							</Button>
 							<Show
-								when={draftJob()?.phase === 'summarizing' || draftJob()?.phase === 'generating'}
+								when={
+									draftJob()?.phase === 'preparing' ||
+									draftJob()?.phase === 'summarizing' ||
+									draftJob()?.phase === 'generating'
+								}
 							>
 								<Button size="sm" variant="ghost" onClick={props.onCancelDraft}>
 									Cancel
@@ -264,6 +285,11 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 						{/* Draft progress */}
 						<Show when={draftJob()}>
 							<div role="status" aria-live="polite" style={{ 'margin-top': '8px' }}>
+								<Show when={draftJob()!.phase === 'preparing'}>
+									<p style={{ 'font-size': '0.85em' }}>
+										Preparing model…{formatPercent(draftJob()!.downloadFraction)}
+									</p>
+								</Show>
 								<Show when={draftJob()!.phase === 'summarizing'}>
 									<p style={{ 'font-size': '0.85em' }}>Summarizing transcript…</p>
 								</Show>

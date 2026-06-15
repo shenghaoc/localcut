@@ -86,6 +86,18 @@ describe('TranslationController', () => {
 		expect(harness.controller.getState().available).toBe(true);
 	});
 
+	it('does NOT enable Translate when only the language detector is usable', () => {
+		// P1-E: a usable detector alone cannot translate anything; Translate must
+		// stay gated on an actual translator pair.
+		const harness = createHarness();
+		harness.controller.setProbe({
+			...PROBE_ALL_UNAVAILABLE,
+			languageDetector: 'available'
+		});
+		expect(harness.controller.getState().available).toBe(false);
+		expect(harness.controller.getState().languageDetectorAvailability).toBe('available');
+	});
+
 	it('subscribes to state changes', () => {
 		const harness = createHarness();
 		const states: TranslationControllerState[] = [];

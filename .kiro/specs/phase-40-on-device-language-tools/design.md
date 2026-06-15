@@ -78,18 +78,18 @@ stays worker-owned.
 
 ```
 Main thread (SolidJS UI)
-  ├─ probeLanguageTools() ── feature-detect + capabilities/canTranslate (no create, no download)
+  ├─ probeLanguageTools() ── feature-detect globals + availability() (no create, no download)
   │     gates only this feature; never feeds deriveCapabilityTierV2
   ├─ LanguageToolsPanel.tsx (rendered only when surface is visible)
   │     ├─ Translate section  ─► translation-controller.ts
-  │     │     detector = translation.createDetector(); detector.detect(sample) → direction
-  │     │     translator = translation.createTranslator({sourceLanguage, targetLanguage})
+  │     │     detector = LanguageDetector.create(); detector.detect(sample)[0] → direction
+  │     │     translator = Translator.create({sourceLanguage, targetLanguage, monitor})
   │     │     for each source segment:  translator.translate(text, {signal})
   │     │       └─ copy {start,duration} verbatim → translated CaptionSegment
-  │     │     monitor(downloadprogress) → progress UX
+  │     │     monitor(downloadprogress) e.loaded 0..1 → progress UX
   │     └─ Draft section      ─► draft-controller.ts
   │           transcript = join(track.segments.text)
-  │           chunk to maxTokens → session.summarize (hierarchical) → condensed
+  │           chunk to inputQuota → summarizer.summarize (hierarchical) → condensed
   │           session.promptStreaming(condensed, simple delimited ask: N titles, hashtags, 文案 zh/en)
   │           session.summarize → description       (copy-only, never applied)
   │
@@ -139,7 +139,7 @@ export async function probeLanguageTools(
 ): Promise<LanguageToolsProbeResult>;
 ```
 
-The probe maps each API's capabilities/availability straight through (using `translation.canTranslate()`, `ai.summarizer.capabilities()`, and `ai.languageModel.capabilities()`). It is side-effect-free: it never
+The probe maps each global's static `availability()` straight through (`Translator.availability({sourceLanguage, targetLanguage})`, `LanguageDetector.availability()`, `Summarizer.availability()`, `LanguageModel.availability()`). It is side-effect-free: it never
 calls `create()`, opens a session, or starts a download. Like the Phase 28 `cleanup` and Phase 29
 `asr` feature probes it is attached to the capability-probe result for display only and is **never** read by
 `deriveCapabilityTierV2`.
@@ -156,11 +156,12 @@ is wrapped in its own `<Show when={...}>` keyed on the per-API availability so p
 
 ```
 source CaptionTrack (Phase 22/29)
-  → detector = translation.createDetector()
-  → detector.detect(sample of segment text) → dominant {zh|en} → default target = the other
-  → ensure translator via translation.createTranslator({sourceLanguage, targetLanguage}):
-        canTranslate 'readily'  → use immediately
-        'after-download' → create({monitor}) on the user gesture, show progress
+  → detector = LanguageDetector.create(); detector.detect(text)[0] over a sample → dominant {zh|en}
+  → default target = the other; user may override
+  → check Translator.availability({sourceLanguage, targetLanguage}) for the resolved pair:
+        'available'  → Translator.create(...) and use immediately
+        'downloadable'/'downloading' → Translator.create({monitor}) on the user gesture, show progress
+        'unavailable' → clear message, create no track
   → for each segment (await, yielding; AbortSignal-cancellable):
         translatedText = await translator.translate(segment.text)
         push { id: new, start: segment.start, duration: segment.duration, text: translatedText }
@@ -188,12 +189,13 @@ the acceptance bar.
 
 ```
 chosen track transcript = track.segments.map(s => s.text.trim()).filter(Boolean).join(' ')
-  → summarizer = ai.summarizer.create(); languageModel = ai.languageModel.create()
-  → if length > model token limit:
-        split into quota-sized chunks (using summarizer.countTokens() against maxTokens)
-        summarizer.summarize each chunk → summarize the summaries  (hierarchical, bounded)
-  → description = summarizer.summarize(condensed, {type:'tldr'|'key-points', format:'plain-text'})
-  → drafts = languageModel.promptStreaming(condensed, simple delimited ask: N titles, hashtags, 文案 zh/en)
+  → create needed sessions up-front, within the click's user activation (P1-F):
+        Summarizer.create({type, format, monitor}); LanguageModel.create({monitor})
+  → if summarizer.measureInputUsage(transcript) > summarizer.inputQuota:
+        split into quota-sized chunks; summarize each → summarize the summaries (hierarchical, bounded)
+  → description = summarizer.summarize(condensed, {type:'key-points', format:'plain-text'})
+  → bound condensed to languageModel.inputQuota via measureInputUsage (covers the no-summarizer case)
+  → drafts = languageModel.promptStreaming(prompt, simple delimited ask: N titles, hashtags, 文案 zh/en)
   → render each field read-only with a Copy button (navigator.clipboard.writeText)
 ```
 
