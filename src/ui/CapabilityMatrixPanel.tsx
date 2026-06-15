@@ -1,5 +1,6 @@
 import { createMemo, For, Show } from 'solid-js';
-import type { CapabilityProbeResult, FeatureSupport } from '../protocol';
+import type { AiAvailability, CapabilityProbeResult, FeatureSupport } from '../protocol';
+import { languageToolsSurfaceVisible } from '../protocol';
 
 interface CapabilityMatrixPanelProps {
 	probe: CapabilityProbeResult | null;
@@ -174,6 +175,9 @@ function rowsForProbe(probe: CapabilityProbeResult): CapabilityRow[] {
 		cleanupRow(probe),
 		asrRow(probe),
 		smartReframeRow(probe),
+		...(probe.languageTools && languageToolsSurfaceVisible(probe.languageTools)
+			? [languageToolsRow(probe)]
+			: []),
 		// ── Capture Engine (Phase 41) probes ─────────────────────────
 		{
 			label: 'Capture: MSTP',
@@ -302,6 +306,25 @@ function smartReframeRow(probe: CapabilityProbeResult): CapabilityRow {
 			: faceOk
 				? 'Auto crop-path (Experimental) with face detection.'
 				: 'Auto crop-path (Experimental) using visual saliency; no face model bundled.'
+	};
+}
+
+/** Phase 40: display-only row, shown only when the Language Tools surface is
+ *  visible (so unsupported browsers see nothing — no nag). */
+function languageToolsRow(probe: CapabilityProbeResult): CapabilityRow {
+	const lt = probe.languageTools;
+	const usable = (a: AiAvailability | undefined): boolean =>
+		a === 'available' || a === 'downloadable' || a === 'downloading';
+	const parts: string[] = [];
+	if (lt) {
+		if (Object.values(lt.translator).some(usable)) parts.push('Translate');
+		if (usable(lt.summarizer) || usable(lt.languageModel)) parts.push('Draft');
+	}
+	return {
+		label: 'Language Tools (Chrome AI)',
+		support: 'supported',
+		active: false,
+		action: `On-device ${parts.join(' + ') || 'language tools'} available (Chrome only).`
 	};
 }
 

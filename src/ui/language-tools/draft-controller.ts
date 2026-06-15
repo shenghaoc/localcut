@@ -104,16 +104,22 @@ async function boundToQuota(
 	return text.slice(0, Math.max(0, Math.floor(text.length * ratio)));
 }
 
+export interface DraftControllerPorts {
+	onError?(message: string): void;
+}
+
 // ── Controller ──
 
 export class DraftController {
+	private readonly ports: DraftControllerPorts;
 	private state: DraftControllerState;
 	private readonly listeners = new Set<(state: DraftControllerState) => void>();
 	private summarizer: Summarizer | null = null;
 	private languageModel: LanguageModel | null = null;
 	private abortController: AbortController | null = null;
 
-	constructor() {
+	constructor(ports: DraftControllerPorts = {}) {
+		this.ports = ports;
 		this.state = {
 			summarizerAvailability: 'unknown',
 			languageModelAvailability: 'unknown',
@@ -300,6 +306,7 @@ export class DraftController {
 			}
 			const message = err instanceof Error ? err.message : String(err);
 			this.updateJob({ phase: 'error', error: message });
+			this.ports.onError?.(message);
 		} finally {
 			this.abortController = null;
 		}

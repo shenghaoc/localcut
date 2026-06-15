@@ -152,6 +152,8 @@ import {
 } from './language-tools/translation-controller';
 import { DraftController, type DraftControllerState } from './language-tools/draft-controller';
 import { languageToolsSurfaceVisible } from '../protocol';
+import { probeLanguageTools } from '../engine/language-tools/probe';
+import { languageSuffixedStem } from '../engine/language-tools/bilingual-export';
 import PipelineWorker from '../engine/worker.ts?worker';
 
 const VIDEO_ACCEPT =
@@ -844,11 +846,39 @@ export function App() {
 	);
 	translationController.subscribe(setTranslationState);
 
-	const draftController = new DraftController();
+	const draftController = new DraftController({
+		onError: (message) => {
+			setRecentErrorLog((prev) =>
+				addRecentError(
+					prev,
+					createRecentError({
+						code: 'language-tools.draft_error',
+						subsystem: 'language-tools',
+						severity: 'error',
+						message
+					})
+				)
+			);
+		}
+	});
 	const [draftState, setDraftState] = createSignal<DraftControllerState>(
 		draftController.getState()
 	);
 	draftController.subscribe(setDraftState);
+
+	/**
+	 * Phase 40: probe Chrome's built-in AI on the main thread (the Prompt API is
+	 * document-context-only, so it can't be detected from the pipeline worker), then
+	 * feed the controllers and merge the result into the capability snapshot used by
+	 * the toolbar gate. Re-runnable so availability refreshes as models download.
+	 */
+	async function refreshLanguageToolsProbe(): Promise<void> {
+		const result = await probeLanguageTools().catch(() => null);
+		if (!result) return;
+		translationController.setProbe(result);
+		draftController.setProbe(result);
+		setCapabilityProbeV2((prev) => (prev ? { ...prev, languageTools: result } : prev));
+	}
 
 	const [languageToolsPanelOpen, setLanguageToolsPanelOpen] = createSignal(false);
 
@@ -1423,10 +1453,9 @@ export function App() {
 				setExportCodecs([...exportConstraintsForProbe(msg.result)]);
 				cleanupController.setCleanupProbe(msg.result.cleanup ?? null);
 				asrController.setProbe();
-				if (msg.result.languageTools) {
-					translationController.setProbe(msg.result.languageTools);
-					draftController.setProbe(msg.result.languageTools);
-				}
+				// Phase 40: language-tools availability is probed on the main thread
+				// (see refreshLanguageToolsProbe) — never sourced from the worker.
+				void refreshLanguageToolsProbe();
 				break;
 			case 'clip-audio':
 			case 'clip-audio-error':
@@ -2985,7 +3014,11 @@ export function App() {
 					onOpenLanguageTools={
 						capabilityProbeV2()?.languageTools &&
 						languageToolsSurfaceVisible(capabilityProbeV2()!.languageTools!)
-							? () => setLanguageToolsPanelOpen(true)
+							? () => {
+									setLanguageToolsPanelOpen(true);
+									// Re-probe on open so states refresh as models finish downloading.
+									void refreshLanguageToolsProbe();
+								}
 							: undefined
 					}
 					onOpenPublish={() => setPublishPanelOpen(true)}
@@ -4090,10 +4123,32 @@ export function App() {
 							void draftController.generateDraft(track.segments);
 						}}
 						onCancelDraft={() => draftController.cancel()}
-						onExportBilingual={(_sourceTrackId, _translatedTrackId) => {
-							// TODO T5: Wire bilingual export through the existing caption export path
-							setStatusLine('Bilingual export — coming soon');
+						onExportBilingual={(sourceTrackId, translatedTrackId) => {
+							const tracks = captionTracks();
+							const source = tracks.find((t) => t.id === sourceTrackId);
+							const translated = tracks.find((t) => t.id === translatedTrackId);
+							if (!source || !translated) return;
+							const baseStem = source.name || 'captions';
+							// Reuse the Phase 22 sidecar path: one export per track, with a
+							// language-suffixed stem so the pair drops out as e.g. clip.en.srt
+							// and clip.zh.srt.
+							for (const [track, fallback] of [
+								[source, 'source'],
+								[translated, 'translated']
+							] as const) {
+								captionBridge().send({
+									type: 'export-captions',
+									settings: {
+										trackId: track.id,
+										formats: ['srt', 'webvtt'],
+										range: { mode: 'full-track' },
+										fileStem: languageSuffixedStem(baseStem, track.language, fallback)
+									}
+								});
+							}
+							setStatusLine('Exporting bilingual captions…');
 						}}
+						onOpenGuide={() => openDocs('language-tools')}
 						onClose={() => setLanguageToolsPanelOpen(false)}
 					/>
 					<PublishPanel

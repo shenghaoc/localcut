@@ -58,6 +58,8 @@ export interface TranslationControllerState {
 	languageDetectorAvailability: AiAvailability;
 	/** Current translation job, or null if idle. */
 	job: TranslateJobState | null;
+	/** Track id of the most recently created translated track (for bilingual export). */
+	lastTranslatedTrackId: string | null;
 }
 
 export interface CaptionTrackInfo {
@@ -103,7 +105,8 @@ export class TranslationController {
 			available: false,
 			translatorAvailability: {},
 			languageDetectorAvailability: 'unknown',
-			job: null
+			job: null,
+			lastTranslatedTrackId: null
 		};
 	}
 
@@ -180,6 +183,9 @@ export class TranslationController {
 			});
 			this.ports.onError?.(message);
 		};
+
+		// A new job invalidates any prior translated-track export target.
+		this.update({ lastTranslatedTrackId: null });
 
 		const TranslatorApi = this.translatorStatic;
 		if (!TranslatorApi) {
@@ -316,6 +322,7 @@ export class TranslationController {
 
 	/** Handle the worker confirming track creation. */
 	onTranslatedTrackCreated(trackId: string): void {
+		this.update({ lastTranslatedTrackId: trackId });
 		this.ports.onTranslatedTrackCreated?.(trackId);
 	}
 

@@ -23,6 +23,7 @@ export interface LanguageToolsPanelProps {
 	onGenerateDraft: (trackId: string) => void;
 	onCancelDraft: () => void;
 	onExportBilingual: (sourceTrackId: string, translatedTrackId: string) => void;
+	onOpenGuide?: () => void;
 	onClose: () => void;
 }
 
@@ -213,6 +214,23 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 								</Button>
 							</Show>
 						</div>
+
+						{/* Bilingual export — available once a translated track exists */}
+						<Show when={props.translationState.lastTranslatedTrackId && selectedTrackId()}>
+							<Button
+								size="sm"
+								variant="ghost"
+								style={{ 'margin-top': '8px' }}
+								onClick={() =>
+									props.onExportBilingual(
+										selectedTrackId(),
+										props.translationState.lastTranslatedTrackId!
+									)
+								}
+							>
+								Export bilingual (SRT + VTT)
+							</Button>
+						</Show>
 
 						{/* Translation progress */}
 						<Show when={translateJob()}>
@@ -424,7 +442,14 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 					</section>
 				</Show>
 
-				<footer class="capability-panel-note">{PRIVACY_STATEMENT}</footer>
+				<footer class="capability-panel-note">
+					<span>{PRIVACY_STATEMENT}</span>
+					<Show when={props.onOpenGuide}>
+						<Button size="sm" variant="ghost" onClick={() => props.onOpenGuide?.()}>
+							Learn more
+						</Button>
+					</Show>
+				</footer>
 			</aside>
 		</Show>
 	);
