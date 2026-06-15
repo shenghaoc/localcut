@@ -124,6 +124,27 @@ describe('ORT model manifest validation', () => {
 		).toThrow(OrtManifestError);
 	});
 
+	it('rejects a frame-coupled manifest that pins CPU tensors (no silent CPU round-trip)', () => {
+		expect(() =>
+			validateOrtManifest({
+				...validManifestInput(),
+				frameCoupled: true,
+				executionProviders: ['webgpu'],
+				tensorLocation: 'cpu'
+			})
+		).toThrow(OrtManifestError);
+	});
+
+	it('allows CPU tensors for a non-frame-coupled manifest', () => {
+		const manifest = validateOrtManifest({
+			...validManifestInput(),
+			frameCoupled: false,
+			executionProviders: ['wasm'],
+			tensorLocation: 'cpu'
+		});
+		expect(manifest.tensorLocation).toBe('cpu');
+	});
+
 	it('rejects a non-boolean frameCoupled', () => {
 		expect(() => validateOrtManifest({ ...validManifestInput(), frameCoupled: 'yes' })).toThrow(
 			OrtManifestError

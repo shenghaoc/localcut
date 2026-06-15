@@ -111,6 +111,16 @@ export function validateOrtManifest(value: unknown): OrtModelManifest {
 			: requirePositiveInt(value.opset, 'opset');
 
 	const tensorLocation = parseTensorLocation(value.tensorLocation);
+	// The frame-coupled hard gate also covers the tensor location: a per-frame
+	// model that pins `cpu` would force ORT to copy full-frame outputs back to the
+	// CPU (the WebGPU session leaves `preferredOutputLocation` unset), which is the
+	// exact silent CPU round-trip this validator exists to prevent.
+	if (frameCoupled && tensorLocation === 'cpu') {
+		throw new OrtManifestError(
+			'frame-coupled models must not declare tensorLocation "cpu"; ' +
+				'full-frame outputs must stay on-device (gpu-buffer or ml-tensor)'
+		);
+	}
 
 	return {
 		id: requireString(value.id, 'id'),

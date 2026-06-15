@@ -66,6 +66,25 @@ function loadOrtFor(eps: readonly OrtExecutionProvider[]): Promise<OrtModule> {
 	return loadOrtWasm();
 }
 
+/**
+ * Resolves which subsystem owns the compute device from the *primary* EP and the
+ * resources the caller supplied. Pure and order-independent so the WebNN case is
+ * never masked by a fallback WebGPU device: a `['webnn', 'webgpu']` model given
+ * both an `MLContext` and a renderer `GPUDevice` still reports `webnn-context`,
+ * because WebNN is the active path and a WebGPU device may be injected only as a
+ * fallback. Returns `undefined` for a deviceless (WASM, or context-less WebNN)
+ * session.
+ */
+export function resolveDeviceOwner(
+	primaryEp: OrtExecutionProvider,
+	hasDevice: boolean,
+	hasMlContext: boolean
+): OrtDeviceOwner | undefined {
+	if (primaryEp === 'webnn') return hasMlContext ? 'webnn-context' : undefined;
+	if (primaryEp === 'webgpu') return hasDevice ? 'renderer' : 'ort-webgpu';
+	return undefined;
+}
+
 function defaultTensorLocation(primaryEp: OrtExecutionProvider): OrtTensorLocation {
 	switch (primaryEp) {
 		case 'webgpu':
@@ -108,13 +127,16 @@ export async function createOrtSession(
 	const primaryEp = eps[0]!;
 	const ort = await loadOrtFor(eps);
 
-	let deviceOwner: OrtDeviceOwner | undefined;
+	const deviceOwner = resolveDeviceOwner(
+		primaryEp,
+		options.device !== undefined,
+		options.mlContext !== undefined
+	);
+	// Inject the renderer's device whenever WebGPU may run (primary or fallback);
+	// must be set before the first session. This does not change ownership: a
+	// WebNN-primary session still reports `webnn-context` above.
 	if (eps.includes('webgpu') && options.device) {
-		// Share the renderer's device: must be set before the first session.
 		ort.env.webgpu.device = options.device;
-		deviceOwner = 'renderer';
-	} else if (primaryEp === 'webnn' && options.mlContext !== undefined) {
-		deviceOwner = 'webnn-context';
 	}
 
 	const tensorLocation =
@@ -128,11 +150,11 @@ export async function createOrtSession(
 
 	const session = await ort.InferenceSession.create(options.modelBytes, sessionOptions);
 
-	let device = options.device;
-	if (eps.includes('webgpu') && !device) {
-		// ORT created and owns the device; expose it so the app can share it.
-		device = await ort.env.webgpu.device;
-		deviceOwner = 'ort-webgpu';
+	// Expose the WebGPU device only when WebGPU is the active (primary) path: the
+	// caller's device when injected, otherwise the one ORT created and owns.
+	let device: GPUDevice | undefined;
+	if (primaryEp === 'webgpu') {
+		device = options.device ?? (await ort.env.webgpu.device);
 	}
 
 	return {
