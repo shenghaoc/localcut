@@ -160,7 +160,7 @@ Radial falloff shader. Uniform layout (16-byte aligned):
 - `offset 8`: `roundness: f32`
 - `offset 12`: `_pad: f32`
 
-NDC coordinates centred at (0,0). Ellipse metric: `len = pow(|x|^roundness + |y|^roundness, 1/roundness)` normalised to the shorter half-dimension. `falloff = smoothstep(1.0 − feather, 1.0, len)`. Multiply RGB by `1 − amount × falloff`. Alpha unchanged.
+NDC coordinates centred at (0,0). Ellipse metric: `len = pow(|x|^roundness + |y|^roundness, 1/max(roundness, 1e-5))` normalised to the shorter half-dimension (clamp `roundness` to avoid division by zero). `falloff = smoothstep(1.0 − feather, 1.0, len)`. Multiply RGB by `1 − amount × falloff`. Alpha unchanged.
 
 #### `src/engine/keyframes.ts` (extended)
 
@@ -257,9 +257,14 @@ New **"Look"** section below the LUT section:
   `halationRadius`, tint RGB (compact three-component row), `vignetteAmount`,
   `vignetteFeather`, `vignetteRoundness`.
 - Section collapsed (hidden) when `isLookParamsNeutral(clip.effects)`.
-- **"Apply Look Preset…"** button: triggers a file-picker (`.json`), reads
-  the file, posts `import-look-preset` command. If the preset references a LUT,
-  a second file-picker opens for the `.cube` file.
+- **"Apply Look Preset…"** button: triggers a file-picker (`.json`, using the
+  `multiple` attribute to allow selecting both `.json` and `.cube` at once).
+  If the user selects two files, the `.json` is parsed as the preset and the
+  `.cube` is routed through the existing LUT import. If only one file is
+  selected, it is treated as the preset JSON. Chaining two separate file
+  pickers is avoided because browsers block async-opened pickers (popup
+  blocker). Both the preset params and the LUT import are committed atomically
+  in a single timeline mutation to avoid duplicate undo/redo entries.
 - **"Export Look Preset…"** button (shown when any look param is non-default):
   posts `export-look-preset`; on `look-preset-exported` saves the JSON via
   blob download.
@@ -389,13 +394,15 @@ Internal state:
 - `frameCount: number` and `repetitionCount: number` — read from
   `decoder.tracks[0]` after the first `decode()` resolves.
 
-Frame index computation:
+Frame index computation (per MDN `ImageTrack.repetitionCount`: `0` = play
+once, `Infinity` = infinite loop):
 ```typescript
 function timeToFrameIndex(time: number, frameDurations: number[], repetitionCount: number): number {
   const totalDuration = frameDurations.reduce((a, b) => a + b, 0);
-  const loopedTime = repetitionCount === 0
+  if (totalDuration <= 0) return 0;
+  const loopedTime = repetitionCount === Infinity
     ? time % totalDuration
-    : Math.min(time, totalDuration * repetitionCount);
+    : Math.min(time, totalDuration * (repetitionCount + 1));
   // accumulate durations to find the index
 }
 ```
@@ -412,15 +419,15 @@ export class LottieFrameSource implements VideoFrameProvider {
 ```
 
 Cache key type: `string` of the form `"${frameIndex}:${outputWidth}x${outputHeight}"`.
-Content hash is the SHA-256 of `data`, computed once in the constructor via
-`crypto.subtle.digest` and used only in diagnostics/logging — the cache lives
-per-instance so hash-based deduplication across instances is not needed.
+The cache is per-instance; no content-hash deduplication across instances is
+needed. Content hash (SHA-256 of `data`) is computed once in the constructor
+via `crypto.subtle.digest` and used only in diagnostics/logging.
 
-`frameAt(t)`:
+`frameAt(t)` (positive modulo to guard against negative `t`):
 ```typescript
-const frameIndex = Math.floor(t * this.animation.frameRate);
-const clampedIndex = frameIndex % this.animation.totalFrames;
-const cacheKey = `${clampedIndex}:${this.outputWidth}x${this.outputHeight}`;
+const totalFrames = this.animation.totalFrames;
+const frameIndex = ((Math.floor(t * this.animation.frameRate) % totalFrames) + totalFrames) % totalFrames;
+const cacheKey = `${frameIndex}:${this.outputWidth}x${this.outputHeight}`;
 // LRU lookup → miss → goToAndStop → createImageBitmap → VideoFrame
 ```
 
@@ -466,9 +473,10 @@ The adapter's `open()` method gains a branch:
 
 #### `src/engine/webcodecs-decoder.ts` (extended)
 
-`WebCodecsVideoDecoder.configure()` adds `alpha: 'keep'` to the
-`VideoDecoderConfig` when the codec string contains `vp09` or `av01`. This is a
-no-op for codecs that do not carry alpha and for browsers that ignore the field.
+In `WebCodecsVideoDecoder`'s `samples` generator method, add `alpha: 'keep'` to
+the `VideoDecoderConfig` passed to `decoder.configure(decoderConfig)` when the
+codec string contains `vp09` or `av01`. This is a no-op for codecs that do not
+carry alpha and for browsers that ignore the field.
 
 #### `src/ui/MediaBin.tsx` (extended)
 

@@ -161,8 +161,9 @@ animated effects; server-side processing of any kind.
 - **R3.2** Frame seeking: `frameAt(time)` maps `time` to a frame index by
   accumulating frame durations from `ImageDecoder.tracks[0].frameCount` and
   each frame's `duration` metadata. Looping uses the file's `repetitionCount`
-  metadata (0 = infinite loop; finite values are honoured). The frame at the
-  computed index is decoded via `ImageDecoder.decode({ frameIndex })` and
+  metadata (per MDN: `Infinity` = infinite loop; finite values are honoured
+  by clamping to `totalDuration * (repetitionCount + 1)`; `0` = play once).
+  The frame at the computed index is decoded via `ImageDecoder.decode({ frameIndex })` and
   converted to a `VideoFrame` via `new VideoFrame(imageBitmap)`. The returned
   `DecodedFrame` wraps this `VideoFrame`; the caller (the pipeline worker) is
   responsible for calling `.close()` exactly once.
@@ -228,11 +229,13 @@ animated effects; server-side processing of any kind.
   per-frame raster in the worker (not on main), satisfying hard gate 1.
 
 - **R4.3** `LottieFrameSource` uses an LRU cache of at most **16** rendered
-  `VideoFrame`s keyed by `(contentHash, frameIndex, outputWidth, outputHeight)`.
-  The cache key encodes output size so a resize flushes stale entries. Eviction
-  closes the evicted `VideoFrame`. `reset()` flushes and closes all cached
-  frames. `dispose()` closes all frames, destroys the lottie instance, and
-  releases the `OffscreenCanvas`.
+  `VideoFrame`s keyed by `frameIndex` and output dimensions
+  (`${frameIndex}:${outputWidth}x${outputHeight}`). The cache is per-instance;
+  no cross-instance deduplication is needed. The content hash (SHA-256 of the
+  source data) is computed once in the constructor for diagnostics/logging only.
+  Eviction closes the evicted `VideoFrame`. `reset()` flushes and closes all
+  cached frames. `dispose()` closes all frames, destroys the lottie instance,
+  and releases the `OffscreenCanvas`.
 
 - **R4.4** The `OffscreenCanvas` is sized to the project's output resolution
   (from the `ExportSettings` stored in the worker) at `LottieFrameSource`

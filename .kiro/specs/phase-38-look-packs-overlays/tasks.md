@@ -82,7 +82,8 @@ in the order listed within each group unless a dependency is noted.
   Uniform struct (16 bytes): `amount: f32` offset 0, `feather: f32` offset 4,
   `roundness: f32` offset 8, `_pad: f32` offset 12. NDC coordinates
   `uv = (gid.xy / vec2f(dims)) * 2.0 - 1.0`. Metric:
-  `len = pow(pow(abs(uv.x), u.roundness) + pow(abs(uv.y), u.roundness), 1.0/u.roundness)`.
+  `len = pow(pow(abs(uv.x), u.roundness) + pow(abs(uv.y), u.roundness), 1.0/max(u.roundness, 1e-5))`.
+  (Clamp roundness to avoid division by zero when roundness is 0.)
   Falloff: `smoothstep(1.0 - u.feather, 1.0, len)`. Multiply RGB by
   `1.0 - u.amount * falloff`; alpha unchanged.
 
@@ -166,10 +167,11 @@ in the order listed within each group unless a dependency is noted.
   whichever is the existing pattern for non-keyframed effect sliders).
 
 - [ ] **T8.2** `src/ui/Inspector.tsx`: **"Apply Look Preset…"** button opens a
-  file picker (`accept=".json"`). On file selection read the JSON and post
-  `import-look-preset`. If the parsed preset has a `lut` field, prompt a second
-  picker for the `.cube` file before posting. Display an inline error if the
-  worker responds with `look-preset-error`.
+  file picker (`accept=".json,.cube"`, `multiple`). If two files are selected,
+  the `.json` is parsed as the preset and the `.cube` is routed through the
+  existing LUT import path. Both the preset params and LUT import are committed
+  atomically in a single timeline mutation (one undo entry). Display an inline
+  error if the worker responds with `look-preset-error`.
 
 - [ ] **T8.3** `src/ui/Inspector.tsx`: **"Export Look Preset…"** button (shown
   when look params are non-neutral) posts `export-look-preset`. On
@@ -202,11 +204,13 @@ in the order listed within each group unless a dependency is noted.
   `frameAt(time: number): Promise<DecodedFrame | null>`. Lazily populates
   `frameDurations: number[]` from the first decode result's metadata on the
   first call. Computes `frameIndex` by accumulating durations. Loops according
-  to `repetitionCount` (0 = infinite; finite = clamp to end). LRU cache lookup
-  before decode; on miss call `this.decoder.decode({ frameIndex })`, obtain
-  `ImageBitmap` from `result.image`, construct `new VideoFrame(bitmap, ...)`,
-  close the `ImageBitmap`. Cache the `VideoFrame`; evict LRU entry at capacity 8
-  by closing the evicted frame.
+  to `repetitionCount` (per MDN: `Infinity` = infinite loop via modulo;
+  finite values clamp to `totalDuration * (repetitionCount + 1)`; `0` = play
+  once, clamp to `totalDuration`). LRU cache lookup before decode; on miss
+  call `this.decoder.decode({ frameIndex })`, obtain `ImageBitmap` from
+  `result.image`, construct `new VideoFrame(bitmap, ...)`, close the
+  `ImageBitmap`. Cache the `VideoFrame`; evict LRU entry at capacity 8 by
+  closing the evicted frame.
 
 - [ ] **T10.3** `src/engine/animated-image-source.ts`: Implement `reset()` —
   flush and close all cached frames, clear `frameDurations`. Implement
@@ -272,7 +276,9 @@ in the order listed within each group unless a dependency is noted.
   Store `this.animation`, `this.canvas`, `this.outputWidth`, `this.outputHeight`.
 
 - [ ] **T13.2** `src/engine/lottie-source.ts`: Implement `frameAt(time)`:
-  compute `frameIndex = Math.floor(t * this.animation.frameRate) % this.animation.totalFrames`.
+  compute `totalFrames = this.animation.totalFrames`.
+  Use positive modulo to guard against negative `t`:
+  `frameIndex = ((Math.floor(t * this.animation.frameRate) % totalFrames) + totalFrames) % totalFrames`.
   Build `cacheKey = \`${frameIndex}:${this.outputWidth}x${this.outputHeight}\``.
   LRU lookup (max 16 entries); on miss call `this.animation.goToAndStop(frameIndex, true)`,
   then `const bitmap = await createImageBitmap(this.canvas)`, then
@@ -307,9 +313,9 @@ in the order listed within each group unless a dependency is noted.
 
 ## T15 — Alpha video: preserve alpha at decode (R5.1–R5.4)
 
-- [ ] **T15.1** `src/engine/webcodecs-decoder.ts`: In
-  `WebCodecsVideoDecoder.configure()`, set `alpha: 'keep'` in the
-  `VideoDecoderConfig` when the codec string contains `'vp09'` or `'av01'`.
+- [ ] **T15.1** `src/engine/webcodecs-decoder.ts`: In the `samples` generator
+  method where `decoder.configure(decoderConfig)` is called, add `alpha: 'keep'`
+  to the `VideoDecoderConfig` when the codec string contains `'vp09'` or `'av01'`.
   Add a code comment: "alpha channel preservation for VP9/AV1-alpha overlays
   (Phase 38b R5.2); this is a no-op for codecs without alpha support."
 
