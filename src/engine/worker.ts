@@ -168,6 +168,7 @@ import {
 	type Timeline,
 	type TimelineClip,
 	type TimelineMarker,
+	type TimelineTrack,
 	type TimelineTransition,
 	type ClipboardTimelineClip,
 	type ClipEffectParams,
@@ -193,8 +194,10 @@ import { openMediaFile, STILL_DEFAULT_DURATION_S, type MediaInputHandle } from '
 import { healthReportForHandle } from './media-adapters/mediabunny-adapter';
 import {
 	resolveSourceTimestamp,
+	resolveNormalizedSourceTimestamp,
 	audioAvailabilityWindowFrames
 } from './media-adapters/source-timing';
+import { buildRemapLUT, remapOutputToSource, type RemapLUT } from './time-remap';
 import { sourceHealthReportFromError } from './media-adapters/source-health';
 import { cleanedAudioMissing, cleanedAudioSubstitute } from './audio-cleanup/cleaned-audio';
 import { ThumbnailGenerator } from './thumbnails';
@@ -347,6 +350,8 @@ const binSourceIds = new Set<string>();
 const clipboardLuts = new Map<string, ClipLut>();
 /** Phase 32a: session-only skin-smooth bypass flags (not serialised, not in undo history). */
 const skinSmoothBypassMap = new Map<string, boolean>();
+/** Phase 35: per-clip remap LUTs (rebuilt on set-time-remap, cleared on clear-time-remap). */
+const remapLUTs = new Map<string, RemapLUT>();
 const restoringSourceIds = new Set<string>();
 let thumbnailGen: ThumbnailGenerator | null = null;
 const THUMBNAIL_WIDTH = 160;
@@ -1021,7 +1026,7 @@ async function mixLiveMonitorWindow(
 				continue;
 			}
 
-			const sourceTimestamp = resolveSourceTimestamp({
+			const sourceTimestamp = resolveSourceTimestampWithRemap({
 				clip: audioClip,
 				timelineTime,
 				trackKind: 'audio',
@@ -1136,6 +1141,28 @@ function syncTimelineLuts(): void {
 		}
 	}
 	renderer.pruneLuts(activeKeys);
+}
+
+/** Phase 35: Rebuild remap LUTs from the current timeline clips (called on undo/redo). */
+function syncRemapLuts(): void {
+	const activeClipIds = new Set<string>();
+	for (const track of timeline) {
+		for (const clip of track.clips) {
+			if (clip.timeRemap) {
+				activeClipIds.add(clip.id);
+				if (!remapLUTs.has(clip.id)) {
+					const lut = buildRemapLUT(clip.timeRemap.keyframes, clip.duration);
+					remapLUTs.set(clip.id, lut);
+				}
+			}
+		}
+	}
+	// Remove LUTs for clips that no longer have remap
+	for (const clipId of remapLUTs.keys()) {
+		if (!activeClipIds.has(clipId)) {
+			remapLUTs.delete(clipId);
+		}
+	}
 }
 
 function sourceDescriptorFromHandle(
@@ -2417,7 +2444,7 @@ function makeGetLayers() {
 					overBudget = true;
 					continue;
 				}
-				const sourceTimestamp = resolveSourceTimestamp({
+				const sourceTimestamp = resolveSourceTimestampWithRemap({
 					clip: layer.clip,
 					timelineTime: timestamp,
 					trackKind: 'video',
@@ -3041,6 +3068,210 @@ function handleSetMatteBlurRadius(cmd: Extract<WorkerCommand, { type: 'set-matte
 	);
 }
 
+// ── Phase 35: Time Remapping ──
+
+/**
+ * Resolve source timestamp with optional time-remap. If the clip has a
+ * timeRemap set and a LUT is available, the clip-local output time is
+ * remapped through the LUT before resolving the source timestamp.
+ */
+function resolveSourceTimestampWithRemap(options: {
+	clip: TimelineClip;
+	timelineTime: number;
+	trackKind: 'video' | 'audio';
+	timing: import('./media-adapters/types').NormalizedSourceTiming;
+}): import('./media-adapters/source-timing').SourceTimestampResolution {
+	const { clip, timelineTime, trackKind, timing } = options;
+
+	if (clip.timeRemap) {
+		const lut = remapLUTs.get(clip.id);
+		if (lut) {
+			const clipLocalOutTimeS = timelineTime - clip.start;
+			const remappedSourceS = remapOutputToSource(lut, clipLocalOutTimeS);
+			return resolveNormalizedSourceTimestamp(timing, trackKind, remappedSourceS);
+		}
+	}
+
+	return resolveSourceTimestamp({ clip, timelineTime, trackKind, timing });
+}
+
+/** Find a clip and its track in the authoritative timeline. */
+function findClipInTimeline(
+	trackId: string,
+	clipId: string
+): { track: TimelineTrack; clip: TimelineClip; clipIndex: number } | null {
+	for (const track of timeline) {
+		if (track.id !== trackId) continue;
+		const clipIndex = track.clips.findIndex((c) => c.id === clipId);
+		if (clipIndex < 0) return null;
+		return { track, clip: track.clips[clipIndex]!, clipIndex };
+	}
+	return null;
+}
+
+/** Compute the maximum allowed output duration for a clip (gap to next clip or track end). */
+function maxAllowedDurationForClip(track: TimelineTrack, clipIndex: number): number {
+	const clip = track.clips[clipIndex]!;
+	const nextClip = track.clips[clipIndex + 1];
+	if (nextClip) {
+		return Math.max(0, nextClip.start - clip.start);
+	}
+	// No next clip — allow up to a generous maximum (6 hours)
+	return 21600;
+}
+
+function handleSetTimeRemap(cmd: Extract<WorkerCommand, { type: 'set-time-remap' }>) {
+	const found = findClipInTimeline(cmd.trackId, cmd.clipId);
+	if (!found) {
+		post({
+			type: 'time-remap-error',
+			trackId: cmd.trackId,
+			clipId: cmd.clipId,
+			reason: 'speed-out-of-range'
+		});
+		return;
+	}
+
+	const { track, clip, clipIndex } = found;
+	const remap = cmd.remap;
+
+	// Validate speed range
+	for (const kf of remap.keyframes) {
+		if (kf.speed < 0.25 || kf.speed > 4.0) {
+			post({
+				type: 'time-remap-error',
+				trackId: cmd.trackId,
+				clipId: cmd.clipId,
+				reason: 'speed-out-of-range'
+			});
+			return;
+		}
+	}
+
+	// Validate no duplicate outTimeS (within 1e-4 s)
+	for (let i = 0; i < remap.keyframes.length - 1; i += 1) {
+		for (let j = i + 1; j < remap.keyframes.length; j += 1) {
+			if (Math.abs(remap.keyframes[i]!.outTimeS - remap.keyframes[j]!.outTimeS) < 1e-4) {
+				post({
+					type: 'time-remap-error',
+					trackId: cmd.trackId,
+					clipId: cmd.clipId,
+					reason: 'duplicate-keyframe'
+				});
+				return;
+			}
+		}
+	}
+
+	// Sort keyframes by outTimeS
+	const sortedKeyframes = [...remap.keyframes].sort((a, b) => a.outTimeS - b.outTimeS);
+
+	// Compute source in/out duration
+	const sourceDurationS = clip.duration;
+	const lut = buildRemapLUT(sortedKeyframes, sourceDurationS);
+	let outputDurationS = lut.outputDurationS;
+
+	// Cap to max allowed duration
+	const maxAllowed = maxAllowedDurationForClip(track, clipIndex);
+	let capped = false;
+	if (outputDurationS > maxAllowed) {
+		outputDurationS = maxAllowed;
+		capped = true;
+	}
+
+	// Store the LUT
+	remapLUTs.set(cmd.clipId, lut);
+
+	// Apply the mutation
+	commitTimelineMutation(
+		() => {
+			return timeline.map((t) => {
+				if (t.id !== cmd.trackId) return t;
+				return {
+					...t,
+					clips: t.clips.map((c) => {
+						if (c.id !== cmd.clipId) return c;
+						return {
+							...c,
+							timeRemap: { keyframes: sortedKeyframes, pitchPreserve: remap.pitchPreserve },
+							duration: outputDurationS
+						};
+					})
+				};
+			});
+		},
+		{
+			coalesceKey: { clipId: cmd.clipId, key: 'timeRemap' },
+			refreshPlayback: 'refresh',
+			prune: false,
+			syncLuts: false
+		}
+	);
+
+	post({
+		type: 'time-remap-updated',
+		trackId: cmd.trackId,
+		clipId: cmd.clipId,
+		outputDurationS
+	});
+
+	if (capped) {
+		post({
+			type: 'time-remap-error',
+			trackId: cmd.trackId,
+			clipId: cmd.clipId,
+			reason: 'remap-capped'
+		});
+	}
+}
+
+function handleClearTimeRemap(cmd: Extract<WorkerCommand, { type: 'clear-time-remap' }>) {
+	const found = findClipInTimeline(cmd.trackId, cmd.clipId);
+	if (!found) return;
+
+	const { track, clip, clipIndex } = found;
+	const originalDuration = clip.duration;
+
+	// Remove the LUT
+	remapLUTs.delete(cmd.clipId);
+
+	// Compute restored duration (original source duration, capped)
+	const maxAllowed = maxAllowedDurationForClip(track, clipIndex);
+	const restoredDuration = Math.min(originalDuration, maxAllowed);
+
+	commitTimelineMutation(
+		() => {
+			return timeline.map((t) => {
+				if (t.id !== cmd.trackId) return t;
+				return {
+					...t,
+					clips: t.clips.map((c) => {
+						if (c.id !== cmd.clipId) return c;
+						return {
+							...c,
+							timeRemap: undefined,
+							duration: restoredDuration
+						};
+					})
+				};
+			});
+		},
+		{
+			coalesceKey: { clipId: cmd.clipId, key: 'timeRemap' },
+			refreshPlayback: 'refresh',
+			prune: false,
+			syncLuts: false
+		}
+	);
+
+	post({
+		type: 'time-remap-updated',
+		trackId: cmd.trackId,
+		clipId: cmd.clipId,
+		outputDurationS: restoredDuration
+	});
+}
+
 function handleSetTrackGain(cmd: Extract<WorkerCommand, { type: 'set-track-gain' }>) {
 	commitTimelineMutation(() => setTrackGain(timeline, cmd.trackId, cmd.gain), {
 		coalesceKey: { clipId: cmd.trackId, key: 'gain' },
@@ -3163,7 +3394,7 @@ async function handleExtractClipAudio(
 		);
 		if (durationS <= 0) return fail('Requested window is empty.');
 		const timelineTime = clip.start + clipOffsetS;
-		const resolution = resolveSourceTimestamp({
+		const resolution = resolveSourceTimestampWithRemap({
 			clip,
 			timelineTime,
 			trackKind: 'audio',
@@ -4064,6 +4295,7 @@ function applyHistoryRestore(next: {
 		next.voiceCleanup ?? DEFAULT_VOICE_CLEANUP_SETTINGS
 	);
 	syncTimelineLuts();
+	syncRemapLuts();
 	// Undo can resurrect clips of a source that was removed from the bin. Re-add
 	// any still-described source the restored timeline references so the asset
 	// returns to the bin (offline, re-linkable) instead of dangling.
@@ -6863,6 +7095,13 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			break;
 		case 'set-beat-settings':
 			handleSetBeatSettings(cmd.enabledSourceIds, cmd.globalOffsetMs);
+			break;
+		// Phase 35: Time Remapping
+		case 'set-time-remap':
+			handleSetTimeRemap(cmd);
+			break;
+		case 'clear-time-remap':
+			handleClearTimeRemap(cmd);
 			break;
 		case 'dispose':
 			void handleDispose();

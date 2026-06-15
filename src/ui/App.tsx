@@ -980,6 +980,7 @@ export function App() {
 				return {
 					trackId: ref.trackId,
 					clipId: clip.id,
+					kind: clip.kind,
 					start: clip.start,
 					duration: clip.duration,
 					effects: sampleEffectsAt(clip.effects, clip.keyframes, localTime),
@@ -987,7 +988,8 @@ export function App() {
 					keyframes: clip.keyframes,
 					lut: clip.lut,
 					skinMask: clip.skinMask,
-					matte: clip.matte
+					matte: clip.matte,
+					timeRemap: clip.timeRemap
 				};
 			}
 		}
@@ -3349,6 +3351,12 @@ export function App() {
 														})
 													}
 													matteStatus={matteStatus()}
+													onSetTimeRemap={(trackId, clipId, remap) =>
+														bridge?.send({ type: 'set-time-remap', trackId, clipId, remap })
+													}
+													onClearTimeRemap={(trackId, clipId) =>
+														bridge?.send({ type: 'clear-time-remap', trackId, clipId })
+													}
 												/>
 											</div>
 										</Show>

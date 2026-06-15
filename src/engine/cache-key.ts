@@ -5,7 +5,7 @@ import type {
 	RenderCacheEntry,
 	SourceDependencyKey
 } from './cache-types';
-import type { ExportSettings, SourceDescriptorSnapshot } from '../protocol';
+import type { ExportSettings, SourceDescriptorSnapshot, TimeRemapSnapshot } from '../protocol';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -195,6 +195,24 @@ export function sourceConformanceHash(source: SourceDescriptorSnapshot): string 
 
 export function proxySettingsHash(settings: ProxyGenerationSettings): string {
 	return hashStableValue('proxy-settings', settings);
+}
+
+/**
+ * Phase 35: Compute a deterministic hash of a TimeRemapSnapshot.
+ * Keyframes are sorted by outTimeS before stringifying to ensure determinism.
+ */
+export function hashTimeRemap(remap: TimeRemapSnapshot): string {
+	const canonical = {
+		keyframes: [...remap.keyframes]
+			.sort((a, b) => a.outTimeS - b.outTimeS)
+			.map((kf) => ({
+				outTimeS: kf.outTimeS,
+				speed: kf.speed,
+				easing: kf.easing
+			})),
+		pitchPreserve: remap.pitchPreserve
+	};
+	return hashStableValue('time-remap', canonical);
 }
 
 export function canonicalExportSettingsForCache(settings: ExportSettings): ExportSettings {

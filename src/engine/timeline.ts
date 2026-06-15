@@ -81,6 +81,8 @@ export interface TimelineClip {
 	linkedGroupId?: string;
 	/** Denoised derived-asset routing; absent = original audio (Phase 27). */
 	cleanedAudio?: CleanedAudioRef;
+	/** Phase 35: optional time-remap speed curve; absent = constant 1× speed. */
+	timeRemap?: import('../protocol').TimeRemapSnapshot;
 }
 
 /** A title clip carries source-less text; it composites as a cached texture. */

@@ -93,6 +93,8 @@ export interface ClipDependencyKey {
 	readonly titleTextureHash?: string;
 	readonly keyframeHash?: string;
 	readonly audioHash?: string;
+	/** Phase 35: SHA-256 hex of canonical remap JSON; absent = identity speed. */
+	readonly timeRemapHash?: string;
 }
 
 export interface RenderCacheKey {
@@ -143,6 +145,8 @@ export interface CacheDependencyIndex {
 	readonly byTitleHash: Readonly<Record<string, readonly string[]>>;
 	readonly byLutHash: Readonly<Record<string, readonly string[]>>;
 	readonly byKeyframeHash: Readonly<Record<string, readonly string[]>>;
+	/** Phase 35: entries keyed by timeRemapHash. */
+	readonly byTimeRemapHash: Readonly<Record<string, readonly string[]>>;
 }
 
 export interface RenderCacheEntry {

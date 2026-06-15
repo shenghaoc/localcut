@@ -38,7 +38,13 @@ import {
 } from '../export';
 import { isTitleClip, resolveAllAt, type Timeline } from '../timeline';
 import { sampleClipParamsAt } from '../keyframes';
-import { resolveSourceTimestamp } from '../media-adapters/source-timing';
+import {
+	resolveNormalizedSourceTimestamp,
+	resolveSourceTimestamp,
+	type SourceTimestampResolution
+} from '../media-adapters/source-timing';
+import type { NormalizedSourceTiming } from '../media-adapters/types';
+import { buildRemapLUT, remapOutputToSource, type RemapKeyframe } from '../time-remap';
 import type { AudioTransitionCut } from '../audio-mix';
 import type { TitleContent } from '../title';
 import type { TransformParams } from '../transform';
@@ -215,6 +221,29 @@ async function reducedAudioSupported(
 	}
 }
 
+// Phase 35: resolve source timestamp with optional time-remap
+interface RemapCapableClip {
+	readonly inPoint: number;
+	readonly start: number;
+	readonly duration: number;
+	readonly timeRemap?: { readonly keyframes: readonly RemapKeyframe[] };
+}
+
+function resolveSourceTimestampWithRemap(options: {
+	clip: RemapCapableClip;
+	timelineTime: number;
+	trackKind: 'video' | 'audio';
+	timing: NormalizedSourceTiming;
+}): SourceTimestampResolution {
+	if (options.clip.timeRemap) {
+		const lut = buildRemapLUT(options.clip.timeRemap.keyframes, options.clip.duration);
+		const clipLocalOutTimeS = options.timelineTime - options.clip.start;
+		const remappedSourceS = remapOutputToSource(lut, clipLocalOutTimeS);
+		return resolveNormalizedSourceTimestamp(options.timing, options.trackKind, remappedSourceS);
+	}
+	return resolveSourceTimestamp(options as Parameters<typeof resolveSourceTimestamp>[0]);
+}
+
 async function encodeReducedVideo(
 	options: ReducedTimelineExportOptions,
 	videoSource: VideoSampleSource,
@@ -267,7 +296,7 @@ async function encodeReducedVideo(
 				if (decodedCount >= layerBudget) continue;
 				const sourceHandle = options.sources.get(layer.clip.sourceId);
 				if (!sourceHandle?.frameSource) continue;
-				const sourceTimestamp = resolveSourceTimestamp({
+				const sourceTimestamp = resolveSourceTimestampWithRemap({
 					clip: layer.clip,
 					timelineTime,
 					trackKind: 'video',

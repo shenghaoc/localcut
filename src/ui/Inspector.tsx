@@ -26,6 +26,7 @@ export interface SelectedTitle {
 export interface SelectedClip {
 	trackId: string;
 	clipId: string;
+	kind?: import('../protocol').ClipKindSnapshot;
 	start: number;
 	duration: number;
 	effects: ClipEffectParamsSnapshot;
@@ -35,6 +36,8 @@ export interface SelectedClip {
 	skinMask?: SkinMaskSnapshot;
 	/** Phase 31: optional portrait matte configuration. */
 	matte?: import('../protocol').ClipMatteSnapshot;
+	/** Phase 35: optional time-remap speed curve. */
+	timeRemap?: import('../protocol').TimeRemapSnapshot;
 }
 
 export interface SelectedClipTransform {
@@ -137,6 +140,13 @@ interface InspectorProps {
 	onSkinMask?: (trackId: string, clipId: string, mask: SkinMaskSnapshot) => void;
 	/** Phase 32a: session-only A/B bypass toggle. */
 	onSkinSmoothBypass?: (trackId: string, clipId: string, bypass: boolean) => void;
+	/** Phase 35: time-remap callbacks. */
+	onSetTimeRemap?: (
+		trackId: string,
+		clipId: string,
+		remap: import('../protocol').TimeRemapSnapshot
+	) => void;
+	onClearTimeRemap?: (trackId: string, clipId: string) => void;
 }
 
 type TransformSliderKey = 'x' | 'y' | 'scale' | 'rotation' | 'opacity';
@@ -1206,6 +1216,74 @@ export function Inspector(props: InspectorProps) {
 									</label>
 								</div>
 							)}
+						</Show>
+						{/* Phase 35: Speed section — visible for non-title clips with time-remap support */}
+						<Show
+							when={
+								props.selectedClip && props.selectedClip.kind !== 'title' && props.onSetTimeRemap
+							}
+						>
+							<div class="effect-sliders">
+								<h3 class="panel-subtitle">Speed</h3>
+								<Show
+									when={props.selectedClip?.timeRemap}
+									fallback={
+										<button
+											type="button"
+											class="btn btn-secondary"
+											aria-label="Add speed ramp"
+											onClick={() => {
+												const clip = props.selectedClip!;
+												props.onSetTimeRemap?.(clip.trackId, clip.clipId, {
+													keyframes: [
+														{ outTimeS: 0, speed: 1, easing: 'linear' },
+														{ outTimeS: clip.duration, speed: 1, easing: 'linear' }
+													],
+													pitchPreserve: true
+												});
+											}}
+										>
+											Add Ramp
+										</button>
+									}
+								>
+									{(remap) => (
+										<>
+											<div class="remap-info">
+												<span class="remap-keyframes-count">
+													{remap().keyframes.length} keyframes
+												</span>
+												<label class="remap-pitch-preserve">
+													<input
+														type="checkbox"
+														checked={remap().pitchPreserve}
+														aria-label="Pitch preserve"
+														onChange={(e) => {
+															const clip = props.selectedClip!;
+															props.onSetTimeRemap?.(clip.trackId, clip.clipId, {
+																...remap(),
+																pitchPreserve: e.currentTarget.checked
+															});
+														}}
+													/>
+													<span>Pitch Preserve</span>
+												</label>
+											</div>
+											<button
+												type="button"
+												class="btn btn-secondary"
+												aria-label="Clear speed ramp"
+												onClick={() => {
+													const clip = props.selectedClip!;
+													props.onClearTimeRemap?.(clip.trackId, clip.clipId);
+												}}
+											>
+												Clear Ramp
+											</button>
+										</>
+									)}
+								</Show>
+							</div>
 						</Show>
 						<Show when={draft()}>
 							{(effects) => (

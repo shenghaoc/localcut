@@ -48,9 +48,18 @@ import { sampleClipParamsAt } from './keyframes';
 import { cleanedAudioSubstitute } from './audio-cleanup/cleaned-audio';
 import {
 	audioAvailabilityWindowFrames,
+	resolveNormalizedSourceTimestamp,
 	resolveSourceTimestamp,
-	unavailableAudioSilenceFrames
+	unavailableAudioSilenceFrames,
+	type SourceTimestampResolution
 } from './media-adapters/source-timing';
+import type { NormalizedSourceTiming } from './media-adapters/types';
+import {
+	buildRemapLUT,
+	remapOutputToSource,
+	type RemapLUT,
+	type RemapKeyframe
+} from './time-remap';
 
 const AUDIO_BLOCK_FRAMES = 1024;
 const EXPORT_INTERLEAVE_SECONDS = 2;
@@ -67,6 +76,40 @@ const OPUS_CODEC = 'opus';
 const H264_CODEC = 'avc1.640028';
 const VP9_CODEC = 'vp09.00.10.08';
 const AV1_CODEC = 'av01.0.05M.08';
+
+// Phase 35: per-export LUT cache (keyed by clip object identity).
+const exportRemapLutCache = new WeakMap<object, RemapLUT>();
+
+interface RemapCapableClip {
+	readonly inPoint: number;
+	readonly start: number;
+	readonly duration: number;
+	readonly timeRemap?: { readonly keyframes: readonly RemapKeyframe[] };
+}
+
+function getOrBuildRemapLut(clip: RemapCapableClip): RemapLUT | null {
+	if (!clip.timeRemap) return null;
+	const cached = exportRemapLutCache.get(clip);
+	if (cached) return cached;
+	const lut = buildRemapLUT(clip.timeRemap.keyframes, clip.duration);
+	exportRemapLutCache.set(clip, lut);
+	return lut;
+}
+
+function resolveSourceTimestampWithRemap(options: {
+	clip: RemapCapableClip;
+	timelineTime: number;
+	trackKind: 'video' | 'audio';
+	timing: NormalizedSourceTiming;
+}): SourceTimestampResolution {
+	const lut = getOrBuildRemapLut(options.clip);
+	if (lut) {
+		const clipLocalOutTimeS = options.timelineTime - options.clip.start;
+		const remappedSourceS = remapOutputToSource(lut, clipLocalOutTimeS);
+		return resolveNormalizedSourceTimestamp(options.timing, options.trackKind, remappedSourceS);
+	}
+	return resolveSourceTimestamp(options as Parameters<typeof resolveSourceTimestamp>[0]);
+}
 
 const CODEC_CANDIDATES: ReadonlyArray<{
 	codec: ExportVideoCodec;
@@ -551,7 +594,7 @@ export async function mixAudioWindow(
 					const hasIn = Boolean(inHandle?.audioSource);
 					if (hasOut || hasIn) {
 						const outSourceTime = outHandle
-							? resolveSourceTimestamp({
+							? resolveSourceTimestampWithRemap({
 									clip: outgoingAudio,
 									timelineTime,
 									trackKind: 'audio',
@@ -559,7 +602,7 @@ export async function mixAudioWindow(
 								})
 							: null;
 						const inSourceTime = inHandle
-							? resolveSourceTimestamp({
+							? resolveSourceTimestampWithRemap({
 									clip: incomingAudio,
 									timelineTime,
 									trackKind: 'audio',
@@ -729,7 +772,7 @@ export async function mixAudioWindow(
 				continue;
 			}
 
-			const sourceTime = resolveSourceTimestamp({
+			const sourceTime = resolveSourceTimestampWithRemap({
 				clip: audioClip,
 				timelineTime,
 				trackKind: 'audio',
@@ -949,7 +992,7 @@ async function encodeVideoRange(
 					// Stop decoding video past the budget but keep scanning so source-less
 					// title layers above the budgeted stack still composite (preview parity).
 					if (decodedCount >= layerBudget) continue;
-					const sourceTimestamp = resolveSourceTimestamp({
+					const sourceTimestamp = resolveSourceTimestampWithRemap({
 						clip: layer.clip,
 						timelineTime,
 						trackKind: 'video',

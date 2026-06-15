@@ -55,6 +55,7 @@ function clipSignature(clip: TimelineClip): string {
 		effects: clip.effects,
 		transform: clip.transform,
 		keyframes: clip.keyframes,
+		timeRemap: clip.timeRemap,
 		lut: clip.lut
 			? {
 					key: clip.lut.key,
