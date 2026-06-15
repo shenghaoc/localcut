@@ -3131,7 +3131,7 @@ async function handleImportLookPreset(
 		post({
 			type: 'look-preset-error',
 			clipId: cmd.clipId,
-		 reason: 'Invalid look preset: missing or invalid fields.'
+			reason: 'Invalid look preset: missing or invalid fields.'
 		});
 		return;
 	}
@@ -3805,7 +3805,12 @@ async function handleApplyAudioCleanup(
 	let handle: MediaInputHandle | null = null;
 	try {
 		assetId = makeSourceId();
-		handle = await openMediaFile(cmd.file, assetId, undefined, currentCapabilityProbe?.imageDecoder);
+		handle = await openMediaFile(
+			cmd.file,
+			assetId,
+			undefined,
+			currentCapabilityProbe?.imageDecoder
+		);
 		if (!handle.audioSource) throw new Error('Cleaned WAV has no decodable audio track.');
 		sourceInputs.set(assetId, handle);
 		const descriptor = sourceDescriptorFromHandle(assetId, cmd.file, handle);
@@ -7118,7 +7123,12 @@ async function handleReplaySaveLastN(nSeconds?: number): Promise<void> {
 		// the timeline through the undoable mutation path (T4.5).
 		const file = await fileHandle.getFile();
 		const sourceId = makeSourceId();
-		const handle = await openMediaFile(file, sourceId, undefined, currentCapabilityProbe?.imageDecoder);
+		const handle = await openMediaFile(
+			file,
+			sourceId,
+			undefined,
+			currentCapabilityProbe?.imageDecoder
+		);
 		sourceInputs.set(sourceId, handle);
 		const descriptor = sourceDescriptorFromHandle(sourceId, file, handle);
 		sourceDescriptors.set(sourceId, descriptor);

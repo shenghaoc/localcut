@@ -631,7 +631,12 @@ export const mediabunnyAdapter: MediaAdapter = {
 				const data = await input.file.arrayBuffer();
 				const outputWidth = 1920;
 				const outputHeight = 1080;
-				const lottieSource = new LottieFrameSource(data, outputWidth, outputHeight, lottie.default as never);
+				const lottieSource = new LottieFrameSource(
+					data,
+					outputWidth,
+					outputHeight,
+					lottie.default as never
+				);
 				const duration = lottieSource.totalFrames / lottieSource.frameRate;
 				const inspection = imageInspection(input.sourceId, input.file, outputWidth, outputHeight);
 				const primaryVideo = inspection.tracks[0] as SourceVideoTrackInspection;

@@ -114,30 +114,10 @@ export function normalizeClipEffects(
 			64,
 			DEFAULT_CLIP_EFFECTS.halationRadius
 		),
-		halationTintR: clampFinite(
-			partial?.halationTintR,
-			0,
-			1,
-			DEFAULT_CLIP_EFFECTS.halationTintR
-		),
-		halationTintG: clampFinite(
-			partial?.halationTintG,
-			0,
-			1,
-			DEFAULT_CLIP_EFFECTS.halationTintG
-		),
-		halationTintB: clampFinite(
-			partial?.halationTintB,
-			0,
-			1,
-			DEFAULT_CLIP_EFFECTS.halationTintB
-		),
-		vignetteAmount: clampFinite(
-			partial?.vignetteAmount,
-			0,
-			1,
-			DEFAULT_CLIP_EFFECTS.vignetteAmount
-		),
+		halationTintR: clampFinite(partial?.halationTintR, 0, 1, DEFAULT_CLIP_EFFECTS.halationTintR),
+		halationTintG: clampFinite(partial?.halationTintG, 0, 1, DEFAULT_CLIP_EFFECTS.halationTintG),
+		halationTintB: clampFinite(partial?.halationTintB, 0, 1, DEFAULT_CLIP_EFFECTS.halationTintB),
+		vignetteAmount: clampFinite(partial?.vignetteAmount, 0, 1, DEFAULT_CLIP_EFFECTS.vignetteAmount),
 		vignetteFeather: clampFinite(
 			partial?.vignetteFeather,
 			0,

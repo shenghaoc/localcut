@@ -95,11 +95,7 @@ export function sampleEffectsAt(
 			localTime,
 			effects.halationThreshold
 		),
-		halationRadius: sampleKeyframes(
-			keyframes?.halationRadius,
-			localTime,
-			effects.halationRadius
-		),
+		halationRadius: sampleKeyframes(keyframes?.halationRadius, localTime, effects.halationRadius),
 		halationTintR: sampleKeyframes(keyframes?.halationTintR, localTime, effects.halationTintR),
 		halationTintG: sampleKeyframes(keyframes?.halationTintG, localTime, effects.halationTintG),
 		halationTintB: sampleKeyframes(keyframes?.halationTintB, localTime, effects.halationTintB),

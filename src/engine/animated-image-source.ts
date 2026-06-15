@@ -17,10 +17,7 @@ export class AnimatedImageFrameSource implements VideoFrameProvider {
 	private readonly lruCache = new Map<number, VideoFrame>();
 	private static readonly MAX_CACHE = 8;
 
-	constructor(
-		stream: ReadableStream<Uint8Array>,
-		mimeType: string
-	) {
+	constructor(stream: ReadableStream<Uint8Array>, mimeType: string) {
 		this.decoder = new ImageDecoder({
 			data: stream,
 			type: mimeType,
@@ -37,7 +34,9 @@ export class AnimatedImageFrameSource implements VideoFrameProvider {
 		this.frameDurations = [];
 		const firstDuration = result.image.duration;
 		for (let i = 0; i < this.frameCount; i++) {
-			this.frameDurations.push(firstDuration && firstDuration > 0 ? firstDuration / 1_000_000 : 0.033);
+			this.frameDurations.push(
+				firstDuration && firstDuration > 0 ? firstDuration / 1_000_000 : 0.033
+			);
 		}
 		result.image.close();
 		this.initialized = true;
