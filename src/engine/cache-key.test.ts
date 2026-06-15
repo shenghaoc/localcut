@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vite-plus/test';
 import {
+	buildClipDependencyKey,
 	canonicalExportSettingsForCache,
 	exportSettingsHash,
 	hashString,
 	hashStableValue,
+	hashTimeRemap,
 	proxySettingsHash,
 	renderCacheEntryMatchesKey,
 	renderCacheKeyHash,
@@ -12,7 +14,7 @@ import {
 	stableStringify
 } from './cache-key';
 import { RENDER_CACHE_SCHEMA_VERSION, type RenderCacheKey } from './cache-types';
-import type { ExportSettings, SourceDescriptorSnapshot } from '../protocol';
+import type { ExportSettings, SourceDescriptorSnapshot, TimeRemapSnapshot } from '../protocol';
 
 function sourceFixture(patch: Partial<SourceDescriptorSnapshot> = {}): SourceDescriptorSnapshot {
 	return {
@@ -225,5 +227,85 @@ describe('renderCacheKeyHash', () => {
 				requestedKey
 			)
 		).toBe(false);
+	});
+});
+
+describe('time remap cache integration', () => {
+	function remap(patch: Partial<TimeRemapSnapshot> = {}): TimeRemapSnapshot {
+		return {
+			keyframes: [
+				{ outTimeS: 0, speed: 1, easing: 'linear' as const },
+				{ outTimeS: 2, speed: 2, easing: 'ease' as const }
+			],
+			pitchPreserve: true,
+			sourceDurationS: 4,
+			...patch
+		};
+	}
+
+	it('hashTimeRemap is order-independent on keyframes', () => {
+		const a = remap();
+		const b = remap({ keyframes: [...a.keyframes].reverse() });
+		expect(hashTimeRemap(a)).toBe(hashTimeRemap(b));
+	});
+
+	it('hashTimeRemap changes when curve content changes', () => {
+		expect(hashTimeRemap(remap())).not.toBe(hashTimeRemap(remap({ pitchPreserve: false })));
+		expect(hashTimeRemap(remap())).not.toBe(
+			hashTimeRemap(
+				remap({
+					keyframes: [
+						{ outTimeS: 0, speed: 1, easing: 'linear' as const },
+						{ outTimeS: 2, speed: 3, easing: 'ease' as const }
+					]
+				})
+			)
+		);
+	});
+
+	it('buildClipDependencyKey populates timeRemapHash when remap is supplied', () => {
+		const base = {
+			trackId: 'track-1',
+			clipId: 'clip-1',
+			sourceId: 'source-1',
+			startS: 0,
+			durationS: 4,
+			inPointS: 0,
+			effectsHash: 'effects-a',
+			transformHash: 'transform-a'
+		};
+		const noRemap = buildClipDependencyKey(base);
+		const withRemap = buildClipDependencyKey({ ...base, timeRemap: remap() });
+
+		expect(noRemap.timeRemapHash).toBeUndefined();
+		expect(withRemap.timeRemapHash).toBe(hashTimeRemap(remap()));
+	});
+
+	it('renderCacheKeyHash changes when clipDependencies gain a timeRemapHash', () => {
+		const baseDep = buildClipDependencyKey({
+			trackId: 'track-1',
+			clipId: 'clip-1',
+			sourceId: 'source-1',
+			startS: 0,
+			durationS: 4,
+			inPointS: 0,
+			effectsHash: 'effects-a',
+			transformHash: 'transform-a'
+		});
+		const remappedDep = buildClipDependencyKey({
+			trackId: 'track-1',
+			clipId: 'clip-1',
+			sourceId: 'source-1',
+			startS: 0,
+			durationS: 4,
+			inPointS: 0,
+			effectsHash: 'effects-a',
+			transformHash: 'transform-a',
+			timeRemap: remap()
+		});
+
+		const keyA = renderKey({ clipDependencies: [baseDep] });
+		const keyB = renderKey({ clipDependencies: [remappedDep] });
+		expect(renderCacheKeyHash(keyA)).not.toBe(renderCacheKeyHash(keyB));
 	});
 });

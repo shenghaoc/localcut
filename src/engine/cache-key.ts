@@ -215,6 +215,46 @@ export function hashTimeRemap(remap: TimeRemapSnapshot): string {
 	return hashStableValue('time-remap', canonical);
 }
 
+/**
+ * Phase 35: Build a {@link ClipDependencyKey} from its component hashes.
+ * Routes `timeRemap` through {@link hashTimeRemap} so remap-aware cache
+ * invalidation can key on the resulting `timeRemapHash` field.
+ */
+export function buildClipDependencyKey(input: {
+	trackId: string;
+	clipId: string;
+	sourceId: string;
+	startS: number;
+	durationS: number;
+	inPointS: number;
+	effectsHash: string;
+	transformHash: string;
+	lutHash?: string;
+	titleTextureHash?: string;
+	keyframeHash?: string;
+	audioHash?: string;
+	timeRemap?: TimeRemapSnapshot;
+}): ClipDependencyKey {
+	const key: Mutable<ClipDependencyKey> = {
+		trackId: input.trackId,
+		clipId: input.clipId,
+		sourceId: input.sourceId,
+		startS: input.startS,
+		durationS: input.durationS,
+		inPointS: input.inPointS,
+		effectsHash: input.effectsHash,
+		transformHash: input.transformHash
+	};
+	if (input.lutHash !== undefined) key.lutHash = input.lutHash;
+	if (input.titleTextureHash !== undefined) key.titleTextureHash = input.titleTextureHash;
+	if (input.keyframeHash !== undefined) key.keyframeHash = input.keyframeHash;
+	if (input.audioHash !== undefined) key.audioHash = input.audioHash;
+	if (input.timeRemap) key.timeRemapHash = hashTimeRemap(input.timeRemap);
+	return key;
+}
+
+type Mutable<T> = { -readonly [P in keyof T]: T[P] };
+
 export function canonicalExportSettingsForCache(settings: ExportSettings): ExportSettings {
 	const canonical: ExportSettings = {
 		preset: settings.preset,

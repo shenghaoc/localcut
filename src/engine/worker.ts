@@ -1047,7 +1047,8 @@ async function mixLiveMonitorWindow(
 				clip: audioClip,
 				timelineTime,
 				sampleRate,
-				maxFrames: runFrames
+				maxFrames: runFrames,
+				remapSpeedRatio: speedRatioForRemap(audioClip, timelineTime)
 			});
 			if (!sourceTimestamp.available) {
 				offsetFrames += availableRunFrames;
@@ -3294,11 +3295,17 @@ function handleSetTimeRemap(cmd: Extract<WorkerCommand, { type: 'set-time-remap'
 
 	// Sort keyframes by outTimeS
 	const sortedKeyframes = [...remap.keyframes].sort((a, b) => a.outTimeS - b.outTimeS);
-	const targetStates = timeRemapTargetsFor(clip).map((target) => {
+	const targets = timeRemapTargetsFor(clip);
+	// Phase 35: linked A/V groups must share the same output duration to stay in
+	// sync, so the cap is the *minimum* of every linked target's allowed length.
+	const sharedMaxAllowedS = targets.reduce(
+		(acc, target) => Math.min(acc, maxAllowedDurationForClip(target.track, target.clipIndex)),
+		Number.POSITIVE_INFINITY
+	);
+	const targetStates = targets.map((target) => {
 		const sourceDurationS = timeRemapSourceDuration(target.clip.timeRemap, target.clip.duration);
 		const lut = buildRemapLUT(sortedKeyframes, sourceDurationS);
-		const maxAllowed = maxAllowedDurationForClip(target.track, target.clipIndex);
-		const outputDurationS = Math.min(lut.outputDurationS, maxAllowed);
+		const outputDurationS = Math.min(lut.outputDurationS, sharedMaxAllowedS);
 		return {
 			...target,
 			timeRemap: {
@@ -3548,15 +3555,56 @@ async function handleExtractClipAudio(
 		if (!resolution.available) return fail('Audio is unavailable at the requested time.');
 		const channels = Math.max(1, Math.min(2, handle.audioChannels || 1));
 		const frameCount = Math.max(1, Math.round(durationS * sampleRate));
-		const pcm = await pcmWindowForRemap({
-			handle,
-			clip,
-			timelineTime,
-			sourceTime: resolution,
-			frameCount,
-			channels,
-			sampleRate
-		});
+		// Phase 35: when the clip has a remap with a varying speed curve the
+		// single-window `pcmWindowForRemap` would freeze the speed at the start
+		// of the request — wrong for curves spanning multiple speeds. Iterate in
+		// chunks so each chunk samples its own local speed and (for pitch
+		// preserve) reuses a persistent WSOLA stretcher across chunks.
+		let pcm: Float32Array;
+		if (clip.timeRemap) {
+			pcm = new Float32Array(frameCount * channels);
+			const chunkFrames = 1024;
+			const localStretcher = clip.timeRemap.pitchPreserve
+				? new WsolaStretcher(channels)
+				: undefined;
+			let written = 0;
+			while (written < frameCount) {
+				const chunk = Math.min(chunkFrames, frameCount - written);
+				const chunkTimelineTime = clip.start + clipOffsetS + written / sampleRate;
+				const chunkResolution = resolveSourceTimestampWithRemap({
+					clip,
+					timelineTime: chunkTimelineTime,
+					trackKind: 'audio',
+					timing: handle.timing
+				});
+				if (!chunkResolution.available) {
+					written += chunk;
+					continue;
+				}
+				const chunkPcm = await pcmWindowForRemap({
+					handle,
+					clip,
+					timelineTime: chunkTimelineTime,
+					sourceTime: chunkResolution,
+					frameCount: chunk,
+					channels,
+					sampleRate,
+					wsola: localStretcher
+				});
+				pcm.set(chunkPcm.subarray(0, chunk * channels), written * channels);
+				written += chunk;
+			}
+		} else {
+			pcm = await pcmWindowForRemap({
+				handle,
+				clip,
+				timelineTime,
+				sourceTime: resolution,
+				frameCount,
+				channels,
+				sampleRate
+			});
+		}
 		self.postMessage(
 			{
 				type: 'clip-audio',

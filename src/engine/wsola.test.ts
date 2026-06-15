@@ -231,4 +231,65 @@ describe('WsolaStretcher', () => {
 			expect(out.length).toBe(960);
 		});
 	});
+
+	describe('correctness', () => {
+		/** Fill stereo output frames with the constant value 0.5 across the entire block. */
+		it('fills the whole output block on a stereo constant signal (no zero tail)', () => {
+			const stretcher = new WsolaStretcher(2);
+			const input = constantSignal(4800, 0.5, 2);
+			const outputFrames = 1024; // larger than a single WSOLA hop (720) to expose unit bugs
+
+			const out = stretcher.stretch(input, 1.0, outputFrames);
+			expect(out.length).toBe(outputFrames * 2);
+
+			// Every sample in the output must be near 0.5 — a stale outOffset bug
+			// would leave the trailing samples at 0.
+			for (let i = 0; i < out.length; i += 1) {
+				expect(out[i]!).toBeCloseTo(0.5, 4);
+			}
+		});
+
+		it('produces a finite, non-NaN output for fractional speedRatio', () => {
+			const stretcher = new WsolaStretcher(2);
+			const input = constantSignal(4800, 0.5, 2);
+			// 1.01x makes hop * speed = 720.0 + 7.2 -> fractional analysisPos.
+			// A round-before-index bug would produce NaN/zero tails.
+			const out = stretcher.stretch(input, 1.01, 1024);
+			for (let i = 0; i < out.length; i += 1) {
+				expect(Number.isFinite(out[i]!)).toBe(true);
+				expect(out[i]!).toBeCloseTo(0.5, 4);
+			}
+		});
+
+		it('best-match offset locks onto the overlap tail rather than the loudest window', () => {
+			// Construct an input where the high-energy region is OUTSIDE the
+			// expected analysis position. A correlation that compares input with
+			// itself would jump to the loud region; a correct WSOLA stays near
+			// the expected analysisPos because that region matches the overlap.
+			const ch = 2;
+			const stretcher = new WsolaStretcher(ch);
+			const baseLevel = 0.2;
+			const frames = 6000;
+			const input = new Float32Array(frames * ch);
+			input.fill(baseLevel);
+			// Inject a loud burst far past where analysisPos will land.
+			const burstStart = 4800;
+			const burstEnd = burstStart + 600;
+			for (let s = burstStart; s < burstEnd; s += 1) {
+				for (let c = 0; c < ch; c += 1) input[s * ch + c] = 0.95;
+			}
+
+			// Prime the stretcher so the overlap tail is non-silent and matches the
+			// baseLevel region (not the burst).
+			stretcher.stretch(input, 1.0, 720);
+			const out = stretcher.stretch(input, 1.0, 720);
+
+			// Output is now driven by the chosen match. If the correlation were
+			// just sqrt(energy) it would jump to the burst and average above 0.5.
+			let sum = 0;
+			for (let i = 0; i < out.length; i += 1) sum += Math.abs(out[i]!);
+			const avg = sum / out.length;
+			expect(avg).toBeLessThan(0.5);
+		});
+	});
 });

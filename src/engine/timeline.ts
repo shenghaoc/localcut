@@ -1,5 +1,6 @@
 import { clamp, clamp01, isFiniteNumber as finite } from '../lib/math';
 import { DEFAULT_CLIP_EFFECTS, normalizeClipEffects, type ClipEffectParams } from './effects';
+import { buildRemapLUT, remapOutputToSource, type RemapLUT } from './time-remap';
 import {
 	DEFAULT_TRANSFORM,
 	normalizeTransform,
@@ -461,11 +462,38 @@ function transitionBoundary(
 function sourceTailHandle(clip: TimelineClip, sourceDurations: TransitionSourceDurations): number {
 	const sourceDuration = sourceDurations.durationForSource(clip.sourceId);
 	if (sourceDuration === undefined || !finite(sourceDuration)) return 0;
-	return Math.max(0, sourceDuration - (clip.inPoint + clip.duration));
+	// Phase 35: a remapped clip consumes `timeRemap.sourceDurationS` of source —
+	// not `clip.duration` (which is output-time). The leftover source after the
+	// clip's consumed range is the tail handle available for an outgoing
+	// transition; for non-remapped clips this collapses to the original
+	// `clip.inPoint + clip.duration` expression.
+	const consumed = clip.timeRemap?.sourceDurationS ?? clip.duration;
+	return Math.max(0, sourceDuration - (clip.inPoint + consumed));
 }
 
 function sourceHeadHandle(clip: TimelineClip): number {
 	return Math.max(0, clip.inPoint);
+}
+
+/**
+ * Phase 35: convert an output-time offset within a clip to the source-time
+ * offset it points at. For non-remapped clips the mapping is identity. For
+ * remapped clips this walks the same monotone LUT used at preview/export.
+ * `outputOffsetS` is the offset from `clip.start` (i.e. timeline time minus
+ * clip start).
+ */
+function remappedSourceOffset(clip: TimelineClip, outputOffsetS: number): number {
+	if (!clip.timeRemap) return outputOffsetS;
+	const lut = buildSplitTrimLut(clip);
+	return remapOutputToSource(lut, outputOffsetS);
+}
+
+function buildSplitTrimLut(clip: TimelineClip): RemapLUT {
+	const sourceDurationS =
+		clip.timeRemap?.sourceDurationS && Number.isFinite(clip.timeRemap.sourceDurationS)
+			? Math.max(0, clip.timeRemap.sourceDurationS)
+			: Math.max(0, clip.duration);
+	return buildRemapLUT(clip.timeRemap?.keyframes ?? [], sourceDurationS);
 }
 
 export function maxTransitionDurationS(
@@ -786,20 +814,28 @@ export function splitClipAt(timeline: Timeline, trackId: string, time: number): 
 	if (splitOffset <= 0 || splitOffset >= clip.duration) return timeline;
 	const splitKeyframes = splitClipKeyframes(clip, splitOffset);
 
+	// Phase 35: For remapped clips the right half's inPoint must come from the
+	// LUT — `splitOffset` is output time but `inPoint` is source time. Both
+	// halves drop the remap (the curve segments would need re-anchoring per
+	// half); the user can reapply if needed.
+	const remapSourceOffset = remappedSourceOffset(clip, splitOffset);
+
 	const left: TimelineClip = {
 		...clip,
 		duration: splitOffset,
 		keyframes: splitKeyframes.left,
-		linkedGroupId: undefined
+		linkedGroupId: undefined,
+		timeRemap: undefined
 	};
 	const right: TimelineClip = {
 		...clip,
 		id: newId(clip.id),
 		start: clip.start + splitOffset,
 		duration: clip.duration - splitOffset,
-		inPoint: clip.inPoint + splitOffset,
+		inPoint: clip.inPoint + remapSourceOffset,
 		keyframes: splitKeyframes.right,
-		linkedGroupId: undefined
+		linkedGroupId: undefined,
+		timeRemap: undefined
 	};
 
 	const next = cloneTimeline(timeline);
@@ -1027,7 +1063,11 @@ export function trimClip(
 		// Must not overlap the previous neighbor.
 		if (time < prevEnd) return timeline;
 		const offset = time - clip.start;
-		const candidateInPoint = clip.inPoint + offset;
+		// Phase 35: convert output-time offset to source-time offset for remapped
+		// clips. Identity for non-remapped clips. The remap itself is cleared on
+		// the trimmed clip because the curve's anchor moved.
+		const sourceOffset = remappedSourceOffset(clip, offset);
+		const candidateInPoint = clip.inPoint + sourceOffset;
 		// The new source-side in-point can't be negative (titles have none).
 		if (!title && candidateInPoint < 0) return timeline;
 		nextStartOut = time;
@@ -1040,8 +1080,12 @@ export function trimClip(
 		if (title) {
 			// Still-like: out-edge bounded only by the next neighbor (checked above).
 		} else if (sourceDuration !== undefined && finite(sourceDuration)) {
-			// Out-edge extension is bounded by available source content.
-			const maxOutTime = clip.start + (sourceDuration - clip.inPoint);
+			// Out-edge extension is bounded by available source content. For
+			// remapped clips, the same total source budget gives a *different*
+			// output-time max because output runs faster/slower than source.
+			const consumedSource = clip.timeRemap?.sourceDurationS ?? clip.duration;
+			const sourceRemaining = sourceDuration - clip.inPoint - consumedSource;
+			const maxOutTime = clipEnd + Math.max(0, sourceRemaining);
 			if (time > maxOutTime) return timeline;
 		} else if (time > clipEnd) {
 			// Without source-duration knowledge, refuse to extend past the current end.
@@ -1059,7 +1103,11 @@ export function trimClip(
 		...clip,
 		start: nextStartOut,
 		duration: nextDuration,
-		inPoint: nextInPoint
+		inPoint: nextInPoint,
+		// Phase 35: trimming clears the speed ramp. The curve anchors at the
+		// original clip start, so its keyframes would point at the wrong source
+		// span after the edit; clearing keeps source/output time consistent.
+		timeRemap: undefined
 	};
 	const keyframes =
 		edge === 'in'

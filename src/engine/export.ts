@@ -677,7 +677,8 @@ export async function mixAudioWindow(
 											clip: outgoingAudio,
 											timelineTime,
 											sampleRate,
-											maxFrames: baseRunFrames
+											maxFrames: baseRunFrames,
+											remapSpeedRatio: speedRatioForRemap(outgoingAudio, timelineTime)
 										})
 									: baseRunFrames,
 								inSourceTime && inHandle
@@ -687,7 +688,8 @@ export async function mixAudioWindow(
 											clip: incomingAudio,
 											timelineTime,
 											sampleRate,
-											maxFrames: baseRunFrames
+											maxFrames: baseRunFrames,
+											remapSpeedRatio: speedRatioForRemap(incomingAudio, timelineTime)
 										})
 									: baseRunFrames
 							)
@@ -849,7 +851,8 @@ export async function mixAudioWindow(
 				clip: audioClip,
 				timelineTime,
 				sampleRate,
-				maxFrames: runFrames
+				maxFrames: runFrames,
+				remapSpeedRatio: speedRatioForRemap(audioClip, timelineTime)
 			});
 			if (!sourceTime.available) {
 				offsetFrames += availableRunFrames;
@@ -1156,11 +1159,11 @@ async function encodeAudioRange(
 	audioSource: AudioSampleSource,
 	startedAt: number,
 	startFrame: number,
-	endFrame: number
+	endFrame: number,
+	wsolaStretchers: Map<string, WsolaStretcher>
 ): Promise<void> {
 	const { timeline, sources, signal, onProgress } = options;
 	let lastReport = 0;
-	const wsolaStretchers = new Map<string, WsolaStretcher>();
 
 	for (let cursor = startFrame; cursor < endFrame; cursor += AUDIO_BLOCK_FRAMES) {
 		throwIfCanceled(signal);
@@ -1214,6 +1217,10 @@ async function encodeInterleaved(
 	const videoFramesPerSlice = Math.max(1, Math.round(plan.frameRate * EXPORT_INTERLEAVE_SECONDS));
 	const totalAudioFrames = Math.max(1, Math.ceil(plan.exportDuration * plan.audioSampleRate));
 	let audioCursor = 0;
+	// Phase 35: WSOLA state must persist across all audio slices for the whole
+	// export — resetting per slice creates ~2 s fade discontinuities on remapped
+	// clips when interleave boundaries fall inside a stretched region.
+	const wsolaStretchers = new Map<string, WsolaStretcher>();
 
 	for (let videoStart = 0; videoStart < plan.totalFrames; videoStart += videoFramesPerSlice) {
 		const videoEnd = Math.min(plan.totalFrames, videoStart + videoFramesPerSlice);
@@ -1222,13 +1229,29 @@ async function encodeInterleaved(
 		if (audioSource) {
 			const sliceEndTime = Math.min(plan.exportDuration, videoEnd / plan.frameRate);
 			const audioEnd = Math.min(totalAudioFrames, Math.ceil(sliceEndTime * plan.audioSampleRate));
-			await encodeAudioRange(options, plan, audioSource, startedAt, audioCursor, audioEnd);
+			await encodeAudioRange(
+				options,
+				plan,
+				audioSource,
+				startedAt,
+				audioCursor,
+				audioEnd,
+				wsolaStretchers
+			);
 			audioCursor = audioEnd;
 		}
 	}
 
 	if (audioSource && audioCursor < totalAudioFrames) {
-		await encodeAudioRange(options, plan, audioSource, startedAt, audioCursor, totalAudioFrames);
+		await encodeAudioRange(
+			options,
+			plan,
+			audioSource,
+			startedAt,
+			audioCursor,
+			totalAudioFrames,
+			wsolaStretchers
+		);
 	}
 }
 
