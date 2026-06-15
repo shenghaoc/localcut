@@ -22,15 +22,16 @@
 export type OrtModule = typeof import('onnxruntime-web');
 
 /**
- * Same-origin, build-scoped directory ORT's WASM artifacts are served from,
- * mirroring the LiteRT `/litert/<sha>/` layout. The Vite plugin
- * (`copyOrtRuntimeAssets`) vendors the `.wasm`/`.mjs` files here; the session
- * wrapper sets `env.wasm.wasmPaths` to this path so ORT never fetches its runtime
- * from a cross-origin CDN (blocked by COEP, and against the model-host policy).
+ * Same-origin path ORT's WASM runtime is served from. ORT's
+ * `ort-wasm-simd-threaded.jsep.wasm` is ~26 MB — over Cloudflare Workers' 25 MiB
+ * per-file static-asset limit, so (unlike the smaller LiteRT runtime) it can't be
+ * vendored. Instead the Worker reverse-proxies it from the jsDelivr npm CDN at
+ * `/_ort/` (version-pinned); the session wrapper points `env.wasm.wasmPaths`
+ * here so ORT fetches its runtime same-origin (COEP: require-corp), never via a
+ * direct cross-origin browser request. See `src/worker/index.ts`.
  */
 export function ortWasmBasePath(): string {
-	const sha = typeof __BUILD_SHA__ === 'string' ? __BUILD_SHA__ : 'dev';
-	return `/ort/${sha}/`;
+	return '/_ort/';
 }
 
 /** Loads the WebGPU build (WebGPU EP, primary for full-frame/video models). */

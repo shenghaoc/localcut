@@ -94,18 +94,22 @@ loaded under the same trust rules as the LiteRT assets:
   dynamic imports in `ort-loader.ts`, so the WebGPU/WebNN/WASM runtimes
   code-split out of the initial bundle and load on first use. The
   `no-startup-load.test.ts` guard enforces this at the module-graph level.
-- **The ORT runtime WASM is vendored same-origin.** ORT fetches a ~26 MB
-  `ort-wasm-simd-threaded.jsep.wasm` (plus its `.mjs` glue) at runtime. A Vite
-  plugin (`copyOrtRuntimeAssets`) vendors these under `public/ort/<build-sha>/`
-  — mirroring the LiteRT `/litert/` layout — and `createOrtSession()` sets
-  `ort.env.wasm.wasmPaths` to `/ort/<sha>/` (see `ortWasmBasePath()`). ORT
-  therefore never fetches its runtime from a cross-origin CDN, which COEP
-  (`require-corp`) would block and the host policy forbids.
-- **The ORT runtime never precaches.** Both the vendored WASM (`/ort/`) and the
-  lazily-imported ORT JS chunks (`*onnxruntime*`) are excluded from the Workbox
-  precache and served via runtime caching instead, so the service worker does
-  not download the ORT runtime at install. `no-startup-load.test.ts` asserts the
-  exclusion in `vite.config.ts`.
+- **The ORT runtime WASM is proxied same-origin.** ORT fetches a ~26 MB
+  `ort-wasm-simd-threaded.jsep.wasm` (plus its `.mjs` glue) at runtime. That file
+  exceeds Cloudflare Workers' 25 MiB per-file static-asset limit, so — unlike the
+  smaller LiteRT runtime, which is vendored under `/litert/` — it cannot be
+  vendored. Instead the Worker reverse-proxies it from the jsDelivr npm CDN at
+  `/_ort/` (version-pinned; see `src/worker/index.ts` and the dev proxy in
+  `vite.config.ts`), and `createOrtSession()` sets `ort.env.wasm.wasmPaths` to
+  `/_ort/` (see `ortWasmBasePath()`). The browser fetch is therefore same-origin
+  (the Worker fetches jsDelivr server-side), satisfying COEP `require-corp`
+  without a direct cross-origin browser request. Self-hosting the runtime from R2
+  is a drop-in alternative if a CDN dependency is undesirable.
+- **The ORT runtime never precaches.** The lazily-imported ORT JS chunks
+  (`*onnxruntime*`) are excluded from the Workbox precache, and the proxied WASM
+  (`/_ort/`) is runtime-cached (CacheFirst) rather than precached, so the service
+  worker never downloads the ORT runtime at install. `no-startup-load.test.ts`
+  asserts the precache exclusion in `vite.config.ts`.
 
 ## Diagnostics
 

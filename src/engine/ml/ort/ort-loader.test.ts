@@ -3,13 +3,10 @@ import { describe, expect, it } from 'vite-plus/test';
 import { ortWasmBasePath } from './ort-loader';
 
 describe('ortWasmBasePath', () => {
-	it('returns a same-origin, build-scoped /ort/<sha>/ directory', () => {
+	it('returns the same-origin /_ort/ proxy path (not a cross-origin URL)', () => {
 		const path = ortWasmBasePath();
-		expect(path).toMatch(/^\/ort\/[^/]+\/$/);
-	});
-
-	it('falls back to the "dev" sha when __BUILD_SHA__ is undefined (test/runtime)', () => {
-		// vitest's node config does not `define` __BUILD_SHA__, so the guard applies.
-		expect(ortWasmBasePath()).toBe('/ort/dev/');
+		expect(path).toBe('/_ort/');
+		// Must be a same-origin relative path so ORT fetches under COEP, never a CDN.
+		expect(path.startsWith('http')).toBe(false);
 	});
 });

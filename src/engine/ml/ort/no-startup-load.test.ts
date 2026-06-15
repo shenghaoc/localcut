@@ -55,14 +55,13 @@ describe('ORT runtime is lazy (module graph)', () => {
 		expect(sessionSource).toMatch(/^import type\s+\{[^}]*\}\s+from\s+'onnxruntime-web';/m);
 	});
 
-	it('keeps ORT WASM and runtime chunks out of the PWA precache', () => {
-		// The vendored WASM (`/ort/`) and the lazily-imported ORT JS chunks
-		// (`*onnxruntime*`) must be excluded from the Workbox precache, or the
-		// service worker would download the ORT runtime at install — defeating the
-		// no-startup-load guarantee. They are runtime-cached instead.
-		expect(viteConfigSource).toMatch(/globIgnores:[^\]]*'\*\*\/ort\/\*\*'/);
+	it('keeps the ORT runtime out of the PWA precache (runtime-cached instead)', () => {
+		// The lazily-imported ORT JS chunks (`*onnxruntime*`) must be excluded from
+		// the Workbox precache, or the service worker would download the ORT runtime
+		// at install — defeating the no-startup-load guarantee. The WASM is proxied
+		// at runtime (`/_ort/`), not a build asset, and is runtime-cached.
 		expect(viteConfigSource).toMatch(/globIgnores:[^\]]*'\*\*\/\*onnxruntime\*'/);
-		expect(viteConfigSource).toMatch(/urlPattern:\s*\/\\\/ort\\\/\//);
+		expect(viteConfigSource).toMatch(/urlPattern:\s*\/\\\/_ort\\\/\//);
 	});
 
 	it('the pure foundation modules do not import onnxruntime-web', () => {
