@@ -70,7 +70,8 @@ function parseAsset(value: unknown): BundleAsset | null {
 		value.kind === 'caption' ||
 		value.kind === 'thumbnail' ||
 		value.kind === 'waveform' ||
-		value.kind === 'proxy'
+		value.kind === 'proxy' ||
+		value.kind === 'beats'
 			? value.kind
 			: null;
 	const relativePath = requiredString(value.relativePath);
@@ -146,6 +147,17 @@ function parseCacheManifest(value: unknown): BundleCacheManifest | undefined {
 			proxies.push({ assetId, sourceId, width, height });
 		}
 		manifest.proxies = proxies;
+	}
+	if (Array.isArray(value.beats)) {
+		const beats: NonNullable<BundleCacheManifest['beats']> = [];
+		for (const entry of value.beats) {
+			if (!isRecord(entry)) return undefined;
+			const assetId = requiredString(entry.assetId);
+			const sourceId = requiredString(entry.sourceId);
+			if (!assetId || !sourceId) return undefined;
+			beats.push({ assetId, sourceId });
+		}
+		manifest.beats = beats;
 	}
 	return manifest;
 }

@@ -680,6 +680,8 @@ export const mediabunnyAdapter: MediaAdapter = {
 				}
 			};
 
+			const secondaryAudioSources: SequentialAudioSource[] = [];
+			const canCreateSecondaryAudio = !!(primaryAudio && primaryAudioInspection?.canDecode);
 			const handle: MediaInputHandle = {
 				sourceId: input.sourceId,
 				kind,
@@ -693,6 +695,17 @@ export const mediabunnyAdapter: MediaAdapter = {
 				audioSource,
 				audioChannels,
 				audioSampleRate,
+				createSecondaryAudioSource: canCreateSecondaryAudio
+					? () => {
+							if (!primaryAudio) return null;
+							const source = new SequentialAudioSource(
+								new AudioSampleSink(primaryAudio),
+								audioSampleRate
+							);
+							secondaryAudioSources.push(source);
+							return source;
+						}
+					: undefined,
 				displayWidth,
 				displayHeight,
 				frameRate,
@@ -701,6 +714,8 @@ export const mediabunnyAdapter: MediaAdapter = {
 				dispose: () => {
 					frameSource?.reset();
 					audioSource?.dispose();
+					for (const sec of secondaryAudioSources) sec.dispose();
+					secondaryAudioSources.length = 0;
 					mediaInput.dispose();
 				}
 			};

@@ -81,6 +81,10 @@ interface TimelineProps {
 	) => void;
 	onTransitionDuration?: (transitionId: string, durationS: number) => void;
 	selectedTransition?: () => { transitionId: string } | null;
+	/** Phase 34: beat analysis results keyed by sourceId. */
+	beatResults?: () => ReadonlyMap<string, { tempoBpm: number; beatTimesMs: number[] }>;
+	/** Phase 34: beat display settings. */
+	beatSettings?: () => { enabledSourceIds: string[]; globalOffsetMs: number };
 }
 
 interface MarqueeBox {
@@ -171,7 +175,38 @@ export function Timeline(props: TimelineProps) {
 	);
 
 	const selectedKeys = createMemo(() => new Set(props.selectedClipRefs().map(selectionKey)));
-	const snapTargets = createMemo(() => buildSnapTargets(props.timeline(), props.markers()));
+	const [snapToBeats, setSnapToBeats] = createSignal(false);
+
+	// Phase 34: derive beat times from enabled sources, adjusted by global offset
+	const activeBeatTimesS = createMemo(() => {
+		const results = props.beatResults?.();
+		const settings = props.beatSettings?.();
+		if (!results || !settings || settings.enabledSourceIds.length === 0) return [];
+		const offsetS = settings.globalOffsetMs / 1000;
+		const times: number[] = [];
+		for (const sourceId of settings.enabledSourceIds) {
+			const result = results.get(sourceId);
+			if (result) {
+				for (const ms of result.beatTimesMs) {
+					const t = ms / 1000 + offsetS;
+					if (t >= 0) times.push(t);
+				}
+			}
+		}
+		times.sort((a, b) => a - b);
+		return times;
+	});
+
+	const snapTargets = createMemo(() =>
+		buildSnapTargets(
+			props.timeline(),
+			props.markers(),
+			snapToBeats() ? activeBeatTimesS() : undefined
+		)
+	);
+
+	// Phase 34: beat tick times for ruler rendering
+	const beatTickTimes = activeBeatTimesS;
 
 	const rulerInterval = createMemo(() => {
 		const pps = pxPerSecond();
@@ -576,6 +611,16 @@ export function Timeline(props: TimelineProps) {
 					</button>
 					<button
 						type="button"
+						class={`timeline-tool-button${snapToBeats() ? ' is-active' : ''}`}
+						onClick={() => setSnapToBeats((value) => !value)}
+						aria-pressed={snapToBeats()}
+						aria-label="Toggle snap to beats"
+						title="Toggle snap to beats (B)"
+					>
+						Beat
+					</button>
+					<button
+						type="button"
 						class="timeline-tool-button"
 						onClick={() => props.onCloseGaps(selectedTrackId())}
 						disabled={props.timeline().length === 0}
@@ -765,6 +810,25 @@ export function Timeline(props: TimelineProps) {
 											>
 												<span>{tick.label}</span>
 											</span>
+										)}
+									</For>
+									{/* Phase 34: beat tick overlay. Render every beat -- scroll position
+									 isn't a reactive signal, so a viewport filter using `scrollEl.scrollLeft`
+									 wouldn't update on drag. A 10-minute track at 200 BPM is ~2000 ticks,
+									 well within DOM cost; the For block is the same `position: absolute`
+									 pattern as `timeline-ruler-tick` so off-screen ticks paint as empty
+									 boxes outside the clipped viewport. */}
+									<For each={beatTickTimes()}>
+										{(beatTime, index) => (
+											<span
+												class="timeline-ruler-tick timeline-beat-tick"
+												style={{
+													left: `${beatTime * pxPerSecond()}px`,
+													'--beat-index': index(),
+													background: '#b06cff',
+													height: index() === 0 ? '100%' : '50%'
+												}}
+											/>
 										)}
 									</For>
 								</div>

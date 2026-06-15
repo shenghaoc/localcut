@@ -73,6 +73,11 @@ export interface ProjectDoc {
 	replayBufferConfig?: RingBufferConfig;
 	liveAudioChainConfig?: LiveAudioChainConfig;
 	voiceCleanup?: VoiceCleanupSettings;
+	/** Phase 34: Beat analysis display settings. */
+	beatSettings?: {
+		enabledSourceIds: string[];
+		globalOffsetMs: number;
+	};
 }
 
 export interface SerializeProjectOptions {
@@ -91,6 +96,7 @@ export interface SerializeProjectOptions {
 	replayBufferConfig?: RingBufferConfig;
 	liveAudioChainConfig?: LiveAudioChainConfig;
 	voiceCleanup?: VoiceCleanupSettings;
+	beatSettings?: { enabledSourceIds: string[]; globalOffsetMs: number };
 }
 
 export type DeserializeProjectResult =
@@ -411,6 +417,12 @@ export function serializeProject(options: SerializeProjectOptions): ProjectDoc {
 	}
 	if (options.voiceCleanup) {
 		doc.voiceCleanup = cloneVoiceCleanupSettings(options.voiceCleanup);
+	}
+	if (options.beatSettings) {
+		doc.beatSettings = {
+			enabledSourceIds: [...options.beatSettings.enabledSourceIds],
+			globalOffsetMs: options.beatSettings.globalOffsetMs
+		};
 	}
 	return doc;
 }
@@ -1408,17 +1420,32 @@ function parseCustomAnimCaptionPresets(value: unknown): CaptionAnimStylePreset[]
 	return presets.length > 0 ? presets : undefined;
 }
 
+function parseBeatSettings(
+	value: unknown
+): { enabledSourceIds: string[]; globalOffsetMs: number } | undefined {
+	if (!isRecord(value)) return undefined;
+	const enabledSourceIds = Array.isArray(value.enabledSourceIds)
+		? (value.enabledSourceIds as unknown[]).filter((s): s is string => typeof s === 'string')
+		: [];
+	let globalOffsetMs = finiteNumber(value.globalOffsetMs) ?? 0;
+	globalOffsetMs = Math.max(-500, Math.min(500, globalOffsetMs));
+	return { enabledSourceIds, globalOffsetMs };
+}
+
 function deserializeV13(value: Record<string, unknown>): DeserializeProjectResult {
 	const result = deserializeV10(value);
 	if (!result.ok) return result;
 	// v13 (Phase 30): optional customAnimCaptionPresets; absent/invalid → undefined.
 	const customPresets = parseCustomAnimCaptionPresets(value.customAnimCaptionPresets);
+	// Phase 34: optional beatSettings; absent/invalid → default.
+	const beatSettings = parseBeatSettings(value.beatSettings);
 	return {
 		ok: true,
 		doc: {
 			...result.doc,
 			schemaVersion: PROJECT_SCHEMA_VERSION,
-			customAnimCaptionPresets: customPresets
+			customAnimCaptionPresets: customPresets,
+			beatSettings
 		}
 	};
 }

@@ -439,6 +439,11 @@ let captureVideoDecoderConfig: VideoDecoderConfig | null = null;
 let captureAudioDecoderConfig: AudioDecoderConfig | null = null;
 let replaySaveAbort: AbortController | null = null;
 
+// -- Phase 34: Beat Detection --
+const beatAnalysisCancels = new Map<string, AbortController>();
+const beatResultCache = new Map<string, import('./beat-analysis').BeatAnalysisResult>();
+let beatSettings = { enabledSourceIds: [] as string[], globalOffsetMs: 0 };
+
 function makeSourceId(): string {
 	return `source-${nextSourceId++}`;
 }
@@ -1248,7 +1253,14 @@ async function persistCurrentProject(): Promise<void> {
 		renderQueueHistory: serializeQueueHistory(queueState),
 		replayBufferConfig: replayRing.getConfig(),
 		liveAudioChainConfig: liveChainConfig,
-		voiceCleanup: voiceCleanupSettings
+		voiceCleanup: voiceCleanupSettings,
+		// Phase 34: persist the user's beat-grid settings so re-opening a
+		// project keeps the same enabled sources and global offset (the
+		// per-source beat times themselves ride in the bundle's beats cache).
+		beatSettings:
+			beatSettings.enabledSourceIds.length > 0 || beatSettings.globalOffsetMs !== 0
+				? { ...beatSettings, enabledSourceIds: [...beatSettings.enabledSourceIds] }
+				: undefined
 	});
 	await saveStoredProject(doc);
 }
@@ -2055,6 +2067,14 @@ async function handleNewProject(): Promise<void> {
 	replayRing.updateConfig({ ...DEFAULT_RING_BUFFER_CONFIG });
 	liveChainConfig = cloneLiveChainConfig(DEFAULT_LIVE_AUDIO_CHAIN_CONFIG);
 	voiceCleanupSettings = { ...DEFAULT_VOICE_CLEANUP_SETTINGS };
+	// Phase 34: cancel any running beat analysis and clear cached results +
+	// grid settings so the next project starts fresh. Without this, a new
+	// import would inherit the previous project's BPM/beat grid via the
+	// re-used source-id numbering (nextSourceId resets to 1 above).
+	for (const controller of beatAnalysisCancels.values()) controller.abort();
+	beatAnalysisCancels.clear();
+	beatResultCache.clear();
+	beatSettings = { enabledSourceIds: [], globalOffsetMs: 0 };
 	postReplayBufferState();
 	postLiveChainState();
 	postVoiceCleanupState();
@@ -2607,6 +2627,18 @@ function pruneUnusedSources(): void {
 		handle.dispose();
 		sourceInputs.delete(id);
 		thumbnailGen?.cancelSource(id);
+		// Phase 34: abort and drop any beat-analysis state for the gone source
+		// so we don't reference its id post-disposal and so Beat Detection can
+		// re-run if it's re-imported under a fresh source id.
+		beatAnalysisCancels.get(id)?.abort();
+		beatAnalysisCancels.delete(id);
+		beatResultCache.delete(id);
+		if (beatSettings.enabledSourceIds.includes(id)) {
+			beatSettings = {
+				...beatSettings,
+				enabledSourceIds: beatSettings.enabledSourceIds.filter((s) => s !== id)
+			};
+		}
 		if (primaryHandle === handle) primaryHandle = null;
 	}
 }
@@ -5215,9 +5247,275 @@ function handleVoiceCleanupUpdateSettings(settings: VoiceCleanupSettings): void 
 	postHistoryState();
 }
 
+// ---------------------------------------------------------------------------
+// Phase 34: Beat Analysis
+// ---------------------------------------------------------------------------
+
+async function handleAnalyzeBeats(sourceId: string): Promise<void> {
+	const { analyseBeatTimes } = await import('./beat-analysis');
+	const { readBeatCache, writeBeatCache } = await import('./beat-cache');
+
+	// Look up the media handle
+	const handle = sourceInputs.get(sourceId);
+	if (!handle?.audioSource) {
+		post({ type: 'beat-analysis-error', sourceId, message: 'Source not found or has no audio.' });
+		return;
+	}
+
+	// Check fingerprint for cache
+	const descriptor = sourceDescriptors.get(sourceId);
+	const fingerprint = descriptor?.fingerprint?.digest;
+
+	// Try cache first
+	if (fingerprint) {
+		const cached = await readBeatCache(fingerprint);
+		if (cached) {
+			beatResultCache.set(sourceId, cached);
+			post({
+				type: 'beat-analysis-result',
+				sourceId,
+				tempoBpm: cached.tempoBpm,
+				beatTimesMs: cached.beatTimesMs,
+				analyserVersion: cached.analyserVersion
+			});
+			return;
+		}
+	}
+
+	// Create abort controller
+	const controller = new AbortController();
+	beatAnalysisCancels.set(sourceId, controller);
+
+	// Open an INDEPENDENT audio source for this analysis so we don't seek
+	// the shared playback/export audio iterator underneath them. Falls back
+	// to the primary audioSource only if the adapter can't open a secondary
+	// (older adapters); in that fallback case analysis may glitch concurrent
+	// playback but at least produces correct beat times.
+	const analysisAudioSource = handle.createSecondaryAudioSource?.() ?? handle.audioSource;
+	const ownsAnalysisAudio = analysisAudioSource !== handle.audioSource;
+
+	try {
+		const duration = handle.duration ?? 0;
+		if (duration <= 0) {
+			post({ type: 'beat-analysis-error', sourceId, message: 'Source has no duration.' });
+			return;
+		}
+
+		const result = await analyseBeatTimes(analysisAudioSource, duration, {
+			signal: controller.signal,
+			onProgress: (fraction) => {
+				post({ type: 'beat-analysis-progress', sourceId, fraction });
+			}
+		});
+
+		beatResultCache.set(sourceId, result);
+		post({
+			type: 'beat-analysis-result',
+			sourceId,
+			tempoBpm: result.tempoBpm,
+			beatTimesMs: result.beatTimesMs,
+			analyserVersion: result.analyserVersion
+		});
+
+		// Cache the result best-effort: a quota-exhausted / private-storage
+		// failure here must NOT mask the successful analysis we already posted.
+		if (fingerprint) {
+			try {
+				await writeBeatCache(fingerprint, result);
+			} catch {
+				// Persisting the cache failed; the in-memory beatResultCache
+				// still has the result, so this is purely a cold-restart cost.
+			}
+		}
+	} catch (err) {
+		if (controller.signal.aborted) {
+			// Explicit cancel -- no message
+			return;
+		}
+		post({
+			type: 'beat-analysis-error',
+			sourceId,
+			message: err instanceof Error ? err.message : 'Beat analysis failed.'
+		});
+	} finally {
+		beatAnalysisCancels.delete(sourceId);
+		if (ownsAnalysisAudio) analysisAudioSource.dispose();
+	}
+}
+
+function handleCancelBeatAnalysis(sourceId: string): void {
+	const controller = beatAnalysisCancels.get(sourceId);
+	if (controller) {
+		controller.abort();
+		beatAnalysisCancels.delete(sourceId);
+	}
+}
+
+function handleSetBeatSettings(enabledSourceIds: string[], globalOffsetMs: number): void {
+	beatSettings = {
+		enabledSourceIds,
+		globalOffsetMs: Math.max(-500, Math.min(500, globalOffsetMs))
+	};
+	scheduleAutosave();
+}
+
+async function handleBeatAutoCut(
+	mode: 'split' | 'align',
+	clipRefs: { trackId: string; clipId: string }[]
+): Promise<void> {
+	// Gather active beat times (from all enabled sources, with global offset)
+	const allBeatTimesMs: number[] = [];
+	for (const sourceId of beatSettings.enabledSourceIds) {
+		const result = beatResultCache.get(sourceId);
+		if (result) {
+			for (const ms of result.beatTimesMs) {
+				allBeatTimesMs.push(ms + beatSettings.globalOffsetMs);
+			}
+		}
+	}
+	if (allBeatTimesMs.length === 0) return;
+
+	// Deduplicate and sort
+	allBeatTimesMs.sort((a, b) => a - b);
+	const beatTimesS = [...new Set(allBeatTimesMs)].map((ms) => ms / 1000);
+
+	// Expand linked A/V partners up front so the auto-cut applies the same
+	// split / move to the paired video+audio of a linked clip. Then drop any
+	// refs that touch a locked track (mirrors the per-clip handlers above).
+	const expandedAll = expandLinkedGroup(timeline, clipRefs);
+	const expanded = expandedAll.filter((ref) => !isTrackLockedWorker(ref.trackId));
+	const skippedLocked = expandedAll.length - expanded.length;
+	if (skippedLocked > 0) {
+		postProjectWarning(
+			`Beat ${mode}: skipped ${skippedLocked} clip${skippedLocked === 1 ? '' : 's'} on locked tracks.`
+		);
+	}
+	if (expanded.length === 0) return;
+
+	if (mode === 'split') {
+		// Split mode: split each clip at beat times inside its span
+		commitTimelineMutation(
+			() => {
+				let currentTimeline = timeline;
+				for (const { trackId, clipId } of expanded) {
+					const track = currentTimeline.find((t) => t.id === trackId);
+					if (!track) continue;
+					const clip = track.clips.find((c) => c.id === clipId);
+					if (!clip) continue;
+
+					const clipStart = clip.start;
+					const clipEnd = clip.start + clip.duration;
+
+					// Collect beats inside this clip's span
+					const beatsInside = beatTimesS.filter((t) => t > clipStart && t < clipEnd);
+					if (beatsInside.length === 0) continue;
+
+					// Sort beats and apply minimum segment guard
+					beatsInside.sort((a, b) => a - b);
+					let lastSplit = clipStart;
+					for (const beatTime of beatsInside) {
+						// Check minimum segment from last split point
+						if (beatTime - lastSplit < 0.2) continue;
+						// Check minimum segment to clip end
+						if (clipEnd - beatTime < 0.2) continue;
+
+						currentTimeline = splitClipAt(currentTimeline, trackId, beatTime);
+						lastSplit = beatTime;
+					}
+				}
+				return currentTimeline;
+			},
+			{ coalesceKey: undefined }
+		);
+	} else {
+		// Align mode: move each clip's start to nearest beat. Compute every
+		// accepted move first, then commit them as a SINGLE moveClips() batch
+		// so a clip that's moving forward isn't rejected as overlapping a
+		// sibling's pre-move position.
+		commitTimelineMutation(
+			() => {
+				// Sort by current start so ties (deterministic earlier-wins) and
+				// overlap-skip decisions don't depend on UI selection order.
+				const sortedRefs = [...expanded].sort((a, b) => {
+					const trackA = timeline.find((t) => t.id === a.trackId);
+					const trackB = timeline.find((t) => t.id === b.trackId);
+					const clipA = trackA?.clips.find((c) => c.id === a.clipId);
+					const clipB = trackB?.clips.find((c) => c.id === b.clipId);
+					return (clipA?.start ?? 0) - (clipB?.start ?? 0);
+				});
+
+				const moves: { trackId: string; clipId: string; toTrackId: string; toStart: number }[] = [];
+				// Per-track running intervals of POST-MOVE positions for accepted
+				// moves PLUS unchanged-selection / non-selection clip spans, so we
+				// can detect collisions against the projected future timeline.
+				const acceptedPostMove = new Map<string, { start: number; end: number }[]>();
+				// Selected clip IDs per track -- their CURRENT spans are vacated.
+				const selectedByTrack = new Map<string, Set<string>>();
+				for (const { trackId, clipId } of sortedRefs) {
+					const set = selectedByTrack.get(trackId) ?? new Set<string>();
+					set.add(clipId);
+					selectedByTrack.set(trackId, set);
+				}
+				for (const track of timeline) {
+					const selSet = selectedByTrack.get(track.id) ?? new Set<string>();
+					const blockers: { start: number; end: number }[] = [];
+					for (const c of track.clips) {
+						if (selSet.has(c.id)) continue;
+						blockers.push({ start: c.start, end: c.start + c.duration });
+					}
+					acceptedPostMove.set(track.id, blockers);
+				}
+
+				for (const { trackId, clipId } of sortedRefs) {
+					const track = timeline.find((t) => t.id === trackId);
+					if (!track) continue;
+					const clip = track.clips.find((c) => c.id === clipId);
+					if (!clip) continue;
+
+					// Find nearest beat (earlier on tie)
+					let nearestBeat = beatTimesS[0];
+					let minDist = Math.abs(clip.start - nearestBeat);
+					for (const bt of beatTimesS) {
+						const dist = Math.abs(clip.start - bt);
+						if (dist < minDist) {
+							minDist = dist;
+							nearestBeat = bt;
+						} else if (dist === minDist && bt < nearestBeat) {
+							nearestBeat = bt; // earlier on tie
+						}
+					}
+
+					// Clamp to 0
+					const newStart = Math.max(0, nearestBeat);
+					const newEnd = newStart + clip.duration;
+
+					// Check for overlap against the projected future timeline.
+					const trackBlockers = acceptedPostMove.get(trackId) ?? [];
+					const overlaps = trackBlockers.some((b) => newStart < b.end && newEnd > b.start);
+					if (overlaps) continue; // skip this clip
+
+					if (newStart !== clip.start) {
+						moves.push({ trackId, clipId, toTrackId: trackId, toStart: newStart });
+					}
+					trackBlockers.push({ start: newStart, end: newEnd });
+					acceptedPostMove.set(trackId, trackBlockers);
+				}
+
+				return moves.length > 0 ? moveClips(timeline, moves) : timeline;
+			},
+			{ coalesceKey: undefined }
+		);
+	}
+}
+
 async function handleDispose(): Promise<void> {
 	restoreOfferGeneration += 1;
 	replaySaveAbort?.abort();
+	// Abort all in-flight beat analyses
+	for (const controller of beatAnalysisCancels.values()) {
+		controller.abort();
+	}
+	beatAnalysisCancels.clear();
 	if (capture) {
 		const finished = capture.finished;
 		requestCaptureStop();
@@ -5300,9 +5598,27 @@ function applyProjectPhase46Config(doc: ProjectDoc): void {
 	voiceCleanupSettings = doc.voiceCleanup
 		? { ...doc.voiceCleanup }
 		: { ...DEFAULT_VOICE_CLEANUP_SETTINGS };
+	// Phase 34: restore beat-grid settings (enabled sources + global offset)
+	// so a reloaded project keeps the user's previously-chosen grid. The UI
+	// learns about this through `beat-settings` below.
+	beatSettings = doc.beatSettings
+		? {
+				enabledSourceIds: [...doc.beatSettings.enabledSourceIds],
+				globalOffsetMs: doc.beatSettings.globalOffsetMs
+			}
+		: { enabledSourceIds: [], globalOffsetMs: 0 };
 	postReplayBufferState();
 	postLiveChainState();
 	postVoiceCleanupState();
+	postBeatSettings();
+}
+
+function postBeatSettings(): void {
+	post({
+		type: 'beat-settings',
+		enabledSourceIds: [...beatSettings.enabledSourceIds],
+		globalOffsetMs: beatSettings.globalOffsetMs
+	});
 }
 
 function queueSpillWrite(entries: RingBufferEntry[], range: SpillRange): void {
@@ -6534,6 +6850,19 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			break;
 		case 'voice-cleanup-update-settings':
 			handleVoiceCleanupUpdateSettings(cmd.settings);
+			break;
+		// -- Phase 34: Beat Detection --
+		case 'analyze-beats':
+			void handleAnalyzeBeats(cmd.sourceId);
+			break;
+		case 'cancel-beat-analysis':
+			handleCancelBeatAnalysis(cmd.sourceId);
+			break;
+		case 'beat-auto-cut':
+			void handleBeatAutoCut(cmd.mode, cmd.clipRefs);
+			break;
+		case 'set-beat-settings':
+			handleSetBeatSettings(cmd.enabledSourceIds, cmd.globalOffsetMs);
 			break;
 		case 'dispose':
 			void handleDispose();

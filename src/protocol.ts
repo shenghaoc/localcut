@@ -1004,6 +1004,14 @@ export interface TimelineMarkerSnapshot {
 	label: string;
 }
 
+// -- Phase 34: Beat Detection --
+
+export interface BeatAnalysisResultSnapshot {
+	tempoBpm: number;
+	beatCount: number; // beatTimesMs.length -- for UI display
+	analyserVersion: number;
+}
+
 export type TransitionKindSnapshot = 'cross-dissolve' | 'dip-to-black' | 'wipe' | 'slide';
 
 export interface TransitionParamsSnapshot {
@@ -1974,6 +1982,15 @@ export type WorkerCommand =
 	| { type: 'voice-cleanup-cancel-analysis' }
 	| { type: 'voice-cleanup-apply-normalisation'; normalisationGainDb: number }
 	| { type: 'voice-cleanup-update-settings'; settings: VoiceCleanupSettings }
+	// -- Phase 34: Beat Detection --
+	| { type: 'analyze-beats'; sourceId: string }
+	| { type: 'cancel-beat-analysis'; sourceId: string }
+	| {
+			type: 'beat-auto-cut';
+			mode: 'split' | 'align';
+			clipRefs: { trackId: string; clipId: string }[];
+	  }
+	| { type: 'set-beat-settings'; enabledSourceIds: string[]; globalOffsetMs: number }
 	| { type: 'dispose' };
 
 /** A measured preview resolution tier (adaptive downscale of the decode path). */
@@ -2230,6 +2247,22 @@ export type WorkerStateMessage =
 			/** Phase 31: matte engine status (probe, model load state, backend). */
 			type: 'matte-status';
 			status: MatteEngineStatusSnapshot;
+	  }
+	// -- Phase 34: Beat Detection --
+	| { type: 'beat-analysis-progress'; sourceId: string; fraction: number }
+	| {
+			type: 'beat-analysis-result';
+			sourceId: string;
+			tempoBpm: number;
+			beatTimesMs: number[];
+			analyserVersion: number;
+	  }
+	| { type: 'beat-analysis-error'; sourceId: string; message: string }
+	| {
+			/** Worker -> UI sync of the persisted beat grid settings on restore/import. */
+			type: 'beat-settings';
+			enabledSourceIds: string[];
+			globalOffsetMs: number;
 	  }
 	| { type: 'error'; message: string };
 

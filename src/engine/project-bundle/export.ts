@@ -16,10 +16,12 @@ import { serializeTimelineToOtio } from '../interchange/otio';
 import type { BundleDirectorySink } from './sinks';
 import type {
 	BundleAsset,
+	BundleCacheManifest,
 	BundleIntegrityReport,
 	BundleJobProgress,
 	BundleSourceEntry,
 	BundleSourcePolicy,
+	MediaFingerprint,
 	ProjectBundleManifest
 } from './types';
 
@@ -29,8 +31,19 @@ export interface ExportBundleOptions {
 	policy: BundleSourcePolicy;
 	resolveSourceFile: (sourceId: string) => Promise<File | null>;
 	collectLuts: () => readonly ClipLut[];
+	/**
+	 * Optional: return the cached beat-analysis JSON text for the source's
+	 * fingerprint, or null if none. Phase 34: when present and embedding,
+	 * the bundle gains a 'beats' asset per source so a future import can
+	 * restore results without re-analysing (R2.3).
+	 */
+	resolveBeatCache?: (sourceId: string, fingerprint: MediaFingerprint) => Promise<string | null>;
 	onProgress?: (progress: BundleJobProgress) => void;
 	isCancelled?: () => boolean;
+}
+
+function beatCacheRelativePath(fingerprint: MediaFingerprint): string {
+	return `cache/beats/${fingerprint.digest.slice(0, 16)}.beats.json`;
 }
 
 function shouldEmbedMedia(policy: BundleSourcePolicy): boolean {
@@ -161,6 +174,44 @@ export async function exportProjectBundle(
 		sources.push(entry);
 	}
 
+	// Phase 34: embed each source's beat cache (if any) alongside the media so
+	// importing a bundle on another machine skips re-analysis. Each beat-cache
+	// JSON gets its own BundleAsset; the cacheManifest.beats entry maps the
+	// source back to the asset on import.
+	const beatsManifest: NonNullable<BundleCacheManifest['beats']> = [];
+	if (embed && options.resolveBeatCache) {
+		for (const sourceEntry of sources) {
+			if (sourceEntry.status !== 'embedded') continue;
+			const fingerprint = sourceEntry.descriptor.fingerprint;
+			if (!fingerprint) continue;
+			throwIfBundleJobCanceled(options.isCancelled);
+			let text: string | null = null;
+			try {
+				text = await options.resolveBeatCache(sourceEntry.sourceId, fingerprint);
+			} catch {
+				// Missing/unreadable beat cache must not fail the whole export.
+				text = null;
+			}
+			if (!text) continue;
+			const blob = new Blob([text], { type: 'application/json' });
+			const beatBlobFingerprint = await fingerprintBlob(blob);
+			const relativePath = beatCacheRelativePath(beatBlobFingerprint);
+			const asset: BundleAsset = {
+				assetId: makeAssetId(),
+				kind: 'beats',
+				relativePath,
+				fingerprint: beatBlobFingerprint,
+				byteSize: blob.size,
+				mimeType: 'application/json',
+				originalFileName: `${sourceEntry.descriptor.fileName}.beats.json`,
+				refs: [sourceEntry.sourceId]
+			};
+			await sink.writeBlob(relativePath, blob);
+			assets.push(asset);
+			beatsManifest.push({ sourceId: sourceEntry.sourceId, assetId: asset.assetId });
+		}
+	}
+
 	if (embed) {
 		const lutByKey = new Map<string, ClipLut>();
 		for (const lut of options.collectLuts()) {
@@ -193,6 +244,9 @@ export async function exportProjectBundle(
 
 	throwIfBundleJobCanceled(options.isCancelled);
 
+	const cacheManifest: BundleCacheManifest | undefined =
+		beatsManifest.length > 0 ? { beats: beatsManifest } : undefined;
+
 	const manifest: ProjectBundleManifest = {
 		bundleSchemaVersion: 1,
 		bundleId,
@@ -203,7 +257,8 @@ export async function exportProjectBundle(
 		displayName: options.displayName,
 		policy: options.policy,
 		sources,
-		assets
+		assets,
+		cacheManifest
 	};
 
 	progress('project');

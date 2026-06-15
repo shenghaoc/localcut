@@ -1,4 +1,5 @@
 import type { BundleSourcePolicySnapshot, BundleIntegrityReportSnapshot } from '../../protocol';
+import { beatCachePath } from '../beat-cache';
 import type { ClipLut } from '../lut';
 import { loadStoredProject, type StoredSourceRecord } from '../persistence';
 import { serializeProject, type ProjectDoc } from '../project';
@@ -7,6 +8,36 @@ import { exportProjectBundle } from './export';
 import { importProjectBundle } from './import';
 import { createFsDirectorySink } from './sinks';
 import type { BundleIntegrityReport, BundleSourcePolicy } from './types';
+
+// Phase 34 bundle round-trip helpers: read OPFS-cached beat results for export
+// and write them back on import. Kept here (not in beat-cache.ts) because they
+// operate on raw JSON text -- the bundle stores the exact on-disk file format.
+
+async function readBeatCacheText(fingerprintDigest: string): Promise<string | null> {
+	if (typeof navigator === 'undefined' || !navigator.storage?.getDirectory) return null;
+	try {
+		const root = await navigator.storage.getDirectory();
+		const dir = await root.getDirectoryHandle('beats', { create: false }).catch(() => null);
+		if (!dir) return null;
+		const file = await dir.getFileHandle(beatCachePath(fingerprintDigest)).catch(() => null);
+		if (!file) return null;
+		const blob = await file.getFile();
+		return await blob.text();
+	} catch {
+		return null;
+	}
+}
+
+async function writeBeatCacheText(fingerprintDigest: string, text: string): Promise<void> {
+	if (typeof navigator === 'undefined' || !navigator.storage?.getDirectory) return;
+	const root = await navigator.storage.getDirectory();
+	const dir = await root.getDirectoryHandle('beats', { create: true });
+	const fileName = beatCachePath(fingerprintDigest);
+	const fileHandle = await dir.getFileHandle(fileName, { create: true });
+	const writable = await fileHandle.createWritable();
+	await writable.write(text);
+	await writable.close();
+}
 
 export interface BundleWorkerContext {
 	getProjectId: () => string;
@@ -119,6 +150,7 @@ export async function runExportProjectBundle(
 			policy: policyFromSnapshot(policy),
 			resolveSourceFile: ctx.resolveSourceFile,
 			collectLuts: ctx.collectLuts,
+			resolveBeatCache: async (_sourceId, fingerprint) => readBeatCacheText(fingerprint.digest),
 			isCancelled: () => job.cancelled,
 			onProgress: ({ phase, bytesDone, bytesTotal }) => {
 				ctx.postProgress(jobId, phase, bytesDone, bytesTotal);
@@ -202,7 +234,8 @@ export async function runImportProjectBundle(
 			attachSource: async (descriptor, file) => {
 				const attached = await ctx.attachSourceFile(descriptor, file, true);
 				return attached.ok ? { ok: true } : { ok: false, message: attached.message };
-			}
+			},
+			persistBeatCache: writeBeatCacheText
 		});
 
 		ctx.postIntegrity(jobId, toReportSnapshot(result.report));

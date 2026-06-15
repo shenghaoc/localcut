@@ -64,6 +64,7 @@ import { Toolbar } from './Toolbar';
 import { Timeline } from './Timeline';
 import { Inspector, type SelectedClip, type SelectedTransition } from './Inspector';
 import { MediaBin } from './MediaBin';
+import { BeatPanel } from './BeatPanel';
 import { TranscriptPanel } from './TranscriptPanel';
 import { ThumbnailStore } from './thumbnail-store';
 import { AudioEngine } from './audio-engine';
@@ -432,6 +433,18 @@ export function App() {
 	});
 	const [restoreOffer, setRestoreOffer] = createSignal<RestoreOfferState | null>(null);
 	const [unresolvedSources, setUnresolvedSources] = createSignal<SourceDescriptorSnapshot[]>([]);
+	// Phase 34: Beat analysis state
+	const [beatResults, setBeatResults] = createSignal<
+		Map<string, { tempoBpm: number; beatTimesMs: number[] }>
+	>(new Map());
+	const [beatProgress, setBeatProgress] = createSignal<Map<string, number>>(new Map());
+	const [beatSettings, setBeatSettings] = createSignal<{
+		enabledSourceIds: string[];
+		globalOffsetMs: number;
+	}>({
+		enabledSourceIds: [],
+		globalOffsetMs: 0
+	});
 	const [assets, setAssets] = createSignal<MediaAssetSnapshot[]>([]);
 	const [latestHealthReport, setLatestHealthReport] =
 		createSignal<SourceHealthReportSnapshot | null>(null);
@@ -1785,6 +1798,48 @@ export function App() {
 				setRuntimeIssue(msg.message);
 				setStatusLine(msg.message);
 				break;
+			// Phase 34: Beat Detection
+			case 'beat-analysis-progress':
+				setBeatProgress((prev) => {
+					const next = new Map(prev);
+					next.set(msg.sourceId, msg.fraction);
+					return next;
+				});
+				break;
+			case 'beat-analysis-result':
+				setBeatResults((prev) => {
+					const next = new Map(prev);
+					next.set(msg.sourceId, {
+						tempoBpm: msg.tempoBpm,
+						beatTimesMs: msg.beatTimesMs
+					});
+					return next;
+				});
+				setBeatProgress((prev) => {
+					const next = new Map(prev);
+					next.delete(msg.sourceId);
+					return next;
+				});
+				setStatusLine(
+					`Beat analysis complete: ${msg.tempoBpm.toFixed(0)} BPM, ${msg.beatTimesMs.length} beats`
+				);
+				break;
+			case 'beat-analysis-error':
+				setBeatProgress((prev) => {
+					const next = new Map(prev);
+					next.delete(msg.sourceId);
+					return next;
+				});
+				setStatusLine(`Beat analysis failed: ${msg.message}`);
+				break;
+			case 'beat-settings':
+				// Worker is the source of truth on restore/import -- adopt the
+				// persisted settings without echoing back to avoid a feedback loop.
+				setBeatSettings({
+					enabledSourceIds: [...msg.enabledSourceIds],
+					globalOffsetMs: msg.globalOffsetMs
+				});
+				break;
 		}
 	}
 
@@ -1997,6 +2052,12 @@ export function App() {
 		thumbnailStore.clear();
 		setThumbnailVersion((v) => v + 1);
 		setHistoryState({ canUndo: false, canRedo: false });
+		// Phase 34: clear any stale beat results / progress / grid settings
+		// from the prior project so a new import doesn't inherit the BPM,
+		// grid, or in-flight progress of an unrelated source.
+		setBeatResults(new Map());
+		setBeatProgress(new Map());
+		setBeatSettings({ enabledSourceIds: [], globalOffsetMs: 0 });
 	}
 
 	function startNewProject() {
@@ -2924,6 +2985,57 @@ export function App() {
 								onPlace={(sourceId) => bridge?.send({ type: 'place-clip', sourceId })}
 								onRemove={(sourceId) => bridge?.send({ type: 'remove-asset', sourceId })}
 							/>
+							<BeatPanel
+								assets={assets}
+								beatResults={beatResults}
+								beatSettings={beatSettings}
+								analysisProgress={beatProgress}
+								onAnalyse={(sourceId) => bridge?.send({ type: 'analyze-beats', sourceId })}
+								onCancel={(sourceId) => {
+									bridge?.send({ type: 'cancel-beat-analysis', sourceId });
+									// The worker intentionally sends no terminal message for an
+									// explicit cancel (cancellation isn't an error). Clear the
+									// progress entry optimistically so the BeatPanel row exits
+									// the analysing state immediately.
+									setBeatProgress((prev) => {
+										if (!prev.has(sourceId)) return prev;
+										const next = new Map(prev);
+										next.delete(sourceId);
+										return next;
+									});
+								}}
+								onToggleSource={(sourceId, enabled) => {
+									const current = beatSettings();
+									const ids = enabled
+										? [...current.enabledSourceIds, sourceId]
+										: current.enabledSourceIds.filter((id) => id !== sourceId);
+									bridge?.send({
+										type: 'set-beat-settings',
+										enabledSourceIds: ids,
+										globalOffsetMs: current.globalOffsetMs
+									});
+									setBeatSettings({ ...current, enabledSourceIds: ids });
+								}}
+								onOffsetChange={(offsetMs) => {
+									const current = beatSettings();
+									bridge?.send({
+										type: 'set-beat-settings',
+										enabledSourceIds: current.enabledSourceIds,
+										globalOffsetMs: offsetMs
+									});
+									setBeatSettings({ ...current, globalOffsetMs: offsetMs });
+								}}
+								onAutoCut={(mode) => {
+									const selected = selectedClipRefs();
+									if (selected.length === 0) return;
+									bridge?.send({
+										type: 'beat-auto-cut',
+										mode,
+										clipRefs: selected.map((r) => ({ trackId: r.trackId, clipId: r.clipId }))
+									});
+								}}
+								selectedClipCount={() => selectedClipRefs().length}
+							/>
 						</Show>
 						<section class="preview panel">
 							<Show when={previewKey() + 1} keyed>
@@ -3472,6 +3584,8 @@ export function App() {
 						waveformPeaks={() => waveformPeaks()}
 						transitions={transitions}
 						selectedTransition={selectedTransition}
+						beatResults={beatResults}
+						beatSettings={beatSettings}
 						onSelectTransition={(transitionId, fromClipId, toClipId, trackId) => {
 							const transition = transitions().find((t) => t.id === transitionId);
 							if (transition) {
