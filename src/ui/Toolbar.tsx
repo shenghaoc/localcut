@@ -5,6 +5,7 @@ import {
 	Cpu,
 	Crop,
 	FolderOpen,
+	Globe,
 	Gauge,
 	Keyboard,
 	Languages,
@@ -55,6 +56,7 @@ interface ToolbarProps {
 	onOpenSilenceReview?: () => void;
 	onImportKeystrokeOverlay?: () => void;
 	keystrokeOverlayAvailable?: boolean;
+	onOpenLanguageTools?: () => void;
 	onOpenPublish?: () => void;
 	/** True while a publish session is connecting/live/reconnecting. */
 	publishLive?: boolean;
@@ -268,6 +270,17 @@ export function Toolbar(props: ToolbarProps) {
 					<Languages size={13} aria-hidden="true" />
 					Auto Captions
 				</button>
+				<Show when={props.onOpenLanguageTools}>
+					<button
+						type="button"
+						class="pipeline-chip pipeline-chip-button"
+						onClick={() => props.onOpenLanguageTools?.()}
+						title="Language Tools — translate captions and draft copy on-device"
+					>
+						<Globe size={13} aria-hidden="true" />
+						Language Tools
+					</button>
+				</Show>
 				<button
 					type="button"
 					class="pipeline-chip pipeline-chip-button"

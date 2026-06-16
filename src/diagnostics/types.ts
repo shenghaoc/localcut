@@ -95,7 +95,8 @@ export type DiagnosticSubsystem =
 	| 'timeline'
 	| 'accessibility'
 	| 'performance'
-	| 'matte';
+	| 'matte'
+	| 'language-tools';
 
 export type DiagnosticSeverity = 'info' | 'warning' | 'error' | 'critical';
 
