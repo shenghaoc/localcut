@@ -251,21 +251,26 @@ export function startCleanupWorker(backend: CleanupBackend): void {
 		const generation = loadGeneration;
 		const active = job;
 		const startedAt = performance.now();
+		// `cleanup-cancel`/`cleanup-dispose` bypass the message queue, so they can run
+		// between the awaits below — nulling `job` (and aborting its processor) or
+		// bumping the load generation. Bail at each boundary so a superseded job never
+		// posts its (transferred) result; the canceller already dropped the job.
+		const superseded = () => generation !== loadGeneration || job !== active;
 		try {
 			if (active.resampler) {
 				const tail = active.resampler.flush();
 				if (tail.length > 0) {
 					const out = await active.processor.push(tail);
-					if (generation !== loadGeneration) {
-						dropJob();
+					if (superseded()) {
+						if (job === active) dropJob();
 						return;
 					}
 					if (out.length > 0) active.outputs.push(out);
 				}
 			}
 			const finalOut = await active.processor.finalize();
-			if (generation !== loadGeneration) {
-				dropJob();
+			if (superseded()) {
+				if (job === active) dropJob();
 				return;
 			}
 			if (finalOut.length > 0) active.outputs.push(finalOut);

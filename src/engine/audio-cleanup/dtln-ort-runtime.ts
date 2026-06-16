@@ -135,22 +135,27 @@ export class DtlnOrtRuntime {
 		this.state2.fill(0);
 	}
 
+	// These run ~125×/s per model, so they avoid per-frame allocations: the state
+	// is passed by reference (ORT reads inputs without mutating them, and the field
+	// is *reassigned* from the output below — never mutated in place — so the input
+	// never aliases the next call's state), and `toFloat32` already returns a fresh,
+	// exactly-sized copy of each output, so no extra `.slice` is needed.
 	async runModel1(magnitude: Float32Array): Promise<Float32Array> {
 		const { magnitudeInput, stateInput, maskOutput, stateOutput } = this.io.model1;
 		const input = new this.ort.Tensor('float32', magnitude, [1, 1, DTLN_FREQ_BINS]);
-		const state = new this.ort.Tensor('float32', this.state1.slice(), this.stateShape);
+		const state = new this.ort.Tensor('float32', this.state1, this.stateShape);
 		const outputs = await this.session1.run({ [magnitudeInput]: input, [stateInput]: state });
 		this.state1 = toFloat32(outputs[stateOutput], stateOutput);
-		return toFloat32(outputs[maskOutput], maskOutput).slice(0, DTLN_FREQ_BINS);
+		return toFloat32(outputs[maskOutput], maskOutput);
 	}
 
 	async runModel2(estimated: Float32Array): Promise<Float32Array> {
 		const { frameInput, stateInput, frameOutput, stateOutput } = this.io.model2;
 		const input = new this.ort.Tensor('float32', estimated, [1, 1, DTLN_BLOCK_LEN]);
-		const state = new this.ort.Tensor('float32', this.state2.slice(), this.stateShape);
+		const state = new this.ort.Tensor('float32', this.state2, this.stateShape);
 		const outputs = await this.session2.run({ [frameInput]: input, [stateInput]: state });
 		this.state2 = toFloat32(outputs[stateOutput], stateOutput);
-		return toFloat32(outputs[frameOutput], frameOutput).slice(0, DTLN_BLOCK_LEN);
+		return toFloat32(outputs[frameOutput], frameOutput);
 	}
 
 	destroy(): void {
