@@ -49,7 +49,7 @@ function isObject(v: unknown): v is Record<string, unknown> {
 
 const CHECKSUM_RE = /^sha256-[0-9a-f]{64}$/;
 
-function validateAsset(value: unknown, field: string): AsrModelAssetSnapshot {
+export function validateAsset(value: unknown, field: string): AsrModelAssetSnapshot {
 	if (!isObject(value)) throw new AsrManifestError(`${field} must be an object`);
 	if (!isNonEmptyString(value['url']))
 		throw new AsrManifestError(`${field}.url must be a non-empty string`);
@@ -64,7 +64,7 @@ function validateAsset(value: unknown, field: string): AsrModelAssetSnapshot {
 	};
 }
 
-function validateSpecialTokens(value: unknown): AsrSpecialTokens {
+export function validateSpecialTokens(value: unknown): AsrSpecialTokens {
 	if (!isObject(value)) throw new AsrManifestError('tokens must be an object');
 	for (const field of [
 		'startOfTranscript',
@@ -100,7 +100,7 @@ function isFiniteNumber(v: unknown): v is number {
 	return typeof v === 'number' && Number.isFinite(v);
 }
 
-function validateDecodeParams(value: unknown): AsrDecodeParams | null {
+export function validateDecodeParams(value: unknown): AsrDecodeParams | null {
 	if (value === undefined || value === null) return null;
 	if (!isObject(value)) throw new AsrManifestError('decode must be an object or null');
 	const params: AsrDecodeParams = {};
@@ -147,6 +147,48 @@ function validateDecodeParams(value: unknown): AsrDecodeParams | null {
 	return params;
 }
 
+/** The fixed audio contract Whisper runs on (16 kHz mono), shared by the LiteRT
+ *  and ONNX manifests. */
+export type AsrAudioConfig = AsrModelManifestSnapshot['audio'];
+
+/**
+ * The transcribe-time configuration the worker's decode path depends on, shared
+ * by every Whisper manifest regardless of runtime (LiteRT TFLite or ONNX). Both
+ * {@link AsrModelManifestSnapshot} and the ONNX manifest snapshot satisfy this
+ * structurally, so transcription stays engine-agnostic.
+ */
+export interface AsrTranscribeConfig {
+	/** Total download size — surfaced in the loaded-model status. */
+	sizeBytes: number;
+	audio: AsrAudioConfig;
+	maxDecodeTokens: number;
+	vocabSize: number;
+	tokens: AsrSpecialTokens;
+	languages: string[];
+	defaultLanguage: string | null;
+	decode: AsrDecodeParams | null;
+}
+
+/** Validates the `audio` block: 16 kHz mono with positive hop/mel/chunk values. */
+export function validateAudioConfig(value: unknown): AsrAudioConfig {
+	if (!isObject(value)) throw new AsrManifestError('audio must be an object');
+	if (value['sampleRate'] !== 16000) throw new AsrManifestError('audio.sampleRate must be 16000');
+	if (value['channels'] !== 1) throw new AsrManifestError('audio.channels must be 1');
+	if (!isPositiveNumber(value['hopLength']))
+		throw new AsrManifestError('audio.hopLength must be a positive number');
+	if (!isPositiveNumber(value['nMel']))
+		throw new AsrManifestError('audio.nMel must be a positive number');
+	if (!isPositiveNumber(value['chunkLengthS']))
+		throw new AsrManifestError('audio.chunkLengthS must be a positive number');
+	return {
+		sampleRate: 16000,
+		channels: 1,
+		hopLength: value['hopLength'],
+		nMel: value['nMel'],
+		chunkLengthS: value['chunkLengthS']
+	};
+}
+
 /**
  * Validates an untrusted manifest document. Throws {@link AsrManifestError} with
  * a precise reason on the first violation. Unknown fields are tolerated so the
@@ -175,16 +217,7 @@ export function validateAsrManifest(value: unknown): AsrModelManifestSnapshot {
 			`sizeBytes (${declaredSize}) must equal the sum of asset sizes (${assetSum})`
 		);
 
-	const audio = value['audio'];
-	if (!isObject(audio)) throw new AsrManifestError('audio must be an object');
-	if (audio['sampleRate'] !== 16000) throw new AsrManifestError('audio.sampleRate must be 16000');
-	if (audio['channels'] !== 1) throw new AsrManifestError('audio.channels must be 1');
-	if (!isPositiveNumber(audio['hopLength']))
-		throw new AsrManifestError('audio.hopLength must be a positive number');
-	if (!isPositiveNumber(audio['nMel']))
-		throw new AsrManifestError('audio.nMel must be a positive number');
-	if (!isPositiveNumber(audio['chunkLengthS']))
-		throw new AsrManifestError('audio.chunkLengthS must be a positive number');
+	const audio = validateAudioConfig(value['audio']);
 
 	if (!isPositiveNumber(value['maxDecodeTokens']))
 		throw new AsrManifestError('maxDecodeTokens must be a positive number');
@@ -215,13 +248,7 @@ export function validateAsrManifest(value: unknown): AsrModelManifestSnapshot {
 		sizeBytes: declaredSize,
 		model,
 		tokenizer,
-		audio: {
-			sampleRate: 16000,
-			channels: 1,
-			hopLength: audio['hopLength'] as number,
-			nMel: audio['nMel'] as number,
-			chunkLengthS: audio['chunkLengthS'] as number
-		},
+		audio,
 		maxDecodeTokens: value['maxDecodeTokens'] as number,
 		vocabSize: value['vocabSize'] as number,
 		encoderFramesPerSecond: value['encoderFramesPerSecond'] as number,

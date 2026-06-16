@@ -30,6 +30,7 @@ function createState(overrides: Partial<AsrControllerState> = {}): AsrController
 		modelStatus: 'not-loaded',
 		modelSizeBytes: null,
 		accelerator: 'webgpu',
+		engine: null,
 		downloadFraction: null,
 		downloadedBytes: null,
 		cached: null,

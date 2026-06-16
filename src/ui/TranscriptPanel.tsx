@@ -102,9 +102,10 @@ function generatedTrackInfo(track: CaptionTrackSnapshot): GeneratedTrackInfo | n
 				? new Date(parsed.createdAt)
 				: null;
 		const engine = typeof parsed.engine === 'string' ? parsed.engine : 'auto captions';
+		const knownEngine = engine === 'litert-whisper' || engine === 'ort-whisper';
 		return {
 			createdAt,
-			label: engine === 'litert-whisper' ? 'Auto captions' : engine
+			label: knownEngine ? 'Auto captions' : engine
 		};
 	} catch {
 		return null;

@@ -1,5 +1,6 @@
 /**
- * "Auto Captions (Experimental)" panel — Phase 29 (LiteRT.js Whisper).
+ * "Auto Captions (Experimental)" panel — Phase 29 (on-device Whisper: ONNX
+ * Runtime Web or LiteRT.js, chosen per the selected model).
  *
  * Thin renderer over `AsrController` state. Everything heavy happens in the
  * lazily spawned ASR worker; this component only shows status, drives actions,
@@ -92,7 +93,13 @@ export const AutoCaptionsPanel: Component<AutoCaptionsPanelProps> = (props) => {
 		// Once loaded, show the accelerator that actually compiled; before that,
 		// show the ASR accelerator the controller will request.
 		const accel = props.state.accelerator ?? preferredAccelerator(props.state.probe);
-		return `LiteRT Whisper (${accel.toUpperCase()})`;
+		// Engine is authoritative once loaded; before that, infer it from the
+		// selected model's manifest (ONNX models live under /models/whisper-onnx/).
+		const engine =
+			props.state.engine ??
+			(props.state.model.manifestUrl.includes('whisper-onnx') ? 'ort-whisper' : 'litert-whisper');
+		const runtime = engine === 'ort-whisper' ? 'ONNX Whisper' : 'LiteRT Whisper';
+		return `${runtime} (${accel.toUpperCase()})`;
 	};
 	const isLoading = () => props.state.modelStatus === 'loading';
 	const isCompilingModel = () =>
@@ -328,7 +335,7 @@ export const AutoCaptionsPanel: Component<AutoCaptionsPanelProps> = (props) => {
 								disabled={!availability().loadModel.enabled}
 								title={
 									availability().loadModel.reason ??
-									'Download and compile the LiteRT Whisper model (cached for offline reuse)'
+									'Download and compile the selected Whisper model (cached for offline reuse)'
 								}
 								onClick={props.onLoadModel}
 							>
@@ -373,8 +380,9 @@ export const AutoCaptionsPanel: Component<AutoCaptionsPanelProps> = (props) => {
 				</Show>
 
 				<footer class="capability-panel-note">
-					Model: Whisper (MIT, OpenAI) compiled with LiteRT.js on WebNN, WebGPU, or WASM. Assets
-					load from this app's own origin only after you click "Load model".
+					Model: Whisper (MIT, OpenAI) run on-device by ONNX Runtime Web (WASM) or LiteRT.js
+					(WebNN/WebGPU/WASM), depending on the selected model. Assets load from this app's own
+					origin only after you click "Load model".
 				</footer>
 			</aside>
 		</Show>

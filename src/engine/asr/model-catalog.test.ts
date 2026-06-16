@@ -77,13 +77,18 @@ describe('catalog', () => {
 		expect(modelById(null).id).toBe(defaultModel().id);
 	});
 
-	it('offers Whisper Base + Tiny with distinct manifests, defaulting to base', () => {
+	it('offers ONNX + LiteRT Whisper variants with distinct manifests, defaulting to ONNX int8', () => {
 		const ids = ASR_MODEL_CATALOG.map((entry) => entry.id);
-		expect(ids).toContain('whisper-base');
-		expect(ids).toContain('whisper-tiny');
-		expect(defaultModel().id).toBe('whisper-base');
+		// The int8-quantized ONNX base is the default: a far smaller first download
+		// (~77 MB) than the fp32 LiteRT build (~290 MB) for a PWA.
+		expect(defaultModel().id).toBe('whisper-base-onnx-int8');
+		// Both runtimes' base + tiny stay selectable behind the one picker.
+		expect(ids).toContain('whisper-base-onnx-int8');
+		expect(ids).toContain('whisper-tiny-onnx-int8');
+		expect(ids).toContain('whisper-base'); // LiteRT fp32
+		expect(ids).toContain('whisper-tiny'); // LiteRT fp32
 		expect(modelById('whisper-tiny').id).toBe('whisper-tiny');
-		// Distinct manifest URLs so the two models cache + switch independently.
+		// Distinct manifest URLs so each model caches + switches independently.
 		const manifests = new Set(ASR_MODEL_CATALOG.map((entry) => entry.manifestUrl));
 		expect(manifests.size).toBe(ASR_MODEL_CATALOG.length);
 	});

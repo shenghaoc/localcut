@@ -29,8 +29,11 @@ zero-copy GPU-buffer tensor IO — ORT ≤ 1.25 ignored an injected
 ORT 1.26+ closes that gap: a session can run on a caller-provided `GPUDevice`,
 and `env.webgpu.device` exposes the device ORT created so the app can share it.
 That, plus ONNX's far larger model ecosystem and the WebNN execution provider,
-makes **ONNX Runtime Web the repo's long-term model runtime.** This foundation
-adds ORT as infrastructure without migrating any LiteRT feature yet.
+makes **ONNX Runtime Web the repo's long-term model runtime.** **Whisper
+auto-captions** is the first feature to migrate: an int8-quantized ONNX
+encoder/decoder pair on the ORT-WASM EP now ships as the default Auto Captions
+model (see "Whisper auto-captions on ORT" below), with the LiteRT fp32 build kept
+as a selectable fallback. DTLN and matte stay on LiteRT until their own PRs.
 
 The two device-sharing directions are proven by the spikes in
 `src/engine/ml/ort/`:
@@ -136,9 +139,37 @@ New and in-flight ML work should target ORT, not LiteRT:
   (`format: 'onnx'`, pinned size + SHA), load bytes via `loadOrtModelAsset()`,
   and create the session via `createOrtSession()`. Choose the EP from the table
   above; default to `webgpu` unless the model is small and non-frame-coupled.
-- **Existing LiteRT features (DTLN, Whisper, matte)** keep working unchanged on
-  their current path. They migrate to ORT in their own dedicated PRs, not as a
-  side effect of unrelated work — this foundation does not touch them.
+- **Whisper auto-captions** has migrated to ORT (this PR) — see the section
+  below. The LiteRT Whisper path stays as a selectable fallback.
+- **Remaining LiteRT features (DTLN, matte)** keep working unchanged on their
+  current path. They migrate to ORT in their own dedicated PRs, not as a side
+  effect of unrelated work — this foundation does not touch them.
+
+## Whisper auto-captions on ORT (non-frame-coupled exemplar)
+
+Auto Captions is the first shipped ORT feature and the template for a **small,
+non-frame-coupled** model — the opposite end of the policy from frame interpolation:
+
+- **EP: `wasm`, tensor location `cpu`.** ASR is not per-video-frame, so the
+  no-WASM hard gate does not apply. The autoregressive decoder is latency-bound by
+  per-step graph dispatch, where a GPU EP's per-call sync overhead and patchier
+  Whisper op coverage make WASM the robust default. The ASR worker is a classic
+  worker with no renderer `GPUDevice`, so there is nothing to share anyway.
+- **Encoder + no-past decoder.** The model is an encoder/decoder **pair**
+  (`onnx-community/whisper-*`), not one graph. The shipped `decoder` is the
+  no-past graph; each greedy step re-runs it with the full token sequence and
+  reads the last logits row, so the shared engine-agnostic `whisper-decode.ts`
+  drives both the ORT and LiteRT runtimes unchanged. `whisper-ort-runtime.ts`
+  builds both sessions via `createOrtSession()` and fetches only `logits` (the
+  no-past decoder also emits `present.*` KV tensors that are ignored).
+- **int8 by default.** Quantized ONNX is ~77 MB (base) / ~41 MB (tiny) versus the
+  290 MB fp32 LiteRT base — a far friendlier PWA download. See
+  `public/models/whisper-onnx/README.md` for the full size-vs-quality table and
+  the digest-provenance procedure.
+- **Manifest:** `src/engine/asr/ort-whisper-manifest.ts` validates the ONNX
+  Whisper manifest (multi-asset encoder/decoder/tokenizer + IO contract), reusing
+  the audio/token/decode validators from the LiteRT manifest. The worker routes a
+  fetched manifest to the ORT path on its `runtime: "ort-whisper"` discriminator.
 
 ## Foundation module map
 
