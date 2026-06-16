@@ -20,7 +20,7 @@ export type BundleAssetKind =
 	| 'thumbnail'
 	| 'waveform'
 	| 'proxy'
-	| 'beats';
+	| 'cover';
 
 export interface BundleAsset {
 	assetId: string;

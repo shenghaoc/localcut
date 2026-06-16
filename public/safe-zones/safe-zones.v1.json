@@ -1,0 +1,45 @@
+{
+  "safeZoneSchemaVersion": 1,
+  "platforms": [
+    {
+      "id": "douyin",
+      "label": "Douyin",
+      "aspect": "9:16",
+      "zones": [
+        { "id": "douyin-bottom-bar", "label": "Bottom UI bar (share / comments / likes)", "rect": { "x": 0, "y": 0.75, "w": 1, "h": 0.25 }, "kind": "occluded" },
+        { "id": "douyin-right-column", "label": "Right interaction column", "rect": { "x": 0.78, "y": 0.20, "w": 0.22, "h": 0.55 }, "kind": "occluded" },
+        { "id": "douyin-safe", "label": "Recommended safe area", "rect": { "x": 0.05, "y": 0.08, "w": 0.70, "h": 0.64 }, "kind": "caution" }
+      ]
+    },
+    {
+      "id": "xiaohongshu",
+      "label": "Xiaohongshu (xiao hong shu)",
+      "aspect": "9:16",
+      "zones": [
+        { "id": "xhs-bottom-bar", "label": "Bottom nav / caption area", "rect": { "x": 0, "y": 0.80, "w": 1, "h": 0.20 }, "kind": "occluded" },
+        { "id": "xhs-top-bar", "label": "Top status / back bar", "rect": { "x": 0, "y": 0, "w": 1, "h": 0.07 }, "kind": "occluded" },
+        { "id": "xhs-safe", "label": "Recommended safe area", "rect": { "x": 0.05, "y": 0.10, "w": 0.90, "h": 0.68 }, "kind": "caution" }
+      ]
+    },
+    {
+      "id": "shorts",
+      "label": "YouTube Shorts",
+      "aspect": "9:16",
+      "zones": [
+        { "id": "shorts-bottom-bar", "label": "Bottom title / action bar", "rect": { "x": 0, "y": 0.72, "w": 1, "h": 0.28 }, "kind": "occluded" },
+        { "id": "shorts-right-column", "label": "Right action column", "rect": { "x": 0.80, "y": 0.20, "w": 0.20, "h": 0.52 }, "kind": "occluded" },
+        { "id": "shorts-safe", "label": "Recommended safe area", "rect": { "x": 0.05, "y": 0.06, "w": 0.70, "h": 0.65 }, "kind": "caution" }
+      ]
+    },
+    {
+      "id": "reels",
+      "label": "Instagram Reels",
+      "aspect": "9:16",
+      "zones": [
+        { "id": "reels-bottom-bar", "label": "Bottom caption / action bar", "rect": { "x": 0, "y": 0.70, "w": 1, "h": 0.30 }, "kind": "occluded" },
+        { "id": "reels-right-column", "label": "Right like / comment / share column", "rect": { "x": 0.78, "y": 0.18, "w": 0.22, "h": 0.52 }, "kind": "occluded" },
+        { "id": "reels-safe", "label": "Recommended safe area", "rect": { "x": 0.05, "y": 0.08, "w": 0.68, "h": 0.60 }, "kind": "caution" }
+      ]
+    }
+  ]
+}

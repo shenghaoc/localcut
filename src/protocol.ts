@@ -44,6 +44,12 @@ export type CapabilityTierV2 =
 export type PreviewBackend = 'core-webgpu' | 'compat-webgpu' | 'canvas2d' | 'none';
 export type ExportBackend = 'core-webgpu' | 'compat-webgpu' | 'canvas2d' | 'none';
 
+// ── Phase 39: Vertical and Platform Finishing ──
+
+export type ProjectAspect = '16:9' | '9:16' | '1:1' | '4:5';
+export interface ProjectFormat { aspect: ProjectAspect; }
+export interface CoverFrameDoc { timeS: number; titleClipId?: string | null; }
+
 export interface CodecProbeResult {
 	h264Decode: FeatureSupport;
 	vp9Decode: FeatureSupport;
@@ -794,6 +800,7 @@ export interface ExportPresetDoc {
 	videoBitrate: number;
 	preset: ExportPreset;
 	outputTemplate?: string;
+	targetLufs?: number;
 }
 
 export type JobRangeMode = 'full' | 'range' | 'markers';
@@ -833,6 +840,7 @@ export interface RenderQueueJob {
 	completedAt: string | null;
 	elapsedSeconds: number | null;
 	outputBytes: number | null;
+	coverExportError?: string | null;
 }
 
 export interface PersistedQueueJob {
@@ -849,6 +857,7 @@ export interface PersistedQueueJob {
 	completedAt: string | null;
 	elapsedSeconds: number | null;
 	outputBytes: number | null;
+	coverExportError?: string | null;
 }
 
 export interface RenderQueueState {
@@ -2194,7 +2203,7 @@ export type WorkerCommand =
 	| { type: 'queue-cancel-job'; jobId: string }
 	| { type: 'queue-cancel-all' }
 	| { type: 'queue-retry'; jobId: string }
-	| { type: 'queue-job-output'; jobId: string; handle: FileSystemFileHandle }
+	| { type: 'queue-job-output'; jobId: string; handle: FileSystemFileHandle; outputDir?: FileSystemDirectoryHandle | null }
 	| { type: 'queue-job-skip'; jobId: string }
 	| { type: 'queue-set-stop-on-error'; stopOnError: boolean }
 	| { type: 'request-diagnostic-snapshot'; requestId: string }
@@ -2295,6 +2304,9 @@ export type WorkerCommand =
 			beauty: Partial<BeautyEffectSnapshot>;
 	  }
 	| { type: 'unload-beauty-model' }
+	// Phase 39: Vertical and Platform Finishing
+	| { type: 'set-project-format'; aspect: ProjectAspect }
+	| { type: 'set-cover-frame'; timeS: number; titleClipId?: string | null }
 	| { type: 'dispose' };
 
 /** A measured preview resolution tier (adaptive downscale of the decode path). */
@@ -2612,6 +2624,10 @@ export type WorkerStateMessage =
 			cadenceHz?: number;
 			activeModel?: string;
 	  }
+	// Phase 39: Vertical and Platform Finishing
+	| { type: 'project-format-changed'; aspect: ProjectAspect }
+	| { type: 'cover-frame-changed'; cover: CoverFrameDoc | null }
+	| { type: 'cover-export-warning'; jobId: string; error: string }
 	| { type: 'error'; message: string };
 
 // ── Phase 46: Replay Buffer + Live Audio Chain ──

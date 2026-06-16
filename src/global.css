@@ -1649,6 +1649,8 @@ body {
 	justify-content: center;
 	min-height: 0;
 	overflow: hidden;
+	--preview-aspect: 16 / 9;
+	--preview-aspect-num: 1.778;
 	background:
 		radial-gradient(
 			ellipse 70% 50% at 50% 0%,
@@ -1664,10 +1666,10 @@ body {
 .preview-canvas {
 	width: min(
 		100%,
-		calc((100vh - var(--toolbar-h) - var(--timeline-h) - var(--status-h) - 28px) * 16 / 9)
+		calc((100vh - var(--toolbar-h) - var(--timeline-h) - var(--status-h) - 28px) * var(--preview-aspect-num, 1.778))
 	);
 	max-width: 100%;
-	aspect-ratio: 16 / 9;
+	aspect-ratio: var(--preview-aspect, 16 / 9);
 	height: auto;
 	max-height: 100%;
 	background: #050610;
@@ -1694,10 +1696,10 @@ body {
 	transform: translate(-50%, -50%);
 	width: min(
 		100%,
-		calc((100vh - var(--toolbar-h) - var(--timeline-h) - var(--status-h) - 28px) * 16 / 9)
+		calc((100vh - var(--toolbar-h) - var(--timeline-h) - var(--status-h) - 28px) * var(--preview-aspect-num, 1.778))
 	);
 	max-width: 100%;
-	aspect-ratio: 16 / 9;
+	aspect-ratio: var(--preview-aspect, 16 / 9);
 	pointer-events: none;
 	z-index: 3;
 }
@@ -1715,6 +1717,41 @@ body {
 .safe-area-title {
 	inset: 10%;
 	border-color: rgb(255 255 255 / 35%);
+}
+
+/* Phase 39: Platform safe-zone overlays */
+.safe-zone-overlay {
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+	z-index: 3;
+}
+
+.safe-zone-rect-occluded {
+	position: absolute;
+	box-sizing: border-box;
+	background: rgb(255 80 80 / 22%);
+	border: 1px dashed rgb(255 80 80 / 70%);
+}
+
+.safe-zone-rect-caution {
+	position: absolute;
+	box-sizing: border-box;
+	background: rgb(255 200 0 / 10%);
+	border: 1px dashed rgb(255 200 0 / 55%);
+}
+
+/* Phase 39: Export dimension/preset warnings */
+.export-aspect-warning {
+	color: rgb(255 200 0);
+	font-size: 12px;
+	margin: 4px 0;
+}
+
+.export-preset-blocked {
+	color: rgb(255 80 80);
+	font-size: 12px;
+	margin: 4px 0;
 }
 
 .safe-area-toggle {

@@ -4,12 +4,15 @@ import {
 	type CapabilityProbeResult,
 	type CaptionPresetIdSnapshot,
 	type CaptionTrackSnapshot,
+	type CoverFrameDoc,
 	ClockIndex,
 	TIMELINE_EPSILON,
 	type ExportPresetDoc,
 	type ExportSettings,
 	type InterpolationWorkerCommand,
 	type MediaAssetSnapshot,
+	type ProjectAspect,
+	type ProjectFormat,
 	type TimeRange,
 	type RenderQueueJob,
 	type RenderQueueState,
@@ -284,6 +287,7 @@ import {
 } from './render-queue';
 import { createTimelineHistory, type HistoryCoalesceKey } from './history';
 import {
+	aspectOutputSize,
 	cloneMarkersSnapshot,
 	cloneCaptionTracksSnapshot,
 	cloneTimelineSnapshot,
@@ -475,6 +479,9 @@ const THUMBNAIL_WIDTH = 160;
 const history = createTimelineHistory();
 let projectId = makeProjectId();
 let restoreDoc: ProjectDoc | null = null;
+// Phase 39: project format and cover frame
+let projectFormat: ProjectFormat = { aspect: '16:9' };
+let cover: CoverFrameDoc | null = null;
 let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
 let autosaveInFlight: Promise<void> | null = null;
 let restoreOfferGeneration = 0;
@@ -494,6 +501,7 @@ let queueJobAbort: AbortController | null = null;
 let queueJobOutputResolve: ((handle: FileSystemFileHandle | null) => void) | null = null;
 let queueJobOutputJobId: string | null = null;
 const queueJobOutputHandles = new Map<string, FileSystemFileHandle>();
+const queueJobOutputDirs = new Map<string, FileSystemDirectoryHandle>();
 let recentErrors = createEmptyRecentErrorLog();
 let lastWebgpuFeatures: string[] = [];
 let lastWebgpuLimits: Record<string, number> = {};
@@ -1439,7 +1447,10 @@ async function persistCurrentProject(): Promise<void> {
 		beatSettings:
 			beatSettings.enabledSourceIds.length > 0 || beatSettings.globalOffsetMs !== 0
 				? { ...beatSettings, enabledSourceIds: [...beatSettings.enabledSourceIds] }
-				: undefined
+				: undefined,
+		// Phase 39: persist project format and cover frame.
+		projectFormat,
+		cover: cover ?? undefined
 	});
 	await saveStoredProject(doc);
 }
@@ -1745,7 +1756,9 @@ function historySnapshot() {
 		captionTracks,
 		transitions,
 		markers,
-		voiceCleanup: voiceCleanupSettings
+		voiceCleanup: voiceCleanupSettings,
+		projectFormat: { ...projectFormat } as ProjectFormat,
+		cover: cover ? { ...cover } as CoverFrameDoc : null
 	};
 }
 
@@ -2193,6 +2206,11 @@ async function handleRestoreProject(): Promise<void> {
 	}
 	masterGain = doc.masterGain;
 	applyProjectPhase46Config(doc);
+	// Phase 39: restore project format and cover frame from saved doc.
+	projectFormat = doc.projectFormat ? { ...doc.projectFormat } : { aspect: '16:9' };
+	cover = doc.cover ? { ...doc.cover } : null;
+	post({ type: 'project-format-changed', aspect: projectFormat.aspect });
+	post({ type: 'cover-frame-changed', cover });
 	nextSourceId = nextSourceIdFromDescriptors(doc.sources);
 	for (const descriptor of doc.sources) {
 		sourceDescriptors.set(descriptor.sourceId, descriptor);
@@ -2257,6 +2275,9 @@ async function handleNewProject(): Promise<void> {
 	replayRing.updateConfig({ ...DEFAULT_RING_BUFFER_CONFIG });
 	liveChainConfig = cloneLiveChainConfig(DEFAULT_LIVE_AUDIO_CHAIN_CONFIG);
 	voiceCleanupSettings = { ...DEFAULT_VOICE_CLEANUP_SETTINGS };
+	// Phase 39: reset project format and cover frame
+	projectFormat = { aspect: '16:9' };
+	cover = null;
 	// Phase 34: cancel any running beat analysis and clear cached results +
 	// grid settings so the next project starts fresh. Without this, a new
 	// import would inherit the previous project's BPM/beat grid via the
@@ -4859,6 +4880,8 @@ function applyHistoryRestore(next: {
 	transitions: TimelineTransition[];
 	markers: TimelineMarker[];
 	voiceCleanup?: VoiceCleanupSettings;
+	projectFormat?: ProjectFormat;
+	cover?: CoverFrameDoc | null;
 }): void {
 	timeline = cloneTimelineSnapshot(next.timeline);
 	captionTracks = cloneCaptionTracksSnapshot(next.captionTracks ?? []);
@@ -4867,6 +4890,13 @@ function applyHistoryRestore(next: {
 	voiceCleanupSettings = cloneVoiceCleanupSettings(
 		next.voiceCleanup ?? DEFAULT_VOICE_CLEANUP_SETTINGS
 	);
+	// Phase 39: restore project format and cover from history.
+	if (next.projectFormat) {
+		projectFormat = { ...next.projectFormat };
+		post({ type: 'project-format-changed', aspect: projectFormat.aspect });
+	}
+	cover = next.cover ? { ...next.cover } : null;
+	post({ type: 'cover-frame-changed', cover });
 	syncTimelineLuts();
 	syncRemapLuts();
 	// Undo can resurrect clips of a source that was removed from the bin. Re-add
@@ -5107,8 +5137,9 @@ function setupPlayback() {
 	);
 	if (!handle?.frameSource && !hasTitles && !hasBurnedInCaptions) return;
 
-	const width = handle?.frameSource ? handle.displayWidth : TITLE_ONLY_CANVAS.width;
-	const height = handle?.frameSource ? handle.displayHeight : TITLE_ONLY_CANVAS.height;
+	const titleOnly = aspectOutputSize(projectFormat.aspect);
+	const width = handle?.frameSource ? handle.displayWidth : titleOnly.width;
+	const height = handle?.frameSource ? handle.displayHeight : titleOnly.height;
 	const frameRate =
 		handle?.frameSource && handle.frameRate > 0 ? handle.frameRate : TITLE_ONLY_CANVAS.frameRate;
 
@@ -5302,8 +5333,9 @@ function exportSettingsForProbe(): ExportSettings | null {
 	const videoHandle = firstExportVideoHandle();
 	// Title-only timelines export over the default canvas (no decodable video).
 	if (!videoHandle && titleClips().length === 0) return null;
-	const width = videoHandle?.displayWidth ?? TITLE_ONLY_CANVAS.width;
-	const height = videoHandle?.displayHeight ?? TITLE_ONLY_CANVAS.height;
+	const titleOnly = aspectOutputSize(projectFormat.aspect);
+	const width = videoHandle?.displayWidth ?? titleOnly.width;
+	const height = videoHandle?.displayHeight ?? titleOnly.height;
 	const frameRate = videoHandle?.frameRate ?? TITLE_ONLY_CANVAS.frameRate;
 	const timelineDuration = getTimelineDuration(timeline);
 	const base =
@@ -5639,6 +5671,7 @@ function resolveWaitingQueueOutput(jobId: string, handle: FileSystemFileHandle |
 function abortQueueWork() {
 	queueRunning = false;
 	queueJobOutputHandles.clear();
+	queueJobOutputDirs.clear();
 	if (queueJobAbort) {
 		queueJobAbort.abort();
 	} else if (queueJobOutputResolve && queueJobOutputJobId) {
@@ -5674,6 +5707,7 @@ function handleQueueEnqueue(cmd: Extract<WorkerCommand, { type: 'queue-enqueue' 
 
 function handleQueueRemove(cmd: Extract<WorkerCommand, { type: 'queue-remove' }>) {
 	queueJobOutputHandles.delete(cmd.jobId);
+	queueJobOutputDirs.delete(cmd.jobId);
 	queueState = removeJob(queueState, cmd.jobId);
 	postQueueState();
 	scheduleAutosave();
@@ -5686,6 +5720,7 @@ function handleQueueReorder(cmd: Extract<WorkerCommand, { type: 'queue-reorder' 
 
 function handleQueueCancelJob(cmd: Extract<WorkerCommand, { type: 'queue-cancel-job' }>) {
 	queueJobOutputHandles.delete(cmd.jobId);
+	queueJobOutputDirs.delete(cmd.jobId);
 	if (queueState.activeJobId === cmd.jobId) {
 		if (queueJobAbort) {
 			queueJobAbort.abort();
@@ -5701,6 +5736,7 @@ function handleQueueCancelJob(cmd: Extract<WorkerCommand, { type: 'queue-cancel-
 
 function handleQueueCancelAll() {
 	queueJobOutputHandles.clear();
+	queueJobOutputDirs.clear();
 	if (queueJobAbort) {
 		queueJobAbort.abort();
 	} else if (queueJobOutputResolve && queueJobOutputJobId) {
@@ -5723,6 +5759,9 @@ function handleQueueJobOutput(cmd: Extract<WorkerCommand, { type: 'queue-job-out
 	const job = queueState.jobs.find((item) => item.id === cmd.jobId);
 	if (job?.status === 'pending') {
 		queueJobOutputHandles.set(cmd.jobId, cmd.handle);
+		if (cmd.outputDir) {
+			queueJobOutputDirs.set(cmd.jobId, cmd.outputDir);
+		}
 	}
 }
 
@@ -5750,6 +5789,7 @@ async function runQueueJob(job: RenderQueueJob): Promise<void> {
 
 	let handle = queueJobOutputHandles.get(job.id) ?? null;
 	queueJobOutputHandles.delete(job.id);
+	queueJobOutputDirs.delete(job.id);
 
 	if (!handle) {
 		queueState = markJobChoosingDestination(queueState, job.id);
@@ -5934,6 +5974,33 @@ async function runQueueJob(job: RenderQueueJob): Promise<void> {
 			elapsedSeconds,
 			outputBytes
 		});
+
+		// Phase 39: export cover frame alongside completed queue job.
+		if (cover) {
+			const outputDir = queueJobOutputDirs.get(job.id) ?? null;
+			if (outputDir) {
+				const stem = handle.name.replace(/\.[^.]+$/, '');
+				const r = await exportCoverFrame(cover, stem, outputDir);
+				if (!r.ok) {
+					queueState = {
+						...queueState,
+						jobs: queueState.jobs.map((j) =>
+							j.id === job.id ? { ...j, coverExportError: r.error } : j
+						)
+					};
+					post({ type: 'cover-export-warning', jobId: job.id, error: r.error });
+				}
+			} else {
+				const warning = 'Cover export requires a directory destination.';
+				queueState = {
+					...queueState,
+					jobs: queueState.jobs.map((j) =>
+						j.id === job.id ? { ...j, coverExportError: warning } : j
+					)
+				};
+				post({ type: 'cover-export-warning', jobId: job.id, error: warning });
+			}
+		}
 	} catch (error) {
 		if (error instanceof ExportCancelledError || controller.signal.aborted) {
 			queueState = markJobCanceled(queueState, job.id);
@@ -7463,6 +7530,82 @@ function handleUnloadBeautyModel(): void {
 	post({ type: 'beauty-model-status', status: 'not-loaded' });
 }
 
+// ── Phase 39: Vertical and Platform Finishing ──
+
+function handleSetProjectFormat(aspect: ProjectAspect): void {
+	if (projectFormat.aspect === aspect) return;
+	history.push(historySnapshot());
+	projectFormat = { aspect };
+	const { width, height } = aspectOutputSize(aspect);
+	renderer?.setPreviewSize(width, height);
+	reducedRenderer?.setPreviewSize(width, height);
+	post({ type: 'project-format-changed', aspect });
+	postTimelineState();
+	scheduleAutosave();
+}
+
+function handleSetCoverFrame(timeS: number, titleClipId: string | null): void {
+	history.push(historySnapshot());
+	cover = { timeS, titleClipId };
+	post({ type: 'cover-frame-changed', cover });
+	scheduleAutosave();
+}
+
+async function exportCoverFrame(
+	coverDoc: CoverFrameDoc,
+	outputStem: string,
+	outputDir: FileSystemDirectoryHandle
+): Promise<{ ok: true } | { ok: false; error: string }> {
+	try {
+		const { width, height } = aspectOutputSize(projectFormat.aspect);
+		if (!renderer || !previewCanvas) return { ok: false, error: 'No renderer available.' };
+		const getLayers = makeGetLayers();
+		const layers = await getLayers(coverDoc.timeS);
+		if (!layers || layers.length === 0)
+			return { ok: false, error: 'No layers at cover timestamp.' };
+		const stack: import('./gpu').CompositeLayer[] = [];
+		for (const layer of layers) {
+			if (layer.meta.kind === 'title') {
+				const texture = titleCache?.get(layer.meta.clipId);
+				if (!texture) continue;
+				stack.push({
+					kind: 'texture',
+					view: texture.view,
+					sourceWidth: texture.width,
+					sourceHeight: texture.height,
+					transform: layer.meta.transform,
+					transition: layer.meta.transition
+				});
+			} else if (layer.decoded) {
+				const frame = layer.decoded.toVideoFrame();
+				stack.push({
+					kind: 'frame',
+					frame,
+					effects: layer.meta.effects,
+					transform: layer.meta.transform,
+					lut: layer.meta.lut,
+					transition: layer.meta.transition
+				});
+			}
+		}
+		renderer.setPreviewSize(width, height);
+		renderer.present(stack);
+		if (typeof previewCanvas.convertToBlob !== 'function')
+			return { ok: false, error: 'Canvas does not support convertToBlob.' };
+		const blob = await previewCanvas.convertToBlob({ type: 'image/jpeg', quality: 0.9 });
+		const handle = await outputDir.getFileHandle(`${outputStem}.cover.jpg`, { create: true });
+		const w = await handle.createWritable();
+		await w.write(blob);
+		await w.close();
+		return { ok: true };
+	} catch (error) {
+		return {
+			ok: false,
+			error: `Cover export failed: ${error instanceof Error ? error.message : String(error)}`
+		};
+	}
+}
+
 self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 	const cmd = event.data;
 	switch (cmd.type) {
@@ -8174,6 +8317,13 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			break;
 		case 'unload-beauty-model':
 			handleUnloadBeautyModel();
+			break;
+		// Phase 39: Vertical and Platform Finishing
+		case 'set-project-format':
+			handleSetProjectFormat(cmd.aspect);
+			break;
+		case 'set-cover-frame':
+			handleSetCoverFrame(cmd.timeS, cmd.titleClipId ?? null);
 			break;
 		case 'dispose':
 			void handleDispose();

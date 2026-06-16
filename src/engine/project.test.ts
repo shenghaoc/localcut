@@ -269,7 +269,10 @@ describe('project serialization', () => {
 		const result = deserializeProject(doc);
 		expect(result.ok).toBe(true);
 		if (!result.ok) return;
-		expect(result.doc).toEqual(doc);
+		expect(result.doc.schemaVersion).toBe(doc.schemaVersion);
+		expect(result.doc.projectId).toBe(doc.projectId);
+		expect(result.doc.projectFormat).toEqual({ aspect: '16:9' });
+		expect(result.doc.cover).toBeUndefined();
 	});
 
 	it('round-trips clip keyframes and LUT payloads', () => {
@@ -1001,5 +1004,39 @@ describe('Phase 30 (v13) — customAnimCaptionPresets', () => {
 		if (!result.ok) return;
 		expect(result.doc.captionTracks[0]!.segments[0]!.text).toBe('Hello');
 		expect(result.doc.captionTracks[0]!.segments[0]!.words).toBeUndefined();
+	});
+});
+
+describe('Phase 39: projectFormat and cover', () => {
+	it('round-trips projectFormat', () => {
+		const doc = serializeProject({ projectId: 'p', timeline: timelineFixture(), sources: [sourceFixture()], projectFormat: { aspect: '9:16' } });
+		const result = deserializeProject(doc);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.doc.projectFormat).toEqual({ aspect: '9:16' });
+	});
+
+	it('defaults projectFormat to 16:9', () => {
+		const doc = serializeProject({ projectId: 'p', timeline: timelineFixture(), sources: [sourceFixture()] });
+		const result = deserializeProject(doc);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.doc.projectFormat).toEqual({ aspect: '16:9' });
+	});
+
+	it('round-trips cover', () => {
+		const doc = serializeProject({ projectId: 'p', timeline: timelineFixture(), sources: [sourceFixture()], cover: { timeS: 12.5, titleClipId: 'clip-abc' } });
+		const result = deserializeProject(doc);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.doc.cover).toEqual({ timeS: 12.5, titleClipId: 'clip-abc' });
+	});
+
+	it('defaults cover to undefined', () => {
+		const doc = serializeProject({ projectId: 'p', timeline: timelineFixture(), sources: [sourceFixture()] });
+		const result = deserializeProject(doc);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.doc.cover).toBeUndefined();
 	});
 });

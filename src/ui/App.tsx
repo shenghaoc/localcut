@@ -124,6 +124,9 @@ import {
 } from '../engine/render-queue';
 import { BUILT_IN_PRESETS } from '../engine/export-presets';
 import type { CaptionAnimStylePresetSnapshot } from '../protocol';
+import { aspectOutputSize } from '../engine/project';
+import { validateSafeZoneFile } from '../engine/safe-zones';
+import { SafeZoneOverlay } from './SafeZoneOverlay';
 import { createRecoveryMachine, type WorkerRecoveryState } from '../engine/recovery';
 import { AppErrorBoundary } from './ErrorBoundary';
 import { AudioCleanupPanel, type AppliedCleanupInfo } from './AudioCleanupPanel';
@@ -364,6 +367,36 @@ export function App() {
 		undefined
 	);
 	const [safeAreaGuides, setSafeAreaGuides] = createSignal(false);
+	// Phase 39: Vertical and Platform Finishing
+	const [projectAspect, setProjectAspect] = createSignal<import('../protocol').ProjectAspect>('16:9');
+	const [safeZoneFile, setSafeZoneFile] = createSignal<import('../engine/safe-zones').SafeZoneFile | null>(null);
+	const [selectedPlatformId, setSelectedPlatformId] = createSignal('');
+	const [coverFrame, setCoverFrame] = createSignal<import('../protocol').CoverFrameDoc | null>(null);
+	const [_coverExportError, setCoverExportError] = createSignal<string | null>(null);
+	const previewAspectStyle = createMemo(() => {
+		const { width, height } = aspectOutputSize(projectAspect());
+		return `${width} / ${height}`;
+	});
+	const previewAspectNum = createMemo(() => {
+		const { width, height } = aspectOutputSize(projectAspect());
+		return width / height;
+	});
+	const selectedPlatform = createMemo<import('../engine/safe-zones').SafeZonePlatform | null>(() => {
+		const id = selectedPlatformId();
+		if (!id) return null;
+		return safeZoneFile()?.platforms.find((p) => p.id === id) ?? null;
+	});
+	const matchingPlatforms = createMemo(() => {
+		return safeZoneFile()?.platforms.filter((p) => p.aspect === projectAspect()) ?? [];
+	});
+	function aspectLabel(aspect: import('../protocol').ProjectAspect): string {
+		switch (aspect) {
+			case '16:9': return 'Landscape';
+			case '9:16': return 'Vertical';
+			case '1:1': return 'Square';
+			case '4:5': return 'Portrait';
+		}
+	}
 	const [encodeFps, setEncodeFps] = createSignal<number | null>(null);
 	const [timeline, setTimeline] = createSignal<TimelineTrackSnapshot[]>([]);
 	const [captionTracks, setCaptionTracks] = createSignal<CaptionTrackSnapshot[]>([]);
@@ -2075,6 +2108,20 @@ export function App() {
 					globalOffsetMs: msg.globalOffsetMs
 				});
 				break;
+			// Phase 39: Vertical and Platform Finishing
+			case 'project-format-changed':
+				setProjectAspect(msg.aspect);
+				{
+					const cp = selectedPlatform();
+					if (cp && cp.aspect !== msg.aspect) setSelectedPlatformId('');
+				}
+				break;
+			case 'cover-frame-changed':
+				setCoverFrame(msg.cover);
+				break;
+			case 'cover-export-warning':
+				setCoverExportError(msg.error);
+				break;
 		}
 	}
 
@@ -2897,6 +2944,18 @@ export function App() {
 			}
 		})();
 
+		// Phase 39: Fetch platform safe-zone data.
+		void fetch(`${import.meta.env.BASE_URL}safe-zones/safe-zones.v1.json`)
+			.then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+			.then((json) => {
+				const file = validateSafeZoneFile(json);
+				if (file) setSafeZoneFile(file);
+				else console.error('[safe-zones] Validation failed.');
+			})
+			.catch((err: unknown) => {
+				console.error('[safe-zones] Failed to load:', err);
+			});
+
 		const handlePopState = () => setDocsSlug(parseDocsPath(window.location.pathname));
 		window.addEventListener('popstate', handlePopState);
 
@@ -3129,6 +3188,7 @@ export function App() {
 								initialSettings={exportSettings()}
 								presets={exportPresets()}
 								markers={markers()}
+								projectAspect={projectAspect()}
 								onProbe={probeExportCodecs}
 								onStart={startExport}
 								onCancel={() => bridge?.send({ type: 'export-cancel' })}
@@ -3314,7 +3374,7 @@ export function App() {
 								selectedClipCount={() => selectedClipRefs().length}
 							/>
 						</Show>
-						<section class="preview panel">
+						<section class="preview panel" style={{ "--preview-aspect": previewAspectStyle(), "--preview-aspect-num": previewAspectNum() }}>
 							<Show when={previewKey() + 1} keyed>
 								{(_k) => (
 									<PreviewCanvas onOffscreenReady={sendInit} onCanvasEl={setPreviewCanvasEl} />
@@ -3348,6 +3408,14 @@ export function App() {
 									<div class="safe-area-rect safe-area-action" />
 									<div class="safe-area-rect safe-area-title" />
 								</div>
+							</Show>
+							{/* Phase 39: Platform safe-zone overlay */}
+							<Show when={previewSurfaceAvailable() && selectedPlatform()}>
+								<SafeZoneOverlay
+									platform={selectedPlatform()}
+									outputWidth={previewSize()?.width ?? 1920}
+									outputHeight={previewSize()?.height ?? 1080}
+								/>
 							</Show>
 							<ReframeOverlay
 								visible={
