@@ -8,9 +8,12 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vite-plus/test';
 import { render } from 'solid-js/web';
 import { LanguageToolsPanel } from '../ui/LanguageToolsPanel';
-import { TranslationController } from '../ui/language-tools/translation-controller';
+import {
+	TranslationController,
+	type TranslationControllerState
+} from '../ui/language-tools/translation-controller';
 import { DraftController } from '../ui/language-tools/draft-controller';
-import type { LanguageToolsProbeResult } from '../protocol';
+import type { CaptionTrackSnapshot, LanguageToolsProbeResult } from '../protocol';
 
 const UNAVAILABLE: LanguageToolsProbeResult = {
 	translator: { 'en->zh': 'unavailable', 'zh->en': 'unavailable' },
@@ -44,7 +47,32 @@ afterEach(() => {
 	document.body.innerHTML = '';
 });
 
-function mount(probe: LanguageToolsProbeResult, open = true) {
+function captionTrack(id: string, name: string, language: string): CaptionTrackSnapshot {
+	return {
+		id,
+		kind: 'caption',
+		name,
+		language,
+		segments: [],
+		defaultStyle: {} as CaptionTrackSnapshot['defaultStyle'],
+		burnedIn: false,
+		visible: true
+	};
+}
+
+async function nextFrame(): Promise<void> {
+	await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+function mount(
+	probe: LanguageToolsProbeResult,
+	open = true,
+	options: {
+		translationState?: Partial<TranslationControllerState>;
+		captionTracks?: readonly CaptionTrackSnapshot[];
+		onExportBilingual?: (sourceTrackId: string, translatedTrackId: string) => void;
+	} = {}
+) {
 	const translation = new TranslationController({ createTranslatedTrack: () => {} });
 	translation.setProbe(probe);
 	const draft = new DraftController();
@@ -56,14 +84,14 @@ function mount(probe: LanguageToolsProbeResult, open = true) {
 		() => (
 			<LanguageToolsPanel
 				open={open}
-				translationState={translation.getState()}
+				translationState={{ ...translation.getState(), ...options.translationState }}
 				draftState={draft.getState()}
-				captionTracks={[]}
+				captionTracks={options.captionTracks ?? []}
 				onTranslate={() => {}}
 				onCancelTranslate={() => {}}
 				onGenerateDraft={() => {}}
 				onCancelDraft={() => {}}
-				onExportBilingual={() => {}}
+				onExportBilingual={options.onExportBilingual ?? (() => {})}
 				onClose={() => {}}
 			/>
 		),
@@ -99,6 +127,35 @@ describe('LanguageToolsPanel surface gating', () => {
 		const labels = buttonLabels(container);
 		expect(labels).toContain('Translate');
 		expect(labels).toContain('Generate Draft');
+		expect(consoleErrors).toEqual([]);
+	});
+
+	it('hides bilingual export when the selected source track changes', async () => {
+		const exported: string[] = [];
+		const container = mount(AVAILABLE, true, {
+			captionTracks: [
+				captionTrack('captions-a', 'English Captions', 'en'),
+				captionTrack('captions-b', 'Chinese Captions', 'zh')
+			],
+			translationState: {
+				lastTranslatedTrackId: 'translated-a',
+				lastTranslatedSourceTrackId: 'captions-a'
+			},
+			onExportBilingual: (sourceTrackId, translatedTrackId) =>
+				exported.push(`${sourceTrackId}:${translatedTrackId}`)
+		});
+		await nextFrame();
+
+		expect(buttonLabels(container)).toContain('Export bilingual (SRT + VTT)');
+
+		const sourcePicker = container.querySelector(
+			'select[aria-label="Select caption track"]'
+		) as HTMLSelectElement;
+		sourcePicker.value = 'captions-b';
+		sourcePicker.dispatchEvent(new Event('change', { bubbles: true }));
+
+		expect(buttonLabels(container)).not.toContain('Export bilingual (SRT + VTT)');
+		expect(exported).toEqual([]);
 		expect(consoleErrors).toEqual([]);
 	});
 });

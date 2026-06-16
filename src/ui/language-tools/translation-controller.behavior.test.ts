@@ -3,7 +3,11 @@
  * Chrome AI globals stubbed.
  */
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
-import { TranslationController, type CreateTranslatedTrackRequest } from './translation-controller';
+import {
+	TranslationController,
+	type CreateTranslatedTrackRequest,
+	type TranslationControllerState
+} from './translation-controller';
 import type { CaptionSegmentSnapshot, LanguageToolsProbeResult } from '../../protocol';
 
 const PROBE: LanguageToolsProbeResult = {
@@ -123,5 +127,66 @@ describe('TranslationController.translateTrack', () => {
 		const controller = new TranslationController({ createTranslatedTrack: () => {} });
 		controller.onTranslatedTrackCreated('track-123');
 		expect(controller.getState().lastTranslatedTrackId).toBe('track-123');
+	});
+
+	it('pairs bilingual export state with the source track that produced it', async () => {
+		stubTranslator((t) => `zh:${t}`);
+		const controller = new TranslationController({ createTranslatedTrack: () => {} });
+		controller.setProbe(PROBE);
+
+		await controller.translateTrack(
+			{ id: 'captions-a', name: 'Clip A', segments: segs(['hello']) },
+			'zh'
+		);
+		controller.onTranslatedTrackCreated('translated-a');
+
+		expect(controller.getState().lastTranslatedTrackId).toBe('translated-a');
+		expect(controller.getState().lastTranslatedSourceTrackId).toBe('captions-a');
+
+		await controller.translateTrack(
+			{ id: 'captions-b', name: 'Clip B', segments: segs(['world']) },
+			'zh'
+		);
+
+		expect(controller.getState().lastTranslatedTrackId).toBeNull();
+		expect(controller.getState().lastTranslatedSourceTrackId).toBe('captions-b');
+	});
+
+	it('reports LanguageDetector download progress while auto-detecting', async () => {
+		const states: TranslationControllerState[] = [];
+		vi.stubGlobal('Translator', {
+			availability: async () => 'available',
+			create: async () => ({
+				translate: async (input: string) => `zh:${input}`,
+				destroy: () => {}
+			})
+		});
+		vi.stubGlobal('LanguageDetector', {
+			availability: async () => 'downloadable',
+			create: async (options?: AICreateOptions) => {
+				options?.monitor?.({
+					addEventListener: (
+						_type: 'downloadprogress',
+						listener: (event: AIDownloadProgressEvent) => void
+					) => listener({ loaded: 0.5 } as AIDownloadProgressEvent),
+					removeEventListener: () => {}
+				} as unknown as AICreateMonitor);
+				return {
+					detect: async () => [{ detectedLanguage: 'en', confidence: 0.9 }],
+					destroy: () => {}
+				};
+			}
+		});
+		const controller = new TranslationController({ createTranslatedTrack: () => {} });
+		controller.setProbe({ ...PROBE, languageDetector: 'downloadable' });
+		controller.subscribe((state) =>
+			states.push({ ...state, job: state.job ? { ...state.job } : null })
+		);
+
+		await controller.translateTrack({ id: 'src', name: 'Clip', segments: segs(['hello']) });
+
+		expect(
+			states.some((state) => state.job?.phase === 'detecting' && state.job.downloadFraction === 0.5)
+		).toBe(true);
 	});
 });

@@ -35,7 +35,7 @@ export interface TranslateJobState {
 	current: number;
 	/** Total segments to translate. */
 	total: number;
-	/** Download progress [0,1] during downloading phase. */
+	/** Download progress [0,1] while Chrome creates a built-in AI session. */
 	downloadFraction: number | null;
 	/** Detected source language ('zh' | 'en'). */
 	detectedSource: 'zh' | 'en' | null;
@@ -60,6 +60,8 @@ export interface TranslationControllerState {
 	job: TranslateJobState | null;
 	/** Track id of the most recently created translated track (for bilingual export). */
 	lastTranslatedTrackId: string | null;
+	/** Source track id that produced the most recently created translated track. */
+	lastTranslatedSourceTrackId: string | null;
 }
 
 export interface CaptionTrackInfo {
@@ -106,7 +108,8 @@ export class TranslationController {
 			translatorAvailability: {},
 			languageDetectorAvailability: 'unknown',
 			job: null,
-			lastTranslatedTrackId: null
+			lastTranslatedTrackId: null,
+			lastTranslatedSourceTrackId: null
 		};
 	}
 
@@ -185,7 +188,7 @@ export class TranslationController {
 		};
 
 		// A new job invalidates any prior translated-track export target.
-		this.update({ lastTranslatedTrackId: null });
+		this.update({ lastTranslatedTrackId: null, lastTranslatedSourceTrackId: null });
 
 		const TranslatorApi = this.translatorStatic;
 		if (!TranslatorApi) {
@@ -226,7 +229,15 @@ export class TranslationController {
 					return;
 				}
 				if (!this.detector) {
-					this.detector = await DetectorApi.create();
+					this.detector = await DetectorApi.create({
+						signal: combinedSignal,
+						monitor: (m) => {
+							m.addEventListener('downloadprogress', (e) => {
+								// e.loaded is a fraction in [0, 1]; there is no e.total.
+								this.updateJob({ downloadFraction: e.loaded });
+							});
+						}
+					});
 				}
 				const sampleSize = Math.min(5, track.segments.length);
 				const tops = await Promise.all(
@@ -241,7 +252,11 @@ export class TranslationController {
 			}
 			const resolvedTarget = targetLang ?? oppositeLanguage(sourceLang);
 
-			this.updateJob({ detectedSource: sourceLang, targetLang: resolvedTarget });
+			this.updateJob({
+				detectedSource: sourceLang,
+				targetLang: resolvedTarget,
+				downloadFraction: null
+			});
 
 			// Guard the exact pair before create() so an unavailable direction
 			// fails with a clear message instead of throwing inside create().
@@ -294,6 +309,7 @@ export class TranslationController {
 			}
 
 			// Phase 4: hand off to the worker for undoable insertion.
+			this.update({ lastTranslatedSourceTrackId: track.id });
 			this.ports.createTranslatedTrack({
 				sourceTrackId: track.id,
 				name: `${track.name} (${resolvedTarget})`,

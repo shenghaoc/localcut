@@ -42,7 +42,7 @@ function formatPercent(fraction: number | null): string {
 }
 
 export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) => {
-	// eslint-disable-next-line eslint/no-unassigned-vars — SolidJS ref assigns via JSX
+	// eslint-disable-next-line no-unassigned-vars -- SolidJS ref assigns via JSX
 	let panelRef: HTMLElement | undefined;
 	const [selectedTrackId, setSelectedTrackId] = createSignal<string>('');
 	const [targetLang, setTargetLang] = createSignal<'auto' | 'zh' | 'en'>('auto');
@@ -68,6 +68,13 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 
 	const translateJob = () => props.translationState.job;
 	const draftJob = () => props.draftState.job;
+	const bilingualExportTrackId = () => {
+		const translatedTrackId = props.translationState.lastTranslatedTrackId;
+		if (!translatedTrackId) return null;
+		return props.translationState.lastTranslatedSourceTrackId === selectedTrackId()
+			? translatedTrackId
+			: null;
+	};
 
 	const canTranslate = () => {
 		const job = translateJob();
@@ -216,17 +223,17 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 						</div>
 
 						{/* Bilingual export — available once a translated track exists */}
-						<Show when={props.translationState.lastTranslatedTrackId && selectedTrackId()}>
+						<Show when={bilingualExportTrackId()}>
 							<Button
 								size="sm"
 								variant="ghost"
 								style={{ 'margin-top': '8px' }}
-								onClick={() =>
-									props.onExportBilingual(
-										selectedTrackId(),
-										props.translationState.lastTranslatedTrackId!
-									)
-								}
+								onClick={() => {
+									const sourceTrackId = selectedTrackId();
+									const translatedTrackId = bilingualExportTrackId();
+									if (!sourceTrackId || !translatedTrackId) return;
+									props.onExportBilingual(sourceTrackId, translatedTrackId);
+								}}
 							>
 								Export bilingual (SRT + VTT)
 							</Button>
@@ -236,7 +243,9 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 						<Show when={translateJob()}>
 							<div role="status" aria-live="polite" style={{ 'margin-top': '8px' }}>
 								<Show when={translateJob()!.phase === 'detecting'}>
-									<p style={{ 'font-size': '0.85em' }}>Detecting language…</p>
+									<p style={{ 'font-size': '0.85em' }}>
+										Detecting language…{formatPercent(translateJob()!.downloadFraction)}
+									</p>
 								</Show>
 								<Show when={translateJob()!.phase === 'downloading'}>
 									<p style={{ 'font-size': '0.85em' }}>
@@ -442,14 +451,13 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 					</section>
 				</Show>
 
-				<footer class="capability-panel-note">
-					<span>{PRIVACY_STATEMENT}</span>
-					<Show when={props.onOpenGuide}>
+				<Show when={props.onOpenGuide}>
+					<footer class="capability-panel-note">
 						<Button size="sm" variant="ghost" onClick={() => props.onOpenGuide?.()}>
 							Learn more
 						</Button>
-					</Show>
-				</footer>
+					</footer>
+				</Show>
 			</aside>
 		</Show>
 	);
