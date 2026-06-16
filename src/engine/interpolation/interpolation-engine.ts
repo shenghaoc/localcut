@@ -80,6 +80,9 @@ export class InterpolationEngine {
 	private loadPromise: Promise<void> | null = null;
 	private disposed = false;
 
+	/** Serializes synthesis; the input/uniform GPU buffers are shared instance state. */
+	private running: Promise<GPUTexture> | null = null;
+
 	private preprocessPipeline: GPUComputePipeline | null = null;
 	private postprocessPipeline: GPUComputePipeline | null = null;
 	private preprocessUniform: GPUBuffer | null = null;
@@ -179,6 +182,34 @@ export class InterpolationEngine {
 		if (this.status !== 'loaded' || !this.model || !this.ort) {
 			throw new Error('Interpolation model is not loaded.');
 		}
+
+		// Serialize synthesis. The input/uniform GPU buffers are shared instance
+		// state, so two overlapping `synthesise` calls would race on them and corrupt
+		// each other's in-flight frame. The previous run is awaited *inside* this
+		// run's promise and `this.running` is published synchronously, so a concurrent
+		// caller chains off this run instead of starting a second `runSynthesis`.
+		const previous = this.running;
+		const run = (async (): Promise<GPUTexture> => {
+			if (previous) await previous.catch(() => {});
+			if (this.disposed || this.status !== 'loaded' || !this.model || !this.ort) {
+				throw new Error('Interpolation model is not loaded.');
+			}
+			return this.runSynthesis(frame0, frame1, tau, fullWidth, fullHeight, plan);
+		})().finally(() => {
+			if (this.running === run) this.running = null;
+		});
+		this.running = run;
+		return run;
+	}
+
+	private async runSynthesis(
+		frame0: VideoFrame,
+		frame1: VideoFrame,
+		tau: number,
+		fullWidth: number,
+		fullHeight: number,
+		plan: TilePlan
+	): Promise<GPUTexture> {
 		this.ensurePipelines();
 		const output = this.device.createTexture({
 			size: { width: fullWidth, height: fullHeight },
@@ -338,6 +369,10 @@ export class InterpolationEngine {
 
 	async dispose(): Promise<void> {
 		this.disposed = true;
+		// Set `disposed` first (blocks new synthesis at the run-promise guard), then
+		// let any in-flight `runSynthesis` finish its GPU submissions and drain the
+		// queue, so destroying the shared buffers never races an executing pass.
+		await this.running?.catch(() => {});
 		try {
 			await this.device.queue.onSubmittedWorkDone();
 		} catch {

@@ -220,17 +220,26 @@ export class MatteEngine {
 			}
 		}
 
-		if (this.running) {
-			if (request.quality === 'preview' && !this.testMode) {
-				// Keep preview realtime: reuse the clip's previous alpha rather than
-				// queueing behind in-flight inference.
-				request.frame.close();
-				return this.lastView.get(request.clipId) ?? null;
-			}
-			await this.running.catch(() => {});
+		// Keep preview realtime: reuse the clip's previous alpha rather than queueing
+		// behind in-flight inference.
+		if (this.running && request.quality === 'preview' && !this.testMode) {
+			request.frame.close();
+			return this.lastView.get(request.clipId) ?? null;
 		}
 
-		const run = this.runInference(request, cacheKey).finally(() => {
+		// Serialize inference. The previous run is awaited *inside* this run's promise
+		// and `this.running` is published synchronously, so a later caller chains off
+		// this run instead of starting a second `runInference` concurrently on the
+		// shared input/uniform GPU buffers (which would corrupt the in-flight frame).
+		const previous = this.running;
+		const run = (async (): Promise<GPUTextureView | null> => {
+			if (previous) await previous.catch(() => {});
+			if (this.disposed) {
+				request.frame.close();
+				return null;
+			}
+			return this.runInference(request, cacheKey);
+		})().finally(() => {
 			if (this.running === run) this.running = null;
 		});
 		this.running = run;
