@@ -24,6 +24,8 @@ import skinSmoothBoxSource from './shaders/skin-smooth-box.wgsl?raw';
 import skinSmoothCoeffsSource from './shaders/skin-smooth-coeffs.wgsl?raw';
 import skinSmoothApplySource from './shaders/skin-smooth-apply.wgsl?raw';
 import beautyWarpSource from './shaders/beauty-warp.wgsl?raw';
+import scopesSource from './shaders/scopes.wgsl?raw';
+import vectorscopeSource from './shaders/vectorscope.wgsl?raw';
 import { EffectChain, type ClipEffectParams, isSkinSmoothActive } from './effects';
 import { createComputePipeline } from './gpu-pipeline';
 import type { ClipLut } from './lut';
@@ -44,8 +46,18 @@ import {
 import { OutputTransfer } from './colour';
 import {
 	SCOPES_FEATURE_ENABLED,
-	resetScopeSlot,
+	SCOPE_RES_X,
+	SCOPE_HISTOGRAM_DATA_FLOATS,
+	SCOPE_VECTORSCOPE_SIZE,
 	histogramSlotOffset,
+	waveformSlotOffset,
+	paradeSlotOffset,
+	vectorscopeSlotOffset,
+	scopeWaveformDataFloats,
+	scopeParadeDataFloats,
+	scopeVectorscopeDataFloats,
+	scopeTotalBufferFloats,
+	writeScopeHeader,
 	beginScopeWrite,
 	endScopeWrite
 } from './scopes';
@@ -257,6 +269,28 @@ export class PreviewRenderer {
 	// Phase 21: scopes SAB reference (set by worker for scope output).
 	private scopeSab: Float32Array | null = null;
 	private scopesEnabled = false;
+	// Phase 21: scope compute pipelines + atomic storage buffers + staging pool.
+	private readonly scopesPipeline: GPUComputePipeline;
+	private readonly vectorscopePipeline: GPUComputePipeline;
+	private readonly scopesGroupLayout: GPUBindGroupLayout;
+	private readonly vectorscopeGroupLayout: GPUBindGroupLayout;
+	private scopeHistogramBuf: GPUBuffer | null = null;
+	private scopeWaveformBuf: GPUBuffer | null = null;
+	private scopeParadeBuf: GPUBuffer | null = null;
+	private scopeClipBuf: GPUBuffer | null = null;
+	private scopeVecBuf: GPUBuffer | null = null;
+	private scopeUniformBuf: GPUBuffer | null = null;
+	private scopeVecUniformBuf: GPUBuffer | null = null;
+	private scopeWaveformInit: Uint32Array | null = null;
+	private scopeParadeInit: Uint32Array | null = null;
+	// `scopeStagingFree` is the LIFO recycle pool — `pop()` for dispatch, `push()` back
+	// from the mapAsync callback. `scopeStagingBuffers` is the master list used only by
+	// `destroy()` so in-flight buffers (popped from `free` but mid-mapAsync) are still
+	// reachable and don't leak when the renderer tears down.
+	private readonly scopeStagingFree: GPUBuffer[] = [];
+	private readonly scopeStagingBuffers: GPUBuffer[] = [];
+	private scopeStagingTotalBytes = 0;
+	private static readonly SCOPE_STAGING_POOL = 3;
 
 	private presentBindGroup: GPUBindGroup | null = null;
 	/** Accumulator view holding the most recent composited frame (preview + export). */
@@ -380,6 +414,13 @@ export class PreviewRenderer {
 				entryPoint: 'main'
 			}
 		});
+
+		// Phase 21: scope pipelines. The WGSL is f32-only (atomic<u32> accumulators)
+		// so there is no f16 variant — `useF16` does not gate these.
+		this.scopesPipeline = createComputePipeline(device, scopesSource, 'scopes');
+		this.vectorscopePipeline = createComputePipeline(device, vectorscopeSource, 'vectorscope');
+		this.scopesGroupLayout = this.scopesPipeline.getBindGroupLayout(0);
+		this.vectorscopeGroupLayout = this.vectorscopePipeline.getBindGroupLayout(0);
 
 		this.normalizeGroupLayout = this.sourceNormalizePipeline.getBindGroupLayout(0);
 		this.outConvGroupLayout = this.outputConvertPipeline.getBindGroupLayout(0);
@@ -1381,20 +1422,295 @@ export class PreviewRenderer {
 		return this.zebraView;
 	}
 
-	/** Phase 21: dispatches scope results to the SAB for main-thread rendering.
-	 *  Currently writes a heartbeat sequence; full shader-based scopes require
-	 *  storage buffer allocation (deferred to a follow-on). */
-	private dispatchScopes(_encoder: GPUCommandEncoder, _accView: GPUTextureView): void {
-		if (!this.scopeSab) return;
-		// Seqlock write: mark the slot "writing" (odd) before clearing the
-		// accumulation region, then "ready" (even) after — so a concurrent
-		// main-thread reader never observes an even sequence over half-cleared data.
-		// This runs inside the single per-frame command encoder; no extra
-		// queue.submit and no CPU pixel readback are introduced.
-		const slot = histogramSlotOffset();
-		beginScopeWrite(this.scopeSab, slot);
-		resetScopeSlot(this.scopeSab, slot, 0);
-		endScopeWrite(this.scopeSab, slot);
+	/**
+	 * Phase 21: scope dispatch. Inside the single per-frame command encoder,
+	 * resets GPU atomic accumulators (histogram bins, waveform/parade min/max,
+	 * clip counter, vectorscope hits), dispatches the two scope compute passes
+	 * against the pre-output-conversion accumulator, then `copyBufferToBuffer`
+	 * the storage into a pooled staging buffer. After `queue.submit` returns
+	 * we `mapAsync` the staging buffer and stream the results into the SAB
+	 * under per-slot seqlock guards. No extra `queue.submit` and no CPU pixel
+	 * readback (the architecture invariant): the only main-side touch is a
+	 * GPU→CPU buffer mapping of the integer scope summaries.
+	 */
+	private dispatchScopes(encoder: GPUCommandEncoder, accView: GPUTextureView): void {
+		const sab = this.scopeSab;
+		if (!sab) return;
+		// SAB must be large enough to hold every slot's header + data at the agreed
+		// SCOPE_RES_X. A smaller SAB (test stubs, mis-sized producers) is a no-op
+		// rather than a crash so the renderer keeps one queue.submit per frame.
+		if (sab.length < scopeTotalBufferFloats(SCOPE_RES_X)) return;
+		if (this.width <= 0 || this.height <= 0) return;
+
+		this.ensureScopeResources();
+
+		const staging = this.scopeStagingFree.pop();
+		// Pool exhausted → skip this frame's scopes. Old frame's SAB data remains
+		// readable; the scope panel updates next frame when a slot frees up.
+		if (!staging) return;
+
+		const device = this.device;
+		const histBytes = SCOPE_HISTOGRAM_DATA_FLOATS * 4;
+		const wfBytes = scopeWaveformDataFloats(SCOPE_RES_X) * 4;
+		const paradeBytes = scopeParadeDataFloats(SCOPE_RES_X) * 4;
+		const vecBytes = scopeVectorscopeDataFloats() * 4;
+
+		// Reset accumulators BEFORE the dispatch:
+		//   histogram + vectorscope + clip use atomicAdd → zero-init via
+		//   encoder.clearBuffer (in-encoder; no CPU→GPU upload).
+		//   waveform/parade use atomicMin/Max → upload sentinel pattern
+		//   (U32_MAX/0 alternating) via writeBuffer because clearBuffer can
+		//   only zero.
+		encoder.clearBuffer(this.scopeHistogramBuf!, 0, histBytes);
+		encoder.clearBuffer(this.scopeVecBuf!, 0, vecBytes);
+		encoder.clearBuffer(this.scopeClipBuf!, 0, 4);
+		device.queue.writeBuffer(this.scopeWaveformBuf!, 0, this.scopeWaveformInit!);
+		device.queue.writeBuffer(this.scopeParadeBuf!, 0, this.scopeParadeInit!);
+
+		// Scope-pass uniforms: input dims (informational) + scopeResX/Y.
+		const scopeUni = new Uint32Array([this.width, this.height, SCOPE_RES_X, SCOPE_RES_X]);
+		device.queue.writeBuffer(this.scopeUniformBuf!, 0, scopeUni);
+		const vecUni = new Uint32Array([this.width, this.height, SCOPE_VECTORSCOPE_SIZE, 0]);
+		device.queue.writeBuffer(this.scopeVecUniformBuf!, 0, vecUni);
+
+		const wgX = Math.ceil(this.width / 8);
+		const wgY = Math.ceil(this.height / 8);
+
+		// Combined scope pass: histogram + waveform + parade + clip counter.
+		{
+			const bg = device.createBindGroup({
+				layout: this.scopesGroupLayout,
+				entries: [
+					{ binding: 0, resource: { buffer: this.scopeUniformBuf! } },
+					{ binding: 1, resource: accView },
+					{ binding: 2, resource: { buffer: this.scopeHistogramBuf! } },
+					{ binding: 3, resource: { buffer: this.scopeWaveformBuf! } },
+					{ binding: 4, resource: { buffer: this.scopeParadeBuf! } },
+					{ binding: 5, resource: { buffer: this.scopeClipBuf! } }
+				]
+			});
+			const pass = encoder.beginComputePass();
+			pass.setPipeline(this.scopesPipeline);
+			pass.setBindGroup(0, bg);
+			pass.dispatchWorkgroups(wgX, wgY);
+			pass.end();
+		}
+
+		// Vectorscope pass — separate shader because the 2D hits buffer is too
+		// large to fold into the combined struct cleanly.
+		{
+			const bg = device.createBindGroup({
+				layout: this.vectorscopeGroupLayout,
+				entries: [
+					{ binding: 0, resource: { buffer: this.scopeVecUniformBuf! } },
+					{ binding: 1, resource: accView },
+					{ binding: 2, resource: { buffer: this.scopeVecBuf! } }
+				]
+			});
+			const pass = encoder.beginComputePass();
+			pass.setPipeline(this.vectorscopePipeline);
+			pass.setBindGroup(0, bg);
+			pass.dispatchWorkgroups(wgX, wgY);
+			pass.end();
+		}
+
+		// Concatenate all atomic buffers into the staging buffer in a fixed layout
+		// the mapAsync callback unpacks. Offsets must be 4-byte aligned (u32 sizes
+		// satisfy this trivially).
+		let off = 0;
+		encoder.copyBufferToBuffer(this.scopeHistogramBuf!, 0, staging, off, histBytes);
+		off += histBytes;
+		encoder.copyBufferToBuffer(this.scopeWaveformBuf!, 0, staging, off, wfBytes);
+		off += wfBytes;
+		encoder.copyBufferToBuffer(this.scopeParadeBuf!, 0, staging, off, paradeBytes);
+		off += paradeBytes;
+		encoder.copyBufferToBuffer(this.scopeClipBuf!, 0, staging, off, 4);
+		off += 4;
+		encoder.copyBufferToBuffer(this.scopeVecBuf!, 0, staging, off, vecBytes);
+
+		// Async readback. mapAsync resolves after the still-pending queue.submit
+		// completes, so the staging contents reflect the GPU writes. Capture the
+		// SAB reference so a destroy()/SAB-swap mid-flight drops the result
+		// instead of writing into a stale view.
+		const sabRef = sab;
+		void staging
+			.mapAsync(GPUMapMode.READ)
+			.then(() => {
+				try {
+					if (this.scopeSab === sabRef) {
+						const u32 = new Uint32Array(staging.getMappedRange());
+						this.writeScopeFrameToSab(u32);
+					}
+				} finally {
+					try {
+						staging.unmap();
+					} catch {
+						// Buffer destroyed during/after destroy(); pool entry is gone too.
+					}
+					this.scopeStagingFree.push(staging);
+				}
+			})
+			.catch(() => {
+				// Device lost, buffer destroyed, or other mapping failure. Return the
+				// buffer to the pool so subsequent frames keep flowing.
+				this.scopeStagingFree.push(staging);
+			});
+	}
+
+	/**
+	 * Lazily allocates GPU storage backing each scope binding, plus a small pool
+	 * of staging buffers for GPU→CPU readback. Sized once for SCOPE_RES_X; never
+	 * resizes (changing preview size doesn't change scope column count).
+	 */
+	private ensureScopeResources(): void {
+		if (this.scopeHistogramBuf) return;
+
+		const device = this.device;
+		const storageUsage = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST;
+		const uniformUsage = GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST;
+
+		const histBytes = SCOPE_HISTOGRAM_DATA_FLOATS * 4;
+		const wfBytes = scopeWaveformDataFloats(SCOPE_RES_X) * 4;
+		const paradeBytes = scopeParadeDataFloats(SCOPE_RES_X) * 4;
+		const vecBytes = scopeVectorscopeDataFloats() * 4;
+
+		this.scopeHistogramBuf = device.createBuffer({
+			label: 'scope-histogram',
+			size: histBytes,
+			usage: storageUsage
+		});
+		this.scopeWaveformBuf = device.createBuffer({
+			label: 'scope-waveform',
+			size: wfBytes,
+			usage: storageUsage
+		});
+		this.scopeParadeBuf = device.createBuffer({
+			label: 'scope-parade',
+			size: paradeBytes,
+			usage: storageUsage
+		});
+		this.scopeClipBuf = device.createBuffer({
+			label: 'scope-clip',
+			size: 4,
+			usage: storageUsage
+		});
+		this.scopeVecBuf = device.createBuffer({
+			label: 'scope-vectorscope',
+			size: vecBytes,
+			usage: storageUsage
+		});
+		this.scopeUniformBuf = device.createBuffer({
+			label: 'scope-uniform',
+			size: 16,
+			usage: uniformUsage
+		});
+		this.scopeVecUniformBuf = device.createBuffer({
+			label: 'scope-vectorscope-uniform',
+			size: 16,
+			usage: uniformUsage
+		});
+
+		// Sentinel init templates for atomicMin/Max columns — cached so the
+		// per-frame writeBuffer is a small upload, not a fresh allocation.
+		// (Histogram + vectorscope + clip zero-init via encoder.clearBuffer.)
+		const wfInit = new Uint32Array(scopeWaveformDataFloats(SCOPE_RES_X));
+		for (let i = 0; i < wfInit.length; i += 2) {
+			wfInit[i] = 0xffffffff; // min sentinel
+			wfInit[i + 1] = 0; // max sentinel
+		}
+		this.scopeWaveformInit = wfInit;
+
+		const paradeInit = new Uint32Array(scopeParadeDataFloats(SCOPE_RES_X));
+		for (let i = 0; i < paradeInit.length; i += 2) {
+			paradeInit[i] = 0xffffffff; // *min sentinel
+			paradeInit[i + 1] = 0; // *max sentinel
+		}
+		this.scopeParadeInit = paradeInit;
+
+		this.scopeStagingTotalBytes = histBytes + wfBytes + paradeBytes + 4 + vecBytes;
+		for (let i = 0; i < PreviewRenderer.SCOPE_STAGING_POOL; i++) {
+			const buf = device.createBuffer({
+				label: `scope-staging-${i}`,
+				size: this.scopeStagingTotalBytes,
+				usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
+			});
+			this.scopeStagingFree.push(buf);
+			this.scopeStagingBuffers.push(buf);
+		}
+	}
+
+	/**
+	 * Unpacks a mapped staging buffer (laid out histogram → waveform → parade →
+	 * clip → vectorscope, all `u32`) into the four scope slots in the SAB. Each
+	 * slot is published under its own seqlock so a concurrent main-thread reader
+	 * either sees a fully-written frame or retries cleanly.
+	 */
+	private writeScopeFrameToSab(u32: Uint32Array): void {
+		const sab = this.scopeSab;
+		if (!sab) return;
+
+		const X = SCOPE_RES_X;
+		const histLen = SCOPE_HISTOGRAM_DATA_FLOATS;
+		const wfLen = scopeWaveformDataFloats(X);
+		const paradeLen = scopeParadeDataFloats(X);
+		const vecLen = scopeVectorscopeDataFloats();
+
+		let off = 0;
+		const hist = u32.subarray(off, off + histLen);
+		off += histLen;
+		const wf = u32.subarray(off, off + wfLen);
+		off += wfLen;
+		const parade = u32.subarray(off, off + paradeLen);
+		off += paradeLen;
+		const clipCount = u32[off]!;
+		off += 1;
+		const vec = u32.subarray(off, off + vecLen);
+
+		// Histogram: raw u32 bin counts → f32. TypedArray.set() does the u32→f32
+		// element conversion in native code.
+		{
+			const slot = histogramSlotOffset();
+			beginScopeWrite(sab, slot);
+			writeScopeHeader(sab, slot, 0, clipCount);
+			sab.set(hist, slot + 3);
+			endScopeWrite(sab, slot);
+		}
+
+		// Waveform: alternating (min, max) per column. Quantized to 16-bit; dequant
+		// to 0..1 floats. Untouched columns (min sentinel still U32_MAX) become 0.
+		{
+			const slot = waveformSlotOffset(X);
+			beginScopeWrite(sab, slot);
+			writeScopeHeader(sab, slot, 0, clipCount);
+			const dataStart = slot + 3;
+			for (let i = 0; i < wfLen; i++) {
+				const v = wf[i]!;
+				sab[dataStart + i] = v === 0xffffffff ? 0 : v / 65535;
+			}
+			endScopeWrite(sab, slot);
+		}
+
+		// Parade: 6 alternating min/max columns (R,G,B). Same dequant as waveform.
+		{
+			const slot = paradeSlotOffset(X);
+			beginScopeWrite(sab, slot);
+			writeScopeHeader(sab, slot, 0, clipCount);
+			const dataStart = slot + 3;
+			for (let i = 0; i < paradeLen; i++) {
+				const v = parade[i]!;
+				sab[dataStart + i] = v === 0xffffffff ? 0 : v / 65535;
+			}
+			endScopeWrite(sab, slot);
+		}
+
+		// Vectorscope: 128×128 hit counts → f32. Native u32→f32 conversion via set().
+		{
+			const slot = vectorscopeSlotOffset(X);
+			beginScopeWrite(sab, slot);
+			writeScopeHeader(sab, slot, 0, clipCount);
+			sab.set(vec, slot + 3);
+			endScopeWrite(sab, slot);
+		}
 	}
 
 	destroy(): void {
@@ -1428,6 +1744,26 @@ export class PreviewRenderer {
 		this.presentBindGroup = null;
 		this.lastPresentView = null;
 		this.scopeSab = null;
+		this.scopeHistogramBuf?.destroy();
+		this.scopeHistogramBuf = null;
+		this.scopeWaveformBuf?.destroy();
+		this.scopeWaveformBuf = null;
+		this.scopeParadeBuf?.destroy();
+		this.scopeParadeBuf = null;
+		this.scopeClipBuf?.destroy();
+		this.scopeClipBuf = null;
+		this.scopeVecBuf?.destroy();
+		this.scopeVecBuf = null;
+		this.scopeUniformBuf?.destroy();
+		this.scopeUniformBuf = null;
+		this.scopeVecUniformBuf?.destroy();
+		this.scopeVecUniformBuf = null;
+		// Destroy via the master list so in-flight buffers (popped from `free`
+		// but mid-mapAsync) are released too — not just whatever happens to be
+		// idle in `scopeStagingFree` at teardown time.
+		for (const buf of this.scopeStagingBuffers) buf.destroy();
+		this.scopeStagingBuffers.length = 0;
+		this.scopeStagingFree.length = 0;
 		this.device.destroy();
 	}
 
