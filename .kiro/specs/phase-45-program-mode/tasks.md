@@ -85,13 +85,14 @@
 - [ ] **T5.1** Create `src/engine/live-compose-tap.ts`: `LiveComposeTap`
   interface and `createLiveComposeTap(compositor: ProgramCompositor):
   LiveComposeTap`. `onFrame(sourceId, frame)` calls
-  `compositor.updateFrame(sourceId, frame)` then closes any previously held
-  clone from that source if not yet consumed (latest-frame-wins per source).
-  `dispose()` closes any held frames.
+  `compositor.updateFrame(sourceId, frame)`, transferring ownership of the
+  clone to the compositor. The compositor closes any previously held clone
+  from that source (latest-frame-wins per source). `dispose()` is a no-op for
+  already-forwarded frames.
 - [ ] **T5.2** Close-exactly-once: every `VideoFrame` handed to
-  `LiveComposeTap` is closed by the tap — either forwarded to the compositor
-  (closed there after `importExternalTexture`) or closed on drop. The tap
-  never leaks a frame across `dispose()`.
+  `LiveComposeTap` is forwarded to the compositor and then closed by the
+  compositor when replaced by a newer frame or when the compositor is
+  disposed. The tap must not also close forwarded frames.
 - [ ] **T5.3** Frames from ALL active sources are kept warm regardless of
   visibility in the current scene. The compositor skips invisible layers
   when building `CompositeLayer[]`, but the tap retains the latest frame
@@ -99,9 +100,10 @@
   frame available immediately (preserving the one-frame switch invariant
   for low-FPS captures like screen sharing).
 - [ ] **T5.4** Unit-test in `src/engine/live-compose-tap.test.ts`: frame
-  forwarded to compositor, older frame closed on replacement (latest-frame-
-  wins), invisible source frame closed immediately, dispose closes held
-  frames. Use a spy compositor and mock `VideoFrame` objects.
+  forwarded to compositor, older frame closed exactly once on compositor
+  replacement (latest-frame-wins), frames from invisible sources still
+  forwarded to keep the compositor warm, and tap disposal does not double-close
+  compositor-owned frames. Use a spy compositor and mock `VideoFrame` objects.
 
 ## T6 — Program compositor (R5, R6)
 
@@ -127,9 +129,10 @@
 - [ ] **T6.5** Unit-test in `src/engine/program-compositor.test.ts`:
   `renderTick` builds layers from scene, `switchScene` does not rebuild any
   pipeline (spy on `compositeLayers` call count), eased-transition opacity
-  interpolation (fake timers), held frames closed after `renderTick`,
-  `dispose` closes all held frames. Count `queue.submit` calls: must be 0
-  per tick (submit is the render-loop's responsibility).
+  interpolation (fake timers), held frames remain open after `renderTick` for
+  reuse on later ticks, and `dispose` closes all held frames. Count
+  `queue.submit` calls: must be 0 per tick (submit is the render-loop's
+  responsibility).
 
 ## T7 — Session orchestrator (R3, R7, R8)
 

@@ -543,22 +543,11 @@ export function recordingAvailable(probe: CapabilityProbeResult): boolean {
 	);
 }
 
-/**
- * Phase 45: Program mode derivation. Requires all Phase 41 capture probes
- * plus WebGPU core support (for live compositing in the pipeline worker).
- */
-function deriveProgramMode(probe: Omit<CapabilityProbeResult, 'tier'>): FeatureSupport {
-	const cap = probe.capture;
-	if (
-		cap.mediaStreamTrackProcessor === 'supported' &&
-		cap.transferableMediaStreamTrack !== 'unsupported' &&
-		cap.videoEncodeRealtime === 'supported' &&
-		cap.opfsSyncAccessHandle === 'supported' &&
-		probe.webGPUCore !== 'unsupported'
-	) {
-		return 'supported';
-	}
-	return 'unsupported';
+/** Phase 45: Program mode derivation follows Phase 41 recording availability. */
+export function deriveProgramModeSupport(probe: CapabilityProbeResult): FeatureSupport {
+	return recordingAvailable(probe) && probe.webGPUCore !== 'unsupported'
+		? 'supported'
+		: 'unsupported';
 }
 
 export async function probeCapabilities(): Promise<CapabilityProbeResult> {
@@ -614,15 +603,19 @@ export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 		offscreenCanvas: supportFromBoolean(typeof OffscreenCanvas !== 'undefined'),
 		livePublish
 	};
-	const result: CapabilityProbeResult = {
+	const tier = deriveCapabilityTierV2(probeWithoutTier);
+	const probeWithTier: CapabilityProbeResult = {
 		...probeWithoutTier,
-		tier: deriveCapabilityTierV2(probeWithoutTier),
+		tier
+	};
+	const result: CapabilityProbeResult = {
+		...probeWithTier,
 		cleanup,
 		asr: probeAsr(),
 		smartReframe: probeSmartReframe(),
 		imageDecoder: probeImageDecoder(),
 		beauty: probeBeauty(),
-		programMode: deriveProgramMode(probeWithoutTier)
+		programMode: deriveProgramModeSupport(probeWithTier)
 	};
 
 	// Dev-only override hook for tests (Vite tree-shakes this in production).
