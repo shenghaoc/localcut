@@ -205,23 +205,23 @@
 
 ## T9 — CountdownOverlay component (R2)
 
-- [ ] **T9.1** Implement `CountdownOverlay` as a local component inside
+- [x] **T9.1** Implement `CountdownOverlay` as a local component inside
   `src/ui/RecordPanel.tsx` (not a separate file — it is only used here). It renders
   a fullscreen fixed-position `<div>` with a semi-transparent scrim, a centred
   large numeral showing `countdownRemaining`, a Cancel button, and an
   `aria-live="assertive"` region that announces each count value as text. No media
   objects; no `postMessage`; pure SolidJS signals.
-- [ ] **T9.2** Drive the countdown from a `setInterval` in the RecordPanel: interval
+- [x] **T9.2** Drive the countdown from a `setInterval` in the RecordPanel: interval
   fires every 1 s, decrementing `countdownRemaining`. At 0, clear the interval and
   issue `capture-start`. Cancel clears the interval and returns to `'idle'`. Escape
   key fires Cancel. Use `onCleanup` to clear the interval if the component unmounts
   mid-countdown.
-- [ ] **T9.3** When `countdownS === 0`, clicking Start skips the overlay entirely and
+- [x] **T9.3** When `countdownS === 0`, clicking Start skips the overlay entirely and
   calls `capture-start` immediately (no `setInterval`, no overlay shown).
 
 ## T10 — RecorderControlStrip component (R6)
 
-- [ ] **T10.1** Create `src/ui/RecorderControlStrip.tsx`. Props: `session`,
+- [x] **T10.1** Create `src/ui/RecorderControlStrip.tsx`. Props: `session`,
   `elapsedUs`, `pausedUs`, `onPause`, `onResume`, `onStop`. Renders:
   elapsed time formatted as `MM:SS` (paused time as a secondary `MM:SS`), a
   Pause button (visible when `session === 'recording'`), a Resume button (visible
@@ -229,23 +229,23 @@
   reachable, ARIA-labeled, and meet 3:1 contrast minimum. The root element carries
   `data-testid` set by a prop `testId: string` (caller passes `'recorder-control-strip-pip'`
   or `'recorder-control-strip-inpage'`).
-- [ ] **T10.2** In `src/ui/RecordPanel.tsx`, when a recording session starts (state
+- [x] **T10.2** In `src/ui/RecordPanel.tsx`, when a recording session starts (state
   transitions to `'recording'`): if `captureUx.documentPip === 'supported'`, call
   `documentPictureInPicture.requestWindow({ width: 320, height: 80 })`, then use
   SolidJS `render()` to mount `RecorderControlStrip` into the returned window's
   document body. Set `documentPipActive` signal to `true`. If the call throws or the
   window is null, fall through to the in-page path.
-- [ ] **T10.3** Register a `pagehide` listener on the PiP window in an `onCleanup`
+- [x] **T10.3** Register a `pagehide` listener on the PiP window in an `onCleanup`
   callback: when fired (user closed the PiP window), call the `dispose()` function
   returned by `render()` to tear down the SolidJS root in the PiP window (preventing
   memory leaks from orphaned reactive subscriptions), then set `documentPipActive` to
   `false`; the in-page strip becomes visible automatically (it is always mounted, just
   hidden via CSS when `documentPipActive` is `true`).
-- [ ] **T10.4** Render the in-page `RecorderControlStrip` unconditionally into the main
+- [x] **T10.4** Render the in-page `RecorderControlStrip` unconditionally into the main
   document as a `position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%)`
   strip. Hide it with `display: none` (not `visibility: hidden`) when the PiP window
   is active (`documentPipActive === true`) to avoid presenting duplicate controls.
-- [ ] **T10.5** On session stop or `capture-landed`, dispose the PiP window SolidJS
+- [x] **T10.5** On session stop or `capture-landed`, dispose the PiP window SolidJS
   root (call the `dispose()` function returned by `render()`) and call
   `documentPictureInPicture.window?.close()` in the `onCleanup` path.
 
@@ -256,34 +256,34 @@
   a new `TimelineClipSnapshot` with `id`, `transform`, `keyframes`, and all other
   fields preserved, and `sourceId`, `duration`, `inPoint` (0), `outPoint` (durationS)
   updated. Does no I/O; pure function.
-- [ ] **T11.2** Extend `src/ui/Inspector.tsx`: when the selected clip's snapshot has a
+- [x] **T11.2** Extend `src/ui/Inspector.tsx`: when the selected clip's snapshot has a
   `captureSessionId` field, render a **Retake** button in the clip-properties section.
   The button is disabled (with reason text) when `session !== 'idle'` (recording in
   progress) or when `acquire('capture')` would return `'budget-exhausted'`. Clicking
   the enabled button calls a `onRetakeRequested(clipId)` callback passed from
   `App.tsx`, which sets the `retakeClipId` signal in RecordPanel and puts the panel
   into `'countdown'` state with the retake clip id.
-- [ ] **T11.3** In `src/ui/App.tsx` (or wherever `Inspector` and `RecordPanel` are
+- [x] **T11.3** In `src/ui/App.tsx` (or wherever `Inspector` and `RecordPanel` are
   wired), connect `onRetakeRequested` from Inspector to RecordPanel's retake entry
   point. No media objects cross this boundary — only the `clipId: string`.
 
 ## T12 — RecordPanel and mid-session source switching (R1, R4, R5)
 
-- [ ] **T12.1** Create `src/ui/RecordPanel.tsx` as the definitive Record panel (Phase
+- [x] **T12.1** Create `src/ui/RecordPanel.tsx` as the definitive Record panel (Phase
   42 owns this file). Include all Phase 41 acquisition controls: Add screen (one
   `getDisplayMedia` gesture each), camera picker, mic picker, capability-gated
   system/tab-audio toggle. Add Phase 42 controls: countdown-duration selector (0/3/5 s
   radio group), Pause/Resume, webcam layout preset section (hidden when no webcam
   source is present), Region/Element Capture options in the source picker (gated on
   `cropTarget` / `elementCapture` probes, labelled Experimental, own-tab only).
-- [ ] **T12.2** Gate the panel on Phase 41's `recordingAvailable` derivation. When
+- [x] **T12.2** Gate the panel on Phase 41's `recordingAvailable` derivation. When
   false, render the panel visible-but-disabled with per-missing-probe reasons and
   action links (Phase 26 pattern). Never hide the panel entirely.
-- [ ] **T12.3** Mid-session source switching: the Add screen / camera / mic controls
+- [x] **T12.3** Mid-session source switching: the Add screen / camera / mic controls
   remain enabled while `session === 'recording' || session === 'paused'`. Adding a
   source mid-session sends `capture-add-source` with the new track. The source chip
   list is derived from `capture-status.sources` (reactive).
-- [ ] **T12.4** Region/Element Capture flow: "Own tab (Region)" / "Own tab (Element)"
+- [x] **T12.4** Region/Element Capture flow: "Own tab (Region)" / "Own tab (Element)"
   options appear in the Add source section when the respective probes are `'supported'`.
   Both options are labelled **"Experimental"**. Selecting one prompts the user with a
   brief instruction ("Click the element to capture"), listens for a single `click`
@@ -294,21 +294,21 @@
   On success, appends a `source-region-applied` manifest record via the dedicated
   `capture-apply-region` command defined in T1:
   `{ type: 'capture-apply-region'; sourceId: string; mode: 'crop' | 'element' }`.
-- [ ] **T12.5** Webcam layout controls: four corner-position buttons (icon-labelled),
+- [x] **T12.5** Webcam layout controls: four corner-position buttons (icon-labelled),
   S/M/L size radio buttons, margin number input (0–64 step 4). All changes are saved
   immediately to `CAPTURE_SETTINGS_STORE`. CSS self-monitor tile updates reactively to
   reflect the chosen preset via inline style (`position: absolute; width: ...; ...`).
-- [ ] **T12.6** Accessibility pass: all controls keyboard-operable, ARIA-labeled,
+- [x] **T12.6** Accessibility pass: all controls keyboard-operable, ARIA-labeled,
   visible focus, no colour-only state indicators. The recording-active state is
   announced via ARIA live region. `onCleanup` for the PiP window, countdown interval,
   and any `document` event listeners.
 
 ## T13 — Playwright tests (R10)
 
-- [ ] **T13.1** Create `tests/e2e/recorder-ux.spec.ts`. Configure `test.describe` in
+- [x] **T13.1** Create `tests/e2e/recorder-ux.spec.ts`. Configure `test.describe` in
   `serial` mode (one worker). Both tests reuse the Vite dev server started by the
   existing `playwright.config.ts` (`test:e2e` script).
-- [ ] **T13.2** **Record → pause → resume → stop → timeline test:**
+- [x] **T13.2** **Record → pause → resume → stop → timeline test:**
   Launch Chromium with browser args:
   `--use-fake-device-for-media-stream --use-fake-ui-for-media-stream
   --auto-select-desktop-capture-source`. These are added to the test's
@@ -320,7 +320,7 @@
   `capture-landed` (poll for two new tracks appearing in the Timeline DOM — selector
   `[data-testid="timeline-track"]` count ≥ 2). Assert a `[data-testid="timeline-marker"]`
   with label text "Resume 1" exists.
-- [ ] **T13.3** **Document PiP fallback test:**
+- [x] **T13.3** **Document PiP fallback test:**
   Use `page.addInitScript` to inject
   `window.__localcutCapabilityOverrides = { captureUx: { documentPip: 'unsupported' } }`
   before navigation. Navigate and start a recording (camera only, fake device).
@@ -330,7 +330,7 @@
 
 ## T14 — Docs (R10)
 
-- [ ] **T14.1** Create `docs/RECORDING.md` covering: countdown configuration (0/3/5 s),
+- [x] **T14.1** Create `docs/RECORDING.md` covering: countdown configuration (0/3/5 s),
   pause/resume (what the seam markers are, that gaps are collapsed on landing),
   webcam PiP layout presets (four corners, S/M/L sizes, margin; note that the preset
   applies at landing — the live monitor tile is a preview only), Document PiP
@@ -338,7 +338,7 @@
   Capture (Experimental; Chromium-only; own-tab only; difference between Region and
   Element), and the Retake flow (how to use it, that undo works, and that the old
   recording stays in the media bin).
-- [ ] **T14.2** Update `docs/USER-GUIDE.md` to link to `docs/RECORDING.md` from the
+- [x] **T14.2** Update `docs/USER-GUIDE.md` to link to `docs/RECORDING.md` from the
   recording section. Update the recording capability summary table (Safari/Firefox
   recording unavailable with per-probe reasons; Document PiP, Region Capture, Element
   Capture labelled Chromium-only).

@@ -69,6 +69,21 @@ interface WriteResumeMessage {
 	atUs: number;
 }
 
+interface WriteSourceAddedMessage {
+	type: 'write-source-added';
+	sessionId: string;
+	source: Record<string, unknown>;
+	atUs: number;
+}
+
+interface WriteSourceRegionAppliedMessage {
+	type: 'write-source-region-applied';
+	sessionId: string;
+	sourceId: string;
+	mode: 'crop' | 'element';
+	atUs: number;
+}
+
 interface ScanSessionsMessage {
 	type: 'scan-sessions';
 }
@@ -86,6 +101,8 @@ type WriterMessage =
 	| WriteSourceEndedMessage
 	| WritePauseMessage
 	| WriteResumeMessage
+	| WriteSourceAddedMessage
+	| WriteSourceRegionAppliedMessage
 	| ScanSessionsMessage
 	| DiscardSessionMessage;
 
@@ -158,6 +175,21 @@ class CaptureWriter {
 				case 'write-resume':
 					await this.appendManifest(msg.sessionId, {
 						kind: 'resume',
+						atUs: msg.atUs
+					});
+					break;
+				case 'write-source-added':
+					await this.appendManifest(msg.sessionId, {
+						kind: 'source-added',
+						source: msg.source,
+						atUs: msg.atUs
+					});
+					break;
+				case 'write-source-region-applied':
+					await this.appendManifest(msg.sessionId, {
+						kind: 'source-region-applied',
+						sourceId: msg.sourceId,
+						mode: msg.mode,
 						atUs: msg.atUs
 					});
 					break;

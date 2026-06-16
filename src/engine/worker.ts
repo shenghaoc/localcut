@@ -169,7 +169,9 @@ import {
 	expandLinkedGroup,
 	setSkinMask,
 	setBeautyEffect,
+	defaultClipTransform,
 	DEFAULT_MASTER_GAIN,
+	DEFAULT_TRACK_MIX,
 	DEFAULT_TITLE_DURATION_S,
 	normalizeTransform,
 	maxTransitionDurationS,
@@ -325,6 +327,8 @@ import { serializeTimelineToOtio } from './interchange/otio';
 import { proxyStatusForAsset } from './proxy-jobs';
 import { buildWorkerDiagnosticSnapshot } from './diagnostics';
 import { CaptureSession } from './capture/capture-session';
+import { computeGapCollapsedUs, seamMarkerPositionsUs } from './capture/pause-resume';
+import { DEFAULT_WEBCAM_PRESET, deriveWebcamTransform } from './capture/webcam-preset';
 import {
 	createEmptyRecentErrorLog,
 	createRecentError,
@@ -512,11 +516,16 @@ const FRAME_CACHE_BUDGET_BYTES = 64 * 1024 * 1024;
 let audioRing: AudioRingViews | null = null;
 // ── Phase 41 Capture Engine ────────────────────────────────────────────
 let captureSession: CaptureSession | null = null;
+let captureLandingSettings: import('../protocol').CaptureSettingsSnapshot | null = null;
+let captureRetakeClipId: string | undefined;
 interface PendingCaptureSource {
 	sourceId: string;
 	kind: import('../protocol').CaptureSourceKind;
 	label: string;
 	track: MediaStreamTrack;
+	width?: number;
+	height?: number;
+	frameRate?: number | null;
 }
 const pendingCaptureSources = new Map<string, PendingCaptureSource>();
 let audioWriteAnchor = 0;
@@ -602,6 +611,219 @@ function makeProjectId(): string {
 		return `project-${crypto.randomUUID()}`;
 	}
 	return `project-${Math.random().toString(36).slice(2)}`;
+}
+
+function makeTrackId(sourceId: string): string {
+	const suffix =
+		typeof crypto !== 'undefined' && 'randomUUID' in crypto
+			? crypto.randomUUID()
+			: Math.random().toString(36).slice(2);
+	return `track-${sourceId}-${suffix}`;
+}
+
+function captureTrackType(kind: import('../protocol').CaptureSourceKind): TimelineTrack['type'] {
+	return kind === 'mic' || kind === 'system-audio' ? 'audio' : 'video';
+}
+
+function captureSourceFileName(
+	sessionId: string,
+	source: { sourceId: string; kind: import('../protocol').CaptureSourceKind }
+): string {
+	const prefix = source.kind === 'mic' || source.kind === 'system-audio' ? 'audio' : 'video';
+	return `${sessionId}-${prefix}-${source.sourceId}.mp4`;
+}
+
+function capturedSourceDescriptor(
+	sessionId: string,
+	source: ReturnType<CaptureSession['getLandingSources']>[number],
+	durationS: number
+): SourceDescriptor {
+	const isAudio = captureTrackType(source.kind) === 'audio';
+	return {
+		sourceId: source.sourceId,
+		fileName: captureSourceFileName(sessionId, source),
+		kind: isAudio ? 'audio' : 'video',
+		byteSize: source.bytesWritten,
+		durationS,
+		mimeType: isAudio ? 'audio/mp4' : 'video/mp4',
+		captureMode: source.captureMode,
+		captureSessionId: sessionId,
+		health: {
+			sourceId: source.sourceId,
+			fileName: captureSourceFileName(sessionId, source),
+			status: 'ok',
+			warnings: []
+		},
+		...(isAudio
+			? {
+					audio: {
+						channels: 2,
+						sampleRate: 48_000,
+						codec: 'aac',
+						canDecode: false,
+						trackStartS: 0,
+						trackDurationS: durationS
+					}
+				}
+			: {
+					video: {
+						width: source.width ?? 1920,
+						height: source.height ?? 1080,
+						frameRate: source.frameRate ?? null,
+						frameRateMode: 'constant' as const,
+						codec: 'h264',
+						canDecode: false,
+						trackStartS: 0,
+						trackDurationS: durationS
+					}
+				})
+	};
+}
+
+function findTimelineClipById(clipId: string): { trackIndex: number; clipIndex: number } | null {
+	for (let trackIndex = 0; trackIndex < timeline.length; trackIndex++) {
+		const clipIndex = timeline[trackIndex]!.clips.findIndex((clip) => clip.id === clipId);
+		if (clipIndex >= 0) return { trackIndex, clipIndex };
+	}
+	return null;
+}
+
+function applyCaptureLanding(
+	session: CaptureSession,
+	settings: import('../protocol').CaptureSettingsSnapshot,
+	retakeClipId?: string
+): string[] {
+	const sources = session.getLandingSources();
+	if (sources.length === 0) return [];
+
+	const pairs = session.getPauseResumePairs();
+	const epochUs = session.epochValue ?? Math.min(...sources.map((source) => source.firstSampleUs));
+	const seamMarkers = seamMarkerPositionsUs(pairs);
+	const trackIds: string[] = [];
+	const descriptors = new Map<string, SourceDescriptor>();
+	const canvasWidth =
+		typeof settings.canvasWidth === 'number' && Number.isFinite(settings.canvasWidth)
+			? settings.canvasWidth
+			: (lastExportSettings?.width ?? 1920);
+	const canvasHeight =
+		typeof settings.canvasHeight === 'number' && Number.isFinite(settings.canvasHeight)
+			? settings.canvasHeight
+			: (lastExportSettings?.height ?? 1080);
+	const webcamPreset = settings.webcamPreset ?? DEFAULT_WEBCAM_PRESET;
+
+	const sourceClips = sources.map((source) => {
+		const adjustedFirstUs = computeGapCollapsedUs(source.firstSampleUs, pairs);
+		const adjustedLastUs = computeGapCollapsedUs(source.lastSampleUs, pairs);
+		const start = Math.max(0, (adjustedFirstUs - epochUs) / 1_000_000);
+		const duration = Math.max(0.1, (adjustedLastUs - adjustedFirstUs) / 1_000_000);
+		const descriptor = capturedSourceDescriptor(session.sessionId, source, duration);
+		descriptors.set(source.sourceId, descriptor);
+
+		const transform =
+			source.kind === 'webcam'
+				? {
+						...defaultClipTransform(),
+						...deriveWebcamTransform(
+							webcamPreset,
+							canvasWidth,
+							canvasHeight,
+							source.width ?? 1280,
+							source.height ?? 720
+						)
+					}
+				: defaultClipTransform();
+		return {
+			source,
+			clip: defaultTimelineClip({
+				id: makeClipId(source.sourceId),
+				sourceId: source.sourceId,
+				start,
+				duration,
+				inPoint: 0,
+				transform,
+				captureSessionId: session.sessionId
+			})
+		};
+	});
+
+	for (const descriptor of descriptors.values()) {
+		sourceDescriptors.set(descriptor.sourceId, descriptor);
+		binSourceIds.add(descriptor.sourceId);
+	}
+
+	const committed = commitEditMutation(
+		() => {
+			let nextTimeline: Timeline = timeline;
+			if (retakeClipId) {
+				const loc = findTimelineClipById(retakeClipId);
+				const replacement = sourceClips.find(
+					(item) =>
+						captureTrackType(item.source.kind) === (loc ? timeline[loc.trackIndex]!.type : 'video')
+				);
+				if (loc && replacement) {
+					nextTimeline = timeline.map((track, trackIndex) =>
+						trackIndex === loc.trackIndex
+							? {
+									...track,
+									clips: track.clips.map((clip, clipIndex) =>
+										clipIndex === loc.clipIndex
+											? {
+													...clip,
+													sourceId: replacement.source.sourceId,
+													duration: replacement.clip.duration,
+													inPoint: 0,
+													cleanedAudio: undefined,
+													captureSessionId: session.sessionId
+												}
+											: clip
+									)
+								}
+							: track
+					);
+					trackIds.push(timeline[loc.trackIndex]!.id);
+				}
+			} else {
+				nextTimeline = [
+					...timeline,
+					...sourceClips.map((item) => {
+						const trackId = makeTrackId(item.source.sourceId);
+						trackIds.push(trackId);
+						return {
+							id: trackId,
+							type: captureTrackType(item.source.kind),
+							clips: [item.clip],
+							...DEFAULT_TRACK_MIX
+						};
+					})
+				];
+			}
+
+			let nextMarkers = markers;
+			for (const marker of seamMarkers) {
+				nextMarkers = addMarker(
+					nextMarkers,
+					Math.max(0, marker.positionUs / 1_000_000),
+					marker.label
+				);
+			}
+			return { timeline: nextTimeline, captionTracks, transitions, markers: nextMarkers };
+		},
+		{ prune: false, refreshPlayback: 'refresh' }
+	);
+
+	if (!committed) return [];
+	postMediaAssets();
+	for (const descriptor of descriptors.values()) {
+		postSourceHealth(
+			descriptor.health ?? {
+				sourceId: descriptor.sourceId,
+				fileName: descriptor.fileName,
+				status: 'ok',
+				warnings: []
+			}
+		);
+	}
+	return trackIds;
 }
 
 function post(msg: WorkerStateMessage) {
@@ -766,6 +988,7 @@ function postTimelineState() {
 			audioFadeOut: clip.audioFadeOut,
 			offline: clip.kind === 'title' || sourceInputs.has(clip.sourceId) ? undefined : true,
 			linkedGroupId: clip.linkedGroupId,
+			captureSessionId: clip.captureSessionId,
 			skinMask: clip.skinMask ? { ...clip.skinMask } : undefined,
 			timeRemap: clip.timeRemap
 				? { ...clip.timeRemap, keyframes: [...clip.timeRemap.keyframes] }
@@ -8219,12 +8442,51 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			void handlePublishTapStop();
 			break;
 		case 'capture-add-source':
-			pendingCaptureSources.set(cmd.source.sourceId, {
-				sourceId: cmd.source.sourceId,
-				kind: cmd.source.kind,
-				label: cmd.source.label,
-				track: cmd.track
-			});
+			if (captureSession?.stateValue === 'recording' || captureSession?.stateValue === 'paused') {
+				const videoConfig: VideoEncoderConfig | undefined =
+					cmd.source.kind === 'screen' || cmd.source.kind === 'webcam'
+						? {
+								codec: 'avc1.64002a',
+								width: cmd.source.width ?? 1920,
+								height: cmd.source.height ?? 1080,
+								bitrate: 5_000_000,
+								latencyMode: 'realtime',
+								hardwareAcceleration: 'prefer-hardware'
+							}
+						: undefined;
+				const audioConfig: AudioEncoderConfig | undefined =
+					cmd.source.kind === 'mic' || cmd.source.kind === 'system-audio'
+						? {
+								codec: 'mp4a.40.2',
+								sampleRate: 48_000,
+								numberOfChannels: 2,
+								bitrate: 128_000
+							}
+						: undefined;
+				captureSession.addSource(
+					cmd.source.sourceId,
+					cmd.source.kind,
+					cmd.source.label,
+					cmd.track,
+					videoConfig,
+					audioConfig,
+					{
+						width: cmd.source.width,
+						height: cmd.source.height,
+						frameRate: cmd.source.frameRate
+					}
+				);
+			} else {
+				pendingCaptureSources.set(cmd.source.sourceId, {
+					sourceId: cmd.source.sourceId,
+					kind: cmd.source.kind,
+					label: cmd.source.label,
+					track: cmd.track,
+					width: cmd.source.width,
+					height: cmd.source.height,
+					frameRate: cmd.source.frameRate
+				});
+			}
 			break;
 		case 'capture-remove-source':
 			pendingCaptureSources.delete(cmd.sourceId);
@@ -8252,13 +8514,15 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 				cmd.writerPort
 			);
 			const settings = cmd.settings;
+			captureLandingSettings = settings;
+			captureRetakeClipId = cmd.retakeClipId;
 			for (const [, src] of pendingCaptureSources) {
 				const videoConfig: VideoEncoderConfig | undefined =
 					src.kind === 'screen' || src.kind === 'webcam'
 						? {
 								codec: settings.videoCodec,
-								width: 1920,
-								height: 1080,
+								width: src.width ?? settings.canvasWidth ?? 1920,
+								height: src.height ?? settings.canvasHeight ?? 1080,
 								bitrate: settings.videoBitrate ?? 5_000_000,
 								latencyMode: 'realtime',
 								hardwareAcceleration: 'prefer-hardware'
@@ -8279,7 +8543,12 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 					src.label,
 					src.track,
 					videoConfig,
-					audioConfig
+					audioConfig,
+					{
+						width: src.width,
+						height: src.height,
+						frameRate: src.frameRate
+					}
 				);
 			}
 			pendingCaptureSources.clear();
@@ -8294,11 +8563,24 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 				void (async () => {
 					try {
 						await session.stop();
+						const trackIds = applyCaptureLanding(
+							session,
+							captureLandingSettings ?? {
+								chunkDurationS: 2,
+								videoCodec: 'avc1.64002a',
+								audioCodec: 'mp4a.40.2',
+								videoBitrate: 5_000_000
+							},
+							captureRetakeClipId
+						);
+						post({ type: 'capture-landed', sessionId: session.sessionId, trackIds });
 					} finally {
 						session.reset();
 						if (captureSession === session) {
 							captureSession = null;
 						}
+						captureLandingSettings = null;
+						captureRetakeClipId = undefined;
 					}
 				})();
 			}
@@ -8334,9 +8616,7 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			}
 			break;
 		case 'capture-apply-region':
-			// Phase 42: Apply Region/Element Capture to an existing source track
-			// TODO: Phase 42 T12.4 — apply crop/restriction to the source track
-			void cmd;
+			captureSession?.applyRegion(cmd.sourceId, cmd.mode);
 			break;
 		case 'capture-recovery-import':
 			// TODO: Phase 41 — T7 crash recovery: scan + import orphaned session

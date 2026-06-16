@@ -539,6 +539,26 @@ for the in-app guide.
 - **Privacy**: all translation and drafting stay on your device. No captions, transcripts, or
   media leave the browser, and there is no cloud API.
 
+## Recording
+
+Use the **Record** panel to capture screen, camera, microphone, and tab/system audio as editable timeline sources. Recording stays local to the browser and writes active-session chunks to private browser storage.
+
+- **Countdown**: choose **0 s**, **3 s**, or **5 s** before starting. Press **Cancel** or **Escape** during the countdown to return to idle.
+- **Pause / Resume**: pausing drains the active encoders. When the session lands, paused gaps are collapsed and timeline markers named **Resume 1**, **Resume 2**, and so on show where the removed gaps were.
+- **Webcam layout**: choose a corner, S/M/L size, and margin for webcam picture-in-picture placement. The preview tile updates immediately, but the preset is applied when the recording lands as normal transform values.
+- **Recorder strip**: Chromium can show pause/resume/stop controls in a Document Picture-in-Picture window. When Document PiP is unavailable, the same controls remain visible in an in-page floating strip.
+- **Region / Element Capture**: experimental Chromium-only options for own-tab captures. Region crops to an element's bounds; Element restricts capture to the selected element. Add a tab source before using either option.
+- **Retake**: captured clips expose a **Retake** action in the Inspector. Retake mode lists the fresh source kinds needed to match the original recording, then starts the countdown once they are present. A retake replaces that clip's source and duration while preserving its clip id, transform, and keyframes. Undo restores the previous clip, and the old recording remains in the media bin.
+
+| Capability            | Chrome / Chromium                                                               | Safari / Firefox                |
+| --------------------- | ------------------------------------------------------------------------------- | ------------------------------- |
+| Recording panel       | Enabled when all capture probes pass; otherwise disabled with per-probe reasons | Disabled with per-probe reasons |
+| Document PiP controls | Chromium-only when `documentPictureInPicture` is available                      | In-page fallback                |
+| Region Capture        | Experimental Chromium-only                                                      | Unavailable                     |
+| Element Capture       | Experimental Chromium-only                                                      | Unavailable                     |
+
+See the full [Recording guide](RECORDING.md) for details.
+
 ## Replay Buffer
 
 Continuously record a screen capture into a rolling buffer and save the last moments as a timeline clip — without interrupting the recording.

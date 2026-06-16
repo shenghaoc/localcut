@@ -6,6 +6,12 @@ import {
 } from './project';
 import type { PublishSettingsDoc } from '../protocol';
 import { parsePublishSettings, sanitizeForPersist } from './publish-settings';
+import {
+	DEFAULT_WEBCAM_PRESET,
+	type WebcamPipPreset,
+	type WebcamPipCorner,
+	type WebcamPipSize
+} from './capture/webcam-preset';
 
 const DB_NAME = 'localcut-projects';
 const DB_VERSION = 2;
@@ -15,8 +21,20 @@ const SOURCE_STORE = 'sources';
 // ProjectDoc — so project bundles and autosaves structurally cannot carry
 // stream destinations or bearer tokens (R7.3).
 const PUBLISH_SETTINGS_STORE = 'publish-settings';
+export const CAPTURE_SETTINGS_STORE = 'capture-settings';
 const LAST_PROJECT_KEY = 'last';
 const PUBLISH_SETTINGS_KEY = 'device';
+const CAPTURE_SETTINGS_KEY = 'device';
+
+export interface CaptureUxSettings {
+	countdownS: 0 | 3 | 5;
+	webcamPreset: WebcamPipPreset;
+}
+
+export const DEFAULT_CAPTURE_SETTINGS: CaptureUxSettings = {
+	countdownS: 3,
+	webcamPreset: { ...DEFAULT_WEBCAM_PRESET }
+};
 
 export interface StoredSourceRecord {
 	sourceId: string;
@@ -68,6 +86,9 @@ function openDatabase(): Promise<IDBDatabase> {
 			if (!db.objectStoreNames.contains(PUBLISH_SETTINGS_STORE)) {
 				db.createObjectStore(PUBLISH_SETTINGS_STORE);
 			}
+			if (!db.objectStoreNames.contains(CAPTURE_SETTINGS_STORE)) {
+				db.createObjectStore(CAPTURE_SETTINGS_STORE);
+			}
 		};
 		request.onsuccess = () => {
 			const db = request.result;
@@ -99,6 +120,47 @@ function isFileHandleValue(value: unknown): value is FileSystemFileHandle {
 		typeof value.name === 'string' &&
 		typeof value.getFile === 'function'
 	);
+}
+
+function parseCountdown(value: unknown): CaptureUxSettings['countdownS'] {
+	return value === 0 || value === 3 || value === 5 ? value : DEFAULT_CAPTURE_SETTINGS.countdownS;
+}
+
+function parseWebcamCorner(value: unknown): WebcamPipCorner {
+	return value === 'top-left' ||
+		value === 'top-right' ||
+		value === 'bottom-left' ||
+		value === 'bottom-right'
+		? value
+		: DEFAULT_CAPTURE_SETTINGS.webcamPreset.corner;
+}
+
+function parseWebcamSize(value: unknown): WebcamPipSize {
+	return value === 'S' || value === 'M' || value === 'L'
+		? value
+		: DEFAULT_CAPTURE_SETTINGS.webcamPreset.size;
+}
+
+function parseWebcamPreset(value: unknown): WebcamPipPreset {
+	if (!isRecord(value)) return { ...DEFAULT_CAPTURE_SETTINGS.webcamPreset };
+	const margin =
+		typeof value.marginPx === 'number' && Number.isFinite(value.marginPx)
+			? Math.max(0, Math.min(64, Math.round(value.marginPx / 4) * 4))
+			: DEFAULT_CAPTURE_SETTINGS.webcamPreset.marginPx;
+	return {
+		corner: parseWebcamCorner(value.corner),
+		size: parseWebcamSize(value.size),
+		marginPx: margin
+	};
+}
+
+function parseCaptureSettings(value: unknown): CaptureUxSettings {
+	if (!isRecord(value))
+		return { ...DEFAULT_CAPTURE_SETTINGS, webcamPreset: { ...DEFAULT_WEBCAM_PRESET } };
+	return {
+		countdownS: parseCountdown(value.countdownS),
+		webcamPreset: parseWebcamPreset(value.webcamPreset)
+	};
 }
 
 export async function loadStoredProject(): Promise<StoredProjectLoadResult> {
@@ -198,6 +260,36 @@ export async function deletePublishSettings(): Promise<void> {
 	const db = await openDatabase();
 	const transaction = db.transaction(PUBLISH_SETTINGS_STORE, 'readwrite');
 	transaction.objectStore(PUBLISH_SETTINGS_STORE).delete(PUBLISH_SETTINGS_KEY);
+	await transactionDone(transaction);
+}
+
+export async function loadCaptureSettings(): Promise<CaptureUxSettings> {
+	try {
+		const db = await openDatabase();
+		const transaction = db.transaction(CAPTURE_SETTINGS_STORE, 'readonly');
+		const done = transactionDone(transaction);
+		const [value] = await Promise.all([
+			requestResult<unknown>(
+				transaction.objectStore(CAPTURE_SETTINGS_STORE).get(CAPTURE_SETTINGS_KEY)
+			),
+			done
+		]);
+		return parseCaptureSettings(value);
+	} catch {
+		return { ...DEFAULT_CAPTURE_SETTINGS, webcamPreset: { ...DEFAULT_WEBCAM_PRESET } };
+	}
+}
+
+export async function saveCaptureSettings(settings: CaptureUxSettings): Promise<void> {
+	const db = await openDatabase();
+	const transaction = db.transaction(CAPTURE_SETTINGS_STORE, 'readwrite');
+	transaction.objectStore(CAPTURE_SETTINGS_STORE).put(
+		{
+			countdownS: parseCountdown(settings.countdownS),
+			webcamPreset: parseWebcamPreset(settings.webcamPreset)
+		},
+		CAPTURE_SETTINGS_KEY
+	);
 	await transactionDone(transaction);
 }
 

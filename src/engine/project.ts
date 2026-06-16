@@ -264,6 +264,7 @@ function cloneClip(clip: TimelineClip): TimelineClip {
 		cloned.title = normalizeTitleContent(clip.title);
 	}
 	if (clip.linkedGroupId) cloned.linkedGroupId = clip.linkedGroupId;
+	if (clip.captureSessionId) cloned.captureSessionId = clip.captureSessionId;
 	if (clip.cleanedAudio) cloned.cleanedAudio = { ...clip.cleanedAudio };
 	if (clip.skinMask) cloned.skinMask = { ...clip.skinMask };
 	if (clip.matte) cloned.matte = { ...clip.matte };
@@ -391,6 +392,8 @@ function cloneSourceDescriptor(source: SourceDescriptor): SourceDescriptor {
 		byteSize: source.byteSize,
 		durationS: source.durationS,
 		mimeType: source.mimeType,
+		captureMode: source.captureMode,
+		captureSessionId: source.captureSessionId,
 		fingerprint: source.fingerprint ? { ...source.fingerprint } : undefined,
 		adapterId: source.adapterId,
 		timing: source.timing ? cloneTiming(source.timing) : undefined,
@@ -621,6 +624,9 @@ function parseClip(value: unknown): TimelineClip | null {
 		audioFadeOut: Math.max(0, audioFadeOut)
 	};
 	if (linkedGroupId) clip.linkedGroupId = linkedGroupId;
+	if (typeof value.captureSessionId === 'string' && value.captureSessionId.length > 0) {
+		clip.captureSessionId = value.captureSessionId;
+	}
 	if (keyframes) clip.keyframes = keyframes;
 	if (lut) clip.lut = lut;
 	if (isRecord(value.matte)) {
@@ -1201,6 +1207,16 @@ export function parseSourceDescriptor(value: unknown): SourceDescriptor | null {
 	const timing = parseTiming(value.timing);
 	const health = parseHealthReport(value.health, sourceId, fileName);
 	const fingerprint = parseFingerprint(value.fingerprint);
+	const captureMode =
+		value.captureMode === 'region' || value.captureMode === 'element'
+			? value.captureMode
+			: value.captureMode === 'full'
+				? 'full'
+				: undefined;
+	const captureSessionId =
+		typeof value.captureSessionId === 'string' && value.captureSessionId.length > 0
+			? value.captureSessionId
+			: undefined;
 
 	return {
 		sourceId,
@@ -1209,6 +1225,8 @@ export function parseSourceDescriptor(value: unknown): SourceDescriptor | null {
 		byteSize,
 		durationS,
 		mimeType,
+		captureMode,
+		captureSessionId,
 		fingerprint,
 		adapterId,
 		timing,

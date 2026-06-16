@@ -5,6 +5,7 @@ import type {
 	CaptureStopReason,
 	CaptureSourceStatusSnapshot
 } from '../../protocol';
+import type { PauseResumePair } from './pause-resume';
 import { TrackPipeline, type TrackPipelineCallbacks } from './track-pipeline';
 
 export interface CaptureSessionCallbacks {
@@ -30,6 +31,12 @@ interface SourceEntry {
 	preEncodeDrops: number;
 	bytesWritten: number;
 	firstSampleUs: number | null;
+	lastSampleUs: number | null;
+	width?: number;
+	height?: number;
+	frameRate?: number | null;
+	captureMode: 'full' | 'region' | 'element';
+	sourceAddedPending: boolean;
 }
 
 interface WriterChunkAckMessage {
@@ -55,6 +62,8 @@ export class CaptureSession {
 	private totalBytesWritten = 0;
 	private lastEncodedFrameTs = 0;
 	private pendingResumeRecord = false;
+	private pendingPauseAtUs: number | null = null;
+	private pauseResumePairs: PauseResumePair[] = [];
 	private pausedAt = 0;
 	private accumulatedPausedUs = 0;
 	private pauseDrain: Promise<void> | null = null;
@@ -88,15 +97,14 @@ export class CaptureSession {
 		label: string,
 		track: MediaStreamTrack,
 		videoEncodeConfig?: VideoEncoderConfig,
-		audioEncodeConfig?: AudioEncoderConfig
+		audioEncodeConfig?: AudioEncoderConfig,
+		sourceInfo: { width?: number; height?: number; frameRate?: number | null } = {}
 	): void {
 		const pipelineCallbacks: TrackPipelineCallbacks = {
 			onEncodedChunk: (srcId, packet, fromUs, toUs, keyFrame, preEncodeDrops) => {
 				this.routeChunk(srcId, packet, fromUs, toUs, keyFrame, preEncodeDrops);
 			},
-			onChunkAck: (srcId) => {
-				this.handleChunkAck(srcId);
-			},
+			onChunkAck: () => {},
 			onEncodeError: (srcId, error) => {
 				this.handleSourceError(srcId, error);
 			},
@@ -123,7 +131,8 @@ export class CaptureSession {
 				? ('prefer-hardware' as const)
 				: ('no-preference' as const);
 
-		this.sources.set(sourceId, {
+		const sourceAddedPending = this.state === 'recording' || this.state === 'paused';
+		const entry: SourceEntry = {
 			sourceId,
 			kind,
 			label,
@@ -133,8 +142,18 @@ export class CaptureSession {
 			state: 'capturing',
 			preEncodeDrops: 0,
 			bytesWritten: 0,
-			firstSampleUs: null
-		});
+			firstSampleUs: null,
+			lastSampleUs: null,
+			width: sourceInfo.width,
+			height: sourceInfo.height,
+			frameRate: sourceInfo.frameRate,
+			captureMode: 'full',
+			sourceAddedPending
+		};
+		this.sources.set(sourceId, entry);
+		if (this.state === 'recording') {
+			entry.pipeline.start(this.keyframeIntervalUs());
+		}
 	}
 
 	async start(chunkDurationS: number): Promise<void> {
@@ -155,6 +174,7 @@ export class CaptureSession {
 		}
 
 		const keyframeIntervalUs = Math.round(chunkDurationS * 1_000_000);
+		this.currentKeyframeIntervalUs = keyframeIntervalUs;
 		for (const [, entry] of this.sources) {
 			entry.pipeline.start(keyframeIntervalUs);
 		}
@@ -217,6 +237,7 @@ export class CaptureSession {
 					atUs: this.lastEncodedFrameTs
 				});
 			}
+			this.pendingPauseAtUs = this.lastEncodedFrameTs;
 		})();
 		this.pauseDrain = pauseDrain;
 		try {
@@ -246,8 +267,10 @@ export class CaptureSession {
 		this.pendingResumeRecord = true;
 		this.state = 'recording';
 		for (const [, entry] of this.sources) {
-			if (entry.state === 'capturing') {
+			if (entry.state === 'capturing' && entry.firstSampleUs !== null) {
 				await entry.pipeline.resume();
+			} else if (entry.state === 'capturing') {
+				entry.pipeline.start(this.keyframeIntervalUs());
 			}
 		}
 		this.emitStatus();
@@ -268,10 +291,15 @@ export class CaptureSession {
 		entry.bytesWritten += packet.byteLength;
 		this.totalBytesWritten += packet.byteLength;
 		this.lastEncodedFrameTs = Math.max(this.lastEncodedFrameTs, toUs);
+		entry.lastSampleUs = Math.max(entry.lastSampleUs ?? toUs, toUs);
 
 		// Write the resume manifest record on the first encoded frame after resume.
 		if (this.pendingResumeRecord) {
 			this.pendingResumeRecord = false;
+			if (this.pendingPauseAtUs !== null) {
+				this.pauseResumePairs.push({ pauseAtUs: this.pendingPauseAtUs, resumeAtUs: fromUs });
+				this.pendingPauseAtUs = null;
+			}
 			if (this.writerPort) {
 				this.writerPort.postMessage({
 					type: 'write-resume',
@@ -284,6 +312,15 @@ export class CaptureSession {
 		if (entry.firstSampleUs === null) {
 			entry.firstSampleUs = fromUs;
 			this.updateEpoch();
+		}
+		if (entry.sourceAddedPending) {
+			entry.sourceAddedPending = false;
+			this.writerPort?.postMessage({
+				type: 'write-source-added',
+				sessionId: this.sessionId,
+				source: this.sourceSnapshot(entry),
+				atUs: fromUs
+			});
 		}
 
 		if (this.writerPort) {
@@ -385,6 +422,25 @@ export class CaptureSession {
 		return audioConfig?.codec ?? 'opus';
 	}
 
+	private currentKeyframeIntervalUs = 2_000_000;
+
+	private keyframeIntervalUs(): number {
+		return this.currentKeyframeIntervalUs;
+	}
+
+	applyRegion(sourceId: string, mode: 'crop' | 'element'): void {
+		const entry = this.sources.get(sourceId);
+		if (!entry) return;
+		entry.captureMode = mode === 'crop' ? 'region' : 'element';
+		this.writerPort?.postMessage({
+			type: 'write-source-region-applied',
+			sessionId: this.sessionId,
+			sourceId,
+			mode,
+			atUs: this.lastEncodedFrameTs
+		});
+	}
+
 	private emitStatus(): void {
 		const now = performance.now();
 		const rawElapsedUs = Math.round((now - this.startTime) * 1000);
@@ -430,20 +486,62 @@ export class CaptureSession {
 		this.totalBytesWritten = 0;
 		this.lastEncodedFrameTs = 0;
 		this.pendingResumeRecord = false;
+		this.pendingPauseAtUs = null;
+		this.pauseResumePairs = [];
 		this.pausedAt = 0;
 		this.accumulatedPausedUs = 0;
 		this.pauseDrain = null;
 		this.epochUs = null;
+		this.currentKeyframeIntervalUs = 2_000_000;
 	}
 
 	getSourceSnapshots(): CaptureSourceSnapshot[] {
-		return [...this.sources.values()].map((s) => ({
-			sourceId: s.sourceId,
-			kind: s.kind,
-			label: s.label,
-			encoderConfig: s.encoderConfigLabel,
-			hardwareAcceleration: s.hwAccel
-		}));
+		return [...this.sources.values()].map((s) => this.sourceSnapshot(s));
+	}
+
+	private sourceSnapshot(source: SourceEntry): CaptureSourceSnapshot {
+		return {
+			sourceId: source.sourceId,
+			kind: source.kind,
+			label: source.label,
+			encoderConfig: source.encoderConfigLabel,
+			hardwareAcceleration: source.hwAccel,
+			width: source.width,
+			height: source.height,
+			frameRate: source.frameRate
+		};
+	}
+
+	getLandingSources(): Array<{
+		sourceId: string;
+		kind: CaptureSourceKind;
+		label: string;
+		firstSampleUs: number;
+		lastSampleUs: number;
+		bytesWritten: number;
+		width?: number;
+		height?: number;
+		frameRate?: number | null;
+		captureMode: 'full' | 'region' | 'element';
+	}> {
+		return [...this.sources.values()]
+			.filter((s) => s.firstSampleUs !== null && s.lastSampleUs !== null)
+			.map((s) => ({
+				sourceId: s.sourceId,
+				kind: s.kind,
+				label: s.label,
+				firstSampleUs: s.firstSampleUs!,
+				lastSampleUs: s.lastSampleUs!,
+				bytesWritten: s.bytesWritten,
+				width: s.width,
+				height: s.height,
+				frameRate: s.frameRate,
+				captureMode: s.captureMode
+			}));
+	}
+
+	getPauseResumePairs(): PauseResumePair[] {
+		return this.pauseResumePairs.map((pair) => ({ ...pair }));
 	}
 
 	get stateValue(): 'idle' | 'armed' | 'recording' | 'paused' | 'stopping' {

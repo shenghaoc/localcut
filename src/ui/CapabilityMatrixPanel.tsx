@@ -249,7 +249,29 @@ function rowsForProbe(probe: CapabilityProbeResult): CapabilityRow[] {
 				probe.capture.opfsSyncAccessHandle === 'supported'
 					? null
 					: 'Recording requires OPFS SyncAccessHandle for crash-safe writes.'
-		}
+		},
+		...(probe.captureUx
+			? [
+					{
+						label: 'Document PiP',
+						support: probe.captureUx.documentPip,
+						active: probe.captureUx.documentPip === 'supported',
+						action: null
+					},
+					{
+						label: 'Region Capture (Experimental)',
+						support: probe.captureUx.cropTarget,
+						active: probe.captureUx.cropTarget === 'supported',
+						action: null
+					},
+					{
+						label: 'Element Capture (Experimental)',
+						support: probe.captureUx.elementCapture,
+						active: probe.captureUx.elementCapture === 'supported',
+						action: null
+					}
+				]
+			: [])
 	];
 }
 

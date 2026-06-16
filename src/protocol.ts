@@ -1338,6 +1338,8 @@ export interface SourceDescriptorSnapshot {
 	byteSize: number;
 	durationS: number;
 	mimeType: string | null;
+	captureMode?: 'full' | 'region' | 'element';
+	captureSessionId?: string;
 	fingerprint?: MediaFingerprintSnapshot;
 	adapterId?: MediaAdapterIdSnapshot;
 	timing?: NormalizedSourceTimingSnapshot;
@@ -2063,6 +2065,15 @@ export interface CaptureSourceDescriptor {
 	sourceId: string;
 	kind: CaptureSourceKind;
 	label: string;
+	width?: number;
+	height?: number;
+	frameRate?: number | null;
+}
+
+export interface CaptureWebcamPipPresetSnapshot {
+	corner: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+	size: 'S' | 'M' | 'L';
+	marginPx: number;
 }
 
 export interface CaptureSettingsSnapshot {
@@ -2070,6 +2081,9 @@ export interface CaptureSettingsSnapshot {
 	videoCodec: string;
 	audioCodec: string;
 	videoBitrate: number | null;
+	canvasWidth?: number;
+	canvasHeight?: number;
+	webcamPreset?: CaptureWebcamPipPresetSnapshot;
 }
 
 export interface CaptureSourceSnapshot {
@@ -2078,6 +2092,9 @@ export interface CaptureSourceSnapshot {
 	label: string;
 	encoderConfig: string;
 	hardwareAcceleration: 'prefer-hardware' | 'no-preference';
+	width?: number;
+	height?: number;
+	frameRate?: number | null;
 }
 
 export interface CaptureSourceStatusSnapshot {
