@@ -165,6 +165,7 @@ import {
 	removeMarkersInRange,
 	expandLinkedGroup,
 	setSkinMask,
+	setBeautyEffect,
 	DEFAULT_MASTER_GAIN,
 	DEFAULT_TITLE_DURATION_S,
 	normalizeTransform,
@@ -723,7 +724,8 @@ function postTimelineState() {
 			skinMask: clip.skinMask ? { ...clip.skinMask } : undefined,
 			timeRemap: clip.timeRemap
 				? { ...clip.timeRemap, keyframes: [...clip.timeRemap.keyframes] }
-				: undefined
+				: undefined,
+			beauty: clip.beauty ? { ...clip.beauty } : undefined
 		}))
 	}));
 	const captionSnapshot: CaptionTrackSnapshot[] = captionTracks.map((track) => ({
@@ -2503,6 +2505,7 @@ type LayerMeta =
 			lut?: ClipLut;
 			skinMask?: import('./skin-smooth').SkinMaskParams;
 			skinSmoothBypass?: boolean;
+			beauty?: import('../protocol').BeautyEffectSnapshot;
 			transition?: import('./timeline').TransitionResolveMeta;
 			/** Phase 31: smoothed alpha view from the matte engine, if enabled. */
 			matteView?: GPUTextureView;
@@ -2632,7 +2635,8 @@ function makeGetLayers() {
 						matteView,
 						matteStrength: matte?.enabled ? matte.strength : undefined,
 						matteMode: matte?.enabled ? matte.mode : undefined,
-						matteBlurRadius: matte?.enabled ? matte.blurRadius : undefined
+						matteBlurRadius: matte?.enabled ? matte.blurRadius : undefined,
+						beauty: sampled.beauty
 					}
 				});
 			}
@@ -5106,7 +5110,8 @@ function setupPlayback() {
 							matteView: layer.meta.matteView,
 							matteStrength: layer.meta.matteStrength,
 							matteMode: layer.meta.matteMode,
-							matteBlurRadius: layer.meta.matteBlurRadius
+							matteBlurRadius: layer.meta.matteBlurRadius,
+							beauty: layer.meta.beauty
 						});
 					}
 				}
@@ -8033,6 +8038,23 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			break;
 		case 'interp-dispose':
 			handleInterpolationDispose();
+			break;
+		// Phase 32b: Landmark-Driven Beauty
+		case 'load-beauty-model':
+			// TODO: Phase 32b — load beauty model manifest and cache in OPFS
+			void cmd;
+			break;
+		case 'set-beauty-effect':
+			commitTimelineMutation(() => setBeautyEffect(timeline, cmd.trackId, cmd.clipId, cmd.beauty), {
+				coalesceKey: { clipId: cmd.clipId, key: 'beauty' },
+				refreshPlayback: 'refresh',
+				prune: false,
+				syncLuts: false
+			});
+			break;
+		case 'unload-beauty-model':
+			// TODO: Phase 32b — dispose beauty model session
+			void cmd;
 			break;
 		case 'dispose':
 			void handleDispose();

@@ -48,6 +48,7 @@ import {
 import { cloneClipKeyframes, parseClipKeyframes } from './keyframes';
 import { cloneClipLut, parsePersistedClipLut } from './lut';
 import { normalizeSkinMask } from './skin-smooth';
+import { normalizeBeautyEffect } from './beauty/beauty-params';
 import { parseExportPresetDoc } from './export-presets';
 
 export const PROJECT_SCHEMA_VERSION = 18;
@@ -218,6 +219,7 @@ function cloneClip(clip: TimelineClip): TimelineClip {
 	if (clip.skinMask) cloned.skinMask = { ...clip.skinMask };
 	if (clip.matte) cloned.matte = { ...clip.matte };
 	if (clip.timeRemap) cloned.timeRemap = cloneTimeRemap(clip.timeRemap);
+	if (clip.beauty) cloned.beauty = normalizeBeautyEffect(clip.beauty);
 	const keyframes = cloneClipKeyframes(clip.keyframes);
 	if (keyframes) cloned.keyframes = keyframes;
 	const lut = cloneClipLut(clip.lut);
@@ -599,6 +601,23 @@ function parseClip(value: unknown): TimelineClip | null {
 	// Phase 35: parse optional time-remap sidecar (normalize invalid values, don't reject).
 	const timeRemap = parseClipTimeRemap(value.timeRemap, duration);
 	if (timeRemap) clip.timeRemap = timeRemap;
+	// Phase 32b: parse optional beauty sidecar (normalize invalid values, don't reject).
+	if (isRecord(value.beauty)) {
+		clip.beauty = normalizeBeautyEffect({
+			enabled: typeof value.beauty.enabled === 'boolean' ? value.beauty.enabled : undefined,
+			modelVersion:
+				typeof value.beauty.modelVersion === 'string' ? value.beauty.modelVersion : undefined,
+			preset:
+				value.beauty.preset === 'custom' || value.beauty.preset === 'subtle'
+					? value.beauty.preset
+					: undefined,
+			masterStrength: finiteNumber(value.beauty.masterStrength) ?? undefined,
+			jawSlim: finiteNumber(value.beauty.jawSlim) ?? undefined,
+			eyeEnlarge: finiteNumber(value.beauty.eyeEnlarge) ?? undefined,
+			noseWidth: finiteNumber(value.beauty.noseWidth) ?? undefined,
+			mouth: finiteNumber(value.beauty.mouth) ?? undefined
+		});
+	}
 	return clip;
 }
 

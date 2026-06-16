@@ -1,7 +1,8 @@
 import { Show, For, createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
 import { ChevronLeft, ChevronRight, Diamond, Upload } from 'lucide-solid';
-import { DEFAULT_SKIN_MASK } from '../protocol';
+import { DEFAULT_BEAUTY_EFFECT, DEFAULT_SKIN_MASK } from '../protocol';
 import type {
+	BeautyEffectSnapshot,
 	ClipEffectParamsSnapshot,
 	ClipKeyframeParamSnapshot,
 	ClipKeyframesSnapshot,
@@ -40,6 +41,8 @@ export interface SelectedClip {
 	matte?: import('../protocol').ClipMatteSnapshot;
 	/** Phase 35: optional time-remap speed curve. */
 	timeRemap?: import('../protocol').TimeRemapSnapshot;
+	/** Phase 32b: optional landmark-driven beauty configuration. */
+	beauty?: BeautyEffectSnapshot;
 }
 
 export interface SelectedClipTransform {
@@ -148,6 +151,8 @@ interface InspectorProps {
 	/** Phase 38a: look preset callbacks. */
 	onImportLookPreset?: (trackId: string, clipId: string, presetFile: File, lutFile?: File) => void;
 	onExportLookPreset?: (trackId: string, clipId: string) => void;
+	/** Phase 32b: beauty effect editing. */
+	onBeautyEffect?: (trackId: string, clipId: string, beauty: Partial<BeautyEffectSnapshot>) => void;
 }
 
 type TransformSliderKey = 'x' | 'y' | 'scale' | 'rotation' | 'opacity';
@@ -2057,6 +2062,305 @@ export function Inspector(props: InspectorProps) {
 											</Show>
 										</div>
 									</Show>
+								</div>
+							)}
+						</Show>
+						{/* Phase 32b: Beauty effect panel */}
+						<Show
+							when={
+								props.selectedClip
+									? (props.selectedClip.beauty ?? DEFAULT_BEAUTY_EFFECT)
+									: undefined
+							}
+						>
+							{(beauty) => (
+								<div class="beauty-panel">
+									<div class="beauty-status">
+										<span class="beauty-title">Beauty</span>
+										<span class="beauty-status-pill">{beauty().enabled ? 'On' : 'Off'}</span>
+										<button
+											type="button"
+											class="button secondary"
+											aria-label={beauty().enabled ? 'Disable Beauty' : 'Enable Beauty'}
+											onClick={() => {
+												const clip = props.selectedClip;
+												if (clip && props.onBeautyEffect) {
+													props.onBeautyEffect(clip.trackId, clip.clipId, {
+														enabled: !beauty().enabled
+													});
+												}
+											}}
+										>
+											{beauty().enabled ? 'Disable' : 'Enable'}
+										</button>
+									</div>
+									<div class="effect-slider">
+										<div class="effect-slider-label">
+											<span>Master Strength</span>
+											<span class="effect-slider-value tabular-nums">
+												{beauty().masterStrength.toFixed(2)}
+											</span>
+										</div>
+										<div class="keyframe-slider-row">
+											<button
+												type="button"
+												class="keyframe-nav"
+												aria-label="Previous Beauty master strength keyframe"
+												onClick={() => seekKeyframe('beauty.masterStrength', -1)}
+												disabled={!props.selectedClip?.keyframes?.['beauty.masterStrength']?.length}
+											>
+												<ChevronLeft size={14} />
+											</button>
+											<button
+												type="button"
+												class={`keyframe-toggle${hasKeyframeAtPlayhead('beauty.masterStrength') ? ' is-active' : ''}`}
+												aria-label="Toggle Beauty master strength keyframe"
+												aria-pressed={hasKeyframeAtPlayhead('beauty.masterStrength')}
+												onClick={() =>
+													toggleKeyframe('beauty.masterStrength', beauty().masterStrength)
+												}
+												disabled={currentLocalTime() === null}
+											>
+												<Diamond size={13} />
+											</button>
+											<input
+												type="range"
+												min={0}
+												max={1}
+												step={0.01}
+												value={beauty().masterStrength}
+												onInput={(e) => {
+													const clip = props.selectedClip;
+													if (clip && props.onBeautyEffect) {
+														props.onBeautyEffect(clip.trackId, clip.clipId, {
+															masterStrength: Number((e.currentTarget as HTMLInputElement).value)
+														});
+													}
+												}}
+											/>
+											<button
+												type="button"
+												class="keyframe-nav"
+												aria-label="Next Beauty master strength keyframe"
+												onClick={() => seekKeyframe('beauty.masterStrength', 1)}
+												disabled={!props.selectedClip?.keyframes?.['beauty.masterStrength']?.length}
+											>
+												<ChevronRight size={14} />
+											</button>
+										</div>
+									</div>
+									<div class="effect-slider">
+										<div class="effect-slider-label">
+											<span>Jaw Slim</span>
+											<span class="effect-slider-value tabular-nums">
+												{beauty().jawSlim.toFixed(2)}
+											</span>
+										</div>
+										<div class="keyframe-slider-row">
+											<button
+												type="button"
+												class="keyframe-nav"
+												aria-label="Previous Jaw Slim keyframe"
+												onClick={() => seekKeyframe('beauty.jawSlim', -1)}
+												disabled={!props.selectedClip?.keyframes?.['beauty.jawSlim']?.length}
+											>
+												<ChevronLeft size={14} />
+											</button>
+											<button
+												type="button"
+												class={`keyframe-toggle${hasKeyframeAtPlayhead('beauty.jawSlim') ? ' is-active' : ''}`}
+												aria-label="Toggle Jaw Slim keyframe"
+												aria-pressed={hasKeyframeAtPlayhead('beauty.jawSlim')}
+												onClick={() => toggleKeyframe('beauty.jawSlim', beauty().jawSlim)}
+												disabled={currentLocalTime() === null}
+											>
+												<Diamond size={13} />
+											</button>
+											<input
+												type="range"
+												min={0}
+												max={1}
+												step={0.01}
+												value={beauty().jawSlim}
+												onInput={(e) => {
+													const clip = props.selectedClip;
+													if (clip && props.onBeautyEffect) {
+														props.onBeautyEffect(clip.trackId, clip.clipId, {
+															jawSlim: Number((e.currentTarget as HTMLInputElement).value)
+														});
+													}
+												}}
+											/>
+											<button
+												type="button"
+												class="keyframe-nav"
+												aria-label="Next Jaw Slim keyframe"
+												onClick={() => seekKeyframe('beauty.jawSlim', 1)}
+												disabled={!props.selectedClip?.keyframes?.['beauty.jawSlim']?.length}
+											>
+												<ChevronRight size={14} />
+											</button>
+										</div>
+									</div>
+									<div class="effect-slider">
+										<div class="effect-slider-label">
+											<span>Eye Enlarge</span>
+											<span class="effect-slider-value tabular-nums">
+												{beauty().eyeEnlarge.toFixed(2)}
+											</span>
+										</div>
+										<div class="keyframe-slider-row">
+											<button
+												type="button"
+												class="keyframe-nav"
+												aria-label="Previous Eye Enlarge keyframe"
+												onClick={() => seekKeyframe('beauty.eyeEnlarge', -1)}
+												disabled={!props.selectedClip?.keyframes?.['beauty.eyeEnlarge']?.length}
+											>
+												<ChevronLeft size={14} />
+											</button>
+											<button
+												type="button"
+												class={`keyframe-toggle${hasKeyframeAtPlayhead('beauty.eyeEnlarge') ? ' is-active' : ''}`}
+												aria-label="Toggle Eye Enlarge keyframe"
+												aria-pressed={hasKeyframeAtPlayhead('beauty.eyeEnlarge')}
+												onClick={() => toggleKeyframe('beauty.eyeEnlarge', beauty().eyeEnlarge)}
+												disabled={currentLocalTime() === null}
+											>
+												<Diamond size={13} />
+											</button>
+											<input
+												type="range"
+												min={0}
+												max={1}
+												step={0.01}
+												value={beauty().eyeEnlarge}
+												onInput={(e) => {
+													const clip = props.selectedClip;
+													if (clip && props.onBeautyEffect) {
+														props.onBeautyEffect(clip.trackId, clip.clipId, {
+															eyeEnlarge: Number((e.currentTarget as HTMLInputElement).value)
+														});
+													}
+												}}
+											/>
+											<button
+												type="button"
+												class="keyframe-nav"
+												aria-label="Next Eye Enlarge keyframe"
+												onClick={() => seekKeyframe('beauty.eyeEnlarge', 1)}
+												disabled={!props.selectedClip?.keyframes?.['beauty.eyeEnlarge']?.length}
+											>
+												<ChevronRight size={14} />
+											</button>
+										</div>
+									</div>
+									<div class="effect-slider">
+										<div class="effect-slider-label">
+											<span>Nose Width</span>
+											<span class="effect-slider-value tabular-nums">
+												{beauty().noseWidth.toFixed(2)}
+											</span>
+										</div>
+										<div class="keyframe-slider-row">
+											<button
+												type="button"
+												class="keyframe-nav"
+												aria-label="Previous Nose Width keyframe"
+												onClick={() => seekKeyframe('beauty.noseWidth', -1)}
+												disabled={!props.selectedClip?.keyframes?.['beauty.noseWidth']?.length}
+											>
+												<ChevronLeft size={14} />
+											</button>
+											<button
+												type="button"
+												class={`keyframe-toggle${hasKeyframeAtPlayhead('beauty.noseWidth') ? ' is-active' : ''}`}
+												aria-label="Toggle Nose Width keyframe"
+												aria-pressed={hasKeyframeAtPlayhead('beauty.noseWidth')}
+												onClick={() => toggleKeyframe('beauty.noseWidth', beauty().noseWidth)}
+												disabled={currentLocalTime() === null}
+											>
+												<Diamond size={13} />
+											</button>
+											<input
+												type="range"
+												min={0}
+												max={1}
+												step={0.01}
+												value={beauty().noseWidth}
+												onInput={(e) => {
+													const clip = props.selectedClip;
+													if (clip && props.onBeautyEffect) {
+														props.onBeautyEffect(clip.trackId, clip.clipId, {
+															noseWidth: Number((e.currentTarget as HTMLInputElement).value)
+														});
+													}
+												}}
+											/>
+											<button
+												type="button"
+												class="keyframe-nav"
+												aria-label="Next Nose Width keyframe"
+												onClick={() => seekKeyframe('beauty.noseWidth', 1)}
+												disabled={!props.selectedClip?.keyframes?.['beauty.noseWidth']?.length}
+											>
+												<ChevronRight size={14} />
+											</button>
+										</div>
+									</div>
+									<div class="effect-slider">
+										<div class="effect-slider-label">
+											<span>Mouth</span>
+											<span class="effect-slider-value tabular-nums">
+												{beauty().mouth.toFixed(2)}
+											</span>
+										</div>
+										<div class="keyframe-slider-row">
+											<button
+												type="button"
+												class="keyframe-nav"
+												aria-label="Previous Mouth keyframe"
+												onClick={() => seekKeyframe('beauty.mouth', -1)}
+												disabled={!props.selectedClip?.keyframes?.['beauty.mouth']?.length}
+											>
+												<ChevronLeft size={14} />
+											</button>
+											<button
+												type="button"
+												class={`keyframe-toggle${hasKeyframeAtPlayhead('beauty.mouth') ? ' is-active' : ''}`}
+												aria-label="Toggle Mouth keyframe"
+												aria-pressed={hasKeyframeAtPlayhead('beauty.mouth')}
+												onClick={() => toggleKeyframe('beauty.mouth', beauty().mouth)}
+												disabled={currentLocalTime() === null}
+											>
+												<Diamond size={13} />
+											</button>
+											<input
+												type="range"
+												min={0}
+												max={1}
+												step={0.01}
+												value={beauty().mouth}
+												onInput={(e) => {
+													const clip = props.selectedClip;
+													if (clip && props.onBeautyEffect) {
+														props.onBeautyEffect(clip.trackId, clip.clipId, {
+															mouth: Number((e.currentTarget as HTMLInputElement).value)
+														});
+													}
+												}}
+											/>
+											<button
+												type="button"
+												class="keyframe-nav"
+												aria-label="Next Mouth keyframe"
+												onClick={() => seekKeyframe('beauty.mouth', 1)}
+												disabled={!props.selectedClip?.keyframes?.['beauty.mouth']?.length}
+											>
+												<ChevronRight size={14} />
+											</button>
+										</div>
+									</div>
 								</div>
 							)}
 						</Show>

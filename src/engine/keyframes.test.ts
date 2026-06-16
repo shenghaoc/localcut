@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vite-plus/test';
+import { DEFAULT_BEAUTY_EFFECT } from '../protocol';
 import { DEFAULT_CLIP_EFFECTS } from './effects';
 import { DEFAULT_TRANSFORM } from './transform';
 import {
 	deleteKeyframe,
 	insertKeyframe,
+	isBeautyKeyframeParam,
 	isEffectKeyframeParam,
 	moveKeyframe,
 	normalizeKeyframeTrack,
@@ -172,6 +174,64 @@ describe('keyframes', () => {
 
 	it('recognises skinSmoothStrength as an effect keyframe param', () => {
 		expect(isEffectKeyframeParam('skinSmoothStrength')).toBe(true);
+	});
+
+	it('recognises beauty params and samples them from shared clip keyframes', () => {
+		expect(isBeautyKeyframeParam('beauty.jawSlim')).toBe(true);
+		const clip = defaultTimelineClip({
+			id: 'clip-beauty',
+			sourceId: 'source-beauty',
+			start: 5,
+			duration: 4,
+			inPoint: 0,
+			beauty: { ...DEFAULT_BEAUTY_EFFECT, enabled: true, jawSlim: 0 },
+			keyframes: {
+				'beauty.jawSlim': [
+					{ t: 0, value: 0, easing: 'linear' },
+					{ t: 4, value: 1, easing: 'linear' }
+				],
+				'beauty.eyeEnlarge': [
+					{ t: 0, value: 0.1, easing: 'linear' },
+					{ t: 4, value: 0.5, easing: 'linear' }
+				]
+			}
+		});
+
+		const sampled = sampleClipParamsAt(clip, 7);
+		expect(sampled.beauty?.jawSlim).toBeCloseTo(0.5);
+		expect(sampled.beauty?.eyeEnlarge).toBeCloseTo(0.3);
+	});
+
+	it('stores beauty keyframe command values in normalized clip beauty state', () => {
+		const timeline: Timeline = [
+			{
+				id: 'track-video',
+				type: 'video',
+				...DEFAULT_TRACK_MIX,
+				clips: [
+					defaultTimelineClip({
+						id: 'clip-a',
+						sourceId: 'source-a',
+						start: 10,
+						duration: 5,
+						inPoint: 0
+					})
+				]
+			}
+		];
+
+		const next = setClipKeyframe(
+			timeline,
+			'track-video',
+			'clip-a',
+			'beauty.jawSlim',
+			12,
+			0.75,
+			'linear'
+		);
+		const clip = next[0]!.clips[0]!;
+		expect(clip.keyframes?.['beauty.jawSlim']).toEqual([{ t: 2, value: 0.75, easing: 'linear' }]);
+		expect(clip.beauty?.jawSlim).toBe(0.75);
 	});
 
 	it('sampleClipParamsAt interpolates skinSmoothStrength keyframes', () => {

@@ -92,7 +92,13 @@ import { PublishPanel } from './PublishPanel';
 import { createPublishController, type PublishTapStats } from './publish-controller';
 import { LimitedPreview } from './LimitedPreview';
 import { registerKeyboardShortcuts } from './keyboard';
-import { clipLocalTime, hasKeyframeTrack, sampleEffectsAt, sampleTransformAt } from './keyframes';
+import {
+	clipLocalTime,
+	hasKeyframeTrack,
+	sampleBeautyAt,
+	sampleEffectsAt,
+	sampleTransformAt
+} from './keyframes';
 import {
 	canCompatibilityPreview,
 	deriveCapabilityTier,
@@ -1105,7 +1111,8 @@ export function App() {
 					lut: clip.lut,
 					skinMask: clip.skinMask,
 					matte: clip.matte,
-					timeRemap: clip.timeRemap
+					timeRemap: clip.timeRemap,
+					beauty: sampleBeautyAt(clip.beauty, clip.keyframes, localTime)
 				};
 			}
 		}
@@ -3613,6 +3620,9 @@ export function App() {
 													onExportLookPreset={(trackId, clipId) =>
 														bridge?.send({ type: 'export-look-preset', trackId, clipId })
 													}
+													onBeautyEffect={(trackId, clipId, beauty) => {
+														bridge?.send({ type: 'set-beauty-effect', trackId, clipId, beauty });
+													}}
 												/>
 											</div>
 										</Show>

@@ -739,6 +739,72 @@ describe('Phase 46 config persistence (schema v11)', () => {
 		});
 	});
 
+	it('round-trips Phase 32b beauty settings at the current version', () => {
+		const tl = timelineFixture();
+		tl[0]!.clips[0]!.beauty = {
+			enabled: true,
+			modelId: 'facemesh-onnx-primary-v1',
+			modelVersion: 'face-landmarker-v1',
+			preset: 'custom',
+			masterStrength: 0.6,
+			jawSlim: 0.4,
+			eyeEnlarge: 0.2,
+			noseWidth: 0.15,
+			mouth: 0.1
+		};
+		const doc = serializeProject({
+			projectId: 'project-beauty',
+			timeline: tl,
+			sources: [sourceFixture()]
+		});
+		const result = deserializeProject(doc);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.doc.timeline[0]!.clips[0]!.beauty).toEqual(tl[0]!.clips[0]!.beauty);
+	});
+
+	it('normalizes malformed beauty settings on load', () => {
+		const tl = timelineFixture();
+		tl[0]!.clips[0]!.beauty = {
+			enabled: true,
+			modelId: 'facemesh-onnx-primary-v1',
+			modelVersion: 'face-landmarker-v1',
+			preset: 'custom',
+			masterStrength: 0.6,
+			jawSlim: 0.4,
+			eyeEnlarge: 0.2,
+			noseWidth: 0.15,
+			mouth: 0.1
+		};
+		const doc = serializeProject({
+			projectId: 'project-beauty-malformed',
+			timeline: tl,
+			sources: [sourceFixture()]
+		});
+		const rawClip = doc.timeline[0]!.clips[0]! as unknown as { beauty: unknown };
+		rawClip.beauty = {
+			enabled: 'yes',
+			modelVersion: 42,
+			preset: 'heavy',
+			masterStrength: 99,
+			jawSlim: Number.NaN,
+			eyeEnlarge: 0.25,
+			noseWidth: -1,
+			mouth: 0.2
+		};
+		const result = deserializeProject(doc);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		const beauty = result.doc.timeline[0]!.clips[0]!.beauty!;
+		expect(beauty.enabled).toBe(false);
+		expect(beauty.preset).toBe('subtle');
+		expect(beauty.masterStrength).toBe(1);
+		expect(beauty.jawSlim).toBe(0.3);
+		expect(beauty.eyeEnlarge).toBe(0.25);
+		expect(beauty.noseWidth).toBe(0);
+		expect(beauty.mouth).toBe(0.2);
+	});
+
 	it('normalizes malformed skinMask on load', () => {
 		const tl = timelineFixture();
 		tl[0]!.clips[0]!.effects.skinSmoothStrength = 0.5;

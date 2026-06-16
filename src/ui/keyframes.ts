@@ -1,5 +1,6 @@
-import { KEYFRAME_EPSILON, TIMELINE_EPSILON } from '../protocol';
+import { DEFAULT_BEAUTY_EFFECT, KEYFRAME_EPSILON, TIMELINE_EPSILON } from '../protocol';
 import type {
+	BeautyEffectSnapshot,
 	ClipEffectParamsSnapshot,
 	ClipKeyframeParamSnapshot,
 	ClipKeyframesSnapshot,
@@ -127,6 +128,26 @@ export function sampleTransformAt(
 		anchorX: sampleKeyframes(keyframes?.anchorX, localTime, transform.anchorX),
 		anchorY: sampleKeyframes(keyframes?.anchorY, localTime, transform.anchorY),
 		fit: transform.fit
+	};
+}
+
+export function sampleBeautyAt(
+	beauty: BeautyEffectSnapshot | undefined,
+	keyframes: ClipKeyframesSnapshot | undefined,
+	localTime: number | null
+): BeautyEffectSnapshot {
+	const base = beauty ?? DEFAULT_BEAUTY_EFFECT;
+	return {
+		...base,
+		masterStrength: sampleKeyframes(
+			keyframes?.['beauty.masterStrength'],
+			localTime,
+			base.masterStrength
+		),
+		jawSlim: sampleKeyframes(keyframes?.['beauty.jawSlim'], localTime, base.jawSlim),
+		eyeEnlarge: sampleKeyframes(keyframes?.['beauty.eyeEnlarge'], localTime, base.eyeEnlarge),
+		noseWidth: sampleKeyframes(keyframes?.['beauty.noseWidth'], localTime, base.noseWidth),
+		mouth: sampleKeyframes(keyframes?.['beauty.mouth'], localTime, base.mouth)
 	};
 }
 

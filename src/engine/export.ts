@@ -1114,7 +1114,8 @@ async function encodeVideoRange(
 						matteStrength: matte?.enabled ? matte.strength : undefined,
 						matteMode: matte?.enabled ? matte.mode : undefined,
 						matteBlurRadius: matte?.enabled ? matte.blurRadius : undefined,
-						matteRefine: matteView !== undefined
+						matteRefine: matteView !== undefined,
+						beauty: sampled.beauty
 					});
 				}
 				for (const overlay of overlayTextureLayersAt?.(timelineTime) ?? []) {
