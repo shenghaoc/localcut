@@ -115,6 +115,9 @@ export interface CapabilityProbeResult {
 	/** Phase 40 (On-Device Language Tools): display/feature-gate only — never
 	 *  consulted by tier derivation or any pipeline code path. */
 	languageTools?: LanguageToolsProbeResult;
+	/** Phase 38b (animated overlays): `ImageDecoder` API availability for
+	 *  animated WebP/AVIF/GIF frame-accurate decoding. */
+	imageDecoder?: FeatureSupport;
 }
 
 // ── Phase 28: Local Audio Cleanup (LiteRT DTLN) ──
@@ -918,7 +921,9 @@ export type SourceHealthWarningCodeSnapshot =
 	| 'corrupt-or-truncated-file'
 	| 'missing-duration'
 	| 'undecodable-track'
-	| 'missing-cleaned-audio';
+	| 'missing-cleaned-audio'
+	| 'alpha-not-decoded'
+	| 'lottie-zip-unsupported';
 
 export interface SourceHealthWarningSnapshot {
 	code: SourceHealthWarningCodeSnapshot;
@@ -945,6 +950,16 @@ export interface ClipEffectParamsSnapshot {
 	temperatureStrength: number;
 	lutStrength: number;
 	skinSmoothStrength: number;
+	grainStrength: number;
+	grainSize: number;
+	halationThreshold: number;
+	halationRadius: number;
+	halationTintR: number;
+	halationTintG: number;
+	halationTintB: number;
+	vignetteAmount: number;
+	vignetteFeather: number;
+	vignetteRoundness: number;
 }
 
 export type FitModeSnapshot = 'fill' | 'fit' | 'letterbox';
@@ -2213,6 +2228,15 @@ export type WorkerCommand =
 			sessionOffsetS: number;
 	  }
 	| InterpolationWorkerCommand
+	// Phase 38a: Look presets
+	| {
+			type: 'import-look-preset';
+			trackId: string;
+			clipId: string;
+			presetFile: File;
+			lutFile?: File;
+	  }
+	| { type: 'export-look-preset'; trackId: string; clipId: string }
 	| { type: 'dispose' };
 
 /** A measured preview resolution tier (adaptive downscale of the decode path). */
@@ -2504,6 +2528,14 @@ export type WorkerStateMessage =
 	| { type: 'silence-result'; requestId: string; regions: SilenceRegion[] }
 	| { type: 'silence-error'; requestId: string; message: string }
 	| InterpolationWorkerState
+	// Phase 38a: Look preset messages
+	| {
+			type: 'look-preset-exported';
+			clipId: string;
+			json: string;
+			lutFileName?: string;
+	  }
+	| { type: 'look-preset-error'; clipId: string; reason: string }
 	| { type: 'error'; message: string };
 
 // ── Phase 46: Replay Buffer + Live Audio Chain ──

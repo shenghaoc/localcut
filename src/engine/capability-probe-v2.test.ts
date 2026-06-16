@@ -6,6 +6,7 @@ import {
 	anyVideoEncodeSupported,
 	deriveCapabilityTierV2,
 	exportConstraintsForProbe,
+	probeImageDecoder,
 	probeSmartReframe
 } from './capability-probe-v2';
 import { compatAdapterProbeResult, probeResultFor } from './compatibility/capability-fixtures';
@@ -138,5 +139,32 @@ describe('codec support helpers', () => {
 		expect(anyVideoEncodeSupported(shell)).toBe(false);
 		expect(anyAudioDecodeSupported(shell)).toBe(false);
 		expect(anyAudioEncodeSupported(shell)).toBe(false);
+	});
+});
+
+describe('probeImageDecoder', () => {
+	const ORIGINAL = (globalThis as Record<string, unknown>).ImageDecoder;
+
+	function restore(): void {
+		if (ORIGINAL === undefined) delete (globalThis as Record<string, unknown>).ImageDecoder;
+		else (globalThis as Record<string, unknown>).ImageDecoder = ORIGINAL;
+	}
+
+	it("reports 'supported' when globalThis.ImageDecoder is a function", () => {
+		(globalThis as Record<string, unknown>).ImageDecoder = function FakeImageDecoder() {};
+		try {
+			expect(probeImageDecoder()).toBe('supported');
+		} finally {
+			restore();
+		}
+	});
+
+	it("reports 'unsupported' when globalThis.ImageDecoder is absent", () => {
+		delete (globalThis as Record<string, unknown>).ImageDecoder;
+		try {
+			expect(probeImageDecoder()).toBe('unsupported');
+		} finally {
+			restore();
+		}
 	});
 });

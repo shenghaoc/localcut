@@ -1515,7 +1515,12 @@ async function attachSourceFile(
 > {
 	let mediaHandle: MediaInputHandle;
 	try {
-		mediaHandle = await openMediaFile(file, descriptor.sourceId);
+		mediaHandle = await openMediaFile(
+			file,
+			descriptor.sourceId,
+			undefined,
+			currentCapabilityProbe?.imageDecoder
+		);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		return { ok: false, message };
@@ -2675,7 +2680,7 @@ async function handleImport(file: File, fileHandle?: FileSystemFileHandle | null
 	let handle: MediaInputHandle | null = null;
 	try {
 		sourceId = makeSourceId();
-		handle = await openMediaFile(file, sourceId);
+		handle = await openMediaFile(file, sourceId, undefined, currentCapabilityProbe?.imageDecoder);
 		sourceInputs.set(sourceId, handle);
 		const descriptor = sourceDescriptorFromHandle(sourceId, file, handle);
 		sourceDescriptors.set(sourceId, descriptor);
@@ -3106,6 +3111,98 @@ async function handleImportLut(cmd: Extract<WorkerCommand, { type: 'import-lut' 
 		coalesceKey: { clipId: cmd.clipId, key: 'lut' },
 		refreshPlayback: 'refresh',
 		prune: false
+	});
+}
+
+async function handleImportLookPreset(
+	cmd: Extract<WorkerCommand, { type: 'import-look-preset' }>
+): Promise<void> {
+	const { parseLookPreset, applyLookPresetToClip } = await import('./look-preset');
+	let preset;
+	try {
+		const text = await cmd.presetFile.text();
+		const json = JSON.parse(text);
+		preset = parseLookPreset(json);
+	} catch {
+		post({ type: 'look-preset-error', clipId: cmd.clipId, reason: 'Invalid JSON file.' });
+		return;
+	}
+	if (!preset) {
+		post({
+			type: 'look-preset-error',
+			clipId: cmd.clipId,
+			reason: 'Invalid look preset: missing or invalid fields.'
+		});
+		return;
+	}
+
+	let lut: ClipLut | null = null;
+	if (cmd.lutFile) {
+		if (!renderer) {
+			postProjectWarning('LUT import requires the accelerated WebGPU renderer.');
+		} else {
+			try {
+				lut = await clipLutFromCubeFile(cmd.lutFile);
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				postProjectWarning(`Could not import LUT: ${message}`);
+			}
+		}
+	}
+
+	commitTimelineMutation(
+		() => {
+			let nextTimeline = timeline.map((track) => {
+				if (track.id !== cmd.trackId) return track;
+				return {
+					...track,
+					clips: track.clips.map((clip) => {
+						if (clip.id !== cmd.clipId) return clip;
+						return applyLookPresetToClip(preset, clip);
+					})
+				};
+			});
+			if (lut) {
+				nextTimeline = setClipLut(nextTimeline, cmd.trackId, cmd.clipId, lut);
+			}
+			return nextTimeline;
+		},
+		{ coalesceKey: { clipId: cmd.clipId, key: 'look-preset' }, refreshPlayback: 'refresh' }
+	);
+}
+
+async function handleExportLookPreset(
+	cmd: Extract<WorkerCommand, { type: 'export-look-preset' }>
+): Promise<void> {
+	const { serializeLookPreset } = await import('./look-preset');
+	const track = timeline.find((t) => t.id === cmd.trackId);
+	const clip = track?.clips.find((c) => c.id === cmd.clipId);
+	if (!clip) {
+		post({ type: 'look-preset-error', clipId: cmd.clipId, reason: 'Clip not found.' });
+		return;
+	}
+	const preset = {
+		lookSchemaVersion: 1 as const,
+		name: `Look ${clip.id.slice(0, 8)}`,
+		params: {
+			grainStrength: clip.effects.grainStrength,
+			grainSize: clip.effects.grainSize,
+			halationThreshold: clip.effects.halationThreshold,
+			halationRadius: clip.effects.halationRadius,
+			halationTintR: clip.effects.halationTintR,
+			halationTintG: clip.effects.halationTintG,
+			halationTintB: clip.effects.halationTintB,
+			vignetteAmount: clip.effects.vignetteAmount,
+			vignetteFeather: clip.effects.vignetteFeather,
+			vignetteRoundness: clip.effects.vignetteRoundness
+		},
+		...(clip.lut ? { lut: { fileName: clip.lut.fileName, fingerprint: clip.lut.key } } : {})
+	};
+	post({
+		type: 'look-preset-exported',
+		clipId: cmd.clipId,
+		json: serializeLookPreset(preset),
+		lutFileName: clip.lut?.fileName
 	});
 }
 
@@ -3718,7 +3815,12 @@ async function handleApplyAudioCleanup(
 	let handle: MediaInputHandle | null = null;
 	try {
 		assetId = makeSourceId();
-		handle = await openMediaFile(cmd.file, assetId);
+		handle = await openMediaFile(
+			cmd.file,
+			assetId,
+			undefined,
+			currentCapabilityProbe?.imageDecoder
+		);
 		if (!handle.audioSource) throw new Error('Cleaned WAV has no decodable audio track.');
 		sourceInputs.set(assetId, handle);
 		const descriptor = sourceDescriptorFromHandle(assetId, cmd.file, handle);
@@ -7031,7 +7133,12 @@ async function handleReplaySaveLastN(nSeconds?: number): Promise<void> {
 		// the timeline through the undoable mutation path (T4.5).
 		const file = await fileHandle.getFile();
 		const sourceId = makeSourceId();
-		const handle = await openMediaFile(file, sourceId);
+		const handle = await openMediaFile(
+			file,
+			sourceId,
+			undefined,
+			currentCapabilityProbe?.imageDecoder
+		);
 		sourceInputs.set(sourceId, handle);
 		const descriptor = sourceDescriptorFromHandle(sourceId, file, handle);
 		sourceDescriptors.set(sourceId, descriptor);
@@ -7400,6 +7507,12 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			break;
 		case 'import-lut':
 			void handleImportLut(cmd);
+			break;
+		case 'import-look-preset':
+			void handleImportLookPreset(cmd);
+			break;
+		case 'export-look-preset':
+			void handleExportLookPreset(cmd);
 			break;
 		case 'set-lut-strength':
 			handleSetLutStrength(cmd);

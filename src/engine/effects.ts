@@ -1,8 +1,12 @@
-/** WebGPU compute effect chain — Phase 4, extended in Phase 21.
+/** WebGPU compute effect chain — Phase 4, extended in Phase 21 and Phase 38.
  *
  *  Phase 21 splits the old `encodeColourChain` into `encodeColourImport` +
  *  `encodeBaseCorrection` + `encodeLutApply`, so the pipeline orchestrator in
  *  gpu.ts can interleave normalization, opacity, and output-conversion stages.
+ *
+ *  Phase 38 adds grain, halation, and vignette film-look passes via
+ *  `encodeFilmLooks`, called after the LUT in the fixed pipeline order:
+ *  decode → colour grade → clip LUT → halation → grain → vignette.
  */
 
 import brightnessContrastF32 from './shaders/brightness-contrast.wgsl?raw';
@@ -13,11 +17,24 @@ import colourTemperatureF32 from './shaders/colour-temperature.wgsl?raw';
 import colourTemperatureF16 from './shaders/colour-temperature.f16.wgsl?raw';
 import lutApplyF32 from './shaders/lut-apply.wgsl?raw';
 import lutApplyF16 from './shaders/lut-apply.f16.wgsl?raw';
+import grainF32 from './shaders/grain.wgsl?raw';
+import grainF16 from './shaders/grain.f16.wgsl?raw';
+import halationF32 from './shaders/halation.wgsl?raw';
+import halationF16 from './shaders/halation.f16.wgsl?raw';
+import vignetteF32 from './shaders/vignette.wgsl?raw';
+import vignetteF16 from './shaders/vignette.f16.wgsl?raw';
 import passthroughSource from './shaders/passthrough.wgsl?raw';
 import { createComputePipeline } from './gpu-pipeline';
 import { LutTextureCache, type ClipLut } from './lut';
 
-export type EffectId = 'brightness-contrast' | 'saturation' | 'colour-temperature' | 'lut-apply';
+export type EffectId =
+	| 'brightness-contrast'
+	| 'saturation'
+	| 'colour-temperature'
+	| 'lut-apply'
+	| 'grain'
+	| 'halation'
+	| 'vignette';
 type ScalarEffectId = Exclude<EffectId, 'lut-apply'>;
 
 /** Per-clip colour-grade parameters mirrored in the timeline model. */
@@ -29,6 +46,17 @@ export interface ClipEffectParams {
 	temperatureStrength: number;
 	lutStrength: number;
 	skinSmoothStrength: number;
+	// Film-look params (Phase 38a). All default to neutral (pass skipped at zero).
+	grainStrength: number;
+	grainSize: number;
+	halationThreshold: number;
+	halationRadius: number;
+	halationTintR: number;
+	halationTintG: number;
+	halationTintB: number;
+	vignetteAmount: number;
+	vignetteFeather: number;
+	vignetteRoundness: number;
 }
 
 export const DEFAULT_CLIP_EFFECTS: ClipEffectParams = {
@@ -38,7 +66,17 @@ export const DEFAULT_CLIP_EFFECTS: ClipEffectParams = {
 	temperature: 6500,
 	temperatureStrength: 1,
 	lutStrength: 0,
-	skinSmoothStrength: 0
+	skinSmoothStrength: 0,
+	grainStrength: 0,
+	grainSize: 1.0,
+	halationThreshold: 0.75,
+	halationRadius: 0,
+	halationTintR: 1.0,
+	halationTintG: 0.3,
+	halationTintB: 0.1,
+	vignetteAmount: 0,
+	vignetteFeather: 0.5,
+	vignetteRoundness: 1.0
 };
 
 function clampFinite(v: number | undefined, lo: number, hi: number, fallback: number): number {
@@ -61,6 +99,36 @@ export function normalizeClipEffects(
 			0,
 			1,
 			DEFAULT_CLIP_EFFECTS.skinSmoothStrength
+		),
+		grainStrength: clampFinite(partial?.grainStrength, 0, 1, DEFAULT_CLIP_EFFECTS.grainStrength),
+		grainSize: clampFinite(partial?.grainSize, 0.5, 4.0, DEFAULT_CLIP_EFFECTS.grainSize),
+		halationThreshold: clampFinite(
+			partial?.halationThreshold,
+			0,
+			1,
+			DEFAULT_CLIP_EFFECTS.halationThreshold
+		),
+		halationRadius: clampFinite(
+			partial?.halationRadius,
+			0,
+			64,
+			DEFAULT_CLIP_EFFECTS.halationRadius
+		),
+		halationTintR: clampFinite(partial?.halationTintR, 0, 1, DEFAULT_CLIP_EFFECTS.halationTintR),
+		halationTintG: clampFinite(partial?.halationTintG, 0, 1, DEFAULT_CLIP_EFFECTS.halationTintG),
+		halationTintB: clampFinite(partial?.halationTintB, 0, 1, DEFAULT_CLIP_EFFECTS.halationTintB),
+		vignetteAmount: clampFinite(partial?.vignetteAmount, 0, 1, DEFAULT_CLIP_EFFECTS.vignetteAmount),
+		vignetteFeather: clampFinite(
+			partial?.vignetteFeather,
+			0,
+			1,
+			DEFAULT_CLIP_EFFECTS.vignetteFeather
+		),
+		vignetteRoundness: clampFinite(
+			partial?.vignetteRoundness,
+			0,
+			2,
+			DEFAULT_CLIP_EFFECTS.vignetteRoundness
 		)
 	};
 }
@@ -118,6 +186,43 @@ const EFFECT_REGISTRY: EffectRegistryEntry[] = [
 			{ key: 'temperature', offset: 0 },
 			{ key: 'temperatureStrength', offset: 4 }
 		]
+	},
+	{
+		id: 'grain',
+		label: 'Grain',
+		shaderF32: grainF32,
+		shaderF16: grainF16,
+		uniformByteLength: 16,
+		fields: [
+			{ key: 'grainStrength', offset: 0 },
+			{ key: 'grainSize', offset: 4 }
+		]
+	},
+	{
+		id: 'halation',
+		label: 'Halation',
+		shaderF32: halationF32,
+		shaderF16: halationF16,
+		uniformByteLength: 32,
+		fields: [
+			{ key: 'halationThreshold', offset: 0 },
+			{ key: 'halationRadius', offset: 4 },
+			{ key: 'halationTintR', offset: 8 },
+			{ key: 'halationTintG', offset: 12 },
+			{ key: 'halationTintB', offset: 16 }
+		]
+	},
+	{
+		id: 'vignette',
+		label: 'Vignette',
+		shaderF32: vignetteF32,
+		shaderF16: vignetteF16,
+		uniformByteLength: 16,
+		fields: [
+			{ key: 'vignetteAmount', offset: 0 },
+			{ key: 'vignetteFeather', offset: 4 },
+			{ key: 'vignetteRoundness', offset: 8 }
+		]
 	}
 ];
 
@@ -159,6 +264,18 @@ export function isLutActive(params: ClipEffectParams, lut: ClipLut | undefined):
 	return Boolean(lut) && params.lutStrength > 0;
 }
 
+export function isGrainActive(params: ClipEffectParams): boolean {
+	return params.grainStrength > 0;
+}
+
+export function isHalationActive(params: ClipEffectParams): boolean {
+	return params.halationRadius > 0;
+}
+
+export function isVignetteActive(params: ClipEffectParams): boolean {
+	return params.vignetteAmount > 0;
+}
+
 export function clipEffectsEqual(a: ClipEffectParams, b: ClipEffectParams): boolean {
 	return (
 		a.brightness === b.brightness &&
@@ -167,7 +284,17 @@ export function clipEffectsEqual(a: ClipEffectParams, b: ClipEffectParams): bool
 		a.temperature === b.temperature &&
 		a.temperatureStrength === b.temperatureStrength &&
 		a.lutStrength === b.lutStrength &&
-		a.skinSmoothStrength === b.skinSmoothStrength
+		a.skinSmoothStrength === b.skinSmoothStrength &&
+		a.grainStrength === b.grainStrength &&
+		a.grainSize === b.grainSize &&
+		a.halationThreshold === b.halationThreshold &&
+		a.halationRadius === b.halationRadius &&
+		a.halationTintR === b.halationTintR &&
+		a.halationTintG === b.halationTintG &&
+		a.halationTintB === b.halationTintB &&
+		a.vignetteAmount === b.vignetteAmount &&
+		a.vignetteFeather === b.vignetteFeather &&
+		a.vignetteRoundness === b.vignetteRoundness
 	);
 }
 
@@ -192,6 +319,12 @@ export function packLutUniform(params: ClipEffectParams, lut: ClipLut): Float32A
 	const view = packEffectUniform('lut-apply', params);
 	view.set(lut.domainMin, 4);
 	view.set(lut.domainMax, 8);
+	return view;
+}
+
+export function packGrainUniform(params: ClipEffectParams, frameTimeSeed: number): Float32Array {
+	const view = packEffectUniform('grain', params);
+	view[2] = frameTimeSeed;
 	return view;
 }
 
@@ -387,6 +520,83 @@ export class EffectChain {
 
 			const uniformBuffer = this.uniformBufferFor(effect, slot);
 			this.device.queue.writeBuffer(uniformBuffer, 0, packEffectUniform(effect.id, normalized));
+
+			const bindGroup = this.device.createBindGroup({
+				layout: effect.bindGroupLayout,
+				entries: [
+					{ binding: 0, resource: { buffer: uniformBuffer } },
+					{ binding: 1, resource: currentSrc },
+					{ binding: 2, resource: currentDst }
+				]
+			});
+			const pass = encoder.beginComputePass();
+			pass.setPipeline(effect.pipeline);
+			pass.setBindGroup(0, bindGroup);
+			pass.dispatchWorkgroups(wgX, wgY);
+			pass.end();
+
+			currentSrc = currentDst;
+		}
+
+		return currentSrc;
+	}
+
+	/**
+	 * Stage 3 (film looks): encodes halation → grain → vignette for one layer.
+	 * Fixed pipeline order (optics-motivated): halation is a lens response that
+	 * occurs before grain is deposited on the emulsion; grain overlays the whole
+	 * frame after chemical processes; vignette is a lens falloff applied last as
+	 * a framing element. All three after the clip LUT. Passes are skipped at
+	 * zero strength — the single queue.submit per frame is never violated.
+	 */
+	encodeFilmLooks(
+		encoder: GPUCommandEncoder,
+		srcView: GPUTextureView,
+		storage: StoragePingPong,
+		width: number,
+		height: number,
+		params: ClipEffectParams,
+		slot: number,
+		frameTimeSeed: number
+	): GPUTextureView {
+		const normalized = normalizeClipEffects(params);
+		if (
+			!isHalationActive(normalized) &&
+			!isGrainActive(normalized) &&
+			!isVignetteActive(normalized)
+		) {
+			return srcView;
+		}
+
+		const wgX = Math.ceil(width / 8);
+		const wgY = Math.ceil(height / 8);
+		const pingPong = [storage.b, storage.c, storage.a];
+		let currentSrc = srcView;
+		let bufIdx = 0;
+
+		const filmEffects: Array<{ effect: CompiledEffect; pack: () => Float32Array }> = [];
+		if (isHalationActive(normalized)) {
+			const effect = this.effects.find((e) => e.id === 'halation')!;
+			filmEffects.push({ effect, pack: () => packEffectUniform('halation', normalized) });
+		}
+		if (isGrainActive(normalized)) {
+			const effect = this.effects.find((e) => e.id === 'grain')!;
+			filmEffects.push({
+				effect,
+				pack: () => packGrainUniform(normalized, frameTimeSeed)
+			});
+		}
+		if (isVignetteActive(normalized)) {
+			const effect = this.effects.find((e) => e.id === 'vignette')!;
+			filmEffects.push({ effect, pack: () => packEffectUniform('vignette', normalized) });
+		}
+
+		for (const { effect, pack } of filmEffects) {
+			const currentDst = pingPong[bufIdx]!;
+			bufIdx = (bufIdx + 1) % 3;
+
+			const uniformBuffer = this.uniformBufferFor(effect, slot);
+			this.device.queue.writeBuffer(uniformBuffer, 0, pack());
 
 			const bindGroup = this.device.createBindGroup({
 				layout: effect.bindGroupLayout,

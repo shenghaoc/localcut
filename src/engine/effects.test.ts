@@ -15,15 +15,19 @@ import {
 } from './effects';
 
 describe('effects', () => {
-	it('exposes four colour-grade effects', () => {
+	it('exposes seven effects including film looks', () => {
 		expect(EFFECT_IDS).toEqual([
 			'brightness-contrast',
 			'saturation',
 			'colour-temperature',
+			'grain',
+			'halation',
+			'vignette',
 			'lut-apply'
 		]);
 		expect(getEffectLabel('saturation')).toBe('Saturation');
 		expect(getEffectLabel('lut-apply')).toBe('LUT');
+		expect(getEffectLabel('grain')).toBe('Grain');
 	});
 
 	it('normalizes partial clip params to defaults', () => {

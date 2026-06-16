@@ -76,7 +76,7 @@ describe('Worker crash/restart flow', () => {
 		const machine = createRecoveryMachine();
 		const checkpoint = {
 			projectDoc: {
-				schemaVersion: 17 as const,
+				schemaVersion: 18 as const,
 				projectId: 'proj-1',
 				savedAt: '2025-01-01T00:00:00.000Z',
 				timeline: [],
@@ -136,7 +136,7 @@ describe('Worker crash/restart flow', () => {
 		};
 		const checkpoint = {
 			projectDoc: {
-				schemaVersion: 17 as const,
+				schemaVersion: 18 as const,
 				projectId: 'proj-2',
 				savedAt: '',
 				timeline: [],

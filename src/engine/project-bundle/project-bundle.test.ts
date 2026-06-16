@@ -57,7 +57,17 @@ function timelineFixture(): Timeline {
 						temperature: 0,
 						temperatureStrength: 0,
 						lutStrength: 0,
-						skinSmoothStrength: 0
+						skinSmoothStrength: 0,
+						grainStrength: 0,
+						grainSize: 1.0,
+						halationThreshold: 0.75,
+						halationRadius: 0,
+						halationTintR: 1.0,
+						halationTintG: 0.3,
+						halationTintB: 0.1,
+						vignetteAmount: 0,
+						vignetteFeather: 0.5,
+						vignetteRoundness: 1.0
 					},
 					transform: {
 						x: 0,
@@ -330,7 +340,17 @@ describe('bundle project.json serialization', () => {
 								temperature: 0,
 								temperatureStrength: 0,
 								lutStrength: 0.5,
-								skinSmoothStrength: 0
+								skinSmoothStrength: 0,
+								grainStrength: 0,
+								grainSize: 1.0,
+								halationThreshold: 0.75,
+								halationRadius: 0,
+								halationTintR: 1.0,
+								halationTintG: 0.3,
+								halationTintB: 0.1,
+								vignetteAmount: 0,
+								vignetteFeather: 0.5,
+								vignetteRoundness: 1.0
 							},
 							transform: {
 								x: 0,

@@ -36,7 +36,17 @@ const EFFECT_PARAM_KEYS = new Set<ClipKeyframeParam>([
 	'temperature',
 	'temperatureStrength',
 	'lutStrength',
-	'skinSmoothStrength'
+	'skinSmoothStrength',
+	'grainStrength',
+	'grainSize',
+	'halationThreshold',
+	'halationRadius',
+	'halationTintR',
+	'halationTintG',
+	'halationTintB',
+	'vignetteAmount',
+	'vignetteFeather',
+	'vignetteRoundness'
 ]);
 
 const TRANSFORM_PARAM_KEYS = new Set<ClipKeyframeParam>([

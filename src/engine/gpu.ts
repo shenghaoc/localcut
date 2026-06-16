@@ -664,7 +664,23 @@ export class PreviewRenderer {
 					wgY
 				);
 			}
-			const opaqueView = this.encodeOpacity(encoder, stageView, layer.transform, slot, wgX, wgY);
+			// Phase 38a: film looks (halation → grain → vignette) after LUT + skin
+			// smooth + matte, before opacity. Fixed order documented on encodeFilmLooks.
+			let filmView = stageView;
+			if (layer.kind === 'frame') {
+				const frameTimeSeed = layer.frame.timestamp / 1e6;
+				filmView = this.effectChain.encodeFilmLooks(
+					encoder,
+					stageView,
+					storage,
+					this.width,
+					this.height,
+					layer.effects,
+					slot,
+					frameTimeSeed
+				);
+			}
+			const opaqueView = this.encodeOpacity(encoder, filmView, layer.transform, slot, wgX, wgY);
 			const xfParams =
 				layer.transform.opacity < 1.0 && opaqueView !== stageView
 					? { ...layer.transform, opacity: 1.0 }

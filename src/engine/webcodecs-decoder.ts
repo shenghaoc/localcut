@@ -78,7 +78,12 @@ export class WebCodecsVideoDecoder implements SequentialVideoSource {
 		const decoderConfig = {
 			...trackConfig,
 			codec: normalizeH264CodecString(trackConfig.codec)
-		};
+		} as VideoDecoderConfig & { alpha?: string };
+		// Alpha channel preservation for VP9/AV1-alpha overlays (Phase 38b R5.2);
+		// this is a no-op for codecs without alpha support.
+		if (/vp09|av01/.test(decoderConfig.codec)) {
+			decoderConfig.alpha = 'keep';
+		}
 		if (this.hardwareAcceleration !== 'no-preference') {
 			decoderConfig.hardwareAcceleration = this.hardwareAcceleration;
 		}
