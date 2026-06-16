@@ -550,7 +550,6 @@ export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 		tier: deriveCapabilityTierV2(probeWithoutTier),
 		cleanup,
 		asr: probeAsr(),
-		smartReframe: probeSmartReframe(),
-		languageTools: await probeLanguageTools().catch((): undefined => undefined)
+		smartReframe: probeSmartReframe()
 	};
 }

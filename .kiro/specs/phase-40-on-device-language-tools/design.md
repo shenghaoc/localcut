@@ -222,6 +222,10 @@ chosen track transcript = track.segments.map(s => s.text.trim()).filter(Boolean)
   govern the Phase 28/29 LiteRT.js runtime **do not apply** to Phase 40, and there is nothing for
   the PWA bundle-cache to pin. This is the honest distinction between "Chrome-owned models" and
   "weights we host".
+- The repository now has an ORT/ONNX ML platform for app-owned model assets. Phase 40
+  intentionally does **not** use it: Chrome owns the built-in AI model download/cache/lifecycle.
+  There are no Phase 40 model URLs, manifests, SHA-256 pins, OPFS model-cache entries, or ORT
+  sessions.
 
 ## Protocol additions
 
