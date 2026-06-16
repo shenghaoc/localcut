@@ -79,11 +79,19 @@ Use this checklist to verify a deployed instance of LocalCut Studio. Each item c
 - [ ] After install, disconnect from the internet.
 - [ ] Open the installed app — it loads from cache and the shell is functional.
 
+### 12. Phase 43 Screencast Post Pack
+
+- [ ] Select a video clip, apply a **Zoom-n-Pan** preset, and verify editable transform keyframes appear on the clip.
+- [ ] Record with the Own Tab capture option, land the clip, open **Auto-Zoom**, and apply or skip at least one proposal. For window/display captures, verify the panel explains that no event log is available.
+- [ ] Use the toolbar **Callout** tool to draw an arrow or box, then select the callout clip and change its style in the Inspector.
+- [ ] Draw **Spotlight** and **Blur** callouts and verify they affect the underlying composited image without leaving the accelerated tier.
+- [ ] Toggle **Padded Background** on a video clip and verify the gradient, inset, rounded corners, and shadow appear in preview and export.
+
 ## Reduced-Tier Verification
 
 For browsers without full WebGPU or COOP/COEP isolation:
 
-### 12. Limited mode
+### 13. Limited mode
 
 - [ ] Open the app in a browser without WebGPU (e.g. Firefox, or Chrome with WebGPU disabled).
 - [ ] The app shell loads — no blank screen or crash.

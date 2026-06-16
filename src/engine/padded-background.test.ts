@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vite-plus/test';
+import { describe, it, expect, vi } from 'vite-plus/test';
 import {
 	DEFAULT_PADDED_BACKGROUND,
+	PaddedBackgroundRenderer,
 	normalizePaddedBackground,
 	parsePaddedBackground,
 	shadowCacheKey
@@ -78,5 +79,19 @@ describe('round-trip', () => {
 		const parsed = parsePaddedBackground(JSON.parse(json));
 		expect(parsed).not.toBeNull();
 		expect(parsed).toEqual(normalized);
+	});
+});
+
+describe('PaddedBackgroundRenderer', () => {
+	it('warns and returns null for a missing wallpaper source', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		try {
+			const renderer = new PaddedBackgroundRenderer({} as GPUDevice);
+			await expect(renderer.wallpaperTextureFor('missing', 1920, 1080)).resolves.toBeNull();
+			expect(warn).toHaveBeenCalledWith('Padded background wallpaper source not found: missing');
+			renderer.dispose();
+		} finally {
+			warn.mockRestore();
+		}
 	});
 });

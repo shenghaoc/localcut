@@ -4,7 +4,7 @@
  *  set-callout on change with 80 ms debounce.
  */
 
-import { createSignal, createEffect, Show } from 'solid-js';
+import { createSignal, createEffect, Show, onCleanup } from 'solid-js';
 import type { CalloutPayload, CalloutStyle } from '../protocol';
 
 interface CalloutInspectorProps {
@@ -39,6 +39,10 @@ export function CalloutInspector(props: CalloutInspectorProps) {
 			});
 		}, PARAM_DEBOUNCE_MS);
 	};
+
+	onCleanup(() => {
+		if (debounceTimer) clearTimeout(debounceTimer);
+	});
 
 	const kind = () => props.callout.calloutKind;
 

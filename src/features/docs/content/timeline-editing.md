@@ -43,6 +43,10 @@ Transitions render on the full accelerated (WebGPU) path. On the reduced-compati
 
 Click **Add Title** in the timeline toolbar to create a text card at the playhead. Edit its text, font size, colour, alignment, background, outline, and shadow in the Inspector. Titles behave like video clips: transforms, effects, and keyframes all apply.
 
+## Screencast tools
+
+For software walkthroughs, see [Screencast Post Pack](/docs/screencast-post-pack). It covers Zoom-n-Pan presets, Auto-Zoom proposals from own-tab capture event logs, callout clips, and padded backgrounds.
+
 ## Inspector: effects, transform, keyframes
 
 Select a clip to edit it in the **Inspector** (right sidebar):

@@ -83,12 +83,8 @@ export function AutoZoomPanel(props: AutoZoomPanelProps) {
 	};
 
 	const handleApply = (proposal: ZoomProposal) => {
-		const keyframes = applyProposal(proposal);
-		props.onSetKeyframes(
-			props.trackId,
-			props.clipId,
-			keyframes as unknown as ClipKeyframesSnapshot
-		);
+		const keyframes = applyProposal(proposal, params());
+		props.onSetKeyframes(props.trackId, props.clipId, keyframes);
 		setProposals((prev) =>
 			prev.map((p) => (p.id === proposal.id ? { ...p, status: 'applied' } : p))
 		);
@@ -160,6 +156,57 @@ export function AutoZoomPanel(props: AutoZoomPanelProps) {
 								min={1}
 								max={4}
 								step={0.1}
+							/>
+						</label>
+						<label>
+							Lead-in (ms)
+							<input
+								type="number"
+								value={params().leadInMs}
+								onInput={(e) =>
+									setParams((p) => ({ ...p, leadInMs: Number(e.currentTarget.value) }))
+								}
+								min={0}
+								max={5000}
+								step={50}
+							/>
+						</label>
+						<label>
+							Ramp (ms)
+							<input
+								type="number"
+								value={params().rampMs}
+								onInput={(e) => setParams((p) => ({ ...p, rampMs: Number(e.currentTarget.value) }))}
+								min={50}
+								max={5000}
+								step={50}
+							/>
+						</label>
+						<label>
+							Hold (ms)
+							<input
+								type="number"
+								value={params().holdMs}
+								onInput={(e) => setParams((p) => ({ ...p, holdMs: Number(e.currentTarget.value) }))}
+								min={0}
+								max={30000}
+								step={100}
+							/>
+						</label>
+						<label>
+							Merge (ms)
+							<input
+								type="number"
+								value={params().overlapMergeThresholdMs}
+								onInput={(e) =>
+									setParams((p) => ({
+										...p,
+										overlapMergeThresholdMs: Number(e.currentTarget.value)
+									}))
+								}
+								min={0}
+								max={1000}
+								step={10}
 							/>
 						</label>
 					</div>

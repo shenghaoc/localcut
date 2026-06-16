@@ -3,6 +3,7 @@ import {
 	normalizeDomEventLogEntry,
 	parseDomEventLog,
 	serializeDomEventLog,
+	CaptureSessionEventLogger,
 	type DomEventLog
 } from './dom-event-log';
 
@@ -66,7 +67,7 @@ describe('parseDomEventLog', () => {
 		).toBeNull();
 	});
 
-	it('filters out unknown event kinds (forward-compat: key channel reserved)', () => {
+	it('preserves reserved key channel entries for forward compatibility', () => {
 		const raw = {
 			eventLogSchemaVersion: 1,
 			sessionId: 'test',
@@ -77,10 +78,9 @@ describe('parseDomEventLog', () => {
 		};
 		const log = parseDomEventLog(raw);
 		expect(log).not.toBeNull();
-		// Unknown kinds are filtered by normalizeDomEventLogEntry; only valid entries survive.
-		// The 'key' channel is reserved for Phase 44 and will be accepted once implemented.
-		expect(log!.events).toHaveLength(1);
+		expect(log!.events).toHaveLength(2);
 		expect(log!.events[0]!.kind).toBe('click');
+		expect(log!.events[1]!.kind).toBe('key');
 	});
 });
 
@@ -101,5 +101,32 @@ describe('serializeDomEventLog', () => {
 		expect(parsed!.events).toHaveLength(2);
 		expect(parsed!.events[0]!.t).toBe(1000);
 		expect(parsed!.events[1]!.deltaY).toBe(-50);
+	});
+});
+
+describe('CaptureSessionEventLogger.flush', () => {
+	it('writes valid events.json to a directory handle', async () => {
+		let written = '';
+		const directory = {
+			async getFileHandle(name: string, options: { create: boolean }) {
+				expect(name).toBe('events.json');
+				expect(options.create).toBe(true);
+				return {
+					async createWritable() {
+						return {
+							async write(value: string) {
+								written = value;
+							},
+							async close() {}
+						};
+					}
+				};
+			}
+		} as unknown as FileSystemDirectoryHandle;
+		const logger = new CaptureSessionEventLogger(0, 'session-a');
+		await logger.flush(directory);
+		const parsed = parseDomEventLog(JSON.parse(written));
+		expect(parsed).not.toBeNull();
+		expect(parsed!.sessionId).toBe('session-a');
 	});
 });

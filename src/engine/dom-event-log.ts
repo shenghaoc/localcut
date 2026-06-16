@@ -7,8 +7,8 @@
  *  `wheel` events provide optional deltaY because `scroll` events do not.
  */
 
-/** One recorded DOM event during an own-tab capture session. */
-export interface DomEventLogEntry {
+/** One recorded click/scroll event during an own-tab capture session. */
+export interface DomPointerEventLogEntry {
 	/** µs on the Phase 41 capture clock (epochUs + performance.now()*1000). */
 	t: number;
 	kind: 'click' | 'scroll';
@@ -20,6 +20,18 @@ export interface DomEventLogEntry {
 	deltaY?: number;
 	// NOTE: 'key' channel reserved for Phase 44 opt-in shortcut-keys extension.
 }
+
+/** Reserved forward-compatible channel; Phase 43 records no keys. */
+export interface DomReservedKeyEventLogEntry {
+	t: number;
+	kind: 'key';
+	x: number;
+	y: number;
+	[key: string]: unknown;
+}
+
+/** One parsed DOM event-log entry. Phase 43 emits click/scroll only. */
+export type DomEventLogEntry = DomPointerEventLogEntry | DomReservedKeyEventLogEntry;
 
 /** Versioned JSON written to OPFS as events.json at session stop. */
 export interface DomEventLog {
@@ -129,6 +141,8 @@ export class CaptureSessionDomEventLogger {
 	}
 }
 
+export { CaptureSessionDomEventLogger as CaptureSessionEventLogger };
+
 /**
  * Get normalised scroll position from the event target (sub-element aware).
  */
@@ -163,10 +177,13 @@ export function normalizeDomEventLogEntry(raw: unknown): DomEventLogEntry | null
 	if (typeof raw !== 'object' || raw === null) return null;
 	const obj = raw as Record<string, unknown>;
 	if (typeof obj.t !== 'number' || !Number.isFinite(obj.t)) return null;
-	if (obj.kind !== 'click' && obj.kind !== 'scroll') return null;
+	if (obj.kind !== 'click' && obj.kind !== 'scroll' && obj.kind !== 'key') return null;
 	const x = typeof obj.x === 'number' ? clamp01(obj.x) : 0;
 	const y = typeof obj.y === 'number' ? clamp01(obj.y) : 0;
-	const entry: DomEventLogEntry = { t: obj.t, kind: obj.kind, x, y };
+	if (obj.kind === 'key') {
+		return { ...obj, t: obj.t, kind: 'key', x, y };
+	}
+	const entry: DomPointerEventLogEntry = { t: obj.t, kind: obj.kind, x, y };
 	if (obj.kind === 'scroll' && typeof obj.deltaY === 'number' && Number.isFinite(obj.deltaY)) {
 		entry.deltaY = obj.deltaY;
 	}

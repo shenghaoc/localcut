@@ -9,6 +9,7 @@
 
 import type { DomEventLogEntry } from './dom-event-log';
 import { stableProposalId } from './dom-event-log';
+import type { ClipKeyframesSnapshot } from '../protocol';
 
 export interface AutoZoomParams {
 	clusterWindowS: number;
@@ -81,6 +82,7 @@ export function clusterEvents(
 	let lastT = Number.NEGATIVE_INFINITY;
 
 	for (const entry of entries) {
+		if (entry.kind === 'key') continue;
 		if (entry.t < lastT) {
 			return clusterEvents(
 				[...entries].sort((a, b) => a.t - b.t),
@@ -182,10 +184,11 @@ function mergeProposals(proposals: ZoomProposal[], mergeThresholdUs: number): Zo
  * the set-keyframes command.
  */
 export function applyProposal(
-	proposal: ZoomProposal
-): Record<string, { t: number; value: number; easing: string }[]> {
+	proposal: ZoomProposal,
+	params: AutoZoomParams = DEFAULT_AUTO_ZOOM_PARAMS
+): ClipKeyframesSnapshot {
 	const { zoomInAtUs, zoomOutAtUs, centroidX, centroidY, scale } = proposal;
-	const rampS = (proposal.cluster.endUs - proposal.cluster.startUs) / 1e6;
+	const rampS = Math.max(0.001, params.rampMs / 1000);
 
 	// Convert µs to seconds relative to clip start
 	const tIn = zoomInAtUs / 1e6;
@@ -202,14 +205,14 @@ export function applyProposal(
 		],
 		x: [
 			{ t: tIn, value: 0, easing: 'ease' },
-			{ t: tInEnd, value: centroidX * 2 - 1, easing: 'linear' },
-			{ t: tOutStart, value: centroidX * 2 - 1, easing: 'ease' },
+			{ t: tInEnd, value: centroidX - 0.5, easing: 'linear' },
+			{ t: tOutStart, value: centroidX - 0.5, easing: 'ease' },
 			{ t: tOut, value: 0, easing: 'linear' }
 		],
 		y: [
 			{ t: tIn, value: 0, easing: 'ease' },
-			{ t: tInEnd, value: centroidY * 2 - 1, easing: 'linear' },
-			{ t: tOutStart, value: centroidY * 2 - 1, easing: 'ease' },
+			{ t: tInEnd, value: centroidY - 0.5, easing: 'linear' },
+			{ t: tOutStart, value: centroidY - 0.5, easing: 'ease' },
 			{ t: tOut, value: 0, easing: 'linear' }
 		]
 	};

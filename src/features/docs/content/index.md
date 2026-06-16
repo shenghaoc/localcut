@@ -16,7 +16,7 @@ LocalCut Studio is a video editor that runs entirely in your browser. There is n
 - New to the app? Read [Getting started](/docs/getting-started).
 - Bringing in footage? See [Importing media](/docs/importing-media) and what to expect from different files.
 - Cutting your project? [Timeline editing](/docs/timeline-editing) covers tools and keyboard shortcuts.
-- Polishing a tutorial? [Silence detection](/docs/silence-detection) finds dead air, [Keystroke overlay](/docs/keystroke-overlay) adds keycap clips, and [YouTube chapters](/docs/youtube-chapters) generates a chapter list from your markers.
+- Polishing a tutorial? [Screencast Post Pack](/docs/screencast-post-pack) adds zoom presets, auto-zoom proposals, callouts, and padded backgrounds; [Silence detection](/docs/silence-detection) finds dead air, [Keystroke overlay](/docs/keystroke-overlay) adds keycap clips, and [YouTube chapters](/docs/youtube-chapters) generates a chapter list from your markers.
 - Ready to render? [Exporting](/docs/exporting) explains codecs, presets, and the render queue.
 - Something looks limited or broken? Check [Browser limitations](/docs/browser-limitations) and [Troubleshooting](/docs/troubleshooting).
 

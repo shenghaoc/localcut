@@ -2,8 +2,9 @@ enable f16;
 
 @group(0) @binding(0) var<uniform> u: BlurRegionUniform;
 @group(0) @binding(1) var src: texture_2d<f32>;
-@group(0) @binding(2) var tmp: texture_storage_2d<rgba8unorm, read_write>;
-@group(0) @binding(3) var dst: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(2) var tmpOut: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(3) var tmpIn: texture_2d<f32>;
+@group(0) @binding(4) var dst: texture_storage_2d<rgba8unorm, write>;
 
 struct BlurRegionUniform {
 	rx: f32,
@@ -31,7 +32,7 @@ fn horizontal_pass(@builtin(global_invocation_id) gid: vec3u) {
 	let uv = vec2f(gid.xy) / vec2f(dims);
 
 	if (!inRect(uv)) {
-		textureStore(tmp, gid.xy, textureLoad(src, gid.xy, 0));
+		textureStore(tmpOut, gid.xy, textureLoad(src, gid.xy, 0));
 		return;
 	}
 
@@ -47,7 +48,7 @@ fn horizontal_pass(@builtin(global_invocation_id) gid: vec3u) {
 		wSum += w;
 	}
 
-	textureStore(tmp, gid.xy, vec4f(vec4f16(sum / wSum)));
+	textureStore(tmpOut, gid.xy, vec4f(vec4f16(sum / wSum)));
 }
 
 @compute @workgroup_size(8, 8, 1)
@@ -70,7 +71,7 @@ fn vertical_pass(@builtin(global_invocation_id) gid: vec3u) {
 	for (var i = -radiusI; i <= radiusI; i++) {
 		let sy = clamp(i32(gid.y) + i, 0, i32(dims.y) - 1);
 		let w = gaussianWeight(f32(i), sigma);
-		sum += f16(textureLoad(tmp, vec2u(gid.x, u32(sy)), 0)) * w;
+		sum += f16(textureLoad(tmpIn, vec2u(gid.x, u32(sy)), 0)) * w;
 		wSum += w;
 	}
 

@@ -4,7 +4,7 @@
  *  preview via the existing 80 ms debounce + worker message pattern.
  */
 
-import { createSignal, createEffect, Show, For } from 'solid-js';
+import { createSignal, createEffect, Show, For, onCleanup } from 'solid-js';
 import type { PaddedBackgroundParams, PaddedBackgroundKind, GradientStop } from '../protocol';
 import { DEFAULT_PADDED_BACKGROUND } from '../engine/padded-background';
 
@@ -60,6 +60,10 @@ export function PaddedBackgroundPanel(props: PaddedBackgroundPanelProps) {
 	) => {
 		dispatch({ ...params(), [key]: value });
 	};
+
+	onCleanup(() => {
+		if (debounceTimer) clearTimeout(debounceTimer);
+	});
 
 	const bgKind = () => params().background.kind;
 

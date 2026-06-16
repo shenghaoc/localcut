@@ -8,9 +8,13 @@ import type {
 	ClipKeyframeParamSnapshot,
 	ClipKeyframesSnapshot,
 	ClipLutSnapshot,
+	CalloutPayload,
+	CapabilityTierV2,
 	FitModeSnapshot,
 	KeyframeEasingSnapshot,
 	MediaMetadata,
+	PaddedBackgroundParams,
+	SessionEventLogRef,
 	SkinMaskSnapshot,
 	TitleAlignSnapshot,
 	TitleContentSnapshot,
@@ -20,6 +24,10 @@ import type {
 	TransformParamsSnapshot
 } from '../protocol';
 import { clipLocalTime, hasKeyframeTrack, keyframeAt, sortedKeyframes } from './keyframes';
+import { ZoomPresetPanel } from './ZoomPresetPanel';
+import { AutoZoomPanel } from './AutoZoomPanel';
+import { CalloutInspector } from './CalloutInspector';
+import { PaddedBackgroundPanel } from './PaddedBackgroundPanel';
 
 export interface SelectedTitle {
 	trackId: string;
@@ -31,7 +39,7 @@ export interface SelectedClip {
 	trackId: string;
 	clipId: string;
 	kind?: import('../protocol').ClipKindSnapshot;
-	sourceId: string;
+	sourceId?: string;
 	start: number;
 	duration: number;
 	effects: ClipEffectParamsSnapshot;
@@ -47,6 +55,8 @@ export interface SelectedClip {
 	beauty?: BeautyEffectSnapshot;
 	/** Phase 42: origin capture session id for retake detection. */
 	captureSessionId?: string;
+	callout?: CalloutPayload;
+	paddedBackground?: PaddedBackgroundParams;
 }
 
 export interface SelectedClipTransform {
@@ -92,6 +102,8 @@ interface InspectorProps {
 	selectedTitle: SelectedTitle | null;
 	/** Phase 13: selected transition data. */
 	selectedTransition: SelectedTransition | null;
+	capabilityTier?: CapabilityTierV2;
+	sessionEventLogs?: readonly SessionEventLogRef[];
 	playheadTime: number;
 	onSetTitle: (
 		trackId: string,
@@ -123,6 +135,17 @@ interface InspectorProps {
 		clipId: string,
 		key: ClipKeyframeParamSnapshot,
 		t: number
+	) => void;
+	onReplaceKeyframeTracks?: (
+		trackId: string,
+		clipId: string,
+		tracks: ClipKeyframesSnapshot
+	) => void;
+	onSetCallout?: (trackId: string, clipId: string, payload: CalloutPayload) => void;
+	onSetPaddedBackground?: (
+		trackId: string,
+		clipId: string,
+		params: PaddedBackgroundParams | null
 	) => void;
 	onImportLut: (trackId: string, clipId: string, file: File) => void;
 	onLutStrength: (trackId: string, clipId: string, strength: number) => void;
@@ -1042,6 +1065,19 @@ export function Inspector(props: InspectorProps) {
 		flushTitle();
 	});
 
+	const phase43Available = () => props.capabilityTier === 'core-webgpu';
+	const phase43VideoClip = () =>
+		Boolean(
+			props.selectedClipTransform &&
+			props.selectedClip?.kind !== 'callout' &&
+			props.selectedClip?.kind !== 'title'
+		);
+	const selectedEventLogRef = () => {
+		const sourceId = props.selectedClip?.sourceId;
+		if (!sourceId) return undefined;
+		return props.sessionEventLogs?.find((ref) => ref.sourceId === sourceId);
+	};
+
 	function scheduleParam(key: keyof ClipEffectParamsSnapshot, value: number) {
 		const clip = props.selectedClip;
 		if (!clip) return;
@@ -1451,6 +1487,78 @@ export function Inspector(props: InspectorProps) {
 									</label>
 								</div>
 							)}
+						</Show>
+						<Show when={phase43VideoClip() || props.selectedClip?.kind === 'callout'}>
+							<Show
+								when={phase43Available()}
+								fallback={
+									<div
+										class="inspector-section phase43-disabled"
+										title="Requires WebGPU (accelerated tier)"
+										aria-disabled="true"
+									>
+										<h3 class="panel-subtitle">Screencast Tools</h3>
+										<p class="placeholder-text">Requires WebGPU (accelerated tier)</p>
+									</div>
+								}
+							>
+								<Show
+									when={
+										phase43VideoClip() && props.onReplaceKeyframeTracks ? props.selectedClip : null
+									}
+								>
+									{(selected) => (
+										<>
+											<ZoomPresetPanel
+												trackId={selected().trackId}
+												clipId={selected().clipId}
+												hasExistingKeyframes={Boolean(
+													selected().keyframes?.x?.length ||
+													selected().keyframes?.y?.length ||
+													selected().keyframes?.scale?.length
+												)}
+												onSetKeyframes={(trackId, clipId, keyframes) =>
+													props.onReplaceKeyframeTracks?.(trackId, clipId, keyframes)
+												}
+											/>
+											<AutoZoomPanel
+												trackId={selected().trackId}
+												clipId={selected().clipId}
+												sessionEventLogRef={selectedEventLogRef()}
+												onSetKeyframes={(trackId, clipId, keyframes) =>
+													props.onReplaceKeyframeTracks?.(trackId, clipId, keyframes)
+												}
+											/>
+											<Show when={props.onSetPaddedBackground}>
+												<PaddedBackgroundPanel
+													trackId={selected().trackId}
+													clipId={selected().clipId}
+													paddedBackground={selected().paddedBackground}
+													onSetPaddedBackground={(trackId, clipId, params) =>
+														props.onSetPaddedBackground?.(trackId, clipId, params)
+													}
+												/>
+											</Show>
+										</>
+									)}
+								</Show>
+								<Show
+									when={
+										props.selectedClip?.kind === 'callout' &&
+										props.selectedClip.callout &&
+										props.onSetCallout
+									}
+								>
+									<CalloutInspector
+										trackId={props.selectedClip!.trackId}
+										clipId={props.selectedClip!.clipId}
+										callout={props.selectedClip!.callout!}
+										onSetCallout={(trackId, clipId, payload) =>
+											props.onSetCallout?.(trackId, clipId, payload)
+										}
+									/>
+								</Show>
+							</Show>
 						</Show>
 						{/* Phase 35: Speed section — visible for non-title clips with time-remap support */}
 						<Show

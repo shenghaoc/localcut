@@ -1868,6 +1868,7 @@ interface AddCalloutCommand {
 	trackId?: string;
 	start?: number;
 	payload: CalloutPayload;
+	transform?: Partial<TransformParamsSnapshot>;
 }
 
 /** Phase 43: updates a callout clip's payload (mirrors SetTitleCommand). */
@@ -2723,6 +2724,7 @@ export type WorkerStateMessage =
 			transitions: TimelineTransitionSnapshot[];
 			markers: TimelineMarkerSnapshot[];
 			masterGain: number;
+			sessionEventLogs: SessionEventLogRef[];
 	  }
 	| { type: 'caption-import-result'; result: CaptionImportResultSnapshot }
 	| { type: 'caption-export-result'; files: readonly CaptionSidecarFileSnapshot[] }

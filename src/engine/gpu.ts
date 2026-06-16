@@ -18,6 +18,12 @@ import matteApplyF32 from './shaders/matte-apply.wgsl?raw';
 import matteApplyF16 from './shaders/matte-apply.f16.wgsl?raw';
 import matteBlurF32 from './shaders/matte-blur.wgsl?raw';
 import matteBlurF16 from './shaders/matte-blur.f16.wgsl?raw';
+import spotlightF32 from './shaders/spotlight.wgsl?raw';
+import spotlightF16 from './shaders/spotlight.f16.wgsl?raw';
+import blurRegionF32 from './shaders/blur-region.wgsl?raw';
+import blurRegionF16 from './shaders/blur-region.f16.wgsl?raw';
+import paddedBackgroundF32 from './shaders/padded-background.wgsl?raw';
+import paddedBackgroundF16 from './shaders/padded-background.f16.wgsl?raw';
 import clippingOverlaySource from './shaders/clipping-overlay.wgsl?raw';
 import skinSmoothPrepareSource from './shaders/skin-smooth-prepare.wgsl?raw';
 import skinSmoothBoxSource from './shaders/skin-smooth-box.wgsl?raw';
@@ -44,6 +50,11 @@ import {
 	type TransformParams
 } from './transform';
 import { OutputTransfer } from './colour';
+import {
+	DEFAULT_PADDED_BACKGROUND,
+	normalizePaddedBackground,
+	type PaddedBackgroundParams
+} from './padded-background';
 import {
 	SCOPES_FEATURE_ENABLED,
 	SCOPE_RES_X,
@@ -119,6 +130,8 @@ export interface FrameCompositeLayer {
 	beauty?: BeautyEffectSnapshot;
 	/** Phase 32b: smoothed/interpolated 478x3 primary-face landmarks for this frame. */
 	beautyLandmarks?: Float32Array;
+	/** Phase 43: padded-background card render for screencast clips. */
+	paddedBackground?: PaddedBackgroundParams;
 	/** Phase 13: present when this layer participates in a transition blend. */
 	transition?: import('./timeline').TransitionResolveMeta;
 }
@@ -145,7 +158,27 @@ export interface TextureCompositeLayer {
 	uvCropMax?: [number, number];
 }
 
-export type CompositeLayer = FrameCompositeLayer | TextureCompositeLayer;
+export interface SpotlightCompositeLayer {
+	kind: 'spotlight';
+	transform: TransformParams;
+	darkenStrength: number;
+	transition?: import('./timeline').TransitionResolveMeta;
+}
+
+export interface BlurRegionCompositeLayer {
+	kind: 'blur-region';
+	transform: TransformParams;
+	blurRadius: number;
+	transition?: import('./timeline').TransitionResolveMeta;
+}
+
+export type CompositeLayer =
+	| FrameCompositeLayer
+	| TextureCompositeLayer
+	| SpotlightCompositeLayer
+	| BlurRegionCompositeLayer;
+
+type RenderableCompositeLayer = FrameCompositeLayer | TextureCompositeLayer;
 
 const DIAGNOSTIC_LIMIT_KEYS = [
 	'maxTextureDimension2D',
@@ -157,6 +190,109 @@ const DIAGNOSTIC_LIMIT_KEYS = [
 
 function unavailable(reason: string): GpuInit {
 	return { renderer: null, features: [], unavailableReason: reason, limits: {}, deviceLost: null };
+}
+
+function isRenderableLayer(layer: CompositeLayer | undefined): layer is RenderableCompositeLayer {
+	return layer?.kind === 'frame' || layer?.kind === 'texture';
+}
+
+function clampUnit(value: number): number {
+	return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
+}
+
+function clampRange(value: number, min: number, max: number): number {
+	return Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : min;
+}
+
+function colourFromHex(hex: string): [number, number, number, number] {
+	const normalised = /^#[0-9a-f]{6}$/i.test(hex) ? hex.slice(1) : '1a1a2e';
+	const int = Number.parseInt(normalised, 16);
+	return [((int >> 16) & 0xff) / 255, ((int >> 8) & 0xff) / 255, (int & 0xff) / 255, 1];
+}
+
+function packSpotlightUniform(layer: SpotlightCompositeLayer): Float32Array {
+	const radius = clampRange(layer.transform.scale * 0.25, 0.025, 0.5);
+	return new Float32Array([
+		clampUnit(0.5 + layer.transform.x),
+		clampUnit(0.5 + layer.transform.y),
+		radius,
+		radius,
+		clampUnit(layer.darkenStrength),
+		0,
+		0,
+		0
+	]);
+}
+
+function packBlurRegionUniform(layer: BlurRegionCompositeLayer): Float32Array {
+	const size = clampRange(layer.transform.scale, 0.03, 1);
+	const cx = clampUnit(0.5 + layer.transform.x);
+	const cy = clampUnit(0.5 + layer.transform.y);
+	const rx = clampRange(cx - size * 0.5, 0, 1);
+	const ry = clampRange(cy - size * 0.5, 0, 1);
+	const rw = Math.min(size, 1 - rx);
+	const rh = Math.min(size, 1 - ry);
+	return new Float32Array([rx, ry, rw, rh, clampRange(layer.blurRadius, 1, 48), 0, 0, 0]);
+}
+
+function packPaddedBackgroundUniform(
+	raw: PaddedBackgroundParams,
+	outputWidth: number,
+	outputHeight: number
+): ArrayBuffer {
+	const params = normalizePaddedBackground(raw);
+	const buffer = new ArrayBuffer(144);
+	const f32 = new Float32Array(buffer);
+	const u32 = new Uint32Array(buffer);
+	const marginX = params.insetMargin * (outputHeight / Math.max(1, outputWidth));
+	const marginY = params.insetMargin;
+	f32[0] = clampRange(marginX, 0, 0.45);
+	f32[1] = clampRange(marginY, 0, 0.45);
+	f32[2] = clampRange(marginX, 0, 0.45);
+	f32[3] = clampRange(marginY, 0, 0.45);
+	f32[4] = clampRange(params.cornerRadius / Math.max(1, outputHeight), 0, 0.08);
+	f32[5] = clampUnit(params.shadowOpacity);
+	f32[6] = params.shadowOffsetY / Math.max(1, outputHeight);
+	u32[7] = params.background.kind === 'solid' ? 0 : 1;
+	const defaultGradient =
+		DEFAULT_PADDED_BACKGROUND.background.kind === 'gradient'
+			? DEFAULT_PADDED_BACKGROUND.background
+			: {
+					kind: 'gradient' as const,
+					stops: [
+						{ color: '#1a1a2e', pos: 0 },
+						{ color: '#16213e', pos: 1 }
+					],
+					angleDeg: 0
+				};
+
+	const solid =
+		params.background.kind === 'solid'
+			? colourFromHex(params.background.color)
+			: colourFromHex(defaultGradient.stops[0]!.color);
+	f32.set(solid, 8);
+
+	const gradient = params.background.kind === 'gradient' ? params.background : defaultGradient;
+	const angle = ((gradient.angleDeg ?? 0) * Math.PI) / 180;
+	f32[12] = Math.cos(angle);
+	f32[13] = Math.sin(angle);
+	const stops = [...gradient.stops]
+		.slice(0, 5)
+		.sort((a, b) => a.pos - b.pos)
+		.map((stop) => ({ ...stop, pos: clampUnit(stop.pos) }));
+	const safeStops = stops.length > 0 ? stops : defaultGradient.stops;
+	u32[14] = safeStops.length;
+	u32[15] = 0;
+	for (let i = 0; i < 5; i += 1) {
+		const stop = safeStops[Math.min(i, safeStops.length - 1)]!;
+		const [r, g, b] = colourFromHex(stop.color);
+		const base = 16 + i * 4;
+		f32[base] = r;
+		f32[base + 1] = g;
+		f32[base + 2] = b;
+		f32[base + 3] = clampUnit(stop.pos);
+	}
+	return buffer;
 }
 
 /**
@@ -196,6 +332,11 @@ export class PreviewRenderer {
 	private readonly mattePipeline: GPUComputePipeline;
 	// Phase 31: matte-blur pipeline (mask-driven background blur).
 	private readonly matteBlurPipeline: GPUComputePipeline;
+	// Phase 43: source-less callout effect layers over the current accumulator.
+	private readonly spotlightPipeline: GPUComputePipeline;
+	private readonly blurRegionHorizontalPipeline: GPUComputePipeline;
+	private readonly blurRegionVerticalPipeline: GPUComputePipeline;
+	private readonly paddedBackgroundPipeline: GPUComputePipeline;
 	private readonly clippingOverlayPipeline: GPUComputePipeline | null;
 	private readonly sampler: GPUSampler;
 
@@ -237,6 +378,13 @@ export class PreviewRenderer {
 	private readonly matteBuffers: GPUBuffer[] = [];
 	private readonly matteGroupLayout: GPUBindGroupLayout;
 	private readonly matteBlurGroupLayout: GPUBindGroupLayout;
+	private readonly spotlightGroupLayout: GPUBindGroupLayout;
+	private readonly blurRegionHorizontalGroupLayout: GPUBindGroupLayout;
+	private readonly blurRegionVerticalGroupLayout: GPUBindGroupLayout;
+	private readonly paddedBackgroundGroupLayout: GPUBindGroupLayout;
+	private readonly spotlightUniformBuffers: GPUBuffer[] = [];
+	private readonly blurRegionUniformBuffers: GPUBuffer[] = [];
+	private readonly paddedBackgroundUniformBuffers: GPUBuffer[] = [];
 	// Phase 13: transition-mix uniform buffers.
 	private readonly transitionUniformBuffers: GPUBuffer[] = [];
 	private readonly transitionGroupLayout: GPUBindGroupLayout;
@@ -370,6 +518,30 @@ export class PreviewRenderer {
 			useF16 ? matteBlurF16 : matteBlurF32,
 			'matte-blur'
 		);
+		this.spotlightPipeline = createComputePipeline(
+			device,
+			useF16 ? spotlightF16 : spotlightF32,
+			'spotlight'
+		);
+		const blurRegionModule = device.createShaderModule({
+			code: useF16 ? blurRegionF16 : blurRegionF32,
+			label: 'blur-region'
+		});
+		this.blurRegionHorizontalPipeline = device.createComputePipeline({
+			label: 'blur-region-horizontal',
+			layout: 'auto',
+			compute: { module: blurRegionModule, entryPoint: 'horizontal_pass' }
+		});
+		this.blurRegionVerticalPipeline = device.createComputePipeline({
+			label: 'blur-region-vertical',
+			layout: 'auto',
+			compute: { module: blurRegionModule, entryPoint: 'vertical_pass' }
+		});
+		this.paddedBackgroundPipeline = createComputePipeline(
+			device,
+			useF16 ? paddedBackgroundF16 : paddedBackgroundF32,
+			'padded-background'
+		);
 		this.clippingOverlayPipeline = (() => {
 			try {
 				return createComputePipeline(device, clippingOverlaySource, 'clipping-overlay');
@@ -427,6 +599,10 @@ export class PreviewRenderer {
 		this.opacityGroupLayout = this.opacityPipeline.getBindGroupLayout(0);
 		this.matteGroupLayout = this.mattePipeline.getBindGroupLayout(0);
 		this.matteBlurGroupLayout = this.matteBlurPipeline.getBindGroupLayout(0);
+		this.spotlightGroupLayout = this.spotlightPipeline.getBindGroupLayout(0);
+		this.blurRegionHorizontalGroupLayout = this.blurRegionHorizontalPipeline.getBindGroupLayout(0);
+		this.blurRegionVerticalGroupLayout = this.blurRegionVerticalPipeline.getBindGroupLayout(0);
+		this.paddedBackgroundGroupLayout = this.paddedBackgroundPipeline.getBindGroupLayout(0);
 		this.transitionGroupLayout = this.transitionMixPipeline.getBindGroupLayout(0);
 		this.skinSmoothGroupLayout = this.skinSmoothPreparePipeline.getBindGroupLayout(0);
 		this.skinSmoothBoxGroupLayout = this.skinSmoothBoxPipeline.getBindGroupLayout(0);
@@ -645,7 +821,7 @@ export class PreviewRenderer {
 		let transitionCount = 0;
 
 		const processLayer = (
-			layer: CompositeLayer,
+			layer: RenderableCompositeLayer,
 			slot: number,
 			transformDst: GPUTextureView
 		): { srcWidth: number; srcHeight: number } => {
@@ -767,17 +943,42 @@ export class PreviewRenderer {
 					frameTimeSeed
 				);
 			}
-			const opaqueView = this.encodeOpacity(encoder, filmView, layer.transform, slot, wgX, wgY);
+			const paddedBackgroundDst =
+				filmView === storage.a ? storage.b : filmView === storage.b ? storage.c : storage.a;
+			const paddedBackgroundView =
+				layer.kind === 'frame' && layer.paddedBackground
+					? this.encodePaddedBackground(
+							encoder,
+							filmView,
+							paddedBackgroundDst,
+							layer.paddedBackground,
+							slot,
+							wgX,
+							wgY
+						)
+					: filmView;
+			const transformSourceWidth =
+				layer.kind === 'frame' && layer.paddedBackground ? this.width : srcWidth;
+			const transformSourceHeight =
+				layer.kind === 'frame' && layer.paddedBackground ? this.height : srcHeight;
+			const opaqueView = this.encodeOpacity(
+				encoder,
+				paddedBackgroundView,
+				layer.transform,
+				slot,
+				wgX,
+				wgY
+			);
 			const xfParams =
-				layer.transform.opacity < 1.0 && opaqueView !== stageView
+				layer.transform.opacity < 1.0 && opaqueView !== paddedBackgroundView
 					? { ...layer.transform, opacity: 1.0 }
 					: layer.transform;
 			this.encodeTransformDirect(
 				encoder,
 				xfParams,
 				opaqueView,
-				srcWidth,
-				srcHeight,
+				transformSourceWidth,
+				transformSourceHeight,
 				slot,
 				wgX,
 				wgY,
@@ -790,9 +991,34 @@ export class PreviewRenderer {
 		for (let i = 0; i < layers.length; i++) {
 			const layer = layers[i]!;
 			const nextLayer = layers[i + 1];
+			if (layer.kind === 'spotlight') {
+				const under = acc;
+				const over = under === 0 ? 1 : 0;
+				this.encodeSpotlightLayer(encoder, accView[under], accView[over], layer, i, wgX, wgY);
+				acc = over;
+				continue;
+			}
+			if (layer.kind === 'blur-region') {
+				const under = acc;
+				const over = under === 0 ? 1 : 0;
+				this.encodeBlurRegionLayer(
+					encoder,
+					accView[under],
+					storage.a,
+					accView[over],
+					layer,
+					i,
+					wgX,
+					wgY
+				);
+				acc = over;
+				continue;
+			}
+			if (!isRenderableLayer(layer)) continue;
 			const isTransitionPair =
 				layer.transition &&
-				nextLayer?.transition &&
+				isRenderableLayer(nextLayer) &&
+				nextLayer.transition &&
 				layer.transition.transitionId === nextLayer.transition.transitionId;
 
 			if (isTransitionPair) {
@@ -1273,6 +1499,120 @@ export class PreviewRenderer {
 		pass.end();
 	}
 
+	private ensureUniformBuffer(buffers: GPUBuffer[], slot: number, byteLength: number): GPUBuffer {
+		let buffer = buffers[slot];
+		if (!buffer) {
+			buffer = this.device.createBuffer({
+				size: byteLength,
+				usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+			});
+			buffers[slot] = buffer;
+		}
+		return buffer;
+	}
+
+	private encodeSpotlightLayer(
+		encoder: GPUCommandEncoder,
+		srcView: GPUTextureView,
+		dstView: GPUTextureView,
+		layer: SpotlightCompositeLayer,
+		slot: number,
+		wgX: number,
+		wgY: number
+	): void {
+		const buffer = this.ensureUniformBuffer(this.spotlightUniformBuffers, slot, 32);
+		this.device.queue.writeBuffer(buffer, 0, packSpotlightUniform(layer));
+		const bindGroup = this.device.createBindGroup({
+			layout: this.spotlightGroupLayout,
+			entries: [
+				{ binding: 0, resource: { buffer } },
+				{ binding: 1, resource: srcView },
+				{ binding: 2, resource: dstView }
+			]
+		});
+		const pass = encoder.beginComputePass();
+		pass.setPipeline(this.spotlightPipeline);
+		pass.setBindGroup(0, bindGroup);
+		pass.dispatchWorkgroups(wgX, wgY);
+		pass.end();
+	}
+
+	private encodeBlurRegionLayer(
+		encoder: GPUCommandEncoder,
+		srcView: GPUTextureView,
+		tmpView: GPUTextureView,
+		dstView: GPUTextureView,
+		layer: BlurRegionCompositeLayer,
+		slot: number,
+		wgX: number,
+		wgY: number
+	): void {
+		const buffer = this.ensureUniformBuffer(this.blurRegionUniformBuffers, slot, 32);
+		this.device.queue.writeBuffer(buffer, 0, packBlurRegionUniform(layer));
+		{
+			const bindGroup = this.device.createBindGroup({
+				layout: this.blurRegionHorizontalGroupLayout,
+				entries: [
+					{ binding: 0, resource: { buffer } },
+					{ binding: 1, resource: srcView },
+					{ binding: 2, resource: tmpView }
+				]
+			});
+			const pass = encoder.beginComputePass();
+			pass.setPipeline(this.blurRegionHorizontalPipeline);
+			pass.setBindGroup(0, bindGroup);
+			pass.dispatchWorkgroups(wgX, wgY);
+			pass.end();
+		}
+		{
+			const bindGroup = this.device.createBindGroup({
+				layout: this.blurRegionVerticalGroupLayout,
+				entries: [
+					{ binding: 0, resource: { buffer } },
+					{ binding: 1, resource: srcView },
+					{ binding: 3, resource: tmpView },
+					{ binding: 4, resource: dstView }
+				]
+			});
+			const pass = encoder.beginComputePass();
+			pass.setPipeline(this.blurRegionVerticalPipeline);
+			pass.setBindGroup(0, bindGroup);
+			pass.dispatchWorkgroups(wgX, wgY);
+			pass.end();
+		}
+	}
+
+	private encodePaddedBackground(
+		encoder: GPUCommandEncoder,
+		srcView: GPUTextureView,
+		dstView: GPUTextureView,
+		params: PaddedBackgroundParams,
+		slot: number,
+		wgX: number,
+		wgY: number
+	): GPUTextureView {
+		const buffer = this.ensureUniformBuffer(this.paddedBackgroundUniformBuffers, slot, 144);
+		this.device.queue.writeBuffer(
+			buffer,
+			0,
+			packPaddedBackgroundUniform(params, this.width, this.height)
+		);
+		const bindGroup = this.device.createBindGroup({
+			layout: this.paddedBackgroundGroupLayout,
+			entries: [
+				{ binding: 0, resource: { buffer } },
+				{ binding: 1, resource: srcView },
+				{ binding: 2, resource: dstView }
+			]
+		});
+		const pass = encoder.beginComputePass();
+		pass.setPipeline(this.paddedBackgroundPipeline);
+		pass.setBindGroup(0, bindGroup);
+		pass.dispatchWorkgroups(wgX, wgY);
+		pass.end();
+		return dstView;
+	}
+
 	/** Stage 7: output-conversion — working linear → sRGB OETF for display/export. */
 	private encodeOutputConvert(
 		encoder: GPUCommandEncoder,
@@ -1726,6 +2066,12 @@ export class PreviewRenderer {
 		this.opacityBuffers.length = 0;
 		for (const buffer of this.matteBuffers) buffer?.destroy();
 		this.matteBuffers.length = 0;
+		for (const buffer of this.spotlightUniformBuffers) buffer?.destroy();
+		this.spotlightUniformBuffers.length = 0;
+		for (const buffer of this.blurRegionUniformBuffers) buffer?.destroy();
+		this.blurRegionUniformBuffers.length = 0;
+		for (const buffer of this.paddedBackgroundUniformBuffers) buffer?.destroy();
+		this.paddedBackgroundUniformBuffers.length = 0;
 		for (const buffer of this.transitionUniformBuffers) buffer?.destroy();
 		this.transitionUniformBuffers.length = 0;
 		this.outConvUniform?.destroy();

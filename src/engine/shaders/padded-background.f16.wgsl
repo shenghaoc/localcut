@@ -2,9 +2,7 @@ enable f16;
 
 @group(0) @binding(0) var<uniform> u: PaddedBgUniform;
 @group(0) @binding(1) var src: texture_2d<f32>;
-@group(0) @binding(2) var shadowTex: texture_2d<f32>;
-@group(0) @binding(3) var wallpaperTex: texture_2d<f32>;
-@group(0) @binding(4) var dst: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(2) var dst: texture_storage_2d<rgba8unorm, write>;
 
 struct PaddedBgUniform {
 	insetL: f32,
@@ -28,44 +26,40 @@ fn sdfRoundedRect(p: vec2f, centre: vec2f, halfExtent: vec2f, radius: f32) -> f3
 	return length(max(q, vec2f(0.0))) + min(max(q.x, q.y), 0.0) - radius;
 }
 
+fn backgroundColour(uv: vec2f) -> vec4f {
+	if (u.bgKind == 0u) {
+		return u.solidColor;
+	}
+
+	let centre = vec2f(0.5);
+	let dir = vec2f(u.gradAngleCos, u.gradAngleSin);
+	let t = clamp(dot(uv - centre, dir) + 0.5, 0.0, 1.0);
+	var colour = u.gradStops[0].xyzw;
+	for (var i = 0u; i + 1u < u.gradStopCount; i++) {
+		let s0 = u.gradStops[i];
+		let s1 = u.gradStops[i + 1u];
+		if (t >= s0.w && t <= s1.w) {
+			let localT = (t - s0.w) / max(s1.w - s0.w, 1e-6);
+			colour = mix(s0, s1, localT);
+			break;
+		}
+	}
+	return colour;
+}
+
+fn sampleInsetSource(uv: vec2f, dims: vec2u) -> vec4f {
+	let innerSize = vec2f(max(1e-6, 1.0 - u.insetL - u.insetR), max(1e-6, 1.0 - u.insetT - u.insetB));
+	let local = clamp((uv - vec2f(u.insetL, u.insetT)) / innerSize, vec2f(0.0), vec2f(1.0));
+	let coord = min(vec2u(local * vec2f(dims)), dims - vec2u(1u, 1u));
+	return textureLoad(src, coord, 0);
+}
+
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
 	let dims = textureDimensions(src);
 	if (gid.x >= dims.x || gid.y >= dims.y) { return; }
 
-	let px = vec2f(gid.xy);
-	let uv = px / vec2f(dims);
-
-	var bg = vec4f16(0.0);
-	if (u.bgKind == 0u) {
-		bg = f16(u.solidColor);
-	} else if (u.bgKind == 1u) {
-		let centre = vec2f(0.5);
-		let dir = vec2f(u.gradAngleCos, u.gradAngleSin);
-		let proj = dot(uv - centre, dir) + 0.5;
-		let t = f16(clamp(proj, 0.0, 1.0));
-		bg = f16(u.gradStops[0]);
-		for (var i = 0u; i < u.gradStopCount - 1u; i++) {
-			let s0 = f16(u.gradStops[i]);
-			let s1 = f16(u.gradStops[i + 1u]);
-			if (t >= s0.w && t <= s1.w) {
-				let localT = (t - s0.w) / max(s1.w - s0.w, f16(1e-6));
-				bg = mix(s0, s1, localT);
-				break;
-			}
-		}
-	} else if (u.bgKind == 2u) {
-		bg = f16(textureLoad(wallpaperTex, gid.xy, 0));
-	}
-
-	let shadowGid = vec2i(gid.xy) + vec2i(0, i32(u.shadowOffsetYN * f32(dims.y)));
-	let inBounds = shadowGid.x >= 0 && shadowGid.x < i32(dims.x) &&
-	               shadowGid.y >= 0 && shadowGid.y < i32(dims.y);
-	let shadowVal = f16(select(0.0, textureLoad(shadowTex, vec2u(shadowGid), 0).r * u.shadowOpacity, inBounds));
-
-	var colour = bg.rgb;
-	colour = mix(colour, vec3f16(0.0), shadowVal);
-
+	let uv = (vec2f(gid.xy) + vec2f(0.5)) / vec2f(dims);
 	let insetCentre = vec2f(
 		(u.insetL + (1.0 - u.insetR)) * 0.5,
 		(u.insetT + (1.0 - u.insetB)) * 0.5
@@ -74,17 +68,22 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 		(1.0 - u.insetR - u.insetL) * 0.5,
 		(1.0 - u.insetB - u.insetT) * 0.5
 	);
-	let sdf = sdfRoundedRect(uv, insetCentre, insetHalf, u.cornerRadius);
 
-	if (sdf < 0.0) {
-		let srcColour = f16(textureLoad(src, gid.xy, 0));
-		colour = srcColour.rgb * srcColour.a + colour * (f16(1.0) - srcColour.a);
-	} else if (sdf < 1.0 / f32(dims.y)) {
-		let aa = f16(smoothstep(0.0, 1.0 / f32(dims.y), sdf));
-		let srcColour = f16(textureLoad(src, gid.xy, 0));
-		let blended = srcColour.rgb * srcColour.a + colour * (f16(1.0) - srcColour.a);
-		colour = mix(blended, colour, aa);
+	var colour = backgroundColour(uv).rgb;
+	let shadowCentre = insetCentre + vec2f(0.0, u.shadowOffsetYN);
+	let shadowSdf = sdfRoundedRect(uv, shadowCentre, insetHalf, u.cornerRadius);
+	let shadowFeather = max(1.0 / f32(dims.y), abs(u.shadowOffsetYN) + 0.02);
+	let shadow = (1.0 - smoothstep(0.0, shadowFeather, shadowSdf)) * u.shadowOpacity;
+	colour = mix(colour, vec3f(0.0), clamp(shadow, 0.0, 1.0));
+
+	let sdf = sdfRoundedRect(uv, insetCentre, insetHalf, u.cornerRadius);
+	let aa = 1.0 / f32(dims.y);
+	if (sdf < aa) {
+		let srcColour = sampleInsetSource(uv, dims);
+		let inside = 1.0 - smoothstep(0.0, aa, sdf);
+		let blended = srcColour.rgb * srcColour.a + colour * (1.0 - srcColour.a);
+		colour = mix(colour, blended, inside);
 	}
 
-	textureStore(dst, gid.xy, vec4f(vec3f(colour), 1.0));
+	textureStore(dst, gid.xy, vec4f(colour, 1.0));
 }

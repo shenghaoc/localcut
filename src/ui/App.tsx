@@ -26,11 +26,13 @@ import {
 	type InterpolationAvailability,
 	type InterpolationModelStatus,
 	type BeautyModelStatus,
+	type CalloutPayload,
 	type RenderQueueState,
 	type BundleIntegrityReportSnapshot,
 	type BundleSourcePolicySnapshot,
 	type MediaAssetSnapshot,
 	type MediaMetadata,
+	type SessionEventLogRef,
 	type SourceDescriptorSnapshot,
 	type SourceHealthReportSnapshot,
 	type TimelineClipboardClip,
@@ -74,6 +76,7 @@ import { PreviewGizmo } from './PreviewGizmo';
 import { DiagnosticsPanel } from './DiagnosticsPanel';
 import { buildUiDiagnosticSnapshot } from './diagnostic-snapshot';
 import { Toolbar } from './Toolbar';
+import { CalloutTool } from './CalloutTool';
 import { Timeline } from './Timeline';
 import { Inspector, type SelectedClip, type SelectedTransition } from './Inspector';
 import { MediaBin } from './MediaBin';
@@ -527,6 +530,7 @@ export function App() {
 				return 'Portrait';
 		}
 	}
+	const [calloutToolActive, setCalloutToolActive] = createSignal(false);
 	const [encodeFps, setEncodeFps] = createSignal<number | null>(null);
 	const [timeline, setTimeline] = createSignal<TimelineTrackSnapshot[]>([]);
 	const coverTitleOptions = createMemo(() => {
@@ -541,6 +545,7 @@ export function App() {
 		return options;
 	});
 	const [captionTracks, setCaptionTracks] = createSignal<CaptionTrackSnapshot[]>([]);
+	const [sessionEventLogs, setSessionEventLogs] = createSignal<SessionEventLogRef[]>([]);
 	const [captionDiagnostics, setCaptionDiagnostics] = createSignal<CaptionDiagnosticSnapshot[]>([]);
 	// Phase 30: user-imported animated caption presets, kept in sync with the worker.
 	// The snapshot type is the structured-clone-safe wire format; the engine type
@@ -1350,7 +1355,9 @@ export function App() {
 					matte: clip.matte,
 					timeRemap: clip.timeRemap,
 					beauty: sampleBeautyAt(clip.beauty, clip.keyframes, localTime),
-					captureSessionId: clip.captureSessionId
+					captureSessionId: clip.captureSessionId,
+					callout: clip.callout,
+					paddedBackground: clip.paddedBackground
 				};
 			}
 		}
@@ -1452,9 +1459,9 @@ export function App() {
 		const timelineClip = track.clips.find((c) => c.id === clip.clipId);
 		if (!timelineClip) return null;
 		const localTime = clipLocalTime(timelineClip, clock.currentTime());
-		// Title clips are source-less: their raster is a fixed 1920×1080 (16:9) card,
-		// so the gizmo/inspector size against that rather than a media asset.
-		if (timelineClip.kind === 'title') {
+		// Source-less overlays raster against a fixed 1920×1080 (16:9) card, so
+		// the gizmo/inspector size them against that rather than a media asset.
+		if (timelineClip.kind === 'title' || timelineClip.kind === 'callout') {
 			return {
 				trackId: track.id,
 				clipId: timelineClip.id,
@@ -2081,6 +2088,19 @@ export function App() {
 		bridge?.send({ type: 'program-scene-switch', sceneId, transitionMs: programTransitionMs() });
 	}
 
+	function handleAddCallout(
+		payload: CalloutPayload,
+		transform?: Partial<import('../protocol').TransformParamsSnapshot>
+	) {
+		bridge?.send({
+			type: 'add-callout',
+			start: Math.max(0, clock.currentTime()),
+			payload,
+			transform
+		});
+		setStatusLine('Callout added');
+	}
+
 	function handleState(msg: WorkerStateMessage) {
 		// Publish tap messages route to the controller (it owns the track/frames).
 		if (publishController.handleWorkerMessage(msg)) return;
@@ -2261,6 +2281,7 @@ export function App() {
 			case 'timeline-state': {
 				setTimeline(msg.timeline);
 				setCaptionTracks(msg.captionTracks);
+				setSessionEventLogs(msg.sessionEventLogs);
 				setTransitions(msg.transitions);
 				setMarkers(msg.markers);
 				setMasterGain(msg.masterGain);
@@ -2986,6 +3007,7 @@ export function App() {
 			});
 			setTimeline([]);
 			setMarkers([]);
+			setSessionEventLogs([]);
 			setSelectedClipRefs([]);
 			setStatusLine(`Loaded ${preview.fileName} · compatibility preview`);
 		} catch (error) {
@@ -3006,6 +3028,7 @@ export function App() {
 		setTimeline([]);
 		setMarkers([]);
 		setCaptionTracks([]);
+		setSessionEventLogs([]);
 		setCaptionDiagnostics([]);
 		setCustomAnimCaptionPresets([]);
 		setSelectedCaptionTrackId(null);
@@ -3822,6 +3845,15 @@ export function App() {
 					}
 					onOpenPublish={() => setPublishPanelOpen(true)}
 					publishLive={publishBusy()}
+					calloutTool={
+						<CalloutTool
+							active={calloutToolActive()}
+							capabilityTier={capabilityProbeV2()?.tier ?? 'shell-only'}
+							onActivate={() => setCalloutToolActive(true)}
+							onDeactivate={() => setCalloutToolActive(false)}
+							onAddCallout={handleAddCallout}
+						/>
+					}
 					masterGain={masterGain()}
 					meterSab={meterSab()}
 					onMasterGain={(gain) => {
@@ -4377,6 +4409,8 @@ export function App() {
 													selectedClipTransform={selectedClipTransform()}
 													selectedTitle={selectedTitle()}
 													selectedTransition={selectedTransition()}
+													capabilityTier={capabilityProbeV2()?.tier}
+													sessionEventLogs={sessionEventLogs()}
 													onSetTitle={(trackId, clipId, patch) =>
 														bridge?.send({ type: 'set-title', trackId, clipId, ...patch })
 													}
@@ -4401,6 +4435,25 @@ export function App() {
 													}
 													onDeleteKeyframe={(trackId, clipId, key, t) =>
 														bridge?.send({ type: 'delete-keyframe', trackId, clipId, key, t })
+													}
+													onReplaceKeyframeTracks={(trackId, clipId, tracks) =>
+														bridge?.send({
+															type: 'replace-keyframe-tracks',
+															trackId,
+															clipId,
+															tracks
+														})
+													}
+													onSetCallout={(trackId, clipId, payload) =>
+														bridge?.send({ type: 'set-callout', trackId, clipId, payload })
+													}
+													onSetPaddedBackground={(trackId, clipId, params) =>
+														bridge?.send({
+															type: 'set-padded-background',
+															trackId,
+															clipId,
+															params
+														})
 													}
 													onImportLut={(trackId, clipId, file) =>
 														bridge?.send({ type: 'import-lut', trackId, clipId, file })

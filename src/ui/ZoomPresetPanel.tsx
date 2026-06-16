@@ -192,6 +192,15 @@ export function ZoomPresetPanel(props: ZoomPresetPanelProps) {
 					class="region-pick-overlay"
 					role="application"
 					aria-label="Drag to set zoom region"
+					tabIndex={0}
+					onPointerUp={(e) => {
+						const rect = e.currentTarget.getBoundingClientRect();
+						const nx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+						const ny = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+						setX(nx - 0.5);
+						setY(ny - 0.5);
+						setRegionPickActive(false);
+					}}
 					onKeyDown={(e) => {
 						if (e.key === 'Escape') setRegionPickActive(false);
 					}}

@@ -5,7 +5,13 @@
  */
 
 import { createSignal, Show, For } from 'solid-js';
-import type { CalloutKind, CalloutPayload, CalloutGeometry } from '../protocol';
+import { MousePointer2 } from 'lucide-solid';
+import type {
+	CalloutKind,
+	CalloutPayload,
+	CalloutGeometry,
+	TransformParamsSnapshot
+} from '../protocol';
 
 const CALLOUT_KINDS: { kind: CalloutKind; label: string }[] = [
 	{ kind: 'arrow', label: 'Arrow' },
@@ -20,7 +26,7 @@ interface CalloutToolProps {
 	capabilityTier: string;
 	onActivate: () => void;
 	onDeactivate: () => void;
-	onAddCallout: (payload: CalloutPayload) => void;
+	onAddCallout: (payload: CalloutPayload, transform?: Partial<TransformParamsSnapshot>) => void;
 }
 
 export function CalloutTool(props: CalloutToolProps) {
@@ -45,7 +51,10 @@ export function CalloutTool(props: CalloutToolProps) {
 		setShowPicker(false);
 	};
 
-	const handlePlacementComplete = (geometry: CalloutGeometry) => {
+	const handlePlacementComplete = (
+		geometry: CalloutGeometry,
+		transform?: Partial<TransformParamsSnapshot>
+	) => {
 		const payload: CalloutPayload = {
 			calloutKind: selectedKind(),
 			geometry,
@@ -59,7 +68,7 @@ export function CalloutTool(props: CalloutToolProps) {
 				darkenStrength: 0.7
 			}
 		};
-		props.onAddCallout(payload);
+		props.onAddCallout(payload, transform);
 		props.onDeactivate();
 	};
 
@@ -67,23 +76,13 @@ export function CalloutTool(props: CalloutToolProps) {
 		<div class="callout-tool">
 			<button
 				type="button"
-				class={`toolbar-btn ${props.active ? 'toolbar-btn--active' : ''}`}
+				class={`pipeline-chip pipeline-chip-button ${props.active ? 'is-ok' : ''}`}
 				onClick={handleToolbarClick}
 				disabled={isDisabled()}
 				title={isDisabled() ? 'Requires WebGPU (accelerated tier)' : 'Callout tool'}
 				aria-label="Callout tool"
 			>
-				{/* Callout icon placeholder */}
-				<svg
-					viewBox="0 0 24 24"
-					width="18"
-					height="18"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-				>
-					<path d="M12 2L2 22h20L12 2z" />
-				</svg>
+				<MousePointer2 size={13} aria-hidden="true" />
 			</button>
 
 			<Show when={showPicker()}>
@@ -133,6 +132,16 @@ export function CalloutTool(props: CalloutToolProps) {
 							const endY = Math.max(0, Math.min(1, (upEvent.clientY - rect.top) / rect.height));
 
 							const kind = selectedKind();
+							const cx = (startX + endX) * 0.5;
+							const cy = (startY + endY) * 0.5;
+							const w = Math.max(0.05, Math.abs(endX - startX));
+							const h = Math.max(0.05, Math.abs(endY - startY));
+							const placementTransform: Partial<TransformParamsSnapshot> = {
+								x: cx - 0.5,
+								y: cy - 0.5,
+								scale: Math.max(w, h),
+								fit: 'fit'
+							};
 							let geometry: CalloutGeometry;
 
 							if (kind === 'arrow') {
@@ -151,7 +160,10 @@ export function CalloutTool(props: CalloutToolProps) {
 								geometry = { kind } as CalloutGeometry;
 							}
 
-							handlePlacementComplete(geometry);
+							handlePlacementComplete(
+								geometry,
+								kind === 'spotlight' || kind === 'blur' ? placementTransform : undefined
+							);
 							target.removeEventListener('pointerup', onPointerUp);
 						};
 

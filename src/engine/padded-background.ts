@@ -106,6 +106,72 @@ export function shadowCacheKey(
 	);
 }
 
+export interface PaddedWallpaperTexture {
+	texture: GPUTexture;
+	view: GPUTextureView;
+	width: number;
+	height: number;
+}
+
+export interface PaddedBackgroundWallpaperSource {
+	sourceId: string;
+	thumbnailAt?: (timeS: number) => Promise<ImageBitmap | null>;
+}
+
+/**
+ * Small cache holder for Phase 43 wallpaper/shadow resources. The current
+ * compositor path renders solid/gradient backgrounds directly; wallpaper lookup
+ * remains an explicit cache-miss path until the media-bin picker is wired.
+ */
+export class PaddedBackgroundRenderer {
+	private readonly wallpaperCache = new Map<string, PaddedWallpaperTexture>();
+
+	constructor(private readonly device: GPUDevice) {}
+
+	async wallpaperTextureFor(
+		sourceId: string,
+		outputWidth: number,
+		outputHeight: number,
+		resolve?: (sourceId: string) => PaddedBackgroundWallpaperSource | null
+	): Promise<PaddedWallpaperTexture | null> {
+		const key = `${sourceId}:${outputWidth}x${outputHeight}`;
+		const cached = this.wallpaperCache.get(key);
+		if (cached) return cached;
+		const source = resolve?.(sourceId) ?? null;
+		if (!source?.thumbnailAt) {
+			console.warn(`Padded background wallpaper source not found: ${sourceId}`);
+			return null;
+		}
+		const bitmap = await source.thumbnailAt(0);
+		if (!bitmap) {
+			console.warn(`Padded background wallpaper thumbnail unavailable: ${sourceId}`);
+			return null;
+		}
+		const texture = this.device.createTexture({
+			size: { width: outputWidth, height: outputHeight },
+			format: 'rgba8unorm',
+			usage:
+				GPUTextureUsage.TEXTURE_BINDING |
+				GPUTextureUsage.COPY_DST |
+				GPUTextureUsage.RENDER_ATTACHMENT
+		});
+		this.device.queue.copyExternalImageToTexture(
+			{ source: bitmap },
+			{ texture },
+			{ width: outputWidth, height: outputHeight }
+		);
+		bitmap.close?.();
+		const entry = { texture, view: texture.createView(), width: outputWidth, height: outputHeight };
+		this.wallpaperCache.set(key, entry);
+		return entry;
+	}
+
+	dispose(): void {
+		for (const entry of this.wallpaperCache.values()) entry.texture.destroy();
+		this.wallpaperCache.clear();
+	}
+}
+
 function clamp(v: number, min: number, max: number): number {
 	return Math.max(min, Math.min(max, v));
 }

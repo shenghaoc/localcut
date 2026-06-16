@@ -12,6 +12,15 @@ interface CachedCallout {
 	texture: GPUTexture;
 	view: GPUTextureView;
 	hash: string;
+	width: number;
+	height: number;
+}
+
+export interface CalloutTexture {
+	texture: GPUTexture;
+	view: GPUTextureView;
+	width: number;
+	height: number;
 }
 
 export class CalloutTextureCache {
@@ -27,20 +36,22 @@ export class CalloutTextureCache {
 		this.ctx = ctx;
 	}
 
-	/**
-	 * Returns a cached GPUTextureView for arrow/box/step callouts.
-	 * Never called for spotlight/blur (those are WGSL passes).
-	 */
-	get(
+	/** Edit-time raster/upload; no-ops when the visual hash is unchanged. */
+	rasterize(
 		clipId: string,
 		payload: CalloutPayload,
 		_outputWidth: number,
 		_outputHeight: number
-	): GPUTextureView {
+	): CalloutTexture {
 		const hash = calloutContentHash(payload);
 		const cached = this.cache.get(clipId);
 		if (cached && cached.hash === hash) {
-			return cached.view;
+			return {
+				texture: cached.texture,
+				view: cached.view,
+				width: cached.width,
+				height: cached.height
+			};
 		}
 
 		// Invalidate old texture
@@ -67,8 +78,26 @@ export class CalloutTextureCache {
 		);
 
 		const view = texture.createView();
-		this.cache.set(clipId, { texture, view, hash });
-		return view;
+		this.cache.set(clipId, { texture, view, hash, width: 1920, height: 1080 });
+		return { texture, view, width: 1920, height: 1080 };
+	}
+
+	/** Cold-path guarantee that a current callout texture exists. */
+	ensure(
+		clipId: string,
+		payload: CalloutPayload,
+		outputWidth: number,
+		outputHeight: number
+	): CalloutTexture {
+		return this.rasterize(clipId, payload, outputWidth, outputHeight);
+	}
+
+	/** Per-frame read. Never rasterizes or uploads. */
+	get(clipId: string): CalloutTexture | null {
+		const cached = this.cache.get(clipId);
+		return cached
+			? { texture: cached.texture, view: cached.view, width: cached.width, height: cached.height }
+			: null;
 	}
 
 	/** Invalidate a specific clip's cached texture. */
@@ -77,6 +106,13 @@ export class CalloutTextureCache {
 		if (cached) {
 			cached.texture.destroy();
 			this.cache.delete(clipId);
+		}
+	}
+
+	/** Drops textures for callouts no longer on the timeline. */
+	retain(activeClipIds: ReadonlySet<string>): void {
+		for (const clipId of [...this.cache.keys()]) {
+			if (!activeClipIds.has(clipId)) this.invalidate(clipId);
 		}
 	}
 
