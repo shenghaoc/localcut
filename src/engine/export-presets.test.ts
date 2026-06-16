@@ -233,7 +233,14 @@ describe('export-presets', () => {
 });
 
 describe('Phase 39: platform presets', () => {
-	const ids = ['builtin-douyin-1080p30', 'builtin-shorts-1080p30', 'builtin-shorts-1080p60', 'builtin-reels-1080p30', 'builtin-xhs-1080p30', 'builtin-xhs-square-1080p30'];
+	const ids = [
+		'builtin-douyin-1080p30',
+		'builtin-shorts-1080p30',
+		'builtin-shorts-1080p60',
+		'builtin-reels-1080p30',
+		'builtin-xhs-1080p30',
+		'builtin-xhs-square-1080p30'
+	];
 
 	it('includes all six platform presets', () => {
 		for (const id of ids) {
@@ -249,19 +256,25 @@ describe('Phase 39: platform presets', () => {
 describe('resolvePlatformPresetCodec', () => {
 	it('returns h264/mp4 when supported', () => {
 		const p = BUILT_IN_PRESETS.find((x) => x.id === 'builtin-douyin-1080p30')!;
-		const probe = { codecs: { h264Encode: 'supported', vp9Encode: 'supported' } } as any;
+		const probe = {
+			codecs: { h264Encode: 'supported', vp9Encode: 'supported' }
+		} as unknown as import('../protocol').CapabilityProbeResult;
 		expect(resolvePlatformPresetCodec(p, probe)).toEqual({ codec: 'h264', container: 'mp4' });
 	});
 
 	it('falls back to vp9 when h264 unsupported', () => {
 		const p = BUILT_IN_PRESETS.find((x) => x.id === 'builtin-douyin-1080p30')!;
-		const probe = { codecs: { h264Encode: 'unsupported', vp9Encode: 'supported' } } as any;
+		const probe = {
+			codecs: { h264Encode: 'unsupported', vp9Encode: 'supported' }
+		} as unknown as import('../protocol').CapabilityProbeResult;
 		expect(resolvePlatformPresetCodec(p, probe)).toEqual({ codec: 'vp9', container: 'webm' });
 	});
 
 	it('blocks when both unsupported', () => {
 		const p = BUILT_IN_PRESETS.find((x) => x.id === 'builtin-douyin-1080p30')!;
-		const probe = { codecs: { h264Encode: 'unsupported', vp9Encode: 'unsupported' } } as any;
+		const probe = {
+			codecs: { h264Encode: 'unsupported', vp9Encode: 'unsupported' }
+		} as unknown as import('../protocol').CapabilityProbeResult;
 		const r = resolvePlatformPresetCodec(p, probe);
 		expect('blocked' in r).toBe(true);
 	});

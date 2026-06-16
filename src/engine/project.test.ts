@@ -1009,7 +1009,12 @@ describe('Phase 30 (v13) — customAnimCaptionPresets', () => {
 
 describe('Phase 39: projectFormat and cover', () => {
 	it('round-trips projectFormat', () => {
-		const doc = serializeProject({ projectId: 'p', timeline: timelineFixture(), sources: [sourceFixture()], projectFormat: { aspect: '9:16' } });
+		const doc = serializeProject({
+			projectId: 'p',
+			timeline: timelineFixture(),
+			sources: [sourceFixture()],
+			projectFormat: { aspect: '9:16' }
+		});
 		const result = deserializeProject(doc);
 		expect(result.ok).toBe(true);
 		if (!result.ok) return;
@@ -1017,7 +1022,11 @@ describe('Phase 39: projectFormat and cover', () => {
 	});
 
 	it('defaults projectFormat to 16:9', () => {
-		const doc = serializeProject({ projectId: 'p', timeline: timelineFixture(), sources: [sourceFixture()] });
+		const doc = serializeProject({
+			projectId: 'p',
+			timeline: timelineFixture(),
+			sources: [sourceFixture()]
+		});
 		const result = deserializeProject(doc);
 		expect(result.ok).toBe(true);
 		if (!result.ok) return;
@@ -1025,7 +1034,12 @@ describe('Phase 39: projectFormat and cover', () => {
 	});
 
 	it('round-trips cover', () => {
-		const doc = serializeProject({ projectId: 'p', timeline: timelineFixture(), sources: [sourceFixture()], cover: { timeS: 12.5, titleClipId: 'clip-abc' } });
+		const doc = serializeProject({
+			projectId: 'p',
+			timeline: timelineFixture(),
+			sources: [sourceFixture()],
+			cover: { timeS: 12.5, titleClipId: 'clip-abc' }
+		});
 		const result = deserializeProject(doc);
 		expect(result.ok).toBe(true);
 		if (!result.ok) return;
@@ -1033,7 +1047,11 @@ describe('Phase 39: projectFormat and cover', () => {
 	});
 
 	it('defaults cover to undefined', () => {
-		const doc = serializeProject({ projectId: 'p', timeline: timelineFixture(), sources: [sourceFixture()] });
+		const doc = serializeProject({
+			projectId: 'p',
+			timeline: timelineFixture(),
+			sources: [sourceFixture()]
+		});
 		const result = deserializeProject(doc);
 		expect(result.ok).toBe(true);
 		if (!result.ok) return;

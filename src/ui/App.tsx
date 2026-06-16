@@ -368,10 +368,15 @@ export function App() {
 	);
 	const [safeAreaGuides, setSafeAreaGuides] = createSignal(false);
 	// Phase 39: Vertical and Platform Finishing
-	const [projectAspect, setProjectAspect] = createSignal<import('../protocol').ProjectAspect>('16:9');
-	const [safeZoneFile, setSafeZoneFile] = createSignal<import('../engine/safe-zones').SafeZoneFile | null>(null);
+	const [projectAspect, setProjectAspect] =
+		createSignal<import('../protocol').ProjectAspect>('16:9');
+	const [safeZoneFile, setSafeZoneFile] = createSignal<
+		import('../engine/safe-zones').SafeZoneFile | null
+	>(null);
 	const [selectedPlatformId, setSelectedPlatformId] = createSignal('');
-	const [coverFrame, setCoverFrame] = createSignal<import('../protocol').CoverFrameDoc | null>(null);
+	const [coverFrame, setCoverFrame] = createSignal<import('../protocol').CoverFrameDoc | null>(
+		null
+	);
 	const [_coverExportError, setCoverExportError] = createSignal<string | null>(null);
 	const previewAspectStyle = createMemo(() => {
 		const { width, height } = aspectOutputSize(projectAspect());
@@ -381,20 +386,26 @@ export function App() {
 		const { width, height } = aspectOutputSize(projectAspect());
 		return width / height;
 	});
-	const selectedPlatform = createMemo<import('../engine/safe-zones').SafeZonePlatform | null>(() => {
-		const id = selectedPlatformId();
-		if (!id) return null;
-		return safeZoneFile()?.platforms.find((p) => p.id === id) ?? null;
-	});
+	const selectedPlatform = createMemo<import('../engine/safe-zones').SafeZonePlatform | null>(
+		() => {
+			const id = selectedPlatformId();
+			if (!id) return null;
+			return safeZoneFile()?.platforms.find((p) => p.id === id) ?? null;
+		}
+	);
 	const matchingPlatforms = createMemo(() => {
 		return safeZoneFile()?.platforms.filter((p) => p.aspect === projectAspect()) ?? [];
 	});
 	function aspectLabel(aspect: import('../protocol').ProjectAspect): string {
 		switch (aspect) {
-			case '16:9': return 'Landscape';
-			case '9:16': return 'Vertical';
-			case '1:1': return 'Square';
-			case '4:5': return 'Portrait';
+			case '16:9':
+				return 'Landscape';
+			case '9:16':
+				return 'Vertical';
+			case '1:1':
+				return 'Square';
+			case '4:5':
+				return 'Portrait';
 		}
 	}
 	const [encodeFps, setEncodeFps] = createSignal<number | null>(null);
@@ -3374,7 +3385,13 @@ export function App() {
 								selectedClipCount={() => selectedClipRefs().length}
 							/>
 						</Show>
-						<section class="preview panel" style={{ "--preview-aspect": previewAspectStyle(), "--preview-aspect-num": previewAspectNum() }}>
+						<section
+							class="preview panel"
+							style={{
+								'--preview-aspect': previewAspectStyle(),
+								'--preview-aspect-num': previewAspectNum()
+							}}
+						>
 							<Show when={previewKey() + 1} keyed>
 								{(_k) => (
 									<PreviewCanvas onOffscreenReady={sendInit} onCanvasEl={setPreviewCanvasEl} />
@@ -3438,6 +3455,72 @@ export function App() {
 								>
 									Safe areas
 								</button>
+							</Show>
+							{/* Phase 39: format picker, platform picker, cover button */}
+							<Show when={previewSurfaceAvailable()}>
+								<div style={{ display: 'flex', gap: '8px', 'align-items': 'center' }}>
+									<fieldset
+										role="group"
+										aria-label="Project format"
+										style={{ display: 'flex', gap: '2px' }}
+									>
+										<For each={['16:9', '9:16', '1:1', '4:5'] as const}>
+											{(aspect) => (
+												<button
+													type="button"
+													class={cn(
+														buttonVariants({
+															variant: projectAspect() === aspect ? 'default' : 'ghost',
+															size: 'sm'
+														}),
+														'text-xs'
+													)}
+													aria-label={`Set project format to ${aspect} (${aspectLabel(aspect)})`}
+													onClick={() => bridge?.send({ type: 'set-project-format', aspect })}
+												>
+													{aspect}
+												</button>
+											)}
+										</For>
+									</fieldset>
+									<Show when={matchingPlatforms().length > 0}>
+										<select
+											aria-label="Safe zone platform"
+											value={selectedPlatformId()}
+											onChange={(e) => setSelectedPlatformId(e.currentTarget.value)}
+											style={{
+												'font-size': '11px',
+												padding: '2px 4px',
+												background: 'var(--input-bg, #1a1d24)',
+												color: 'inherit',
+												border: '1px solid rgb(255 255 255 / 14%)',
+												'border-radius': 'var(--radius-sm)'
+											}}
+										>
+											<option value="">Off</option>
+											<For each={matchingPlatforms()}>
+												{(p) => <option value={p.id}>{p.label}</option>}
+											</For>
+										</select>
+									</Show>
+									<button
+										type="button"
+										class={cn(
+											buttonVariants({ variant: coverFrame() ? 'default' : 'ghost', size: 'sm' }),
+											'text-xs'
+										)}
+										onClick={() =>
+											bridge?.send({
+												type: 'set-cover-frame',
+												timeS: clock.currentTime(),
+												titleClipId: null
+											})
+										}
+										title="Set cover frame at current playhead position"
+									>
+										Cover
+									</button>
+								</div>
 							</Show>
 							<Show when={compatibilityPreview() !== null}>
 								<LimitedPreview

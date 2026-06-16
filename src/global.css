@@ -1666,7 +1666,10 @@ body {
 .preview-canvas {
 	width: min(
 		100%,
-		calc((100vh - var(--toolbar-h) - var(--timeline-h) - var(--status-h) - 28px) * var(--preview-aspect-num, 1.778))
+		calc(
+			(100vh - var(--toolbar-h) - var(--timeline-h) - var(--status-h) - 28px) *
+				var(--preview-aspect-num, 1.778)
+		)
 	);
 	max-width: 100%;
 	aspect-ratio: var(--preview-aspect, 16 / 9);
@@ -1696,7 +1699,10 @@ body {
 	transform: translate(-50%, -50%);
 	width: min(
 		100%,
-		calc((100vh - var(--toolbar-h) - var(--timeline-h) - var(--status-h) - 28px) * var(--preview-aspect-num, 1.778))
+		calc(
+			(100vh - var(--toolbar-h) - var(--timeline-h) - var(--status-h) - 28px) *
+				var(--preview-aspect-num, 1.778)
+		)
 	);
 	max-width: 100%;
 	aspect-ratio: var(--preview-aspect, 16 / 9);

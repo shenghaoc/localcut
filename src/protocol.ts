@@ -47,8 +47,13 @@ export type ExportBackend = 'core-webgpu' | 'compat-webgpu' | 'canvas2d' | 'none
 // ── Phase 39: Vertical and Platform Finishing ──
 
 export type ProjectAspect = '16:9' | '9:16' | '1:1' | '4:5';
-export interface ProjectFormat { aspect: ProjectAspect; }
-export interface CoverFrameDoc { timeS: number; titleClipId?: string | null; }
+export interface ProjectFormat {
+	aspect: ProjectAspect;
+}
+export interface CoverFrameDoc {
+	timeS: number;
+	titleClipId?: string | null;
+}
 
 export interface CodecProbeResult {
 	h264Decode: FeatureSupport;
@@ -2203,7 +2208,12 @@ export type WorkerCommand =
 	| { type: 'queue-cancel-job'; jobId: string }
 	| { type: 'queue-cancel-all' }
 	| { type: 'queue-retry'; jobId: string }
-	| { type: 'queue-job-output'; jobId: string; handle: FileSystemFileHandle; outputDir?: FileSystemDirectoryHandle | null }
+	| {
+			type: 'queue-job-output';
+			jobId: string;
+			handle: FileSystemFileHandle;
+			outputDir?: FileSystemDirectoryHandle | null;
+	  }
 	| { type: 'queue-job-skip'; jobId: string }
 	| { type: 'queue-set-stop-on-error'; stopOnError: boolean }
 	| { type: 'request-diagnostic-snapshot'; requestId: string }

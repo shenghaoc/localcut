@@ -652,12 +652,12 @@ The queue supports per-job progress, retry on failure, and stop-on-error mode.
 
 LocalCut supports four project aspect-ratio modes:
 
-| Mode | Aspect | Output Dimensions | Use Case |
-|------|--------|-------------------|----------|
-| Landscape | 16:9 | 1920×1080 | Standard video, YouTube |
-| Vertical | 9:16 | 1080×1920 | TikTok, Douyin, Shorts, Reels |
-| Square | 1:1 | 1080×1080 | Instagram feed |
-| Portrait | 4:5 | 1080×1350 | Instagram portrait, Xiaohongshu |
+| Mode      | Aspect | Output Dimensions | Use Case                        |
+| --------- | ------ | ----------------- | ------------------------------- |
+| Landscape | 16:9   | 1920×1080         | Standard video, YouTube         |
+| Vertical  | 9:16   | 1080×1920         | TikTok, Douyin, Shorts, Reels   |
+| Square    | 1:1    | 1080×1080         | Instagram feed                  |
+| Portrait  | 4:5    | 1080×1350         | Instagram portrait, Xiaohongshu |
 
 Use the format picker in the preview toolbar. Clips re-letterbox automatically. Changes are undoable.
 

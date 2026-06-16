@@ -404,7 +404,8 @@ export function ExportDialog(props: ExportDialogProps) {
 
 					<Show when={aspectMismatch()}>
 						<p class="export-aspect-warning" role="alert">
-							Export dimensions ({settings().width}×{settings().height}) do not match project format ({props.projectAspect}). The output may appear letterboxed.
+							Export dimensions ({settings().width}×{settings().height}) do not match project format
+							({props.projectAspect}). The output may appear letterboxed.
 						</p>
 					</Show>
 					<Show when={platformCodecResolution() && 'blocked' in platformCodecResolution()!}>
@@ -412,7 +413,13 @@ export function ExportDialog(props: ExportDialogProps) {
 							{(platformCodecResolution() as { blocked: true; reason: string }).reason}
 						</p>
 					</Show>
-					<Show when={platformCodecResolution() && !('blocked' in platformCodecResolution()!) && (platformCodecResolution() as { codec: ExportVideoCodec }).codec !== settings().codec}>
+					<Show
+						when={
+							platformCodecResolution() &&
+							!('blocked' in platformCodecResolution()!) &&
+							(platformCodecResolution() as { codec: ExportVideoCodec }).codec !== settings().codec
+						}
+					>
 						<p class="export-aspect-warning" role="status">
 							H.264 is not supported on this device; falling back to VP9 (WebM).
 						</p>

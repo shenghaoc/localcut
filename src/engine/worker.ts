@@ -1758,7 +1758,7 @@ function historySnapshot() {
 		markers,
 		voiceCleanup: voiceCleanupSettings,
 		projectFormat: { ...projectFormat } as ProjectFormat,
-		cover: cover ? { ...cover } as CoverFrameDoc : null
+		cover: cover ? ({ ...cover } as CoverFrameDoc) : null
 	};
 }
 

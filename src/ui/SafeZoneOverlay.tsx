@@ -17,11 +17,7 @@ export function SafeZoneOverlay(props: SafeZoneOverlayProps): JSX.Element {
 			<For each={props.platform?.zones ?? []}>
 				{(zone) => (
 					<div
-						class={
-							zone.kind === 'occluded'
-								? 'safe-zone-rect-occluded'
-								: 'safe-zone-rect-caution'
-						}
+						class={zone.kind === 'occluded' ? 'safe-zone-rect-occluded' : 'safe-zone-rect-caution'}
 						aria-label={zone.label}
 						title={zone.label}
 						style={{

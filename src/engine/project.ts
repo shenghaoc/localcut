@@ -212,8 +212,7 @@ const VALID_ASPECTS: readonly ProjectAspect[] = ['16:9', '9:16', '1:1', '4:5'];
 export function parseProjectFormat(value: unknown): ProjectFormat {
 	if (!isRecord(value)) return { aspect: '16:9' };
 	const aspect =
-		typeof value.aspect === 'string' &&
-		(VALID_ASPECTS as readonly string[]).includes(value.aspect)
+		typeof value.aspect === 'string' && (VALID_ASPECTS as readonly string[]).includes(value.aspect)
 			? (value.aspect as ProjectAspect)
 			: '16:9';
 	return { aspect };
