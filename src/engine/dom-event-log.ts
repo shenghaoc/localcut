@@ -106,7 +106,9 @@ export class CaptureSessionDomEventLogger {
 		this.installed = false;
 
 		if (this.clickHandler) {
-			window.removeEventListener('click', this.clickHandler, { capture: true } as EventListenerOptions);
+			window.removeEventListener('click', this.clickHandler, {
+				capture: true
+			} as EventListenerOptions);
 			this.clickHandler = null;
 		}
 		if (this.wheelHandler) {

@@ -11,7 +11,15 @@ describe('calloutContentHash', () => {
 		const base: CalloutPayload = {
 			calloutKind: 'arrow',
 			geometry: { kind: 'arrow', x1: 0, y1: 0, x2: 1, y2: 1 },
-			style: { color: '#FFD700', strokeWidth: 3, fillOpacity: 0, fontSize: 28, arrowheadSize: 14, blurRadius: 12, darkenStrength: 0.7 }
+			style: {
+				color: '#FFD700',
+				strokeWidth: 3,
+				fillOpacity: 0,
+				fontSize: 28,
+				arrowheadSize: 14,
+				blurRadius: 12,
+				darkenStrength: 0.7
+			}
 		};
 		const h1 = calloutContentHash(base);
 		const h2 = calloutContentHash({ ...base, style: { ...base.style, color: '#FF0000' } });
@@ -22,7 +30,15 @@ describe('calloutContentHash', () => {
 		const base: CalloutPayload = {
 			calloutKind: 'box',
 			geometry: { kind: 'box', x: 0, y: 0, w: 1, h: 1 },
-			style: { color: '#FFD700', strokeWidth: 3, fillOpacity: 0, fontSize: 28, arrowheadSize: 14, blurRadius: 12, darkenStrength: 0.7 }
+			style: {
+				color: '#FFD700',
+				strokeWidth: 3,
+				fillOpacity: 0,
+				fontSize: 28,
+				arrowheadSize: 14,
+				blurRadius: 12,
+				darkenStrength: 0.7
+			}
 		};
 		const h1 = calloutContentHash(base);
 		const h2 = calloutContentHash({ ...base, style: { ...base.style, strokeWidth: 6 } });
@@ -33,10 +49,21 @@ describe('calloutContentHash', () => {
 		const base: CalloutPayload = {
 			calloutKind: 'arrow',
 			geometry: { kind: 'arrow', x1: 0.2, y1: 0.3, x2: 0.8, y2: 0.7 },
-			style: { color: '#FFD700', strokeWidth: 3, fillOpacity: 0, fontSize: 28, arrowheadSize: 14, blurRadius: 12, darkenStrength: 0.7 }
+			style: {
+				color: '#FFD700',
+				strokeWidth: 3,
+				fillOpacity: 0,
+				fontSize: 28,
+				arrowheadSize: 14,
+				blurRadius: 12,
+				darkenStrength: 0.7
+			}
 		};
 		const h1 = calloutContentHash(base);
-		const h2 = calloutContentHash({ ...base, geometry: { kind: 'arrow', x1: 0.5, y1: 0.3, x2: 0.8, y2: 0.7 } });
+		const h2 = calloutContentHash({
+			...base,
+			geometry: { kind: 'arrow', x1: 0.5, y1: 0.3, x2: 0.8, y2: 0.7 }
+		});
 		expect(h1).not.toBe(h2);
 	});
 
@@ -44,7 +71,15 @@ describe('calloutContentHash', () => {
 		const payload: CalloutPayload = {
 			calloutKind: 'step',
 			geometry: { kind: 'step', cx: 0.5, cy: 0.5, r: 0.05, number: 1 },
-			style: { color: '#FFD700', strokeWidth: 3, fillOpacity: 0, fontSize: 28, arrowheadSize: 14, blurRadius: 12, darkenStrength: 0.7 }
+			style: {
+				color: '#FFD700',
+				strokeWidth: 3,
+				fillOpacity: 0,
+				fontSize: 28,
+				arrowheadSize: 14,
+				blurRadius: 12,
+				darkenStrength: 0.7
+			}
 		};
 		expect(calloutContentHash(payload)).toBe(calloutContentHash(payload));
 	});
@@ -55,7 +90,15 @@ describe('parseCalloutPayload', () => {
 		const result = parseCalloutPayload({
 			calloutKind: 'arrow',
 			geometry: { kind: 'arrow', x1: 0, y1: 0, x2: 1, y2: 1 },
-			style: { color: '#FFD700', strokeWidth: 3, fillOpacity: 0, fontSize: 28, arrowheadSize: 14, blurRadius: 12, darkenStrength: 0.7 }
+			style: {
+				color: '#FFD700',
+				strokeWidth: 3,
+				fillOpacity: 0,
+				fontSize: 28,
+				arrowheadSize: 14,
+				blurRadius: 12,
+				darkenStrength: 0.7
+			}
 		});
 		expect(result).not.toBeNull();
 		expect(result!.calloutKind).toBe('arrow');
@@ -70,11 +113,13 @@ describe('parseCalloutPayload', () => {
 	});
 
 	it('rejects geometry missing required field', () => {
-		expect(parseCalloutPayload({
-			calloutKind: 'arrow',
-			geometry: { kind: 'arrow', x1: 0, y1: 0 }, // missing x2, y2
-			style: {}
-		})).toBeNull();
+		expect(
+			parseCalloutPayload({
+				calloutKind: 'arrow',
+				geometry: { kind: 'arrow', x1: 0, y1: 0 }, // missing x2, y2
+				style: {}
+			})
+		).toBeNull();
 	});
 });
 

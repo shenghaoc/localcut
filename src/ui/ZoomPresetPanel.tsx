@@ -175,9 +175,15 @@ export function ZoomPresetPanel(props: ZoomPresetPanelProps) {
 
 			<Show when={showWarning()}>
 				<div class="warning-dialog" role="alertdialog">
-					<p>Existing keyframes will be merged — existing values outside this range are preserved.</p>
-					<button type="button" onClick={handleApply}>Confirm</button>
-					<button type="button" onClick={() => setShowWarning(false)}>Cancel</button>
+					<p>
+						Existing keyframes will be merged — existing values outside this range are preserved.
+					</p>
+					<button type="button" onClick={handleApply}>
+						Confirm
+					</button>
+					<button type="button" onClick={() => setShowWarning(false)}>
+						Cancel
+					</button>
 				</div>
 			</Show>
 
@@ -186,7 +192,9 @@ export function ZoomPresetPanel(props: ZoomPresetPanelProps) {
 					class="region-pick-overlay"
 					role="application"
 					aria-label="Drag to set zoom region"
-					onKeyDown={(e) => { if (e.key === 'Escape') setRegionPickActive(false); }}
+					onKeyDown={(e) => {
+						if (e.key === 'Escape') setRegionPickActive(false);
+					}}
 				>
 					<p>Drag on the preview to set the zoom region. Press Escape to cancel.</p>
 				</div>

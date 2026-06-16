@@ -84,7 +84,11 @@ export function AutoZoomPanel(props: AutoZoomPanelProps) {
 
 	const handleApply = (proposal: ZoomProposal) => {
 		const keyframes = applyProposal(proposal);
-		props.onSetKeyframes(props.trackId, props.clipId, keyframes as unknown as ClipKeyframesSnapshot);
+		props.onSetKeyframes(
+			props.trackId,
+			props.clipId,
+			keyframes as unknown as ClipKeyframesSnapshot
+		);
 		setProposals((prev) =>
 			prev.map((p) => (p.id === proposal.id ? { ...p, status: 'applied' } : p))
 		);
@@ -167,12 +171,11 @@ export function AutoZoomPanel(props: AutoZoomPanelProps) {
 					<div class="proposal-list">
 						<For each={proposals()}>
 							{(proposal) => (
-								<div
-									class={`proposal-item proposal-item--${proposal.status}`}
-								>
+								<div class={`proposal-item proposal-item--${proposal.status}`}>
 									<span class="proposal-time">{formatTime(proposal.cluster.startUs)}</span>
 									<span class="proposal-centroid">
-										{(proposal.centroidX * 100).toFixed(0)}% × {(proposal.centroidY * 100).toFixed(0)}%
+										{(proposal.centroidX * 100).toFixed(0)}% ×{' '}
+										{(proposal.centroidY * 100).toFixed(0)}%
 									</span>
 									<span class="proposal-count">{proposal.cluster.eventCount} events</span>
 									<button

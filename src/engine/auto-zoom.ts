@@ -140,10 +140,7 @@ function closeCluster(c: RunningCluster): EventCluster {
 	};
 }
 
-function mergeProposals(
-	proposals: ZoomProposal[],
-	mergeThresholdUs: number
-): ZoomProposal[] {
+function mergeProposals(proposals: ZoomProposal[], mergeThresholdUs: number): ZoomProposal[] {
 	if (proposals.length <= 1) return proposals;
 
 	// Sort by zoomInAtUs

@@ -4576,29 +4576,21 @@ function handleAddCallout(cmd: Extract<WorkerCommand, { type: 'add-callout' }>) 
 }
 
 function handleSetCallout(cmd: Extract<WorkerCommand, { type: 'set-callout' }>) {
-	commitTimelineMutation(
-		() => setCalloutPayload(timeline, cmd.trackId, cmd.clipId, cmd.payload),
-		{
-			coalesceKey: { clipId: cmd.clipId, key: 'callout' },
-			refreshPlayback: 'refresh',
-			prune: false,
-			syncLuts: false
-		}
-	);
+	commitTimelineMutation(() => setCalloutPayload(timeline, cmd.trackId, cmd.clipId, cmd.payload), {
+		coalesceKey: { clipId: cmd.clipId, key: 'callout' },
+		refreshPlayback: 'refresh',
+		prune: false,
+		syncLuts: false
+	});
 }
 
-function handleSetPaddedBackground(
-	cmd: Extract<WorkerCommand, { type: 'set-padded-background' }>
-) {
-	commitTimelineMutation(
-		() => setPaddedBackground(timeline, cmd.trackId, cmd.clipId, cmd.params),
-		{
-			coalesceKey: { clipId: cmd.clipId, key: 'paddedBackground' },
-			refreshPlayback: 'refresh',
-			prune: false,
-			syncLuts: false
-		}
-	);
+function handleSetPaddedBackground(cmd: Extract<WorkerCommand, { type: 'set-padded-background' }>) {
+	commitTimelineMutation(() => setPaddedBackground(timeline, cmd.trackId, cmd.clipId, cmd.params), {
+		coalesceKey: { clipId: cmd.clipId, key: 'paddedBackground' },
+		refreshPlayback: 'refresh',
+		prune: false,
+		syncLuts: false
+	});
 }
 
 function handleAddTrack(cmd: Extract<WorkerCommand, { type: 'add-track' }>) {

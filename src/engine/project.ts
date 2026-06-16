@@ -279,7 +279,8 @@ function cloneClip(clip: TimelineClip): TimelineClip {
 		cloned.kind = 'callout';
 		if (clip.callout) cloned.callout = normalizeCalloutPayload(clip.callout);
 	}
-	if (clip.paddedBackground) cloned.paddedBackground = normalizePaddedBackground(clip.paddedBackground);
+	if (clip.paddedBackground)
+		cloned.paddedBackground = normalizePaddedBackground(clip.paddedBackground);
 	if (clip.linkedGroupId) cloned.linkedGroupId = clip.linkedGroupId;
 	if (clip.captureSessionId) cloned.captureSessionId = clip.captureSessionId;
 	if (clip.cleanedAudio) cloned.cleanedAudio = { ...clip.cleanedAudio };

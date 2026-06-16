@@ -29,15 +29,25 @@ export function normalizePaddedBackground(
 	partial: Partial<PaddedBackgroundParams>
 ): PaddedBackgroundParams {
 	const insetMargin =
-		typeof partial.insetMargin === 'number' ? clamp(partial.insetMargin, 0, 0.4) : DEFAULT_PADDED_BACKGROUND.insetMargin;
+		typeof partial.insetMargin === 'number'
+			? clamp(partial.insetMargin, 0, 0.4)
+			: DEFAULT_PADDED_BACKGROUND.insetMargin;
 	const cornerRadius =
-		typeof partial.cornerRadius === 'number' ? clamp(partial.cornerRadius, 0, 64) : DEFAULT_PADDED_BACKGROUND.cornerRadius;
+		typeof partial.cornerRadius === 'number'
+			? clamp(partial.cornerRadius, 0, 64)
+			: DEFAULT_PADDED_BACKGROUND.cornerRadius;
 	const shadowOpacity =
-		typeof partial.shadowOpacity === 'number' ? clamp(partial.shadowOpacity, 0, 1) : DEFAULT_PADDED_BACKGROUND.shadowOpacity;
+		typeof partial.shadowOpacity === 'number'
+			? clamp(partial.shadowOpacity, 0, 1)
+			: DEFAULT_PADDED_BACKGROUND.shadowOpacity;
 	const shadowRadius =
-		typeof partial.shadowRadius === 'number' ? clamp(partial.shadowRadius, 0, 64) : DEFAULT_PADDED_BACKGROUND.shadowRadius;
+		typeof partial.shadowRadius === 'number'
+			? clamp(partial.shadowRadius, 0, 64)
+			: DEFAULT_PADDED_BACKGROUND.shadowRadius;
 	const shadowOffsetY =
-		typeof partial.shadowOffsetY === 'number' ? clamp(partial.shadowOffsetY, -32, 32) : DEFAULT_PADDED_BACKGROUND.shadowOffsetY;
+		typeof partial.shadowOffsetY === 'number'
+			? clamp(partial.shadowOffsetY, -32, 32)
+			: DEFAULT_PADDED_BACKGROUND.shadowOffsetY;
 	const background = normalizeBackground(partial.background);
 	return { insetMargin, cornerRadius, shadowOpacity, shadowRadius, shadowOffsetY, background };
 }
@@ -90,7 +100,10 @@ export function shadowCacheKey(
 	outputWidth: number,
 	outputHeight: number
 ): string {
-	return hashString(`shadow:${shadowRadius}:${cornerRadius}:${outputWidth}:${outputHeight}`).slice(0, 16);
+	return hashString(`shadow:${shadowRadius}:${cornerRadius}:${outputWidth}:${outputHeight}`).slice(
+		0,
+		16
+	);
 }
 
 function clamp(v: number, min: number, max: number): number {

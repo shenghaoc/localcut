@@ -67,7 +67,13 @@ export function parseCalloutPayload(value: unknown): CalloutPayload | null {
 	if (typeof value !== 'object' || value === null) return null;
 	const obj = value as Record<string, unknown>;
 	const kind = obj.calloutKind;
-	if (kind !== 'arrow' && kind !== 'box' && kind !== 'step' && kind !== 'spotlight' && kind !== 'blur')
+	if (
+		kind !== 'arrow' &&
+		kind !== 'box' &&
+		kind !== 'step' &&
+		kind !== 'spotlight' &&
+		kind !== 'blur'
+	)
 		return null;
 	if (typeof obj.geometry !== 'object' || obj.geometry === null) return null;
 	if (typeof obj.style !== 'object' || obj.style === null) return null;
@@ -97,14 +103,17 @@ export function parseCalloutPayload(value: unknown): CalloutPayload | null {
 
 	const style: CalloutStyle = {
 		color: typeof sty.color === 'string' ? sty.color : DEFAULT_CALLOUT_STYLE.color,
-		strokeWidth: typeof sty.strokeWidth === 'number' ? sty.strokeWidth : DEFAULT_CALLOUT_STYLE.strokeWidth,
-		fillOpacity: typeof sty.fillOpacity === 'number' ? sty.fillOpacity : DEFAULT_CALLOUT_STYLE.fillOpacity,
+		strokeWidth:
+			typeof sty.strokeWidth === 'number' ? sty.strokeWidth : DEFAULT_CALLOUT_STYLE.strokeWidth,
+		fillOpacity:
+			typeof sty.fillOpacity === 'number' ? sty.fillOpacity : DEFAULT_CALLOUT_STYLE.fillOpacity,
 		fontSize: typeof sty.fontSize === 'number' ? sty.fontSize : DEFAULT_CALLOUT_STYLE.fontSize,
 		arrowheadSize:
 			typeof sty.arrowheadSize === 'number'
 				? sty.arrowheadSize
 				: DEFAULT_CALLOUT_STYLE.arrowheadSize,
-		blurRadius: typeof sty.blurRadius === 'number' ? sty.blurRadius : DEFAULT_CALLOUT_STYLE.blurRadius,
+		blurRadius:
+			typeof sty.blurRadius === 'number' ? sty.blurRadius : DEFAULT_CALLOUT_STYLE.blurRadius,
 		darkenStrength:
 			typeof sty.darkenStrength === 'number'
 				? sty.darkenStrength

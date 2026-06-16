@@ -26,20 +26,14 @@ describe('clusterEvents', () => {
 	});
 
 	it('clusters two events inside 2s and 15% threshold', () => {
-		const entries = [
-			makeEntry(1_000_000, 0.5, 0.5),
-			makeEntry(1_500_000, 0.52, 0.51)
-		];
+		const entries = [makeEntry(1_000_000, 0.5, 0.5), makeEntry(1_500_000, 0.52, 0.51)];
 		const result = clusterEvents(entries, DEFAULT_AUTO_ZOOM_PARAMS, 0);
 		expect(result).toHaveLength(1);
 		expect(result[0]!.cluster.eventCount).toBe(2);
 	});
 
 	it('splits two events >2s apart into two clusters', () => {
-		const entries = [
-			makeEntry(1_000_000, 0.5, 0.5),
-			makeEntry(3_000_001, 0.5, 0.5)
-		];
+		const entries = [makeEntry(1_000_000, 0.5, 0.5), makeEntry(3_000_001, 0.5, 0.5)];
 		const result = clusterEvents(entries, DEFAULT_AUTO_ZOOM_PARAMS, 0);
 		expect(result).toHaveLength(2);
 	});

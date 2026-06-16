@@ -5,11 +5,7 @@
  */
 
 import { createSignal, createEffect, Show, For } from 'solid-js';
-import type {
-	PaddedBackgroundParams,
-	PaddedBackgroundKind,
-	GradientStop
-} from '../protocol';
+import type { PaddedBackgroundParams, PaddedBackgroundKind, GradientStop } from '../protocol';
 import { DEFAULT_PADDED_BACKGROUND } from '../engine/padded-background';
 
 interface PaddedBackgroundPanelProps {
@@ -72,11 +68,7 @@ export function PaddedBackgroundPanel(props: PaddedBackgroundPanelProps) {
 			<h3>Padded Background</h3>
 
 			<label class="toggle-label">
-				<input
-					type="checkbox"
-					checked={enabled()}
-					onChange={toggle}
-				/>
+				<input type="checkbox" checked={enabled()} onChange={toggle} />
 				Enable
 			</label>
 
@@ -131,9 +123,7 @@ export function PaddedBackgroundPanel(props: PaddedBackgroundPanelProps) {
 					</Show>
 
 					<Show when={bgKind() === 'gradient'}>
-						<For
-							each={(params().background as { kind: 'gradient'; stops: GradientStop[] }).stops}
-						>
+						<For each={(params().background as { kind: 'gradient'; stops: GradientStop[] }).stops}>
 							{(stop, i) => (
 								<div class="gradient-stop">
 									<input
@@ -177,9 +167,7 @@ export function PaddedBackgroundPanel(props: PaddedBackgroundPanelProps) {
 								min={0}
 								max={360}
 								step={1}
-								value={
-									(params().background as { kind: 'gradient'; angleDeg: number }).angleDeg
-								}
+								value={(params().background as { kind: 'gradient'; angleDeg: number }).angleDeg}
 								onInput={(e) => {
 									const bg = params().background as {
 										kind: 'gradient';

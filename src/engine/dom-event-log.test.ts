@@ -24,7 +24,13 @@ describe('normalizeDomEventLogEntry', () => {
 	});
 
 	it('accepts kind: scroll with deltaY', () => {
-		const entry = normalizeDomEventLogEntry({ t: 1000, kind: 'scroll', x: 0.5, y: 0.5, deltaY: -120 });
+		const entry = normalizeDomEventLogEntry({
+			t: 1000,
+			kind: 'scroll',
+			x: 0.5,
+			y: 0.5,
+			deltaY: -120
+		});
 		expect(entry).not.toBeNull();
 		expect(entry!.kind).toBe('scroll');
 		expect(entry!.deltaY).toBe(-120);
@@ -55,7 +61,9 @@ describe('parseDomEventLog', () => {
 	});
 
 	it('rejects wrong version', () => {
-		expect(parseDomEventLog({ eventLogSchemaVersion: 2, sessionId: 'test', events: [] })).toBeNull();
+		expect(
+			parseDomEventLog({ eventLogSchemaVersion: 2, sessionId: 'test', events: [] })
+		).toBeNull();
 	});
 
 	it('filters out unknown event kinds (forward-compat: key channel reserved)', () => {

@@ -74,7 +74,14 @@ export function CalloutTool(props: CalloutToolProps) {
 				aria-label="Callout tool"
 			>
 				{/* Callout icon placeholder */}
-				<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+				<svg
+					viewBox="0 0 24 24"
+					width="18"
+					height="18"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+				>
 					<path d="M12 2L2 22h20L12 2z" />
 				</svg>
 			</button>
