@@ -1,5 +1,24 @@
 # Tasks: Phase 32b - Landmark-Driven Beauty
 
+> **Status — runtime wired, feature gated behind a template manifest.** The
+> accelerated ORT runtime is implemented end-to-end: `BeautyEngine`
+> (`src/engine/beauty/beauty-engine.ts`) loads a detector + landmark ONNX pair on
+> the renderer's `GPUDevice`, and a cadence-gated per-frame solve
+> (preprocess WGSL → detector → primary-face → landmark → One-Euro → ring →
+> interpolate) delivers landmarks to the `beauty-warp.wgsl` compositor pass in
+> preview and export. Capability gating (`probeBeauty`) and the Inspector model-
+> state UI hide/disable the controls until a model loads. The shipped
+> `public/models/beauty/manifest.json` is a **`template`** that
+> `validateBeautyManifest` rejects, so the feature reports "No compatible beauty
+> model configured" and the editing controls never appear (R1.3, R7.1) — no
+> visible no-op. **Remaining before enabling the feature:** vendor a
+> license-verified ONNX detector/landmark pair (T2.1/T2.2, model card + provenance),
+> wire the Phase 32a geometry-aware skin mask (T7), add cadence/inference
+> diagnostics counters (T4.4), Playwright UI coverage (T9.3), user-guide docs
+> (T8.5), and run the manual GPU/offline/identity validation with the real model
+> (T10). Detector output-decode conventions (`decodeCandidates`) are
+> contract-documented and confirmed against the vendored model.
+
 ## T1 - ORT runtime and ONNX model manifest (R1, R2)
 
 - [ ] **T1.1** Reuse or create the shared ORT model platform in the pipeline

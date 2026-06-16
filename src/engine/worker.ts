@@ -2544,6 +2544,8 @@ type LayerMeta =
 			skinMask?: import('./skin-smooth').SkinMaskParams;
 			skinSmoothBypass?: boolean;
 			beauty?: import('../protocol').BeautyEffectSnapshot;
+			/** Phase 32b: smoothed/interpolated primary-face landmarks for this frame. */
+			beautyLandmarks?: Float32Array;
 			transition?: import('./timeline').TransitionResolveMeta;
 			/** Phase 31: smoothed alpha view from the matte engine, if enabled. */
 			matteView?: GPUTextureView;
@@ -2659,6 +2661,32 @@ function makeGetLayers() {
 						}
 					}
 				}
+				// Phase 32b: per-frame zero-copy landmark solve. Like matte, preview never
+				// stalls — the engine returns the latest interpolated landmarks (or null)
+				// while a solve runs. Gated on a loaded model, so it's inert (no clone, no
+				// work) until a license-verified model is vendored (template → not loaded).
+				let beautyLandmarks: Float32Array | undefined;
+				const beauty = sampled.beauty;
+				if (beauty?.enabled && beautyEngine?.getStatus() === 'loaded') {
+					try {
+						beautyLandmarks =
+							(await beautyEngine.solveFrame({
+								clipId: layer.clip.id,
+								frame: decoded.toVideoFrame(),
+								timeS: timestamp,
+								beauty,
+								quality: 'preview'
+							})) ?? undefined;
+					} catch (error) {
+						beautyLandmarks = undefined;
+						recordRecentError({
+							code: 'beauty.inference_failed',
+							subsystem: 'beauty',
+							severity: 'warning',
+							message: `Beauty landmark inference failed; showing the clip without beauty. ${errorMessage(error)}`
+						});
+					}
+				}
 				decodedCount += 1;
 				decodedLayers.push({
 					decoded,
@@ -2674,7 +2702,8 @@ function makeGetLayers() {
 						matteStrength: matte?.enabled ? matte.strength : undefined,
 						matteMode: matte?.enabled ? matte.mode : undefined,
 						matteBlurRadius: matte?.enabled ? matte.blurRadius : undefined,
-						beauty: sampled.beauty
+						beauty: sampled.beauty,
+						beautyLandmarks
 					}
 				});
 			}
@@ -2872,6 +2901,7 @@ function handleDelete(cmd: Extract<WorkerCommand, { type: 'delete-clip' }>) {
 	});
 	for (const ref of expanded) {
 		matteEngine?.deleteClip(ref.clipId);
+		beautyEngine?.deleteClip(ref.clipId);
 	}
 }
 
@@ -2887,6 +2917,7 @@ function handleDeleteBatch(cmd: Extract<WorkerCommand, { type: 'delete-clips' }>
 	});
 	for (const ref of expanded) {
 		matteEngine?.deleteClip(ref.clipId);
+		beautyEngine?.deleteClip(ref.clipId);
 	}
 }
 
@@ -5149,7 +5180,8 @@ function setupPlayback() {
 							matteStrength: layer.meta.matteStrength,
 							matteMode: layer.meta.matteMode,
 							matteBlurRadius: layer.meta.matteBlurRadius,
-							beauty: layer.meta.beauty
+							beauty: layer.meta.beauty,
+							beautyLandmarks: layer.meta.beautyLandmarks
 						});
 					}
 				}
@@ -5496,6 +5528,19 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
 						frame,
 						sourceTimeS,
 						frameStepS: handle && handle.frameRate > 0 ? 1 / handle.frameRate : 1 / 30,
+						quality: 'export'
+					});
+				},
+				beautyLandmarksFor: (clip, frame, timelineTimeS) => {
+					if (!clip.beauty?.enabled || beautyEngine?.getStatus() !== 'loaded') {
+						frame.close();
+						return Promise.resolve(null);
+					}
+					return beautyEngine.solveFrame({
+						clipId: clip.id,
+						frame,
+						timeS: timelineTimeS,
+						beauty: clip.beauty,
 						quality: 'export'
 					});
 				}
@@ -5855,6 +5900,19 @@ async function runQueueJob(job: RenderQueueJob): Promise<void> {
 					frame,
 					sourceTimeS,
 					frameStepS: handle && handle.frameRate > 0 ? 1 / handle.frameRate : 1 / 30,
+					quality: 'export'
+				});
+			},
+			beautyLandmarksFor: (clip, frame, timelineTimeS) => {
+				if (!clip.beauty?.enabled || beautyEngine?.getStatus() !== 'loaded') {
+					frame.close();
+					return Promise.resolve(null);
+				}
+				return beautyEngine.solveFrame({
+					clipId: clip.id,
+					frame,
+					timeS: timelineTimeS,
+					beauty: clip.beauty,
 					quality: 'export'
 				});
 			}

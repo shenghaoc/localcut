@@ -58,6 +58,11 @@ describe('validateBeautyManifest', () => {
 		expect(result.sizeBytes).toBe(detectorAsset.sizeBytes + landmarkAsset.sizeBytes);
 	});
 
+	it('rejects a placeholder template manifest so the feature stays gated', () => {
+		expect(() => validateBeautyManifest({ ...VALID, template: true })).toThrow(BeautyManifestError);
+		expect(() => validateBeautyManifest({ ...VALID, template: true })).toThrow('template');
+	});
+
 	it('accepts an optional blendshape asset', () => {
 		const blendshape = {
 			role: 'blendshape',
