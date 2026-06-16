@@ -3135,9 +3135,24 @@ async function handleImportLookPreset(
 		});
 		return;
 	}
+
+	let lut: ClipLut | null = null;
+	if (cmd.lutFile) {
+		if (!renderer) {
+			postProjectWarning('LUT import requires the accelerated WebGPU renderer.');
+		} else {
+			try {
+				lut = await clipLutFromCubeFile(cmd.lutFile);
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				postProjectWarning(`Could not import LUT: ${message}`);
+			}
+		}
+	}
+
 	commitTimelineMutation(
 		() => {
-			const nextTimeline = timeline.map((track) => {
+			let nextTimeline = timeline.map((track) => {
 				if (track.id !== cmd.trackId) return track;
 				return {
 					...track,
@@ -3147,18 +3162,13 @@ async function handleImportLookPreset(
 					})
 				};
 			});
+			if (lut) {
+				nextTimeline = setClipLut(nextTimeline, cmd.trackId, cmd.clipId, lut);
+			}
 			return nextTimeline;
 		},
 		{ coalesceKey: { clipId: cmd.clipId, key: 'look-preset' }, refreshPlayback: 'refresh' }
 	);
-	if (cmd.lutFile) {
-		await handleImportLut({
-			type: 'import-lut',
-			trackId: cmd.trackId,
-			clipId: cmd.clipId,
-			file: cmd.lutFile
-		});
-	}
 }
 
 async function handleExportLookPreset(

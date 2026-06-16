@@ -145,10 +145,13 @@ in the order listed within each group unless a dependency is noted.
   `LookPresetErrorMessage` to `WorkerStateMessage`.
 
 - [ ] **T7.2** `src/engine/worker.ts`: Handle `'import-look-preset'` command:
-  read the preset file text, call `parseLookPreset`, call
-  `applyLookPresetToClip`, commit via `commitTimelineMutation`, and if
-  `lutFile` is provided route it through the existing `handleImportLut` path.
-  On validation failure post `look-preset-error`.
+  read the preset file text, call `parseLookPreset`, and — if `lutFile` is
+  provided — parse the `.cube` via `clipLutFromCubeFile` _before_ the
+  mutation. Then commit a **single** `commitTimelineMutation` that calls
+  `applyLookPresetToClip` and, when a parsed LUT is present, follows it with
+  `setClipLut` so both changes land as one undo entry. On JSON validation
+  failure post `look-preset-error`; on LUT parse failure post a project
+  warning and proceed with the look params only.
 
 - [ ] **T7.3** `src/engine/worker.ts`: Handle `'export-look-preset'` command:
   find the clip by `trackId`/`clipId`, build a `LookPreset` from its current
