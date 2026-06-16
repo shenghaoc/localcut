@@ -147,10 +147,12 @@ version-tolerant and backward-compatible.
 - **R5.3** At landing, the webcam clip's `transform` fields are set to the P12 values
   that implement the chosen preset. The transform is applied to the webcam clip on the
   dedicated webcam timeline track. The screen track clip is untouched. Specifically:
-  the P12 `ClipTransformSnapshot` fields `x`, `y`, `width`, `height` (normalised 0–1
-  relative to canvas) are derived from the preset corner + size + margin selection. The
-  screen track clip uses `FitMode = 'letterbox'`. These values are written directly
-  into the `TimelineClipSnapshot.transform` field during the landing operation.
+  the P12 `TransformParamsSnapshot` fields `x`, `y`, `scale`, and `fit` are derived
+  from the preset corner + size + margin selection. Size is defined as a percentage of
+  canvas width; height preserves source aspect ratio by factoring in the canvas aspect
+  ratio; margin is normalised separately for the horizontal and vertical axes. The
+  screen track clip uses `FitMode = 'letterbox'`. These values are written directly into
+  the `TimelineClipSnapshot.transform` field during the landing operation.
 - **R5.4** The webcam layout section is hidden (not merely disabled) when no webcam
   source (`CaptureSourceKind === 'webcam'`) has been added to the session.
 
@@ -160,7 +162,7 @@ version-tolerant and backward-compatible.
   in `src/protocol.ts` and `src/engine/capability-probe-v2.ts`. The probe checks
   `'documentPictureInPicture' in window` and is Chromium-only as of June 2026; Safari
   and Firefox report `'unsupported'` and receive the in-page fallback automatically
-  (R6.4). The probe is in the optional `capture` group alongside the Phase 41 probes
+  (R6.4). The probe is in the optional `captureUx` group alongside the Phase 41 probes
   (not a hard gate — `recordingAvailable` is unchanged by its absence).
 - **R6.2** `src/ui/RecorderControlStrip.tsx` is a standalone SolidJS component that
   renders the essential recording controls: Pause/Resume, Stop, elapsed time, and
@@ -285,15 +287,15 @@ version-tolerant and backward-compatible.
   resume; stop; assert two new timeline tracks are created and a "Resume 1" marker
   exists at the expected seam position (within 1 s of the calculated position); (b)
   **Document PiP fallback path**: inject
-  `window.__localcutCapabilityOverrides = { capture: { documentPip: 'unsupported' } }`
+  `window.__localcutCapabilityOverrides = { captureUx: { documentPip: 'unsupported' } }`
   before starting the app (via Playwright's `page.addInitScript`) — only valid in dev
   builds where the override hook is compiled in (R6.6); start a recording; assert the
   floating in-page strip is visible (selector `[data-testid="recorder-control-strip-inpage"]`)
   and contains the Pause and Stop buttons; pause and stop via the strip; assert normal
   landing.
 - **R10.5** `src/engine/capture/webcam-preset.test.ts` covers: P12 transform value
-  derivation for each corner × size combination, asserting that the resulting `x`,
-  `y`, `width`, `height` (normalised 0–1) place the clip within canvas bounds with the
+  derivation for each corner × size combination, asserting that the resulting
+  center-offset `x`/`y` plus `scale`/`fit` place the clip within canvas bounds with the
   configured margin; margin clamping (0, 64, out-of-range inputs); the S/M/L size
   percentages (20 / 30 / 40 % of canvas width with aspect ratio preserved).
 - **R10.6** `src/engine/capture/retake.test.ts` covers: retake landing replaces clip

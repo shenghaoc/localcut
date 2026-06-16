@@ -129,20 +129,28 @@ transform/size/position that mirrors the preset. This is pure CSS on the main th
 no compositing, no VideoFrame, no GPU work. The CSS layout on the monitor tile is
 cosmetic only; the recorded files remain raw.
 
-The P12 `ClipTransformSnapshot` (fields `x`, `y`, `width`, `height` normalised 0–1
-relative to canvas) is derived from corner + size + margin as follows (for canvas size
-`W × H` at normalised scale `1.0 × 1.0`):
+The P12 `TransformParamsSnapshot` has center-offset `x`/`y` plus `scale`/`fit`; it
+does not have `width` or `height` fields. The webcam preset therefore first derives a
+normalised target rectangle from corner + size + margin, then converts that rectangle
+to the existing center-offset transform model:
 
 ```
 webcamW = sizePercent(size) * 1.0           // S=0.20, M=0.30, L=0.40 of canvas width
-webcamH = webcamW * (sourceHeight / sourceWidth)   // preserve aspect ratio
-marginX = margin / canvasPixelWidth         // normalised horizontal margin
-marginY = margin / canvasPixelHeight        // normalised vertical margin (distinct for non-square canvases)
+webcamH = webcamW * (canvasWidth / canvasHeight) * (sourceHeight / sourceWidth)
+marginX = margin / canvasPixelWidth
+marginY = margin / canvasPixelHeight
 
 bottom-right:   x = 1 − marginX − webcamW,  y = 1 − marginY − webcamH
 bottom-left:    x = marginX,                 y = 1 − marginY − webcamH
 top-right:      x = 1 − marginX − webcamW,  y = marginY
 top-left:       x = marginX,                 y = marginY
+
+centerX = x + webcamW / 2
+centerY = y + webcamH / 2
+transform.x = centerX − 0.5
+transform.y = centerY − 0.5
+transform.scale = webcamW / computeFitRect(source, canvas, 'fit').width
+transform.fit = 'fit'
 ```
 
 The screen track uses `FitMode = 'letterbox'` (existing, no change). Both are written
@@ -332,10 +340,10 @@ export const DEFAULT_WEBCAM_PRESET: WebcamPipPreset = {
 };
 
 /**
- * Derives normalised (0–1) P12 clip transform for the webcam clip.
+ * Derives a P12 transform for the webcam clip.
  * canvasW/H: pixel dimensions of the export canvas.
  * sourceW/H: webcam source pixel dimensions (for aspect ratio).
- * Returns { x, y, width, height } matching ClipTransformSnapshot layout fields.
+ * Returns the center-offset x/y, scale, and fit fields used by TransformParamsSnapshot.
  */
 export function deriveWebcamTransform(
   preset: WebcamPipPreset,
@@ -343,7 +351,7 @@ export function deriveWebcamTransform(
   canvasH: number,
   sourceW: number,
   sourceH: number
-): { x: number; y: number; width: number; height: number };
+): Pick<TransformParamsSnapshot, 'x' | 'y' | 'scale' | 'fit'>;
 ```
 
 ### `src/engine/persistence.ts` (extended)

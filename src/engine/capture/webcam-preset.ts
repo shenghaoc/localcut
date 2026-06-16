@@ -1,8 +1,8 @@
 /**
  * Phase 42: Webcam PiP layout preset transform derivation.
  *
- * Pure function — fully unit-testable. Derives normalised (0–1) P12
- * ClipTransformSnapshot fields from a corner + size + margin selection.
+ * Pure function — fully unit-testable. Derives P12 transform fields from a corner +
+ * size + margin selection.
  */
 
 import type { TransformParamsSnapshot } from '../../protocol';

@@ -40,6 +40,21 @@ describe('parseManifestLine', () => {
 		expect(parseManifestLine('{"atUs":1000}')).toBeUndefined();
 		expect(parseManifestLine('null')).toBeUndefined();
 	});
+
+	it('skips malformed known record kinds instead of casting partial data', () => {
+		expect(parseManifestLine('{"kind":"pause"}')).toBeUndefined();
+		expect(parseManifestLine('{"kind":"resume","atUs":"2000"}')).toBeUndefined();
+		expect(parseManifestLine('{"kind":"source-region-applied","mode":"bad"}')).toBeUndefined();
+		expect(
+			parseManifestLine('{"kind":"source-added","source":{"sourceId":"s1"},"atUs":500}')
+		).toBeUndefined();
+		expect(
+			parseManifestLine(
+				'{"kind":"chunk","sourceId":"s1","file":"video-s1.mp4","fromUs":0,"toUs":100}'
+			)
+		).toBeUndefined();
+		expect(parseManifestLine('{"kind":"finalize"}')).toBeUndefined();
+	});
 });
 
 describe('parseManifest', () => {

@@ -100,10 +100,11 @@
   - `DEFAULT_WEBCAM_PRESET: WebcamPipPreset` (`corner: 'bottom-right'`, `size: 'M'`,
     `marginPx: 16`)
   - `deriveWebcamTransform(preset, canvasW, canvasH, sourceW, sourceH)` returning
-    `{ x: number; y: number; width: number; height: number }` (normalised 0–1) per the
-    formula in design.md §Webcam PiP. Size percentages: S = 0.20, M = 0.30, L = 0.40 of
-    canvas width; height preserves source aspect ratio. `marginPx` is clamped to [0, 64]
-    before normalisation.
+    `Pick<TransformParamsSnapshot, 'x' | 'y' | 'scale' | 'fit'>` per the formula in
+    design.md §Webcam PiP. Size percentages: S = 0.20, M = 0.30, L = 0.40 of canvas
+    width; height preserves source aspect ratio by factoring in the canvas aspect ratio
+    (`canvasW / canvasH`). `marginPx` is clamped to [0, 64] and normalised separately
+    for width and height before conversion to P12 center-offset coordinates.
 - [ ] **T5.2** Call `deriveWebcamTransform` in the landing path inside
   `src/engine/capture/capture-session.ts`: after landing the webcam source's clip, set
   `clip.transform` to the derived values. The canvas W/H come from `ExportSettings`
@@ -123,17 +124,18 @@
     `pair.resumeAtUs ≤ rawTs`. Integer arithmetic only (µs are integers in the
     manifest); no floating-point accumulation.
   - `seamMarkerPositionsUs(pairs: readonly PauseResumePair[]): { positionUs: number; label: string }[]`
-    — returns `{ positionUs: computeGapCollapsedUs(pair.resumeAtUs, allPriorPairs),
-    label: "Resume N" }` for each pair (N is 1-based index).
+    — returns `{ positionUs: computeGapCollapsedUs(pair.resumeAtUs, pairs),
+    label: "Resume N" }` for each pair (N is 1-based index), subtracting the current
+    pair's gap and all prior gaps.
 - [x] **T6.2** Add `capture-pause` command handler to `src/engine/capture/capture-session.ts`:
-  suspend the MSTP reader loops for all active sources (via their `AbortController`
-  signals — pause should abort the reader and let it restart on resume); call
-  `appendPauseRecord(lastEncodedFrameTs)` on the manifest; transition session state to
-  `'paused'`; emit `capture-status` with `state: 'paused'`.
+  suspend the MSTP reader loops for all active sources by cancelling the active readers,
+  wait for each encoder to flush and close, then call `appendPauseRecord(lastEncodedFrameTs)`
+  on the manifest; transition session state to `'paused'`; emit `capture-status` with
+  `state: 'paused'`.
 - [x] **T6.3** Add `capture-resume` command handler: restart the MSTP reader loops
-  (construct new `AbortController`, re-create reader from `MediaStreamTrack`); call the
-  Phase 41 epoch mechanism to start a new chunk epoch; call `appendResumeRecord(firstEncodedFrameTs)`
-  after the first frame encodes; transition state to `'recording'`; emit `capture-status`.
+  after any in-flight pause drain completes; call the Phase 41 epoch mechanism to start
+  a new chunk epoch; call `appendResumeRecord(firstEncodedFrameTs)` after the first
+  frame encodes; transition state to `'recording'`; emit `capture-status`.
 - [ ] **T6.4** Extend the landing function in `capture-session.ts`: after all clips are
   created, call `extractPauseResumePairs`, apply `computeGapCollapsedUs` to each
   clip's first-sample timestamp to get the adjusted placement offset, and call
@@ -178,19 +180,18 @@
 
 - [x] **T8.1** Create `src/engine/capture/webcam-preset.test.ts`:
   - For all 4 corners × 3 sizes (12 combinations), call `deriveWebcamTransform` with
-    a 1920 × 1080 canvas and a 1280 × 720 source; assert `x`, `y`, `width`, `height`
-    are all in [0, 1] and that the clip fits within the canvas (no overflow for any
-    corner with `marginPx = 16`).
-  - **Size percentages:** assert that for size `'S'`, `width ≈ 0.20`; for `'M'`,
-    `width ≈ 0.30`; for `'L'`, `width ≈ 0.40` (tolerance ≤ 0.001).
-  - **Aspect ratio:** assert `height / width ≈ 720 / 1280` (tolerance ≤ 0.001) for
-    the 1280 × 720 source.
+    a 1920 × 1080 canvas and a 1280 × 720 source; convert the returned center-offset
+    `x`/`y` plus `scale`/`fit` through `computeFitRect` and assert the clip fits within
+    the canvas (no overflow for any corner with `marginPx = 16`).
+  - **Size percentages:** assert that for size `'S'`, rendered width ≈ 0.20; for `'M'`,
+    rendered width ≈ 0.30; for `'L'`, rendered width ≈ 0.40 (tolerance ≤ 0.001).
+  - **Aspect ratio:** assert rendered pixel `height / width ≈ 720 / 1280`
+    (tolerance ≤ 0.001) for the 1280 × 720 source.
   - **Margin clamping:** `marginPx = -4` clamps to 0; `marginPx = 100` clamps to 64;
     assert the resulting transform differs from the unclamped case.
   - **Non-square canvas margin uniformity:** with a 1080 × 1920 (portrait) canvas and
-    `marginPx = 16`, assert the pixel margin is 16 px on all four sides (i.e.
-    `x * canvasW ≈ 16` and `y * canvasH ≈ 16` for top-left corner), confirming
-    separate X/Y normalisation.
+    `marginPx = 16`, assert the rendered pixel margin is 16 px on the applicable axes,
+    confirming separate X/Y normalisation.
 - [x] **T8.2** Create `src/engine/capture/retake.test.ts`:
   - Build a `TimelineClipSnapshot` with `id`, `sourceId`, `duration`, `inPoint`,
     `outPoint`, `transform`, `keyframes`, and `captureSessionId` fields.
@@ -290,10 +291,9 @@
   `RestrictionTarget.fromElement(el)`, and applies it to the existing tab source track
   via `track.cropTo(cropTarget)` or `track.restrictTo(restrictionTarget)`. If no tab
   source is active, the options are rendered disabled with "Add a Tab source first".
-  On success, appends a `source-region-applied` manifest record via the
-  `capture-add-region` command (T1 command, or done inline in the session worker via
-  a new dedicated command `{ type: 'capture-apply-region'; sourceId: string; mode:
-  'crop' | 'element' }`).
+  On success, appends a `source-region-applied` manifest record via the dedicated
+  `capture-apply-region` command defined in T1:
+  `{ type: 'capture-apply-region'; sourceId: string; mode: 'crop' | 'element' }`.
 - [ ] **T12.5** Webcam layout controls: four corner-position buttons (icon-labelled),
   S/M/L size radio buttons, margin number input (0–64 step 4). All changes are saved
   immediately to `CAPTURE_SETTINGS_STORE`. CSS self-monitor tile updates reactively to

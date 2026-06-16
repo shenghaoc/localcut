@@ -8310,13 +8310,27 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 		case 'capture-pause':
 			// Phase 42: Pause capture session (suspend MSTP reader loops)
 			if (captureSession) {
-				captureSession.pause();
+				void captureSession.pause().catch((err: Error) => {
+					post({
+						type: 'capture-error',
+						sourceId: null,
+						code: 'session-error',
+						detail: String(err)
+					});
+				});
 			}
 			break;
 		case 'capture-resume':
 			// Phase 42: Resume capture session (restart MSTP reader loops)
 			if (captureSession) {
-				captureSession.resume();
+				void captureSession.resume().catch((err: Error) => {
+					post({
+						type: 'capture-error',
+						sourceId: null,
+						code: 'session-error',
+						detail: String(err)
+					});
+				});
 			}
 			break;
 		case 'capture-apply-region':
