@@ -36,9 +36,12 @@ import {
 	TIMELINE_EPSILON,
 	type CleanedAudioRefSnapshot,
 	type ClipMatteSnapshot,
+	type CalloutPayload,
+	type PaddedBackgroundParams,
 	type SceneDefinition
 } from '../protocol';
 import { normalizeBeautyEffect } from './beauty/beauty-params';
+import { normalizeCalloutPayload } from './callout';
 
 /** Denoised-audio routing for a clip (Phase 28 local audio cleanup). */
 export type CleanedAudioRef = CleanedAudioRefSnapshot;
@@ -56,8 +59,9 @@ export const DEFAULT_MATTE: ClipMatte = {
 	strength: 1.0
 };
 
-/** Source clips decode media; title clips are source-less text overlays (Phase 14). */
-export type ClipKind = 'video' | 'title';
+/** Source clips decode media; title clips are source-less text overlays (Phase 14);
+ *  callout clips are source-less visual annotations (Phase 43). */
+export type ClipKind = 'video' | 'title' | 'callout';
 
 /** Authoritative timeline model — Phase 3+. */
 export interface TimelineClip {
@@ -92,6 +96,10 @@ export interface TimelineClip {
 	timeRemap?: import('../protocol').TimeRemapSnapshot;
 	/** Phase 42: origin capture session id for retake detection. */
 	captureSessionId?: string;
+	/** Phase 43: callout payload; present iff `kind === 'callout'`. */
+	callout?: CalloutPayload;
+	/** Phase 43: padded-background sidecar; absent = no padded background. */
+	paddedBackground?: PaddedBackgroundParams;
 }
 
 /** A title clip carries source-less text; it composites as a cached texture. */
@@ -108,6 +116,11 @@ export interface LayoutClip {
 	sceneId: string;
 	/** Full SceneDefinition snapshot at this segment. */
 	sceneSnapshot: SceneDefinition;
+}
+
+/** A callout clip is a source-less visual annotation (Phase 43). */
+export function isCalloutClip(clip: TimelineClip): boolean {
+	return clip.kind === 'callout';
 }
 
 export interface TimelineTrack {
@@ -1137,9 +1150,10 @@ export function trimClip(
 		if (other.start >= clipEnd && other.start < nextStart) nextStart = other.start;
 	}
 
-	// Title clips are source-less and still-like: no decoded media bounds them, so
-	// both edges move freely (neighbor-bounded only) and the in-point stays 0.
-	const title = isTitleClip(clip);
+	// Title and callout clips are source-less and still-like: no decoded media
+	// bounds them, so both edges move freely (neighbor-bounded only) and the
+	// in-point stays 0.
+	const sourceLess = isTitleClip(clip) || isCalloutClip(clip);
 
 	let nextStartOut: number;
 	let nextDuration: number;
@@ -1158,16 +1172,16 @@ export function trimClip(
 		// the trimmed clip because the curve's anchor moved.
 		const sourceOffset = remappedSourceOffset(clip, offset);
 		const candidateInPoint = clip.inPoint + sourceOffset;
-		// The new source-side in-point can't be negative (titles have none).
-		if (!title && candidateInPoint < 0) return timeline;
+		// The new source-side in-point can't be negative (source-less clips have none).
+		if (!sourceLess && candidateInPoint < 0) return timeline;
 		nextStartOut = time;
 		nextDuration = clip.duration - offset;
-		nextInPoint = title ? 0 : candidateInPoint;
+		nextInPoint = sourceLess ? 0 : candidateInPoint;
 	} else {
 		if (time <= clip.start) return timeline;
 		// Must not overlap the next neighbor.
 		if (time > nextStart) return timeline;
-		if (title) {
+		if (sourceLess) {
 			// Still-like: out-edge bounded only by the next neighbor (checked above).
 		} else if (sourceDuration !== undefined && finite(sourceDuration)) {
 			// Out-edge extension is bounded by available source content. For
@@ -1478,6 +1492,25 @@ export function setSkinMask(
 	return next;
 }
 
+/** Phase 43: sets or removes the padded-background sidecar on a clip. */
+export function setPaddedBackground(
+	timeline: Timeline,
+	trackId: string,
+	clipId: string,
+	params: PaddedBackgroundParams | null
+): Timeline {
+	const loc = trackWithClip(timeline, trackId, clipId);
+	if (!loc) return timeline;
+	const next = cloneTimeline(timeline);
+	const clip = next[loc.trackIndex]!.clips[loc.clipIndex]!;
+	if (params === null) {
+		delete clip.paddedBackground;
+	} else {
+		clip.paddedBackground = params;
+	}
+	return next;
+}
+
 /** Phase 31: enables or disables portrait matting on a clip. */
 export function setClipMatteEnabled(
 	timeline: Timeline,
@@ -1623,6 +1656,28 @@ export function defaultTitleClip(partial: {
 	};
 }
 
+/** Builds a source-less callout clip with the given payload (Phase 43). */
+export function defaultCalloutClip(partial: {
+	id: string;
+	start: number;
+	duration: number;
+	payload: CalloutPayload;
+	transform?: Partial<TransformParams>;
+}): TimelineClip {
+	return {
+		id: partial.id,
+		kind: 'callout',
+		sourceId: '',
+		start: partial.start,
+		duration: partial.duration,
+		inPoint: 0,
+		effects: defaultClipEffects(),
+		transform: normalizeTransform(partial.transform),
+		...DEFAULT_CLIP_AUDIO_FADES,
+		callout: partial.payload
+	};
+}
+
 /**
  * Updates a title clip's text and/or style; returns the original timeline on
  * no-op (unchanged content) or when the target is missing or not a title clip.
@@ -1649,6 +1704,28 @@ export function setTitleContent(
 
 	const cloned = cloneTimeline(timeline);
 	cloned[loc.trackIndex]!.clips[loc.clipIndex]!.title = next;
+	return cloned;
+}
+
+/**
+ * Updates a callout clip's payload; returns the original timeline on no-op or
+ * when the target is missing or not a callout clip (Phase 43).
+ */
+export function setCalloutPayload(
+	timeline: Timeline,
+	trackId: string,
+	clipId: string,
+	payload: CalloutPayload
+): Timeline {
+	const loc = trackWithClip(timeline, trackId, clipId);
+	if (!loc) return timeline;
+
+	const clip = timeline[loc.trackIndex]!.clips[loc.clipIndex]!;
+	if (!isCalloutClip(clip)) return timeline;
+
+	const next = normalizeCalloutPayload(payload);
+	const cloned = cloneTimeline(timeline);
+	cloned[loc.trackIndex]!.clips[loc.clipIndex]!.callout = next;
 	return cloned;
 }
 
@@ -1760,7 +1837,7 @@ export function setClipCleanedAudio(
 	const loc = trackWithClip(timeline, trackId, clipId);
 	if (!loc) return timeline;
 	const clip = timeline[loc.trackIndex]!.clips[loc.clipIndex]!;
-	if (isTitleClip(clip)) return timeline;
+	if (isTitleClip(clip) || isCalloutClip(clip)) return timeline;
 	const current = clip.cleanedAudio ?? null;
 	const sameRef =
 		current === ref ||
@@ -2308,7 +2385,7 @@ export function slipEdit(
 	if (!loc) return timeline;
 
 	const clip = timeline[loc.trackIndex]!.clips[loc.clipIndex]!;
-	if (isTitleClip(clip)) return timeline;
+	if (isTitleClip(clip) || isCalloutClip(clip)) return timeline;
 	const newInPoint = clip.inPoint + deltaS;
 	if (newInPoint < 0 || newInPoint + clip.duration > sourceDuration + TIMELINE_EPSILON)
 		return timeline;

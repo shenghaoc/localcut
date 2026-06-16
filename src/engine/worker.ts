@@ -149,8 +149,11 @@ import {
 	setClipAudioFade,
 	setClipCleanedAudio,
 	setTitleContent,
+	setCalloutPayload,
+	setPaddedBackground,
 	defaultTimelineClip,
 	defaultTitleClip,
+	defaultCalloutClip,
 	isTitleClip,
 	linkClips,
 	unlinkClips,
@@ -4537,6 +4540,67 @@ function handleSetTitle(cmd: Extract<WorkerCommand, { type: 'set-title' }>) {
 	);
 }
 
+function makeCalloutClipId(): string {
+	const suffix =
+		typeof crypto !== 'undefined' && 'randomUUID' in crypto
+			? crypto.randomUUID()
+			: Math.random().toString(36).slice(2);
+	return `clip-callout-${suffix}`;
+}
+
+function handleAddCallout(cmd: Extract<WorkerCommand, { type: 'add-callout' }>) {
+	const added = commitTimelineMutation(() => {
+		const start =
+			cmd.start !== undefined && Number.isFinite(cmd.start) && cmd.start >= 0 ? cmd.start : 0;
+		const makeClip = () =>
+			defaultCalloutClip({
+				id: makeCalloutClipId(),
+				start,
+				duration: DEFAULT_TITLE_DURATION_S,
+				payload: cmd.payload
+			});
+
+		if (cmd.trackId) {
+			return insertClip(timeline, cmd.trackId, makeClip());
+		}
+		for (const track of timeline) {
+			if (track.type !== 'video') continue;
+			const candidate = insertClip(timeline, track.id, makeClip());
+			if (candidate !== timeline) return candidate;
+		}
+		const withTrack = addTrack(timeline, 'video');
+		const overlayTrackId = withTrack[withTrack.length - 1]!.id;
+		return insertClip(withTrack, overlayTrackId, makeClip());
+	});
+	if (added && !playback) setupPlayback();
+}
+
+function handleSetCallout(cmd: Extract<WorkerCommand, { type: 'set-callout' }>) {
+	commitTimelineMutation(
+		() => setCalloutPayload(timeline, cmd.trackId, cmd.clipId, cmd.payload),
+		{
+			coalesceKey: { clipId: cmd.clipId, key: 'callout' },
+			refreshPlayback: 'refresh',
+			prune: false,
+			syncLuts: false
+		}
+	);
+}
+
+function handleSetPaddedBackground(
+	cmd: Extract<WorkerCommand, { type: 'set-padded-background' }>
+) {
+	commitTimelineMutation(
+		() => setPaddedBackground(timeline, cmd.trackId, cmd.clipId, cmd.params),
+		{
+			coalesceKey: { clipId: cmd.clipId, key: 'paddedBackground' },
+			refreshPlayback: 'refresh',
+			prune: false,
+			syncLuts: false
+		}
+	);
+}
+
 function handleAddTrack(cmd: Extract<WorkerCommand, { type: 'add-track' }>) {
 	commitTimelineMutation(() => addTrack(timeline, cmd.trackType), {
 		refreshPlayback: 'none',
@@ -8657,6 +8721,15 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			break;
 		case 'set-title':
 			handleSetTitle(cmd);
+			break;
+		case 'add-callout':
+			handleAddCallout(cmd);
+			break;
+		case 'set-callout':
+			handleSetCallout(cmd);
+			break;
+		case 'set-padded-background':
+			handleSetPaddedBackground(cmd);
 			break;
 		case 'add-track':
 			handleAddTrack(cmd);
