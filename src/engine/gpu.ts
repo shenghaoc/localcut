@@ -1556,8 +1556,7 @@ export class PreviewRenderer {
 		if (this.scopeHistogramBuf) return;
 
 		const device = this.device;
-		const storageUsage =
-			GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST;
+		const storageUsage = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST;
 		const uniformUsage = GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST;
 
 		const histBytes = SCOPE_HISTOGRAM_DATA_FLOATS * 4;
