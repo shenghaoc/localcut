@@ -111,17 +111,21 @@ the `<video srcObject>` monitor tiles.
 | Object | Produced by | Consumed/closed by | When |
 |---|---|---|---|
 | `VideoFrame` from MSTP reader | MSTP `readable` | ISO encode path | `encoder.encode(frame)` returns; or on pre-encode drop |
-| Clone for compose | ISO path, before encode | `LiveComposeTap` | after `importExternalTexture(frame)` call in compositor |
+| Clone for compose | ISO path, before encode | `LiveComposeTap` | when a newer clone arrives from the same source, or on `dispose()` — NOT inside `renderTick` |
 | Clone for phase-47 tap | `ProgramCompositor` | `PublishFrameTap` | after write/drop per P47 discipline |
 
 The clone-before-encode ordering: the reader loop calls `frame.clone()` to
 produce the compose copy, then calls `encoder.encode(frame)` (the original),
-then `frame.close()`. The clone is passed to `LiveComposeTap`; it is closed
-by the compositor after `importExternalTexture` has been called on it within
-that frame's `GPUCommandEncoder`. Total close count per MSTP frame: 2 (the
-original + 1 compose clone). If the source is not visible in the current
-scene (layer `visible: false`), the clone is closed immediately without
-being passed to the compositor — never leaked.
+then `frame.close()`. The clone is passed to `LiveComposeTap`. The tap
+retains the latest clone per source; when a newer clone arrives, the
+previous clone is closed. Frames are NOT closed inside `renderTick` — they
+are held open and reused across ticks until replaced or until `dispose()`.
+This keeps a warm frame for every active source at all times, which is
+critical for the one-frame scene-switch invariant: switching to a scene
+where a low-FPS source (e.g. screen capture) is visible must have a frame
+available immediately without waiting for the next MSTP read. Total close
+count per MSTP frame: 2 (the original + 1 compose clone, closed when
+replaced or on dispose).
 
 ## Scene-switch one-frame invariant
 
@@ -130,10 +134,14 @@ scene updates only this signal. On the next compositor tick,
 `resolveSceneAt(currentSceneId)` looks up the scene's layer definitions and
 produces the `CompositeLayer[]` array passed to `compositeLayers`. The
 layers reference the most recent `VideoFrame` clones already held by the
-`LiveComposeTap` per source. **No pipeline rebuild, no texture reallocation,
+`LiveComposeTap` per source — **all active sources keep their latest frame
+warm regardless of visibility**, so switching to a scene that reveals a
+previously invisible low-FPS source (e.g. screen capture at 5 fps) has a
+frame available immediately. **No pipeline rebuild, no texture reallocation,
 no encoder restart occurs.** The compositor doesn't distinguish "first frame
 after switch" from any other frame — only the layer-uniform values change.
-This is the invariant the R9.1 acceptance test asserts.
+Frames are held open across ticks and only closed when replaced by a newer
+frame or on dispose. This is the invariant the R9.1 acceptance test asserts.
 
 The eased-transition variant (200 ms, optional): during the transition
 window, the compositor computes `opacity = lerp(outgoing.opacity,
@@ -219,10 +227,12 @@ submission is owned by the worker's render loop, exactly as Phase 12.
 
 Per-source bridge from the MSTP reader loop to the `ProgramCompositor`.
 Called by `TrackPipeline` immediately after `frame.clone()` and before
-`encoder.encode(frame)`. Passes the clone to the compositor; if the
-compositor has not yet rendered the previous clone from this source, the
-older clone is closed (dropped) — latest-frame-wins per source, matching
-the Phase 47 tap discipline.
+`encoder.encode(frame)`. Passes the clone to the compositor. The tap
+retains the latest frame per source regardless of visibility — when a
+newer clone arrives, the previous one is closed. Frames from invisible
+sources are kept warm (not closed immediately) so that switching to a
+scene where the source IS visible has a frame available within one tick.
+This is critical for low-FPS captures like screen sharing.
 
 ```typescript
 export interface LiveComposeTap {

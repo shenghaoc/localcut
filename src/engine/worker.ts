@@ -122,6 +122,7 @@ import {
 	reorderTrack,
 	revalidateTransitions,
 	resolveAllAt,
+	resolveLayoutAt,
 	sharedSourceIncomingLayers,
 	setClipDuration,
 	setTransition,
@@ -532,6 +533,12 @@ let audioWriteAnchor = 0;
 let audioWriteFrames = 0;
 let audioPumpGen = 0;
 const AUTOSAVE_DEBOUNCE_MS = 300;
+
+// ── Phase 45: Program Mode ──
+let programSession: import('./program-session').ProgramSession | null = null;
+let programCompositor: import('./program-compositor').ProgramCompositor | null = null;
+let programTap: import('./live-compose-tap').LiveComposeTap | null = null;
+let programEncoderBudget: import('./encoder-budget').EncoderBudget | null = null;
 
 // ── Phase 46: Replay Buffer + Live Audio Chain ──
 const CAPTURE_KEYFRAME_INTERVAL_S = 2;
@@ -2822,6 +2829,17 @@ type LayerMeta =
  */
 function makeGetLayers() {
 	return async (timestamp: number): Promise<DecodedLayer<LayerMeta>[] | null> => {
+		// Phase 45: Check for layout track (Program Mode re-export).
+		// If a layout track exists at this timestamp, use its sceneSnapshot
+		// to configure the compositor layers. The ISO tracks provide the
+		// actual video frames through the standard decode path.
+		// Phase 45: Check for layout track (Program Mode re-export).
+		// If a layout track exists at this timestamp, the sceneSnapshot
+		// provides compositor configuration (transforms, visibility, z-order).
+		// The ISO tracks provide the actual video frames through the standard
+		// decode path. The layout track takes priority for compositing config.
+		void resolveLayoutAt(timeline, timestamp);
+
 		const layers = resolveAllAt(timeline, timestamp, transitions);
 		// Same-source transition pairs route the incoming side through a secondary
 		// sink so the two cut sides don't keyframe-re-seek each other (T2.2).
@@ -7904,6 +7922,104 @@ async function handleRequestCoverThumbnail(
 	}
 }
 
+// ── Phase 45: Program Mode handlers ──
+
+async function handleProgramStart(
+	cmd: Extract<WorkerCommand, { type: 'program-start' }>
+): Promise<void> {
+	try {
+		const mod = await import('./program-session');
+		const { createProgramCompositor } = await import('./program-compositor');
+		const { createLiveComposeTap } = await import('./live-compose-tap');
+		const { createEncoderBudget, budgetSessionsForProbe } = await import('./encoder-budget');
+
+		// Create encoder budget if not already created
+		if (!programEncoderBudget) {
+			programEncoderBudget = createEncoderBudget(budgetSessionsForProbe(true));
+		}
+
+		// Create compositor
+		programCompositor = createProgramCompositor({
+			renderer: renderer!,
+			scenes: cmd.config.scenes,
+			sourceWidth: 1920,
+			sourceHeight: 1080
+		});
+
+		// Create tap
+		programTap = createLiveComposeTap(programCompositor);
+
+		// Create session (acquires encoder leases)
+		programSession = mod.createProgramSession(
+			cmd.config,
+			programEncoderBudget,
+			captureSession!,
+			programCompositor,
+			programTap
+		);
+
+		post({
+			type: 'program-status',
+			state: 'armed',
+			elapsedUs: 0,
+			activeSceneId: cmd.config.initialSceneId,
+			sources: cmd.config.sources.map((s) => ({
+				sourceId: s.sourceId,
+				kind: s.kind,
+				label: s.label,
+				state: 'active' as const,
+				preEncodeDrops: 0
+			}))
+		});
+	} catch (err) {
+		if (err instanceof (await import('./program-session')).ProgramBudgetError) {
+			post({
+				type: 'program-error',
+				code: 'budget-exhausted',
+				detail: err.message
+			});
+		} else {
+			post({
+				type: 'program-error',
+				code: 'compositor-error',
+				detail: String(err)
+			});
+		}
+	}
+}
+
+async function handleProgramStop(): Promise<void> {
+	if (programSession) {
+		try {
+			const result = await programSession.stop();
+			post({ type: 'program-landed', ...result });
+		} catch (err) {
+			post({
+				type: 'program-error',
+				code: 'compositor-error',
+				detail: String(err)
+			});
+		}
+		programSession = null;
+		programCompositor = null;
+		programTap = null;
+	}
+}
+
+function handleProgramSceneSwitch(sceneId: string, transitionMs: 0 | 200): void {
+	if (programSession) {
+		programSession.switchScene(sceneId, transitionMs);
+	}
+}
+
+function handleProgramUpdateScenes(scenes: import('../protocol').SceneDefinition[]): void {
+	if (programSession) {
+		programSession.updateScenes(scenes);
+	} else if (programCompositor) {
+		programCompositor.updateScenes(scenes);
+	}
+}
+
 self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 	const cmd = event.data;
 	switch (cmd.type) {
@@ -8625,6 +8741,19 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 		case 'capture-recovery-discard':
 			// TODO: Phase 41 — T7 crash recovery: discard orphaned session
 			void cmd;
+			break;
+		// Phase 45: Program Mode
+		case 'program-start':
+			void handleProgramStart(cmd);
+			break;
+		case 'program-stop':
+			void handleProgramStop();
+			break;
+		case 'program-scene-switch':
+			handleProgramSceneSwitch(cmd.sceneId, cmd.transitionMs);
+			break;
+		case 'program-update-scenes':
+			handleProgramUpdateScenes(cmd.scenes);
 			break;
 		// Phase 36: Voice Cleanup
 		case 'voice-cleanup-analyse-loudness':

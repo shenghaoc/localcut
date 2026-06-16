@@ -797,6 +797,33 @@ LocalCut Studio is a Progressive Web App. After the first visit:
 - Imported media stays on your machine (not uploaded).
 - Export works without internet.
 
+## Program Mode
+
+Program Mode lets you compose named scenes over live cameras, screen captures, and stills, then switch between them with hotkeys while recording. Every source is independently ISO-encoded, so after stopping you get a fully re-editable multitrack project.
+
+For full details, see [PROGRAM-MODE.md](PROGRAM-MODE.md).
+
+### Quick start
+
+1. Open the Program Mode panel
+2. Add sources: **+ Screen**, **+ Camera**, **+ Mic**
+3. Define scenes with layer transforms and hotkeys
+4. Click **Start**
+5. Press `1`–`9` to switch scenes during recording
+6. Click **Stop** — ISO tracks + layout track land on the timeline
+
+### Key features
+
+- **One-gesture-per-screen**: each screen source needs one picker click
+- **One-frame scene switch**: no pipeline rebuild, no texture reallocation
+- **ISO tracks**: each source is independently recorded and editable
+- **Layout track**: replays the live mix through the compositor
+- **Encoder budget**: hardware-limited concurrent sessions
+
+### Browser support
+
+Chromium-only (requires WebGPU + MediaStreamTrackProcessor + WebCodecs). Safari and Firefox see the panel disabled with reasons.
+
 ## Help
 
 Click **Help** in the toolbar (or browse to `/docs`) to open the in-app User Guide — a set of user-facing pages covering getting started, importing, timeline editing, exporting, live streaming, browser limitations, performance, troubleshooting, and an FAQ. Sections are in-app routes (`/docs/getting-started`, `/docs/exporting`, …) so they can be deep-linked, and **Back to editor** returns to the editor exactly as you left it. The guide's source lives in `src/features/docs/content/` and is bundled with the app, so it works offline.

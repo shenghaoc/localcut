@@ -165,6 +165,14 @@ Program mode adds only the live-compose tap and the layout track on top.
   path. Every `VideoFrame` received from an MSTP reader is passed to
   `importExternalTexture` in the pipeline worker; it never touches
   Canvas2D, `getImageData`, or CPU memory.
+- **R6.7** Frames from ALL active sources are kept warm regardless of
+  visibility in the current scene. The tap retains the latest frame per
+  source; frames are NOT closed inside `renderTick` — they are held open
+  and reused across ticks until replaced by a newer frame or until
+  `dispose()`. This preserves the one-frame scene-switch invariant for
+  low-FPS captures (e.g. screen sharing at 5 fps): switching to a scene
+  that reveals a previously invisible source has a frame available
+  immediately without waiting for the next MSTP read.
 
 ## R7 — ISO Recording (N Sources, One Session)
 
@@ -205,9 +213,13 @@ Program mode adds only the live-compose tap and the layout track on top.
   carries the full `SceneDefinition` (layers + transforms) active during
   that segment as P15-compatible keyframes at segment boundaries.
 - **R8.3** Re-exporting the landed project runs the normal Phase 12
-  compositor driven by the layout track's clip data. The live mix is
-  fully re-editable: the user can trim, reorder, or retransform any
-  segment after landing.
+  compositor. The layout track provides the compositor configuration
+  (layer transforms, visibility, z-order) via `resolveLayoutAt`, while
+  the ISO tracks provide the actual video frames through the standard
+  `resolveAllAt` decode path. The layout track's `sceneSnapshot` maps
+  each layer's `sourceRef` to the corresponding ISO track's decoded
+  frame. The live mix is fully re-editable: the user can trim, reorder,
+  or retransform any segment after landing.
 - **R8.4** The landing operation is one undoable operation via the
   existing Phase 9 command path. Undo removes all landed tracks and the
   layout track atomically.

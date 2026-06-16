@@ -14,7 +14,7 @@ import {
 } from './capture/webcam-preset';
 
 const DB_NAME = 'localcut-projects';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const PROJECT_STORE = 'project';
 const SOURCE_STORE = 'sources';
 // Phase 47: device-scoped publish settings. A separate store — never part of
@@ -22,9 +22,14 @@ const SOURCE_STORE = 'sources';
 // stream destinations or bearer tokens (R7.3).
 const PUBLISH_SETTINGS_STORE = 'publish-settings';
 export const CAPTURE_SETTINGS_STORE = 'capture-settings';
+// Phase 45: device-scoped program source bindings. Maps sourceId to deviceId
+// for webcam/mic sources. Not part of ProjectDoc because device IDs are
+// machine-local and would make bundles non-portable.
+const PROGRAM_SOURCE_BINDINGS_STORE = 'program-source-bindings';
 const LAST_PROJECT_KEY = 'last';
 const PUBLISH_SETTINGS_KEY = 'device';
 const CAPTURE_SETTINGS_KEY = 'device';
+const PROGRAM_SOURCE_BINDINGS_KEY = 'bindings';
 
 export interface CaptureUxSettings {
 	countdownS: 0 | 3 | 5;
@@ -88,6 +93,9 @@ function openDatabase(): Promise<IDBDatabase> {
 			}
 			if (!db.objectStoreNames.contains(CAPTURE_SETTINGS_STORE)) {
 				db.createObjectStore(CAPTURE_SETTINGS_STORE);
+			}
+			if (!db.objectStoreNames.contains(PROGRAM_SOURCE_BINDINGS_STORE)) {
+				db.createObjectStore(PROGRAM_SOURCE_BINDINGS_STORE);
 			}
 		};
 		request.onsuccess = () => {
@@ -299,4 +307,49 @@ export async function saveStoredSourceWithoutHandle(record: StoredSourceRecord):
 		descriptor: record.descriptor,
 		file: record.file
 	});
+}
+
+// ── Phase 45: Program Source Bindings ──
+
+export interface ProgramSourceBinding {
+	sourceId: string;
+	kind: 'webcam' | 'mic';
+	deviceId: string;
+	label: string;
+}
+
+export async function loadProgramSourceBindings(): Promise<ProgramSourceBinding[] | null> {
+	const db = await openDatabase();
+	const transaction = db.transaction(PROGRAM_SOURCE_BINDINGS_STORE, 'readonly');
+	const done = transactionDone(transaction);
+	const [value] = await Promise.all([
+		requestResult<unknown>(
+			transaction.objectStore(PROGRAM_SOURCE_BINDINGS_STORE).get(PROGRAM_SOURCE_BINDINGS_KEY)
+		),
+		done
+	]);
+	if (!Array.isArray(value)) return null;
+	// Validate each binding
+	const bindings: ProgramSourceBinding[] = [];
+	for (const item of value) {
+		if (!isRecord(item)) continue;
+		if (typeof item.sourceId !== 'string') continue;
+		if (item.kind !== 'webcam' && item.kind !== 'mic') continue;
+		if (typeof item.deviceId !== 'string') continue;
+		if (typeof item.label !== 'string') continue;
+		bindings.push({
+			sourceId: item.sourceId,
+			kind: item.kind,
+			deviceId: item.deviceId,
+			label: item.label
+		});
+	}
+	return bindings;
+}
+
+export async function saveProgramSourceBindings(bindings: ProgramSourceBinding[]): Promise<void> {
+	const db = await openDatabase();
+	const transaction = db.transaction(PROGRAM_SOURCE_BINDINGS_STORE, 'readwrite');
+	transaction.objectStore(PROGRAM_SOURCE_BINDINGS_STORE).put(bindings, PROGRAM_SOURCE_BINDINGS_KEY);
+	await transactionDone(transaction);
 }

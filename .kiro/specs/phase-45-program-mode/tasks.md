@@ -92,9 +92,12 @@
   `LiveComposeTap` is closed by the tap — either forwarded to the compositor
   (closed there after `importExternalTexture`) or closed on drop. The tap
   never leaks a frame across `dispose()`.
-- [ ] **T5.3** If a source's layer `visible: false` in the current scene, the
-  clone is closed immediately by the tap without being forwarded to the
-  compositor.
+- [ ] **T5.3** Frames from ALL active sources are kept warm regardless of
+  visibility in the current scene. The compositor skips invisible layers
+  when building `CompositeLayer[]`, but the tap retains the latest frame
+  so that switching to a scene where the source IS visible has a warm
+  frame available immediately (preserving the one-frame switch invariant
+  for low-FPS captures like screen sharing).
 - [ ] **T5.4** Unit-test in `src/engine/live-compose-tap.test.ts`: frame
   forwarded to compositor, older frame closed on replacement (latest-frame-
   wins), invisible source frame closed immediately, dispose closes held
@@ -116,9 +119,11 @@
 - [ ] **T6.4** `renderTick(encoder)`: calls `resolveSceneAt` for
   `currentSceneId` (applying the eased-opacity lerp during a 200 ms
   transition window if active), then calls `compositeLayers(encoder,
-  layers)` from `src/engine/gpu.ts`. Closes each `VideoFrame` used in
-  `importExternalTexture` after the call. Single `queue.submit` is owned by
-  the outer render loop — `renderTick` must not call `submit`.
+  layers)` from `src/engine/gpu.ts`. Frames are NOT closed inside
+  `renderTick` — they are held open and reused on subsequent ticks until
+  a newer frame arrives from the same source (via `updateFrame`) or until
+  `dispose()`. Single `queue.submit` is owned by the outer render loop —
+  `renderTick` must not call `submit`.
 - [ ] **T6.5** Unit-test in `src/engine/program-compositor.test.ts`:
   `renderTick` builds layers from scene, `switchScene` does not rebuild any
   pipeline (spy on `compositeLayers` call count), eased-transition opacity
@@ -244,10 +249,12 @@
 
 - [ ] **T12.1** In `src/engine/worker.ts` render loop, call
   `resolveLayoutAt(timeline, time)` alongside `resolveAllAt`. When a
-  `LayoutClip` is active, substitute its `sceneSnapshot.layers` as the
-  `CompositeLayer[]` source instead of (or composited on top of) the
-  standard video-track resolve. In v1, if a layout track exists it takes
-  full priority over video tracks during its span.
+  `LayoutClip` is active, use its `sceneSnapshot` to determine layer
+  transforms/visibility/z-order, but resolve the actual video frames from
+  the ISO tracks via the standard `resolveAllAt` decode path. The layout
+  track provides the compositor configuration; the ISO tracks provide the
+  media. In v1, if a layout track exists it takes full priority over
+  video tracks for compositing configuration during its span.
 - [ ] **T12.2** Export path (`src/engine/export.ts`) must consult the layout
   track via `resolveLayoutAt` so the exported file matches the landed live
   mix. The same `compositeLayers` path — no fork for export vs preview.

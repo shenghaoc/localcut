@@ -543,6 +543,24 @@ export function recordingAvailable(probe: CapabilityProbeResult): boolean {
 	);
 }
 
+/**
+ * Phase 45: Program mode derivation. Requires all Phase 41 capture probes
+ * plus WebGPU core support (for live compositing in the pipeline worker).
+ */
+function deriveProgramMode(probe: Omit<CapabilityProbeResult, 'tier'>): FeatureSupport {
+	const cap = probe.capture;
+	if (
+		cap.mediaStreamTrackProcessor === 'supported' &&
+		cap.transferableMediaStreamTrack !== 'unsupported' &&
+		cap.videoEncodeRealtime === 'supported' &&
+		cap.opfsSyncAccessHandle === 'supported' &&
+		probe.webGPUCore !== 'unsupported'
+	) {
+		return 'supported';
+	}
+	return 'unsupported';
+}
+
 export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 	// Probe both adapters independently so the diagnostic panel reports each one's
 	// true availability. Short-circuiting webGPUCompat to 'unsupported' whenever the
@@ -603,7 +621,8 @@ export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 		asr: probeAsr(),
 		smartReframe: probeSmartReframe(),
 		imageDecoder: probeImageDecoder(),
-		beauty: probeBeauty()
+		beauty: probeBeauty(),
+		programMode: deriveProgramMode(probeWithoutTier)
 	};
 
 	// Dev-only override hook for tests (Vite tree-shakes this in production).
