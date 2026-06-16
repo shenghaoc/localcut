@@ -3,15 +3,9 @@
  *  During an own-tab (`getDisplayMedia` with `preferCurrentTab: true`) Phase 41
  *  recording session, capture-phase listeners record timestamped click and
  *  scroll events as a sidecar. The log is flushed to OPFS at session stop.
- *
- *  Review-issue fixes applied:
- *  - Scroll handler uses explicit parentheses to avoid `/` vs `??` precedence bug.
- *  - Normalisation uses `scrollWidth - clientWidth` for full [0,1] range.
- *  - `wheel` events capture deltaY (scroll events don't have deltaY).
- *  - Sub-element scroll support via `e.target` inspection.
+ *  Scroll position uses the event target when a sub-element scrolls, and
+ *  `wheel` events provide optional deltaY because `scroll` events do not.
  */
-
-import { hashString } from './cache-key';
 
 /** One recorded DOM event during an own-tab capture session. */
 export interface DomEventLogEntry {
@@ -62,7 +56,7 @@ export class CaptureSessionDomEventLogger {
 		return this._entries;
 	}
 
-	/** Install capture-phase click + passive scroll/wheel listeners on window. */
+	/** Install capture-phase click plus passive wheel/window and scroll/document listeners. */
 	install(): void {
 		if (this.installed) return;
 		this.installed = true;
@@ -137,7 +131,6 @@ export class CaptureSessionDomEventLogger {
 
 /**
  * Get normalised scroll position from the event target (sub-element aware).
- * Uses explicit parentheses to avoid the operator-precedence bug flagged in review.
  */
 function getScrollPosition(target: EventTarget | null): { x: number; y: number } {
 	// Try sub-element scroll first
@@ -201,9 +194,18 @@ export function serializeDomEventLog(log: DomEventLog): string {
 }
 
 /**
- * Stable hash for auto-zoom proposal IDs. Uses the sync SHA-256 from
- * cache-key.ts (not async crypto.subtle.digest — fixes review issue 5).
+ * Stable synchronous hash for auto-zoom proposal IDs. This path is hot during
+ * clustering, so use two FNV-1a 32-bit passes instead of async WebCrypto.
  */
 export function stableProposalId(input: string): string {
-	return hashString(input).slice(0, 16);
+	return `${fnv1a32(input, 0x811c9dc5).toString(16).padStart(8, '0')}${fnv1a32(input, 0x01000193).toString(16).padStart(8, '0')}`;
+}
+
+function fnv1a32(input: string, seed: number): number {
+	let hash = seed >>> 0;
+	for (let i = 0; i < input.length; i += 1) {
+		hash ^= input.charCodeAt(i);
+		hash = Math.imul(hash, 0x01000193);
+	}
+	return hash >>> 0;
 }

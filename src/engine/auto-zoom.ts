@@ -3,8 +3,8 @@
  *  Pure-logic module — no DOM, no OPFS, no GPU dependencies. Fully unit-testable.
  *  Runs synchronously on the main thread at panel open / re-cluster.
  *
- *  Review-issue fix: stable IDs use sync SHA-256 from cache-key.ts instead of
- *  async crypto.subtle.digest.
+ *  Stable IDs use a sync FNV-1a-derived hash so this module remains
+ *  synchronous and within the 1-hour log performance budget.
  */
 
 import type { DomEventLogEntry } from './dom-event-log';
@@ -74,14 +74,22 @@ export function clusterEvents(
 	const holdUs = params.holdMs * 1000;
 	const mergeThresholdUs = params.overlapMergeThresholdMs * 1000;
 
-	// Sort by timestamp (O(n log n))
-	const sorted = [...entries].sort((a, b) => a.t - b.t);
-
 	// Linear sweep: build clusters
-	const clusters: EventCluster[] = [];
+	const proposals: ZoomProposal[] = [];
 	let current: RunningCluster | null = null;
+	const distThresholdSq = distThreshold * distThreshold;
+	let lastT = Number.NEGATIVE_INFINITY;
 
-	for (const entry of sorted) {
+	for (const entry of entries) {
+		if (entry.t < lastT) {
+			return clusterEvents(
+				[...entries].sort((a, b) => a.t - b.t),
+				params,
+				clipStartUs
+			);
+		}
+		lastT = entry.t;
+
 		const ex = entry.x;
 		const ey = entry.y;
 
@@ -93,9 +101,11 @@ export function clusterEvents(
 		const timeDelta = entry.t - current.startUs;
 		const cx = current.sumX / current.count;
 		const cy = current.sumY / current.count;
-		const dist = Math.sqrt((ex - cx) ** 2 + (ey - cy) ** 2);
+		const dx = ex - cx;
+		const dy = ey - cy;
+		const distSq = dx * dx + dy * dy;
 
-		if (timeDelta <= windowUs && dist <= distThreshold) {
+		if (timeDelta <= windowUs && distSq <= distThresholdSq) {
 			// Extend current cluster
 			current.endUs = entry.t;
 			current.sumX += ex;
@@ -103,30 +113,18 @@ export function clusterEvents(
 			current.count += 1;
 		} else {
 			// Close current, open new
-			clusters.push(closeCluster(current));
+			proposals.push(
+				createProposal(closeCluster(current), params.zoomScale, leadInUs, holdUs, clipStartUs)
+			);
 			current = { startUs: entry.t, endUs: entry.t, sumX: ex, sumY: ey, count: 1 };
 		}
 	}
-	if (current) clusters.push(closeCluster(current));
+	if (current) {
+		proposals.push(
+			createProposal(closeCluster(current), params.zoomScale, leadInUs, holdUs, clipStartUs)
+		);
+	}
 
-	// Generate proposals per cluster
-	const proposals: ZoomProposal[] = clusters.map((cluster) => {
-		const zoomInAtUs = cluster.startUs - leadInUs;
-		const zoomOutAtUs = cluster.endUs + holdUs;
-		const idInput = `${cluster.startUs}:${cluster.centroidX.toFixed(4)}:${cluster.centroidY.toFixed(4)}`;
-		return {
-			id: stableProposalId(idInput),
-			cluster,
-			zoomInAtUs: Math.max(clipStartUs, zoomInAtUs),
-			zoomOutAtUs,
-			centroidX: cluster.centroidX,
-			centroidY: cluster.centroidY,
-			scale: params.zoomScale,
-			status: 'pending' as const
-		};
-	});
-
-	// Merge overlapping proposals
 	return mergeProposals(proposals, mergeThresholdUs);
 }
 
@@ -140,17 +138,36 @@ function closeCluster(c: RunningCluster): EventCluster {
 	};
 }
 
+function createProposal(
+	cluster: EventCluster,
+	scale: number,
+	leadInUs: number,
+	holdUs: number,
+	clipStartUs: number
+): ZoomProposal {
+	const zoomInAtUs = cluster.startUs - leadInUs;
+	const zoomOutAtUs = cluster.endUs + holdUs;
+	const idInput = `${cluster.startUs}:${cluster.centroidX.toFixed(4)}:${cluster.centroidY.toFixed(4)}`;
+	return {
+		id: stableProposalId(idInput),
+		cluster,
+		zoomInAtUs: Math.max(clipStartUs, zoomInAtUs),
+		zoomOutAtUs,
+		centroidX: cluster.centroidX,
+		centroidY: cluster.centroidY,
+		scale,
+		status: 'pending'
+	};
+}
+
 function mergeProposals(proposals: ZoomProposal[], mergeThresholdUs: number): ZoomProposal[] {
 	if (proposals.length <= 1) return proposals;
-
-	// Sort by zoomInAtUs
-	proposals.sort((a, b) => a.zoomInAtUs - b.zoomInAtUs);
 
 	const merged: ZoomProposal[] = [proposals[0]!];
 	for (let i = 1; i < proposals.length; i++) {
 		const prev = merged[merged.length - 1]!;
 		const curr = proposals[i]!;
-		if (curr.zoomInAtUs - prev.zoomOutAtUs < mergeThresholdUs) {
+		if (prev.zoomOutAtUs - curr.zoomInAtUs > mergeThresholdUs) {
 			// Merge: move prev's zoomOut to curr's zoomIn
 			prev.zoomOutAtUs = curr.zoomInAtUs;
 		} else {

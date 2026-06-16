@@ -31,15 +31,20 @@
   valid `kind`), `parseDomEventLog`, and `serializeDomEventLog`; add a comment
   block explaining the reserved `kind: 'key'` channel for Phase 44.
 - [ ] **T2.2** `src/engine/event-log.ts`: implement `CaptureSessionEventLogger`
-  class — `install()` adds a capture-phase `click` listener and a passive
-  `scroll` listener to `window`; `remove()` removes both listeners (idempotent);
-  the click handler records `{t, kind:'click', x: e.clientX/innerWidth,
-  y: e.clientY/innerHeight}`; the scroll handler records `{t, kind:'scroll',
-  x: window.scrollX/document.scrollingElement?.scrollWidth ?? 0,
-  y: window.scrollY/document.scrollingElement?.scrollHeight ?? 0, deltaY:
-  (e as WheelEvent).deltaY}` — clamp all values; `flush(sessionDir)` writes
-  `events.json` via `sessionDir.getFileHandle('events.json', {create:true})`
-  → `createWritable()` → write JSON string → close.
+  class — `install()` adds a capture-phase `click` listener on `window`, a
+  passive `wheel` listener on `window`, and a passive `scroll` listener on
+  `document`; `remove()` removes all three listeners (idempotent). The click
+  handler records `{t, kind:'click', x: e.clientX / innerWidth, y:
+  e.clientY / innerHeight}`. Wheel-originated entries record `deltaY`; plain
+  scroll entries omit it. Scroll coordinates come from the scroll event target
+  when it is a scrollable `HTMLElement` (`scrollLeft / max(1, scrollWidth -
+  clientWidth)`, `scrollTop / max(1, scrollHeight - clientHeight)`), otherwise
+  from the document scroller (`window.scrollX / max(1, scrollWidth -
+  window.innerWidth)`, `window.scrollY / max(1, scrollHeight -
+  window.innerHeight)`). Clamp all values and treat missing scrollers or
+  non-finite divisions as `0`; `flush(sessionDir)` writes `events.json` via
+  `sessionDir.getFileHandle('events.json', {create:true})` →
+  `createWritable()` → write JSON string → close.
 - [ ] **T2.3** Integrate `CaptureSessionEventLogger` into the Phase 41 capture
   session startup/stop path in `src/engine/capture/capture-session.ts` (or
   wherever Phase 41 manages session lifecycle on the main thread). Install only
@@ -68,10 +73,11 @@
   sort-then-linear-sweep algorithm described in the design: sort by `t`; sweep
   maintaining an open cluster; close and open on distance or time threshold
   breach; generate `ZoomProposal` per cluster; merge overlapping proposals;
-  assign stable IDs via `crypto.subtle.digest('SHA-256', ...)` (use the sync
-  `TextEncoder` path and `await`-free where possible for performance — if
-  WebCrypto is async-only in the test environment, use a synchronous FNV-1a
-  fallback for the ID and note it in a comment).
+  assign stable IDs with a synchronous FNV-1a-derived hash over
+  `clusterStartUs + ':' + centroidX.toFixed(4) + ':' +
+  centroidY.toFixed(4)`, truncated to 16 hex chars. Do not use
+  `crypto.subtle.digest` here because `clusterEvents` is synchronous and runs
+  inside the 1-hour log performance budget.
 - [ ] **T3.2** `src/engine/auto-zoom.ts`: export `applyProposal(proposal:
   ZoomProposal, params: AutoZoomParams): ClipKeyframesSnapshot` — converts a
   proposal to the exact `ClipKeyframesSnapshot` structure expected by the
@@ -88,8 +94,8 @@
   `strokeWidth: 3`, `fillOpacity: 0`, `fontSize: 28`, `arrowheadSize: 14`,
   `blurRadius: 12`, `darkenStrength: 0.7`); implement `normalizeCalloutPayload`,
   `parseCalloutPayload`, and `calloutContentHash` (hash over
-  `JSON.stringify(normalizeCalloutPayload(payload))` via WebCrypto SHA-256,
-  hex, first 32 chars).
+  `JSON.stringify(normalizeCalloutPayload(payload))` via the repo's synchronous
+  `hashString` SHA-256 helper, hex, first 32 chars).
 - [ ] **T4.2** `src/engine/callout.ts`: implement `rasterizeCallout(ctx, w, h,
   payload)` for the three Canvas2D kinds:
   - `arrow`: `moveTo(x1*w, y1*h)` → `lineTo(x2*w, y2*h)`, stroke with
@@ -132,8 +138,8 @@
   spotlight/blur callout clip invokes the corresponding WGSL pass before the
   layer is composited over the background. The effect must execute within the
   existing single `GPUCommandEncoder` (no additional `queue.submit`). Allocate
-  the two-pass blur temp textures from a small frame-scoped pool; release after
-  `submit`.
+  the two-pass blur temp textures from a small frame-scoped pool; keep them
+  alive until the submitted GPU work completes, then return them to the pool.
 
 ## T6 — Padded-background shader and renderer (R5)
 
@@ -149,9 +155,11 @@
   `normalizePaddedBackground`, `parsePaddedBackground`, and `shadowCacheKey`;
   implement `PaddedBackgroundRenderer` with `getShadowTexture` (pre-blurs an
   SDF rounded-rect into a 1-channel f16 texture; caches by `shadowCacheKey` +
-  output dimensions; regenerates only when the key changes) and
-  `resolveWallpaper` (resolves first frame from `MediaInputHandle.thumbnailAt(0)`,
-  returns null on miss with a `console.warn`).
+  output dimensions; regenerates only when the key changes) and a wallpaper
+  texture cache keyed by `sourceId` + output dimensions + wallpaper params.
+  Resolve the first frame from `MediaInputHandle.thumbnailAt(0)` only on a
+  cache miss or source/parameter change; return null on miss with a
+  `console.warn`.
 - [ ] **T6.3** `src/engine/gpu.ts`: when a `FrameCompositeLayer` has
   `paddedBackground` present, dispatch the `padded-background.wgsl` pass (or
   `.f16` variant based on capability tier) before compositing the layer, within
@@ -283,8 +291,10 @@
   `shadowCacheKey` returns different strings for `shadowRadius: 24` vs `32`
   and for `cornerRadius: 16` vs `0`; round-trip `parsePaddedBackground(
   JSON.parse(JSON.stringify(normalizePaddedBackground({}))))` equals
-  `DEFAULT_PADDED_BACKGROUND`; wallpaper `resolveWallpaper` with a missing
-  `sourceId` returns `null` and calls `console.warn` (spy).
+  `DEFAULT_PADDED_BACKGROUND`; wallpaper texture lookup with a missing
+  `sourceId` returns `null` and calls `console.warn` (spy), while repeated
+  lookups for the same `sourceId` and output dimensions reuse the cached
+  texture.
 - [ ] **T11.5** `src/engine/project.test.ts` (extend): project doc with `callout`
   on a clip survives `serializeProject` → `parseProjectDoc` with bit-identical
   `callout`; project doc with `paddedBackground` survives round-trip; project

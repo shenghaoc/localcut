@@ -57,11 +57,12 @@ explicitly deferred to a future phase.
 ## R2 — DOM event log (own-tab capture path)
 
 - **R2.1** During an own-tab (`getDisplayMedia`, `preferCurrentTab: true`)
-  Phase 41 recording session, the capture session manager installs
-  capture-phase event listeners on `window` at session start (before the first
-  video frame is encoded) and removes them at session stop:
+  Phase 41 recording session, the capture session manager installs event
+  listeners at session start (before the first video frame is encoded) and
+  removes them at session stop:
   - `click` (pointerup captures are too late; use the click event)
-  - `scroll` (passive, on `document`)
+  - `wheel` (passive, on `window`, used only for `deltaY`)
+  - `scroll` (passive, on `document`, used for final scroll position)
   The listeners are present only while a recording session is active. No
   listeners are installed for arbitrary screen/window/display captures.
 - **R2.2** Each event is recorded as an entry in a versioned in-memory log with
@@ -71,11 +72,19 @@ explicitly deferred to a future phase.
   interface DomEventLogEntry {
     t: number;        // µs on the Phase 41 capture clock (same epoch as track timestamps)
     kind: 'click' | 'scroll';
-    x: number;        // normalised viewport position, 0–1 (clientX / window.innerWidth)
-    y: number;        // normalised viewport position, 0–1 (clientY / window.innerHeight)
-    deltaY?: number;  // scroll only: WheelEvent.deltaY (px)
+    x: number;        // normalised viewport or scrollable-target position, 0–1
+    y: number;        // normalised viewport or scrollable-target position, 0–1
+    deltaY?: number;  // wheel-originated scroll entries only
   }
   ```
+
+  Scroll position normalisation must inspect the event target: when the target
+  is a scrollable `HTMLElement`, use `scrollLeft / max(1, scrollWidth -
+  clientWidth)` and `scrollTop / max(1, scrollHeight - clientHeight)`;
+  otherwise use the document scroller with `window.scrollX / max(1, scrollWidth
+  - window.innerWidth)` and `window.scrollY / max(1, scrollHeight -
+  window.innerHeight)`. All divisions must be guarded so `null` scrollers and
+  non-finite values clamp to `0`.
 
   No element references, no text content, no key states, no URLs, no user
   identifiers. The channel `kind: 'key'` is reserved for a future Phase 44
@@ -179,8 +188,9 @@ explicitly deferred to a future phase.
   - `blur`: uniform carries rect (x, y, w, h normalised) and a Gaussian radius
     in pixels (default 12). Two-pass separable Gaussian (horizontal + vertical)
     within the rect; outside pixels are unchanged. Maximum radius 48 px.
-    The implementation uses two temporary textures within the pass; both are
-    released before the submission completes.
+    The implementation uses temporary textures within the pass; they remain
+    live until the submitted GPU work has completed, then return to the
+    frame-scoped pool.
 - **R4.5** The ellipse/rect parameters for spotlight and blur callouts are
   stored as P15 keyframe-capable transform parameters on the callout clip so
   the user can animate the region over time. Specifically, `x`, `y`, `scale`

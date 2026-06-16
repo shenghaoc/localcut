@@ -78,7 +78,7 @@ A dedicated "zoom preset track" would need its own editor widget, its own
 serialisation path, and its own preview/export integration — all for the same
 visual result. Writing keyframes is the strictly simpler design.
 
-### DOM event log: capture-phase listeners on `window`
+### DOM event log: capture-phase click plus passive wheel/scroll listeners
 
 `addEventListener('click', handler, { capture: true })` fires before the
 target element's handlers and cannot be cancelled by child listeners (unless
@@ -157,7 +157,7 @@ Gaussian, which would otherwise be the dominant cost at high shadow radii.
                                                                               │
                   DOM event log (main thread, session-scoped)                 │
 ┌────────────────────────────────────────────────────────────────────────────▼┐
-│  window: 'click' (capture phase), 'scroll' (passive)                        │
+│  window: 'click' (capture phase), 'wheel' (passive); document: 'scroll'     │
 │  → DomEventLogEntry[] (in memory) → events.json on session stop             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -178,9 +178,9 @@ OPFS persistence.
 export interface DomEventLogEntry {
   t: number;           // µs on Phase 41 capture clock (epochUs + performance.now()*1000)
   kind: 'click' | 'scroll'; // NOTE: 'key' channel reserved for Phase 44 opt-in extension
-  x: number;           // normalised 0–1 (clientX / window.innerWidth)
-  y: number;           // normalised 0–1 (clientY / window.innerHeight)
-  deltaY?: number;     // scroll only: WheelEvent.deltaY (px)
+  x: number;           // normalised 0–1 viewport/scrollable-target position
+  y: number;           // normalised 0–1 viewport/scrollable-target position
+  deltaY?: number;     // wheel-originated scroll entries only
 }
 
 /** Versioned JSON written to OPFS as events.json at session stop. */
@@ -201,7 +201,7 @@ export interface SessionEventLogRef {
 /** Main-thread capture-phase listener set, installed/removed by CaptureSessionManager. */
 export class CaptureSessionEventLogger {
   constructor(private readonly epochUs: number) {}
-  install(): void;           // adds listeners to window
+  install(): void;           // adds click, wheel, and scroll listeners
   remove(): void;            // removes listeners; safe to call multiple times
   readonly entries: DomEventLogEntry[];
   async flush(sessionDir: FileSystemDirectoryHandle): Promise<void>; // writes events.json
@@ -216,7 +216,14 @@ export function serializeDomEventLog(log: DomEventLog): string; // JSON.stringif
 `CaptureSessionManager` for own-tab sessions only. The `flush()` method is
 called once at session stop, before the tracks are landed. It writes
 `events.json` to the session directory handle obtained from Phase 41's OPFS
-session directory reference.
+session directory reference. Scroll position normalisation inspects the event
+target first: a scrollable `HTMLElement` uses `scrollLeft / max(1, scrollWidth
+- clientWidth)` and `scrollTop / max(1, scrollHeight - clientHeight)`; the
+document fallback uses `window.scrollX / max(1, scrollWidth -
+window.innerWidth)` and `window.scrollY / max(1, scrollHeight -
+window.innerHeight)`. Missing scrollers and non-finite divisions clamp to `0`.
+`deltaY` is recorded only from passive `wheel` events because `scroll` events
+do not expose wheel deltas.
 
 ### `src/engine/auto-zoom.ts` (new)
 
@@ -278,7 +285,10 @@ The clustering algorithm:
 4. Merge overlapping proposals: sort by `zoomInAtUs`; if two adjacent proposals
    overlap by more than `overlapMergeThresholdMs × 1000 µs`, move the earlier
    proposal's `zoomOutAtUs` to the later proposal's `zoomInAtUs`.
-5. Assign stable IDs via `sha-256(clusterStartUs + ':' + centroidX.toFixed(4) + ':' + centroidY.toFixed(4))` (WebCrypto, truncated to 16 hex chars).
+5. Assign stable IDs via a synchronous FNV-1a-derived hash over
+   `clusterStartUs + ':' + centroidX.toFixed(4) + ':' +
+   centroidY.toFixed(4)`, truncated to 16 hex chars. `clusterEvents` stays
+   synchronous and never calls `crypto.subtle.digest`.
 
 ### `src/engine/callout.ts` (new)
 
@@ -410,7 +420,7 @@ Uniform layout:
 struct BlurRegionUniform {
   rx: f32; ry: f32; rw: f32; rh: f32; // normalised rect
   radius: f32;                          // Gaussian radius (px at output res)
-  _pad: array<f32, 3>;
+  _pad: vec3<f32>;
 }
 ```
 
@@ -425,11 +435,12 @@ Both passes are encoded as two compute dispatches within the same
 dispatches belong to the same encoder; `submit` is called once per frame for
 the entire compositor chain).
 
-The temporary texture is acquired from a small per-frame pool (max 2 allocated
-simultaneously) and released by the compositor after `queue.submit`. This
-avoids per-frame allocation on the GPU heap. Maximum effective radius clamped
-to 48 px; if `maxComputeWorkgroupSizeX < 64`, clamped to 24 px with a visible
-Inspector label (R7.3).
+The temporary texture is acquired from a small frame-scoped pool (max 2
+allocated simultaneously), kept alive until the submitted GPU work has
+completed, then returned to the pool. This avoids per-frame allocation on the
+GPU heap and avoids destroying resources before command execution completes.
+Maximum effective radius clamped to 48 px; if `maxComputeWorkgroupSizeX < 64`,
+clamped to 24 px with a visible Inspector label (R7.3).
 
 ### `src/engine/padded-background.ts` (new)
 
@@ -482,13 +493,16 @@ export class PaddedBackgroundRenderer {
     outputHeight: number,
   ): GPUTexture;
   /**
-   * Resolve wallpaper first frame from a MediaInputHandle (returns null if
-   * sourceId is not found or not a still/video source).
+   * Returns a cached wallpaper GPU texture, resolving the first frame from a
+   * MediaInputHandle only when sourceId, output dimensions, or wallpaper params
+   * change. Returns null if sourceId is not found or not a still/video source.
    */
-  resolveWallpaper(
+  getWallpaperTexture(
     sourceId: string,
     handles: Map<string, MediaInputHandle>,
-  ): Promise<VideoFrame | null>;
+    outputWidth: number,
+    outputHeight: number,
+  ): Promise<GPUTexture | null>;
   dispose(): void;
 }
 ```
@@ -508,6 +522,7 @@ struct PaddedBgUniform {
   gradAngleCos: f32;
   gradAngleSin: f32;
   gradStopCount: u32;
+  _pad: u32;
   gradStops: array<vec4<f32>, 5>; // xyz=color, w=pos (max 5 stops)
   // wallpaper texture bound as a separate binding when bgKind=2
 }
@@ -656,9 +671,10 @@ boolean` = `clip.kind === 'callout'`. The `ClipKind` union becomes `'video' |
 ## Third-party additions
 
 No new runtime dependencies. All components use existing browser APIs (WebGPU
-compute, OffscreenCanvas 2D, OPFS, WebCrypto for stable IDs) and the existing
-project infrastructure (Mediabunny, SolidJS, Vite). The WGSL shaders are
-authored inline (same pattern as existing shaders in `src/engine/shaders/`).
+compute, OffscreenCanvas 2D, OPFS) plus synchronous local hashing for stable
+IDs/cache keys, and the existing project infrastructure (Mediabunny, SolidJS,
+Vite). The WGSL shaders are authored inline (same pattern as existing shaders
+in `src/engine/shaders/`).
 
 ## Validation
 
