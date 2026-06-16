@@ -139,6 +139,13 @@ New and in-flight ML work should target ORT, not LiteRT:
 - **Existing LiteRT features (DTLN, Whisper, matte)** keep working unchanged on
   their current path. They migrate to ORT in their own dedicated PRs, not as a
   side effect of unrelated work — this foundation does not touch them.
+- **DTLN audio cleanup** now also ships an **ORT/ONNX backend** alongside LiteRT,
+  selectable in the Audio Cleanup panel (`src/engine/audio-cleanup/dtln-ort-runtime.ts`,
+  `public/models/dtln-onnx/manifest.json`). DTLN's tensors are tiny, so it pins
+  the `wasm` (CPU) execution provider with CPU tensors — it is **not**
+  frame-coupled, so the EP policy permits `wasm`. LiteRT stays the default until
+  ONNX parity is verified on real audio; this is the migration template for a
+  small, non-frame-coupled LiteRT feature moving onto the ORT foundation.
 
 ## Foundation module map
 

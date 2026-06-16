@@ -1,0 +1,37 @@
+{
+	"id": "dtln-onnx",
+	"version": "breizhn-dtln-onnx-v1",
+	"license": "MIT",
+	"source": "https://github.com/breizhn/DTLN",
+	"provider": "Nils L. Westhausen (breizhn)",
+	"modelCard": "https://github.com/breizhn/DTLN#readme",
+	"format": "onnx",
+	"sizeBytes": 3968247,
+	"model1": {
+		"url": "/_model/gh/breizhn/DTLN/c9ae0833cad9bcdbf999173892a4fce964644399/pretrained_model/model_1.onnx",
+		"sizeBytes": 1458237,
+		"checksum": "sha256-22b91cae3855e5a0620e66a917ca6c82c58db0e842c770f58d86751c5e8d4ae3"
+	},
+	"model2": {
+		"url": "/_model/gh/breizhn/DTLN/c9ae0833cad9bcdbf999173892a4fce964644399/pretrained_model/model_2.onnx",
+		"sizeBytes": 2510010,
+		"checksum": "sha256-e20c92f9233fccf29cddf86970d0d0161a03aebccc26d6f4d5639c4d5ec2e639"
+	},
+	"audio": { "sampleRate": 16000, "channels": 1, "blockLen": 512, "blockShift": 128 },
+	"stateShape": [1, 2, 128, 2],
+	"executionProviders": ["wasm"],
+	"io": {
+		"model1": {
+			"magnitudeInput": "input_2",
+			"stateInput": "input_3",
+			"maskOutput": "activation_2",
+			"stateOutput": "tf_op_layer_stack_2"
+		},
+		"model2": {
+			"frameInput": "input_4",
+			"stateInput": "input_5",
+			"frameOutput": "conv1d_3",
+			"stateOutput": "tf_op_layer_stack_5"
+		}
+	}
+}

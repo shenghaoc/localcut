@@ -210,6 +210,11 @@ export interface CapabilityProbeResult {
 
 export type CleanupAccelerator = 'wasm' | 'webgpu' | 'webnn';
 
+/** Which DTLN inference backend runs the cleanup: the original LiteRT/TFLite
+ *  path, or the ONNX Runtime Web path. Selected in the UI; decides which worker
+ *  the bridge spawns and which manifest the controller loads. */
+export type CleanupBackendKind = 'litert' | 'ort';
+
 export interface CleanupProbeResult {
 	wasmAvailable: boolean;
 	accelerator: CleanupAccelerator;
