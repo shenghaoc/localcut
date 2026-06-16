@@ -238,7 +238,20 @@ export class MatteEngine {
 				request.frame.close();
 				return null;
 			}
-			return this.runInference(request, cacheKey);
+			try {
+				return await this.runInference(request, cacheKey);
+			} catch (error) {
+				// runInference closes the frame itself once it has imported it, but it
+				// can throw earlier (lost device, buffer allocation), which would leak
+				// the frame. Close it here so it is released exactly once; a redundant
+				// close after a late failure is a harmless no-op (already detached).
+				try {
+					request.frame.close();
+				} catch {
+					// Already closed.
+				}
+				throw error;
+			}
 		})().finally(() => {
 			if (this.running === run) this.running = null;
 		});

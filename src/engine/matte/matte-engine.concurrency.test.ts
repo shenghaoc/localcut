@@ -157,4 +157,23 @@ describe('MatteEngine.matteViewFor concurrency', () => {
 		expect(entered).toBe(3);
 		expect(maxActive).toBe(1);
 	});
+
+	it('closes the frame and rejects when runInference throws (no leak on failure)', async () => {
+		const { engine, internals } = makeEngine();
+		// Fail before runInference reaches its own frame.close() (e.g. lost device).
+		internals.runInference = async () => {
+			throw new Error('device lost');
+		};
+		const close = vi.fn();
+
+		await expect(
+			engine.matteViewFor({
+				...makeRequest('export'),
+				frame: { close } as unknown as VideoFrame
+			})
+		).rejects.toThrow('device lost');
+
+		// The frame is released exactly once instead of leaking.
+		expect(close).toHaveBeenCalledTimes(1);
+	});
 });

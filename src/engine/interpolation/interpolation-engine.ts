@@ -191,7 +191,12 @@ export class InterpolationEngine {
 		const previous = this.running;
 		const run = (async (): Promise<GPUTexture> => {
 			if (previous) await previous.catch(() => {});
-			if (this.disposed || this.status !== 'loaded' || !this.model || !this.ort) {
+			// Disposed mid-flight is distinct from never-loaded: the model may still be
+			// set (dispose nulls it only after this run drains), so report it as such.
+			if (this.disposed) {
+				throw new Error('InterpolationEngine is disposed.');
+			}
+			if (this.status !== 'loaded' || !this.model || !this.ort) {
 				throw new Error('Interpolation model is not loaded.');
 			}
 			return this.runSynthesis(frame0, frame1, tau, fullWidth, fullHeight, plan);

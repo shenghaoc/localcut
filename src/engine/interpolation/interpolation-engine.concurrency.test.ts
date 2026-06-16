@@ -45,6 +45,7 @@ interface InterpInternals {
 	status: string;
 	model: unknown;
 	ort: unknown;
+	disposed: boolean;
 	ensurePipelines: () => void;
 	synthesiseTile: (...args: unknown[]) => Promise<void>;
 }
@@ -104,5 +105,16 @@ describe('InterpolationEngine.synthesise concurrency', () => {
 		// All three ran, but never more than one at a time.
 		expect(entered).toBe(3);
 		expect(maxActive).toBe(1);
+	});
+
+	it('rejects with a disposed-specific error when disposed mid-flight', async () => {
+		const { engine, internals } = makeEngine();
+		// Loaded model still present (dispose nulls it only after the run drains), so
+		// the message must say "disposed", not the generic "not loaded".
+		internals.disposed = true;
+
+		await expect(engine.synthesise(FRAME, FRAME, 0.5, 1920, 1080, PLAN)).rejects.toThrow(
+			'InterpolationEngine is disposed.'
+		);
 	});
 });
