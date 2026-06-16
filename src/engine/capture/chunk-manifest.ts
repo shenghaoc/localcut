@@ -45,14 +45,30 @@ export function parseManifestLine(line: string): CaptureManifestRecord | undefin
 		// Known kinds are validated; unknown kinds are silently skipped.
 		switch (obj.kind) {
 			case 'header':
+				if (typeof obj.sessionId !== 'string') return undefined;
+				return obj as CaptureManifestRecord;
 			case 'epoch':
+				if (typeof obj.epochUs !== 'number') return undefined;
+				return obj as CaptureManifestRecord;
 			case 'chunk':
+				if (typeof obj.sourceId !== 'string' || typeof obj.fromUs !== 'number') return undefined;
+				return obj as CaptureManifestRecord;
 			case 'source-ended':
+				if (typeof obj.sourceId !== 'string') return undefined;
+				return obj as CaptureManifestRecord;
 			case 'finalize':
+				return obj as CaptureManifestRecord;
 			case 'pause':
 			case 'resume':
+				if (typeof obj.atUs !== 'number') return undefined;
+				return obj as CaptureManifestRecord;
 			case 'source-added':
+				if (typeof obj.atUs !== 'number' || typeof obj.source !== 'object' || obj.source === null)
+					return undefined;
+				return obj as CaptureManifestRecord;
 			case 'source-region-applied':
+				if (typeof obj.sourceId !== 'string' || typeof obj.atUs !== 'number') return undefined;
+				if (obj.mode !== 'crop' && obj.mode !== 'element') return undefined;
 				return obj as CaptureManifestRecord;
 			default:
 				return undefined;

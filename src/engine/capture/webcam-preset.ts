@@ -5,6 +5,9 @@
  * ClipTransformSnapshot fields from a corner + size + margin selection.
  */
 
+import type { TransformParamsSnapshot } from '../../protocol';
+import { computeFitRect } from '../transform';
+
 export type WebcamPipCorner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
 export type WebcamPipSize = 'S' | 'M' | 'L';
 
@@ -30,14 +33,17 @@ const MIN_MARGIN = 0;
 const MAX_MARGIN = 64;
 
 /**
- * Derives normalised (0–1) P12 clip transform for the webcam clip.
+ * Derives a P12 TransformParamsSnapshot for the webcam PiP clip.
+ *
+ * The transform uses `fit: 'fit'` so the source is contained within the
+ * output, then scales and positions it to the requested corner/size/margin.
  *
  * @param preset   Corner, size, and margin selection.
  * @param canvasW  Export canvas width in pixels.
  * @param canvasH  Export canvas height in pixels.
  * @param sourceW  Webcam source width in pixels (for aspect ratio).
  * @param sourceH  Webcam source height in pixels (for aspect ratio).
- * @returns `{ x, y, width, height }` matching ClipTransformSnapshot layout fields.
+ * @returns A partial TransformParamsSnapshot (x, y, scale, fit).
  */
 export function deriveWebcamTransform(
 	preset: WebcamPipPreset,
@@ -45,37 +51,50 @@ export function deriveWebcamTransform(
 	canvasH: number,
 	sourceW: number,
 	sourceH: number
-): { x: number; y: number; width: number; height: number } {
+): Pick<TransformParamsSnapshot, 'x' | 'y' | 'scale' | 'fit'> {
 	const clampedMargin = Math.max(MIN_MARGIN, Math.min(MAX_MARGIN, preset.marginPx));
 
-	const webcamW = SIZE_PERCENT[preset.size];
-	const webcamH = webcamW * (canvasW / canvasH) * (sourceH / sourceW);
+	// Normalized size of the source at scale=1 with 'fit' mode.
+	const fitRect = computeFitRect(sourceW, sourceH, canvasW, canvasH, 'fit');
+	const targetW = SIZE_PERCENT[preset.size];
+	const scale = targetW / fitRect.width;
 
-	// Separate X/Y normalisation for non-square canvases.
+	// Actual normalized dimensions after scale.
+	const halfW = (fitRect.width * scale) / 2;
+	const halfH = (fitRect.height * scale) / 2;
+
+	// Normalized margin.
 	const marginX = clampedMargin / canvasW;
 	const marginY = clampedMargin / canvasH;
 
-	let x: number;
-	let y: number;
+	// Center position in [0,1] space.
+	let cx: number;
+	let cy: number;
 
 	switch (preset.corner) {
 		case 'bottom-right':
-			x = 1 - marginX - webcamW;
-			y = 1 - marginY - webcamH;
+			cx = 1 - marginX - halfW;
+			cy = 1 - marginY - halfH;
 			break;
 		case 'bottom-left':
-			x = marginX;
-			y = 1 - marginY - webcamH;
+			cx = marginX + halfW;
+			cy = 1 - marginY - halfH;
 			break;
 		case 'top-right':
-			x = 1 - marginX - webcamW;
-			y = marginY;
+			cx = 1 - marginX - halfW;
+			cy = marginY + halfH;
 			break;
 		case 'top-left':
-			x = marginX;
-			y = marginY;
+			cx = marginX + halfW;
+			cy = marginY + halfH;
 			break;
 	}
 
-	return { x, y, width: webcamW, height: webcamH };
+	// Convert from [0,1] center to TransformParamsSnapshot offset from 0.5.
+	return {
+		x: cx - 0.5,
+		y: cy - 0.5,
+		scale,
+		fit: 'fit'
+	};
 }

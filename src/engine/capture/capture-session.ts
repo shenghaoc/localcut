@@ -55,6 +55,8 @@ export class CaptureSession {
 	private totalBytesWritten = 0;
 	private lastEncodedFrameTs = 0;
 	private pendingResumeRecord = false;
+	private pausedAt = 0;
+	private accumulatedPausedUs = 0;
 	private abort = new AbortController();
 	private callbacks: CaptureSessionCallbacks;
 	private writerPort: MessagePort | null;
@@ -190,7 +192,13 @@ export class CaptureSession {
 	 */
 	pause(): void {
 		if (this.state !== 'recording') return;
-		// Record pause timestamp from the last encoded frame.
+		// Pause all source pipelines first so they drain and stop producing chunks.
+		for (const [, entry] of this.sources) {
+			if (entry.state === 'capturing') {
+				entry.pipeline.pause();
+			}
+		}
+		// Record pause timestamp from the last encoded frame (after drain).
 		if (this.writerPort) {
 			this.writerPort.postMessage({
 				type: 'write-pause',
@@ -198,12 +206,7 @@ export class CaptureSession {
 				atUs: this.lastEncodedFrameTs
 			});
 		}
-		// Pause all source pipelines — they stay in the sources map.
-		for (const [, entry] of this.sources) {
-			if (entry.state === 'capturing') {
-				entry.pipeline.pause();
-			}
-		}
+		this.pausedAt = performance.now();
 		this.state = 'paused';
 		this.emitStatus();
 	}
@@ -215,14 +218,17 @@ export class CaptureSession {
 	 */
 	resume(): void {
 		if (this.state !== 'paused') return;
+		// Accumulate paused wall time so emitStatus can exclude it.
+		if (this.pausedAt > 0) {
+			this.accumulatedPausedUs += Math.round((performance.now() - this.pausedAt) * 1000);
+			this.pausedAt = 0;
+		}
 		for (const [, entry] of this.sources) {
 			if (entry.state === 'capturing') {
 				entry.pipeline.resume();
 			}
 		}
 		this.state = 'recording';
-		// The resume manifest record is written on the next routeChunk call,
-		// using the first encoded frame's timestamp after resumption.
 		this.pendingResumeRecord = true;
 		this.emitStatus();
 	}
@@ -361,7 +367,10 @@ export class CaptureSession {
 
 	private emitStatus(): void {
 		const now = performance.now();
-		const elapsedUs = Math.round((now - this.startTime) * 1000);
+		const rawElapsedUs = Math.round((now - this.startTime) * 1000);
+		const currentPausedUs =
+			this.state === 'paused' && this.pausedAt > 0 ? Math.round((now - this.pausedAt) * 1000) : 0;
+		const elapsedUs = rawElapsedUs - this.accumulatedPausedUs - currentPausedUs;
 
 		const sourceStatuses: CaptureSourceStatusSnapshot[] = [...this.sources.values()].map((s) => ({
 			sourceId: s.sourceId,
@@ -394,6 +403,8 @@ export class CaptureSession {
 		this.totalBytesWritten = 0;
 		this.lastEncodedFrameTs = 0;
 		this.pendingResumeRecord = false;
+		this.pausedAt = 0;
+		this.accumulatedPausedUs = 0;
 		this.epochUs = null;
 	}
 

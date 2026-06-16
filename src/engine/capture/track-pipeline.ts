@@ -89,9 +89,9 @@ export class TrackPipeline {
 	}
 
 	private emitEnded(): void {
-		// Don't emit ended when paused — the pipeline will be restarted on resume.
-		// Only emit when the pipeline is truly done (stop or source ended).
-		if (!this.ended && !this.paused) {
+		// Suppress ended when paused due to pause-induced loop shutdown.
+		// But still report real stream endings (e.g., browser "Stop sharing").
+		if (!this.ended) {
 			this.ended = true;
 			this.callbacks.onPipelineEnded(this.sourceId);
 		}
@@ -343,12 +343,21 @@ export class TrackPipeline {
 
 	/**
 	 * Phase 42: Resume — restarts the MSTP reader loop and encoder.
-	 * Creates a fresh encoder and reader from the same track.
+	 * Cancels any lingering reader from the paused loop before restarting.
 	 */
 	resume(): void {
 		if (!this.paused) return;
 		this.paused = false;
 		this.ended = false;
+		// Cancel the old reader synchronously so the previous loop exits
+		// before we start a new one (prevents duplicate encoders).
+		if (this.reader) {
+			try {
+				void this.reader.cancel();
+			} catch {
+				// best-effort cancel
+			}
+		}
 		this.start(this.keyframeIntervalUs);
 	}
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { deriveWebcamTransform, type WebcamPipCorner, type WebcamPipSize } from './webcam-preset';
+import { computeFitRect } from '../transform';
 
 const CANVAS_W = 1920;
 const CANVAS_H = 1080;
@@ -20,10 +21,15 @@ describe('deriveWebcamTransform', () => {
 					SOURCE_W,
 					SOURCE_H
 				);
-				expect(t.x, `${corner}/${size} x`).toBeGreaterThanOrEqual(0);
-				expect(t.y, `${corner}/${size} y`).toBeGreaterThanOrEqual(0);
-				expect(t.x + t.width, `${corner}/${size} right edge`).toBeLessThanOrEqual(1);
-				expect(t.y + t.height, `${corner}/${size} bottom edge`).toBeLessThanOrEqual(1);
+				const fitRect = computeFitRect(SOURCE_W, SOURCE_H, CANVAS_W, CANVAS_H, 'fit');
+				const halfW = (fitRect.width * t.scale) / 2;
+				const halfH = (fitRect.height * t.scale) / 2;
+				const cx = 0.5 + t.x;
+				const cy = 0.5 + t.y;
+				expect(cx - halfW, `${corner}/${size} left`).toBeGreaterThanOrEqual(0);
+				expect(cy - halfH, `${corner}/${size} top`).toBeGreaterThanOrEqual(0);
+				expect(cx + halfW, `${corner}/${size} right`).toBeLessThanOrEqual(1);
+				expect(cy + halfH, `${corner}/${size} bottom`).toBeLessThanOrEqual(1);
 			}
 		}
 	});
@@ -42,7 +48,9 @@ describe('deriveWebcamTransform', () => {
 				SOURCE_W,
 				SOURCE_H
 			);
-			expect(t.width, `size ${size}`).toBeCloseTo(expectedWidth, 3);
+			const fitRect = computeFitRect(SOURCE_W, SOURCE_H, CANVAS_W, CANVAS_H, 'fit');
+			const actualWidth = fitRect.width * t.scale;
+			expect(actualWidth, `size ${size}`).toBeCloseTo(expectedWidth, 3);
 		}
 	});
 
@@ -54,10 +62,22 @@ describe('deriveWebcamTransform', () => {
 			SOURCE_W,
 			SOURCE_H
 		);
-		const pixelW = t.width * CANVAS_W;
-		const pixelH = t.height * CANVAS_H;
+		const fitRect = computeFitRect(SOURCE_W, SOURCE_H, CANVAS_W, CANVAS_H, 'fit');
+		const pixelW = fitRect.width * t.scale * CANVAS_W;
+		const pixelH = fitRect.height * t.scale * CANVAS_H;
 		const expectedRatio = SOURCE_H / SOURCE_W; // 720/1280 = 0.5625
 		expect(pixelH / pixelW).toBeCloseTo(expectedRatio, 3);
+	});
+
+	it('fit mode is always "fit"', () => {
+		const t = deriveWebcamTransform(
+			{ corner: 'top-left', size: 'M', marginPx: 0 },
+			CANVAS_W,
+			CANVAS_H,
+			SOURCE_W,
+			SOURCE_H
+		);
+		expect(t.fit).toBe('fit');
 	});
 
 	it('margin clamping: -4 clamps to 0', () => {
@@ -107,10 +127,15 @@ describe('deriveWebcamTransform', () => {
 			SOURCE_W,
 			SOURCE_H
 		);
-		// x should be marginX = 16/1080 ≈ 0.01481
-		expect(t.x).toBeCloseTo(16 / 1080, 5);
-		// y should be marginY = 16/1920 ≈ 0.00833
-		expect(t.y).toBeCloseTo(16 / 1920, 5);
+		const fitRect = computeFitRect(SOURCE_W, SOURCE_H, 1080, 1920, 'fit');
+		const halfW = (fitRect.width * t.scale) / 2;
+		const halfH = (fitRect.height * t.scale) / 2;
+		const cx = 0.5 + t.x;
+		const cy = 0.5 + t.y;
+		// left edge should be at marginX = 16/1080
+		expect(cx - halfW).toBeCloseTo(16 / 1080, 4);
+		// top edge should be at marginY = 16/1920
+		expect(cy - halfH).toBeCloseTo(16 / 1920, 4);
 	});
 
 	it('bottom-right places clip at bottom-right corner', () => {
@@ -121,8 +146,14 @@ describe('deriveWebcamTransform', () => {
 			SOURCE_W,
 			SOURCE_H
 		);
-		// With 0 margin, bottom-right = (1 - width, 1 - height)
-		expect(t.x).toBeCloseTo(1 - 0.3, 5);
-		expect(t.y).toBeCloseTo(1 - 0.3 * (CANVAS_W / CANVAS_H) * (SOURCE_H / SOURCE_W), 5);
+		const fitRect = computeFitRect(SOURCE_W, SOURCE_H, CANVAS_W, CANVAS_H, 'fit');
+		const halfW = (fitRect.width * t.scale) / 2;
+		const halfH = (fitRect.height * t.scale) / 2;
+		const cx = 0.5 + t.x;
+		const cy = 0.5 + t.y;
+		// right edge should be at 1.0
+		expect(cx + halfW).toBeCloseTo(1, 5);
+		// bottom edge should be at 1.0
+		expect(cy + halfH).toBeCloseTo(1, 5);
 	});
 });

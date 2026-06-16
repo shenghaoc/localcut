@@ -25,7 +25,9 @@ export function applyRetakeToClip(
 		...original,
 		sourceId: newSourceId,
 		duration: newDurationS,
-		inPoint: 0
+		inPoint: 0,
+		// Drop derived-audio refs — the old cleaned asset belongs to the old source.
+		cleanedAudio: undefined
 		// transform, keyframes, id, kind, effects, lut, etc. are preserved via spread
 	};
 }
