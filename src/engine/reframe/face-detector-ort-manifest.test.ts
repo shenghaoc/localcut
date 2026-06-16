@@ -60,6 +60,7 @@ describe('validateReframeFaceDetectorManifest', () => {
 				type: 'anchor-offset',
 				boxesOutputName: 'boxes',
 				scoresOutputName: 'scores',
+				anchorsOutputName: 'anchors',
 				variance: [0.1, 0.1, 0.2, 0.2],
 				scoreThreshold: 0.6,
 				iouThreshold: 0.3,
@@ -68,8 +69,25 @@ describe('validateReframeFaceDetectorManifest', () => {
 		});
 		expect(manifest.decode.type).toBe('anchor-offset');
 		if (manifest.decode.type === 'anchor-offset') {
+			expect(manifest.decode.anchorsOutputName).toBe('anchors');
 			expect(manifest.decode.variance).toEqual([0.1, 0.1, 0.2, 0.2]);
 		}
+	});
+
+	it('rejects an anchor-offset manifest without anchorsOutputName', () => {
+		expect(() =>
+			validateReframeFaceDetectorManifest({
+				...BASE_VALID,
+				decode: {
+					type: 'anchor-offset',
+					boxesOutputName: 'boxes',
+					scoresOutputName: 'scores',
+					scoreThreshold: 0.5,
+					iouThreshold: 0.3,
+					maxDetections: 8
+				}
+			})
+		).toThrow(/anchorsOutputName/);
 	});
 
 	it('accepts a mean-std input range with mean + std vectors', () => {

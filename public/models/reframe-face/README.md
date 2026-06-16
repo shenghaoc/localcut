@@ -79,17 +79,17 @@ validated by `validateOrtManifest`) plus a face-detector `io` block and a
 
 ### `decode`
 
-| Field               | Type                                                         | Description                                                                                                 |
-| ------------------- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| `type`              | `'raw-bbox'` \| `'anchor-offset'`                            | How to interpret the boxes output.                                                                          |
-| `boxesOutputName`   | non-empty string                                             | Output name for box predictions.                                                                            |
-| `scoresOutputName`  | non-empty string                                             | Output name for per-prediction scores.                                                                      |
-| `boxFormat`         | `'xyxy-normalized'` \| `'xywh-normalized'` \| `'xywh-pixel'` | Box encoding (required for `raw-bbox`; for `anchor-offset` defaults to xywh offsets in the anchor's space). |
-| `anchorsOutputName` | string                                                       | (Optional, `anchor-offset`) ONNX output that ships the prior anchors when they live in the graph.           |
-| `scoreThreshold`    | float ∈ (0, 1)                                               | Minimum confidence to keep a candidate.                                                                     |
-| `iouThreshold`      | float ∈ (0, 1)                                               | NMS IoU threshold (greedy NMS, descending score).                                                           |
-| `maxDetections`     | positive integer                                             | Cap on outputs after NMS.                                                                                   |
-| `applySigmoid`      | `boolean` (default `false`)                                  | Set true when the scores output is unactivated logits rather than probabilities.                            |
+| Field               | Type                                                         | Description                                                                                                                                   |
+| ------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`              | `'raw-bbox'` \| `'anchor-offset'`                            | How to interpret the boxes output.                                                                                                            |
+| `boxesOutputName`   | non-empty string                                             | Output name for box predictions.                                                                                                              |
+| `scoresOutputName`  | non-empty string                                             | Output name for per-prediction scores.                                                                                                        |
+| `boxFormat`         | `'xyxy-normalized'` \| `'xywh-normalized'` \| `'xywh-pixel'` | Box encoding (required for `raw-bbox`; for `anchor-offset` defaults to xywh offsets in the anchor's space).                                   |
+| `anchorsOutputName` | string                                                       | **Required for `anchor-offset`.** ONNX output (flattened `[N × 4]` as `cx, cy, w, h` per candidate, normalised) that ships the anchor priors. |
+| `scoreThreshold`    | float ∈ (0, 1)                                               | Minimum confidence to keep a candidate.                                                                                                       |
+| `iouThreshold`      | float ∈ (0, 1)                                               | NMS IoU threshold (greedy NMS, descending score).                                                                                             |
+| `maxDetections`     | positive integer                                             | Cap on outputs after NMS.                                                                                                                     |
+| `applySigmoid`      | `boolean` (default `false`)                                  | Set true when the scores output is unactivated logits rather than probabilities.                                                              |
 
 ## To enable
 

@@ -21,7 +21,8 @@ import type {
 	SmartReframeWorkerCommand,
 	SmartReframeWorkerState,
 	ClipKeyframesSnapshot,
-	ReframeAnalysisStatsSnapshot
+	ReframeAnalysisStatsSnapshot,
+	ReframeFaceModelEngine
 } from '../../protocol';
 import { createSaliencyEstimator } from './saliency-estimator';
 import { createSubjectTracker, type TrackedDetection } from './subject-tracker';
@@ -51,9 +52,12 @@ interface AnalysisState {
 }
 
 let currentAnalysis: AnalysisState | null = null;
-/** MediaPipe face detector, loaded once on the user's explicit action and
- *  reused across analyses (null = saliency-only). */
+/** Face detector — MediaPipe BlazeFace or ORT/ONNX — loaded once on the user's
+ *  explicit action and reused across analyses (null = saliency-only). */
 let faceDetector: FaceDetector | null = null;
+/** Which engine backs `faceDetector` when loaded; null while unloaded. Kept in
+ *  sync so every `reframe-face-model-status` reports a consistent engine. */
+let loadedEngine: ReframeFaceModelEngine | null = null;
 
 /** Load a face detector on the user's explicit action. Tries the ORT/ONNX path
  *  first when `ortManifestUrl` is provided — on a template/invalid manifest or
@@ -64,13 +68,18 @@ async function handleLoadFaceModel(
 	cmd: Extract<SmartReframeWorkerCommand, { type: 'reframe-load-face-model' }>
 ): Promise<void> {
 	if (faceDetector) {
-		post({ type: 'reframe-face-model-status', status: 'loaded' });
+		post({
+			type: 'reframe-face-model-status',
+			status: 'loaded',
+			...(loadedEngine ? { engine: loadedEngine } : {})
+		});
 		return;
 	}
 	post({ type: 'reframe-face-model-status', status: 'loading' });
 
 	const ortError = await tryLoadOrtFaceDetector(cmd.ortManifestUrl);
 	if (faceDetector) {
+		loadedEngine = 'ort-onnx';
 		post({ type: 'reframe-face-model-status', status: 'loaded', engine: 'ort-onnx' });
 		return;
 	}
@@ -82,6 +91,7 @@ async function handleLoadFaceModel(
 			wasmPath: cmd.wasmPath,
 			modelUrl: cmd.modelUrl
 		});
+		loadedEngine = 'mediapipe-blazeface';
 		post({
 			type: 'reframe-face-model-status',
 			status: 'loaded',
@@ -89,6 +99,7 @@ async function handleLoadFaceModel(
 		});
 	} catch (err) {
 		faceDetector = null;
+		loadedEngine = null;
 		const mediapipeMessage = err instanceof Error ? err.message : String(err);
 		// Both paths failed: tell the panel "face detector unavailable; using
 		// saliency" and surface whichever underlying error is more informative.
@@ -377,6 +388,7 @@ self.onmessage = (event: MessageEvent<SmartReframeWorkerCommand>) => {
 			}
 			faceDetector?.dispose();
 			faceDetector = null;
+			loadedEngine = null;
 			self.close();
 			break;
 	}

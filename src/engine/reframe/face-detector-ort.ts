@@ -37,6 +37,7 @@ import {
 	decodeAnchorOffsetOutput,
 	decodeRawBboxOutput,
 	type AnchorOffsetDecodeConfig,
+	type AnchorPrior,
 	type RawBboxDecodeConfig
 } from './face-detector-ort-decode';
 import {
@@ -209,12 +210,21 @@ function decodeOutputs(
 		};
 		return decodeRawBboxOutput(boxes, scores, config, sourceWidth, sourceHeight);
 	}
-	// Anchor priors must be supplied out-of-band — the manifest validator
-	// surfaces `anchorsOutputName` but reading from a graph output is the user's
-	// responsibility to wire when a real anchor-output model is vendored.
+	// Anchor priors come from a session output named by `decode.anchorsOutputName`
+	// (laid out [N × 4] as `cx, cy, width, height` per candidate, normalised).
+	// Without that name we cannot decode anchor-offset predictions — abort
+	// cleanly so the caller falls through to its saliency / MediaPipe fallback.
+	if (!decode.anchorsOutputName) {
+		throw new OrtFaceDetectorUnavailableError(
+			'anchor-offset decoder requires decode.anchorsOutputName so anchor ' +
+				'priors can be read from the session results.'
+		);
+	}
+	const anchorData = readNumericTensor(outputs, decode.anchorsOutputName, 'anchors');
+	const anchors = readAnchorPriors(anchorData);
 	const config: AnchorOffsetDecodeConfig = {
 		type: 'anchor-offset',
-		anchors: [],
+		anchors,
 		scoreThreshold: decode.scoreThreshold,
 		iouThreshold: decode.iouThreshold,
 		maxDetections: decode.maxDetections,
@@ -222,6 +232,21 @@ function decodeOutputs(
 		...(decode.variance !== undefined ? { variance: decode.variance } : {})
 	};
 	return decodeAnchorOffsetOutput(boxes, scores, config);
+}
+
+/** Parse a flat anchor-prior buffer `[cx, cy, w, h, …]` into structured priors. */
+function readAnchorPriors(data: ArrayLike<number>): AnchorPrior[] {
+	const count = Math.floor(data.length / 4);
+	const priors: AnchorPrior[] = [];
+	for (let i = 0; i < count; i++) {
+		priors.push({
+			cx: data[i * 4] as number,
+			cy: (data[i * 4 + 1] as number) ?? 0,
+			width: (data[i * 4 + 2] as number) ?? 0,
+			height: (data[i * 4 + 3] as number) ?? 0
+		});
+	}
+	return priors;
 }
 
 function readNumericTensor(

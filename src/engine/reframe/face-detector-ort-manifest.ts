@@ -64,11 +64,11 @@ export interface FaceDetectorAnchorOffsetDecode extends FaceDetectorDecodeBase {
 	readonly boxesOutputName: string;
 	readonly scoresOutputName: string;
 	/**
-	 * Optional output name carrying per-candidate anchor priors. When omitted,
-	 * anchors are expected to be supplied to the loader out-of-band (a small
-	 * JSON sidecar, vendored under the same `/models/reframe-face/` directory).
+	 * ONNX output (flattened `[N × 4]` as `cx, cy, w, h` per candidate,
+	 * normalised) the anchor priors are read from at decode time. Required —
+	 * without anchors the offset outputs cannot be reconstructed into boxes.
 	 */
-	readonly anchorsOutputName?: string;
+	readonly anchorsOutputName: string;
 	/** Per-axis variance scaling applied to offsets (default `[1,1,1,1]`). */
 	readonly variance?: readonly [number, number, number, number];
 }
@@ -201,9 +201,7 @@ function validateDecode(raw: unknown): FaceDetectorDecodeContract {
 			type: 'anchor-offset',
 			boxesOutputName: requireName(raw['boxesOutputName'], 'decode.boxesOutputName'),
 			scoresOutputName: requireName(raw['scoresOutputName'], 'decode.scoresOutputName'),
-			...(raw['anchorsOutputName'] === undefined
-				? {}
-				: { anchorsOutputName: requireName(raw['anchorsOutputName'], 'decode.anchorsOutputName') }),
+			anchorsOutputName: requireName(raw['anchorsOutputName'], 'decode.anchorsOutputName'),
 			...(variance === undefined ? {} : { variance: validateVariance(variance) }),
 			...base
 		};

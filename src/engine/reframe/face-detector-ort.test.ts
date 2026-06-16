@@ -307,6 +307,60 @@ describe('createOrtFaceDetector', () => {
 		expect(stub.sessionRun).not.toHaveBeenCalled();
 	});
 
+	it('decodes anchor-offset detectors using anchors read from a session output', async () => {
+		// Two candidates, one above threshold; the model emits flat anchors as
+		// [cx, cy, w, h] per candidate alongside per-candidate offsets + scores.
+		const offsets = new Float32Array([0, 0, 1, 1, 0, 0, 1, 1]);
+		const scores = new Float32Array([0.95, 0.2]);
+		const anchors = new Float32Array([0.5, 0.5, 0.2, 0.2, 0.1, 0.1, 0.05, 0.05]);
+		const session = {
+			run: vi.fn(async () => ({
+				boxes: { data: offsets, type: 'float32' },
+				scores: { data: scores, type: 'float32' },
+				anchors: { data: anchors, type: 'float32' }
+			})),
+			release: vi.fn(async () => {})
+		};
+		const handle = {
+			session: session as never,
+			executionProviders: ['webgpu'] as const,
+			primaryEp: 'webgpu' as const,
+			tensorLocation: 'gpu-buffer' as const
+		};
+		const manifest = {
+			...VALID_MANIFEST,
+			decode: {
+				type: 'anchor-offset',
+				boxesOutputName: 'boxes',
+				scoresOutputName: 'scores',
+				anchorsOutputName: 'anchors',
+				scoreThreshold: 0.5,
+				iouThreshold: 0.3,
+				maxDetections: 16
+			}
+		};
+		const detector = await createOrtFaceDetector({
+			manifestUrl: '/models/reframe-face/manifest.json',
+			fetchManifest: async () => manifest,
+			loadModelBytes: async () => new Uint8Array(0),
+			createSession: async () => handle,
+			resizeImageData: async () => new Uint8ClampedArray(4 * 4 * 4)
+		});
+		const image: ImageData = {
+			data: new Uint8ClampedArray(256 * 256 * 4),
+			width: 256,
+			height: 256,
+			colorSpace: 'srgb'
+		} as ImageData;
+		const detections = await detector.detect(image);
+		// Only the high-confidence candidate survives the score threshold; the
+		// decoded box matches anchor 0 (cx=0.5, w=0.2 → x ≈ 0.4, w ≈ 0.2).
+		expect(detections).toHaveLength(1);
+		expect(detections[0]!.x).toBeCloseTo(0.4, 5);
+		expect(detections[0]!.width).toBeCloseTo(0.2, 5);
+		expect(detections[0]!.confidence).toBeCloseTo(0.95, 5);
+	});
+
 	it('dispose() releases the underlying session', async () => {
 		const stub = stubSession(new Float32Array(0), new Float32Array(0));
 		const detector = await createOrtFaceDetector({

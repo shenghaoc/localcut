@@ -12,6 +12,7 @@
 import type {
 	ClipKeyframesSnapshot,
 	ReframeAnalysisStatsSnapshot,
+	ReframeFaceModelEngine,
 	ReframeFaceModelStatus,
 	SmartReframeWorkerCommand,
 	SmartReframeWorkerState
@@ -42,9 +43,11 @@ export interface ReframeControllerState {
 	readonly stats: ReframeAnalysisStatsSnapshot | null;
 	readonly result: ClipKeyframesSnapshot | null;
 	readonly error: string | null;
-	/** Load state of the optional MediaPipe face model (persists across analyses). */
+	/** Load state of the optional face model (persists across analyses). */
 	readonly faceModelStatus: ReframeFaceModelStatus;
 	readonly faceModelError: string | null;
+	/** Which engine resolved on the last successful load; null while not loaded. */
+	readonly faceModelEngine: ReframeFaceModelEngine | null;
 	readonly context: ReframeContext | null;
 }
 
@@ -67,6 +70,7 @@ const INITIAL_STATE: ReframeControllerState = {
 	error: null,
 	faceModelStatus: 'not-loaded',
 	faceModelError: null,
+	faceModelEngine: null,
 	context: null
 };
 
@@ -239,6 +243,9 @@ export class ReframeController {
 			case 'reframe-face-model-status':
 				this.update({
 					faceModelStatus: msg.status,
+					// Only track the engine on a successful load; clear it on
+					// loading / failed / not-loaded so the UI never reports stale state.
+					faceModelEngine: msg.status === 'loaded' ? (msg.engine ?? null) : null,
 					faceModelError:
 						msg.status === 'failed' ? (msg.message ?? 'Face model failed to load.') : null
 				});
