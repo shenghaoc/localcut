@@ -270,6 +270,18 @@ describe('resolvePlatformPresetCodec', () => {
 		expect(resolvePlatformPresetCodec(p, probe)).toEqual({ codec: 'vp9', container: 'webm' });
 	});
 
+	it('keeps a supported preset-requested vp9 codec', () => {
+		const p = {
+			...BUILT_IN_PRESETS.find((x) => x.id === 'builtin-douyin-1080p30')!,
+			codec: 'vp9' as const,
+			container: 'webm' as const
+		};
+		const probe = {
+			codecs: { h264Encode: 'supported', vp9Encode: 'supported' }
+		} as unknown as import('../protocol').CapabilityProbeResult;
+		expect(resolvePlatformPresetCodec(p, probe)).toEqual({ codec: 'vp9', container: 'webm' });
+	});
+
 	it('blocks when both unsupported', () => {
 		const p = BUILT_IN_PRESETS.find((x) => x.id === 'builtin-douyin-1080p30')!;
 		const probe = {

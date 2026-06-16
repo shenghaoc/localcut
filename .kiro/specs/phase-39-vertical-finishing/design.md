@@ -1,6 +1,6 @@
 # Design: Phase 39 — Vertical and Platform Finishing
 
-> Status: **Proposed** — spec only, not yet implemented.
+> Status: **Implemented** — this branch contains the Phase 39 implementation.
 
 ## Goal
 
@@ -189,7 +189,7 @@ custom property set on the preview container element:
 ```typescript
 export interface SafeZoneRect { x: number; y: number; w: number; h: number; }
 export interface SafeZoneEntry { id: string; label: string; rect: SafeZoneRect; kind: 'occluded' | 'caution'; }
-export interface SafeZonePlatform { id: string; label: string; aspect: string; zones: SafeZoneEntry[]; }
+export interface SafeZonePlatform { id: string; label: string; aspect: ProjectAspect; zones: SafeZoneEntry[]; }
 export interface SafeZoneFile { safeZoneSchemaVersion: 1; platforms: SafeZonePlatform[]; }
 
 export function validateSafeZoneFile(json: unknown): SafeZoneFile | null { /* hand-rolled */ }
@@ -198,8 +198,8 @@ export function validateSafeZoneFile(json: unknown): SafeZoneFile | null { /* ha
 The validator checks:
 1. `safeZoneSchemaVersion === 1` (exact number, not cast).
 2. `platforms` is a non-empty array.
-3. Each platform has a non-empty string `id`, `label`, `aspect` string, and
-   non-empty `zones` array.
+3. Each platform has a non-empty string `id`, `label`, supported `aspect`
+   (`16:9`, `9:16`, `1:1`, `4:5`), and non-empty `zones` array.
 4. Each zone has `id`, `label`, `kind` ∈ `{'occluded', 'caution'}`, and `rect`
    with all four fields as finite numbers in [0, 1] (x+w ≤ 1, y+h ≤ 1).
 Returns `null` without throwing on any violation.
@@ -315,6 +315,16 @@ The function returns `{ ok: false; error: string }` for any failure. The caller
 `coverExportError: string | null` field on `RenderQueueJob` and posts a
 non-fatal warning state message to the UI.
 
+For single-job queues, the UI must choose `showDirectoryPicker` instead of
+`showSaveFilePicker` whenever `cover` is set, because a
+`FileSystemFileHandle` cannot create a sibling `<stem>.cover.jpg`. The selected
+directory is sent with the queue output handle so the worker can write both the
+video and cover JPEG.
+
+The same cover renderer exposes a `request-cover-thumbnail` worker command for
+the UI preview and a bundle-export callback so portable project bundles can
+include `cover/<stem>.cover.jpg` as a first-class asset.
+
 ### Platform preset codec-fallback helper
 
 A new pure function in `src/engine/export-presets.ts`:
@@ -328,8 +338,9 @@ export function resolvePlatformPresetCodec(
 
 Algorithm (R4.3):
 1. Call `exportConstraintsForProbe(probe)` — the existing helper.
-2. If `h264Encode === 'supported'`, return `{ codec: 'h264', container: 'mp4' }`.
-3. Else if `vp9Encode === 'supported'`, return `{ codec: 'vp9', container: 'webm' }`.
+2. If the preset's requested codec/container is supported, return it unchanged.
+3. Otherwise try the alternate common web export pairing: H.264/MP4 for VP9
+   presets, VP9/WebM for H.264 presets.
 4. Else return `{ blocked: true, reason: "This device cannot encode H.264 or VP9. Platform preset unavailable." }`.
 
 The UI displays the resolved codec (and a banner if it fell back) in the export
@@ -353,10 +364,11 @@ mutation, so undo restores the previous aspect or cover frame.
 
 ## Third-party additions
 
-**No new runtime dependencies.** The safe-zone JSON is fetched with `fetch()`
-from the `public/` directory (served as a static asset by Vite). Validation is
-hand-rolled. Cover export uses `OffscreenCanvas.convertToBlob`, a web platform
-primitive. No new libraries are introduced.
+**No new runtime dependencies.** The safe-zone JSON is fetched from
+`${import.meta.env.BASE_URL}safe-zones/safe-zones.v1.json` so sub-path
+deployments work. Validation is hand-rolled. Cover export uses
+`OffscreenCanvas.convertToBlob`, a web platform primitive. No new libraries are
+introduced.
 
 ## Validation
 

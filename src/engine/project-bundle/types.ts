@@ -73,6 +73,7 @@ export type BundleIntegrityCode =
 	| 'unsupported-project-schema'
 	| 'unsupported-operation'
 	| 'interchange-export-failed'
+	| 'cover-export-failed'
 	| 'cache-stale';
 
 export interface BundleIntegrityItem {

@@ -252,7 +252,8 @@ import {
 	exportTimeline,
 	layerBudgetFromProbe,
 	normalizeExportSettings,
-	probeExportCodecs
+	probeExportCodecs,
+	videoBitrateForPreset
 } from './export';
 import { exportTimelineReduced } from './compatibility/compat-export';
 import { exportConstraintsForProbe } from './capability-probe-v2';
@@ -5049,10 +5050,17 @@ const bundleWorkerContext: BundleWorkerContext = {
 		exportSettings: lastExportSettings ?? undefined,
 		sources: currentProjectSources(),
 		customAnimCaptionPresets:
-			customAnimCaptionPresets.length > 0 ? customAnimCaptionPresets : undefined
+			customAnimCaptionPresets.length > 0 ? customAnimCaptionPresets : undefined,
+		projectFormat,
+		cover: cover ?? undefined
 	}),
 	resolveSourceFile: makeStoredSourceResolver(loadStoredSource, fileFromHandle),
 	collectLuts: collectTimelineLuts,
+	renderCoverAsset: async () => {
+		if (!cover) return null;
+		const rendered = await renderCoverFrameBlob(cover);
+		return rendered.ok ? rendered.blob : null;
+	},
 	attachSourceFile: async (descriptor, file, persist) => {
 		const result = await attachSourceFile(descriptor, file, null, persist);
 		return result.ok ? { ok: true } : { ok: false, message: result.message };
@@ -5137,9 +5145,9 @@ function setupPlayback() {
 	);
 	if (!handle?.frameSource && !hasTitles && !hasBurnedInCaptions) return;
 
-	const titleOnly = aspectOutputSize(projectFormat.aspect);
-	const width = handle?.frameSource ? handle.displayWidth : titleOnly.width;
-	const height = handle?.frameSource ? handle.displayHeight : titleOnly.height;
+	const outputSize = aspectOutputSize(projectFormat.aspect);
+	const width = outputSize.width;
+	const height = outputSize.height;
 	const frameRate =
 		handle?.frameSource && handle.frameRate > 0 ? handle.frameRate : TITLE_ONLY_CANVAS.frameRate;
 
@@ -5333,14 +5341,19 @@ function exportSettingsForProbe(): ExportSettings | null {
 	const videoHandle = firstExportVideoHandle();
 	// Title-only timelines export over the default canvas (no decodable video).
 	if (!videoHandle && titleClips().length === 0) return null;
-	const titleOnly = aspectOutputSize(projectFormat.aspect);
-	const width = videoHandle?.displayWidth ?? titleOnly.width;
-	const height = videoHandle?.displayHeight ?? titleOnly.height;
+	const outputSize = aspectOutputSize(projectFormat.aspect);
+	const width = outputSize.width;
+	const height = outputSize.height;
 	const frameRate = videoHandle?.frameRate ?? TITLE_ONLY_CANVAS.frameRate;
 	const timelineDuration = getTimelineDuration(timeline);
 	const base =
 		lastExportSettings ??
-		defaultExportSettings('quality', width, height, frameRate, timelineDuration);
+		({
+			...defaultExportSettings('quality', width, height, frameRate, timelineDuration),
+			width,
+			height,
+			videoBitrate: videoBitrateForPreset('quality', width, height)
+		} satisfies ExportSettings);
 	try {
 		return normalizeExportSettings(base, width, height, frameRate, timelineDuration);
 	} catch {
@@ -5381,10 +5394,11 @@ async function handleExportProbe() {
 		return;
 	}
 
-	// Fall back to the settings geometry when there's no decodable video source.
+	// Project format owns export geometry; source media contributes only cadence.
 	const handleAfterProbe = firstExportVideoHandle();
-	const resolvedWidth = handleAfterProbe?.displayWidth ?? settings.width;
-	const resolvedHeight = handleAfterProbe?.displayHeight ?? settings.height;
+	const outputSize = aspectOutputSize(projectFormat.aspect);
+	const resolvedWidth = outputSize.width;
+	const resolvedHeight = outputSize.height;
 	const resolvedFps = handleAfterProbe?.frameRate ?? settings.fps;
 
 	const preferredCodec = supported.some((entry) => entry.codec === settings.codec)
@@ -5755,13 +5769,13 @@ function handleQueueRetry(cmd: Extract<WorkerCommand, { type: 'queue-retry' }>) 
 }
 
 function handleQueueJobOutput(cmd: Extract<WorkerCommand, { type: 'queue-job-output' }>) {
+	if (cmd.outputDir) {
+		queueJobOutputDirs.set(cmd.jobId, cmd.outputDir);
+	}
 	if (resolveWaitingQueueOutput(cmd.jobId, cmd.handle)) return;
 	const job = queueState.jobs.find((item) => item.id === cmd.jobId);
 	if (job?.status === 'pending') {
 		queueJobOutputHandles.set(cmd.jobId, cmd.handle);
-		if (cmd.outputDir) {
-			queueJobOutputDirs.set(cmd.jobId, cmd.outputDir);
-		}
 	}
 }
 
@@ -5788,6 +5802,7 @@ async function runQueueJob(job: RenderQueueJob): Promise<void> {
 	}
 
 	let handle = queueJobOutputHandles.get(job.id) ?? null;
+	let outputDir = queueJobOutputDirs.get(job.id) ?? null;
 	queueJobOutputHandles.delete(job.id);
 	queueJobOutputDirs.delete(job.id);
 
@@ -5808,6 +5823,8 @@ async function runQueueJob(job: RenderQueueJob): Promise<void> {
 		});
 		post({ type: 'queue-job-destination', jobId: job.id, suggestedName });
 		handle = await outputHandlePromise;
+		outputDir = queueJobOutputDirs.get(job.id) ?? outputDir;
+		queueJobOutputDirs.delete(job.id);
 	}
 
 	if (!handle) {
@@ -5977,7 +5994,6 @@ async function runQueueJob(job: RenderQueueJob): Promise<void> {
 
 		// Phase 39: export cover frame alongside completed queue job.
 		if (cover) {
-			const outputDir = queueJobOutputDirs.get(job.id) ?? null;
 			if (outputDir) {
 				const stem = handle.name.replace(/\.[^.]+$/, '');
 				const r = await exportCoverFrame(cover, stem, outputDir);
@@ -7537,8 +7553,11 @@ function handleSetProjectFormat(aspect: ProjectAspect): void {
 	history.push(historySnapshot());
 	projectFormat = { aspect };
 	const { width, height } = aspectOutputSize(aspect);
-	renderer?.setPreviewSize(width, height);
-	reducedRenderer?.setPreviewSize(width, height);
+	const handle = getPlaybackSource();
+	const frameRate =
+		handle?.frameSource && handle.frameRate > 0 ? handle.frameRate : TITLE_ONLY_CANVAS.frameRate;
+	adaptive = new AdaptiveResolution(buildPreviewLadder(width, height), 1000 / frameRate);
+	ensurePreview();
 	post({ type: 'project-format-changed', aspect });
 	postTimelineState();
 	scheduleAutosave();
@@ -7556,46 +7575,12 @@ async function exportCoverFrame(
 	outputStem: string,
 	outputDir: FileSystemDirectoryHandle
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+	const rendered = await renderCoverFrameBlob(coverDoc);
+	if (!rendered.ok) return rendered;
 	try {
-		const { width, height } = aspectOutputSize(projectFormat.aspect);
-		if (!renderer || !previewCanvas) return { ok: false, error: 'No renderer available.' };
-		const getLayers = makeGetLayers();
-		const layers = await getLayers(coverDoc.timeS);
-		if (!layers || layers.length === 0)
-			return { ok: false, error: 'No layers at cover timestamp.' };
-		const stack: import('./gpu').CompositeLayer[] = [];
-		for (const layer of layers) {
-			if (layer.meta.kind === 'title') {
-				const texture = titleCache?.get(layer.meta.clipId);
-				if (!texture) continue;
-				stack.push({
-					kind: 'texture',
-					view: texture.view,
-					sourceWidth: texture.width,
-					sourceHeight: texture.height,
-					transform: layer.meta.transform,
-					transition: layer.meta.transition
-				});
-			} else if (layer.decoded) {
-				const frame = layer.decoded.toVideoFrame();
-				stack.push({
-					kind: 'frame',
-					frame,
-					effects: layer.meta.effects,
-					transform: layer.meta.transform,
-					lut: layer.meta.lut,
-					transition: layer.meta.transition
-				});
-			}
-		}
-		renderer.setPreviewSize(width, height);
-		renderer.present(stack);
-		if (typeof previewCanvas.convertToBlob !== 'function')
-			return { ok: false, error: 'Canvas does not support convertToBlob.' };
-		const blob = await previewCanvas.convertToBlob({ type: 'image/jpeg', quality: 0.9 });
 		const handle = await outputDir.getFileHandle(`${outputStem}.cover.jpg`, { create: true });
 		const w = await handle.createWritable();
-		await w.write(blob);
+		await w.write(rendered.blob);
 		await w.close();
 		return { ok: true };
 	} catch (error) {
@@ -7603,6 +7588,96 @@ async function exportCoverFrame(
 			ok: false,
 			error: `Cover export failed: ${error instanceof Error ? error.message : String(error)}`
 		};
+	}
+}
+
+async function renderCoverFrameBlob(
+	coverDoc: CoverFrameDoc
+): Promise<{ ok: true; blob: Blob } | { ok: false; error: string }> {
+	try {
+		const { width, height } = aspectOutputSize(projectFormat.aspect);
+		if (!renderer || !previewCanvas) return { ok: false, error: 'No renderer available.' };
+		const getLayers = makeGetLayers();
+		const layers = await getLayers(coverDoc.timeS);
+		if (!layers || layers.length === 0)
+			return { ok: false, error: 'No layers at cover timestamp.' };
+
+		const stack: CompositeLayer[] = [];
+		const frames: VideoFrame[] = [];
+		try {
+			for (const layer of layers) {
+				if (layer.meta.kind === 'title') {
+					if (coverDoc.titleClipId) continue;
+					const texture = titleCache?.get(layer.meta.clipId);
+					if (!texture) continue;
+					stack.push({
+						kind: 'texture',
+						view: texture.view,
+						sourceWidth: texture.width,
+						sourceHeight: texture.height,
+						transform: layer.meta.transform,
+						transition: layer.meta.transition
+					});
+				} else if (layer.decoded) {
+					const frame = layer.decoded.toVideoFrame();
+					frames.push(frame);
+					stack.push({
+						kind: 'frame',
+						frame,
+						effects: layer.meta.effects,
+						transform: layer.meta.transform,
+						lut: layer.meta.lut,
+						transition: layer.meta.transition
+					});
+				}
+			}
+
+			if (coverDoc.titleClipId) {
+				const selected = titleClips().find(({ clip }) => clip.id === coverDoc.titleClipId)?.clip;
+				if (selected?.title) {
+					const texture = titleCache?.ensure(selected.id, selected.title);
+					if (texture) {
+						stack.push({
+							kind: 'texture',
+							view: texture.view,
+							sourceWidth: texture.width,
+							sourceHeight: texture.height,
+							transform: sampleClipParamsAt(selected, coverDoc.timeS).transform
+						});
+					}
+				}
+			}
+
+			renderer.setPreviewSize(width, height);
+			renderer.present(stack);
+			if (typeof previewCanvas.convertToBlob !== 'function')
+				return { ok: false, error: 'Canvas does not support convertToBlob.' };
+			// Cover export: one-shot readback, not a sustained pixel loop - hard gate 2 exemption.
+			const blob = await previewCanvas.convertToBlob({ type: 'image/jpeg', quality: 0.9 });
+			return { ok: true, blob };
+		} finally {
+			for (const frame of frames) frame.close();
+			for (const layer of layers) layer.decoded?.close();
+		}
+	} catch (error) {
+		return {
+			ok: false,
+			error: `Cover render failed: ${error instanceof Error ? error.message : String(error)}`
+		};
+	} finally {
+		ensurePreview();
+	}
+}
+
+async function handleRequestCoverThumbnail(
+	cmd: Extract<WorkerCommand, { type: 'request-cover-thumbnail' }>
+): Promise<void> {
+	const coverDoc: CoverFrameDoc = { timeS: cmd.timeS, titleClipId: cmd.titleClipId ?? null };
+	const rendered = await renderCoverFrameBlob(coverDoc);
+	if (rendered.ok) {
+		post({ type: 'cover-thumbnail', cover: coverDoc, blob: rendered.blob });
+	} else {
+		post({ type: 'cover-thumbnail-error', cover: coverDoc, error: rendered.error });
 	}
 }
 
@@ -7872,6 +7947,9 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			break;
 		case 'request-thumbnails':
 			handleRequestThumbnails(cmd);
+			break;
+		case 'request-cover-thumbnail':
+			void handleRequestCoverThumbnail(cmd);
 			break;
 		case 'export-project-bundle':
 			void runExportProjectBundle(bundleWorkerContext, cmd.jobId, cmd.policy, cmd.outputDir).catch(

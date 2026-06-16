@@ -32,11 +32,10 @@
   project format; initialise it when a project is loaded or restored from a
   snapshot (same point where `timeline`, `captionTracks`, etc. are restored).
 - [ ] **T2.2** `src/engine/worker.ts`: handle `'set-project-format'` command:
-  push an undo snapshot; update `projectFormat`; call
-  `activeRenderer.setPreviewSize(...aspectOutputSize(aspect))` on both
-  `renderer` and `reducedRenderer` if non-null; re-run `buildPreviewLadder`
-  with the new output dimensions and re-initialise `adaptive`; post
-  `{ type: 'project-format-changed', aspect }`.
+  push an undo snapshot; update `projectFormat`; re-run `buildPreviewLadder`
+  with `aspectOutputSize(aspect)`, re-initialise `adaptive`, call
+  `ensurePreview()` so whichever renderer is active resizes from the new
+  adaptive tier, and post `{ type: 'project-format-changed', aspect }`.
 - [ ] **T2.3** `src/engine/worker.ts`: update `TITLE_ONLY_CANVAS` usage (lines
   ~246, ~3601–3602, ~3767–3769) to derive width/height from
   `aspectOutputSize(projectFormat.aspect)` instead of the hardcoded
@@ -70,9 +69,10 @@
   render-queue job's video mux is complete if `cover !== null`. Store a
   failure result in `job.coverExportError` and post `cover-export-warning`;
   do not fail the overall job.
-- [ ] **T3.5** Bundle serializer (`src/engine/project-bundle/`): when
-  `cover` is set and `<stem>.cover.jpg` exists on disk, include it as a
-  `BundleAsset` with `kind: 'cover'` and `relativePath: 'cover/<stem>.cover.jpg'`.
+- [ ] **T3.5** Bundle serializer (`src/engine/project-bundle/`): when `cover`
+  is set, accept a worker-provided cover JPEG blob, write it as
+  `cover/<stem>.cover.jpg`, and include it as a `BundleAsset` with
+  `kind: 'cover'`.
 
 ## T4 — Platform export presets (R4)
 
@@ -87,8 +87,9 @@
 - [ ] **T4.3** `src/engine/export-presets.ts`: add
   `resolvePlatformPresetCodec(preset: ExportPresetDoc, probe: CapabilityProbeResult):
   { codec: ExportVideoCodec; container: ExportContainer } | { blocked: true; reason: string }`
-  implementing the h264 → vp9 fallback from R4.3; import `exportConstraintsForProbe`
-  from `src/engine/capability-probe-v2.ts`.
+  that first honors the preset's requested codec/container when supported, then
+  falls back between H.264/MP4 and VP9/WebM; import
+  `exportConstraintsForProbe` from `src/engine/capability-probe-v2.ts`.
 
 ## T5 — Safe-zone JSON and validator (R2)
 
@@ -98,8 +99,9 @@
 - [ ] **T5.2** Create `src/engine/safe-zones.ts` exporting: `SafeZoneRect`,
   `SafeZoneEntry`, `SafeZonePlatform`, `SafeZoneFile` interfaces;
   `validateSafeZoneFile(json: unknown): SafeZoneFile | null` with hand-rolled
-  validation (no zod) checking schema version, array non-emptiness, zone `kind`
-  membership, and rect values in [0, 1] with x+w ≤ 1 and y+h ≤ 1; returns
+  validation (no zod) checking schema version, supported platform `aspect`,
+  array non-emptiness, zone `kind` membership, and rect values in [0, 1] with
+  x+w ≤ 1 and y+h ≤ 1; returns
   `null` (never throws) on any violation; logs a `console.error` describing
   the first failure.
 
@@ -140,8 +142,8 @@
   position absolute, box-sizing border-box); add `.safe-zone-rect-caution`
   (background rgb(255 200 0 / 10%), border 1px dashed rgb(255 200 0 / 55%),
   position absolute, box-sizing border-box).
-- [ ] **T7.3** `src/ui/App.tsx`: fetch `/safe-zones/safe-zones.v1.json` on mount
-  with `fetch('/safe-zones/safe-zones.v1.json')` and validate with
+- [ ] **T7.3** `src/ui/App.tsx`: fetch `safe-zones/safe-zones.v1.json` on mount
+  by prepending `import.meta.env.BASE_URL` and validate with
   `validateSafeZoneFile`; store the result in a signal
   `const [safeZoneFile, setSafeZoneFile] = createSignal<SafeZoneFile | null>(null)`.
   If validation fails, log a console error but do not crash the shell.
@@ -168,10 +170,10 @@
   title-clip selector `<select>` listing clips from `titleClips()` so the user
   can pick a title overlay.
 - [ ] **T8.3** `src/ui/App.tsx`: when `coverFrame()` is non-null, request a
-  thumbnail via `{ type: 'request-thumbnails', sourceId: '__cover__', timestamps:
-  [coverFrame()!.timeS] }` (or use the existing seek-based thumbnail path) and
-  render the result in a `<canvas class="cover-thumb-preview" aria-label="Cover
-  frame preview" width="160" height={...}>` next to the button.
+  composited cover thumbnail via `{ type: 'request-cover-thumbnail', timeS,
+  titleClipId }`; create an object URL for the returned JPEG blob, revoke stale
+  URLs on cleanup, and render the result with `aria-label="Cover frame preview"`
+  next to the button.
 - [ ] **T8.4** `src/ui/App.tsx`: display `coverExportError` (from
   `cover-export-warning` messages) as a non-blocking inline warning in the
   render queue panel: "Cover export failed: <error>".
@@ -179,9 +181,10 @@
 ## T9 — Export dialog: aspect-mismatch warning and preset codec resolution (R1, R4)
 
 - [ ] **T9.1** `src/ui/ExportDialog.tsx`: after the user selects a preset or
-  changes export dimensions, compute whether `settings.width / settings.height`
-  matches the current project aspect ratio (within a 1% tolerance); if not,
-  show an inline `<p class="export-aspect-warning" role="alert">` reading
+  changes export dimensions, accept `projectAspect` as an `ExportDialogProps`
+  prop from `App.tsx` and compute whether `settings.width / settings.height`
+  matches that project aspect ratio (within a 1% tolerance); if not, show an
+  inline `<p class="export-aspect-warning" role="alert">` reading
   "Export dimensions (<w>×<h>) do not match project format (<aspect>). The
   output may appear letterboxed."
 - [ ] **T9.2** `src/ui/ExportDialog.tsx`: when a platform preset is selected,

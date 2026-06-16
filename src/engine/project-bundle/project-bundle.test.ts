@@ -390,6 +390,37 @@ describe('bundle project.json serialization', () => {
 		const result = deserializeProject(parsed);
 		expect(result.ok).toBe(true);
 	});
+
+	it('writes project format and cover metadata to project.json', async () => {
+		const sink = createMemoryDirectorySink();
+		const doc = serializeProject({
+			projectId: 'phase-39-bundle',
+			timeline: timelineFixture(),
+			sources: [sourceFixture()],
+			projectFormat: { aspect: '9:16' },
+			cover: { timeS: 1.25, titleClipId: 'title-1' }
+		});
+
+		const { manifest } = await exportProjectBundle(sink, {
+			doc,
+			displayName: 'phase-39',
+			policy: { mode: 'reference-only' },
+			resolveSourceFile: async () => null,
+			collectLuts: () => [],
+			renderCoverAsset: async () => new Blob([new Uint8Array([1, 2, 3])], { type: 'image/jpeg' })
+		});
+
+		const text = await sink.readText('project.json');
+		expect(text).not.toBeNull();
+		const result = deserializeProject(JSON.parse(text ?? '{}'));
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.doc.projectFormat).toEqual({ aspect: '9:16' });
+		expect(result.doc.cover).toEqual({ timeS: 1.25, titleClipId: 'title-1' });
+		const coverAsset = manifest.assets.find((asset) => asset.kind === 'cover');
+		expect(coverAsset?.relativePath).toBe('cover/phase-39.cover.jpg');
+		expect(await sink.exists('cover/phase-39.cover.jpg')).toBe(true);
+	});
 });
 
 describe('bundle export cancellation', () => {

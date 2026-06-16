@@ -132,27 +132,28 @@ upload or scheduled posting to any platform is explicitly out of scope.
   `'set-cover-frame'` carrying `{ timeS: number; titleClipId?: string | null }`.
   The worker applies the mutation and the UI reflects it immediately via the
   existing snapshot-and-mirror protocol.
-- **R3.3** A cover thumbnail preview is shown in the Inspector: when
-  `cover.timeS` is set the UI requests a thumbnail via the existing
-  `request-thumbnails` protocol and renders it in a small `<img>`-like canvas
-  beside the "Set Cover Frame" button, with aria-label "Cover frame preview".
+- **R3.3** A cover thumbnail preview is shown in the preview toolbar: when
+  `cover.timeS` is set the UI requests a composited cover thumbnail via
+  `request-cover-thumbnail` and renders the returned JPEG blob beside the
+  "Set Cover Frame" button, with aria-label "Cover frame preview".
 - **R3.4** Cover image export: when a render-queue job (P24) completes and
   `ProjectDoc.cover` is set, the worker composites the output frame at
   `cover.timeS` through the normal accelerated pipeline (same compositor path
   as preview/export), then performs a **single-frame readback** using
-  `copyTextureToBuffer` → `createImageBitmap` → `OffscreenCanvas.convertToBlob`
-  at JPEG quality 0.9. The cover image is saved alongside the video file with
-  the stem `<output-stem>.cover.jpg`. PNG is not offered; JPEG at 0.9 quality
-  is the only format.
+  `OffscreenCanvas.convertToBlob` at JPEG quality 0.9. The cover image is
+  saved alongside the video file with the stem `<output-stem>.cover.jpg`. The
+  UI must collect a writable directory handle whenever a cover is set, including
+  single-job queues, because `showSaveFilePicker` file handles cannot create
+  sibling files. PNG is not offered; JPEG at 0.9 quality is the only format.
 - **R3.5** The single-frame readback in R3.4 does not violate architectural
   hard gate 2 (no CPU pixel round-trips in the accelerated hot path) because
   it is a one-shot post-export operation, not a per-frame sustained loop. It
   is clearly labeled in code comments as `// Cover export: one-shot readback,
   not a sustained pixel loop — hard gate 2 exemption`.
 - **R3.6** Cover images are stored in project bundles (P23) as a `BundleAsset`
-  with `kind: 'cover'`. The `BundleAssetKind` union in
-  `src/engine/project-bundle/types.ts` is extended with `'cover'`. The
-  relative path inside the bundle directory is `cover/<stem>.cover.jpg`.
+  with `kind: 'cover'`. The worker renders the same JPEG cover blob during
+  bundle export when `cover` is set; the relative path inside the bundle
+  directory is `cover/<stem>.cover.jpg`.
 - **R3.7** If cover export fails (compositor error, codec error, file write
   error), the main video export result is unaffected. The queue job's
   completion summary includes a `coverExportError: string | null` field so the
@@ -185,12 +186,12 @@ upload or scheduled posting to any platform is explicitly out of scope.
 
 - **R4.3** When a platform preset is selected in the export dialog, the existing
   `exportConstraintsForProbe` helper from `src/engine/capability-probe-v2.ts`
-  is called to determine whether the requested codec (H.264) is encodable. If
-  H.264 encode is `'unsupported'`, the UI automatically tries VP9 as the
-  fallback (`container: 'webm'`). If VP9 is also unsupported, the preset
-  selection is blocked with an explicit message: "This device cannot encode
-  H.264 or VP9. Platform preset unavailable." The fallback is always visible
-  to the user — silent degradation is not permitted.
+  is called to determine whether the preset's requested codec/container is
+  encodable. If the requested codec is unsupported, the UI tries the alternate
+  H.264/VP9 pairing (`h264` → `mp4`, `vp9` → `webm`). If both are unsupported,
+  the preset selection is blocked with an explicit message: "This device cannot
+  encode H.264 or VP9. Platform preset unavailable." The fallback is always
+  visible to the user — silent degradation is not permitted.
 - **R4.4** When a user selects a platform preset whose aspect ratio does not
   match `projectFormat.aspect`, the export dialog shows the inline warning from
   R1.6: "Export dimensions (1080×1920) do not match project format (16:9).

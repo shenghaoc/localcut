@@ -366,6 +366,12 @@ export function App() {
 	const [previewCanvasEl, setPreviewCanvasEl] = createSignal<HTMLCanvasElement | undefined>(
 		undefined
 	);
+	const [previewCanvasBox, setPreviewCanvasBox] = createSignal<{
+		left: number;
+		top: number;
+		width: number;
+		height: number;
+	} | null>(null);
 	const [safeAreaGuides, setSafeAreaGuides] = createSignal(false);
 	// Phase 39: Vertical and Platform Finishing
 	const [projectAspect, setProjectAspect] =
@@ -377,14 +383,29 @@ export function App() {
 	const [coverFrame, setCoverFrame] = createSignal<import('../protocol').CoverFrameDoc | null>(
 		null
 	);
+	const [coverTitleClipId, setCoverTitleClipId] = createSignal('');
+	const [coverThumbnailUrl, setCoverThumbnailUrl] = createSignal<string | null>(null);
+	const [coverThumbnailError, setCoverThumbnailError] = createSignal<string | null>(null);
 	const [_coverExportError, setCoverExportError] = createSignal<string | null>(null);
+	const projectOutputSize = createMemo(() => aspectOutputSize(projectAspect()));
 	const previewAspectStyle = createMemo(() => {
-		const { width, height } = aspectOutputSize(projectAspect());
+		const { width, height } = projectOutputSize();
 		return `${width} / ${height}`;
 	});
 	const previewAspectNum = createMemo(() => {
-		const { width, height } = aspectOutputSize(projectAspect());
+		const { width, height } = projectOutputSize();
 		return width / height;
+	});
+	const previewCanvasBoxStyle = createMemo((): Record<string, string> => {
+		const box = previewCanvasBox();
+		if (!box) return {};
+		return {
+			'--preview-canvas-left': `${box.left}px`,
+			'--preview-canvas-top': `${box.top}px`,
+			'--preview-canvas-width': `${box.width}px`,
+			'--preview-canvas-height': `${box.height}px`,
+			'--preview-canvas-transform': 'none'
+		};
 	});
 	const selectedPlatform = createMemo<import('../engine/safe-zones').SafeZonePlatform | null>(
 		() => {
@@ -395,6 +416,39 @@ export function App() {
 	);
 	const matchingPlatforms = createMemo(() => {
 		return safeZoneFile()?.platforms.filter((p) => p.aspect === projectAspect()) ?? [];
+	});
+
+	createEffect(() => {
+		const canvas = previewCanvasEl();
+		const aspect = previewAspectNum();
+		if (!canvas) {
+			setPreviewCanvasBox(null);
+			return;
+		}
+
+		const updateCanvasBox = () => {
+			const parent = canvas.parentElement;
+			if (!parent) return;
+			const parentRect = parent.getBoundingClientRect();
+			const width = Math.min(parentRect.width, parentRect.height * aspect);
+			const height = width / aspect;
+			setPreviewCanvasBox({
+				left: (parentRect.width - width) / 2,
+				top: (parentRect.height - height) / 2,
+				width,
+				height
+			});
+		};
+
+		updateCanvasBox();
+		const observer = new ResizeObserver(updateCanvasBox);
+		observer.observe(canvas);
+		if (canvas.parentElement) observer.observe(canvas.parentElement);
+		window.addEventListener('resize', updateCanvasBox);
+		onCleanup(() => {
+			observer.disconnect();
+			window.removeEventListener('resize', updateCanvasBox);
+		});
 	});
 	function aspectLabel(aspect: import('../protocol').ProjectAspect): string {
 		switch (aspect) {
@@ -410,6 +464,17 @@ export function App() {
 	}
 	const [encodeFps, setEncodeFps] = createSignal<number | null>(null);
 	const [timeline, setTimeline] = createSignal<TimelineTrackSnapshot[]>([]);
+	const coverTitleOptions = createMemo(() => {
+		const options: { id: string; label: string }[] = [];
+		for (const track of timeline()) {
+			if (track.type !== 'video') continue;
+			for (const clip of track.clips) {
+				if (clip.kind !== 'title' || !clip.title) continue;
+				options.push({ id: clip.id, label: clip.title.text.trim() || 'Untitled title' });
+			}
+		}
+		return options;
+	});
 	const [captionTracks, setCaptionTracks] = createSignal<CaptionTrackSnapshot[]>([]);
 	const [captionDiagnostics, setCaptionDiagnostics] = createSignal<CaptionDiagnosticSnapshot[]>([]);
 	// Phase 30: user-imported animated caption presets, kept in sync with the worker.
@@ -637,6 +702,28 @@ export function App() {
 		}
 	});
 	let voiceCleanupWasmLoad: Promise<ArrayBuffer> | null = null;
+
+	function clearCoverThumbnail(): void {
+		setCoverThumbnailUrl((current) => {
+			if (current) URL.revokeObjectURL(current);
+			return null;
+		});
+	}
+
+	createEffect(
+		on([coverFrame, workerReady], ([currentCover, ready]) => {
+			clearCoverThumbnail();
+			setCoverThumbnailError(null);
+			if (!currentCover || !ready) return;
+			bridge?.send({
+				type: 'request-cover-thumbnail',
+				timeS: currentCover.timeS,
+				titleClipId: currentCover.titleClipId ?? null
+			});
+		})
+	);
+
+	onCleanup(() => clearCoverThumbnail());
 	function loadVoiceCleanupWasm(): Promise<ArrayBuffer> {
 		voiceCleanupWasmLoad ??= loadVerifiedVoiceCleanupWasm();
 		return voiceCleanupWasmLoad;
@@ -2129,9 +2216,36 @@ export function App() {
 				break;
 			case 'cover-frame-changed':
 				setCoverFrame(msg.cover);
+				setCoverTitleClipId(msg.cover?.titleClipId ?? '');
+				break;
+			case 'cover-thumbnail':
+				{
+					const currentCover = coverFrame();
+					if (
+						currentCover &&
+						currentCover.timeS === msg.cover.timeS &&
+						(currentCover.titleClipId ?? null) === (msg.cover.titleClipId ?? null)
+					) {
+						const nextUrl = URL.createObjectURL(msg.blob);
+						setCoverThumbnailUrl((current) => {
+							if (current) URL.revokeObjectURL(current);
+							return nextUrl;
+						});
+						setCoverThumbnailError(null);
+					}
+				}
+				break;
+			case 'cover-thumbnail-error':
+				if (
+					coverFrame()?.timeS === msg.cover.timeS &&
+					(coverFrame()?.titleClipId ?? null) === (msg.cover.titleClipId ?? null)
+				) {
+					setCoverThumbnailError(msg.error);
+				}
 				break;
 			case 'cover-export-warning':
 				setCoverExportError(msg.error);
+				setStatusLine(msg.error);
 				break;
 		}
 	}
@@ -2544,10 +2658,15 @@ export function App() {
 
 		const allJobs = renderQueue().jobs;
 		const usedNames = new Set<string>();
-		if (pendingJobs.length > 1) {
+		const needsDirectory = pendingJobs.length > 1 || coverFrame() !== null;
+		if (needsDirectory) {
 			const directoryPicker = (window as DirectoryPickerWindow).showDirectoryPicker;
 			if (typeof directoryPicker !== 'function') {
-				setStatusLine('Queue needs a directory picker to run multiple pending exports.');
+				setStatusLine(
+					coverFrame()
+						? 'Cover export needs a directory picker so the cover JPEG can be saved beside the video.'
+						: 'Queue needs a directory picker to run multiple pending exports.'
+				);
 				return false;
 			}
 			try {
@@ -2563,7 +2682,7 @@ export function App() {
 						usedNames
 					);
 					const handle = await directory.getFileHandle(suggestedName, { create: true });
-					bridge?.send({ type: 'queue-job-output', jobId: job.id, handle });
+					bridge?.send({ type: 'queue-job-output', jobId: job.id, handle, outputDir: directory });
 				}
 				return true;
 			} catch (error) {
@@ -3389,7 +3508,8 @@ export function App() {
 							class="preview panel"
 							style={{
 								'--preview-aspect': previewAspectStyle(),
-								'--preview-aspect-num': previewAspectNum()
+								'--preview-aspect-num': previewAspectNum(),
+								...previewCanvasBoxStyle()
 							}}
 						>
 							<Show when={previewKey() + 1} keyed>
@@ -3430,8 +3550,8 @@ export function App() {
 							<Show when={previewSurfaceAvailable() && selectedPlatform()}>
 								<SafeZoneOverlay
 									platform={selectedPlatform()}
-									outputWidth={previewSize()?.width ?? 1920}
-									outputHeight={previewSize()?.height ?? 1080}
+									outputWidth={projectOutputSize().width}
+									outputHeight={projectOutputSize().height}
 								/>
 							</Show>
 							<ReframeOverlay
@@ -3458,11 +3578,11 @@ export function App() {
 							</Show>
 							{/* Phase 39: format picker, platform picker, cover button */}
 							<Show when={previewSurfaceAvailable()}>
-								<div style={{ display: 'flex', gap: '8px', 'align-items': 'center' }}>
+								<div class="phase39-controls">
 									<fieldset
 										role="group"
 										aria-label="Project format"
-										style={{ display: 'flex', gap: '2px' }}
+										style={{ display: 'flex', gap: '2px', 'flex-wrap': 'wrap' }}
 									>
 										<For each={['16:9', '9:16', '1:1', '4:5'] as const}>
 											{(aspect) => (
@@ -3513,13 +3633,39 @@ export function App() {
 											bridge?.send({
 												type: 'set-cover-frame',
 												timeS: clock.currentTime(),
-												titleClipId: null
+												titleClipId: coverTitleClipId() || null
 											})
 										}
 										title="Set cover frame at current playhead position"
 									>
 										Cover
 									</button>
+									<Show when={coverTitleOptions().length > 0}>
+										<select
+											aria-label="Cover title overlay"
+											value={coverTitleClipId()}
+											onChange={(e) => setCoverTitleClipId(e.currentTarget.value)}
+											class="cover-title-select"
+										>
+											<option value="">No title</option>
+											<For each={coverTitleOptions()}>
+												{(option) => <option value={option.id}>{option.label}</option>}
+											</For>
+										</select>
+									</Show>
+									<Show when={coverThumbnailUrl()}>
+										{(url) => (
+											<img
+												class="cover-thumb-preview"
+												src={url()}
+												alt=""
+												aria-label="Cover frame preview"
+											/>
+										)}
+									</Show>
+									<Show when={coverThumbnailError()}>
+										{(error) => <span class="cover-thumb-warning">{error()}</span>}
+									</Show>
 								</div>
 							</Show>
 							<Show when={compatibilityPreview() !== null}>

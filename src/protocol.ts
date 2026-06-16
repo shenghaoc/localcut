@@ -1709,6 +1709,12 @@ interface RequestThumbnailsCommand {
 	timestamps: number[];
 }
 
+interface RequestCoverThumbnailCommand {
+	type: 'request-cover-thumbnail';
+	timeS: number;
+	titleClipId?: string | null;
+}
+
 interface ImportCaptionsCommand {
 	type: 'import-captions';
 	file: File;
@@ -1865,6 +1871,7 @@ export type BundleIntegrityCodeSnapshot =
 	| 'unsupported-project-schema'
 	| 'unsupported-operation'
 	| 'interchange-export-failed'
+	| 'cover-export-failed'
 	| 'cache-stale';
 
 export interface BundleIntegrityItemSnapshot {
@@ -2140,6 +2147,7 @@ export type WorkerCommand =
 	| ReorderTrackCommand
 	| RemoveAssetCommand
 	| RequestThumbnailsCommand
+	| RequestCoverThumbnailCommand
 	| ImportCaptionsCommand
 	| ExportCaptionsCommand
 	| SetCaptionTrackCommand
@@ -2637,6 +2645,8 @@ export type WorkerStateMessage =
 	// Phase 39: Vertical and Platform Finishing
 	| { type: 'project-format-changed'; aspect: ProjectAspect }
 	| { type: 'cover-frame-changed'; cover: CoverFrameDoc | null }
+	| { type: 'cover-thumbnail'; cover: CoverFrameDoc; blob: Blob }
+	| { type: 'cover-thumbnail-error'; cover: CoverFrameDoc; error: string }
 	| { type: 'cover-export-warning'; jobId: string; error: string }
 	| { type: 'error'; message: string };
 

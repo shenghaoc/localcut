@@ -138,6 +138,29 @@ describe('validateSafeZoneFile', () => {
 		).toBeNull();
 	});
 
+	it('rejects rect where y + h > 1', () => {
+		expect(
+			validateSafeZoneFile({
+				safeZoneSchemaVersion: 1,
+				platforms: [
+					{
+						id: 't',
+						label: 'T',
+						aspect: '9:16',
+						zones: [
+							{
+								id: 'z',
+								label: 'Z',
+								rect: { x: 0, y: 0.6, w: 1, h: 0.5 },
+								kind: 'occluded'
+							}
+						]
+					}
+				]
+			})
+		).toBeNull();
+	});
+
 	it('rejects unknown kind', () => {
 		expect(
 			validateSafeZoneFile({
@@ -148,6 +171,22 @@ describe('validateSafeZoneFile', () => {
 						label: 'T',
 						aspect: '9:16',
 						zones: [{ id: 'z', label: 'Z', rect: { x: 0, y: 0, w: 1, h: 1 }, kind: 'bad' }]
+					}
+				]
+			})
+		).toBeNull();
+	});
+
+	it('rejects unsupported platform aspect', () => {
+		expect(
+			validateSafeZoneFile({
+				safeZoneSchemaVersion: 1,
+				platforms: [
+					{
+						id: 't',
+						label: 'T',
+						aspect: '3:2',
+						zones: [{ id: 'z', label: 'Z', rect: { x: 0, y: 0, w: 1, h: 1 }, kind: 'caution' }]
 					}
 				]
 			})

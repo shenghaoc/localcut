@@ -31,6 +31,7 @@ export interface ExportBundleOptions {
 	policy: BundleSourcePolicy;
 	resolveSourceFile: (sourceId: string) => Promise<File | null>;
 	collectLuts: () => readonly ClipLut[];
+	renderCoverAsset?: () => Promise<Blob | null>;
 	/**
 	 * Optional: return the cached beat-analysis JSON text for the source's
 	 * fingerprint, or null if none. Phase 34: when present and embedding,
@@ -44,6 +45,16 @@ export interface ExportBundleOptions {
 
 function beatCacheRelativePath(fingerprint: MediaFingerprint): string {
 	return `cache/beats/${fingerprint.digest.slice(0, 16)}.beats.json`;
+}
+
+function coverRelativePath(displayName: string): { relativePath: string; fileName: string } {
+	const stem =
+		displayName
+			.trim()
+			.replace(/[^A-Za-z0-9._-]+/g, '-')
+			.replace(/^-+|-+$/g, '') || 'project';
+	const fileName = `${stem}.cover.jpg`;
+	return { relativePath: `cover/${fileName}`, fileName };
 }
 
 function shouldEmbedMedia(policy: BundleSourcePolicy): boolean {
@@ -239,6 +250,44 @@ export async function exportProjectBundle(
 				digestToAsset.set(`lut:${fingerprint.digest}`, asset);
 				assets.push(asset);
 			}
+		}
+	}
+
+	if (options.doc.cover && options.renderCoverAsset) {
+		throwIfBundleJobCanceled(options.isCancelled);
+		progress('cover');
+		try {
+			const blob = await options.renderCoverAsset();
+			if (blob) {
+				const fingerprint = await fingerprintBlob(blob);
+				const { relativePath, fileName } = coverRelativePath(options.displayName);
+				await sink.writeBlob(relativePath, blob);
+				assets.push({
+					assetId: makeAssetId(),
+					kind: 'cover',
+					relativePath,
+					fingerprint,
+					byteSize: blob.size,
+					mimeType: blob.type || 'image/jpeg',
+					originalFileName: fileName,
+					refs: ['project-cover']
+				});
+			} else {
+				report = addIntegrityItem(
+					report,
+					integrityItem(
+						'cover-export-failed',
+						'warning',
+						'Cover metadata is saved, but no cover JPEG asset was available to bundle.'
+					)
+				);
+			}
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			report = addIntegrityItem(
+				report,
+				integrityItem('cover-export-failed', 'warning', `Failed to write cover asset: ${message}`)
+			);
 		}
 	}
 

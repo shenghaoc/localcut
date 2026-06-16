@@ -676,10 +676,14 @@ Zone values are updatable via `safe-zones.v1.json` without code changes.
 Set a cover frame (封面) for export as JPEG thumbnail:
 
 1. Position playhead at desired frame.
-2. Click **Cover** button.
-3. Export via render queue with directory destination → `<filename>.cover.jpg` saved alongside video.
+2. Optionally choose a title overlay, then click **Cover**.
+3. Export via the render queue. When a cover is set, LocalCut asks for a
+   directory destination even for a one-job queue so `<filename>.cover.jpg` can
+   be saved alongside the video.
 
-Single-file exports skip cover export (browser file picker limitation).
+The cover preview appears beside the Cover button. Direct one-off video exports
+do not create a cover JPEG; cover files are produced by render queue jobs and
+project bundle exports.
 
 ## Platform Export Presets
 

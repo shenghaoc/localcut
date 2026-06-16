@@ -51,9 +51,12 @@ export interface BundleWorkerContext {
 		exportSettings?: ProjectDoc['exportSettings'];
 		sources: ProjectDoc['sources'];
 		customAnimCaptionPresets?: ProjectDoc['customAnimCaptionPresets'];
+		projectFormat?: ProjectDoc['projectFormat'];
+		cover?: ProjectDoc['cover'];
 	};
 	resolveSourceFile: (sourceId: string) => Promise<File | null>;
 	collectLuts: () => readonly ClipLut[];
+	renderCoverAsset?: () => Promise<Blob | null>;
 	attachSourceFile: (
 		descriptor: import('../project').SourceDescriptor,
 		file: File,
@@ -140,7 +143,9 @@ export async function runExportProjectBundle(
 		sources: state.sources,
 		masterGain: state.masterGain,
 		exportSettings: state.exportSettings,
-		customAnimCaptionPresets: state.customAnimCaptionPresets
+		customAnimCaptionPresets: state.customAnimCaptionPresets,
+		projectFormat: state.projectFormat,
+		cover: state.cover
 	});
 
 	try {
@@ -150,6 +155,7 @@ export async function runExportProjectBundle(
 			policy: policyFromSnapshot(policy),
 			resolveSourceFile: ctx.resolveSourceFile,
 			collectLuts: ctx.collectLuts,
+			renderCoverAsset: ctx.renderCoverAsset,
 			resolveBeatCache: async (_sourceId, fingerprint) => readBeatCacheText(fingerprint.digest),
 			isCancelled: () => job.cancelled,
 			onProgress: ({ phase, bytesDone, bytesTotal }) => {

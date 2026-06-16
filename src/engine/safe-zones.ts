@@ -1,5 +1,7 @@
 /** Phase 39: Platform safe-zone overlay data types and validator. */
 
+import type { ProjectAspect } from '../protocol';
+
 export interface SafeZoneRect {
 	x: number;
 	y: number;
@@ -17,7 +19,7 @@ export interface SafeZoneEntry {
 export interface SafeZonePlatform {
 	id: string;
 	label: string;
-	aspect: string;
+	aspect: ProjectAspect;
 	zones: SafeZoneEntry[];
 }
 
@@ -28,6 +30,12 @@ export interface SafeZoneFile {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+const SUPPORTED_ASPECTS = new Set<ProjectAspect>(['16:9', '9:16', '1:1', '4:5']);
+
+function isProjectAspect(value: unknown): value is ProjectAspect {
+	return typeof value === 'string' && SUPPORTED_ASPECTS.has(value as ProjectAspect);
 }
 
 /**
@@ -56,7 +64,7 @@ export function validateSafeZoneFile(json: unknown): SafeZoneFile | null {
 		}
 		const id = typeof raw.id === 'string' && raw.id.length > 0 ? raw.id : null;
 		const label = typeof raw.label === 'string' && raw.label.length > 0 ? raw.label : null;
-		const aspect = typeof raw.aspect === 'string' ? raw.aspect : null;
+		const aspect = isProjectAspect(raw.aspect) ? raw.aspect : null;
 		if (!id || !label || !aspect) {
 			console.error('[safe-zones] Platform missing required fields.');
 			return null;
