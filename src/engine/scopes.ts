@@ -72,6 +72,13 @@ export const SCOPE_HISTOGRAM_SLOT_FLOATS = SLOT_HEADER_FLOATS + SCOPE_HISTOGRAM_
 
 export const SCOPE_VECTORSCOPE_SIZE = 128;
 
+/**
+ * Horizontal column count for waveform + parade scopes. Producer (worker
+ * compositor) and consumer (UI ScopePanel) share this constant so the SAB
+ * layout, GPU storage sizing, and Canvas2D paint loop stay in lock-step.
+ */
+export const SCOPE_RES_X = 256;
+
 export function scopeWaveformDataFloats(scopeResX: number): number {
 	return 2 * scopeResX; // min/max per column
 }
