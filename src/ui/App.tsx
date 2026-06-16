@@ -426,7 +426,35 @@ export function App() {
 			return;
 		}
 
+		let frame = 0;
 		const updateCanvasBox = () => {
+			if (frame) cancelAnimationFrame(frame);
+			frame = requestAnimationFrame(() => {
+				frame = 0;
+				const parent = canvas.parentElement;
+				if (!parent) return;
+				const parentRect = parent.getBoundingClientRect();
+				const width = Math.min(parentRect.width, parentRect.height * aspect);
+				const height = width / aspect;
+				const next = {
+					left: (parentRect.width - width) / 2,
+					top: (parentRect.height - height) / 2,
+					width,
+					height
+				};
+				setPreviewCanvasBox((previous) =>
+					previous &&
+					Math.abs(previous.left - next.left) < 0.5 &&
+					Math.abs(previous.top - next.top) < 0.5 &&
+					Math.abs(previous.width - next.width) < 0.5 &&
+					Math.abs(previous.height - next.height) < 0.5
+						? previous
+						: next
+				);
+			});
+		};
+
+		const updateCanvasBoxNow = () => {
 			const parent = canvas.parentElement;
 			if (!parent) return;
 			const parentRect = parent.getBoundingClientRect();
@@ -440,12 +468,12 @@ export function App() {
 			});
 		};
 
-		updateCanvasBox();
+		updateCanvasBoxNow();
 		const observer = new ResizeObserver(updateCanvasBox);
-		observer.observe(canvas);
 		if (canvas.parentElement) observer.observe(canvas.parentElement);
 		window.addEventListener('resize', updateCanvasBox);
 		onCleanup(() => {
+			if (frame) cancelAnimationFrame(frame);
 			observer.disconnect();
 			window.removeEventListener('resize', updateCanvasBox);
 		});
