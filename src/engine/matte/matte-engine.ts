@@ -220,17 +220,26 @@ export class MatteEngine {
 			}
 		}
 
-		if (this.running) {
-			if (request.quality === 'preview' && !this.testMode) {
-				// Keep preview realtime: reuse the clip's previous alpha rather than
-				// queueing behind in-flight inference.
-				request.frame.close();
-				return this.lastView.get(request.clipId) ?? null;
-			}
-			await this.running.catch(() => {});
+		// Keep preview realtime: reuse the clip's previous alpha rather than queueing
+		// behind in-flight inference.
+		if (this.running && request.quality === 'preview' && !this.testMode) {
+			request.frame.close();
+			return this.lastView.get(request.clipId) ?? null;
 		}
 
-		const run = this.runInference(request, cacheKey).finally(() => {
+		// Serialize inference. The previous run is awaited *inside* this run's promise
+		// and `this.running` is published synchronously, so a later caller chains off
+		// this run instead of starting a second `runInference` concurrently on the
+		// shared input/uniform GPU buffers (which would corrupt the in-flight frame).
+		const previous = this.running;
+		const run = (async (): Promise<GPUTextureView | null> => {
+			if (previous) await previous.catch(() => {});
+			if (this.disposed) {
+				request.frame.close();
+				return null;
+			}
+			return this.runInference(request, cacheKey);
+		})().finally(() => {
 			if (this.running === run) this.running = null;
 		});
 		this.running = run;
@@ -464,6 +473,29 @@ export class MatteEngine {
 		request: MatteFrameRequest,
 		cacheKey: string
 	): Promise<GPUTextureView | null> {
+		// The engine owns request.frame and must release it exactly once. The body
+		// frees it eagerly right after the preprocess import, so the scarce VideoFrame
+		// isn't held across the inference wait; this guarded finally still releases it
+		// if an earlier step throws (lost device, buffer allocation), and the flag
+		// keeps a late failure from double-closing a frame the eager path already shut.
+		let frameClosed = false;
+		const closeFrame = (): void => {
+			if (frameClosed) return;
+			frameClosed = true;
+			request.frame.close();
+		};
+		try {
+			return await this.runInferenceBody(request, cacheKey, closeFrame);
+		} finally {
+			closeFrame();
+		}
+	}
+
+	private async runInferenceBody(
+		request: MatteFrameRequest,
+		cacheKey: string,
+		closeFrame: () => void
+	): Promise<GPUTextureView | null> {
 		const model = this.model!;
 		const api = this.api!;
 		const device = this.device;
@@ -519,12 +551,9 @@ export class MatteEngine {
 		prePass.dispatchWorkgroups(Math.ceil(model.width / 8), Math.ceil(model.height / 8));
 		prePass.end();
 		device.queue.submit([preEncoder.finish()]);
-		// The source frame is consumed by the import above; close it now.
-		try {
-			request.frame.close();
-		} catch {
-			// Already closed.
-		}
+		// The source frame is consumed by the import above; free it now (before the
+		// inference wait). Routed through the caller's guard so it closes exactly once.
+		closeFrame();
 
 		// 2. Inference with GPU-buffer tensor IO — input wraps our preprocess
 		// buffer (no upload), output stays a GPU buffer (no readback). Both live
