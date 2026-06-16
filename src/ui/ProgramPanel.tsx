@@ -120,7 +120,7 @@ export function ProgramPanel(props: ProgramPanelProps) {
 							<button
 								type="button"
 								class="program-panel-btn"
-								onClick={props.onAddScreen}
+								onClick={() => props.onAddScreen()}
 								aria-label="Add screen source"
 							>
 								+ Screen
@@ -169,7 +169,7 @@ export function ProgramPanel(props: ProgramPanelProps) {
 							<button
 								type="button"
 								class="program-panel-btn"
-								onClick={props.onAddScene}
+								onClick={() => props.onAddScene()}
 								disabled={props.scenes().length >= 9}
 								aria-label="Add scene"
 							>

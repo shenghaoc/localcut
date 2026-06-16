@@ -218,7 +218,17 @@ function cloneTimeline(timeline: Timeline): Timeline {
 		visible: track.visible,
 		syncLocked: track.syncLocked,
 		editTarget: track.editTarget,
-		clips: track.clips.map(cloneClip)
+		clips: track.clips.map(cloneClip),
+		layoutClips: track.layoutClips?.map((clip) => ({
+			...clip,
+			sceneSnapshot: {
+				...clip.sceneSnapshot,
+				layers: clip.sceneSnapshot.layers.map((layer) => ({
+					...layer,
+					transform: { ...layer.transform }
+				}))
+			}
+		}))
 	}));
 }
 

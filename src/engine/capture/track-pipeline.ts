@@ -22,6 +22,7 @@ export interface TrackPipelineOptions {
 	track: MediaStreamTrack;
 	videoEncodeConfig?: VideoEncoderConfig;
 	audioEncodeConfig?: AudioEncoderConfig;
+	onVideoFrame?: (sourceId: string, frame: VideoFrame) => void;
 	callbacks: TrackPipelineCallbacks;
 	abort: AbortController;
 }
@@ -216,6 +217,17 @@ export class TrackPipeline {
 				}
 				const frame = result.value as VideoFrame;
 				try {
+					let composeFrame: VideoFrame | null = null;
+					try {
+						if (this.options.onVideoFrame) {
+							composeFrame = frame.clone();
+							this.options.onVideoFrame(this.sourceId, composeFrame);
+							composeFrame = null;
+						}
+					} finally {
+						composeFrame?.close();
+					}
+
 					if (encoder.encodeQueueSize > VIDEO_QUEUE_BOUND) {
 						this.preEncodeDrops++;
 						continue; // frame closed exactly once in finally

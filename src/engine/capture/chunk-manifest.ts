@@ -21,7 +21,7 @@ export type CaptureManifestRecord =
 			toUs: number;
 			keyFrame: boolean;
 			preEncodeDrops: number;
-	}
+	  }
 	| { kind: 'source-ended'; sourceId: string; reason: string }
 	| { kind: 'finalize'; endedAtIso: string; reason: string }
 	// Phase 42: Recorder UX manifest extensions (version-tolerant)

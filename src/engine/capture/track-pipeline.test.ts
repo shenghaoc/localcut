@@ -100,7 +100,8 @@ interface PipelineHarness {
 function buildPipeline(
 	kind: 'screen' | 'mic',
 	frames: Array<VideoFrame | AudioData>,
-	readerOpts?: { delayMs?: number }
+	readerOpts?: { delayMs?: number },
+	onVideoFrame?: (sourceId: string, frame: VideoFrame) => void
 ): PipelineHarness {
 	stubGlobals();
 	nextReader = createMockMSTPReader(frames as VideoFrame[], readerOpts);
@@ -136,6 +137,7 @@ function buildPipeline(
 				: undefined,
 		audioEncodeConfig:
 			kind === 'mic' ? { codec: 'opus', sampleRate: 48_000, numberOfChannels: 2 } : undefined,
+		onVideoFrame,
 		callbacks,
 		abort: new AbortController()
 	});
@@ -208,6 +210,34 @@ describe('TrackPipeline video', () => {
 		expect(encoderState.videoEncodes).toHaveLength(0);
 		for (const frame of frames) {
 			expect(getCloseCount(frame)).toBe(1);
+		}
+	});
+
+	it('hands cloned frames to the live compose tap before pre-encode drops', async () => {
+		const frames = vfrFrames([0, 0.033]);
+		const clones = vfrFrames([0, 0.033]);
+		frames.forEach((frame, index) => {
+			Object.defineProperty(frame, 'clone', {
+				value: () => clones[index]!,
+				configurable: true
+			});
+		});
+		const received: VideoFrame[] = [];
+		const harness = buildPipeline('screen', frames, undefined, (_sourceId, frame) => {
+			received.push(frame);
+		});
+
+		harness.pipeline.start();
+		encoderState.queueSize = 9;
+		await harness.ended;
+
+		expect(encoderState.videoEncodes).toHaveLength(0);
+		expect(received).toEqual(clones);
+		for (const frame of frames) {
+			expect(getCloseCount(frame)).toBe(1);
+		}
+		for (const clone of clones) {
+			expect(getCloseCount(clone)).toBe(0);
 		}
 	});
 

@@ -17,7 +17,7 @@ describe('parseManifestLine', () => {
 			chunkTargetS: 2
 		});
 		const record = parseManifestLine(line);
-		expect(record).not.toBeNull();
+		expect(record).toBeDefined();
 		expect(record!.kind).toBe('header');
 	});
 
@@ -28,7 +28,7 @@ describe('parseManifestLine', () => {
 			atUs: 5_300_000
 		});
 		const record = parseManifestLine(line);
-		expect(record).not.toBeNull();
+		expect(record).toBeDefined();
 		expect(record!.kind).toBe('scene-switch');
 		if (record!.kind === 'scene-switch') {
 			expect(record!.sceneId).toBe('scene-2');
@@ -36,40 +36,40 @@ describe('parseManifestLine', () => {
 		}
 	});
 
-	it('returns null for malformed JSON', () => {
-		expect(parseManifestLine('not json')).toBeNull();
-		expect(parseManifestLine('')).toBeNull();
+	it('returns undefined for malformed JSON', () => {
+		expect(parseManifestLine('not json')).toBeUndefined();
+		expect(parseManifestLine('')).toBeUndefined();
 	});
 
-	it('returns null for non-object', () => {
-		expect(parseManifestLine('42')).toBeNull();
-		expect(parseManifestLine('"string"')).toBeNull();
-		expect(parseManifestLine('null')).toBeNull();
+	it('returns undefined for non-object', () => {
+		expect(parseManifestLine('42')).toBeUndefined();
+		expect(parseManifestLine('"string"')).toBeUndefined();
+		expect(parseManifestLine('null')).toBeUndefined();
 	});
 
-	it('returns null for unrecognised kind', () => {
+	it('returns undefined for unrecognised kind', () => {
 		const line = JSON.stringify({ kind: 'unknown-record', data: 'test' });
-		expect(parseManifestLine(line)).toBeNull();
+		expect(parseManifestLine(line)).toBeUndefined();
 	});
 
-	it('returns null for scene-switch with missing sceneId', () => {
+	it('returns undefined for scene-switch with missing sceneId', () => {
 		const line = JSON.stringify({ kind: 'scene-switch', atUs: 5_000_000 });
-		expect(parseManifestLine(line)).toBeNull();
+		expect(parseManifestLine(line)).toBeUndefined();
 	});
 
-	it('returns null for scene-switch with missing atUs', () => {
+	it('returns undefined for scene-switch with missing atUs', () => {
 		const line = JSON.stringify({ kind: 'scene-switch', sceneId: 'scene-1' });
-		expect(parseManifestLine(line)).toBeNull();
+		expect(parseManifestLine(line)).toBeUndefined();
 	});
 
-	it('returns null for scene-switch with non-string sceneId', () => {
+	it('returns undefined for scene-switch with non-string sceneId', () => {
 		const line = JSON.stringify({ kind: 'scene-switch', sceneId: 123, atUs: 5_000_000 });
-		expect(parseManifestLine(line)).toBeNull();
+		expect(parseManifestLine(line)).toBeUndefined();
 	});
 
-	it('returns null for scene-switch with non-number atUs', () => {
+	it('returns undefined for scene-switch with non-number atUs', () => {
 		const line = JSON.stringify({ kind: 'scene-switch', sceneId: 'scene-1', atUs: 'not-number' });
-		expect(parseManifestLine(line)).toBeNull();
+		expect(parseManifestLine(line)).toBeUndefined();
 	});
 });
 

@@ -186,6 +186,7 @@ import {
 	type MoveClipTarget,
 	type TransformParams
 } from './timeline';
+import { applyProgramLayoutToResolvedLayers } from './program-layout-resolve';
 import type { SourceVideoTrackInspection } from './media-adapters/types';
 import { sampleClipParamsAt } from './keyframes';
 import { clipLutFromCubeFile, cloneClipLut, lutSnapshot, type ClipLut } from './lut';
@@ -1001,6 +1002,20 @@ function postTimelineState() {
 				? { ...clip.timeRemap, keyframes: [...clip.timeRemap.keyframes] }
 				: undefined,
 			beauty: clip.beauty ? { ...clip.beauty } : undefined
+		})),
+		layoutClips: track.layoutClips?.map((clip) => ({
+			id: clip.id,
+			kind: 'layout',
+			startTime: clip.startTime,
+			duration: clip.duration,
+			sceneId: clip.sceneId,
+			sceneSnapshot: {
+				...clip.sceneSnapshot,
+				layers: clip.sceneSnapshot.layers.map((layer) => ({
+					...layer,
+					transform: { ...layer.transform }
+				}))
+			}
 		}))
 	}));
 	const captionSnapshot: CaptionTrackSnapshot[] = captionTracks.map((track) => ({
@@ -2829,18 +2844,9 @@ type LayerMeta =
  */
 function makeGetLayers() {
 	return async (timestamp: number): Promise<DecodedLayer<LayerMeta>[] | null> => {
-		// Phase 45: Check for layout track (Program Mode re-export).
-		// If a layout track exists at this timestamp, use its sceneSnapshot
-		// to configure the compositor layers. The ISO tracks provide the
-		// actual video frames through the standard decode path.
-		// Phase 45: Check for layout track (Program Mode re-export).
-		// If a layout track exists at this timestamp, the sceneSnapshot
-		// provides compositor configuration (transforms, visibility, z-order).
-		// The ISO tracks provide the actual video frames through the standard
-		// decode path. The layout track takes priority for compositing config.
-		void resolveLayoutAt(timeline, timestamp);
-
+		const layoutClip = resolveLayoutAt(timeline, timestamp);
 		const layers = resolveAllAt(timeline, timestamp, transitions);
+		const arrangedLayers = applyProgramLayoutToResolvedLayers(layers, layoutClip);
 		// Same-source transition pairs route the incoming side through a secondary
 		// sink so the two cut sides don't keyframe-re-seek each other (T2.2).
 		const secondarySinkLayers = sharedSourceIncomingLayers(layers);
@@ -2849,7 +2855,8 @@ function makeGetLayers() {
 		let decodedCount = 0;
 		let overBudget = false;
 		try {
-			for (const layer of layers) {
+			for (const arranged of arrangedLayers) {
+				const { layer, layoutLayer } = arranged;
 				// Title layers carry no decode and don't consume the decode budget; they
 				// composite from the cached title texture, preserving z-order.
 				if (isTitleClip(layer.clip)) {
@@ -2861,7 +2868,9 @@ function makeGetLayers() {
 							kind: 'title',
 							clipId: layer.clip.id,
 							content: layer.clip.title,
-							transform: sampled.transform,
+							transform: layoutLayer
+								? normalizeTransform(layoutLayer.transform)
+								: sampled.transform,
 							animUniforms: CAPTION_ANIM_IDENTITY,
 							transition: layer.transition
 						}
@@ -2956,7 +2965,7 @@ function makeGetLayers() {
 					meta: {
 						kind: 'frame',
 						effects: sampled.effects,
-						transform: sampled.transform,
+						transform: layoutLayer ? normalizeTransform(layoutLayer.transform) : sampled.transform,
 						lut: layer.clip.lut,
 						skinMask: layer.clip.skinMask,
 						skinSmoothBypass: skinSmoothBypassMap.get(layer.clip.id) ?? false,
@@ -7924,10 +7933,77 @@ async function handleRequestCoverThumbnail(
 
 // ── Phase 45: Program Mode handlers ──
 
+function isProgramVideoSource(kind: import('../protocol').ProgramSourceKind): boolean {
+	return kind === 'screen' || kind === 'webcam';
+}
+
+function programSourceKindToCapture(
+	kind: import('../protocol').ProgramSourceKind
+): import('../protocol').CaptureSourceKind | null {
+	switch (kind) {
+		case 'screen':
+		case 'webcam':
+		case 'mic':
+			return kind;
+		default:
+			return null;
+	}
+}
+
+function programVideoConfig(
+	config: VideoEncoderConfig | AudioEncoderConfig | null
+): VideoEncoderConfig {
+	const partial = (config ?? {}) as Partial<VideoEncoderConfig>;
+	return {
+		codec: partial.codec ?? 'avc1.42001E',
+		width: partial.width ?? 1920,
+		height: partial.height ?? 1080,
+		bitrate: partial.bitrate ?? 5_000_000,
+		framerate: partial.framerate,
+		latencyMode: 'realtime',
+		hardwareAcceleration: 'prefer-hardware'
+	};
+}
+
+function programAudioConfig(
+	config: VideoEncoderConfig | AudioEncoderConfig | null
+): AudioEncoderConfig {
+	const partial = (config ?? {}) as Partial<AudioEncoderConfig>;
+	return {
+		codec: partial.codec ?? 'opus',
+		sampleRate: partial.sampleRate ?? 48_000,
+		numberOfChannels: partial.numberOfChannels ?? 2,
+		bitrate: partial.bitrate ?? 128_000
+	};
+}
+
+function captureSourceStatusToProgram(
+	source: import('../protocol').CaptureSourceStatusSnapshot
+): import('../protocol').ProgramSourceStatusSnapshot {
+	return {
+		sourceId: source.sourceId,
+		kind: source.kind === 'screen' || source.kind === 'webcam' ? source.kind : 'mic',
+		label: source.label,
+		state:
+			source.state === 'error' ? 'failed' : source.state === 'capturing' ? 'active' : 'dropped',
+		preEncodeDrops: source.preEncodeDrops
+	};
+}
+
 async function handleProgramStart(
 	cmd: Extract<WorkerCommand, { type: 'program-start' }>
 ): Promise<void> {
+	let sessionForStart: CaptureSession | null = null;
 	try {
+		if (!renderer) {
+			throw new Error('Program Mode requires the accelerated preview renderer.');
+		}
+		if (programSession) {
+			throw new Error('Program session is already running.');
+		}
+		if (captureSession) {
+			throw new Error('Capture engine is already active.');
+		}
 		const mod = await import('./program-session');
 		const { createProgramCompositor } = await import('./program-compositor');
 		const { createLiveComposeTap } = await import('./live-compose-tap');
@@ -7949,18 +8025,88 @@ async function handleProgramStart(
 		// Create tap
 		programTap = createLiveComposeTap(programCompositor);
 
+		sessionForStart = new CaptureSession(
+			`program-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+			{
+				onStatusChange(status) {
+					const programState =
+						status.state === 'recording' || status.state === 'paused' ? 'running' : status.state;
+					post({
+						type: 'program-status',
+						state: programState,
+						elapsedUs: status.elapsedUs,
+						activeSceneId: programSession?.getCurrentSceneId() ?? cmd.config.initialSceneId,
+						sources: status.sources.map(captureSourceStatusToProgram)
+					});
+				},
+				onError(_sourceId, code, detail) {
+					post({
+						type: 'program-error',
+						code: code === 'quota-exceeded' ? 'storage-quota' : 'source-failed',
+						detail
+					});
+				},
+				onLanded() {
+					// Program stop posts the landed result after it has materialised the layout track.
+				}
+			},
+			cmd.writerPort
+		);
+
+		let capturedSourceCount = 0;
+		for (const source of cmd.config.sources) {
+			if (!source.track) continue;
+			const captureKind = programSourceKindToCapture(source.kind);
+			if (!captureKind) continue;
+			const videoConfig = isProgramVideoSource(source.kind)
+				? programVideoConfig(source.encoderConfig)
+				: undefined;
+			const audioConfig =
+				source.kind === 'mic' ? programAudioConfig(source.encoderConfig) : undefined;
+			sessionForStart.addSource(
+				source.sourceId,
+				captureKind,
+				source.label,
+				source.track,
+				videoConfig,
+				audioConfig,
+				videoConfig
+					? {
+							width: videoConfig.width,
+							height: videoConfig.height,
+							frameRate: null
+						}
+					: {},
+				videoConfig
+					? (sourceId, frame) => {
+							programTap?.onFrame(sourceId, frame);
+							programCompositor?.renderTick();
+						}
+					: undefined
+			);
+			capturedSourceCount++;
+		}
+		if (capturedSourceCount === 0) {
+			throw new Error(
+				'Program Mode requires at least one captured screen, camera, or microphone source.'
+			);
+		}
+
 		// Create session (acquires encoder leases)
 		programSession = mod.createProgramSession(
 			cmd.config,
 			programEncoderBudget,
-			captureSession!,
+			sessionForStart,
 			programCompositor,
 			programTap
 		);
+		captureSession = sessionForStart;
+		sessionForStart = null;
+		await programSession.start();
 
 		post({
 			type: 'program-status',
-			state: 'armed',
+			state: 'running',
 			elapsedUs: 0,
 			activeSceneId: cmd.config.initialSceneId,
 			sources: cmd.config.sources.map((s) => ({
@@ -7985,38 +8131,71 @@ async function handleProgramStart(
 				detail: String(err)
 			});
 		}
+		const failedCaptureSession = sessionForStart ?? captureSession;
+		failedCaptureSession?.reset();
+		programSession = null;
+		programCompositor?.dispose();
+		programCompositor = null;
+		programTap?.dispose();
+		programTap = null;
+		if (captureSession === failedCaptureSession) {
+			captureSession = null;
+		}
 	}
 }
 
 async function handleProgramStop(): Promise<void> {
 	if (programSession) {
+		const session = programSession;
+		const activeCaptureSession = captureSession;
 		try {
-			const result = await programSession.stop();
-			post({ type: 'program-landed', ...result });
+			const result = await session.stop();
+			const landedTracks = result.layoutTrack
+				? [...result.isoTracks, result.layoutTrack]
+				: result.isoTracks;
+			if (landedTracks.length > 0) {
+				commitTimelineMutation(() => [...timeline, ...landedTracks], {
+					refreshPlayback: 'refresh'
+				});
+			}
+			post({
+				type: 'program-landed',
+				sessionId: result.sessionId,
+				isoTrackIds: result.isoTrackIds,
+				layoutTrackId: result.layoutTrackId
+			});
 		} catch (err) {
 			post({
 				type: 'program-error',
 				code: 'compositor-error',
 				detail: String(err)
 			});
+		} finally {
+			activeCaptureSession?.reset();
+			if (captureSession === activeCaptureSession) {
+				captureSession = null;
+			}
+			programSession = null;
+			programCompositor = null;
+			programTap = null;
 		}
-		programSession = null;
-		programCompositor = null;
-		programTap = null;
 	}
 }
 
 function handleProgramSceneSwitch(sceneId: string, transitionMs: 0 | 200): void {
 	if (programSession) {
 		programSession.switchScene(sceneId, transitionMs);
+		programCompositor?.renderTick();
 	}
 }
 
 function handleProgramUpdateScenes(scenes: import('../protocol').SceneDefinition[]): void {
 	if (programSession) {
 		programSession.updateScenes(scenes);
+		programCompositor?.renderTick();
 	} else if (programCompositor) {
 		programCompositor.updateScenes(scenes);
+		programCompositor.renderTick();
 	}
 }
 

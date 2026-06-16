@@ -98,7 +98,8 @@ export class CaptureSession {
 		track: MediaStreamTrack,
 		videoEncodeConfig?: VideoEncoderConfig,
 		audioEncodeConfig?: AudioEncoderConfig,
-		sourceInfo: { width?: number; height?: number; frameRate?: number | null } = {}
+		sourceInfo: { width?: number; height?: number; frameRate?: number | null } = {},
+		onVideoFrame?: (sourceId: string, frame: VideoFrame) => void
 	): void {
 		const pipelineCallbacks: TrackPipelineCallbacks = {
 			onEncodedChunk: (srcId, packet, fromUs, toUs, keyFrame, preEncodeDrops) => {
@@ -122,6 +123,7 @@ export class CaptureSession {
 			track,
 			videoEncodeConfig,
 			audioEncodeConfig,
+			onVideoFrame,
 			callbacks: pipelineCallbacks,
 			abort: this.abort
 		});
@@ -210,6 +212,19 @@ export class CaptureSession {
 
 		this.state = 'idle';
 		this.emitStatus();
+		this.callbacks.onLanded(
+			this.sessionId,
+			[...this.sources.values()].map((source) => source.sourceId)
+		);
+	}
+
+	appendSceneSwitch(sceneId: string, atUs: number): void {
+		this.writerPort?.postMessage({
+			type: 'write-scene-switch',
+			sessionId: this.sessionId,
+			sceneId,
+			atUs
+		});
 	}
 
 	/**

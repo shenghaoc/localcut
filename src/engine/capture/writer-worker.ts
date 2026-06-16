@@ -84,6 +84,13 @@ interface WriteSourceRegionAppliedMessage {
 	atUs: number;
 }
 
+interface WriteSceneSwitchMessage {
+	type: 'write-scene-switch';
+	sessionId: string;
+	sceneId: string;
+	atUs: number;
+}
+
 interface ScanSessionsMessage {
 	type: 'scan-sessions';
 }
@@ -103,6 +110,7 @@ type WriterMessage =
 	| WriteResumeMessage
 	| WriteSourceAddedMessage
 	| WriteSourceRegionAppliedMessage
+	| WriteSceneSwitchMessage
 	| ScanSessionsMessage
 	| DiscardSessionMessage;
 
@@ -190,6 +198,13 @@ class CaptureWriter {
 						kind: 'source-region-applied',
 						sourceId: msg.sourceId,
 						mode: msg.mode,
+						atUs: msg.atUs
+					});
+					break;
+				case 'write-scene-switch':
+					await this.appendManifest(msg.sessionId, {
+						kind: 'scene-switch',
+						sceneId: msg.sceneId,
 						atUs: msg.atUs
 					});
 					break;

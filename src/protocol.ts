@@ -1264,6 +1264,15 @@ export interface TimelineClipSnapshot {
 	captureSessionId?: string;
 }
 
+export interface LayoutClipSnapshot {
+	id: string;
+	kind: 'layout';
+	startTime: number;
+	duration: number;
+	sceneId: string;
+	sceneSnapshot: SceneDefinition;
+}
+
 export interface TimelineTrackSnapshot {
 	id: string;
 	type: 'video' | 'audio' | 'layout';
@@ -1276,6 +1285,8 @@ export interface TimelineTrackSnapshot {
 	visible: boolean;
 	syncLocked: boolean;
 	editTarget: boolean;
+	/** Phase 45: layout clips for Program Mode re-export tracks. */
+	layoutClips?: LayoutClipSnapshot[];
 }
 
 export interface TimelineMarkerSnapshot {
@@ -2357,7 +2368,7 @@ export type WorkerCommand =
 	| { type: 'capture-recovery-import'; sessionId: string }
 	| { type: 'capture-recovery-discard'; sessionId: string }
 	// Phase 45: Program Mode
-	| { type: 'program-start'; config: ProgramSessionConfig }
+	| { type: 'program-start'; config: ProgramSessionConfig; writerPort?: MessagePort }
 	| { type: 'program-stop' }
 	| { type: 'program-scene-switch'; sceneId: string; transitionMs: 0 | 200 }
 	| { type: 'program-update-scenes'; scenes: SceneDefinition[] }
