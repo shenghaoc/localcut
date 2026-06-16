@@ -1528,6 +1528,24 @@ export function App() {
 			case 'translated-caption-track-created':
 				translationController.onTranslatedTrackCreated(msg.trackId);
 				break;
+			case 'look-preset-exported': {
+				const blob = new Blob([msg.json], { type: 'application/json' });
+				const url = URL.createObjectURL(blob);
+				const a = document.createElement('a');
+				a.href = url;
+				a.download = `${msg.clipId.slice(0, 8)}-look.json`;
+				a.click();
+				URL.revokeObjectURL(url);
+				setStatusLine(
+					msg.lutFileName
+						? `Look preset exported (paired LUT: ${msg.lutFileName})`
+						: 'Look preset exported'
+				);
+				break;
+			}
+			case 'look-preset-error':
+				setRuntimeIssue(`Look preset import failed: ${msg.reason}`);
+				break;
 			case 'clock-update':
 				// Reduced tiers without SAB: the worker drives the clock over postMessage.
 				clock.applyUpdate(msg);
@@ -3582,6 +3600,18 @@ export function App() {
 													}
 													onClearTimeRemap={(trackId, clipId) =>
 														bridge?.send({ type: 'clear-time-remap', trackId, clipId })
+													}
+													onImportLookPreset={(trackId, clipId, presetFile, lutFile) =>
+														bridge?.send({
+															type: 'import-look-preset',
+															trackId,
+															clipId,
+															presetFile,
+															lutFile
+														})
+													}
+													onExportLookPreset={(trackId, clipId) =>
+														bridge?.send({ type: 'export-look-preset', trackId, clipId })
 													}
 												/>
 											</div>

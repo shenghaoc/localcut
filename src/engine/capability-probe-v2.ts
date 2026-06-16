@@ -477,7 +477,7 @@ export function probeSmartReframe(): SmartReframeProbeResult {
 }
 
 /** Phase 38b: probe `ImageDecoder` API for animated image frame-accurate decoding. */
-function probeImageDecoder(): FeatureSupport {
+export function probeImageDecoder(): FeatureSupport {
 	return typeof (globalThis as unknown as Record<string, unknown>)['ImageDecoder'] === 'function'
 		? 'supported'
 		: 'unsupported';
