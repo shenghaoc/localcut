@@ -158,22 +158,34 @@ describe('MatteEngine.matteViewFor concurrency', () => {
 		expect(maxActive).toBe(1);
 	});
 
-	it('closes the frame and rejects when runInference throws (no leak on failure)', async () => {
-		const { engine, internals } = makeEngine();
-		// Fail before runInference reaches its own frame.close() (e.g. lost device).
-		internals.runInference = async () => {
-			throw new Error('device lost');
-		};
+	it('releases the frame exactly once when an early GPU step throws (no leak, no double close)', async () => {
+		// A device that throws on the first GPU call runInference makes (building its
+		// pipelines), so the body fails before its eager post-import frame close. The
+		// frame-owning guard must still release the frame, and exactly once.
+		const engine = new MatteEngine({
+			device: {
+				createShaderModule: () => {
+					throw new Error('device lost');
+				}
+			} as unknown as GPUDevice,
+			onStatus: vi.fn(),
+			wasmPath: '/litert/'
+		});
+		(engine as unknown as MatteEngineInternals).modelStatus = 'loaded';
 		const close = vi.fn();
 
 		await expect(
 			engine.matteViewFor({
-				...makeRequest('export'),
-				frame: { close } as unknown as VideoFrame
+				clipId: 'clip',
+				modelKey: 'model',
+				frame: { close } as unknown as VideoFrame,
+				sourceTimeS: 0,
+				frameStepS: 1 / 30,
+				quality: 'export'
 			})
 		).rejects.toThrow('device lost');
 
-		// The frame is released exactly once instead of leaking.
+		// Released exactly once — not leaked (0) and not double-closed (2).
 		expect(close).toHaveBeenCalledTimes(1);
 	});
 });
