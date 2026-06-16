@@ -17,13 +17,13 @@ export interface WebcamPipPreset {
 export const DEFAULT_WEBCAM_PRESET: WebcamPipPreset = {
 	corner: 'bottom-right',
 	size: 'M',
-	marginPx: 16,
+	marginPx: 16
 };
 
 const SIZE_PERCENT: Record<WebcamPipSize, number> = {
 	S: 0.2,
 	M: 0.3,
-	L: 0.4,
+	L: 0.4
 };
 
 const MIN_MARGIN = 0;
@@ -44,12 +44,12 @@ export function deriveWebcamTransform(
 	canvasW: number,
 	canvasH: number,
 	sourceW: number,
-	sourceH: number,
+	sourceH: number
 ): { x: number; y: number; width: number; height: number } {
 	const clampedMargin = Math.max(MIN_MARGIN, Math.min(MAX_MARGIN, preset.marginPx));
 
 	const webcamW = SIZE_PERCENT[preset.size];
-	const webcamH = webcamW * (sourceH / sourceW);
+	const webcamH = webcamW * (canvasW / canvasH) * (sourceH / sourceW);
 
 	// Separate X/Y normalisation for non-square canvases.
 	const marginX = clampedMargin / canvasW;

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { TimelineClipSnapshot, TransformParamsSnapshot, ClipKeyframesSnapshot } from '../../protocol';
+import type {
+	TimelineClipSnapshot,
+	TransformParamsSnapshot,
+	ClipKeyframesSnapshot
+} from '../../protocol';
 import { applyRetakeToClip } from './retake';
 
 const mockTransform: TransformParamsSnapshot = {
@@ -23,7 +27,15 @@ const originalClip: TimelineClipSnapshot = {
 	start: 0,
 	duration: 10,
 	inPoint: 2,
-	effects: { brightness: 0, contrast: 0, saturation: 0, temperature: 0, temperatureStrength: 0, lutStrength: 1 },
+	effects: {
+		brightness: 0,
+		contrast: 0,
+		saturation: 0,
+		temperature: 0,
+		temperatureStrength: 0,
+		lutStrength: 1,
+		skinSmoothStrength: 0
+	},
 	transform: mockTransform,
 	keyframes: mockKeyframes,
 	audioFadeIn: 0,

@@ -92,17 +92,14 @@ export function appendResumeRecord(atUs: number): string {
 	return JSON.stringify({ kind: 'resume', atUs });
 }
 
-export function appendSourceAddedRecord(
-	source: CaptureSourceSnapshot,
-	atUs: number,
-): string {
+export function appendSourceAddedRecord(source: CaptureSourceSnapshot, atUs: number): string {
 	return JSON.stringify({ kind: 'source-added', source, atUs });
 }
 
 export function appendSourceRegionAppliedRecord(
 	sourceId: string,
 	mode: 'crop' | 'element',
-	atUs: number,
+	atUs: number
 ): string {
 	return JSON.stringify({ kind: 'source-region-applied', sourceId, mode, atUs });
 }

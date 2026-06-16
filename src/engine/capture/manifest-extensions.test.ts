@@ -3,12 +3,26 @@ import { parseManifest, parseManifestLine } from './chunk-manifest';
 
 describe('parseManifestLine', () => {
 	it('parses known record kinds', () => {
-		expect(parseManifestLine('{"kind":"pause","atUs":1000}')).toEqual({ kind: 'pause', atUs: 1000 });
-		expect(parseManifestLine('{"kind":"resume","atUs":2000}')).toEqual({ kind: 'resume', atUs: 2000 });
-		expect(parseManifestLine('{"kind":"source-added","source":{"sourceId":"s1","kind":"webcam","label":"cam"},"atUs":500}'))
-			.toEqual({ kind: 'source-added', source: { sourceId: 's1', kind: 'webcam', label: 'cam' }, atUs: 500 });
-		expect(parseManifestLine('{"kind":"source-region-applied","sourceId":"s1","mode":"crop","atUs":300}'))
-			.toEqual({ kind: 'source-region-applied', sourceId: 's1', mode: 'crop', atUs: 300 });
+		expect(parseManifestLine('{"kind":"pause","atUs":1000}')).toEqual({
+			kind: 'pause',
+			atUs: 1000
+		});
+		expect(parseManifestLine('{"kind":"resume","atUs":2000}')).toEqual({
+			kind: 'resume',
+			atUs: 2000
+		});
+		expect(
+			parseManifestLine(
+				'{"kind":"source-added","source":{"sourceId":"s1","kind":"webcam","label":"cam"},"atUs":500}'
+			)
+		).toEqual({
+			kind: 'source-added',
+			source: { sourceId: 's1', kind: 'webcam', label: 'cam' },
+			atUs: 500
+		});
+		expect(
+			parseManifestLine('{"kind":"source-region-applied","sourceId":"s1","mode":"crop","atUs":300}')
+		).toEqual({ kind: 'source-region-applied', sourceId: 's1', mode: 'crop', atUs: 300 });
 	});
 
 	it('skips unknown kind values (forward compatibility)', () => {
@@ -56,7 +70,7 @@ describe('parseManifest', () => {
 		const ndjson = [
 			'{"kind":"pause","atUs":1000}',
 			'{"kind":"resume","atUs":2000}',
-			'{"kind":"pause","atUs":3000'  // torn tail — missing closing brace
+			'{"kind":"pause","atUs":3000' // torn tail — missing closing brace
 		].join('\n');
 
 		const records = parseManifest(ndjson);

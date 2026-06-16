@@ -19,13 +19,13 @@ import type { TimelineClipSnapshot } from '../../protocol';
 export function applyRetakeToClip(
 	original: TimelineClipSnapshot,
 	newSourceId: string,
-	newDurationS: number,
+	newDurationS: number
 ): TimelineClipSnapshot {
 	return {
 		...original,
 		sourceId: newSourceId,
 		duration: newDurationS,
-		inPoint: 0,
+		inPoint: 0
 		// transform, keyframes, id, kind, effects, lut, etc. are preserved via spread
 	};
 }

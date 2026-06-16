@@ -17,7 +17,7 @@ export interface PauseResumePair {
  * A final unpaired pause (session stopped while paused) is excluded.
  */
 export function extractPauseResumePairs(
-	records: readonly CaptureManifestRecord[],
+	records: readonly CaptureManifestRecord[]
 ): PauseResumePair[] {
 	const pairs: PauseResumePair[] = [];
 	let pendingPause: number | null = null;
@@ -42,10 +42,7 @@ export function extractPauseResumePairs(
  *
  * Integer arithmetic only — no floating-point accumulation.
  */
-export function computeGapCollapsedUs(
-	rawTs: number,
-	pairs: readonly PauseResumePair[],
-): number {
+export function computeGapCollapsedUs(rawTs: number, pairs: readonly PauseResumePair[]): number {
 	let cumulativeGap = 0;
 	for (const pair of pairs) {
 		if (pair.resumeAtUs <= rawTs) {
@@ -60,16 +57,15 @@ export function computeGapCollapsedUs(
  * Each position is the gap-collapsed resume timestamp.
  */
 export function seamMarkerPositionsUs(
-	pairs: readonly PauseResumePair[],
+	pairs: readonly PauseResumePair[]
 ): { positionUs: number; label: string }[] {
 	return pairs.map((pair, index) => {
 		// The marker position is the collapsed timestamp of the resume point.
-		// All prior pairs' gaps have been subtracted.
-		const priorPairs = pairs.slice(0, index);
-		const positionUs = computeGapCollapsedUs(pair.resumeAtUs, priorPairs);
+		// The current gap and all prior gaps must be subtracted to place the marker at the seam.
+		const positionUs = computeGapCollapsedUs(pair.resumeAtUs, pairs);
 		return {
 			positionUs,
-			label: `Resume ${index + 1}`,
+			label: `Resume ${index + 1}`
 		};
 	});
 }

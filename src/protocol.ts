@@ -2263,7 +2263,12 @@ export type WorkerCommand =
 	| { type: 'publish-tap-stop' }
 	| { type: 'capture-add-source'; source: CaptureSourceDescriptor; track: MediaStreamTrack }
 	| { type: 'capture-remove-source'; sourceId: string }
-	| { type: 'capture-start'; settings: CaptureSettingsSnapshot; writerPort?: MessagePort; retakeClipId?: string }
+	| {
+			type: 'capture-start';
+			settings: CaptureSettingsSnapshot;
+			writerPort?: MessagePort;
+			retakeClipId?: string;
+	  }
 	| { type: 'capture-stop' }
 	| { type: 'capture-pause' }
 	| { type: 'capture-resume' }
