@@ -14,7 +14,12 @@ gated by the Phase 26 probe rather than assumed.
   (`Content-Type: application/sdp`) to the configured endpoint URL. A `201
   Created` response provides the SDP answer body and a `Location` header; the
   resolved `Location` URL is retained as the session resource for the lifetime
-  of the publish.
+  of the publish. A `201` response without a `Location` header is a **protocol
+  error** (not retryable): without the session resource the client cannot
+  issue `PATCH` (ICE restart) or `DELETE` (teardown). The error is mapped to a
+  distinct `protocol-error` failure reason that the reconnect policy treats as
+  fatal so a misconfigured server doesn't drive the client into a useless
+  retry loop.
 - **R1.2** When a bearer token is configured, every WHIP request (`POST`,
   `PATCH`, `DELETE`) carries `Authorization: Bearer <token>`. The token never
   appears in logs, diagnostics snapshots, or error messages.
@@ -39,7 +44,11 @@ gated by the Phase 26 probe rather than assumed.
   support; if the server answers `405`/`501` the client falls back to a full
   re-`POST` (new session) per the R5 policy. No trickle-ICE `PATCH` is sent
   for initial candidates — the offer waits for ICE gathering to complete
-  (bounded by a timeout) so that servers without trickle support work.
+  (bounded by a timeout, **default 10 seconds**, overridable via
+  `WhipSessionDeps.gatherTimeoutMs`) so that servers without trickle support
+  work even on constrained or high-latency networks. The default is chosen to
+  cover STUN round-trips over cellular / VPN connections; raising it trades
+  setup latency for resilience.
 
 ## R2 — Codec negotiation and encode settings
 

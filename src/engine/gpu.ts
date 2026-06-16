@@ -49,7 +49,7 @@ import {
 	TRANSFORM_UNIFORM_BYTES,
 	type TransformParams
 } from './transform';
-import { OutputTransfer } from './colour';
+import { NormalizeTransfer, OutputTransfer, selectNormalizeTransfer } from './colour';
 import {
 	DEFAULT_PADDED_BACKGROUND,
 	normalizePaddedBackground,
@@ -112,6 +112,15 @@ export interface FrameCompositeLayer {
 	frame: VideoFrame;
 	effects: ClipEffectParams;
 	transform: TransformParams;
+	/**
+	 * Phase 21: per-clip source colour metadata. When present, `encodeSourceNormalize`
+	 * picks the inverse transfer function from `transfer` and the limited/full range
+	 * bit from `fullRange`. When absent, the shader defaults to sRGB → linear.
+	 * Gamut conversion (`primaries` / `matrix`) is not yet wired to the shader uniform
+	 * — non-BT.709 primaries fall through unconverted and a `gamut-mismatch` warning is
+	 * surfaced elsewhere instead.
+	 */
+	colorMetadata?: import('./colour').ColorMetadata;
 	lut?: ClipLut;
 	/** Phase 32a: optional skin-mask sidecar. */
 	skinMask?: SkinMaskSnapshot;
@@ -774,13 +783,16 @@ export class PreviewRenderer {
 	/**
 	 * Renders one frame from a layer stack (bottom → top). The caller owns every
 	 * `frame` and must `.close()` it afterwards; external textures are valid only
-	 * for the submission issued here. An empty stack clears to black.
+	 * for the submission issued here. An empty stack clears to black. `renderTimeS`
+	 * is the timeline / export sample time in seconds — Phase 38 film grain seeds
+	 * from this so grain stays deterministic across stills, cached frames, and
+	 * looped media (where the decoded frame's own timestamp is not unique).
 	 */
-	present(layers: readonly CompositeLayer[]): void {
+	present(layers: readonly CompositeLayer[], renderTimeS = 0): void {
 		if (!this.accView || !this.storageAView || !this.storageBView || !this.storageCView) return;
 
 		const encoder = this.device.createCommandEncoder();
-		const finalView = this.compositeLayers(encoder, layers);
+		const finalView = this.compositeLayers(encoder, layers, renderTimeS);
 
 		// Phase 21: optional zebra clipping overlay — fed from pre-conversion
 		// accumulator so isClipped() can detect out-of-range values.
@@ -840,7 +852,8 @@ export class PreviewRenderer {
 	 */
 	private compositeLayers(
 		encoder: GPUCommandEncoder,
-		layers: readonly CompositeLayer[]
+		layers: readonly CompositeLayer[],
+		renderTimeS = 0
 	): GPUTextureView {
 		const accView = this.accView!;
 		const wgX = Math.ceil(this.width / 8);
@@ -972,9 +985,11 @@ export class PreviewRenderer {
 			}
 			// Phase 38a: film looks (halation → grain → vignette) after LUT + skin
 			// smooth + matte + beauty, before opacity. Fixed order documented on encodeFilmLooks.
+			// Grain seeds from the timeline/render time (not layer.frame.timestamp)
+			// so stills, cached frames, and looped media still get changing grain
+			// — the per-frame contract that makes export deterministic.
 			let filmView = stageView;
 			if (layer.kind === 'frame') {
-				const frameTimeSeed = layer.frame.timestamp / 1e6;
 				filmView = this.effectChain.encodeFilmLooks(
 					encoder,
 					stageView,
@@ -983,7 +998,7 @@ export class PreviewRenderer {
 					this.height,
 					layer.effects,
 					slot,
-					frameTimeSeed
+					renderTimeS
 				);
 			}
 			const paddedBackgroundDst = filmView === storage.a ? storage.b : storage.a;
@@ -1189,8 +1204,9 @@ export class PreviewRenderer {
 		);
 
 		// Source normalization: decode transfer + convert colour space to working linear.
-		// When per-clip colour metadata is available, the per-clip normalization params
-		// are written to the uniform buffer; currently defaults to identity (sRGB→linear).
+		// Pull the per-clip transfer + range from layer.colorMetadata when available
+		// so HDR (PQ/HLG) sources are decoded correctly; absent metadata defaults to
+		// sRGB / full range. Gamut matrix is still identity (see shader comment).
 		let buffer = this.normalizeBuffers[slot];
 		if (!buffer) {
 			buffer = this.device.createBuffer({
@@ -1199,8 +1215,15 @@ export class PreviewRenderer {
 			});
 			this.normalizeBuffers[slot] = buffer;
 		}
-		// Default: sRGB→linear, full range
-		this.device.queue.writeBuffer(buffer, 0, new Uint32Array([2, 1]));
+		// Map `unknown` transfer to sRGB rather than the literal IDENTITY (0) —
+		// container metadata that came up empty is almost always SDR, so treating
+		// it as already-linear would over-brighten the source.
+		const inverseTransfer =
+			layer.colorMetadata && layer.colorMetadata.transfer !== 'unknown'
+				? selectNormalizeTransfer(layer.colorMetadata.transfer)
+				: NormalizeTransfer.SRGB;
+		const fullRange = layer.colorMetadata ? (layer.colorMetadata.fullRange ? 1 : 0) : 1;
+		this.device.queue.writeBuffer(buffer, 0, new Uint32Array([inverseTransfer, fullRange]));
 
 		// Normalize into storage.c (not storage.b — storage.a holds the imported
 		// frame and storage.b is the first ping-pong slot in encodeBaseCorrection)
@@ -1745,14 +1768,18 @@ export class PreviewRenderer {
 
 	/**
 	 * Renders a layer stack through the same compositor as preview, then captures
-	 * the compositor-backed canvas as the frame handed to the encoder.
+	 * the compositor-backed canvas as the frame handed to the encoder. `renderTimeS`
+	 * defaults to `timestamp` so existing callers keep using output time as the
+	 * grain seed; pass the timeline time explicitly when those diverge (in/out
+	 * range export).
 	 */
 	async renderLayeredForExport(
 		layers: readonly CompositeLayer[],
 		timestamp: number,
-		duration: number
+		duration: number,
+		renderTimeS = timestamp
 	): Promise<VideoFrame> {
-		this.present(layers);
+		this.present(layers, renderTimeS);
 		await this.device.queue.onSubmittedWorkDone();
 		return this.captureCanvasFrame(timestamp, duration);
 	}
@@ -1762,7 +1789,7 @@ export class PreviewRenderer {
 		if (this.width <= 0 || this.height <= 0) {
 			throw new Error('Export renderer has not been sized.');
 		}
-		return this.renderLayeredForExport([], timestamp, duration);
+		return this.renderLayeredForExport([], timestamp, duration, timestamp);
 	}
 
 	/** Phase 21: encodes the zebra clipping overlay composited on top of the frame. */

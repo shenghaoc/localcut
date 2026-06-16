@@ -4,7 +4,9 @@ import {
 	addTrack,
 	addTransition,
 	maxTransitionDurationS,
+	removeTransition,
 	revalidateTransitions,
+	setTransition,
 	closeGaps,
 	createEmptyTimeline,
 	DEFAULT_TRACK_MIX,
@@ -1070,6 +1072,97 @@ describe('timeline tracks', () => {
 			sourceDuration: 10
 		});
 		expect(revalidateTransitions(stillAdjacent, transitions, durations)).toHaveLength(1);
+	});
+
+	describe('removeTransition', () => {
+		const baseTransitions: TimelineTransition[] = [
+			{
+				id: 'tr-a',
+				trackId: 'video-track',
+				fromClipId: 'a',
+				toClipId: 'b',
+				durationS: 1,
+				kind: 'cross-dissolve',
+				params: {}
+			},
+			{
+				id: 'tr-b',
+				trackId: 'video-track',
+				fromClipId: 'b',
+				toClipId: 'c',
+				durationS: 1,
+				kind: 'cross-dissolve',
+				params: {}
+			}
+		];
+
+		it('filters out the targeted transition', () => {
+			const next = removeTransition(baseTransitions, 'tr-a');
+			expect(next.map((t) => t.id)).toEqual(['tr-b']);
+		});
+
+		it('returns the same reference when no transition matches (no-op)', () => {
+			const next = removeTransition(baseTransitions, 'tr-missing');
+			expect(next).toBe(baseTransitions);
+		});
+	});
+
+	describe('setTransition', () => {
+		const timeline: TimelineTrack[] = [
+			{
+				id: 'video-track',
+				type: 'video',
+				...DEFAULT_TRACK_MIX,
+				clips: [
+					clip({ id: 'a', sourceId: 'src-a', start: 0, duration: 4, inPoint: 1 }),
+					clip({ id: 'b', sourceId: 'src-b', start: 4, duration: 4, inPoint: 1 })
+				]
+			}
+		];
+		const durations = { durationForSource: () => 10 };
+		const baseTransitions: TimelineTransition[] = [
+			{
+				id: 'tr-1',
+				trackId: 'video-track',
+				fromClipId: 'a',
+				toClipId: 'b',
+				durationS: 1,
+				kind: 'cross-dissolve',
+				params: {}
+			}
+		];
+
+		it('applies a partial patch and clamps the duration against source handles', () => {
+			const next = setTransition(timeline, baseTransitions, durations, 'tr-1', {
+				durationS: 100,
+				kind: 'wipe',
+				params: { direction: 'right' }
+			});
+			expect(next).toHaveLength(1);
+			const updated = next[0]!;
+			expect(updated.durationS).toBeLessThanOrEqual(
+				maxTransitionDurationS(timeline, durations, 'video-track', 'a', 'b')
+			);
+			expect(updated.kind).toBe('wipe');
+			expect(updated.params).toEqual({ direction: 'right' });
+		});
+
+		it('drops the transition when the patched duration clamps to zero', () => {
+			const noRoom = { durationForSource: () => 0 };
+			const next = setTransition(timeline, baseTransitions, noRoom, 'tr-1', {
+				durationS: 1
+			});
+			expect(next).toEqual([]);
+		});
+
+		it('returns the same reference when the patch is a no-op', () => {
+			const next = setTransition(timeline, baseTransitions, durations, 'tr-1', {
+				durationS: baseTransitions[0]!.durationS,
+				kind: baseTransitions[0]!.kind,
+				params: baseTransitions[0]!.params
+			});
+			expect(next).toBe(baseTransitions);
+		});
 	});
 });
 

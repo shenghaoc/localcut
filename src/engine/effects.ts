@@ -570,9 +570,22 @@ export class EffectChain {
 
 		const wgX = Math.ceil(width / 8);
 		const wgY = Math.ceil(height / 8);
-		const pingPong = [storage.b, storage.c, storage.a];
+		const slots = [storage.a, storage.b, storage.c];
 		let currentSrc = srcView;
-		let bufIdx = 0;
+		// Start ping-pong from the slot *after* the one currentSrc currently occupies,
+		// so the first dst is never the same view as src (WebGPU forbids a single pass
+		// binding the same texture view as both sampled input and storage output).
+		// External / non-storage srcView (e.g. source-normalize output) falls through
+		// to bufIdx=0 (writes to storage.b) which never collides.
+		const srcSlotIdx =
+			currentSrc === storage.a
+				? 0
+				: currentSrc === storage.b
+					? 1
+					: currentSrc === storage.c
+						? 2
+						: -1;
+		let bufIdx = srcSlotIdx >= 0 ? (srcSlotIdx + 1) % 3 : 0;
 
 		const filmEffects: Array<{ effect: CompiledEffect; pack: () => Float32Array }> = [];
 		if (isHalationActive(normalized)) {
@@ -592,7 +605,7 @@ export class EffectChain {
 		}
 
 		for (const { effect, pack } of filmEffects) {
-			const currentDst = pingPong[bufIdx]!;
+			const currentDst = slots[bufIdx]!;
 			bufIdx = (bufIdx + 1) % 3;
 
 			const uniformBuffer = this.uniformBufferFor(effect, slot);

@@ -44,6 +44,34 @@ export interface PrimaryMediaAdapterOpenResult extends MediaAdapterInspectionRes
 	readonly conformance: SourceConformance;
 }
 
+/**
+ * Thrown by a primary adapter's `open()` when the file is recognised but
+ * cannot produce a real `MediaInputHandle` (e.g. .lottie zip we don't unpack).
+ * Callers should surface the embedded warnings rather than treating it as a
+ * generic crash. The previous workaround — returning `null as MediaInputHandle`
+ * — silently desync'd the type contract and caused null deref downstream.
+ */
+export class BlockedImportError extends Error {
+	readonly warnings: readonly SourceHealthWarning[];
+	readonly inspection: SourceInspection;
+	readonly conformance: SourceConformance;
+
+	constructor(
+		message: string,
+		details: {
+			warnings: readonly SourceHealthWarning[];
+			inspection: SourceInspection;
+			conformance: SourceConformance;
+		}
+	) {
+		super(message);
+		this.name = 'BlockedImportError';
+		this.warnings = details.warnings;
+		this.inspection = details.inspection;
+		this.conformance = details.conformance;
+	}
+}
+
 export interface MediaAdapter {
 	readonly id: MediaAdapterId;
 	readonly role: MediaAdapterRole;

@@ -1042,7 +1042,8 @@ export type SourceHealthWarningCodeSnapshot =
 	| 'undecodable-track'
 	| 'missing-cleaned-audio'
 	| 'alpha-not-decoded'
-	| 'lottie-zip-unsupported';
+	| 'lottie-zip-unsupported'
+	| 'animated-image-static-fallback';
 
 export interface SourceHealthWarningSnapshot {
 	code: SourceHealthWarningCodeSnapshot;
@@ -2539,6 +2540,7 @@ export type WorkerCommand =
 			outputDir?: FileSystemDirectoryHandle | null;
 	  }
 	| { type: 'queue-job-skip'; jobId: string }
+	| { type: 'queue-pause' }
 	| { type: 'queue-set-stop-on-error'; stopOnError: boolean }
 	| { type: 'request-diagnostic-snapshot'; requestId: string }
 	| { type: 'run-recovery-action'; actionId: string }
@@ -2858,6 +2860,12 @@ export type WorkerStateMessage =
 	| {
 			type: 'translated-caption-track-created';
 			trackId: string;
+	  }
+	// Phase 40: translated caption track creation rejected (e.g. zero segments).
+	| {
+			type: 'translated-caption-track-error';
+			reason: 'empty-segments' | 'malformed-segments';
+			message: string;
 	  }
 	| { type: 'diagnostic-snapshot'; requestId?: string; snapshot: DiagnosticSnapshot }
 	| { type: 'recent-error'; error: RecentError }
