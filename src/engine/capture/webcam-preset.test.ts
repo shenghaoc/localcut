@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { deriveWebcamTransform, type WebcamPipCorner, type WebcamPipSize } from './webcam-preset';
 
 const CANVAS_W = 1920;
