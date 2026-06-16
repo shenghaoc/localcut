@@ -25,6 +25,7 @@ import {
 	type PreviewBackend,
 	type InterpolationAvailability,
 	type InterpolationModelStatus,
+	type BeautyModelStatus,
 	type RenderQueueState,
 	type BundleIntegrityReportSnapshot,
 	type BundleSourcePolicySnapshot,
@@ -432,6 +433,18 @@ export function App() {
 	const [interpolationRecentErrors, setInterpolationRecentErrors] = createSignal<readonly string[]>(
 		[]
 	);
+	// Phase 32b: beauty model load state (mirrors interpolation; drives Inspector gating).
+	const [beautyModelStatus, setBeautyModelStatus] = createSignal<BeautyModelStatus>('not-loaded');
+	const [beautyModelSizeBytes, setBeautyModelSizeBytes] = createSignal<number | null>(null);
+	const [beautyModelDownloadedBytes, setBeautyModelDownloadedBytes] = createSignal<number | null>(
+		null
+	);
+	const [beautyModelError, setBeautyModelError] = createSignal<string | null>(null);
+	// Phase 32b: accelerated beauty path needs WebGPU + cross-origin isolation.
+	const beautyAvailable = (): boolean => {
+		const probe = capabilityProbeV2()?.beauty;
+		return probe ? probe.webgpu === 'supported' && probe.crossOriginIsolated : false;
+	};
 	const [exportPresets, setExportPresets] = createSignal<ExportPresetDoc[]>(
 		BUILT_IN_PRESETS.map((preset) => ({ ...preset }))
 	);
@@ -1520,6 +1533,17 @@ export function App() {
 			case 'interp-error':
 				recordInterpolationError(msg.message);
 				setStatusLine(`Frame interpolation unavailable: ${msg.message}`);
+				break;
+			case 'beauty-model-status':
+				setBeautyModelStatus(msg.status);
+				if (msg.sizeBytes !== undefined) setBeautyModelSizeBytes(msg.sizeBytes);
+				if (msg.downloadedBytes !== undefined) setBeautyModelDownloadedBytes(msg.downloadedBytes);
+				if (msg.error) setBeautyModelError(msg.error);
+				else if (msg.status === 'loaded' || msg.status === 'not-loaded') setBeautyModelError(null);
+				break;
+			case 'beauty-runtime-status':
+				// Display-only; the model-load status drives Inspector gating.
+				if (msg.reason) setBeautyModelError(msg.reason);
 				break;
 			case 'asr-caption-track-created':
 				asrController.handlePipelineMessage(msg);
@@ -3623,6 +3647,18 @@ export function App() {
 													onBeautyEffect={(trackId, clipId, beauty) => {
 														bridge?.send({ type: 'set-beauty-effect', trackId, clipId, beauty });
 													}}
+													beautyAvailable={beautyAvailable()}
+													beautyModelStatus={beautyModelStatus()}
+													beautyModelSizeBytes={beautyModelSizeBytes() ?? undefined}
+													beautyModelDownloadedBytes={beautyModelDownloadedBytes() ?? undefined}
+													beautyModelError={beautyModelError() ?? undefined}
+													onLoadBeautyModel={() =>
+														bridge?.send({
+															type: 'load-beauty-model',
+															manifestUrl: '/models/beauty/manifest.json',
+															preferredExecutionProvider: 'webgpu'
+														})
+													}
 												/>
 											</div>
 										</Show>

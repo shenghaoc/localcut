@@ -236,6 +236,7 @@ import {
 	type CalibrationProfile
 } from './interpolation/interpolation-estimate';
 import { planTiles, type ModelIoContract, type VramBudget } from './interpolation/tiling';
+import { BeautyEngine } from './beauty/beauty-engine';
 import {
 	InterpolationManifestError,
 	toModelIoContract,
@@ -375,6 +376,41 @@ function ensureInterpolationEngine(): InterpolationEngine | null {
 		});
 	}
 	return interpolationEngine;
+}
+
+/** Phase 32b landmark-driven beauty engine — zero-copy ORT-WebGPU face/landmark
+ *  inference on the renderer's device; created lazily on the first load action. */
+let beautyEngine: BeautyEngine | null = null;
+
+function ensureBeautyEngine(): BeautyEngine | null {
+	if (!renderer) return null;
+	if (!beautyEngine) {
+		beautyEngine = new BeautyEngine({
+			device: renderer.gpuDevice,
+			onStatus: (status, error) => {
+				const manifest = beautyEngine?.getModelManifest();
+				const ep = beautyEngine?.getExecutionProvider();
+				post({
+					type: 'beauty-model-status',
+					status,
+					...(ep ? { executionProvider: ep } : {}),
+					...(manifest ? { sizeBytes: manifest.sizeBytes } : {}),
+					...(error ? { error } : {})
+				});
+			},
+			onProgress: ({ downloadedBytes, totalBytes, cached }) => {
+				post({
+					type: 'beauty-model-status',
+					status: 'loading',
+					downloadedBytes,
+					sizeBytes: totalBytes,
+					fraction: totalBytes > 0 ? downloadedBytes / totalBytes : 0,
+					cached
+				});
+			}
+		});
+	}
+	return beautyEngine;
 }
 
 /** Conservative default per-tile calibration until a real micro-benchmark
@@ -1967,6 +2003,8 @@ async function handleInit(
 				matteEngine = null;
 				void interpolationEngine?.dispose();
 				interpolationEngine = null;
+				void beautyEngine?.dispose();
+				beautyEngine = null;
 				renderer?.destroy();
 				renderer = null;
 				previewBackend = 'none';
@@ -6487,6 +6525,8 @@ async function handleDispose(): Promise<void> {
 	matteEngine = null;
 	void interpolationEngine?.dispose();
 	interpolationEngine = null;
+	void beautyEngine?.dispose();
+	beautyEngine = null;
 	renderer?.destroy();
 	renderer = null;
 	reducedRenderer?.destroy();
@@ -7342,6 +7382,29 @@ function handleInterpolationDispose(): void {
 	interpolationEngine = null;
 }
 
+/** Phase 32b: lazily build the beauty engine and trigger a model load. The
+ *  frame-coupled face/landmark path is pinned to ORT-WebGPU, so the command's
+ *  `preferredExecutionProvider` only matters for a future reduced/export path. */
+function handleLoadBeautyModel(cmd: Extract<WorkerCommand, { type: 'load-beauty-model' }>): void {
+	void cmd;
+	const engine = ensureBeautyEngine();
+	if (!engine) {
+		post({
+			type: 'beauty-model-status',
+			status: 'failed',
+			error: 'Beauty requires the accelerated WebGPU renderer.'
+		});
+		return;
+	}
+	void engine.ensureModelLoaded();
+}
+
+function handleUnloadBeautyModel(): void {
+	void beautyEngine?.dispose();
+	beautyEngine = null;
+	post({ type: 'beauty-model-status', status: 'not-loaded' });
+}
+
 self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 	const cmd = event.data;
 	switch (cmd.type) {
@@ -8041,8 +8104,7 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			break;
 		// Phase 32b: Landmark-Driven Beauty
 		case 'load-beauty-model':
-			// TODO: Phase 32b — load beauty model manifest and cache in OPFS
-			void cmd;
+			handleLoadBeautyModel(cmd);
 			break;
 		case 'set-beauty-effect':
 			commitTimelineMutation(() => setBeautyEffect(timeline, cmd.trackId, cmd.clipId, cmd.beauty), {
@@ -8053,8 +8115,7 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			});
 			break;
 		case 'unload-beauty-model':
-			// TODO: Phase 32b — dispose beauty model session
-			void cmd;
+			handleUnloadBeautyModel();
 			break;
 		case 'dispose':
 			void handleDispose();

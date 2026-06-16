@@ -295,6 +295,16 @@ function assertV1AssetContracts(assets: BeautyModelAssets): void {
 export function validateBeautyManifest(value: unknown): BeautyModelManifest {
 	if (!isRecord(value)) throw new BeautyManifestError('manifest must be an object');
 
+	// A placeholder/template manifest is the "no compatible model configured" state
+	// (mirrors interpolation's R2.4 gate): reject it so the feature stays hidden until
+	// a license-verified ONNX detector/landmark pair is vendored. See
+	// public/models/beauty/README.md for the enable steps.
+	if (value.template === true) {
+		throw new BeautyManifestError(
+			'manifest is a placeholder template — vendor license-verified detector + landmark ONNX models'
+		);
+	}
+
 	const id = requireString(value.id, 'id');
 	const version = requireString(value.version, 'version');
 	const sizeBytes = requirePositiveInt(value.sizeBytes, 'sizeBytes');

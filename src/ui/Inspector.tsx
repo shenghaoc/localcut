@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Diamond, Upload } from 'lucide-solid';
 import { DEFAULT_BEAUTY_EFFECT, DEFAULT_SKIN_MASK } from '../protocol';
 import type {
 	BeautyEffectSnapshot,
+	BeautyModelStatus,
 	ClipEffectParamsSnapshot,
 	ClipKeyframeParamSnapshot,
 	ClipKeyframesSnapshot,
@@ -153,6 +154,18 @@ interface InspectorProps {
 	onExportLookPreset?: (trackId: string, clipId: string) => void;
 	/** Phase 32b: beauty effect editing. */
 	onBeautyEffect?: (trackId: string, clipId: string, beauty: Partial<BeautyEffectSnapshot>) => void;
+	/** Phase 32b: whether the browser can run the accelerated beauty path (WebGPU + COI). */
+	beautyAvailable?: boolean;
+	/** Phase 32b: on-device beauty model load status. */
+	beautyModelStatus?: BeautyModelStatus;
+	/** Phase 32b: total beauty model download size in bytes (from the manifest). */
+	beautyModelSizeBytes?: number;
+	/** Phase 32b: bytes downloaded so far while loading. */
+	beautyModelDownloadedBytes?: number;
+	/** Phase 32b: clear, non-alarming reason the model is unavailable/failed. */
+	beautyModelError?: string;
+	/** Phase 32b: request an on-device beauty model download (explicit user action). */
+	onLoadBeautyModel?: () => void;
 }
 
 type TransformSliderKey = 'x' | 'y' | 'scale' | 'rotation' | 'opacity';
@@ -629,6 +642,27 @@ export function Inspector(props: InspectorProps) {
 				: frames.find((frame) => frame.t > localTime + 1e-3);
 		if (next) props.onSeek(clip.start + next.t);
 	}
+
+	// Phase 32b: beauty model-state labels (the editing controls only render once a
+	// model is loaded, so the panel never presents a no-op effect — R1.3/R7.1).
+	const beautyModelStateLabel = (): string => {
+		switch (props.beautyModelStatus) {
+			case 'loading':
+				return 'Loading…';
+			case 'failed':
+				return 'Unavailable';
+			case 'loaded':
+				return 'Ready';
+			default:
+				return 'Load required';
+		}
+	};
+	const beautyModelSizeLabel = (): string => {
+		const bytes = props.beautyModelSizeBytes;
+		if (!bytes || bytes <= 0) return '';
+		const mb = bytes / (1024 * 1024);
+		return mb >= 1 ? ` (${mb.toFixed(1)} MB)` : ` (${Math.max(1, Math.round(bytes / 1024))} KB)`;
+	};
 
 	function handleLutFile(file: File | undefined): void {
 		const clip = props.selectedClip;
@@ -2065,10 +2099,59 @@ export function Inspector(props: InspectorProps) {
 								</div>
 							)}
 						</Show>
-						{/* Phase 32b: Beauty effect panel */}
+						{/* Phase 32b: Beauty model state + load. The editing controls below only
+						    appear once a model is loaded, so the panel never presents a no-op
+						    effect (R1.3, R7.1). With the shipped template manifest, loading
+						    resolves to "No compatible beauty model configured". */}
+						<Show when={props.selectedClip}>
+							<Show when={props.beautyAvailable === false}>
+								<div class="beauty-panel">
+									<div class="beauty-status">
+										<span class="beauty-title">Beauty</span>
+										<span class="beauty-status-pill">Unavailable</span>
+									</div>
+									<p class="beauty-hint">
+										Beauty needs WebGPU and cross-origin isolation; it's unavailable on this
+										browser.
+									</p>
+								</div>
+							</Show>
+							<Show
+								when={
+									props.beautyAvailable !== false &&
+									(props.beautyModelStatus ?? 'not-loaded') !== 'loaded'
+								}
+							>
+								<div class="beauty-panel">
+									<div class="beauty-status">
+										<span class="beauty-title">Beauty</span>
+										<span class="beauty-status-pill">{beautyModelStateLabel()}</span>
+									</div>
+									<p class="beauty-hint">
+										On-device face-landmark model{beautyModelSizeLabel()}. Runs locally — nothing is
+										uploaded.
+									</p>
+									<Show when={props.beautyModelStatus !== 'loading'}>
+										<button
+											type="button"
+											class="button secondary"
+											onClick={() => props.onLoadBeautyModel?.()}
+										>
+											Load beauty model{beautyModelSizeLabel()}
+										</button>
+									</Show>
+									<Show when={props.beautyModelError} keyed>
+										{(err) => <p class="beauty-error">{err}</p>}
+									</Show>
+								</div>
+							</Show>
+						</Show>
+						{/* Phase 32b: Beauty effect editing — only when a model is loaded. */}
 						<Show
 							when={
-								props.selectedClip
+								props.selectedClip &&
+								props.beautyAvailable !== false &&
+								props.beautyModelStatus === 'loaded'
 									? (props.selectedClip.beauty ?? DEFAULT_BEAUTY_EFFECT)
 									: undefined
 							}
