@@ -1,6 +1,7 @@
 import { clamp, clamp01, isFiniteNumber as finite } from '../lib/math';
-import { KEYFRAME_EPSILON } from '../protocol';
+import { DEFAULT_BEAUTY_EFFECT, KEYFRAME_EPSILON } from '../protocol';
 import type {
+	BeautyEffectSnapshot,
 	ClipEffectParamsSnapshot,
 	ClipKeyframeParamSnapshot,
 	ClipKeyframesSnapshot,
@@ -10,6 +11,7 @@ import type {
 } from '../protocol';
 import { DEFAULT_CLIP_EFFECTS, normalizeClipEffects, type ClipEffectParams } from './effects';
 import { DEFAULT_TRANSFORM, normalizeTransform, type TransformParams } from './transform';
+import { normalizeBeautyEffect } from './beauty/beauty-params';
 
 export type KeyframeEasing = KeyframeEasingSnapshot;
 export type Keyframe = KeyframeSnapshot;
@@ -19,6 +21,7 @@ export type ClipKeyframes = ClipKeyframesSnapshot;
 export interface SampledClipParams {
 	effects: ClipEffectParams;
 	transform: TransformParams;
+	beauty?: BeautyEffectSnapshot;
 }
 
 export interface KeyframedClip {
@@ -26,6 +29,7 @@ export interface KeyframedClip {
 	duration: number;
 	effects: ClipEffectParamsSnapshot;
 	transform: TransformParamsSnapshot;
+	beauty?: BeautyEffectSnapshot;
 	keyframes?: ClipKeyframes;
 }
 
@@ -59,6 +63,20 @@ const TRANSFORM_PARAM_KEYS = new Set<ClipKeyframeParam>([
 	'anchorY'
 ]);
 
+export type BeautyKeyframeParam = Extract<ClipKeyframeParam, `beauty.${string}`>;
+type BeautyParamName = keyof Pick<
+	BeautyEffectSnapshot,
+	'masterStrength' | 'jawSlim' | 'eyeEnlarge' | 'noseWidth' | 'mouth'
+>;
+
+const BEAUTY_PARAM_KEYS = new Set<ClipKeyframeParam>([
+	'beauty.masterStrength',
+	'beauty.jawSlim',
+	'beauty.eyeEnlarge',
+	'beauty.noseWidth',
+	'beauty.mouth'
+]);
+
 function sameTime(a: number, b: number): boolean {
 	return Math.abs(a - b) <= KEYFRAME_EPSILON;
 }
@@ -83,11 +101,16 @@ export function isTransformKeyframeParam(
 	return TRANSFORM_PARAM_KEYS.has(key);
 }
 
+export function isBeautyKeyframeParam(key: ClipKeyframeParam): key is BeautyKeyframeParam {
+	return BEAUTY_PARAM_KEYS.has(key);
+}
+
 export function isClipKeyframeParam(key: unknown): key is ClipKeyframeParam {
 	return (
 		typeof key === 'string' &&
 		(EFFECT_PARAM_KEYS.has(key as ClipKeyframeParam) ||
-			TRANSFORM_PARAM_KEYS.has(key as ClipKeyframeParam))
+			TRANSFORM_PARAM_KEYS.has(key as ClipKeyframeParam) ||
+			BEAUTY_PARAM_KEYS.has(key as ClipKeyframeParam))
 	);
 }
 
@@ -262,13 +285,18 @@ function clipLocalTime(clip: KeyframedClip, timelineTime: number): number {
 	return clamp(timelineTime - clip.start, 0, Math.max(0, clip.duration));
 }
 
+function beautyParamName(key: BeautyKeyframeParam): BeautyParamName {
+	return key.slice('beauty.'.length) as BeautyParamName;
+}
+
 export function sampleClipParamsAt(clip: KeyframedClip, timelineTime: number): SampledClipParams {
 	const localTime = clipLocalTime(clip, timelineTime);
 	const effects = normalizeClipEffects(clip.effects);
 	const transform = normalizeTransform(clip.transform);
+	let beauty = clip.beauty ? normalizeBeautyEffect(clip.beauty) : undefined;
 	const keyframes = clip.keyframes;
 	if (!keyframes) {
-		return { effects, transform };
+		return beauty ? { effects, transform, beauty } : { effects, transform };
 	}
 
 	for (const [rawKey, track] of Object.entries(keyframes)) {
@@ -285,8 +313,12 @@ export function sampleClipParamsAt(clip: KeyframedClip, timelineTime: number): S
 				localTime,
 				transform[rawKey] ?? DEFAULT_TRANSFORM[rawKey]
 			);
+		} else if (isBeautyKeyframeParam(rawKey)) {
+			beauty = normalizeBeautyEffect(beauty ?? DEFAULT_BEAUTY_EFFECT);
+			const key = beautyParamName(rawKey);
+			beauty[key] = sampleKeyframes(track, localTime, beauty[key] ?? DEFAULT_BEAUTY_EFFECT[key]);
 		}
 	}
 
-	return { effects, transform };
+	return beauty ? { effects, transform, beauty } : { effects, transform };
 }

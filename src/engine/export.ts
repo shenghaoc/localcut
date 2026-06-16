@@ -238,6 +238,16 @@ export interface TimelineExportOptions {
 		frame: VideoFrame,
 		sourceTimeS: number
 	) => Promise<GPUTextureView | null>;
+	/**
+	 * Phase 32b: resolve smoothed primary-face landmarks for a clip's frame, running
+	 * the same cadence-gated solve as preview so beauty matches frame-for-frame. The
+	 * callback owns the passed frame clone. Returns `null` when no model is loaded.
+	 */
+	beautyLandmarksFor?: (
+		clip: TimelineClip,
+		frame: VideoFrame,
+		timelineTimeS: number
+	) => Promise<Float32Array | null>;
 }
 
 export interface TimelineExportResult {
@@ -1008,7 +1018,8 @@ async function encodeVideoRange(
 		onProgress,
 		titleTextureFor,
 		overlayTextureLayersAt,
-		matteViewFor
+		matteViewFor,
+		beautyLandmarksFor
 	} = options;
 	renderer.setPreviewSize(plan.width, plan.height);
 
@@ -1100,6 +1111,13 @@ async function encodeVideoRange(
 									sourceTimestamp.adapterTimestampS
 								)) ?? undefined)
 							: undefined;
+					// Phase 32b: export resolves landmarks through the same engine as preview
+					// so beauty matches frame-for-frame; the resolver owns the frame clone.
+					const beautyLandmarks =
+						sampled.beauty?.enabled && beautyLandmarksFor
+							? ((await beautyLandmarksFor(layer.clip, videoFrame.clone(), timelineTime)) ??
+								undefined)
+							: undefined;
 					decodedFrames.push(videoFrame);
 					layers.push({
 						kind: 'frame',
@@ -1114,7 +1132,9 @@ async function encodeVideoRange(
 						matteStrength: matte?.enabled ? matte.strength : undefined,
 						matteMode: matte?.enabled ? matte.mode : undefined,
 						matteBlurRadius: matte?.enabled ? matte.blurRadius : undefined,
-						matteRefine: matteView !== undefined
+						matteRefine: matteView !== undefined,
+						beauty: sampled.beauty,
+						beautyLandmarks
 					});
 				}
 				for (const overlay of overlayTextureLayersAt?.(timelineTime) ?? []) {

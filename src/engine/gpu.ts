@@ -23,11 +23,18 @@ import skinSmoothPrepareSource from './shaders/skin-smooth-prepare.wgsl?raw';
 import skinSmoothBoxSource from './shaders/skin-smooth-box.wgsl?raw';
 import skinSmoothCoeffsSource from './shaders/skin-smooth-coeffs.wgsl?raw';
 import skinSmoothApplySource from './shaders/skin-smooth-apply.wgsl?raw';
+import beautyWarpSource from './shaders/beauty-warp.wgsl?raw';
 import { EffectChain, type ClipEffectParams, isSkinSmoothActive } from './effects';
 import { createComputePipeline } from './gpu-pipeline';
 import type { ClipLut } from './lut';
 import { packSkinBoxUniform, packSkinApplyUniform, radiusForHeight } from './skin-smooth';
-import type { SkinMaskSnapshot } from '../protocol';
+import type { BeautyEffectSnapshot, SkinMaskSnapshot } from '../protocol';
+import {
+	isBeautyActive,
+	LANDMARK_FLOATS,
+	packBeautyUniform,
+	packLandmarkBuffer
+} from './beauty/beauty-params';
 import {
 	DEFAULT_TRANSFORM,
 	packTransformUniform,
@@ -96,6 +103,10 @@ export interface FrameCompositeLayer {
 	matteBlurRadius?: number;
 	/** Phase 31: export path — guided-upsample refinement of the matte sample. */
 	matteRefine?: boolean;
+	/** Phase 32b: optional beauty effect sidecar. */
+	beauty?: BeautyEffectSnapshot;
+	/** Phase 32b: smoothed/interpolated 478x3 primary-face landmarks for this frame. */
+	beautyLandmarks?: Float32Array;
 	/** Phase 13: present when this layer participates in a transition blend. */
 	transition?: import('./timeline').TransitionResolveMeta;
 }
@@ -226,10 +237,12 @@ export class PreviewRenderer {
 	private readonly skinSmoothBoxPipeline: GPUComputePipeline;
 	private readonly skinSmoothCoeffsPipeline: GPUComputePipeline;
 	private readonly skinSmoothApplyPipeline: GPUComputePipeline;
+	private readonly beautyWarpPipeline: GPUComputePipeline;
 	private readonly skinSmoothGroupLayout: GPUBindGroupLayout;
 	private readonly skinSmoothBoxGroupLayout: GPUBindGroupLayout;
 	private readonly skinSmoothCoeffsGroupLayout: GPUBindGroupLayout;
 	private readonly skinSmoothApplyGroupLayout: GPUBindGroupLayout;
+	private readonly beautyWarpGroupLayout: GPUBindGroupLayout;
 	private skinScratch0: GPUTexture | null = null;
 	private skinScratch1: GPUTexture | null = null;
 	private skinScratch0View: GPUTextureView | null = null;
@@ -238,6 +251,8 @@ export class PreviewRenderer {
 	private skinBoxUniformV: GPUBuffer | null = null;
 	private skinBoxUniformHeight: number | null = null;
 	private readonly skinApplyUniforms: GPUBuffer[] = [];
+	private readonly beautyUniforms: GPUBuffer[] = [];
+	private readonly beautyLandmarkBuffers: GPUBuffer[] = [];
 
 	// Phase 21: scopes SAB reference (set by worker for scope output).
 	private scopeSab: Float32Array | null = null;
@@ -358,6 +373,13 @@ export class PreviewRenderer {
 				entryPoint: 'main'
 			}
 		});
+		this.beautyWarpPipeline = device.createComputePipeline({
+			layout: 'auto',
+			compute: {
+				module: device.createShaderModule({ code: beautyWarpSource }),
+				entryPoint: 'main'
+			}
+		});
 
 		this.normalizeGroupLayout = this.sourceNormalizePipeline.getBindGroupLayout(0);
 		this.outConvGroupLayout = this.outputConvertPipeline.getBindGroupLayout(0);
@@ -369,6 +391,7 @@ export class PreviewRenderer {
 		this.skinSmoothBoxGroupLayout = this.skinSmoothBoxPipeline.getBindGroupLayout(0);
 		this.skinSmoothCoeffsGroupLayout = this.skinSmoothCoeffsPipeline.getBindGroupLayout(0);
 		this.skinSmoothApplyGroupLayout = this.skinSmoothApplyPipeline.getBindGroupLayout(0);
+		this.beautyWarpGroupLayout = this.beautyWarpPipeline.getBindGroupLayout(0);
 
 		this.sampler = device.createSampler({
 			magFilter: 'linear',
@@ -640,6 +663,7 @@ export class PreviewRenderer {
 				);
 				stageView = skinDst;
 			}
+			// Phase 31: portrait matte (background removal/replace/blur).
 			if (
 				layer.kind === 'frame' &&
 				layer.matteView &&
@@ -664,8 +688,30 @@ export class PreviewRenderer {
 					wgY
 				);
 			}
+			// Phase 32b: landmark-driven beauty warp. Missing landmarks degrade to identity.
+			if (
+				layer.kind === 'frame' &&
+				layer.beauty &&
+				isBeautyActive(layer.beauty) &&
+				layer.beautyLandmarks &&
+				layer.beautyLandmarks.length > 0
+			) {
+				const beautyDst =
+					stageView === storage.a ? storage.b : stageView === storage.b ? storage.c : storage.a;
+				this.encodeBeautyWarp(
+					encoder,
+					stageView,
+					beautyDst,
+					layer.beauty,
+					layer.beautyLandmarks,
+					slot,
+					wgX,
+					wgY
+				);
+				stageView = beautyDst;
+			}
 			// Phase 38a: film looks (halation → grain → vignette) after LUT + skin
-			// smooth + matte, before opacity. Fixed order documented on encodeFilmLooks.
+			// smooth + matte + beauty, before opacity. Fixed order documented on encodeFilmLooks.
 			let filmView = stageView;
 			if (layer.kind === 'frame') {
 				const frameTimeSeed = layer.frame.timestamp / 1e6;
@@ -1140,6 +1186,52 @@ export class PreviewRenderer {
 		return dstView;
 	}
 
+	private encodeBeautyWarp(
+		encoder: GPUCommandEncoder,
+		srcView: GPUTextureView,
+		dstView: GPUTextureView,
+		beauty: BeautyEffectSnapshot,
+		landmarks: Float32Array,
+		slot: number,
+		wgX: number,
+		wgY: number
+	): void {
+		let uniformBuffer = this.beautyUniforms[slot];
+		if (!uniformBuffer) {
+			uniformBuffer = this.device.createBuffer({
+				size: 64,
+				usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+			});
+			this.beautyUniforms[slot] = uniformBuffer;
+		}
+		let landmarkBuffer = this.beautyLandmarkBuffers[slot];
+		if (!landmarkBuffer) {
+			landmarkBuffer = this.device.createBuffer({
+				size: LANDMARK_FLOATS * Float32Array.BYTES_PER_ELEMENT,
+				usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+			});
+			this.beautyLandmarkBuffers[slot] = landmarkBuffer;
+		}
+
+		this.device.queue.writeBuffer(uniformBuffer, 0, packBeautyUniform(beauty));
+		this.device.queue.writeBuffer(landmarkBuffer, 0, packLandmarkBuffer(landmarks));
+
+		const bindGroup = this.device.createBindGroup({
+			layout: this.beautyWarpGroupLayout,
+			entries: [
+				{ binding: 0, resource: srcView },
+				{ binding: 1, resource: dstView },
+				{ binding: 2, resource: { buffer: landmarkBuffer } },
+				{ binding: 3, resource: { buffer: uniformBuffer } }
+			]
+		});
+		const pass = encoder.beginComputePass();
+		pass.setPipeline(this.beautyWarpPipeline);
+		pass.setBindGroup(0, bindGroup);
+		pass.dispatchWorkgroups(wgX, wgY);
+		pass.end();
+	}
+
 	/** Stage 7: output-conversion — working linear → sRGB OETF for display/export. */
 	private encodeOutputConvert(
 		encoder: GPUCommandEncoder,
@@ -1329,6 +1421,10 @@ export class PreviewRenderer {
 		this.skinBoxUniformHeight = null;
 		for (const buffer of this.skinApplyUniforms) buffer.destroy();
 		this.skinApplyUniforms.length = 0;
+		for (const buffer of this.beautyUniforms) buffer.destroy();
+		this.beautyUniforms.length = 0;
+		for (const buffer of this.beautyLandmarkBuffers) buffer.destroy();
+		this.beautyLandmarkBuffers.length = 0;
 		this.presentBindGroup = null;
 		this.lastPresentView = null;
 		this.scopeSab = null;

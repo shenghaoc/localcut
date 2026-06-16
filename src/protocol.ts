@@ -118,6 +118,9 @@ export interface CapabilityProbeResult {
 	/** Phase 38b (animated overlays): `ImageDecoder` API availability for
 	 *  animated WebP/AVIF/GIF frame-accurate decoding. */
 	imageDecoder?: FeatureSupport;
+	/** Phase 32b (Beauty): display/feature-gate only — never
+	 *  consulted by tier derivation or any pipeline code path. */
+	beauty?: BeautyProbeResult;
 }
 
 // ── Phase 28: Local Audio Cleanup (LiteRT DTLN) ──
@@ -1106,7 +1109,8 @@ export const KEYFRAME_EPSILON = 1e-4;
 export type TransformKeyframeParamSnapshot = Exclude<keyof TransformParamsSnapshot, 'fit'>;
 export type ClipKeyframeParamSnapshot =
 	| keyof ClipEffectParamsSnapshot
-	| TransformKeyframeParamSnapshot;
+	| TransformKeyframeParamSnapshot
+	| `beauty.${'masterStrength' | 'jawSlim' | 'eyeEnlarge' | 'noseWidth' | 'mouth'}`;
 export type ClipKeyframesSnapshot = Partial<Record<ClipKeyframeParamSnapshot, KeyframeSnapshot[]>>;
 
 export interface ClipLutSnapshot {
@@ -1162,6 +1166,45 @@ export interface TimeRemapSnapshot {
 	sourceDurationS: number;
 }
 
+// ── Phase 32b: Landmark-Driven Beauty ──
+
+export type BeautyPreset = 'subtle' | 'custom';
+
+export interface BeautyEffectSnapshot {
+	enabled: boolean;
+	modelId: string;
+	modelVersion: string;
+	preset: BeautyPreset;
+	masterStrength: number;
+	jawSlim: number;
+	eyeEnlarge: number;
+	noseWidth: number;
+	mouth: number;
+}
+
+export const DEFAULT_BEAUTY_EFFECT: BeautyEffectSnapshot = {
+	enabled: false,
+	modelId: 'facemesh-onnx-primary-v1',
+	modelVersion: '',
+	preset: 'subtle',
+	masterStrength: 0.5,
+	jawSlim: 0.3,
+	eyeEnlarge: 0.15,
+	noseWidth: 0.1,
+	mouth: 0.1
+};
+
+export type BeautyModelStatus = 'not-loaded' | 'loading' | 'loaded' | 'failed';
+
+export type BeautyExecutionProvider = 'wasm' | 'webgpu' | 'webnn';
+
+export interface BeautyProbeResult {
+	wasm: FeatureSupport;
+	webgpu: FeatureSupport;
+	webnn: FeatureSupport;
+	crossOriginIsolated: boolean;
+}
+
 export interface TimelineClipSnapshot {
 	id: string;
 	/** Absent/`'video'` for source clips; `'title'` for source-less titles (Phase 14). */
@@ -1177,6 +1220,8 @@ export interface TimelineClipSnapshot {
 	skinMask?: SkinMaskSnapshot;
 	/** Phase 31: optional portrait matte configuration. */
 	matte?: ClipMatteSnapshot;
+	/** Phase 32b: optional landmark-driven beauty configuration. */
+	beauty?: BeautyEffectSnapshot;
 	audioFadeIn: number;
 	audioFadeOut: number;
 	offline?: boolean;
@@ -2237,6 +2282,19 @@ export type WorkerCommand =
 			lutFile?: File;
 	  }
 	| { type: 'export-look-preset'; trackId: string; clipId: string }
+	// Phase 32b: Landmark-Driven Beauty
+	| {
+			type: 'load-beauty-model';
+			manifestUrl: string;
+			preferredExecutionProvider: BeautyExecutionProvider;
+	  }
+	| {
+			type: 'set-beauty-effect';
+			trackId: string;
+			clipId: string;
+			beauty: Partial<BeautyEffectSnapshot>;
+	  }
+	| { type: 'unload-beauty-model' }
 	| { type: 'dispose' };
 
 /** A measured preview resolution tier (adaptive downscale of the decode path). */
@@ -2536,6 +2594,24 @@ export type WorkerStateMessage =
 			lutFileName?: string;
 	  }
 	| { type: 'look-preset-error'; clipId: string; reason: string }
+	// Phase 32b: Landmark-Driven Beauty
+	| {
+			type: 'beauty-model-status';
+			status: BeautyModelStatus;
+			executionProvider?: BeautyExecutionProvider;
+			sizeBytes?: number;
+			downloadedBytes?: number;
+			fraction?: number;
+			cached?: boolean;
+			error?: string;
+	  }
+	| {
+			type: 'beauty-runtime-status';
+			available: boolean;
+			reason?: string;
+			cadenceHz?: number;
+			activeModel?: string;
+	  }
 	| { type: 'error'; message: string };
 
 // ── Phase 46: Replay Buffer + Live Audio Chain ──

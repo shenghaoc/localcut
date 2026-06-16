@@ -1,4 +1,5 @@
 import type {
+	BeautyProbeResult,
 	CapabilityProbeResult,
 	CapabilityTierV2,
 	CaptureProbeResult,
@@ -476,6 +477,23 @@ export function probeSmartReframe(): SmartReframeProbeResult {
 	};
 }
 
+/**
+ * Phase 32b: probe Beauty availability — display/feature-gate only. WebGPU +
+ * cross-origin isolation are required for the accelerated face/landmark path;
+ * WebNN is gated behind per-model proof (reported but not auto-enabled); WASM is
+ * the explicit reduced/export-only fallback. Whether a model is actually
+ * configured is decided later by the load flow (template manifest → unavailable).
+ */
+export function probeBeauty(): BeautyProbeResult {
+	const nav = typeof navigator !== 'undefined' ? navigator : undefined;
+	return {
+		wasm: supportFromBoolean(typeof WebAssembly !== 'undefined'),
+		webgpu: supportFromBoolean(nav !== undefined && 'gpu' in nav),
+		webnn: supportFromBoolean(nav !== undefined && (nav as { ml?: unknown }).ml !== undefined),
+		crossOriginIsolated: globalThis.crossOriginIsolated === true
+	};
+}
+
 /** Phase 38b: probe `ImageDecoder` API for animated image frame-accurate decoding. */
 export function probeImageDecoder(): FeatureSupport {
 	return typeof (globalThis as unknown as Record<string, unknown>)['ImageDecoder'] === 'function'
@@ -558,6 +576,7 @@ export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 		cleanup,
 		asr: probeAsr(),
 		smartReframe: probeSmartReframe(),
-		imageDecoder: probeImageDecoder()
+		imageDecoder: probeImageDecoder(),
+		beauty: probeBeauty()
 	};
 }

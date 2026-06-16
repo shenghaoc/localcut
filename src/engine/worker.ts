@@ -165,6 +165,7 @@ import {
 	removeMarkersInRange,
 	expandLinkedGroup,
 	setSkinMask,
+	setBeautyEffect,
 	DEFAULT_MASTER_GAIN,
 	DEFAULT_TITLE_DURATION_S,
 	normalizeTransform,
@@ -235,6 +236,7 @@ import {
 	type CalibrationProfile
 } from './interpolation/interpolation-estimate';
 import { planTiles, type ModelIoContract, type VramBudget } from './interpolation/tiling';
+import { BeautyEngine } from './beauty/beauty-engine';
 import {
 	InterpolationManifestError,
 	toModelIoContract,
@@ -374,6 +376,41 @@ function ensureInterpolationEngine(): InterpolationEngine | null {
 		});
 	}
 	return interpolationEngine;
+}
+
+/** Phase 32b landmark-driven beauty engine — zero-copy ORT-WebGPU face/landmark
+ *  inference on the renderer's device; created lazily on the first load action. */
+let beautyEngine: BeautyEngine | null = null;
+
+function ensureBeautyEngine(): BeautyEngine | null {
+	if (!renderer) return null;
+	if (!beautyEngine) {
+		beautyEngine = new BeautyEngine({
+			device: renderer.gpuDevice,
+			onStatus: (status, error) => {
+				const manifest = beautyEngine?.getModelManifest();
+				const ep = beautyEngine?.getExecutionProvider();
+				post({
+					type: 'beauty-model-status',
+					status,
+					...(ep ? { executionProvider: ep } : {}),
+					...(manifest ? { sizeBytes: manifest.sizeBytes } : {}),
+					...(error ? { error } : {})
+				});
+			},
+			onProgress: ({ downloadedBytes, totalBytes, cached }) => {
+				post({
+					type: 'beauty-model-status',
+					status: 'loading',
+					downloadedBytes,
+					sizeBytes: totalBytes,
+					fraction: totalBytes > 0 ? downloadedBytes / totalBytes : 0,
+					cached
+				});
+			}
+		});
+	}
+	return beautyEngine;
 }
 
 /** Conservative default per-tile calibration until a real micro-benchmark
@@ -723,7 +760,8 @@ function postTimelineState() {
 			skinMask: clip.skinMask ? { ...clip.skinMask } : undefined,
 			timeRemap: clip.timeRemap
 				? { ...clip.timeRemap, keyframes: [...clip.timeRemap.keyframes] }
-				: undefined
+				: undefined,
+			beauty: clip.beauty ? { ...clip.beauty } : undefined
 		}))
 	}));
 	const captionSnapshot: CaptionTrackSnapshot[] = captionTracks.map((track) => ({
@@ -1965,6 +2003,8 @@ async function handleInit(
 				matteEngine = null;
 				void interpolationEngine?.dispose();
 				interpolationEngine = null;
+				void beautyEngine?.dispose();
+				beautyEngine = null;
 				renderer?.destroy();
 				renderer = null;
 				previewBackend = 'none';
@@ -2503,6 +2543,9 @@ type LayerMeta =
 			lut?: ClipLut;
 			skinMask?: import('./skin-smooth').SkinMaskParams;
 			skinSmoothBypass?: boolean;
+			beauty?: import('../protocol').BeautyEffectSnapshot;
+			/** Phase 32b: smoothed/interpolated primary-face landmarks for this frame. */
+			beautyLandmarks?: Float32Array;
 			transition?: import('./timeline').TransitionResolveMeta;
 			/** Phase 31: smoothed alpha view from the matte engine, if enabled. */
 			matteView?: GPUTextureView;
@@ -2618,6 +2661,32 @@ function makeGetLayers() {
 						}
 					}
 				}
+				// Phase 32b: per-frame zero-copy landmark solve. Like matte, preview never
+				// stalls — the engine returns the latest interpolated landmarks (or null)
+				// while a solve runs. Gated on a loaded model, so it's inert (no clone, no
+				// work) until a license-verified model is vendored (template → not loaded).
+				let beautyLandmarks: Float32Array | undefined;
+				const beauty = sampled.beauty;
+				if (beauty?.enabled && beautyEngine?.getStatus() === 'loaded') {
+					try {
+						beautyLandmarks =
+							(await beautyEngine.solveFrame({
+								clipId: layer.clip.id,
+								frame: decoded.toVideoFrame(),
+								timeS: timestamp,
+								beauty,
+								quality: 'preview'
+							})) ?? undefined;
+					} catch (error) {
+						beautyLandmarks = undefined;
+						recordRecentError({
+							code: 'beauty.inference_failed',
+							subsystem: 'beauty',
+							severity: 'warning',
+							message: `Beauty landmark inference failed; showing the clip without beauty. ${errorMessage(error)}`
+						});
+					}
+				}
 				decodedCount += 1;
 				decodedLayers.push({
 					decoded,
@@ -2632,7 +2701,9 @@ function makeGetLayers() {
 						matteView,
 						matteStrength: matte?.enabled ? matte.strength : undefined,
 						matteMode: matte?.enabled ? matte.mode : undefined,
-						matteBlurRadius: matte?.enabled ? matte.blurRadius : undefined
+						matteBlurRadius: matte?.enabled ? matte.blurRadius : undefined,
+						beauty: sampled.beauty,
+						beautyLandmarks
 					}
 				});
 			}
@@ -2830,6 +2901,7 @@ function handleDelete(cmd: Extract<WorkerCommand, { type: 'delete-clip' }>) {
 	});
 	for (const ref of expanded) {
 		matteEngine?.deleteClip(ref.clipId);
+		beautyEngine?.deleteClip(ref.clipId);
 	}
 }
 
@@ -2845,6 +2917,7 @@ function handleDeleteBatch(cmd: Extract<WorkerCommand, { type: 'delete-clips' }>
 	});
 	for (const ref of expanded) {
 		matteEngine?.deleteClip(ref.clipId);
+		beautyEngine?.deleteClip(ref.clipId);
 	}
 }
 
@@ -5106,7 +5179,9 @@ function setupPlayback() {
 							matteView: layer.meta.matteView,
 							matteStrength: layer.meta.matteStrength,
 							matteMode: layer.meta.matteMode,
-							matteBlurRadius: layer.meta.matteBlurRadius
+							matteBlurRadius: layer.meta.matteBlurRadius,
+							beauty: layer.meta.beauty,
+							beautyLandmarks: layer.meta.beautyLandmarks
 						});
 					}
 				}
@@ -5453,6 +5528,19 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
 						frame,
 						sourceTimeS,
 						frameStepS: handle && handle.frameRate > 0 ? 1 / handle.frameRate : 1 / 30,
+						quality: 'export'
+					});
+				},
+				beautyLandmarksFor: (clip, frame, timelineTimeS) => {
+					if (!clip.beauty?.enabled || beautyEngine?.getStatus() !== 'loaded') {
+						frame.close();
+						return Promise.resolve(null);
+					}
+					return beautyEngine.solveFrame({
+						clipId: clip.id,
+						frame,
+						timeS: timelineTimeS,
+						beauty: clip.beauty,
 						quality: 'export'
 					});
 				}
@@ -5812,6 +5900,19 @@ async function runQueueJob(job: RenderQueueJob): Promise<void> {
 					frame,
 					sourceTimeS,
 					frameStepS: handle && handle.frameRate > 0 ? 1 / handle.frameRate : 1 / 30,
+					quality: 'export'
+				});
+			},
+			beautyLandmarksFor: (clip, frame, timelineTimeS) => {
+				if (!clip.beauty?.enabled || beautyEngine?.getStatus() !== 'loaded') {
+					frame.close();
+					return Promise.resolve(null);
+				}
+				return beautyEngine.solveFrame({
+					clipId: clip.id,
+					frame,
+					timeS: timelineTimeS,
+					beauty: clip.beauty,
 					quality: 'export'
 				});
 			}
@@ -6482,6 +6583,8 @@ async function handleDispose(): Promise<void> {
 	matteEngine = null;
 	void interpolationEngine?.dispose();
 	interpolationEngine = null;
+	void beautyEngine?.dispose();
+	beautyEngine = null;
 	renderer?.destroy();
 	renderer = null;
 	reducedRenderer?.destroy();
@@ -7337,6 +7440,29 @@ function handleInterpolationDispose(): void {
 	interpolationEngine = null;
 }
 
+/** Phase 32b: lazily build the beauty engine and trigger a model load. The
+ *  frame-coupled face/landmark path is pinned to ORT-WebGPU, so the command's
+ *  `preferredExecutionProvider` only matters for a future reduced/export path. */
+function handleLoadBeautyModel(cmd: Extract<WorkerCommand, { type: 'load-beauty-model' }>): void {
+	void cmd;
+	const engine = ensureBeautyEngine();
+	if (!engine) {
+		post({
+			type: 'beauty-model-status',
+			status: 'failed',
+			error: 'Beauty requires the accelerated WebGPU renderer.'
+		});
+		return;
+	}
+	void engine.ensureModelLoaded();
+}
+
+function handleUnloadBeautyModel(): void {
+	void beautyEngine?.dispose();
+	beautyEngine = null;
+	post({ type: 'beauty-model-status', status: 'not-loaded' });
+}
+
 self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 	const cmd = event.data;
 	switch (cmd.type) {
@@ -8033,6 +8159,21 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			break;
 		case 'interp-dispose':
 			handleInterpolationDispose();
+			break;
+		// Phase 32b: Landmark-Driven Beauty
+		case 'load-beauty-model':
+			handleLoadBeautyModel(cmd);
+			break;
+		case 'set-beauty-effect':
+			commitTimelineMutation(() => setBeautyEffect(timeline, cmd.trackId, cmd.clipId, cmd.beauty), {
+				coalesceKey: { clipId: cmd.clipId, key: 'beauty' },
+				refreshPlayback: 'refresh',
+				prune: false,
+				syncLuts: false
+			});
+			break;
+		case 'unload-beauty-model':
+			handleUnloadBeautyModel();
 			break;
 		case 'dispose':
 			void handleDispose();

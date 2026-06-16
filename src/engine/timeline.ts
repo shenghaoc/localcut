@@ -20,6 +20,7 @@ import {
 	cloneClipKeyframes,
 	deleteKeyframe,
 	insertKeyframe,
+	isBeautyKeyframeParam,
 	isClipKeyframeParam,
 	isEffectKeyframeParam,
 	isTransformKeyframeParam,
@@ -31,10 +32,12 @@ import {
 } from './keyframes';
 import { cloneClipLut, type ClipLut } from './lut';
 import {
+	DEFAULT_BEAUTY_EFFECT,
 	TIMELINE_EPSILON,
 	type CleanedAudioRefSnapshot,
 	type ClipMatteSnapshot
 } from '../protocol';
+import { normalizeBeautyEffect } from './beauty/beauty-params';
 
 /** Denoised-audio routing for a clip (Phase 28 local audio cleanup). */
 export type CleanedAudioRef = CleanedAudioRefSnapshot;
@@ -74,6 +77,8 @@ export interface TimelineClip {
 	skinMask?: import('./skin-smooth').SkinMaskParams;
 	/** Phase 31: optional portrait matte configuration. */
 	matte?: ClipMatte;
+	/** Phase 32b: optional beauty effect sidecar (per-clip face-landmark params). */
+	beauty?: import('../protocol').BeautyEffectSnapshot;
 	audioFadeIn: number;
 	audioFadeOut: number;
 	/** Text + style for `kind: 'title'` clips; absent otherwise (Phase 14). */
@@ -682,7 +687,8 @@ function cloneClip(clip: TimelineClip): TimelineClip {
 		matte: clip.matte ? { ...clip.matte } : undefined,
 		linkedGroupId: clip.linkedGroupId,
 		cleanedAudio: clip.cleanedAudio ? { ...clip.cleanedAudio } : undefined,
-		skinMask: clip.skinMask ? { ...clip.skinMask } : undefined
+		skinMask: clip.skinMask ? { ...clip.skinMask } : undefined,
+		beauty: clip.beauty ? normalizeBeautyEffect(clip.beauty) : undefined
 	};
 	const keyframes = cloneClipKeyframes(clip.keyframes);
 	if (keyframes) cloned.keyframes = keyframes;
@@ -729,7 +735,32 @@ function normalizeMoveStart(toStart: number): number | null {
 function clipKeyframeFallback(clip: TimelineClip, key: ClipKeyframeParam): number {
 	if (isEffectKeyframeParam(key)) return clip.effects[key];
 	if (isTransformKeyframeParam(key)) return clip.transform[key];
+	if (isBeautyKeyframeParam(key)) {
+		const beauty = normalizeBeautyEffect(clip.beauty ?? DEFAULT_BEAUTY_EFFECT);
+		const param = key.slice('beauty.'.length) as keyof Pick<
+			import('../protocol').BeautyEffectSnapshot,
+			'masterStrength' | 'jawSlim' | 'eyeEnlarge' | 'noseWidth' | 'mouth'
+		>;
+		return beauty[param];
+	}
 	return 0;
+}
+
+function beautyEffectsEqual(
+	a: import('../protocol').BeautyEffectSnapshot,
+	b: import('../protocol').BeautyEffectSnapshot
+): boolean {
+	return (
+		a.enabled === b.enabled &&
+		a.modelId === b.modelId &&
+		a.modelVersion === b.modelVersion &&
+		a.preset === b.preset &&
+		a.masterStrength === b.masterStrength &&
+		a.jawSlim === b.jawSlim &&
+		a.eyeEnlarge === b.eyeEnlarge &&
+		a.noseWidth === b.noseWidth &&
+		a.mouth === b.mouth
+	);
 }
 
 function splitClipKeyframes(
@@ -1196,11 +1227,17 @@ export function setClipKeyframes(
 	const nextKeyframes: ClipKeyframes = { ...normalized };
 	const effectPatch: Partial<ClipEffectParams> = {};
 	const transformPatch: Partial<TransformParams> = {};
+	const beautyPatch: Partial<import('../protocol').BeautyEffectSnapshot> = {};
 	let changed = false;
 
 	for (const update of updates) {
 		const { key, value, easing = 'linear' } = update;
-		if (!finite(value) || (!isEffectKeyframeParam(key) && !isTransformKeyframeParam(key))) continue;
+		if (
+			!finite(value) ||
+			(!isEffectKeyframeParam(key) && !isTransformKeyframeParam(key) && !isBeautyKeyframeParam(key))
+		) {
+			continue;
+		}
 		const nextTrack = insertKeyframe(nextKeyframes[key], { t: localTime, value, easing });
 		const previous = nextKeyframes[key] ?? [];
 		const sameTrack =
@@ -1218,6 +1255,12 @@ export function setClipKeyframes(
 			effectPatch[key] = value;
 		} else if (isTransformKeyframeParam(key)) {
 			transformPatch[key] = value;
+		} else if (isBeautyKeyframeParam(key)) {
+			const beautyKey = key.slice('beauty.'.length) as keyof Pick<
+				import('../protocol').BeautyEffectSnapshot,
+				'masterStrength' | 'jawSlim' | 'eyeEnlarge' | 'noseWidth' | 'mouth'
+			>;
+			beautyPatch[beautyKey] = value;
 		}
 	}
 
@@ -1231,6 +1274,12 @@ export function setClipKeyframes(
 	}
 	if (Object.keys(transformPatch).length > 0) {
 		nextClip.transform = normalizeTransform({ ...nextClip.transform, ...transformPatch });
+	}
+	if (Object.keys(beautyPatch).length > 0) {
+		nextClip.beauty = normalizeBeautyEffect({
+			...(nextClip.beauty ?? DEFAULT_BEAUTY_EFFECT),
+			...beautyPatch
+		});
 	}
 	return next;
 }
@@ -1446,6 +1495,26 @@ export function setClipMatteBlurRadius(
 	return next;
 }
 
+/** Phase 32b: Update beauty effect params on a clip. Returns the original timeline on no-op. */
+export function setBeautyEffect(
+	timeline: Timeline,
+	trackId: string,
+	clipId: string,
+	beauty: Partial<import('../protocol').BeautyEffectSnapshot>
+): Timeline {
+	const loc = trackWithClip(timeline, trackId, clipId);
+	if (!loc) return timeline;
+	const original = timeline[loc.trackIndex]!.clips[loc.clipIndex]!;
+	const existing = normalizeBeautyEffect(original.beauty ?? DEFAULT_BEAUTY_EFFECT);
+	const nextBeauty = normalizeBeautyEffect({ ...existing, ...beauty });
+	if (beautyEffectsEqual(existing, nextBeauty)) return timeline;
+
+	const next = cloneTimeline(timeline);
+	const clip = next[loc.trackIndex]!.clips[loc.clipIndex]!;
+	clip.beauty = nextBeauty;
+	return next;
+}
+
 export function defaultClipEffects(): ClipEffectParams {
 	return { ...DEFAULT_CLIP_EFFECTS };
 }
@@ -1546,6 +1615,7 @@ export function defaultTimelineClip(
 	if (keyframes) clip.keyframes = keyframes;
 	const lut = cloneClipLut(partial.lut);
 	if (lut) clip.lut = lut;
+	if (partial.beauty) clip.beauty = normalizeBeautyEffect(partial.beauty);
 	return clip;
 }
 

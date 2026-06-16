@@ -96,6 +96,7 @@ export type DiagnosticSubsystem =
 	| 'accessibility'
 	| 'performance'
 	| 'matte'
+	| 'beauty'
 	| 'language-tools';
 
 export type DiagnosticSeverity = 'info' | 'warning' | 'error' | 'critical';

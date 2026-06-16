@@ -1,0 +1,46 @@
+{
+	"_comment": "TEMPLATE — NOT loadable. `template: true` makes validateBeautyManifest reject this manifest so Phase 32b Beauty stays hidden/disabled (R1.3, R7.1). To enable: remove `template`, set real `assets.detector`/`assets.landmarks` ONNX files on an allowlisted host (same-origin `/_model/{hf,gh,gcs}/…` proxy or a same-origin static path), fill each `url`/`sizeBytes`/`checksum` (sha256-<64 hex>) from the vendored bytes, set the top-level `sizeBytes` to the sum of all asset sizes, and confirm the tensor contracts below match a license-verified FaceMesh-derived detector (192×192 image → boxes+scores) and landmark (256×256 image → [1,478,3]) model pair. See README.md.",
+	"template": true,
+	"id": "facemesh-onnx-primary-v1",
+	"version": "TEMPLATE",
+	"sizeBytes": 2,
+	"topologyVersion": 1,
+	"landmarkCount": 478,
+	"assets": {
+		"detector": {
+			"role": "detector",
+			"format": "onnx",
+			"url": "/_model/REPLACE_WITH_ALLOWLISTED_HOST_PATH/face-detector.onnx",
+			"sizeBytes": 1,
+			"checksum": "sha256-0000000000000000000000000000000000000000000000000000000000000000",
+			"license": "TBD",
+			"source": "https://github.com/google-ai-edge/mediapipe",
+			"provider": "TBD",
+			"modelCard": "https://example.invalid/face-detector-model-card",
+			"inputs": [
+				{ "name": "input", "dims": [1, 192, 192, 3], "dataType": "float32", "semantic": "image" }
+			],
+			"outputs": [
+				{ "name": "boxes", "dims": [1, 896, 4], "dataType": "float32", "semantic": "boxes" },
+				{ "name": "scores", "dims": [1, 896, 1], "dataType": "float32", "semantic": "scores" }
+			]
+		},
+		"landmarks": {
+			"role": "landmarks",
+			"format": "onnx",
+			"url": "/_model/REPLACE_WITH_ALLOWLISTED_HOST_PATH/face-landmarks.onnx",
+			"sizeBytes": 1,
+			"checksum": "sha256-0000000000000000000000000000000000000000000000000000000000000000",
+			"license": "TBD",
+			"source": "https://github.com/google-ai-edge/mediapipe",
+			"provider": "TBD",
+			"modelCard": "https://example.invalid/face-landmarks-model-card",
+			"inputs": [
+				{ "name": "input", "dims": [1, 256, 256, 3], "dataType": "float32", "semantic": "image" }
+			],
+			"outputs": [
+				{ "name": "landmarks", "dims": [1, 478, 3], "dataType": "float32", "semantic": "landmarks" }
+			]
+		}
+	}
+}
