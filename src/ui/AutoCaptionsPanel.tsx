@@ -92,12 +92,16 @@ export const AutoCaptionsPanel: Component<AutoCaptionsPanelProps> = (props) => {
 		if (props.state.recommendedEngine !== 'litert-whisper') return 'Unavailable';
 		// Once loaded, show the accelerator that actually compiled; before that,
 		// show the ASR accelerator the controller will request.
-		const accel = props.state.accelerator ?? preferredAccelerator(props.state.probe);
 		// Engine is authoritative once loaded; before that, infer it from the
 		// selected model's manifest (ONNX models live under /models/whisper-onnx/).
 		const engine =
 			props.state.engine ??
 			(props.state.model.manifestUrl.includes('whisper-onnx') ? 'ort-whisper' : 'litert-whisper');
+		// The ORT Whisper models run on the WASM EP; only LiteRT picks WebNN/WebGPU.
+		// Use the loaded accelerator once known, else each engine's default.
+		const accel =
+			props.state.accelerator ??
+			(engine === 'ort-whisper' ? 'wasm' : preferredAccelerator(props.state.probe));
 		const runtime = engine === 'ort-whisper' ? 'ONNX Whisper' : 'LiteRT Whisper';
 		return `${runtime} (${accel.toUpperCase()})`;
 	};

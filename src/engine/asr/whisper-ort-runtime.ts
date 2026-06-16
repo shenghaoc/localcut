@@ -177,11 +177,14 @@ class OrtWhisperRuntimeImpl implements OrtWhisperRuntime {
 	private makeInputIds(tokens: Int32Array): OrtTensor {
 		const dims = [1, tokens.length];
 		if (this.io.inputIdsDataType === 'int64') {
+			// ORT int64 tensors need BigInt64Array; widen the int32 token ids.
 			const big = new BigInt64Array(tokens.length);
 			for (let i = 0; i < tokens.length; i++) big[i] = BigInt(tokens[i]!);
 			return new this.ort.Tensor('int64', big, dims);
 		}
-		return new this.ort.Tensor('int32', Int32Array.from(tokens), dims);
+		// `tokens` is already a fresh Int32Array per decode step (whisper-decode.ts
+		// passes `Int32Array.from(...)`), so hand it to ORT directly — no extra copy.
+		return new this.ort.Tensor('int32', tokens, dims);
 	}
 
 	dispose(): void {

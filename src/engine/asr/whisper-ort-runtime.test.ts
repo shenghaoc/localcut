@@ -201,6 +201,27 @@ describe('createOrtWhisperRuntime', () => {
 		rt.dispose();
 	});
 
+	it('passes int32 input_ids straight through (no copy) when the manifest declares int32', async () => {
+		const m = manifest();
+		m.io = { ...m.io, inputIdsDataType: 'int32' };
+		const rt = await createOrtWhisperRuntime({
+			encoderBytes: bytes(),
+			decoderBytes: bytes(),
+			manifest: m
+		});
+		const encoded = await rt.encode({ data: new Float32Array([1, 2, 3, 4]), nMel: 2, nFrames: 2 });
+		const tokens = Int32Array.from([50258, 1, 2]);
+		await rt.decode(tokens, encoded);
+
+		const ids = h.runCalls[1]!.feeds['input_ids']!;
+		expect(ids.type).toBe('int32');
+		// Handed to ORT directly — the same array, not a reallocated copy.
+		expect(ids.data).toBe(tokens);
+
+		encoded.dispose();
+		rt.dispose();
+	});
+
 	it('dispose releases both sessions and is idempotent', async () => {
 		const rt = await createOrtWhisperRuntime({
 			encoderBytes: bytes(),

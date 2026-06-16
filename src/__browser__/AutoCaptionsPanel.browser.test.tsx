@@ -71,12 +71,20 @@ afterEach(() => {
 });
 
 describe('AutoCaptionsPanel progress', () => {
-	it('renders WebNN/WebGPU/WASM backend copy', () => {
-		const { container } = renderPanel();
+	it('shows the engine + accelerator label per selected model', () => {
+		// Default is the int8 ONNX model, which runs on the ORT WASM execution provider.
+		const onnx = renderPanel({ accelerator: null });
+		expect(onnx.container.textContent).toContain('ONNX Whisper (WASM)');
 
-		expect(container.textContent).toContain('LiteRT Whisper (WEBGPU)');
-		expect(container.textContent).toContain('experimental WebNN');
-		expect(container.textContent).toContain('WebNN, WebGPU, or WASM');
+		// The full-precision LiteRT model reports its compiled accelerator instead.
+		const litertModel = ASR_MODEL_CATALOG.find((m) => m.id === 'whisper-base')!;
+		const litert = renderPanel({ model: litertModel, accelerator: 'webgpu' });
+		expect(litert.container.textContent).toContain('LiteRT Whisper (WEBGPU)');
+
+		// Copy names both on-device runtimes and no cloud path.
+		expect(litert.container.textContent).toContain('ONNX Runtime Web');
+		expect(litert.container.textContent).toContain('LiteRT.js');
+		expect(litert.container.textContent).toContain('No cloud API');
 	});
 
 	it('renders a dedicated download progress block', () => {
