@@ -1,0 +1,366 @@
+/**
+ * ORT/ONNX face detector for Smart Reframe (Phase 33 follow-up).
+ *
+ * Loads a digest-pinned face-detector ONNX model through the Phase-105 ORT
+ * foundation:
+ *
+ *   manifest (fetch + validate) → ORT model bytes
+ *   (`loadOrtModelAsset`, SHA-256 + OPFS cache) → {@link createOrtSession}
+ *   (WebGPU / WebNN / WASM under the EP policy) → preprocess (ImageData →
+ *   normalised Float32 tensor) → `session.run` → {@link decodeRawBboxOutput}
+ *   or {@link decodeAnchorOffsetOutput} → normalised `FaceDetection[]`.
+ *
+ * The detector implements the same {@link FaceDetector} interface the
+ * MediaPipe BlazeFace path returns, so it slots into the Smart Reframe analysis
+ * worker without changes elsewhere. The manifest currently ships as a
+ * `template` — the validator rejects it and the loader throws a clear
+ * "no model configured" error, which the worker maps to its saliency
+ * fallback ("face detector unavailable; using saliency").
+ *
+ * Constraints:
+ * - **No startup model load.** `onnxruntime-web` is reached only through
+ *   `ort-loader.ts`'s dynamic imports, the same as Phase 37 interpolation.
+ * - **No cloud inference, no telemetry, no image uploads.** Model bytes arrive
+ *   through the same-origin `/_model/*` proxy and OPFS; inference runs on the
+ *   user's device in the analysis worker.
+ * - **WASM EP is size-gated.** A face detector running on WASM blocks the
+ *   worker for the duration of `session.run`; the gate keeps that window
+ *   short enough that cancellation between frames stays responsive.
+ */
+import type { InferenceSession, Tensor as OrtTensor } from 'onnxruntime-web';
+import { createOrtSession, type OrtSessionHandle } from '../ml/ort/ort-session';
+import { loadOrtModelAsset, createOrtOpfsAssetStore } from '../ml/ort/ort-asset-loader';
+import { loadOrtWasm } from '../ml/ort/ort-loader';
+import type { OrtExecutionProvider, OrtModelAsset } from '../ml/ort/ort-types';
+import type { FaceDetection, FaceDetector } from './face-detector';
+import {
+	decodeAnchorOffsetOutput,
+	decodeRawBboxOutput,
+	type AnchorOffsetDecodeConfig,
+	type RawBboxDecodeConfig
+} from './face-detector-ort-decode';
+import {
+	inputTensorBytes,
+	validateReframeFaceDetectorManifest,
+	type FaceDetectorIoContract,
+	type ReframeFaceDetectorManifest
+} from './face-detector-ort-manifest';
+
+/**
+ * Largest input tensor permitted on the WASM execution provider. A
+ * BlazeFace-class 128×128×3×fp32 input is 192 KiB; YuNet 320×320×3×fp32 is
+ * ~1.2 MiB. SCRFD 640×640×3×fp32 (~4.7 MiB) is rejected on WASM — its session
+ * latency would block the analysis worker too long for cancellation to feel
+ * snappy. WebGPU / WebNN have no such gate.
+ */
+export const WASM_DETECTOR_INPUT_TENSOR_LIMIT_BYTES = 2 * 1024 * 1024;
+
+/** Injection seams (mostly for unit tests; production paths use the defaults). */
+export interface OrtFaceDetectorPorts {
+	/** Fetch the manifest JSON. Defaults to {@link fetch} → `.json()`. */
+	fetchManifest?: (url: string) => Promise<unknown>;
+	/** Load ORT model bytes. Defaults to {@link loadOrtModelAsset}. */
+	loadModelBytes?: (asset: OrtModelAsset) => Promise<Uint8Array>;
+	/** Create the ORT session. Defaults to {@link createOrtSession}. */
+	createSession?: typeof createOrtSession;
+	/** Resize ImageData to the model's input shape. Defaults to an internal
+	 *  OffscreenCanvas helper; tests inject a deterministic stub. */
+	resizeImageData?: (image: ImageData, width: number, height: number) => Promise<Uint8ClampedArray>;
+}
+
+export interface CreateOrtFaceDetectorOptions extends OrtFaceDetectorPorts {
+	manifestUrl: string;
+	/** Renderer-owned `GPUDevice` to share with ORT, when available. The Smart
+	 *  Reframe worker does not currently own a compositor device, so this is
+	 *  typically omitted — ORT then creates its own (deviceOwner: 'ort-webgpu'). */
+	device?: GPUDevice;
+}
+
+/** Error raised when the ORT face-detector path cannot load. The reframe worker
+ *  catches it and falls through to the MediaPipe path or saliency. */
+export class OrtFaceDetectorUnavailableError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'OrtFaceDetectorUnavailableError';
+	}
+}
+
+/**
+ * Build a fully-loaded ORT-backed {@link FaceDetector}. Throws
+ * {@link OrtFaceDetectorUnavailableError} when the manifest is a template, the
+ * EP policy is violated, the WASM size gate trips, or the network/decode path
+ * fails — the caller maps these to its saliency fallback.
+ */
+export async function createOrtFaceDetector(
+	options: CreateOrtFaceDetectorOptions
+): Promise<FaceDetector> {
+	const fetchManifest = options.fetchManifest ?? defaultFetchManifest;
+	const loadModelBytes = options.loadModelBytes ?? defaultLoadModelBytes;
+	const createSession = options.createSession ?? createOrtSession;
+	const resizeImageData = options.resizeImageData ?? defaultResizeImageData;
+
+	const manifestRaw = await fetchManifest(options.manifestUrl);
+	let manifest: ReframeFaceDetectorManifest;
+	try {
+		manifest = validateReframeFaceDetectorManifest(manifestRaw);
+	} catch (error) {
+		throw new OrtFaceDetectorUnavailableError(
+			error instanceof Error ? error.message : String(error)
+		);
+	}
+
+	const modelBytes = await loadModelBytes(manifest.model);
+
+	let handle: OrtSessionHandle;
+	try {
+		handle = await createSession({
+			modelBytes,
+			manifest,
+			...(options.device !== undefined ? { device: options.device } : {})
+		});
+	} catch (error) {
+		throw new OrtFaceDetectorUnavailableError(
+			`ORT face detector session creation failed: ${error instanceof Error ? error.message : String(error)}`
+		);
+	}
+
+	try {
+		assertWasmEpAllowed(manifest.io, handle.primaryEp);
+	} catch (error) {
+		await safeRelease(handle.session);
+		throw error;
+	}
+
+	return new OrtFaceDetector(handle, manifest, resizeImageData);
+}
+
+/**
+ * Enforce the WASM input-tensor-size budget so a large detector can never run
+ * on the WASM EP. WebGPU / WebNN are unconstrained. Throws
+ * {@link OrtFaceDetectorUnavailableError} so the caller treats it as
+ * "no detector available" and falls back to saliency.
+ */
+export function assertWasmEpAllowed(
+	io: FaceDetectorIoContract,
+	primaryEp: OrtExecutionProvider
+): void {
+	if (primaryEp !== 'wasm') return;
+	const bytes = inputTensorBytes(io);
+	if (bytes > WASM_DETECTOR_INPUT_TENSOR_LIMIT_BYTES) {
+		throw new OrtFaceDetectorUnavailableError(
+			`ORT face detector WASM EP forbidden: input tensor ${bytes} bytes ` +
+				`exceeds the ${WASM_DETECTOR_INPUT_TENSOR_LIMIT_BYTES}-byte budget for ` +
+				`worker-responsive inference. Vendor a smaller detector or pin a GPU-class EP.`
+		);
+	}
+}
+
+class OrtFaceDetector implements FaceDetector {
+	constructor(
+		private readonly handle: OrtSessionHandle,
+		private readonly manifest: ReframeFaceDetectorManifest,
+		private readonly resize: NonNullable<OrtFaceDetectorPorts['resizeImageData']>
+	) {}
+
+	async detect(imageData: ImageData): Promise<FaceDetection[]> {
+		if (imageData.width === 0 || imageData.height === 0) return [];
+		const io = this.manifest.io;
+		const decode = this.manifest.decode;
+		const resized = await this.resize(imageData, io.inputWidth, io.inputHeight);
+		const tensorData = normalizePixelsToTensor(resized, io);
+
+		const { Tensor } = await loadOrtTensor();
+		const dims =
+			io.layout === 'nchw'
+				? [1, io.inputChannels, io.inputHeight, io.inputWidth]
+				: [1, io.inputHeight, io.inputWidth, io.inputChannels];
+		const input = new Tensor('float32', tensorData, dims);
+
+		const feeds: Record<string, OrtTensor> = { [io.inputName]: input as unknown as OrtTensor };
+		const outputs = await this.handle.session.run(feeds);
+		try {
+			return decodeOutputs(outputs, decode, imageData.width, imageData.height);
+		} finally {
+			(input as unknown as { dispose?: () => void }).dispose?.();
+		}
+	}
+
+	dispose(): void {
+		void safeRelease(this.handle.session);
+	}
+}
+
+function decodeOutputs(
+	outputs: Readonly<Record<string, OrtTensor>>,
+	decode: ReframeFaceDetectorManifest['decode'],
+	sourceWidth: number,
+	sourceHeight: number
+): FaceDetection[] {
+	const boxes = readNumericTensor(outputs, decode.boxesOutputName, 'boxes');
+	const scores = readNumericTensor(outputs, decode.scoresOutputName, 'scores');
+	if (decode.type === 'raw-bbox') {
+		const config: RawBboxDecodeConfig = {
+			type: 'raw-bbox',
+			boxFormat: decode.boxFormat,
+			scoreThreshold: decode.scoreThreshold,
+			iouThreshold: decode.iouThreshold,
+			maxDetections: decode.maxDetections,
+			...(decode.applySigmoid !== undefined ? { applySigmoid: decode.applySigmoid } : {})
+		};
+		return decodeRawBboxOutput(boxes, scores, config, sourceWidth, sourceHeight);
+	}
+	// Anchor priors must be supplied out-of-band — the manifest validator
+	// surfaces `anchorsOutputName` but reading from a graph output is the user's
+	// responsibility to wire when a real anchor-output model is vendored.
+	const config: AnchorOffsetDecodeConfig = {
+		type: 'anchor-offset',
+		anchors: [],
+		scoreThreshold: decode.scoreThreshold,
+		iouThreshold: decode.iouThreshold,
+		maxDetections: decode.maxDetections,
+		...(decode.applySigmoid !== undefined ? { applySigmoid: decode.applySigmoid } : {}),
+		...(decode.variance !== undefined ? { variance: decode.variance } : {})
+	};
+	return decodeAnchorOffsetOutput(boxes, scores, config);
+}
+
+function readNumericTensor(
+	outputs: Readonly<Record<string, OrtTensor>>,
+	name: string,
+	role: string
+): ArrayLike<number> {
+	const tensor = outputs[name];
+	if (!tensor) {
+		throw new OrtFaceDetectorUnavailableError(
+			`ORT face detector ${role} output "${name}" missing from session results.`
+		);
+	}
+	const data = tensor.data;
+	if (
+		!(
+			data instanceof Float32Array ||
+			data instanceof Float64Array ||
+			data instanceof Int32Array ||
+			data instanceof Int16Array ||
+			data instanceof Uint8Array ||
+			data instanceof Uint16Array
+		)
+	) {
+		throw new OrtFaceDetectorUnavailableError(
+			`ORT face detector ${role} tensor "${name}" has unsupported dtype ${tensor.type}.`
+		);
+	}
+	return data as ArrayLike<number>;
+}
+
+/**
+ * Normalise an RGBA pixel buffer at `(io.inputWidth × io.inputHeight)` into the
+ * float32 tensor the model expects. Pure — no DOM/Canvas access, no
+ * `onnxruntime-web` import — so the layout/normalisation contract is unit
+ * testable on synthetic byte arrays.
+ */
+export function normalizePixelsToTensor(
+	pixels: ArrayLike<number>,
+	io: FaceDetectorIoContract
+): Float32Array {
+	const { inputWidth: w, inputHeight: h, inputChannels: c, layout, inputRange } = io;
+	const pixelCount = w * h;
+	if (pixels.length < pixelCount * 4) {
+		throw new Error(
+			`normalizePixelsToTensor: pixel buffer too small (got ${pixels.length}, want ≥ ${pixelCount * 4}).`
+		);
+	}
+	const out = new Float32Array(pixelCount * c);
+	const mean = io.mean ?? [0, 0, 0];
+	const std = io.std ?? [1, 1, 1];
+	for (let pixelIndex = 0; pixelIndex < pixelCount; pixelIndex++) {
+		const src = pixelIndex * 4;
+		for (let channel = 0; channel < c; channel++) {
+			const byte = pixels[src + channel] as number;
+			const value = normalizeChannel(byte, inputRange, mean[channel] ?? 0, std[channel] ?? 1);
+			if (layout === 'nchw') {
+				out[channel * pixelCount + pixelIndex] = value;
+			} else {
+				out[pixelIndex * c + channel] = value;
+			}
+		}
+	}
+	return out;
+}
+
+function normalizeChannel(
+	byte: number,
+	range: FaceDetectorIoContract['inputRange'],
+	mean: number,
+	std: number
+): number {
+	const unit = byte / 255;
+	switch (range) {
+		case 'unit':
+			return unit;
+		case 'signed-unit':
+			return unit * 2 - 1;
+		case 'mean-std':
+			return std !== 0 ? (unit - mean) / std : 0;
+	}
+}
+
+async function defaultFetchManifest(url: string): Promise<unknown> {
+	const response = await fetch(url);
+	if (!response.ok) {
+		throw new OrtFaceDetectorUnavailableError(
+			`ORT face-detector manifest fetch failed: HTTP ${response.status}`
+		);
+	}
+	return await response.json();
+}
+
+async function defaultLoadModelBytes(asset: OrtModelAsset): Promise<Uint8Array> {
+	const store = await createOrtOpfsAssetStore();
+	return loadOrtModelAsset(asset, { store });
+}
+
+async function defaultResizeImageData(
+	image: ImageData,
+	width: number,
+	height: number
+): Promise<Uint8ClampedArray> {
+	// createImageBitmap accepts ImageData; subsequent drawImage onto a
+	// model-size OffscreenCanvas scales it. Both APIs exist in DedicatedWorker.
+	if (typeof createImageBitmap !== 'function' || typeof OffscreenCanvas !== 'function') {
+		throw new OrtFaceDetectorUnavailableError(
+			'ORT face detector requires createImageBitmap + OffscreenCanvas (not available in this context).'
+		);
+	}
+	const bitmap = await createImageBitmap(image);
+	try {
+		const canvas = new OffscreenCanvas(width, height);
+		const ctx = canvas.getContext('2d');
+		if (!ctx) {
+			throw new OrtFaceDetectorUnavailableError(
+				'ORT face detector could not obtain a 2D context for resize.'
+			);
+		}
+		ctx.drawImage(bitmap, 0, 0, width, height);
+		return ctx.getImageData(0, 0, width, height).data;
+	} finally {
+		bitmap.close();
+	}
+}
+
+async function loadOrtTensor(): Promise<{ Tensor: typeof OrtTensor }> {
+	// `Tensor` is on `ort.Tensor` for every ORT build (WebGPU / WebNN / WASM);
+	// the smallest WASM build is enough to construct a CPU input tensor. In
+	// production the WebGPU build is typically already cached from the session,
+	// so this is a no-op dynamic-import lookup, not a second runtime download.
+	const ort = await loadOrtWasm();
+	return { Tensor: ort.Tensor as unknown as typeof OrtTensor };
+}
+
+async function safeRelease(session: InferenceSession): Promise<void> {
+	try {
+		await session.release();
+	} catch {
+		// Session may already be released or never fully initialised; swallow.
+	}
+}

@@ -56,9 +56,13 @@ foundation never appends ORT's implicit WASM fallback.
 
 ### The frame-coupled hard gate
 
-A model is **frame-coupled** when it runs per video frame (matte, frame
-interpolation, smart-reframe detection — anything in the preview/export hot
-path). For these:
+A model is **frame-coupled** when it runs per video frame in the preview /
+export hot path — matte (Phase 31) and frame interpolation (Phase 37) qualify.
+Smart Reframe's optional ORT face detector runs in a one-shot analysis pass at
+the analysis fps (default 2 fps), **not** in the preview/export hot path, so it
+is **not** frame-coupled and is allowed to declare `wasm` alongside
+`webgpu`/`webnn`; the detector's own loader gates WASM by input tensor size to
+keep the analysis worker responsive. For frame-coupled models:
 
 - The EP list **must not** contain `wasm`, and **must** include at least one
   GPU-class EP (`webgpu` or `webnn`).

@@ -4,6 +4,9 @@
 > Phase 15 transform keyframes, reviewed via a preview overlay and applied as a
 > single undo step. Subject detection defaults to pure-DSP saliency; MediaPipe
 > BlazeFace face detection is available on an explicit, click-to-load action.
+> A follow-up PR adds an optional ORT/ONNX face detector built on the Phase 105
+> ORT foundation; the manifest ships as a `template` so the path stays disabled
+> until a real model is vendored (see T17).
 
 ## Implementation status
 
@@ -287,6 +290,57 @@ in-app guide (T16.1/T16.1a).
   MediaPipe WASM at install; both are runtime-cached (`CacheFirst`,
   `ignoreVary`) after first successful load (`vite.config.ts` workbox
   `runtimeCaching`), the same pattern as Phase 28 RNNoise weights.
+
+## T17 — Optional ORT/ONNX face detector (follow-up)
+
+The follow-up PR ("Smart Reframe ONNX face detector") adds a properly
+catalog-pinned face-detector path built on the Phase 105 ORT foundation,
+**replacing** the deferred-digest-pinned BlazeFace `.tflite` catalog entry
+(T15.2 stays as the hobby-scope MediaPipe fallback).
+
+- [x] **T17.1** Manifest at `public/models/reframe-face/manifest.json` —
+  base ORT manifest (`validateOrtManifest`) plus a face-detector `io` block
+  (`layout`/`inputWidth`/…/`inputName`/`inputRange`/optional `mean,std`)
+  and a `decode` block (`type: 'raw-bbox' | 'anchor-offset'`,
+  `scoreThreshold`/`iouThreshold`/`maxDetections`, optional `applySigmoid`,
+  optional `variance`). Ships as `template: true` so the path stays disabled
+  until a real model is vendored. Reframe analysis is not on the preview /
+  export hot path, so the manifest must declare `"frameCoupled": false`
+  (the validator rejects `true`) — that lets the manifest legally pin the
+  `wasm` execution provider alongside `webgpu`/`webnn`.
+- [x] **T17.2** Pure decode helpers in
+  `src/engine/reframe/face-detector-ort-decode.ts`: `sigmoid`, `clamp01`,
+  `iou`, `nonMaxSuppression`, `decodeRawBboxOutput`, and
+  `decodeAnchorOffsetOutput`. Unit tests exercise score thresholding,
+  every `boxFormat`, sigmoid activation, anchor-offset reconstruction with
+  variance scaling, degenerate-box drop, and greedy NMS — including the
+  near-duplicate merge and `maxDetections` cap.
+- [x] **T17.3** Loader in `src/engine/reframe/face-detector-ort.ts`:
+  fetches + validates the manifest, loads model bytes through
+  `loadOrtModelAsset` (SHA-256 + OPFS cache + same-origin proxy + trusted
+  host allowlist), creates the session via `createOrtSession`, and on each
+  `detect(imageData)` resizes the frame through `createImageBitmap` /
+  `OffscreenCanvas`, normalises pixels via the pure
+  `normalizePixelsToTensor` (NCHW or NHWC; `unit` / `signed-unit` /
+  `mean-std`), runs the session, and runs the manifest's decoder.
+- [x] **T17.4** WASM execution-provider size gate
+  (`assertWasmEpAllowed` + `WASM_DETECTOR_INPUT_TENSOR_LIMIT_BYTES` =
+  2 MiB). The ORT face detector may only resolve to WASM when the input
+  tensor stays inside that budget — a BlazeFace-class 128×128×3×fp32
+  detector is fine, a 640×640 SCRFD is rejected to keep the analysis
+  worker responsive and cancellation snappy.
+- [x] **T17.5** `reframe-load-face-model` carries an optional
+  `ortManifestUrl`. The analysis worker tries the ORT path first
+  (`tryLoadOrtFaceDetector`), falls back to MediaPipe BlazeFace, and
+  finally to saliency-only. The `reframe-face-model-status` message
+  reports which `engine` resolved on success and surfaces
+  "face detector unavailable; using saliency" on both-paths failure.
+- [x] **T17.6** Hard constraints upheld: no startup model download (`ORT`
+  runtime imported only inside the lazy detector); no direct cross-origin
+  fetch (manifest is same-origin, model bytes flow through the
+  `/_model/*` proxy and the ORT trusted-host allowlist); no image upload,
+  no cloud inference, no telemetry; saliency-only mode unchanged when no
+  face detector loads (existing saliency tests still pass).
 
 ## T16 — Docs + verification (R11)
 

@@ -55,9 +55,11 @@ let currentAnalysis: AnalysisState | null = null;
  *  reused across analyses (null = saliency-only). */
 let faceDetector: FaceDetector | null = null;
 
-/** Load the MediaPipe BlazeFace detector on the user's explicit action. On
- *  success the worker reuses it for subsequent analyses; on failure analysis
- *  stays saliency-only (R2.6 / R8.2). */
+/** Load a face detector on the user's explicit action. Tries the ORT/ONNX path
+ *  first when `ortManifestUrl` is provided — on a template/invalid manifest or
+ *  any load failure, falls through to the MediaPipe BlazeFace path. If both
+ *  fail, analysis stays saliency-only (R2.6 / R8.2). On success the worker
+ *  reuses the detector for subsequent analyses. */
 async function handleLoadFaceModel(
 	cmd: Extract<SmartReframeWorkerCommand, { type: 'reframe-load-face-model' }>
 ): Promise<void> {
@@ -66,6 +68,13 @@ async function handleLoadFaceModel(
 		return;
 	}
 	post({ type: 'reframe-face-model-status', status: 'loading' });
+
+	const ortError = await tryLoadOrtFaceDetector(cmd.ortManifestUrl);
+	if (faceDetector) {
+		post({ type: 'reframe-face-model-status', status: 'loaded', engine: 'ort-onnx' });
+		return;
+	}
+
 	try {
 		// Lazy: keep MediaPipe (and its CDN WASM) out of the worker's eager graph.
 		const { createMediapipeFaceDetector } = await import('./face-detector');
@@ -73,14 +82,42 @@ async function handleLoadFaceModel(
 			wasmPath: cmd.wasmPath,
 			modelUrl: cmd.modelUrl
 		});
-		post({ type: 'reframe-face-model-status', status: 'loaded' });
+		post({
+			type: 'reframe-face-model-status',
+			status: 'loaded',
+			engine: 'mediapipe-blazeface'
+		});
 	} catch (err) {
 		faceDetector = null;
+		const mediapipeMessage = err instanceof Error ? err.message : String(err);
+		// Both paths failed: tell the panel "face detector unavailable; using
+		// saliency" and surface whichever underlying error is more informative.
+		const message = ortError
+			? `face detector unavailable; using saliency (ORT: ${ortError}; MediaPipe: ${mediapipeMessage})`
+			: `face detector unavailable; using saliency (${mediapipeMessage})`;
 		post({
 			type: 'reframe-face-model-status',
 			status: 'failed',
-			message: err instanceof Error ? err.message : String(err)
+			message
 		});
+	}
+}
+
+/** Try the ORT/ONNX face detector path. Returns the failure message on a soft
+ *  miss (template manifest, EP policy rejection, WASM size gate, …) so the
+ *  caller can fall through to the MediaPipe path without surfacing two errors
+ *  to the UI; returns null on success or when no ORT manifest is configured. */
+async function tryLoadOrtFaceDetector(manifestUrl: string | undefined): Promise<string | null> {
+	if (!manifestUrl) return null;
+	try {
+		// Lazy: keep `onnxruntime-web` out of the worker's eager graph; the ORT
+		// runtime only loads when the user explicitly opts into face detection.
+		const { createOrtFaceDetector } = await import('./face-detector-ort');
+		faceDetector = await createOrtFaceDetector({ manifestUrl });
+		return null;
+	} catch (err) {
+		faceDetector = null;
+		return err instanceof Error ? err.message : String(err);
 	}
 }
 

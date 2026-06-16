@@ -117,15 +117,22 @@ export class ReframeController {
 		return runId;
 	}
 
-	/** Load the MediaPipe face model on the user's explicit action (Phase 28/29
-	 *  pattern). Idempotent while loading/loaded. */
-	async loadFaceModel(wasmPath: string, modelUrl: string): Promise<void> {
+	/** Load a face model on the user's explicit action (Phase 28/29 pattern).
+	 *  When `ortManifestUrl` is supplied the worker tries the ORT/ONNX detector
+	 *  first; on template/invalid manifest it falls back to MediaPipe BlazeFace.
+	 *  Idempotent while loading/loaded. */
+	async loadFaceModel(wasmPath: string, modelUrl: string, ortManifestUrl?: string): Promise<void> {
 		if (this.state.faceModelStatus === 'loaded' || this.state.faceModelStatus === 'loading') return;
 		this.update({ faceModelStatus: 'loading', faceModelError: null });
 		try {
 			const worker = await this.ensureWorker();
 			if (this.disposed) return;
-			worker.send({ type: 'reframe-load-face-model', wasmPath, modelUrl });
+			worker.send({
+				type: 'reframe-load-face-model',
+				wasmPath,
+				modelUrl,
+				...(ortManifestUrl !== undefined ? { ortManifestUrl } : {})
+			});
 		} catch (error) {
 			this.update({ faceModelStatus: 'failed', faceModelError: messageOf(error) });
 		}

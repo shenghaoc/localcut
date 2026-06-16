@@ -35,12 +35,23 @@ confirmation before replacing them.
 - **Visual saliency** (always available) estimates the most prominent region of
   each frame from skin tone, edges, and local contrast — no machine-learning
   model required. This is the default, used until you load the face model.
-- **Face detection** uses **MediaPipe BlazeFace**. Like Auto Captions and Audio
-  Cleanup, it is **click-to-load**: open Smart Reframe and click **Load face
-  model**, which fetches the MediaPipe runtime and model once from Google
-  (on-device after that; nothing is uploaded). Once loaded, analysis tracks
-  faces and falls back to saliency for frames with no face. The model stays
-  loaded for the session.
+- **Face detection** is an **optional progressive enhancement**, click-to-load
+  the same way as Auto Captions and Audio Cleanup: open Smart Reframe and click
+  **Load face model**. Two engines coexist behind that button:
+  - An **ORT/ONNX face detector** built on the editor's ONNX runtime. It is
+    catalog-pinned (size + SHA-256, loaded through a same-origin proxy and
+    cached locally) and currently disabled — the manifest ships as a
+    placeholder until a real model is vendored.
+  - **MediaPipe BlazeFace**, fetched on demand from Google's model store. This
+    is the path that actually loads today.
+
+  The app tries the ORT detector first when its manifest is configured, then
+  falls through to MediaPipe, then to saliency-only. Once a detector loads,
+  analysis tracks faces and falls back to saliency for frames with no face;
+  the model stays loaded for the session.
+
+Either face-detection engine runs **entirely on your device** — no frames or
+detections are uploaded, no cloud AI is called, and no telemetry is sent.
 
 A lightweight tracker follows one subject across the clip and smooths its path,
 and **shot-boundary detection** resets the tracker at hard cuts so the crop does
