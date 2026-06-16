@@ -272,6 +272,8 @@ export class PreviewRenderer {
 	// Phase 21: scope compute pipelines + atomic storage buffers + staging pool.
 	private readonly scopesPipeline: GPUComputePipeline;
 	private readonly vectorscopePipeline: GPUComputePipeline;
+	private readonly scopesGroupLayout: GPUBindGroupLayout;
+	private readonly vectorscopeGroupLayout: GPUBindGroupLayout;
 	private scopeHistogramBuf: GPUBuffer | null = null;
 	private scopeWaveformBuf: GPUBuffer | null = null;
 	private scopeParadeBuf: GPUBuffer | null = null;
@@ -279,12 +281,14 @@ export class PreviewRenderer {
 	private scopeVecBuf: GPUBuffer | null = null;
 	private scopeUniformBuf: GPUBuffer | null = null;
 	private scopeVecUniformBuf: GPUBuffer | null = null;
-	private scopeHistogramInit: Uint32Array | null = null;
 	private scopeWaveformInit: Uint32Array | null = null;
 	private scopeParadeInit: Uint32Array | null = null;
-	private scopeVecInit: Uint32Array | null = null;
-	private readonly scopeClipInit = new Uint32Array(1);
+	// `scopeStagingFree` is the LIFO recycle pool — `pop()` for dispatch, `push()` back
+	// from the mapAsync callback. `scopeStagingBuffers` is the master list used only by
+	// `destroy()` so in-flight buffers (popped from `free` but mid-mapAsync) are still
+	// reachable and don't leak when the renderer tears down.
 	private readonly scopeStagingFree: GPUBuffer[] = [];
+	private readonly scopeStagingBuffers: GPUBuffer[] = [];
 	private scopeStagingTotalBytes = 0;
 	private static readonly SCOPE_STAGING_POOL = 3;
 
@@ -415,6 +419,8 @@ export class PreviewRenderer {
 		// so there is no f16 variant — `useF16` does not gate these.
 		this.scopesPipeline = createComputePipeline(device, scopesSource, 'scopes');
 		this.vectorscopePipeline = createComputePipeline(device, vectorscopeSource, 'vectorscope');
+		this.scopesGroupLayout = this.scopesPipeline.getBindGroupLayout(0);
+		this.vectorscopeGroupLayout = this.vectorscopePipeline.getBindGroupLayout(0);
 
 		this.normalizeGroupLayout = this.sourceNormalizePipeline.getBindGroupLayout(0);
 		this.outConvGroupLayout = this.outputConvertPipeline.getBindGroupLayout(0);
@@ -1444,14 +1450,22 @@ export class PreviewRenderer {
 		if (!staging) return;
 
 		const device = this.device;
-		// Reset accumulators to sentinel values BEFORE the dispatch:
-		//   histogram + vectorscope use atomicAdd → init to 0.
-		//   waveform/parade use atomicMin/Max → init min to U32_MAX, max to 0.
-		device.queue.writeBuffer(this.scopeHistogramBuf!, 0, this.scopeHistogramInit!);
+		const histBytes = SCOPE_HISTOGRAM_DATA_FLOATS * 4;
+		const wfBytes = scopeWaveformDataFloats(SCOPE_RES_X) * 4;
+		const paradeBytes = scopeParadeDataFloats(SCOPE_RES_X) * 4;
+		const vecBytes = scopeVectorscopeDataFloats() * 4;
+
+		// Reset accumulators BEFORE the dispatch:
+		//   histogram + vectorscope + clip use atomicAdd → zero-init via
+		//   encoder.clearBuffer (in-encoder; no CPU→GPU upload).
+		//   waveform/parade use atomicMin/Max → upload sentinel pattern
+		//   (U32_MAX/0 alternating) via writeBuffer because clearBuffer can
+		//   only zero.
+		encoder.clearBuffer(this.scopeHistogramBuf!, 0, histBytes);
+		encoder.clearBuffer(this.scopeVecBuf!, 0, vecBytes);
+		encoder.clearBuffer(this.scopeClipBuf!, 0, 4);
 		device.queue.writeBuffer(this.scopeWaveformBuf!, 0, this.scopeWaveformInit!);
 		device.queue.writeBuffer(this.scopeParadeBuf!, 0, this.scopeParadeInit!);
-		device.queue.writeBuffer(this.scopeClipBuf!, 0, this.scopeClipInit);
-		device.queue.writeBuffer(this.scopeVecBuf!, 0, this.scopeVecInit!);
 
 		// Scope-pass uniforms: input dims (informational) + scopeResX/Y.
 		const scopeUni = new Uint32Array([this.width, this.height, SCOPE_RES_X, SCOPE_RES_X]);
@@ -1465,7 +1479,7 @@ export class PreviewRenderer {
 		// Combined scope pass: histogram + waveform + parade + clip counter.
 		{
 			const bg = device.createBindGroup({
-				layout: this.scopesPipeline.getBindGroupLayout(0),
+				layout: this.scopesGroupLayout,
 				entries: [
 					{ binding: 0, resource: { buffer: this.scopeUniformBuf! } },
 					{ binding: 1, resource: accView },
@@ -1486,7 +1500,7 @@ export class PreviewRenderer {
 		// large to fold into the combined struct cleanly.
 		{
 			const bg = device.createBindGroup({
-				layout: this.vectorscopePipeline.getBindGroupLayout(0),
+				layout: this.vectorscopeGroupLayout,
 				entries: [
 					{ binding: 0, resource: { buffer: this.scopeVecUniformBuf! } },
 					{ binding: 1, resource: accView },
@@ -1503,10 +1517,6 @@ export class PreviewRenderer {
 		// Concatenate all atomic buffers into the staging buffer in a fixed layout
 		// the mapAsync callback unpacks. Offsets must be 4-byte aligned (u32 sizes
 		// satisfy this trivially).
-		const histBytes = SCOPE_HISTOGRAM_DATA_FLOATS * 4;
-		const wfBytes = scopeWaveformDataFloats(SCOPE_RES_X) * 4;
-		const paradeBytes = scopeParadeDataFloats(SCOPE_RES_X) * 4;
-		const vecBytes = scopeVectorscopeDataFloats() * 4;
 		let off = 0;
 		encoder.copyBufferToBuffer(this.scopeHistogramBuf!, 0, staging, off, histBytes);
 		off += histBytes;
@@ -1600,11 +1610,9 @@ export class PreviewRenderer {
 			usage: uniformUsage
 		});
 
-		// Init templates uploaded each frame before the dispatch. Cached to avoid
-		// per-frame allocation churn.
-		this.scopeHistogramInit = new Uint32Array(SCOPE_HISTOGRAM_DATA_FLOATS); // zero
-		this.scopeVecInit = new Uint32Array(scopeVectorscopeDataFloats()); // zero
-
+		// Sentinel init templates for atomicMin/Max columns — cached so the
+		// per-frame writeBuffer is a small upload, not a fresh allocation.
+		// (Histogram + vectorscope + clip zero-init via encoder.clearBuffer.)
 		const wfInit = new Uint32Array(scopeWaveformDataFloats(SCOPE_RES_X));
 		for (let i = 0; i < wfInit.length; i += 2) {
 			wfInit[i] = 0xffffffff; // min sentinel
@@ -1621,13 +1629,13 @@ export class PreviewRenderer {
 
 		this.scopeStagingTotalBytes = histBytes + wfBytes + paradeBytes + 4 + vecBytes;
 		for (let i = 0; i < PreviewRenderer.SCOPE_STAGING_POOL; i++) {
-			this.scopeStagingFree.push(
-				device.createBuffer({
-					label: `scope-staging-${i}`,
-					size: this.scopeStagingTotalBytes,
-					usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
-				})
-			);
+			const buf = device.createBuffer({
+				label: `scope-staging-${i}`,
+				size: this.scopeStagingTotalBytes,
+				usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
+			});
+			this.scopeStagingFree.push(buf);
+			this.scopeStagingBuffers.push(buf);
 		}
 	}
 
@@ -1658,13 +1666,13 @@ export class PreviewRenderer {
 		off += 1;
 		const vec = u32.subarray(off, off + vecLen);
 
-		// Histogram: raw u32 bin counts → f32.
+		// Histogram: raw u32 bin counts → f32. TypedArray.set() does the u32→f32
+		// element conversion in native code.
 		{
 			const slot = histogramSlotOffset();
 			beginScopeWrite(sab, slot);
 			writeScopeHeader(sab, slot, 0, clipCount);
-			const dataStart = slot + 3;
-			for (let i = 0; i < histLen; i++) sab[dataStart + i] = hist[i]!;
+			sab.set(hist, slot + 3);
 			endScopeWrite(sab, slot);
 		}
 
@@ -1695,13 +1703,12 @@ export class PreviewRenderer {
 			endScopeWrite(sab, slot);
 		}
 
-		// Vectorscope: 128×128 hit counts → f32.
+		// Vectorscope: 128×128 hit counts → f32. Native u32→f32 conversion via set().
 		{
 			const slot = vectorscopeSlotOffset(X);
 			beginScopeWrite(sab, slot);
 			writeScopeHeader(sab, slot, 0, clipCount);
-			const dataStart = slot + 3;
-			for (let i = 0; i < vecLen; i++) sab[dataStart + i] = vec[i]!;
+			sab.set(vec, slot + 3);
 			endScopeWrite(sab, slot);
 		}
 	}
@@ -1751,7 +1758,11 @@ export class PreviewRenderer {
 		this.scopeUniformBuf = null;
 		this.scopeVecUniformBuf?.destroy();
 		this.scopeVecUniformBuf = null;
-		for (const buf of this.scopeStagingFree) buf.destroy();
+		// Destroy via the master list so in-flight buffers (popped from `free`
+		// but mid-mapAsync) are released too — not just whatever happens to be
+		// idle in `scopeStagingFree` at teardown time.
+		for (const buf of this.scopeStagingBuffers) buf.destroy();
+		this.scopeStagingBuffers.length = 0;
 		this.scopeStagingFree.length = 0;
 		this.device.destroy();
 	}
