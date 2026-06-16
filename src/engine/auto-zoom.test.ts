@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vite-plus/test';
 import { clusterEvents, DEFAULT_AUTO_ZOOM_PARAMS } from './auto-zoom';
 import type { DomEventLogEntry } from './dom-event-log';
 
