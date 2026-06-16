@@ -169,7 +169,7 @@ describe('import → edit → export integration', () => {
 		const machine = createRecoveryMachine();
 		machine.setCheckpoint({
 			projectDoc: {
-				schemaVersion: 18 as const,
+				schemaVersion: 19 as const,
 				projectId: 'export-retry',
 				savedAt: '',
 				timeline: [],

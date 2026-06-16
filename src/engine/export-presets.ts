@@ -1,4 +1,5 @@
 import type {
+	CapabilityProbeResult,
 	ExportPresetDoc,
 	ExportPreset,
 	ExportVideoCodec,
@@ -6,6 +7,7 @@ import type {
 	ExportSettings,
 	OutputNameTemplateContext
 } from '../protocol';
+import { exportConstraintsForProbe } from './capability-probe-v2';
 
 const TEMPLATE_VARIABLES = new Set([
 	'project',
@@ -54,6 +56,85 @@ export const BUILT_IN_PRESETS: readonly ExportPresetDoc[] = [
 		fps: 30,
 		videoBitrate: 3_000_000,
 		preset: 'fast'
+	},
+	// Phase 39: Platform export presets
+	{
+		id: 'builtin-douyin-1080p30',
+		name: 'Douyin 1080p 30fps',
+		builtIn: true,
+		codec: 'h264',
+		container: 'mp4',
+		width: 1080,
+		height: 1920,
+		fps: 30,
+		videoBitrate: 10_000_000,
+		preset: 'quality',
+		targetLufs: -14
+	},
+	{
+		id: 'builtin-shorts-1080p30',
+		name: 'YouTube Shorts 1080p 30fps',
+		builtIn: true,
+		codec: 'h264',
+		container: 'mp4',
+		width: 1080,
+		height: 1920,
+		fps: 30,
+		videoBitrate: 10_000_000,
+		preset: 'quality',
+		targetLufs: -14
+	},
+	{
+		id: 'builtin-shorts-1080p60',
+		name: 'YouTube Shorts 1080p 60fps',
+		builtIn: true,
+		codec: 'h264',
+		container: 'mp4',
+		width: 1080,
+		height: 1920,
+		fps: 60,
+		videoBitrate: 15_000_000,
+		preset: 'quality',
+		targetLufs: -14
+	},
+	{
+		id: 'builtin-reels-1080p30',
+		name: 'Instagram Reels 1080p 30fps',
+		builtIn: true,
+		codec: 'h264',
+		container: 'mp4',
+		width: 1080,
+		height: 1920,
+		fps: 30,
+		videoBitrate: 10_000_000,
+		preset: 'quality',
+		targetLufs: -14
+	},
+	{
+		id: 'builtin-xhs-1080p30',
+		name: 'Xiaohongshu 1080p 30fps',
+		builtIn: true,
+		codec: 'h264',
+		container: 'mp4',
+		width: 1080,
+		height: 1350,
+		fps: 30,
+		videoBitrate: 8_000_000,
+		preset: 'quality',
+		targetLufs: -14
+	},
+	{
+		id: 'builtin-xhs-square-1080p30',
+		name: 'Xiaohongshu Square 30fps',
+		builtIn: true,
+		codec: 'h264',
+		container: 'mp4',
+		width: 1080,
+		height: 1080,
+		fps: 30,
+		videoBitrate: 6_000_000,
+		preset: 'quality',
+		targetLufs: -14
 	}
 ];
 
@@ -74,7 +155,8 @@ export function mergePresetsWithBuiltIns(
 export function createPresetFromSettings(
 	name: string,
 	settings: ExportSettings,
-	outputTemplate?: string
+	outputTemplate?: string,
+	targetLufs?: number
 ): ExportPresetDoc {
 	return {
 		id: makePresetId(),
@@ -87,7 +169,8 @@ export function createPresetFromSettings(
 		fps: settings.fps,
 		videoBitrate: settings.videoBitrate,
 		preset: settings.preset,
-		outputTemplate
+		outputTemplate,
+		targetLufs
 	};
 }
 
@@ -236,6 +319,31 @@ export function clonePresetDoc(preset: ExportPresetDoc): ExportPresetDoc {
 	return { ...preset };
 }
 
+/**
+ * Resolve the best codec/container for a platform preset given the device's
+ * encode capabilities. Returns the preset's codec when supported, falls back
+ * to the other common codec, or reports blocked when neither is available.
+ */
+export function resolvePlatformPresetCodec(
+	preset: ExportPresetDoc,
+	probe: CapabilityProbeResult
+): { codec: ExportVideoCodec; container: ExportContainer } | { blocked: true; reason: string } {
+	const constraints = exportConstraintsForProbe(probe);
+	const supportedCodecs = new Set(constraints.map((c) => c.codec));
+	if (supportedCodecs.has(preset.codec)) {
+		return { codec: preset.codec, container: preset.container };
+	}
+	const fallback: ExportVideoCodec = preset.codec === 'h264' ? 'vp9' : 'h264';
+	const fallbackContainer: ExportContainer = fallback === 'h264' ? 'mp4' : 'webm';
+	if (supportedCodecs.has(fallback)) {
+		return { codec: fallback, container: fallbackContainer };
+	}
+	return {
+		blocked: true,
+		reason: 'This device cannot encode H.264 or VP9. Platform preset unavailable.'
+	};
+}
+
 export function parseExportPresetDoc(value: unknown): ExportPresetDoc | null {
 	if (!value || typeof value !== 'object') return null;
 	const v = value as Record<string, unknown>;
@@ -256,6 +364,8 @@ export function parseExportPresetDoc(value: unknown): ExportPresetDoc | null {
 	const preset = v.preset as ExportPreset;
 	if (preset !== 'quality' && preset !== 'fast') return null;
 	const outputTemplate = typeof v.outputTemplate === 'string' ? v.outputTemplate : undefined;
+	const targetLufs =
+		typeof v.targetLufs === 'number' && Number.isFinite(v.targetLufs) ? v.targetLufs : undefined;
 	return {
 		id,
 		name,
@@ -267,6 +377,7 @@ export function parseExportPresetDoc(value: unknown): ExportPresetDoc | null {
 		fps,
 		videoBitrate,
 		preset,
-		outputTemplate
+		outputTemplate,
+		targetLufs
 	};
 }

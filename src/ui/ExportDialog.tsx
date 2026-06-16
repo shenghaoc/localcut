@@ -2,7 +2,8 @@ import { createEffect, createMemo, createSignal, For, Show, untrack } from 'soli
 import { Popover } from '@kobalte/core/popover';
 import { Copy, Download, ListPlus, Save } from 'lucide-solid';
 import { Button } from './components/button';
-import { validateOutputTemplate } from '../engine/export-presets';
+import { validateOutputTemplate, resolvePlatformPresetCodec } from '../engine/export-presets';
+import { aspectOutputSize } from '../engine/project';
 import { exportConstraintsForProbe } from '../engine/capability-probe-v2';
 import { generateChapterText, generateChaptersJson } from '../engine/chapters';
 import type {
@@ -13,6 +14,7 @@ import type {
 	ExportProgress,
 	ExportSettings,
 	ExportVideoCodec,
+	ProjectAspect,
 	TimelineMarkerSnapshot
 } from '../protocol';
 
@@ -30,6 +32,7 @@ interface ExportDialogProps {
 	initialSettings: ExportSettings | null;
 	presets: ExportPresetDoc[];
 	markers: TimelineMarkerSnapshot[];
+	projectAspect: ProjectAspect;
 	/** Project name for chapter file suggested name. */
 	projectName?: string;
 	onProbe: () => void;
@@ -137,6 +140,22 @@ export function ExportDialog(props: ExportDialogProps) {
 	const nonCoreProbe = createMemo(() => {
 		const probe = props.capabilityProbeV2;
 		return probe && probe.tier !== 'core-webgpu' ? probe : null;
+	});
+
+	const aspectMismatch = createMemo(() => {
+		const s = settings();
+		const { width: ew, height: eh } = aspectOutputSize(props.projectAspect);
+		return Math.abs(s.width / s.height - ew / eh) / (ew / eh) > 0.01;
+	});
+
+	const platformCodecResolution = createMemo(() => {
+		const id = selectedPresetId();
+		if (!id) return null;
+		const preset = props.presets.find((p) => p.id === id);
+		if (!preset || !preset.builtIn || preset.targetLufs === undefined) return null;
+		const probe = props.capabilityProbeV2;
+		if (!probe) return null;
+		return resolvePlatformPresetCodec(preset, probe);
 	});
 
 	createEffect(() => {
@@ -381,6 +400,29 @@ export function ExportDialog(props: ExportDialogProps) {
 								</button>
 							</Show>
 						</div>
+					</Show>
+
+					<Show when={aspectMismatch()}>
+						<p class="export-aspect-warning" role="alert">
+							Export dimensions ({settings().width}×{settings().height}) do not match project format
+							({props.projectAspect}). The output may appear letterboxed.
+						</p>
+					</Show>
+					<Show when={platformCodecResolution() && 'blocked' in platformCodecResolution()!}>
+						<p class="export-preset-blocked" role="alert">
+							{(platformCodecResolution() as { blocked: true; reason: string }).reason}
+						</p>
+					</Show>
+					<Show
+						when={
+							platformCodecResolution() &&
+							!('blocked' in platformCodecResolution()!) &&
+							(platformCodecResolution() as { codec: ExportVideoCodec }).codec !== settings().codec
+						}
+					>
+						<p class="export-aspect-warning" role="status">
+							H.264 is not supported on this device; falling back to VP9 (WebM).
+						</p>
 					</Show>
 
 					<p class="export-eyebrow">Export preset</p>

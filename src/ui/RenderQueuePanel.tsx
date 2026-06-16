@@ -158,6 +158,12 @@ export function RenderQueuePanel(props: RenderQueuePanelProps) {
 									<p class="render-queue-job-error">{job.error}</p>
 								</Show>
 
+								<Show when={job.coverExportError}>
+									<p class="render-queue-job-cover-warning">
+										Cover export failed: {job.coverExportError}
+									</p>
+								</Show>
+
 								<Show when={job.status === 'completed' && job.outputFileName}>
 									<p class="render-queue-job-output">{job.outputFileName}</p>
 								</Show>

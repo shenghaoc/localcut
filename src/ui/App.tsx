@@ -124,6 +124,9 @@ import {
 } from '../engine/render-queue';
 import { BUILT_IN_PRESETS } from '../engine/export-presets';
 import type { CaptionAnimStylePresetSnapshot } from '../protocol';
+import { aspectOutputSize } from '../engine/project';
+import { validateSafeZoneFile } from '../engine/safe-zones';
+import { SafeZoneOverlay } from './SafeZoneOverlay';
 import { createRecoveryMachine, type WorkerRecoveryState } from '../engine/recovery';
 import { AppErrorBoundary } from './ErrorBoundary';
 import { AudioCleanupPanel, type AppliedCleanupInfo } from './AudioCleanupPanel';
@@ -363,9 +366,143 @@ export function App() {
 	const [previewCanvasEl, setPreviewCanvasEl] = createSignal<HTMLCanvasElement | undefined>(
 		undefined
 	);
+	const [previewCanvasBox, setPreviewCanvasBox] = createSignal<{
+		left: number;
+		top: number;
+		width: number;
+		height: number;
+	} | null>(null);
 	const [safeAreaGuides, setSafeAreaGuides] = createSignal(false);
+	// Phase 39: Vertical and Platform Finishing
+	const [projectAspect, setProjectAspect] =
+		createSignal<import('../protocol').ProjectAspect>('16:9');
+	const [safeZoneFile, setSafeZoneFile] = createSignal<
+		import('../engine/safe-zones').SafeZoneFile | null
+	>(null);
+	const [selectedPlatformId, setSelectedPlatformId] = createSignal('');
+	const [coverFrame, setCoverFrame] = createSignal<import('../protocol').CoverFrameDoc | null>(
+		null
+	);
+	const [coverTitleClipId, setCoverTitleClipId] = createSignal('');
+	const [coverThumbnailUrl, setCoverThumbnailUrl] = createSignal<string | null>(null);
+	const [coverThumbnailError, setCoverThumbnailError] = createSignal<string | null>(null);
+	const [_coverExportError, setCoverExportError] = createSignal<string | null>(null);
+	const projectOutputSize = createMemo(() => aspectOutputSize(projectAspect()));
+	const previewAspectStyle = createMemo(() => {
+		const { width, height } = projectOutputSize();
+		return `${width} / ${height}`;
+	});
+	const previewAspectNum = createMemo(() => {
+		const { width, height } = projectOutputSize();
+		return width / height;
+	});
+	const previewCanvasBoxStyle = createMemo((): Record<string, string> => {
+		const box = previewCanvasBox();
+		if (!box) return {};
+		return {
+			'--preview-canvas-left': `${box.left}px`,
+			'--preview-canvas-top': `${box.top}px`,
+			'--preview-canvas-width': `${box.width}px`,
+			'--preview-canvas-height': `${box.height}px`,
+			'--preview-canvas-transform': 'none'
+		};
+	});
+	const selectedPlatform = createMemo<import('../engine/safe-zones').SafeZonePlatform | null>(
+		() => {
+			const id = selectedPlatformId();
+			if (!id) return null;
+			return safeZoneFile()?.platforms.find((p) => p.id === id) ?? null;
+		}
+	);
+	const matchingPlatforms = createMemo(() => {
+		return safeZoneFile()?.platforms.filter((p) => p.aspect === projectAspect()) ?? [];
+	});
+
+	createEffect(() => {
+		const canvas = previewCanvasEl();
+		const aspect = previewAspectNum();
+		if (!canvas) {
+			setPreviewCanvasBox(null);
+			return;
+		}
+
+		let frame = 0;
+		const updateCanvasBox = () => {
+			if (frame) cancelAnimationFrame(frame);
+			frame = requestAnimationFrame(() => {
+				frame = 0;
+				const parent = canvas.parentElement;
+				if (!parent) return;
+				const parentRect = parent.getBoundingClientRect();
+				const width = Math.min(parentRect.width, parentRect.height * aspect);
+				const height = width / aspect;
+				const next = {
+					left: (parentRect.width - width) / 2,
+					top: (parentRect.height - height) / 2,
+					width,
+					height
+				};
+				setPreviewCanvasBox((previous) =>
+					previous &&
+					Math.abs(previous.left - next.left) < 0.5 &&
+					Math.abs(previous.top - next.top) < 0.5 &&
+					Math.abs(previous.width - next.width) < 0.5 &&
+					Math.abs(previous.height - next.height) < 0.5
+						? previous
+						: next
+				);
+			});
+		};
+
+		const updateCanvasBoxNow = () => {
+			const parent = canvas.parentElement;
+			if (!parent) return;
+			const parentRect = parent.getBoundingClientRect();
+			const width = Math.min(parentRect.width, parentRect.height * aspect);
+			const height = width / aspect;
+			setPreviewCanvasBox({
+				left: (parentRect.width - width) / 2,
+				top: (parentRect.height - height) / 2,
+				width,
+				height
+			});
+		};
+
+		updateCanvasBoxNow();
+		const observer = new ResizeObserver(updateCanvasBox);
+		if (canvas.parentElement) observer.observe(canvas.parentElement);
+		window.addEventListener('resize', updateCanvasBox);
+		onCleanup(() => {
+			if (frame) cancelAnimationFrame(frame);
+			observer.disconnect();
+			window.removeEventListener('resize', updateCanvasBox);
+		});
+	});
+	function aspectLabel(aspect: import('../protocol').ProjectAspect): string {
+		switch (aspect) {
+			case '16:9':
+				return 'Landscape';
+			case '9:16':
+				return 'Vertical';
+			case '1:1':
+				return 'Square';
+			case '4:5':
+				return 'Portrait';
+		}
+	}
 	const [encodeFps, setEncodeFps] = createSignal<number | null>(null);
 	const [timeline, setTimeline] = createSignal<TimelineTrackSnapshot[]>([]);
+	const coverTitleOptions = createMemo(() => {
+		const options: { id: string; label: string }[] = [];
+		for (const track of timeline()) {
+			if (track.type !== 'video') continue;
+			for (const clip of track.clips) {
+				if (clip.kind !== 'title' || !clip.title) continue;
+				options.push({ id: clip.id, label: clip.title.text.trim() || 'Untitled title' });
+			}
+		}
+		return options;
+	});
 	const [captionTracks, setCaptionTracks] = createSignal<CaptionTrackSnapshot[]>([]);
 	const [captionDiagnostics, setCaptionDiagnostics] = createSignal<CaptionDiagnosticSnapshot[]>([]);
 	// Phase 30: user-imported animated caption presets, kept in sync with the worker.
@@ -593,6 +730,28 @@ export function App() {
 		}
 	});
 	let voiceCleanupWasmLoad: Promise<ArrayBuffer> | null = null;
+
+	function clearCoverThumbnail(): void {
+		setCoverThumbnailUrl((current) => {
+			if (current) URL.revokeObjectURL(current);
+			return null;
+		});
+	}
+
+	createEffect(
+		on([coverFrame, workerReady], ([currentCover, ready]) => {
+			clearCoverThumbnail();
+			setCoverThumbnailError(null);
+			if (!currentCover || !ready) return;
+			bridge?.send({
+				type: 'request-cover-thumbnail',
+				timeS: currentCover.timeS,
+				titleClipId: currentCover.titleClipId ?? null
+			});
+		})
+	);
+
+	onCleanup(() => clearCoverThumbnail());
 	function loadVoiceCleanupWasm(): Promise<ArrayBuffer> {
 		voiceCleanupWasmLoad ??= loadVerifiedVoiceCleanupWasm();
 		return voiceCleanupWasmLoad;
@@ -2075,6 +2234,47 @@ export function App() {
 					globalOffsetMs: msg.globalOffsetMs
 				});
 				break;
+			// Phase 39: Vertical and Platform Finishing
+			case 'project-format-changed':
+				setProjectAspect(msg.aspect);
+				{
+					const cp = selectedPlatform();
+					if (cp && cp.aspect !== msg.aspect) setSelectedPlatformId('');
+				}
+				break;
+			case 'cover-frame-changed':
+				setCoverFrame(msg.cover);
+				setCoverTitleClipId(msg.cover?.titleClipId ?? '');
+				break;
+			case 'cover-thumbnail':
+				{
+					const currentCover = coverFrame();
+					if (
+						currentCover &&
+						currentCover.timeS === msg.cover.timeS &&
+						(currentCover.titleClipId ?? null) === (msg.cover.titleClipId ?? null)
+					) {
+						const nextUrl = URL.createObjectURL(msg.blob);
+						setCoverThumbnailUrl((current) => {
+							if (current) URL.revokeObjectURL(current);
+							return nextUrl;
+						});
+						setCoverThumbnailError(null);
+					}
+				}
+				break;
+			case 'cover-thumbnail-error':
+				if (
+					coverFrame()?.timeS === msg.cover.timeS &&
+					(coverFrame()?.titleClipId ?? null) === (msg.cover.titleClipId ?? null)
+				) {
+					setCoverThumbnailError(msg.error);
+				}
+				break;
+			case 'cover-export-warning':
+				setCoverExportError(msg.error);
+				setStatusLine(msg.error);
+				break;
 		}
 	}
 
@@ -2486,10 +2686,15 @@ export function App() {
 
 		const allJobs = renderQueue().jobs;
 		const usedNames = new Set<string>();
-		if (pendingJobs.length > 1) {
+		const needsDirectory = pendingJobs.length > 1 || coverFrame() !== null;
+		if (needsDirectory) {
 			const directoryPicker = (window as DirectoryPickerWindow).showDirectoryPicker;
 			if (typeof directoryPicker !== 'function') {
-				setStatusLine('Queue needs a directory picker to run multiple pending exports.');
+				setStatusLine(
+					coverFrame()
+						? 'Cover export needs a directory picker so the cover JPEG can be saved beside the video.'
+						: 'Queue needs a directory picker to run multiple pending exports.'
+				);
 				return false;
 			}
 			try {
@@ -2505,7 +2710,7 @@ export function App() {
 						usedNames
 					);
 					const handle = await directory.getFileHandle(suggestedName, { create: true });
-					bridge?.send({ type: 'queue-job-output', jobId: job.id, handle });
+					bridge?.send({ type: 'queue-job-output', jobId: job.id, handle, outputDir: directory });
 				}
 				return true;
 			} catch (error) {
@@ -2897,6 +3102,18 @@ export function App() {
 			}
 		})();
 
+		// Phase 39: Fetch platform safe-zone data.
+		void fetch(`${import.meta.env.BASE_URL}safe-zones/safe-zones.v1.json`)
+			.then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+			.then((json) => {
+				const file = validateSafeZoneFile(json);
+				if (file) setSafeZoneFile(file);
+				else console.error('[safe-zones] Validation failed.');
+			})
+			.catch((err: unknown) => {
+				console.error('[safe-zones] Failed to load:', err);
+			});
+
 		const handlePopState = () => setDocsSlug(parseDocsPath(window.location.pathname));
 		window.addEventListener('popstate', handlePopState);
 
@@ -3129,6 +3346,7 @@ export function App() {
 								initialSettings={exportSettings()}
 								presets={exportPresets()}
 								markers={markers()}
+								projectAspect={projectAspect()}
 								onProbe={probeExportCodecs}
 								onStart={startExport}
 								onCancel={() => bridge?.send({ type: 'export-cancel' })}
@@ -3314,7 +3532,14 @@ export function App() {
 								selectedClipCount={() => selectedClipRefs().length}
 							/>
 						</Show>
-						<section class="preview panel">
+						<section
+							class="preview panel"
+							style={{
+								'--preview-aspect': previewAspectStyle(),
+								'--preview-aspect-num': previewAspectNum(),
+								...previewCanvasBoxStyle()
+							}}
+						>
 							<Show when={previewKey() + 1} keyed>
 								{(_k) => (
 									<PreviewCanvas onOffscreenReady={sendInit} onCanvasEl={setPreviewCanvasEl} />
@@ -3349,6 +3574,14 @@ export function App() {
 									<div class="safe-area-rect safe-area-title" />
 								</div>
 							</Show>
+							{/* Phase 39: Platform safe-zone overlay */}
+							<Show when={previewSurfaceAvailable() && selectedPlatform()}>
+								<SafeZoneOverlay
+									platform={selectedPlatform()}
+									outputWidth={projectOutputSize().width}
+									outputHeight={projectOutputSize().height}
+								/>
+							</Show>
 							<ReframeOverlay
 								visible={
 									smartReframeOpen() &&
@@ -3370,6 +3603,98 @@ export function App() {
 								>
 									Safe areas
 								</button>
+							</Show>
+							{/* Phase 39: format picker, platform picker, cover button */}
+							<Show when={previewSurfaceAvailable()}>
+								<div class="phase39-controls">
+									<fieldset
+										role="group"
+										aria-label="Project format"
+										style={{ display: 'flex', gap: '2px', 'flex-wrap': 'wrap' }}
+									>
+										<For each={['16:9', '9:16', '1:1', '4:5'] as const}>
+											{(aspect) => (
+												<button
+													type="button"
+													class={cn(
+														buttonVariants({
+															variant: projectAspect() === aspect ? 'default' : 'ghost',
+															size: 'sm'
+														}),
+														'text-xs'
+													)}
+													aria-label={`Set project format to ${aspect} (${aspectLabel(aspect)})`}
+													onClick={() => bridge?.send({ type: 'set-project-format', aspect })}
+												>
+													{aspect}
+												</button>
+											)}
+										</For>
+									</fieldset>
+									<Show when={matchingPlatforms().length > 0}>
+										<select
+											aria-label="Safe zone platform"
+											value={selectedPlatformId()}
+											onChange={(e) => setSelectedPlatformId(e.currentTarget.value)}
+											style={{
+												'font-size': '11px',
+												padding: '2px 4px',
+												background: 'var(--input-bg, #1a1d24)',
+												color: 'inherit',
+												border: '1px solid rgb(255 255 255 / 14%)',
+												'border-radius': 'var(--radius-sm)'
+											}}
+										>
+											<option value="">Off</option>
+											<For each={matchingPlatforms()}>
+												{(p) => <option value={p.id}>{p.label}</option>}
+											</For>
+										</select>
+									</Show>
+									<button
+										type="button"
+										class={cn(
+											buttonVariants({ variant: coverFrame() ? 'default' : 'ghost', size: 'sm' }),
+											'text-xs'
+										)}
+										onClick={() =>
+											bridge?.send({
+												type: 'set-cover-frame',
+												timeS: clock.currentTime(),
+												titleClipId: coverTitleClipId() || null
+											})
+										}
+										title="Set cover frame at current playhead position"
+									>
+										Cover
+									</button>
+									<Show when={coverTitleOptions().length > 0}>
+										<select
+											aria-label="Cover title overlay"
+											value={coverTitleClipId()}
+											onChange={(e) => setCoverTitleClipId(e.currentTarget.value)}
+											class="cover-title-select"
+										>
+											<option value="">No title</option>
+											<For each={coverTitleOptions()}>
+												{(option) => <option value={option.id}>{option.label}</option>}
+											</For>
+										</select>
+									</Show>
+									<Show when={coverThumbnailUrl()}>
+										{(url) => (
+											<img
+												class="cover-thumb-preview"
+												src={url()}
+												alt=""
+												aria-label="Cover frame preview"
+											/>
+										)}
+									</Show>
+									<Show when={coverThumbnailError()}>
+										{(error) => <span class="cover-thumb-warning">{error()}</span>}
+									</Show>
+								</div>
 							</Show>
 							<Show when={compatibilityPreview() !== null}>
 								<LimitedPreview

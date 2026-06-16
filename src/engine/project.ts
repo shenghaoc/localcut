@@ -1,10 +1,13 @@
 import type {
 	CaptionTrackSnapshot,
+	CoverFrameDoc,
 	ExportPresetDoc,
 	ExportSettings,
 	LiveAudioChainConfig,
 	NormalizedSourceTimingSnapshot,
 	PersistedQueueJob,
+	ProjectAspect,
+	ProjectFormat,
 	RingBufferConfig,
 	SourceColorHintsSnapshot,
 	SourceDescriptorSnapshot,
@@ -51,7 +54,20 @@ import { normalizeSkinMask } from './skin-smooth';
 import { normalizeBeautyEffect } from './beauty/beauty-params';
 import { parseExportPresetDoc } from './export-presets';
 
-export const PROJECT_SCHEMA_VERSION = 18;
+export const PROJECT_SCHEMA_VERSION = 19;
+
+// ── Phase 39: Vertical and Platform Finishing ──
+
+export const ASPECT_OUTPUT_SIZES: Record<ProjectAspect, { width: number; height: number }> = {
+	'16:9': { width: 1920, height: 1080 },
+	'9:16': { width: 1080, height: 1920 },
+	'1:1': { width: 1080, height: 1080 },
+	'4:5': { width: 1080, height: 1350 }
+};
+
+export function aspectOutputSize(aspect: ProjectAspect): { width: number; height: number } {
+	return ASPECT_OUTPUT_SIZES[aspect];
+}
 const DURATION_MATCH_TOLERANCE_S = 0.25;
 const TIMING_MATCH_TOLERANCE_S = 0.05;
 
@@ -80,6 +96,10 @@ export interface ProjectDoc {
 		enabledSourceIds: string[];
 		globalOffsetMs: number;
 	};
+	/** Phase 39: project aspect/format (default 16:9). */
+	projectFormat?: ProjectFormat;
+	/** Phase 39: optional cover frame for export. */
+	cover?: CoverFrameDoc;
 }
 
 export interface SerializeProjectOptions {
@@ -99,6 +119,8 @@ export interface SerializeProjectOptions {
 	liveAudioChainConfig?: LiveAudioChainConfig;
 	voiceCleanup?: VoiceCleanupSettings;
 	beatSettings?: { enabledSourceIds: string[]; globalOffsetMs: number };
+	projectFormat?: ProjectFormat;
+	cover?: CoverFrameDoc;
 }
 
 export type DeserializeProjectResult =
@@ -181,6 +203,33 @@ function parseExportSettings(value: unknown): ExportSettings | undefined {
 		parsed.sourceMode = sourceMode;
 	}
 	return parsed;
+}
+
+// ── Phase 39: projectFormat and cover parsers ──
+
+const VALID_ASPECTS: readonly ProjectAspect[] = ['16:9', '9:16', '1:1', '4:5'];
+
+export function parseProjectFormat(value: unknown): ProjectFormat {
+	if (!isRecord(value)) return { aspect: '16:9' };
+	const aspect =
+		typeof value.aspect === 'string' && (VALID_ASPECTS as readonly string[]).includes(value.aspect)
+			? (value.aspect as ProjectAspect)
+			: '16:9';
+	return { aspect };
+}
+
+export function parseCoverFrame(value: unknown): CoverFrameDoc | undefined {
+	if (value === undefined || value === null) return undefined;
+	if (!isRecord(value)) return undefined;
+	const timeS = finiteNumber(value.timeS);
+	if (timeS === null || timeS < 0) return undefined;
+	const titleClipId =
+		value.titleClipId === null || value.titleClipId === undefined
+			? null
+			: typeof value.titleClipId === 'string'
+				? value.titleClipId
+				: null;
+	return { timeS, titleClipId };
 }
 
 function cloneExportSettings(settings: ExportSettings): ExportSettings {
@@ -471,6 +520,12 @@ export function serializeProject(options: SerializeProjectOptions): ProjectDoc {
 			enabledSourceIds: [...options.beatSettings.enabledSourceIds],
 			globalOffsetMs: options.beatSettings.globalOffsetMs
 		};
+	}
+	if (options.projectFormat) {
+		doc.projectFormat = { aspect: options.projectFormat.aspect };
+	}
+	if (options.cover) {
+		doc.cover = { timeS: options.cover.timeS, titleClipId: options.cover.titleClipId ?? null };
 	}
 	return doc;
 }
@@ -1534,6 +1589,22 @@ function deserializeV14(value: Record<string, unknown>): DeserializeProjectResul
 	};
 }
 
+function deserializeV19(value: Record<string, unknown>): DeserializeProjectResult {
+	const result = deserializeV14(value);
+	if (!result.ok) return result;
+	// v19 (Phase 39): adds optional projectFormat and cover on top of v14.
+	// Invalid/absent falls back to defaults at the consumer.
+	return {
+		ok: true,
+		doc: {
+			...result.doc,
+			schemaVersion: PROJECT_SCHEMA_VERSION,
+			projectFormat: parseProjectFormat(value.projectFormat),
+			cover: parseCoverFrame(value.cover)
+		}
+	};
+}
+
 export function deserializeProject(value: unknown): DeserializeProjectResult {
 	if (!isRecord(value)) return { ok: false, reason: 'Project document is not an object.' };
 	const schemaVersion = finiteNumber(value.schemaVersion);
@@ -1587,6 +1658,9 @@ export function deserializeProject(value: unknown): DeserializeProjectResult {
 			// v18 (Phase 38): adds film-look params (grain, halation, vignette) to
 			// ClipEffectParams — backwards-compatible, filled by normalizeClipEffects.
 			return deserializeV14(value);
+		case 19:
+			// v19 (Phase 39): adds optional projectFormat and cover.
+			return deserializeV19(value);
 		default:
 			return { ok: false, reason: `Unsupported project schemaVersion ${schemaVersion}.` };
 	}

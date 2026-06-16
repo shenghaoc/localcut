@@ -20,7 +20,8 @@ export type BundleAssetKind =
 	| 'thumbnail'
 	| 'waveform'
 	| 'proxy'
-	| 'beats';
+	| 'beats'
+	| 'cover';
 
 export interface BundleAsset {
 	assetId: string;
@@ -72,6 +73,7 @@ export type BundleIntegrityCode =
 	| 'unsupported-project-schema'
 	| 'unsupported-operation'
 	| 'interchange-export-failed'
+	| 'cover-export-failed'
 	| 'cache-stale';
 
 export interface BundleIntegrityItem {

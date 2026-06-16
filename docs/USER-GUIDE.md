@@ -648,6 +648,47 @@ Queue multiple export jobs to run sequentially:
 
 The queue supports per-job progress, retry on failure, and stop-on-error mode.
 
+## Project Format
+
+LocalCut supports four project aspect-ratio modes:
+
+| Mode      | Aspect | Output Dimensions | Use Case                        |
+| --------- | ------ | ----------------- | ------------------------------- |
+| Landscape | 16:9   | 1920×1080         | Standard video, YouTube         |
+| Vertical  | 9:16   | 1080×1920         | TikTok, Douyin, Shorts, Reels   |
+| Square    | 1:1    | 1080×1080         | Instagram feed                  |
+| Portrait  | 4:5    | 1080×1350         | Instagram portrait, Xiaohongshu |
+
+Use the format picker in the preview toolbar. Clips re-letterbox automatically. Changes are undoable.
+
+## Platform Safe Zones
+
+Enable platform-specific safe-zone overlays to keep content visible above UI elements:
+
+1. Set format to vertical/square.
+2. Use the **Platform** dropdown to select Douyin, Xiaohongshu, Shorts, or Reels.
+3. Red zones = occluded by platform UI. Yellow zones = recommended safe area.
+
+Zone values are updatable via `safe-zones.v1.json` without code changes.
+
+## Cover Frame
+
+Set a cover frame (封面) for export as JPEG thumbnail:
+
+1. Position playhead at desired frame.
+2. Optionally choose a title overlay, then click **Cover**.
+3. Export via the render queue. When a cover is set, LocalCut asks for a
+   directory destination even for a one-job queue so `<filename>.cover.jpg` can
+   be saved alongside the video.
+
+The cover preview appears beside the Cover button. Direct one-off video exports
+do not create a cover JPEG; cover files are produced by render queue jobs and
+project bundle exports.
+
+## Platform Export Presets
+
+Built-in presets for short-form platforms (Douyin, Shorts, Reels, Xiaohongshu) with H.264 codec and -14 LUFS target. Codec fallback (H.264→VP9) with visible banner when needed.
+
 ## Live Streaming
 
 Broadcast the program output to a WHIP ingest endpoint (Twitch WHIP,

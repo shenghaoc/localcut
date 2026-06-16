@@ -1478,6 +1478,12 @@ body {
 	font-size: 11px;
 }
 
+.render-queue-job-cover-warning {
+	margin: 0;
+	color: rgb(255 200 0);
+	font-size: 11px;
+}
+
 .render-queue-job-output {
 	margin: 0;
 	color: var(--muted-foreground);
@@ -1649,6 +1655,8 @@ body {
 	justify-content: center;
 	min-height: 0;
 	overflow: hidden;
+	--preview-aspect: 16 / 9;
+	--preview-aspect-num: 1.778;
 	background:
 		radial-gradient(
 			ellipse 70% 50% at 50% 0%,
@@ -1664,11 +1672,24 @@ body {
 .preview-canvas {
 	width: min(
 		100%,
-		calc((100vh - var(--toolbar-h) - var(--timeline-h) - var(--status-h) - 28px) * 16 / 9)
+		calc(
+			(100vh - var(--toolbar-h) - var(--timeline-h) - var(--status-h) - 28px) *
+				var(--preview-aspect-num, 1.778)
+		)
+	);
+	width: var(
+		--preview-canvas-width,
+		min(
+			100%,
+			calc(
+				(100vh - var(--toolbar-h) - var(--timeline-h) - var(--status-h) - 28px) *
+					var(--preview-aspect-num, 1.778)
+			)
+		)
 	);
 	max-width: 100%;
-	aspect-ratio: 16 / 9;
-	height: auto;
+	aspect-ratio: var(--preview-aspect, 16 / 9);
+	height: var(--preview-canvas-height, auto);
 	max-height: 100%;
 	background: #050610;
 	border: 1px solid rgb(255 255 255 / 10%);
@@ -1689,15 +1710,30 @@ body {
 /* Title/action safe-area guides: a pure DOM overlay matching the canvas box. */
 .safe-area-overlay {
 	position: absolute;
-	top: 50%;
-	left: 50%;
-	transform: translate(-50%, -50%);
+	top: var(--preview-canvas-top, 50%);
+	left: var(--preview-canvas-left, 50%);
+	transform: var(--preview-canvas-transform, translate(-50%, -50%));
 	width: min(
 		100%,
-		calc((100vh - var(--toolbar-h) - var(--timeline-h) - var(--status-h) - 28px) * 16 / 9)
+		calc(
+			(100vh - var(--toolbar-h) - var(--timeline-h) - var(--status-h) - 28px) *
+				var(--preview-aspect-num, 1.778)
+		)
+	);
+	width: var(
+		--preview-canvas-width,
+		min(
+			100%,
+			calc(
+				(100vh - var(--toolbar-h) - var(--timeline-h) - var(--status-h) - 28px) *
+					var(--preview-aspect-num, 1.778)
+			)
+		)
 	);
 	max-width: 100%;
-	aspect-ratio: 16 / 9;
+	aspect-ratio: var(--preview-aspect, 16 / 9);
+	height: var(--preview-canvas-height, auto);
+	max-height: 100%;
 	pointer-events: none;
 	z-index: 3;
 }
@@ -1715,6 +1751,95 @@ body {
 .safe-area-title {
 	inset: 10%;
 	border-color: rgb(255 255 255 / 35%);
+}
+
+/* Phase 39: Platform safe-zone overlays */
+.safe-zone-overlay {
+	position: absolute;
+	top: var(--preview-canvas-top, 50%);
+	left: var(--preview-canvas-left, 50%);
+	transform: var(--preview-canvas-transform, translate(-50%, -50%));
+	width: min(
+		100%,
+		calc(
+			(100vh - var(--toolbar-h) - var(--timeline-h) - var(--status-h) - 28px) *
+				var(--preview-aspect-num, 1.778)
+		)
+	);
+	width: var(
+		--preview-canvas-width,
+		min(
+			100%,
+			calc(
+				(100vh - var(--toolbar-h) - var(--timeline-h) - var(--status-h) - 28px) *
+					var(--preview-aspect-num, 1.778)
+			)
+		)
+	);
+	max-width: 100%;
+	aspect-ratio: var(--preview-aspect, 16 / 9);
+	height: var(--preview-canvas-height, auto);
+	max-height: 100%;
+	pointer-events: none;
+	z-index: 3;
+}
+
+.safe-zone-rect-occluded {
+	position: absolute;
+	box-sizing: border-box;
+	background: rgb(255 80 80 / 22%);
+	border: 1px dashed rgb(255 80 80 / 70%);
+}
+
+.safe-zone-rect-caution {
+	position: absolute;
+	box-sizing: border-box;
+	background: rgb(255 200 0 / 10%);
+	border: 1px dashed rgb(255 200 0 / 55%);
+}
+
+.cover-title-select {
+	max-width: 120px;
+	height: 24px;
+	padding: 2px 4px;
+	overflow: hidden;
+	color: inherit;
+	font-size: 11px;
+	text-overflow: ellipsis;
+	background: var(--input-bg, #1a1d24);
+	border: 1px solid rgb(255 255 255 / 14%);
+	border-radius: var(--radius-sm);
+}
+
+.cover-thumb-preview {
+	width: 42px;
+	height: 24px;
+	object-fit: cover;
+	background: #050610;
+	border: 1px solid rgb(255 255 255 / 14%);
+	border-radius: var(--radius-sm);
+}
+
+.cover-thumb-warning {
+	max-width: 160px;
+	overflow: hidden;
+	color: rgb(255 200 0);
+	font-size: 11px;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* Phase 39: Export dimension/preset warnings */
+.export-aspect-warning {
+	color: rgb(255 200 0);
+	font-size: 12px;
+	margin: 4px 0;
+}
+
+.export-preset-blocked {
+	color: rgb(255 80 80);
+	font-size: 12px;
+	margin: 4px 0;
 }
 
 .safe-area-toggle {
@@ -1737,6 +1862,28 @@ body {
 	color: #fff;
 	border-color: var(--primary);
 	box-shadow: var(--glow-primary);
+}
+
+.phase39-controls {
+	position: absolute;
+	right: 10px;
+	bottom: 10px;
+	z-index: 4;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 8px;
+	width: min(96px, calc(100% - 20px));
+	max-width: calc(100% - 20px);
+}
+
+.phase39-controls fieldset {
+	min-width: 0;
+}
+
+.phase39-controls select {
+	width: 100%;
 }
 
 .preview-gizmo {
@@ -3900,7 +4047,8 @@ button.status-badge:hover {
 	}
 
 	.preview-canvas,
-	.safe-area-overlay {
+	.safe-area-overlay,
+	.safe-zone-overlay {
 		width: 100%;
 	}
 
