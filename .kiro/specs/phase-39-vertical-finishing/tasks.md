@@ -115,11 +115,12 @@
 - [ ] **T6.2** `src/ui/App.tsx`: apply `style={{ '--preview-aspect': previewAspectStyle() }}`
   on the `.preview` container element so CSS `var(--preview-aspect)` resolves
   to the current output aspect.
-- [ ] **T6.3** `src/global.css`: change `.preview-canvas { aspect-ratio: 16 / 9 }`
-  to `aspect-ratio: var(--preview-aspect, 16 / 9)`; update `.safe-area-overlay`
-  analogously, updating the `calc(… * 16 / 9)` width formula to use
-  `var(--preview-aspect-num, 1.778)` (a separate numeric custom property set
-  alongside `--preview-aspect`).
+- [ ] **T6.3** `src/global.css`: change `.preview-canvas`, `.safe-area-overlay`,
+  and `.safe-zone-overlay` to use the same project-format sizing inputs:
+  `aspect-ratio: var(--preview-aspect, 16 / 9)`, a numeric
+  `var(--preview-aspect-num, 1.778)` fallback in both canvas and overlay width
+  formulas, and the measured `--preview-canvas-*` custom properties so overlays
+  align to the displayed canvas rather than the full preview panel.
 - [ ] **T6.4** `src/ui/App.tsx` (preview toolbar): add a segmented-control
   `<fieldset role="group" aria-label="Project format">` with four radio-button
   styled items: `16:9 Landscape`, `9:16 Vertical`, `1:1 Square`, `4:5 Portrait`;
