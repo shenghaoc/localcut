@@ -9,12 +9,12 @@
 /**
  * Phase 21 scopes feature flag (B7).
  *
- * The full scope UI/worker/SAB/throttling pipeline is unfinished: `dispatchScopes`
- * is a placeholder and no scope panel is wired into the app. Until the pipeline
- * is complete, scopes must be impossible to enable so no scope pass ever runs by
- * default. Flip this to `true` only when the end-to-end path lands.
+ * End-to-end path now wired: scope compute pipelines run inside the single
+ * per-frame command encoder, results land in the SAB ring buffer, and
+ * `ScopePanel` reads them on its own rAF loop. Setting this to `false` is the
+ * killswitch for the entire scope pass.
  */
-export const SCOPES_FEATURE_ENABLED = false;
+export const SCOPES_FEATURE_ENABLED = true;
 
 export type ScopeType = 'histogram' | 'waveform-luma' | 'parade-rgb' | 'vectorscope';
 

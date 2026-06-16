@@ -144,16 +144,26 @@ describe('PreviewRenderer single submission', () => {
 });
 
 describe('PreviewRenderer scope gating (B7)', () => {
-	it('does not enable scopes via setScopesEnabled while the feature flag is off', () => {
+	it('enables scopes when the feature flag is on and setScopesEnabled(true)', () => {
 		const { device, submit } = fakeDevice();
 		const renderer = new PreviewRenderer(device, fakeContext(), 'rgba8unorm', fakeCanvas(), false);
 		renderer.setPreviewSize(64, 64);
 		renderer.setScopeSab(new SharedArrayBuffer(64));
 		renderer.setScopesEnabled(true);
 
-		expect(renderer.scopesActive).toBe(false);
+		expect(renderer.scopesActive).toBe(true);
 		renderer.present([layer(1920, 1080)]);
 		expect(submit).toHaveBeenCalledTimes(1);
+	});
+
+	it('disables scopes via setScopesEnabled(false) regardless of the feature flag', () => {
+		const { device } = fakeDevice();
+		const renderer = new PreviewRenderer(device, fakeContext(), 'rgba8unorm', fakeCanvas(), false);
+		renderer.setPreviewSize(64, 64);
+		renderer.setScopeSab(new SharedArrayBuffer(64));
+		renderer.setScopesEnabled(true);
+		renderer.setScopesEnabled(false);
+		expect(renderer.scopesActive).toBe(false);
 	});
 
 	it('keeps a single submission per frame even when scope dispatch is forced on', () => {
