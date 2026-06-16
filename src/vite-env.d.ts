@@ -2,6 +2,9 @@
 /// <reference types="vite-plugin-pwa/client" />
 
 declare const __BUILD_SHA__: string;
+/** Phase 31 experimental ORT/ONNX matte backend feature flag (see vite.config.ts
+ *  `define` and src/engine/matte/matte-backend.ts). Default false. */
+declare const __MATTE_ONNX_SPIKE__: boolean;
 
 interface FileSystemFileHandle {
 	name: string;

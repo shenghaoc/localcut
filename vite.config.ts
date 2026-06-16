@@ -249,7 +249,12 @@ export default defineConfig({
 		ignorePatterns: ['dist', 'dev-dist', 'coverage', '.kiro/', '.claude/', '.jules/']
 	},
 	define: {
-		__BUILD_SHA__: JSON.stringify(BUILD_SHA)
+		__BUILD_SHA__: JSON.stringify(BUILD_SHA),
+		// Phase 31 experimental ORT/ONNX matte backend feature flag. Off by default
+		// (production ships LiteRT MediaPipe); build with MATTE_ONNX_SPIKE=1 to
+		// evaluate the ONNX path. When false, the MatteOnnxEngine branch in the
+		// worker is dead-code-eliminated. See docs/ML-RUNTIME.md.
+		__MATTE_ONNX_SPIKE__: JSON.stringify(process.env.MATTE_ONNX_SPIKE === '1')
 	},
 	plugins: [
 		litertRuntimeAssetsPlugin(),

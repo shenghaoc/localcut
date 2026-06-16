@@ -1,0 +1,529 @@
+/**
+ * Portrait matting engine — Phase 31, **experimental ORT/ONNX backend** (spike).
+ *
+ * A second, opt-in matte backend that evaluates replacing the deployed LiteRT
+ * MediaPipe Selfie Segmentation path with an ONNX matting/segmentation model on
+ * **ONNX Runtime Web (ORT-WebGPU)**, built on the Phase 105 ORT foundation
+ * (`src/engine/ml/ort/`). It does **not** change the deployed default — the
+ * backend is selected only when the `__MATTE_ONNX_SPIKE__` flag is on AND a real
+ * ONNX model is pinned (the shipped manifest is a `template`, so by default this
+ * engine reports "no model configured" and the matte path degrades to unmatted).
+ * See {@link file://./matte-backend.ts} and docs/ML-RUNTIME.md.
+ *
+ * Per-frame pipeline (zero-copy, no CPU pixel round-trip — same contract as the
+ * LiteRT engine, on the ORT runtime):
+ *
+ *   VideoFrame → importExternalTexture → matte-onnx-preprocess WGSL
+ *   (resize / normalize → NCHW|NHWC float32 GPUBuffer) →
+ *   `ort.Tensor.fromGpuBuffer` → `session.run` (output `gpu-buffer`) →
+ *   matte-resolve WGSL (raw alpha buffer → rgba8unorm texture + EMA temporal
+ *   smoothing, **shared with the LiteRT engine**) → matte-apply / matte-blur
+ *   in the Phase 12 compositor.
+ *
+ * Foundation pieces it reuses verbatim:
+ * - {@link createOrtSession} injects the renderer's `GPUDevice`
+ *   (`deviceOwner: 'renderer'`) and pins the manifest EPs under the frame-coupled
+ *   gate — a per-frame matte can never resolve to WASM/CPU.
+ * - {@link loadOrtModelAsset} fetches the ONNX bytes through the trusted-host
+ *   `/_model/*` proxy, SHA-256-verifies them, and OPFS-caches by digest.
+ * - The temporal contract ({@link MATTE_TEMPORAL_SMOOTHING},
+ *   {@link shouldResetMatteHistory}) and the resolve shader are shared with the
+ *   LiteRT engine, so EMA smoothing and recurrent-state resets are unchanged.
+ *
+ * Local-only: the ONNX model loads on demand, manifest-validated and digest-pinned;
+ * frames never leave the device; no WASM/CPU full-frame fallback and no cloud.
+ */
+
+import matteOnnxPreprocessSource from '../shaders/matte-onnx-preprocess.wgsl?raw';
+import matteResolveSource from '../shaders/matte-resolve.wgsl?raw';
+import type { Tensor as OrtTensor } from 'onnxruntime-web';
+import type { MatteEngineStatusSnapshot, MatteModelStatus } from '../../protocol';
+import { MatteCache, makeMatteCacheKey } from '../matte-cache';
+import { createOrtSession, type OrtSessionHandle } from '../ml/ort/ort-session';
+import { loadOrtWebGpu, type OrtModule } from '../ml/ort/ort-loader';
+import { createOrtOpfsAssetStore, loadOrtModelAsset } from '../ml/ort/ort-asset-loader';
+import {
+	MatteOnnxManifestError,
+	validateMatteOnnxManifest,
+	type MatteOnnxIoContract,
+	type MatteOnnxModelManifestSnapshot
+} from './matte-onnx-model';
+import { MATTE_TEMPORAL_SMOOTHING, shouldResetMatteHistory } from './matte-temporal';
+import type { MatteBackendEngine, MatteFrameRequest } from './matte-backend';
+
+/** Same-origin manifest describing the experimental ONNX matte model. */
+const MATTE_ONNX_MANIFEST_URL = '/models/matte-onnx/manifest.json';
+
+/** Reuse-cache budget (matches the LiteRT engine). Correctness never depends on a
+ *  hit (R3.3). */
+const MATTE_CACHE_BYTES = 32 * 1024 * 1024;
+
+export interface MatteOnnxEngineOptions {
+	/** The renderer/compositor `GPUDevice`; injected into ORT so inference shares it. */
+	device: GPUDevice;
+	onStatus: (status: MatteEngineStatusSnapshot) => void;
+	manifestUrl?: string;
+	/** Determinism mode (R8): disables the reuse-last-while-busy shortcut so
+	 *  repeated runs over a fixture produce identical alpha. */
+	testMode?: boolean;
+}
+
+interface ClipSession {
+	history: GPUTexture;
+	historyView: GPUTextureView;
+	lastSourceTimeS: number | null;
+}
+
+interface LoadedModel {
+	handle: OrtSessionHandle;
+	io: MatteOnnxIoContract;
+	manifest: MatteOnnxModelManifestSnapshot;
+	width: number;
+	height: number;
+	/** Preprocess normalization `rgb * normScale + normBias`, derived from inputRange. */
+	normScale: number;
+	normBias: number;
+	/** Preprocess layout flag: 0 = NCHW, 1 = NHWC. */
+	layoutFlag: number;
+	/** ONNX input tensor dims in the model's layout ([1,3,H,W] or [1,H,W,3]). */
+	inputDims: number[];
+}
+
+export class MatteOnnxEngine implements MatteBackendEngine {
+	private readonly device: GPUDevice;
+	private readonly onStatus: (status: MatteEngineStatusSnapshot) => void;
+	private readonly manifestUrl: string;
+	private readonly testMode: boolean;
+
+	private readonly cache: MatteCache;
+	private readonly sessions = new Map<string, ClipSession>();
+	private readonly lastView = new Map<string, GPUTextureView>();
+
+	private ort: OrtModule | null = null;
+	private model: LoadedModel | null = null;
+	private modelStatus: MatteModelStatus = 'not-loaded';
+	private loadError: string | undefined;
+	private loadPromise: Promise<void> | null = null;
+	private pinWarned = new Set<string>();
+
+	private preprocessPipeline: GPUComputePipeline | null = null;
+	private resolvePipeline: GPUComputePipeline | null = null;
+	private preprocessUniform: GPUBuffer | null = null;
+	private resolveUniform: GPUBuffer | null = null;
+	private inputBuffer: GPUBuffer | null = null;
+	private frameSampler: GPUSampler | null = null;
+
+	/** Serializes inference; the GPU input buffer and history textures are shared state. */
+	private running: Promise<GPUTextureView | null> | null = null;
+	private disposed = false;
+
+	constructor(options: MatteOnnxEngineOptions) {
+		this.device = options.device;
+		this.onStatus = options.onStatus;
+		this.manifestUrl = options.manifestUrl ?? MATTE_ONNX_MANIFEST_URL;
+		this.testMode = options.testMode ?? false;
+		this.cache = new MatteCache({ maxBytes: MATTE_CACHE_BYTES });
+	}
+
+	/**
+	 * Returns the smoothed alpha matte view for one frame, running inference if
+	 * needed. Preview returns the previous alpha (or null) instead of stalling when
+	 * inference is busy or the model is still loading; export always waits. The
+	 * engine takes ownership of `request.frame` and closes it exactly once.
+	 */
+	async matteViewFor(request: MatteFrameRequest): Promise<GPUTextureView | null> {
+		if (this.disposed) {
+			request.frame.close();
+			return null;
+		}
+
+		const cacheKey = `${makeMatteCacheKey(request.clipId, request.sourceTimeS)}:${request.modelKey}`;
+		const cached = this.cache.get(cacheKey);
+		if (cached) {
+			request.frame.close();
+			this.touchSession(request);
+			return cached;
+		}
+
+		if (this.modelStatus !== 'loaded') {
+			const loading = this.ensureModelLoaded();
+			if (request.quality === 'preview') {
+				// Never stall playback on a model download — unmatted until ready.
+				request.frame.close();
+				return null;
+			}
+			await loading;
+			if (!this.isLoaded()) {
+				request.frame.close();
+				return null;
+			}
+		}
+
+		if (this.running) {
+			if (request.quality === 'preview' && !this.testMode) {
+				// Keep preview realtime: reuse the clip's previous alpha rather than
+				// queueing behind in-flight inference.
+				request.frame.close();
+				return this.lastView.get(request.clipId) ?? null;
+			}
+			await this.running.catch(() => {});
+		}
+
+		const run = this.runInference(request, cacheKey).finally(() => {
+			if (this.running === run) this.running = null;
+		});
+		this.running = run;
+		return run;
+	}
+
+	/** Drops a clip's temporal state (R4.2 reset triggers beyond the time policy). */
+	resetClip(clipId: string): void {
+		const session = this.sessions.get(clipId);
+		if (session) {
+			session.lastSourceTimeS = null;
+		}
+	}
+
+	/** Releases a clip's session, history texture, and cached alpha frames. */
+	deleteClip(clipId: string): void {
+		const session = this.sessions.get(clipId);
+		if (session) {
+			session.history.destroy();
+			this.sessions.delete(clipId);
+		}
+		this.lastView.delete(clipId);
+		this.cache.deleteByClip(clipId);
+	}
+
+	async dispose(): Promise<void> {
+		this.disposed = true;
+		// Set `disposed` first (blocks new inference at the matteViewFor guard), then
+		// let any in-flight runInference finish its GPU submission and drain the queue
+		// so destroying buffers/textures never races an executing pass.
+		await this.running?.catch(() => {});
+		try {
+			await this.device.queue.onSubmittedWorkDone();
+		} catch {
+			// Device may be lost; its resources are already invalid — tear down anyway.
+		}
+		for (const session of this.sessions.values()) {
+			session.history.destroy();
+		}
+		this.sessions.clear();
+		this.lastView.clear();
+		this.cache.clear();
+		this.inputBuffer?.destroy();
+		this.inputBuffer = null;
+		this.preprocessUniform?.destroy();
+		this.preprocessUniform = null;
+		this.resolveUniform?.destroy();
+		this.resolveUniform = null;
+		try {
+			await this.model?.handle.session.release();
+		} catch {
+			// Session may already be gone.
+		}
+		this.model = null;
+		this.ort = null;
+	}
+
+	/** Re-reads load state after awaits (defeats control-flow narrowing). */
+	private isLoaded(): boolean {
+		return this.modelStatus === 'loaded';
+	}
+
+	private postStatus(): void {
+		this.onStatus({
+			probe: {
+				webgpu: 'supported',
+				// The frame-coupled gate forbids a WASM matte fallback by design.
+				wasm: 'unsupported',
+				backend: 'webgpu'
+			},
+			modelStatus: this.modelStatus,
+			backend: this.modelStatus === 'loaded' ? 'webgpu' : null,
+			...(this.loadError ? { error: this.loadError } : {})
+		});
+	}
+
+	private ensureModelLoaded(): Promise<void> {
+		if (this.loadPromise) return this.loadPromise;
+		this.loadPromise = this.loadModel().catch((error) => {
+			this.modelStatus = 'failed';
+			// A placeholder/template (or otherwise invalid) manifest is the "no
+			// compatible model configured" state; surface it as a clear, non-alarming
+			// message rather than an error spew. The deployed LiteRT default is the
+			// real matte path; this experimental backend stays dark until pinned.
+			this.loadError =
+				error instanceof MatteOnnxManifestError
+					? 'No compatible ONNX matte model configured (experimental backend).'
+					: error instanceof Error
+						? error.message
+						: String(error);
+			this.loadPromise = null; // Allow retry on the next matted frame.
+			this.postStatus();
+		});
+		return this.loadPromise;
+	}
+
+	private async loadModel(): Promise<void> {
+		this.modelStatus = 'loading';
+		this.loadError = undefined;
+		this.postStatus();
+
+		const response = await fetch(this.manifestUrl);
+		if (!response.ok) {
+			throw new Error(`ONNX matte manifest fetch failed: HTTP ${response.status}`);
+		}
+		// Throws MatteOnnxManifestError on a template/invalid manifest or a GPL
+		// license — caught by ensureModelLoaded → "no model configured".
+		const manifest = validateMatteOnnxManifest(await response.json());
+
+		const store = await createOrtOpfsAssetStore();
+		const modelBytes = await loadOrtModelAsset(manifest.model, { store });
+
+		const ort = await loadOrtWebGpu();
+		// Inject the renderer's device so ORT computes on the compositor's device
+		// (deviceOwner: 'renderer'); the frame-coupled EP policy forbids any WASM/CPU
+		// fallback, and 'gpu-buffer' output keeps the alpha on-device (no readback).
+		const handle = await createOrtSession({
+			modelBytes,
+			manifest,
+			device: this.device,
+			tensorLocation: 'gpu-buffer'
+		});
+		// dispose() may have run during any of the awaits above; don't strand the
+		// session on a dead engine (it would never be released).
+		if (this.disposed) {
+			await handle.session.release();
+			return;
+		}
+
+		const io = manifest.io;
+		// Map the declared input range to a linear `rgb * scale + bias` normalize
+		// (same convention as the LiteRT preprocess).
+		const [normScale, normBias] = io.inputRange === 'unit' ? [1, 0] : [2, -1];
+		const layoutFlag = io.layout === 'nchw' ? 0 : 1;
+		const inputDims =
+			io.layout === 'nchw'
+				? [1, io.inputChannels, io.inputHeight, io.inputWidth]
+				: [1, io.inputHeight, io.inputWidth, io.inputChannels];
+
+		this.ort = ort;
+		this.model = {
+			handle,
+			io,
+			manifest,
+			width: io.inputWidth,
+			height: io.inputHeight,
+			normScale,
+			normBias,
+			layoutFlag,
+			inputDims
+		};
+		this.modelStatus = 'loaded';
+		this.postStatus();
+	}
+
+	private ensurePipelines(): void {
+		if (this.preprocessPipeline) return;
+		const device = this.device;
+		this.preprocessPipeline = device.createComputePipeline({
+			layout: 'auto',
+			compute: {
+				module: device.createShaderModule({ code: matteOnnxPreprocessSource }),
+				entryPoint: 'main'
+			}
+		});
+		this.resolvePipeline = device.createComputePipeline({
+			layout: 'auto',
+			compute: {
+				module: device.createShaderModule({ code: matteResolveSource }),
+				entryPoint: 'main'
+			}
+		});
+		this.preprocessUniform = device.createBuffer({
+			// 4×u32 (dims + layout + pad) then 2×f32 (normScale, normBias).
+			size: 32,
+			usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+		});
+		this.resolveUniform = device.createBuffer({
+			// 2×u32 (dims) + f32 (smoothing) + u32 (reset).
+			size: 16,
+			usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+		});
+		this.frameSampler = device.createSampler({
+			magFilter: 'linear',
+			minFilter: 'linear',
+			addressModeU: 'clamp-to-edge',
+			addressModeV: 'clamp-to-edge'
+		});
+	}
+
+	private sessionFor(clipId: string): ClipSession {
+		let session = this.sessions.get(clipId);
+		if (!session) {
+			const model = this.model!;
+			const history = this.device.createTexture({
+				size: { width: model.width, height: model.height },
+				// Must match alphaTexture's format for copyTextureToTexture; rgba8unorm
+				// because r8unorm cannot be a storage texture (the resolve write target).
+				format: 'rgba8unorm',
+				usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC
+			});
+			session = { history, historyView: history.createView(), lastSourceTimeS: null };
+			this.sessions.set(clipId, session);
+		}
+		return session;
+	}
+
+	private touchSession(request: MatteFrameRequest): void {
+		const session = this.sessions.get(request.clipId);
+		if (session) session.lastSourceTimeS = request.sourceTimeS;
+	}
+
+	private async runInference(
+		request: MatteFrameRequest,
+		cacheKey: string
+	): Promise<GPUTextureView | null> {
+		const model = this.model!;
+		const ort = this.ort!;
+		const device = this.device;
+		const io = model.io;
+		this.ensurePipelines();
+
+		// Pin check (R1.2): warn once per clip on mismatch; never silently switch.
+		if (request.modelKey !== model.manifest.id && !this.pinWarned.has(request.clipId)) {
+			this.pinWarned.add(request.clipId);
+			this.loadError = `Clip pins matte model "${request.modelKey}" but "${model.manifest.id}" is deployed; using the deployed model.`;
+			this.postStatus();
+			this.loadError = undefined;
+		}
+
+		const session = this.sessionFor(request.clipId);
+		// Discontinuity policy (R4.2), shared with the LiteRT engine.
+		const reset = shouldResetMatteHistory(
+			session.lastSourceTimeS,
+			request.sourceTimeS,
+			request.frameStepS
+		);
+
+		// Input buffer in the model's layout: W*H*C float32. STORAGE for the
+		// preprocess pass + COPY_SRC/DST so ORT can wrap it as a GPU-buffer tensor.
+		const inputFloats = model.width * model.height * io.inputChannels;
+		if (!this.inputBuffer) {
+			this.inputBuffer = device.createBuffer({
+				size: inputFloats * 4,
+				usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST
+			});
+		}
+
+		// 1. Preprocess: external texture → normalized NCHW|NHWC GPU buffer.
+		const preUniform = new ArrayBuffer(32);
+		new Uint32Array(preUniform, 0, 4).set([model.width, model.height, model.layoutFlag, 0]);
+		new Float32Array(preUniform, 16, 2).set([model.normScale, model.normBias]);
+		device.queue.writeBuffer(this.preprocessUniform!, 0, preUniform);
+		const external = device.importExternalTexture({ source: request.frame });
+		const preEncoder = device.createCommandEncoder();
+		const prePass = preEncoder.beginComputePass();
+		prePass.setPipeline(this.preprocessPipeline!);
+		prePass.setBindGroup(
+			0,
+			device.createBindGroup({
+				layout: this.preprocessPipeline!.getBindGroupLayout(0),
+				entries: [
+					{ binding: 0, resource: { buffer: this.preprocessUniform! } },
+					{ binding: 1, resource: external },
+					{ binding: 2, resource: { buffer: this.inputBuffer } },
+					{ binding: 3, resource: this.frameSampler! }
+				]
+			})
+		);
+		prePass.dispatchWorkgroups(Math.ceil(model.width / 8), Math.ceil(model.height / 8));
+		prePass.end();
+		device.queue.submit([preEncoder.finish()]);
+		// The source frame is consumed by the import above; close it now.
+		try {
+			request.frame.close();
+		} catch {
+			// Already closed.
+		}
+
+		// 2. ORT inference with GPU-buffer tensor IO — input wraps our preprocess
+		// buffer (no upload), output stays a GPU buffer (no readback). Both live on
+		// the shared compositor device.
+		const inputTensor = ort.Tensor.fromGpuBuffer(this.inputBuffer, {
+			dataType: 'float32',
+			dims: model.inputDims
+		});
+		const feeds: Record<string, OrtTensor> = {
+			[io.inputName]: inputTensor as unknown as OrtTensor
+		};
+		let alphaBuffer: GPUBuffer;
+		let outputTensor: OrtTensor;
+		try {
+			const results = await model.handle.session.run(feeds);
+			outputTensor = results[io.outputName]!;
+			if (!outputTensor) throw new Error(`ONNX matte output "${io.outputName}" missing.`);
+			// 'gpu-buffer' output: a single-channel [1,1,H,W]|[1,H,W,1] alpha buffer
+			// the resolve pass binds directly (no intermediate copy, no getData).
+			alphaBuffer = outputTensor.gpuBuffer as GPUBuffer;
+			if (!alphaBuffer) throw new Error('ONNX matte output is not a GPU buffer.');
+		} finally {
+			// The input tensor wraps our reused buffer; ORT does not own/destroy it.
+			inputTensor.dispose();
+		}
+
+		// 3. Resolve: raw alpha buffer + history → smoothed alpha texture (shared
+		// shader + temporal constant with the LiteRT engine).
+		const alphaTexture = device.createTexture({
+			size: { width: model.width, height: model.height },
+			// rgba8unorm, not r8unorm: r8unorm is not a storage-capable format, so it
+			// cannot be the resolve pass's STORAGE_BINDING write target. Alpha is .r.
+			format: 'rgba8unorm',
+			usage:
+				GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC
+		});
+		const uniform = new ArrayBuffer(16);
+		new Uint32Array(uniform, 0, 2).set([model.width, model.height]);
+		new Float32Array(uniform, 8, 1)[0] = MATTE_TEMPORAL_SMOOTHING;
+		new Uint32Array(uniform, 12, 1)[0] = reset ? 1 : 0;
+		device.queue.writeBuffer(this.resolveUniform!, 0, uniform);
+
+		const resolveEncoder = device.createCommandEncoder();
+		const resolvePass = resolveEncoder.beginComputePass();
+		resolvePass.setPipeline(this.resolvePipeline!);
+		resolvePass.setBindGroup(
+			0,
+			device.createBindGroup({
+				layout: this.resolvePipeline!.getBindGroupLayout(0),
+				entries: [
+					{ binding: 0, resource: { buffer: this.resolveUniform! } },
+					{ binding: 1, resource: { buffer: alphaBuffer } },
+					{ binding: 2, resource: session.historyView },
+					{ binding: 3, resource: alphaTexture.createView() }
+				]
+			})
+		);
+		resolvePass.dispatchWorkgroups(Math.ceil(model.width / 8), Math.ceil(model.height / 8));
+		resolvePass.end();
+		// Next frame's history = this frame's smoothed alpha.
+		resolveEncoder.copyTextureToTexture(
+			{ texture: alphaTexture },
+			{ texture: session.history },
+			{ width: model.width, height: model.height }
+		);
+		device.queue.submit([resolveEncoder.finish()]);
+
+		// Free ORT's output tensor (and its GPU buffer) only after the resolve pass
+		// that reads it has finished on the GPU — avoids a use-after-free.
+		void device.queue.onSubmittedWorkDone().then(() => outputTensor.dispose());
+
+		session.lastSourceTimeS = request.sourceTimeS;
+		// The cache owns alphaTexture from here (destroyed on eviction).
+		this.cache.set(cacheKey, alphaTexture, model.width, model.height);
+		const view = this.cache.get(cacheKey);
+		if (view) this.lastView.set(request.clipId, view);
+		return view;
+	}
+}

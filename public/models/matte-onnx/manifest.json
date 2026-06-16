@@ -1,0 +1,30 @@
+{
+	"_comment": "TEMPLATE — NOT loadable. `template: true` makes validateMatteOnnxManifest reject this manifest so the EXPERIMENTAL ORT/ONNX matte backend stays disabled and the deployed LiteRT MediaPipe Selfie default is unaffected. Even with the __MATTE_ONNX_SPIKE__ build flag on, this template keeps the ONNX backend dark. To enable: remove `template`, set a real license-verified `model.url` on an allowlisted host (same-origin /_model/{hf,gh,gcs}/… proxy or a Cloudflare R2 bucket), fill `model.sizeBytes` + `model.checksum` (sha256) from the vendored ONNX file, and set the real `io` contract (input/output names, layout, inputRange, and the alpha output shape/range) for a MODNet-class ONNX model that passes the full-WebGPU operator-support gate. GPL-family weights (e.g. RVM) are rejected. See README.md and docs/ML-RUNTIME.md.",
+	"template": true,
+	"id": "modnet-onnx-matte",
+	"version": "TEMPLATE",
+	"license": "TBD",
+	"source": "https://github.com/ZHKKKe/MODNet",
+	"format": "onnx",
+	"frameCoupled": true,
+	"executionProviders": ["webgpu"],
+	"tensorLocation": "gpu-buffer",
+	"model": {
+		"url": "/_model/REPLACE_WITH_ALLOWLISTED_HOST_PATH/model.onnx",
+		"sizeBytes": 1,
+		"checksum": "sha256-0000000000000000000000000000000000000000000000000000000000000000"
+	},
+	"io": {
+		"layout": "nchw",
+		"inputWidth": 512,
+		"inputHeight": 512,
+		"inputChannels": 3,
+		"bytesPerElement": 4,
+		"inputName": "input",
+		"inputRange": "signed-unit",
+		"outputName": "output",
+		"outputLayout": "nchw",
+		"outputChannels": 1,
+		"outputRange": "unit"
+	}
+}
