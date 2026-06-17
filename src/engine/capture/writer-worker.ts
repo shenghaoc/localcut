@@ -381,7 +381,11 @@ class CaptureWriter {
 			payload += JSON.stringify(entry) + '\n';
 		}
 		const encoded = new TextEncoder().encode(payload);
-		eventsAccess.write(encoded.buffer as ArrayBuffer, { at: eventsAccess.getSize() });
+		// Pass the Uint8Array directly so byteLength tracks the encoded bytes
+		// exactly, not the (possibly larger) underlying ArrayBuffer. SyncAccessHandle
+		// accepts any BufferSource, so this is both safer and more idiomatic than
+		// reaching for `.buffer`.
+		eventsAccess.write(encoded, { at: eventsAccess.getSize() });
 		await eventsAccess.flush();
 	}
 

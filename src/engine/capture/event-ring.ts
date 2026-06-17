@@ -78,7 +78,7 @@ export class CaptureEventRingWriter {
 		validateCaptureEventRing(sab);
 		this.header = new Int32Array(sab, 0, CAPTURE_EVENT_HEADER_FIELDS);
 		this.records = new DataView(sab, CAPTURE_EVENT_HEADER_BYTES);
-		this.stringScratch = new Uint8Array(sab, 0).subarray(CAPTURE_EVENT_HEADER_BYTES);
+		this.stringScratch = new Uint8Array(sab, CAPTURE_EVENT_HEADER_BYTES);
 	}
 
 	/** Write a key event. Returns whether it was written or dropped. */
@@ -132,11 +132,12 @@ export class CaptureEventRingWriter {
 		if (stringPayload.length > 0) {
 			const encoded = this.textEncoder.encode(stringPayload);
 			stringLen = Math.min(encoded.length, STRING_CAPACITY);
-			const slotStringStart =
-				CAPTURE_EVENT_HEADER_BYTES + recordOffset + CAPTURE_EVENT_RECORD_STRING_OFFSET;
+			// stringScratch is offset at CAPTURE_EVENT_HEADER_BYTES, so the destination
+			// within it is just recordOffset + CAPTURE_EVENT_RECORD_STRING_OFFSET (no
+			// header adjustment needed).
 			this.stringScratch.set(
 				encoded.subarray(0, stringLen),
-				slotStringStart - CAPTURE_EVENT_HEADER_BYTES
+				recordOffset + CAPTURE_EVENT_RECORD_STRING_OFFSET
 			);
 		}
 		this.records.setUint32(recordOffset + 28, stringLen >>> 0, true);
