@@ -5554,3 +5554,13 @@ button.status-badge:hover {
 	color: var(--text-muted);
 	font-size: var(--text-xs);
 }
+
+.beat-panel-progress-wrap {
+	overflow: hidden;
+}
+
+.beat-panel-progress-bar {
+	width: 100%;
+	transform-origin: left;
+	will-change: transform;
+}

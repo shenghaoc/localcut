@@ -85,12 +85,7 @@ export function BeatPanel(props: BeatPanelProps) {
 														aria-valuemin={0}
 														aria-valuemax={100}
 														aria-label="Beat analysis progress"
-														style={{
-															transform: `scaleX(${progress() ?? 0})`,
-															'transform-origin': 'left',
-															width: '100%',
-															'will-change': 'transform'
-														}}
+														style={{ transform: `scaleX(${progress() ?? 0})` }}
 													/>
 													<button
 														type="button"
