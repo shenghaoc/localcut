@@ -198,10 +198,16 @@ export class CaptureEventRingReader {
 		const tS = Number(tUsBig) / 1_000_000;
 
 		if (type === CaptureEventType.KEY) {
-			const bytes = this.stringView.subarray(
+			// Browsers' `TextDecoder.decode` rejects buffers backed by SharedArrayBuffer
+			// with a "must not be shared" TypeError, so we copy the slice into a plain
+			// Uint8Array first. Node's TextDecoder doesn't enforce this so the unit
+			// tests passed; Chromium does.
+			const sharedBytes = this.stringView.subarray(
 				recordOffset + CAPTURE_EVENT_RECORD_STRING_OFFSET,
 				recordOffset + CAPTURE_EVENT_RECORD_STRING_OFFSET + Math.min(stringLen, STRING_CAPACITY)
 			);
+			const bytes = new Uint8Array(sharedBytes.length);
+			bytes.set(sharedBytes);
 			const combo = this.textDecoder.decode(bytes);
 			return { kind: 'key', combo, t: tS };
 		}

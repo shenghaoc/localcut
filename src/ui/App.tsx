@@ -5067,6 +5067,10 @@ export function App() {
 						<KeystrokeOverlayPanel
 							sendCommand={(cmd) => bridge?.send(cmd)}
 							onClose={() => setKeystrokeOverlayOpen(false)}
+							landedSessionId={recorderLandedSessionId()}
+							captureRecording={
+								recorderStatus()?.state === 'recording' || recorderStatus()?.state === 'paused'
+							}
 						/>
 					</Show>
 					<LanguageToolsPanel

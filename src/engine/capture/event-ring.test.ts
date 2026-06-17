@@ -176,6 +176,36 @@ describe('CaptureEventRing — wraparound', () => {
 	});
 });
 
+describe('CaptureEventRingReader — TextDecoder SAB regression', () => {
+	it('does not pass a SharedArrayBuffer-backed view to TextDecoder.decode', () => {
+		// Browsers' TextDecoder rejects shared-backed buffers with "must not be shared".
+		// We can't trigger the real browser error in node, but we can verify the reader
+		// passes a fresh (non-shared) Uint8Array by spying on TextDecoder.prototype.decode.
+		const sab = allocateCaptureEventRing(1);
+		const writer = new CaptureEventRingWriter(sab);
+		const reader = new CaptureEventRingReader(sab);
+		writer.writeKey('Ctrl+S', 0, 0);
+
+		const original = TextDecoder.prototype.decode;
+		let seenSharedBuffer = false;
+		TextDecoder.prototype.decode = function (input?: BufferSource, options?: TextDecodeOptions) {
+			if (input && 'buffer' in input) {
+				const buffer = (input as ArrayBufferView).buffer;
+				if (typeof SharedArrayBuffer !== 'undefined' && buffer instanceof SharedArrayBuffer) {
+					seenSharedBuffer = true;
+				}
+			}
+			return original.call(this, input, options);
+		};
+		try {
+			reader.drain();
+		} finally {
+			TextDecoder.prototype.decode = original;
+		}
+		expect(seenSharedBuffer).toBe(false);
+	});
+});
+
 describe('packModifierFlags', () => {
 	it('packs each modifier into its own bit', () => {
 		expect(packModifierFlags({})).toBe(0);

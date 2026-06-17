@@ -5436,6 +5436,42 @@ button.status-badge:hover {
 	font-size: 0.85em;
 }
 
+.keystroke-overlay-sidecar-prompt {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	padding: 0.75rem;
+	border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--border));
+	border-radius: var(--radius-md);
+	background: color-mix(in srgb, var(--accent) 8%, var(--bg-elevated));
+	font-size: var(--text-sm);
+}
+
+.keystroke-overlay-sidecar-prompt code {
+	font-family: 'JetBrains Mono', 'Courier New', Courier, monospace;
+	font-size: 0.85em;
+}
+
+.keystroke-overlay-sidecar-loaded {
+	padding: 0.4rem 0.6rem;
+	border-radius: var(--radius-sm);
+	background: var(--bg-elevated);
+	color: var(--text-muted);
+	font-size: var(--text-sm);
+}
+
+.keystroke-overlay-sidecar-loaded code {
+	font-family: 'JetBrains Mono', 'Courier New', Courier, monospace;
+	font-size: 0.85em;
+}
+
+.keystroke-overlay-manual-disabled {
+	margin: 0;
+	color: var(--text-muted);
+	font-size: var(--text-sm);
+	font-style: italic;
+}
+
 .record-panel {
 	display: flex;
 	flex-direction: column;
