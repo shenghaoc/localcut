@@ -10,6 +10,7 @@ import timelineEditingContent from './content/timeline-editing.md?raw';
 import beatDetectionContent from './content/beat-detection.md?raw';
 import timeRemappingContent from './content/time-remapping.md?raw';
 import smartReframeContent from './content/smart-reframe.md?raw';
+import screencastPostPackContent from './content/screencast-post-pack.md?raw';
 import silenceDetectionContent from './content/silence-detection.md?raw';
 import keystrokeOverlayContent from './content/keystroke-overlay.md?raw';
 import youtubeChaptersContent from './content/youtube-chapters.md?raw';
@@ -43,6 +44,11 @@ export const DOC_SECTIONS: readonly DocSection[] = [
 	{ slug: 'beat-detection', title: 'Beat detection', content: beatDetectionContent },
 	{ slug: 'time-remapping', title: 'Time remapping', content: timeRemappingContent },
 	{ slug: 'smart-reframe', title: 'Smart Reframe', content: smartReframeContent },
+	{
+		slug: 'screencast-post-pack',
+		title: 'Screencast Post Pack',
+		content: screencastPostPackContent
+	},
 	{
 		slug: 'silence-detection',
 		title: 'Silence detection',

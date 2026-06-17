@@ -10,6 +10,7 @@ import type {
 	ProjectFormat,
 	RingBufferConfig,
 	SceneDoc,
+	SessionEventLogRef,
 	SourceColorHintsSnapshot,
 	SourceDescriptorSnapshot,
 	SourceFrameRateModeSnapshot,
@@ -56,8 +57,10 @@ import { normalizeSkinMask } from './skin-smooth';
 import { normalizeBeautyEffect } from './beauty/beauty-params';
 import { parseExportPresetDoc } from './export-presets';
 import { validateSceneDoc } from './program-scenes';
+import { normalizeCalloutPayload, parseCalloutPayload } from './callout';
+import { normalizePaddedBackground, parsePaddedBackground } from './padded-background';
 
-export const PROJECT_SCHEMA_VERSION = 19;
+export const PROJECT_SCHEMA_VERSION = 20;
 
 // ── Phase 39: Vertical and Platform Finishing ──
 
@@ -105,6 +108,8 @@ export interface ProjectDoc {
 	cover?: CoverFrameDoc;
 	/** Phase 45: Program Mode scene definitions. */
 	scenes?: SceneDoc | null;
+	/** Phase 43: OPFS path refs for landed capture session event logs. */
+	sessionEventLogs?: SessionEventLogRef[];
 }
 
 export interface SerializeProjectOptions {
@@ -127,6 +132,7 @@ export interface SerializeProjectOptions {
 	projectFormat?: ProjectFormat;
 	cover?: CoverFrameDoc;
 	scenes?: SceneDoc | null;
+	sessionEventLogs?: SessionEventLogRef[];
 }
 
 export type DeserializeProjectResult =
@@ -269,6 +275,12 @@ function cloneClip(clip: TimelineClip): TimelineClip {
 		cloned.kind = 'title';
 		cloned.title = normalizeTitleContent(clip.title);
 	}
+	if (clip.kind === 'callout') {
+		cloned.kind = 'callout';
+		if (clip.callout) cloned.callout = normalizeCalloutPayload(clip.callout);
+	}
+	if (clip.paddedBackground)
+		cloned.paddedBackground = normalizePaddedBackground(clip.paddedBackground);
 	if (clip.linkedGroupId) cloned.linkedGroupId = clip.linkedGroupId;
 	if (clip.captureSessionId) cloned.captureSessionId = clip.captureSessionId;
 	if (clip.cleanedAudio) cloned.cleanedAudio = { ...clip.cleanedAudio };
@@ -572,6 +584,9 @@ export function serializeProject(options: SerializeProjectOptions): ProjectDoc {
 			}))
 		};
 	}
+	if (options.sessionEventLogs && options.sessionEventLogs.length > 0) {
+		doc.sessionEventLogs = options.sessionEventLogs.map((r) => ({ ...r }));
+	}
 	return doc;
 }
 
@@ -601,17 +616,20 @@ function parseClip(value: unknown): TimelineClip | null {
 	const id = requiredString(value.id);
 	const start = finiteNumber(value.start);
 	const duration = finiteNumber(value.duration);
-	// Title clips are source-less, carry no in-point, and decode no media (Phase
-	// 14); regular clips still require a sourceId and a non-negative in-point.
+	// Title and callout clips are source-less, carry no in-point, and decode no
+	// media (Phase 14/43); regular clips still require a sourceId and a non-negative in-point.
 	const isTitle = value.kind === 'title';
-	const sourceId = isTitle ? '' : requiredString(value.sourceId);
-	const inPoint = isTitle ? 0 : finiteNumber(value.inPoint);
+	const isCallout = value.kind === 'callout';
+	const sourceLess = isTitle || isCallout;
+	const sourceId = sourceLess ? '' : requiredString(value.sourceId);
+	const inPoint = sourceLess ? 0 : finiteNumber(value.inPoint);
 	if (!id || start === null || duration === null || inPoint === null) {
 		return null;
 	}
-	if (!isTitle && sourceId === null) return null;
+	if (!sourceLess && sourceId === null) return null;
 	if (duration <= 0 || start < 0 || inPoint < 0) return null;
 	if (isTitle && !isRecord(value.title)) return null;
+	if (isCallout && !isRecord(value.callout)) return null;
 
 	const rawEffects = isRecord(value.effects) ? value.effects : {};
 	const rawTransform = isRecord(value.transform) ? value.transform : {};
@@ -637,7 +655,9 @@ function parseClip(value: unknown): TimelineClip | null {
 					kind: 'title' as const,
 					title: normalizeTitleContent(value.title as Partial<TitleContent>)
 				}
-			: {}),
+			: isCallout
+				? { kind: 'callout' as const }
+				: {}),
 		sourceId: sourceId ?? '',
 		start,
 		duration,
@@ -689,7 +709,7 @@ function parseClip(value: unknown): TimelineClip | null {
 			...(blurRadius !== null && blurRadius >= 0 ? { blurRadius: Math.min(64, blurRadius) } : {})
 		};
 	}
-	const cleanedAudio = isTitle ? undefined : parseCleanedAudio(value.cleanedAudio);
+	const cleanedAudio = sourceLess ? undefined : parseCleanedAudio(value.cleanedAudio);
 	if (cleanedAudio) clip.cleanedAudio = cleanedAudio;
 	// Phase 32a: parse optional skin-mask sidecar (normalize invalid values, don't reject).
 	if (isRecord(value.skinMask)) {
@@ -721,6 +741,14 @@ function parseClip(value: unknown): TimelineClip | null {
 			mouth: finiteNumber(value.beauty.mouth) ?? undefined
 		});
 	}
+	// Phase 43: parse optional callout payload (degrades to absent on invalid input).
+	if (isCallout) {
+		const callout = parseCalloutPayload(value.callout);
+		if (callout) clip.callout = normalizeCalloutPayload(callout);
+	}
+	// Phase 43: parse optional padded-background sidecar (degrades to absent on invalid input).
+	const paddedBg = parsePaddedBackground(value.paddedBackground);
+	if (paddedBg) clip.paddedBackground = paddedBg;
 	return clip;
 }
 
@@ -1656,6 +1684,22 @@ function parseBeatSettings(
 	return { enabledSourceIds, globalOffsetMs };
 }
 
+/** Phase 43: parse optional session event log refs. */
+function parseSessionEventLogs(value: unknown): SessionEventLogRef[] | undefined {
+	if (!Array.isArray(value)) return undefined;
+	const refs: SessionEventLogRef[] = [];
+	for (const item of value) {
+		if (!isRecord(item)) continue;
+		const sessionId = requiredString(item.sessionId);
+		const sourceId = requiredString(item.sourceId);
+		const opfsPath = requiredString(item.opfsPath);
+		if (sessionId && sourceId && opfsPath) {
+			refs.push({ sessionId, sourceId, opfsPath });
+		}
+	}
+	return refs.length > 0 ? refs : undefined;
+}
+
 function deserializeV13(value: Record<string, unknown>): DeserializeProjectResult {
 	const result = deserializeV10(value);
 	if (!result.ok) return result;
@@ -1708,6 +1752,22 @@ function deserializeV19(value: Record<string, unknown>): DeserializeProjectResul
 			projectFormat: parseProjectFormat(value.projectFormat),
 			cover: parseCoverFrame(value.cover),
 			scenes: parseSceneDocFromValue(value.scenes) ?? undefined
+		}
+	};
+}
+
+function deserializeV20(value: Record<string, unknown>): DeserializeProjectResult {
+	const result = deserializeV19(value);
+	if (!result.ok) return result;
+	// v20 (Phase 43): adds optional callout/paddedBackground on clips and
+	// sessionEventLogs on ProjectDoc. Clip sidecars are handled by parseClip.
+	const sessionEventLogs = parseSessionEventLogs(value.sessionEventLogs);
+	return {
+		ok: true,
+		doc: {
+			...result.doc,
+			schemaVersion: PROJECT_SCHEMA_VERSION,
+			...(sessionEventLogs ? { sessionEventLogs } : {})
 		}
 	};
 }
@@ -1768,6 +1828,9 @@ export function deserializeProject(value: unknown): DeserializeProjectResult {
 		case 19:
 			// v19 adds Phase 39 projectFormat/cover and Phase 45 scenes.
 			return deserializeV19(value);
+		case 20:
+			// v20 adds Phase 43 callout/paddedBackground sidecars and session event logs.
+			return deserializeV20(value);
 		default:
 			return { ok: false, reason: `Unsupported project schemaVersion ${schemaVersion}.` };
 	}

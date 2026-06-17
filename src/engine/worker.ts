@@ -149,9 +149,13 @@ import {
 	setClipAudioFade,
 	setClipCleanedAudio,
 	setTitleContent,
+	setCalloutPayload,
+	setPaddedBackground,
 	defaultTimelineClip,
 	defaultTitleClip,
+	defaultCalloutClip,
 	isTitleClip,
+	isCalloutClip,
 	linkClips,
 	unlinkClips,
 	setTrackLock,
@@ -225,6 +229,7 @@ import { ThumbnailGenerator } from './thumbnails';
 import { initCompatibilityGpu, initGpu, type CompositeLayer, type PreviewRenderer } from './gpu';
 import { createCanvasTitleUploader, loadTitleFonts, TitleTextureCache } from './titles';
 import type { TitleContent } from './title';
+import { CalloutTextureCache } from './callout-textures';
 import {
 	AdaptiveResolution,
 	buildPreviewLadder,
@@ -349,6 +354,8 @@ let previewBackend: PreviewBackend = 'none';
 let exportBackend: ExportBackend = 'none';
 /** Phase 14 title raster cache; created once the GPU device is ready. */
 let titleCache: TitleTextureCache | null = null;
+/** Phase 43 callout raster cache; shares the renderer GPU device with titles. */
+let calloutCache: CalloutTextureCache | null = null;
 /** Phase 31 matte engine — per-frame zero-copy inference on the renderer's
  *  device; created lazily on the first matted frame. */
 let matteEngine: MatteEngine | null = null;
@@ -466,6 +473,7 @@ let captionTracks: CaptionTrack[] = [];
 let transitions: TimelineTransition[] = [];
 let markers: TimelineMarker[] = [];
 let masterGain = DEFAULT_MASTER_GAIN;
+let sessionEventLogs: import('../protocol').SessionEventLogRef[] = [];
 /** Phase 13 will populate this; export crossfades only until preview dual-stream lands. */
 const audioTransitions: AudioTransitionCut[] = [];
 let nextSourceId = 1;
@@ -945,6 +953,22 @@ function applyCaptureLanding(
 	);
 
 	if (!committed) return [];
+	const primaryScreenSourceId = sourceClips.find(({ source }) => source.kind === 'screen')?.source
+		.sourceId;
+	if (primaryScreenSourceId) {
+		const nextRef: import('../protocol').SessionEventLogRef = {
+			sessionId: session.sessionId,
+			sourceId: primaryScreenSourceId,
+			opfsPath: `capture/${session.sessionId}/events.ndjson`
+		};
+		sessionEventLogs = [
+			...sessionEventLogs.filter(
+				(ref) => !(ref.sessionId === nextRef.sessionId && ref.sourceId === nextRef.sourceId)
+			),
+			nextRef
+		];
+		postTimelineState();
+	}
 	postMediaAssets();
 	for (const descriptor of descriptors.values()) {
 		postSourceHealth(
@@ -1196,7 +1220,8 @@ function postTimelineState() {
 		captionTracks: captionSnapshot,
 		transitions: transitionSnapshot,
 		markers: cloneMarkersSnapshot(markers),
-		masterGain
+		masterGain,
+		sessionEventLogs: sessionEventLogs.map((ref) => ({ ...ref }))
 	});
 }
 
@@ -1815,6 +1840,7 @@ async function persistCurrentProject(): Promise<void> {
 		replayBufferConfig: replayRing.getConfig(),
 		liveAudioChainConfig: liveChainConfig,
 		voiceCleanup: voiceCleanupSettings,
+		sessionEventLogs,
 		// Phase 34: persist the user's beat-grid settings so re-opening a
 		// project keeps the same enabled sources and global offset (the
 		// per-source beat times themselves ride in the bundle's beats cache).
@@ -2109,6 +2135,7 @@ function afterTimelineMutation(
 	// Refresh title rasters (no-op on unchanged content) before re-rendering so
 	// the cached texture is current when playback refreshes the frame.
 	syncTitleRasters();
+	syncCalloutRasters();
 	if (!playback) {
 		setupPlayback();
 	}
@@ -2339,6 +2366,8 @@ async function handleInit(
 		}
 		if (renderer) {
 			titleCache = new TitleTextureCache(createCanvasTitleUploader(renderer.gpuDevice));
+			calloutCache = new CalloutTextureCache(renderer.gpuDevice);
+			syncCalloutRasters();
 			// Load bundled fonts before the first raster; resolves even when a bundle
 			// is missing (generic fallback keeps titles offline-safe). Font availability
 			// isn't part of the content hash, so titles rastered during the load race
@@ -2347,6 +2376,7 @@ async function handleInit(
 			void loadTitleFonts().then(() => {
 				titleCache?.retain(EMPTY_CLIP_IDS);
 				syncTitleRasters();
+				syncCalloutRasters();
 				playback?.refresh();
 			});
 		}
@@ -2571,6 +2601,7 @@ async function handleRestoreProject(): Promise<void> {
 	captionTracks = cloneCaptionTracksSnapshot(doc.captionTracks);
 	markers = cloneMarkersSnapshot(doc.markers);
 	programSceneDoc = cloneSceneDocForWorker(doc.scenes);
+	sessionEventLogs = (doc.sessionEventLogs ?? []).map((ref) => ({ ...ref }));
 	syncTimelineLuts();
 	syncRemapLuts();
 	lastExportSettings = doc.exportSettings ?? null;
@@ -2610,6 +2641,7 @@ async function handleRestoreProject(): Promise<void> {
 	setupPlayback();
 	// Raster any restored title clips so their textures exist before first render.
 	syncTitleRasters();
+	syncCalloutRasters();
 	ensureClockAndTimeline();
 	postHistoryState();
 	postPresetsState();
@@ -2651,6 +2683,7 @@ async function handleNewProject(): Promise<void> {
 	markers = [];
 	programSceneDoc = null;
 	masterGain = DEFAULT_MASTER_GAIN;
+	sessionEventLogs = [];
 	if (capture) requestCaptureStop();
 	replayRing.updateConfig({ ...DEFAULT_RING_BUFFER_CONFIG });
 	liveChainConfig = cloneLiveChainConfig(DEFAULT_LIVE_AUDIO_CHAIN_CONFIG);
@@ -2743,6 +2776,7 @@ function teardownMedia() {
 	customAnimCaptionPresets = [];
 	transitions = [];
 	markers = [];
+	sessionEventLogs = [];
 }
 
 function wrapDecodedFrameForPlayback(
@@ -2842,6 +2876,25 @@ function syncTitleRasters(): void {
 		titleCache.rasterize(target.textureId, target.content, target.extras);
 	}
 	titleCache.retain(active);
+}
+
+function isRasterCalloutClip(clip: TimelineClip): boolean {
+	const kind = clip.callout?.calloutKind;
+	return kind === 'arrow' || kind === 'box' || kind === 'step';
+}
+
+function syncCalloutRasters(): void {
+	if (!calloutCache) return;
+	const active = new Set<string>();
+	for (const track of timeline) {
+		if (track.type !== 'video') continue;
+		for (const clip of track.clips) {
+			if (!isCalloutClip(clip) || !clip.callout || !isRasterCalloutClip(clip)) continue;
+			active.add(clip.id);
+			calloutCache.rasterize(clip.id, clip.callout, 1920, 1080);
+		}
+	}
+	calloutCache.retain(active);
 }
 
 function exportCaptionTextureId(exportId: string, trackId: string, segmentId: string): string {
@@ -2948,6 +3001,8 @@ type LayerMeta =
 			beauty?: import('../protocol').BeautyEffectSnapshot;
 			/** Phase 32b: smoothed/interpolated primary-face landmarks for this frame. */
 			beautyLandmarks?: Float32Array;
+			/** Phase 43: per-clip padded-background compositor sidecar. */
+			paddedBackground?: import('../protocol').PaddedBackgroundParams;
 			transition?: import('./timeline').TransitionResolveMeta;
 			/** Phase 31: smoothed alpha view from the matte engine, if enabled. */
 			matteView?: GPUTextureView;
@@ -2965,6 +3020,20 @@ type LayerMeta =
 			transform: TransformParams;
 			/** Phase 30: caption animation uniforms; CAPTION_ANIM_IDENTITY for non-caption title clips. */
 			animUniforms: CaptionAnimUniforms;
+			transition?: import('./timeline').TransitionResolveMeta;
+	  }
+	| {
+			kind: 'callout-texture';
+			clipId: string;
+			transform: TransformParams;
+			transition?: import('./timeline').TransitionResolveMeta;
+	  }
+	| {
+			kind: 'callout-effect';
+			effect: 'spotlight' | 'blur-region';
+			transform: TransformParams;
+			darkenStrength?: number;
+			blurRadius?: number;
 			transition?: import('./timeline').TransitionResolveMeta;
 	  };
 
@@ -3007,6 +3076,35 @@ function makeGetLayers() {
 								? normalizeTransform(layoutLayer.transform)
 								: sampled.transform,
 							animUniforms: CAPTION_ANIM_IDENTITY,
+							transition: layer.transition
+						}
+					});
+					continue;
+				}
+				if (isCalloutClip(layer.clip)) {
+					const sampled = sampleClipParamsAt(layer.clip, timestamp);
+					const callout = layer.clip.callout;
+					if (!callout) continue;
+					if (!isRasterCalloutClip(layer.clip)) {
+						decodedLayers.push({
+							decoded: null,
+							meta: {
+								kind: 'callout-effect',
+								effect: callout.calloutKind === 'spotlight' ? 'spotlight' : 'blur-region',
+								transform: sampled.transform,
+								darkenStrength: callout.style.darkenStrength,
+								blurRadius: callout.style.blurRadius,
+								transition: layer.transition
+							}
+						});
+						continue;
+					}
+					decodedLayers.push({
+						decoded: null,
+						meta: {
+							kind: 'callout-texture',
+							clipId: layer.clip.id,
+							transform: sampled.transform,
 							transition: layer.transition
 						}
 					});
@@ -3110,7 +3208,8 @@ function makeGetLayers() {
 						matteMode: matte?.enabled ? matte.mode : undefined,
 						matteBlurRadius: matte?.enabled ? matte.blurRadius : undefined,
 						beauty: sampled.beauty,
-						beautyLandmarks
+						beautyLandmarks,
+						paddedBackground: layer.clip.paddedBackground
 					}
 				});
 			}
@@ -4537,6 +4636,60 @@ function handleSetTitle(cmd: Extract<WorkerCommand, { type: 'set-title' }>) {
 	);
 }
 
+function makeCalloutClipId(): string {
+	const suffix =
+		typeof crypto !== 'undefined' && 'randomUUID' in crypto
+			? crypto.randomUUID()
+			: Math.random().toString(36).slice(2);
+	return `clip-callout-${suffix}`;
+}
+
+function handleAddCallout(cmd: Extract<WorkerCommand, { type: 'add-callout' }>) {
+	const added = commitTimelineMutation(() => {
+		const start =
+			cmd.start !== undefined && Number.isFinite(cmd.start) && cmd.start >= 0 ? cmd.start : 0;
+		const makeClip = () =>
+			defaultCalloutClip({
+				id: makeCalloutClipId(),
+				start,
+				duration: DEFAULT_TITLE_DURATION_S,
+				payload: cmd.payload,
+				transform: cmd.transform
+			});
+
+		if (cmd.trackId) {
+			return insertClip(timeline, cmd.trackId, makeClip());
+		}
+		for (const track of timeline) {
+			if (track.type !== 'video') continue;
+			const candidate = insertClip(timeline, track.id, makeClip());
+			if (candidate !== timeline) return candidate;
+		}
+		const withTrack = addTrack(timeline, 'video');
+		const overlayTrackId = withTrack[withTrack.length - 1]!.id;
+		return insertClip(withTrack, overlayTrackId, makeClip());
+	});
+	if (added && !playback) setupPlayback();
+}
+
+function handleSetCallout(cmd: Extract<WorkerCommand, { type: 'set-callout' }>) {
+	commitTimelineMutation(() => setCalloutPayload(timeline, cmd.trackId, cmd.clipId, cmd.payload), {
+		coalesceKey: { clipId: cmd.clipId, key: 'callout' },
+		refreshPlayback: 'refresh',
+		prune: false,
+		syncLuts: false
+	});
+}
+
+function handleSetPaddedBackground(cmd: Extract<WorkerCommand, { type: 'set-padded-background' }>) {
+	commitTimelineMutation(() => setPaddedBackground(timeline, cmd.trackId, cmd.clipId, cmd.params), {
+		coalesceKey: { clipId: cmd.clipId, key: 'paddedBackground' },
+		refreshPlayback: 'refresh',
+		prune: false,
+		syncLuts: false
+	});
+}
+
 function handleAddTrack(cmd: Extract<WorkerCommand, { type: 'add-track' }>) {
 	commitTimelineMutation(() => addTrack(timeline, cmd.trackType), {
 		refreshPlayback: 'none',
@@ -5177,6 +5330,7 @@ function handleCaptionImportCustomPreset(
 	// the new fields. `rasterize` is hash-checked, so segments using OTHER
 	// presets pay only a hash compare; touched segments get a fresh upload.
 	syncTitleRasters();
+	syncCalloutRasters();
 	scheduleAutosave();
 }
 
@@ -5192,6 +5346,7 @@ function handleCaptionDeleteCustomPreset(
 	// at next resolve; re-rasterise so the cache reflects the fallback instead
 	// of holding the now-orphaned custom-preset texture.
 	syncTitleRasters();
+	syncCalloutRasters();
 	scheduleAutosave();
 }
 
@@ -5347,7 +5502,8 @@ function handleExportInterchange(
 		sources: currentProjectSources(),
 		masterGain,
 		exportSettings: lastExportSettings ?? undefined,
-		scenes: programSceneDoc
+		scenes: programSceneDoc,
+		sessionEventLogs
 	});
 	const displayName = projectDisplayName();
 	try {
@@ -5420,6 +5576,7 @@ async function applyImportedDoc(doc: ProjectDoc): Promise<void> {
 	postProgramScenes();
 	setupPlayback();
 	syncTitleRasters();
+	syncCalloutRasters();
 	ensureClockAndTimeline();
 	postHistoryState();
 	scheduleAutosave();
@@ -5593,6 +5750,31 @@ function setupPlayback() {
 							uvCropMax: [au.cropRightFrac, 1.0],
 							transition: layer.meta.transition
 						});
+					} else if (layer.meta.kind === 'callout-texture') {
+						const texture = calloutCache?.get(layer.meta.clipId);
+						if (!texture) continue;
+						stack.push({
+							kind: 'texture',
+							view: texture.view,
+							sourceWidth: texture.width,
+							sourceHeight: texture.height,
+							transform: layer.meta.transform,
+							transition: layer.meta.transition
+						});
+					} else if (layer.meta.kind === 'callout-effect') {
+						stack.push(
+							layer.meta.effect === 'spotlight'
+								? {
+										kind: 'spotlight',
+										transform: layer.meta.transform,
+										darkenStrength: layer.meta.darkenStrength ?? 0.7
+									}
+								: {
+										kind: 'blur-region',
+										transform: layer.meta.transform,
+										blurRadius: layer.meta.blurRadius ?? 12
+									}
+						);
 					} else if (layer.frame) {
 						stack.push({
 							kind: 'frame',
@@ -5608,7 +5790,8 @@ function setupPlayback() {
 							matteMode: layer.meta.matteMode,
 							matteBlurRadius: layer.meta.matteBlurRadius,
 							beauty: layer.meta.beauty,
-							beautyLandmarks: layer.meta.beautyLandmarks
+							beautyLandmarks: layer.meta.beautyLandmarks,
+							paddedBackground: layer.meta.paddedBackground
 						});
 					}
 				}
@@ -5905,6 +6088,10 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
 				// per title on the cold export path, never per frame.
 				titleTextureFor: (clip) =>
 					clip.title ? (titleCache?.ensure(clip.id, clip.title) ?? null) : null,
+				calloutTextureFor: (clip) =>
+					clip.callout && isRasterCalloutClip(clip)
+						? (calloutCache?.ensure(clip.id, clip.callout, settings.width, settings.height) ?? null)
+						: null,
 				overlayTextureLayersAt: (timelineTime) => {
 					const ew = settings.width,
 						eh = settings.height;
@@ -6041,6 +6228,7 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
 		await destroyConfiguredVoiceCleanupState(exportCleanupState);
 		releaseRetainedOverlayTextures(exportCaptionTextureIds);
 		syncTitleRasters();
+		syncCalloutRasters();
 		exportAbort = null;
 		pruneUnusedSources();
 		ensurePreview();
@@ -6288,6 +6476,10 @@ async function runQueueJob(job: RenderQueueJob): Promise<void> {
 			cleanupState: exportCleanupState,
 			titleTextureFor: (clip) =>
 				clip.title ? (titleCache?.ensure(clip.id, clip.title) ?? null) : null,
+			calloutTextureFor: (clip) =>
+				clip.callout && isRasterCalloutClip(clip)
+					? (calloutCache?.ensure(clip.id, clip.callout, settings.width, settings.height) ?? null)
+					: null,
 			overlayTextureLayersAt: (timelineTime) => {
 				const ew = settings.width,
 					eh = settings.height;
@@ -6418,6 +6610,7 @@ async function runQueueJob(job: RenderQueueJob): Promise<void> {
 		await destroyConfiguredVoiceCleanupState(exportCleanupState);
 		releaseRetainedOverlayTextures(exportCaptionTextureIds);
 		syncTitleRasters();
+		syncCalloutRasters();
 		queueJobAbort = null;
 		queueJobOutputJobId = null;
 		pruneUnusedSources();
@@ -7050,6 +7243,8 @@ async function handleDispose(): Promise<void> {
 	await handlePublishTapStop();
 	titleCache?.destroy();
 	titleCache = null;
+	calloutCache?.dispose();
+	calloutCache = null;
 	void matteEngine?.dispose();
 	matteEngine = null;
 	void interpolationEngine?.dispose();
@@ -8006,7 +8201,34 @@ async function renderCoverFrameBlob(
 						transform: layer.meta.transform,
 						transition: layer.meta.transition
 					});
-				} else if (layer.decoded) {
+				} else if (layer.meta.kind === 'callout-texture') {
+					const texture = calloutCache?.get(layer.meta.clipId);
+					if (!texture) continue;
+					stack.push({
+						kind: 'texture',
+						view: texture.view,
+						sourceWidth: texture.width,
+						sourceHeight: texture.height,
+						transform: layer.meta.transform,
+						transition: layer.meta.transition
+					});
+				} else if (layer.meta.kind === 'callout-effect') {
+					stack.push(
+						layer.meta.effect === 'spotlight'
+							? {
+									kind: 'spotlight',
+									transform: layer.meta.transform,
+									darkenStrength: layer.meta.darkenStrength ?? 0.7,
+									transition: layer.meta.transition
+								}
+							: {
+									kind: 'blur-region',
+									transform: layer.meta.transform,
+									blurRadius: layer.meta.blurRadius ?? 12,
+									transition: layer.meta.transition
+								}
+					);
+				} else if (layer.meta.kind === 'frame' && layer.decoded) {
 					const frame = layer.decoded.toVideoFrame();
 					frames.push(frame);
 					stack.push({
@@ -8657,6 +8879,15 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			break;
 		case 'set-title':
 			handleSetTitle(cmd);
+			break;
+		case 'add-callout':
+			handleAddCallout(cmd);
+			break;
+		case 'set-callout':
+			handleSetCallout(cmd);
+			break;
+		case 'set-padded-background':
+			handleSetPaddedBackground(cmd);
 			break;
 		case 'add-track':
 			handleAddTrack(cmd);

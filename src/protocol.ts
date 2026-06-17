@@ -1064,8 +1064,97 @@ export interface TransformParamsSnapshot {
 	fit: FitModeSnapshot;
 }
 
-export type ClipKindSnapshot = 'video' | 'title';
+export type ClipKindSnapshot = 'video' | 'title' | 'callout';
 export type TitleAlignSnapshot = 'left' | 'center' | 'right';
+
+// ---------------------------------------------------------------------------
+// Phase 43: Callout types
+// ---------------------------------------------------------------------------
+
+export type CalloutKind = 'arrow' | 'box' | 'step' | 'spotlight' | 'blur';
+
+export interface CalloutArrowGeometry {
+	kind: 'arrow';
+	x1: number;
+	y1: number;
+	x2: number;
+	y2: number;
+}
+
+export interface CalloutBoxGeometry {
+	kind: 'box';
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+}
+
+export interface CalloutStepGeometry {
+	kind: 'step';
+	cx: number;
+	cy: number;
+	r: number;
+	number: number;
+}
+
+export interface CalloutRegionGeometry {
+	kind: 'spotlight' | 'blur';
+}
+
+export type CalloutGeometry =
+	| CalloutArrowGeometry
+	| CalloutBoxGeometry
+	| CalloutStepGeometry
+	| CalloutRegionGeometry;
+
+export interface CalloutStyle {
+	color: string;
+	strokeWidth: number;
+	fillOpacity: number;
+	fontSize: number;
+	arrowheadSize: number;
+	blurRadius: number;
+	darkenStrength: number;
+}
+
+export interface CalloutPayload {
+	calloutKind: CalloutKind;
+	geometry: CalloutGeometry;
+	style: CalloutStyle;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 43: Padded-background types
+// ---------------------------------------------------------------------------
+
+export type PaddedBackgroundKind = 'solid' | 'gradient' | 'wallpaper';
+
+export interface GradientStop {
+	color: string;
+	pos: number;
+}
+
+export interface PaddedBackgroundParams {
+	insetMargin: number;
+	cornerRadius: number;
+	shadowOpacity: number;
+	shadowRadius: number;
+	shadowOffsetY: number;
+	background:
+		| { kind: 'solid'; color: string }
+		| { kind: 'gradient'; stops: GradientStop[]; angleDeg: number }
+		| { kind: 'wallpaper'; sourceId: string };
+}
+
+// ---------------------------------------------------------------------------
+// Phase 43: Session event log ref
+// ---------------------------------------------------------------------------
+
+export interface SessionEventLogRef {
+	sessionId: string;
+	sourceId: string;
+	opfsPath: string;
+}
 
 export interface TitleStyleSnapshot {
 	fontFamily: string;
@@ -1320,6 +1409,10 @@ export interface TimelineClipSnapshot {
 	timeRemap?: TimeRemapSnapshot;
 	/** Phase 42: origin capture session id for retake detection. */
 	captureSessionId?: string;
+	/** Phase 43: callout payload; present iff `kind === 'callout'`. */
+	callout?: CalloutPayload;
+	/** Phase 43: padded-background sidecar; absent = no padded background. */
+	paddedBackground?: PaddedBackgroundParams;
 }
 
 export interface LayoutClipSnapshot {
@@ -1767,6 +1860,31 @@ interface SetTitleCommand {
 	clipId: string;
 	text?: string;
 	style?: Partial<TitleStyleSnapshot>;
+}
+
+/** Phase 43: adds a source-less callout clip (mirrors AddTitleCommand). */
+interface AddCalloutCommand {
+	type: 'add-callout';
+	trackId?: string;
+	start?: number;
+	payload: CalloutPayload;
+	transform?: Partial<TransformParamsSnapshot>;
+}
+
+/** Phase 43: updates a callout clip's payload (mirrors SetTitleCommand). */
+interface SetCalloutCommand {
+	type: 'set-callout';
+	trackId: string;
+	clipId: string;
+	payload: CalloutPayload;
+}
+
+/** Phase 43: sets or removes the padded-background sidecar on a clip. */
+interface SetPaddedBackgroundCommand {
+	type: 'set-padded-background';
+	trackId: string;
+	clipId: string;
+	params: PaddedBackgroundParams | null;
 }
 
 interface AddTrackCommand {
@@ -2307,6 +2425,9 @@ export type WorkerCommand =
 	| SetStillDurationCommand
 	| AddTitleCommand
 	| SetTitleCommand
+	| AddCalloutCommand
+	| SetCalloutCommand
+	| SetPaddedBackgroundCommand
 	| AddTrackCommand
 	| RemoveTrackCommand
 	| ReorderTrackCommand
@@ -2603,6 +2724,7 @@ export type WorkerStateMessage =
 			transitions: TimelineTransitionSnapshot[];
 			markers: TimelineMarkerSnapshot[];
 			masterGain: number;
+			sessionEventLogs: SessionEventLogRef[];
 	  }
 	| { type: 'caption-import-result'; result: CaptionImportResultSnapshot }
 	| { type: 'caption-export-result'; files: readonly CaptionSidecarFileSnapshot[] }

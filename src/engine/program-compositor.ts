@@ -85,9 +85,9 @@ export function createProgramCompositor(config: ProgramCompositorConfig): Progra
 	}
 
 	function layerSourceKey(layer: CompositeLayer): string {
-		return layer.kind === 'frame'
-			? `frame:${layerObjectKey(layer.frame)}`
-			: `texture:${layerObjectKey(layer.view)}`;
+		if (layer.kind === 'frame') return `frame:${layerObjectKey(layer.frame)}`;
+		if (layer.kind === 'texture') return `texture:${layerObjectKey(layer.view)}`;
+		return `${layer.kind}:${layerObjectKey(layer)}`;
 	}
 
 	function withOpacity(layer: CompositeLayer, opacity: number): CompositeLayer {

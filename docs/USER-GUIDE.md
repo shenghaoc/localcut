@@ -223,6 +223,17 @@ Add title cards to your project:
 
 Title clips are rasterized at 1920×1080 and composited like any video clip — they support transforms, effects, and keyframes.
 
+## Screencast Post Pack
+
+The Screencast Post Pack adds four accelerated tools for tutorial and software walkthrough edits. Select a video clip to use **Zoom-n-Pan**, **Auto-Zoom**, and **Padded Background** in the Inspector; use the toolbar **Callout** tool to place arrow, box, step, spotlight, or blur-region callout clips at the playhead.
+
+- **Zoom-n-Pan** writes normal transform keyframes, so every generated zoom can be edited in the existing keyframe workflow.
+- **Auto-Zoom** reads an own-tab capture event log and proposes zooms around click and scroll clusters. Auto-Zoom requires recording with the Own Tab option — event logs are not available for window or display captures.
+- **Callouts** are source-less timeline clips that trim, move, split, serialize, and export like other overlay clips. Spotlight and blur-region callouts run as GPU passes in the compositor.
+- **Padded Background** renders a solid or gradient background behind a rounded, inset version of the selected clip with a shadow.
+
+See [Screencast Guide](SCREENCAST-GUIDE.md) for step-by-step walkthroughs.
+
 ## Audio Mixing
 
 LocalCut Studio includes a multi-track audio mixer:

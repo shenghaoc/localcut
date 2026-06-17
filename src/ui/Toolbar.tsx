@@ -58,6 +58,7 @@ interface ToolbarProps {
 	keystrokeOverlayAvailable?: boolean;
 	onOpenLanguageTools?: () => void;
 	onOpenPublish?: () => void;
+	calloutTool?: JSX.Element;
 	/** True while a publish session is connecting/live/reconnecting. */
 	publishLive?: boolean;
 	masterGain: number;
@@ -299,6 +300,7 @@ export function Toolbar(props: ToolbarProps) {
 					<VolumeX size={13} aria-hidden="true" />
 					Silence Review
 				</button>
+				{props.calloutTool}
 				<Show when={props.keystrokeOverlayAvailable}>
 					<button
 						type="button"

@@ -36,6 +36,7 @@ import {
 import {
 	DEFAULT_MASTER_GAIN,
 	getTimelineDuration,
+	isCalloutClip,
 	isTitleClip,
 	resolveAllAt,
 	resolveLayoutAt,
@@ -223,6 +224,8 @@ export interface TimelineExportOptions {
 	/** Resolves a title clip's cached raster texture (Phase 14); rasters on the
 	 *  cold path if needed, never per frame. Returns `null` for non-title clips. */
 	titleTextureFor?: (clip: TimelineClip) => TitleTexture | null;
+	/** Resolves a raster callout texture (arrow/box/step) on the cold export path. */
+	calloutTextureFor?: (clip: TimelineClip) => TitleTexture | null;
 	overlayTextureLayersAt?: (timelineTime: number) => Array<{
 		view: GPUTextureView;
 		sourceWidth: number;
@@ -1021,6 +1024,7 @@ async function encodeVideoRange(
 		onProgress,
 		titleTextureFor,
 		overlayTextureLayersAt,
+		calloutTextureFor,
 		matteViewFor,
 		beautyLandmarksFor
 	} = options;
@@ -1083,6 +1087,39 @@ async function encodeVideoRange(
 						});
 						continue;
 					}
+					if (isCalloutClip(layer.clip)) {
+						const sampled = sampleClipParamsAt(layer.clip, timelineTime);
+						const callout = layer.clip.callout;
+						if (!callout) continue;
+						if (callout.calloutKind === 'spotlight') {
+							layers.push({
+								kind: 'spotlight',
+								transform: sampled.transform,
+								darkenStrength: callout.style.darkenStrength ?? 0.7
+							});
+							continue;
+						}
+						if (callout.calloutKind === 'blur') {
+							layers.push({
+								kind: 'blur-region',
+								transform: sampled.transform,
+								blurRadius: callout.style.blurRadius ?? 12
+							});
+							continue;
+						}
+						const texture = calloutTextureFor?.(layer.clip);
+						if (texture) {
+							layers.push({
+								kind: 'texture',
+								view: texture.view,
+								sourceWidth: texture.width,
+								sourceHeight: texture.height,
+								transform: sampled.transform,
+								transition: layer.transition
+							});
+						}
+						continue;
+					}
 					const sourceHandle = sources.get(layer.clip.sourceId);
 					if (!sourceHandle?.frameSource) continue;
 					// Stop decoding video past the budget but keep scanning so source-less
@@ -1142,7 +1179,8 @@ async function encodeVideoRange(
 						matteBlurRadius: matte?.enabled ? matte.blurRadius : undefined,
 						matteRefine: matteView !== undefined,
 						beauty: sampled.beauty,
-						beautyLandmarks
+						beautyLandmarks,
+						paddedBackground: layer.clip.paddedBackground
 					});
 				}
 				for (const overlay of overlayTextureLayersAt?.(timelineTime) ?? []) {
