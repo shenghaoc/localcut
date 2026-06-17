@@ -13,9 +13,11 @@
 		"binding": "ASSETS",
 		// SPA fallback so in-app routes (/docs and subsections) survive refresh and deep links.
 		"not_found_handling": "single-page-application",
-		// Run the Worker before the SPA fallback for the model proxy, so
-		// `/_model/*` reaches the proxy instead of being rewritten to index.html.
-		"run_worker_first": ["/_model/*"]
+		// Run the Worker before the SPA fallback for the reverse proxies, so they
+		// reach the Worker instead of being rewritten to index.html: `/_model/*`
+		// (HF/GH/GCS model assets) and `/_ort/*` (the ONNX Runtime Web WASM runtime,
+		// which the ORT Whisper Auto Captions model fetches same-origin in production).
+		"run_worker_first": ["/_model/*", "/_ort/*"]
 	},
 	"compatibility_flags": ["nodejs_compat"]
 }
