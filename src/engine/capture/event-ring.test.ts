@@ -176,6 +176,33 @@ describe('CaptureEventRing — wraparound', () => {
 	});
 });
 
+describe('CaptureEventRingWriter — TextEncoder.encodeInto SAB regression', () => {
+	it('does not pass a SharedArrayBuffer-backed view to TextEncoder.encodeInto', () => {
+		// Chromium's `TextEncoder.encodeInto` rejects shared-backed Uint8Arrays
+		// with "must not be shared" (same restriction as `TextDecoder.decode`).
+		// Node's TextEncoder doesn't enforce this, so without the spy this would
+		// pass in CI and break in real browsers.
+		const sab = allocateCaptureEventRing(1);
+		const writer = new CaptureEventRingWriter(sab);
+
+		// eslint-disable-next-line typescript/unbound-method -- prototype spy
+		const original = TextEncoder.prototype.encodeInto;
+		let seenSharedBuffer = false;
+		TextEncoder.prototype.encodeInto = function (input: string, dest: Uint8Array) {
+			if (typeof SharedArrayBuffer !== 'undefined' && dest.buffer instanceof SharedArrayBuffer) {
+				seenSharedBuffer = true;
+			}
+			return original.call(this, input, dest);
+		};
+		try {
+			writer.writeKey('Ctrl+Shift+S', 0, 0);
+		} finally {
+			TextEncoder.prototype.encodeInto = original;
+		}
+		expect(seenSharedBuffer).toBe(false);
+	});
+});
+
 describe('CaptureEventRingReader — TextDecoder SAB regression', () => {
 	it('does not pass a SharedArrayBuffer-backed view to TextDecoder.decode', () => {
 		// Browsers' TextDecoder rejects shared-backed buffers with "must not be shared".
@@ -186,6 +213,8 @@ describe('CaptureEventRingReader — TextDecoder SAB regression', () => {
 		const reader = new CaptureEventRingReader(sab);
 		writer.writeKey('Ctrl+S', 0, 0);
 
+		// eslint-disable-next-line typescript/unbound-method -- intentionally storing the
+		// prototype function so we can spy on it and restore it in `finally`.
 		const original = TextDecoder.prototype.decode;
 		let seenSharedBuffer = false;
 		TextDecoder.prototype.decode = function (input?: BufferSource, options?: TextDecodeOptions) {

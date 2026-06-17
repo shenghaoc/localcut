@@ -130,11 +130,15 @@ export class CaptureEventRingWriter {
 
 		let stringLen = 0;
 		if (stringPayload.length > 0) {
+			// We tried `encodeInto(stringPayload, scratchSlice)` to avoid the encode
+			// allocation, but Chromium's TextEncoder.encodeInto rejects shared-backed
+			// Uint8Arrays with the same "must not be shared" TypeError that
+			// TextDecoder.decode does. So we encode into a fresh non-shared array
+			// (one Uint8Array allocation per recorded shortcut) and `set` the bytes
+			// into the SAB-backed scratch — the encoder allocation is the price of
+			// the SAB destination.
 			const encoded = this.textEncoder.encode(stringPayload);
 			stringLen = Math.min(encoded.length, STRING_CAPACITY);
-			// stringScratch is offset at CAPTURE_EVENT_HEADER_BYTES, so the destination
-			// within it is just recordOffset + CAPTURE_EVENT_RECORD_STRING_OFFSET (no
-			// header adjustment needed).
 			this.stringScratch.set(
 				encoded.subarray(0, stringLen),
 				recordOffset + CAPTURE_EVENT_RECORD_STRING_OFFSET

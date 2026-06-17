@@ -33,6 +33,12 @@ export interface CaptureDomTap {
 	detachDocument(doc: Document): void;
 	/** Internal: called when the worker signals a session start. */
 	start(sessionId: string, ring: SharedArrayBuffer, epochMs: number): void;
+	/** Internal: pause the tap clock so events recorded during the session pause
+	 *  don't drift from the gap-collapsed media. Listeners stay attached so the
+	 *  pause itself is captured at its true t and so resumes resume cleanly. */
+	pause(): void;
+	/** Internal: resume the tap clock. */
+	resume(): void;
 	/** Internal: called on session stop or unload. */
 	stop(): void;
 	/** Currently active session id, or null. */
@@ -69,10 +75,25 @@ export function createCaptureDomTap(): CaptureDomTap {
 	let writer: CaptureEventRingWriter | null = null;
 	let sessionId: string | null = null;
 	let epochMs = 0;
+	/** Accumulated paused-millis across all completed pause intervals. */
+	let pausedAccumulatorMs = 0;
+	/** `performance.timeOrigin + performance.now()` at the start of the current
+	 *  pause, or null when not paused. */
+	let pauseStartedAtMs: number | null = null;
 	const attached = new Map<Document, AttachedDocument>();
 
 	function nowUsSinceEpoch(): number {
-		return Math.max(0, Math.floor((performance.now() - epochMs) * 1000));
+		// epochMs from the worker is `performance.timeOrigin + performance.now()` —
+		// a wall-clock-equivalent absolute timestamp. We compute the same on main so
+		// the subtraction yields the wall-clock delta, immune to per-realm `timeOrigin`
+		// differences. Subtract pausedAccumulator + current paused interval so
+		// timestamps mirror the session's gap-collapsed media clock.
+		const nowAbsMs = performance.timeOrigin + performance.now();
+		let activeMs = nowAbsMs - epochMs - pausedAccumulatorMs;
+		if (pauseStartedAtMs !== null) {
+			activeMs -= nowAbsMs - pauseStartedAtMs;
+		}
+		return Math.max(0, Math.floor(activeMs * 1000));
 	}
 
 	function buildHandlers(): AttachedDocument['handlers'] {
@@ -148,8 +169,19 @@ export function createCaptureDomTap(): CaptureDomTap {
 			writer = new CaptureEventRingWriter(ring);
 			sessionId = newSessionId;
 			epochMs = newEpochMs;
+			pausedAccumulatorMs = 0;
+			pauseStartedAtMs = null;
 			// Always attach the top-level document; iframes opt-in via attachDocument.
 			if (typeof document !== 'undefined') attachInternal(document);
+		},
+		pause(): void {
+			if (!writer || pauseStartedAtMs !== null) return;
+			pauseStartedAtMs = performance.timeOrigin + performance.now();
+		},
+		resume(): void {
+			if (!writer || pauseStartedAtMs === null) return;
+			pausedAccumulatorMs += performance.timeOrigin + performance.now() - pauseStartedAtMs;
+			pauseStartedAtMs = null;
 		},
 		stop(): void {
 			for (const entry of attached.values()) detachInternal(entry);
@@ -157,6 +189,8 @@ export function createCaptureDomTap(): CaptureDomTap {
 			writer = null;
 			sessionId = null;
 			epochMs = 0;
+			pausedAccumulatorMs = 0;
+			pauseStartedAtMs = null;
 		},
 		activeSessionId(): string | null {
 			return sessionId;

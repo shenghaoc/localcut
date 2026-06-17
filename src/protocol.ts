@@ -2773,10 +2773,22 @@ export type WorkerStateMessage =
 			type: 'capture-dom-tap-init';
 			sessionId: string;
 			ring: SharedArrayBuffer;
-			/** `performance.now()` at session start so main can compute event t = (now - epochMs) / 1000. */
+			/** Wall-clock-equivalent absolute timestamp at session start
+			 *  (`performance.timeOrigin + performance.now()` in the worker realm).
+			 *  Main computes event t against the same `timeOrigin + now()` in its
+			 *  realm so the difference is the wall-clock delta — immune to per-realm
+			 *  `timeOrigin` mismatches. */
 			epochMs: number;
 	  }
 	| { type: 'capture-dom-tap-stop'; sessionId: string }
+	/** Worker → main: session paused/resumed so the tap can gap-collapse its clock
+	 *  to mirror the media's pause-collapsed landing. Listeners stay attached. */
+	| { type: 'capture-dom-tap-pause'; sessionId: string }
+	| { type: 'capture-dom-tap-resume'; sessionId: string }
+	/** Writer-worker → pipeline-worker → main confirming that `events.ndjson` has
+	 *  been flushed and closed for the session. Panel waits for this before
+	 *  attempting to read the sidecar. */
+	| { type: 'capture-events-sidecar-ready'; sessionId: string }
 	// Phase 36: Voice Cleanup
 	| { type: 'voice-cleanup-analysis-progress'; fraction: number; currentWindowS: number }
 	| {

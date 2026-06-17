@@ -15,7 +15,7 @@
  *  two listener paths never run concurrently (T13.8 acceptance).
  */
 
-import { createSignal, For, Show, onCleanup } from 'solid-js';
+import { createEffect, createSignal, For, Show, onCleanup } from 'solid-js';
 import { Button } from './components/button';
 import {
 	shouldRecordKey,
@@ -39,6 +39,14 @@ export interface KeystrokeOverlayPanelProps {
 	/** Phase 41: true when a capture session is currently recording, so the panel
 	 *  can disable manual recording (the worker-driven DOM tap covers it). */
 	captureRecording?: boolean;
+	/** Phase 41: writer worker has flushed + closed `events.ndjson` for the
+	 *  current `landedSessionId`. The Load button stays disabled until this is
+	 *  true so we never race the writer's still-open SyncAccessHandle. */
+	sidecarReady?: boolean;
+	/** Phase 41: when the landed session was a retake, this is the timeline
+	 *  start (seconds) of the retake clip so overlay clips land on top of the
+	 *  retake instead of at t=0. Null when not a retake. */
+	retakeStartS?: number | null;
 }
 
 function formatStamp(s: number): string {
@@ -121,13 +129,18 @@ export function KeystrokeOverlayPanel(props: KeystrokeOverlayPanelProps) {
 
 	function insertOverlay() {
 		if (entries().length === 0) return;
-		const clips = generateKeyOverlayClips(entries(), 0).map((c) => ({
+		// Sidecar t is session-relative. For retakes the session starts at the
+		// retake clip's timeline position, so overlay clips need that offset added.
+		// Manual mode is always relative to the panel's own session start, so
+		// offset there is 0.
+		const sessionOffsetS = source() === 'sidecar' ? (props.retakeStartS ?? 0) : 0;
+		const clips = generateKeyOverlayClips(entries(), sessionOffsetS).map((c) => ({
 			text: c.text,
 			startS: c.startS,
 			durationS: c.durationS,
 			style: c.style as Partial<TitleStyleSnapshot>
 		}));
-		props.sendCommand({ type: 'generate-key-overlay', clips, sessionOffsetS: 0 });
+		props.sendCommand({ type: 'generate-key-overlay', clips, sessionOffsetS });
 	}
 
 	function clearLog() {
@@ -138,6 +151,26 @@ export function KeystrokeOverlayPanel(props: KeystrokeOverlayPanelProps) {
 
 	onCleanup(() => {
 		if (recording()) stopRecording();
+	});
+
+	// Stop manual recording when a capture session begins so the panel listener
+	// and the worker-driven DOM tap never both record the same keys (the disabled
+	// Start button only blocks future starts).
+	createEffect(() => {
+		if (props.captureRecording && recording()) {
+			stopRecording();
+		}
+	});
+
+	// Clear stale state when the landed session id changes so a fresh session
+	// doesn't show events from a previous one.
+	createEffect(() => {
+		const id = props.landedSessionId;
+		if (id !== sidecarSessionId() && source() === 'sidecar') {
+			setEntries([]);
+			setSource('manual');
+			setSidecarSessionId(null);
+		}
 	});
 
 	const handleClose = () => {
@@ -185,9 +218,18 @@ export function KeystrokeOverlayPanel(props: KeystrokeOverlayPanelProps) {
 						onClick={() => {
 							void loadFromSidecar();
 						}}
-						disabled={loadingSidecar()}
+						disabled={loadingSidecar() || props.sidecarReady === false}
+						title={
+							props.sidecarReady === false
+								? 'Waiting for the recording’s events sidecar to flush…'
+								: undefined
+						}
 					>
-						{loadingSidecar() ? 'Loading…' : 'Load events from last recording'}
+						{loadingSidecar()
+							? 'Loading…'
+							: props.sidecarReady === false
+								? 'Waiting for sidecar…'
+								: 'Load events from last recording'}
 					</Button>
 				</div>
 			</Show>
