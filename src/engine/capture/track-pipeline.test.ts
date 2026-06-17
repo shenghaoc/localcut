@@ -225,6 +225,72 @@ describe('TrackPipeline video', () => {
 			expect(getCloseCount(frame)).toBeLessThanOrEqual(1);
 		}
 	});
+
+	it('waits for the paused reader to drain before resuming a new run', async () => {
+		stubGlobals();
+		let resolveRead: ((value: { done: boolean; value?: VideoFrame }) => void) | null = null;
+		const firstCancel = vi.fn(() => {
+			resolveRead?.({ done: true });
+			return Promise.resolve();
+		});
+		const firstReleaseLock = vi.fn();
+		const firstReader = {
+			read: vi.fn(
+				() =>
+					new Promise<{ done: boolean; value?: VideoFrame }>((resolve) => {
+						resolveRead = resolve;
+					})
+			),
+			cancel: firstCancel,
+			releaseLock: firstReleaseLock
+		} as unknown as ReadableStreamDefaultReader<VideoFrame | AudioData>;
+		nextReader = firstReader;
+
+		let endedCount = 0;
+		const callbacks: TrackPipelineCallbacks = {
+			onEncodedChunk: () => {},
+			onChunkAck: () => {},
+			onEncodeError: () => {},
+			onAudioOverrun: () => {},
+			onPipelineEnded: () => {
+				endedCount++;
+			}
+		};
+		const pipeline = new TrackPipeline({
+			sourceId: 'src-1',
+			kind: 'screen',
+			track: fakeTrack(),
+			videoEncodeConfig: { codec: 'avc1.42001E', width: 1920, height: 1080, bitrate: 5_000_000 },
+			callbacks,
+			abort: new AbortController()
+		});
+
+		pipeline.start();
+		const pausePromise = pipeline.pause();
+		let resolveSecondRead: ((value: { done: boolean; value?: VideoFrame }) => void) | null = null;
+		const secondReader = {
+			read: vi.fn(
+				() =>
+					new Promise<{ done: boolean; value?: VideoFrame }>((resolve) => {
+						resolveSecondRead = resolve;
+					})
+			),
+			cancel: vi.fn(() => {
+				resolveSecondRead?.({ done: true });
+				return Promise.resolve();
+			}),
+			releaseLock: vi.fn()
+		} as unknown as ReadableStreamDefaultReader<VideoFrame | AudioData>;
+		nextReader = secondReader;
+		const resumePromise = pipeline.resume();
+		await Promise.all([pausePromise, resumePromise]);
+
+		expect(firstCancel).toHaveBeenCalled();
+		expect(firstReleaseLock).toHaveBeenCalled();
+		expect(endedCount).toBe(0);
+		expect(encoderState.flushed).toBe(true);
+		await pipeline.stop();
+	});
 });
 
 describe('TrackPipeline audio', () => {

@@ -89,6 +89,8 @@ export interface TimelineClip {
 	cleanedAudio?: CleanedAudioRef;
 	/** Phase 35: optional time-remap speed curve; absent = constant 1× speed. */
 	timeRemap?: import('../protocol').TimeRemapSnapshot;
+	/** Phase 42: origin capture session id for retake detection. */
+	captureSessionId?: string;
 }
 
 /** A title clip carries source-less text; it composites as a cached texture. */

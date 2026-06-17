@@ -3,6 +3,7 @@ import type {
 	CapabilityProbeResult,
 	CapabilityTierV2,
 	CaptureProbeResult,
+	CaptureUxProbeResult,
 	CodecProbeResult,
 	ExportCodecSupport,
 	FeatureSupport,
@@ -477,6 +478,29 @@ export function probeSmartReframe(): SmartReframeProbeResult {
 	};
 }
 
+const unknownCaptureUx: CaptureUxProbeResult = {
+	documentPip: 'unknown',
+	cropTarget: 'unknown',
+	elementCapture: 'unknown'
+};
+
+/**
+ * Phase 42: Probe recorder-UX browser capabilities (Chromium-only APIs).
+ * Errors are mapped to `'unknown'` (same pattern as other probe groups).
+ */
+async function probeCaptureUx(): Promise<CaptureUxProbeResult> {
+	const documentPip = supportFromBoolean(
+		typeof window !== 'undefined' && 'documentPictureInPicture' in window
+	);
+	const cropTarget = supportFromBoolean(
+		typeof globalThis !== 'undefined' && 'CropTarget' in globalThis
+	);
+	const elementCapture = supportFromBoolean(
+		typeof globalThis !== 'undefined' && 'RestrictionTarget' in globalThis
+	);
+	return { documentPip, cropTarget, elementCapture };
+}
+
 /**
  * Phase 32b: probe Beauty availability — display/feature-gate only. WebGPU +
  * cross-origin isolation are required for the accelerated face/landmark path;
@@ -547,6 +571,7 @@ export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 		})
 	);
 	const capture = await probeCaptureCapabilities(trackTransfer).catch(() => unknownCapture);
+	const captureUx = await probeCaptureUx().catch(() => unknownCaptureUx);
 	const probeWithoutTier: Omit<CapabilityProbeResult, 'tier'> = {
 		crossOriginIsolated: globalThis.crossOriginIsolated === true,
 		sharedArrayBuffer: hasSharedArrayBuffer(),
@@ -557,6 +582,7 @@ export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 		webCodecsEncode: supportFromBoolean(typeof VideoEncoder !== 'undefined'),
 		codecs,
 		capture,
+		captureUx,
 		fileSystemAccess: supportFromBoolean(
 			typeof window !== 'undefined' &&
 				('showOpenFilePicker' in window || 'showSaveFilePicker' in window)
@@ -570,7 +596,7 @@ export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 		offscreenCanvas: supportFromBoolean(typeof OffscreenCanvas !== 'undefined'),
 		livePublish
 	};
-	return {
+	const result: CapabilityProbeResult = {
 		...probeWithoutTier,
 		tier: deriveCapabilityTierV2(probeWithoutTier),
 		cleanup,
@@ -579,4 +605,14 @@ export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 		imageDecoder: probeImageDecoder(),
 		beauty: probeBeauty()
 	};
+
+	// Dev-only override hook for tests (Vite tree-shakes this in production).
+	if (import.meta.env.DEV) {
+		const overrides = (globalThis as Record<string, unknown>).__localcutCapabilityOverrides;
+		if (overrides && typeof overrides === 'object') {
+			Object.assign(result, overrides);
+		}
+	}
+
+	return result;
 }

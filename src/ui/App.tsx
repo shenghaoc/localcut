@@ -48,6 +48,7 @@ import {
 	type CaptureSessionState,
 	type LiveAudioChainConfig,
 	type RingBufferState,
+	type CaptureSourceKind,
 	type VoiceCleanupSettings,
 	VOICE_CLEANUP_NORMALISE_GAIN_DB
 } from '../protocol';
@@ -79,6 +80,7 @@ import { writeChainParamsToSab, writeDenoiserBypassToSab } from '../engine/live-
 import { ExportDialog } from './ExportDialog';
 import { RenderQueuePanel } from './RenderQueuePanel';
 import { ReplayBufferPanel } from './ReplayBufferPanel';
+import { RecordPanel, type RecorderStatusSnapshot } from './RecordPanel';
 import { LiveAudioChainPanel } from './LiveAudioChainPanel';
 import { VoiceCleanupPanel, voiceCleanupLatencyMs } from './VoiceCleanupPanel';
 import { probeMediaStreamTrackProcessor, startCapture, stopCaptureStreams } from './capture-bridge';
@@ -241,6 +243,14 @@ function formatSourceSummary(source: SourceDescriptorSnapshot): string {
 	return `${source.fileName} · ${mb.toFixed(mb >= 10 ? 0 : 1)} MB · ${source.durationS.toFixed(2)}s`;
 }
 
+function captureKindFromSourceId(sourceId: string): CaptureSourceKind | null {
+	if (sourceId.startsWith('capture-webcam-')) return 'webcam';
+	if (sourceId.startsWith('capture-screen-')) return 'screen';
+	if (sourceId.startsWith('capture-mic-')) return 'mic';
+	if (sourceId.startsWith('capture-system-audio-')) return 'system-audio';
+	return null;
+}
+
 function formatSavedAt(value: string): string {
 	const date = new Date(value);
 	if (Number.isNaN(date.getTime())) return value;
@@ -306,6 +316,7 @@ function capabilityTierV2Label(probe: CapabilityProbeResult | null): string | nu
 const SIDE_RAIL_TABS = [
 	{ id: 'inspector', label: 'Inspector' },
 	{ id: 'captions', label: 'Captions' },
+	{ id: 'record', label: 'Record' },
 	{ id: 'replay', label: 'Replay' },
 	{ id: 'live-audio', label: 'Audio' },
 	{ id: 'voice-cleanup', label: 'Cleanup' }
@@ -588,6 +599,9 @@ export function App() {
 	const [renderQueue, setRenderQueue] = createSignal<RenderQueueState>(createEmptyQueueState());
 	// Phase 46: Replay Buffer + Live Audio Chain
 	const [captureSession, setCaptureSession] = createSignal<CaptureSessionState | null>(null);
+	const [recorderStatus, setRecorderStatus] = createSignal<RecorderStatusSnapshot | null>(null);
+	const [recorderLandedSessionId, setRecorderLandedSessionId] = createSignal<string | null>(null);
+	const [retakeClipId, setRetakeClipId] = createSignal<string | null>(null);
 	const [replayBufferState, setReplayBufferState] = createSignal<RingBufferState | null>(null);
 	const [replaySaveInProgress, setReplaySaveInProgress] = createSignal(false);
 	const [liveChainConfig, setLiveChainConfig] = createSignal<LiveAudioChainConfig>(
@@ -1275,6 +1289,7 @@ export function App() {
 					trackId: ref.trackId,
 					clipId: clip.id,
 					kind: clip.kind,
+					sourceId: clip.sourceId,
 					start: clip.start,
 					duration: clip.duration,
 					effects: sampleEffectsAt(clip.effects, clip.keyframes, localTime),
@@ -1284,11 +1299,37 @@ export function App() {
 					skinMask: clip.skinMask,
 					matte: clip.matte,
 					timeRemap: clip.timeRemap,
-					beauty: sampleBeautyAt(clip.beauty, clip.keyframes, localTime)
+					beauty: sampleBeautyAt(clip.beauty, clip.keyframes, localTime),
+					captureSessionId: clip.captureSessionId
 				};
 			}
 		}
 		return null;
+	});
+
+	const retakeSourceKinds = createMemo<CaptureSourceKind[]>(() => {
+		const clipId = retakeClipId();
+		if (!clipId) return [];
+		let sessionId: string | undefined;
+		const kinds: CaptureSourceKind[] = [];
+		for (const track of timeline()) {
+			for (const clip of track.clips) {
+				if (clip.id === clipId) {
+					sessionId = clip.captureSessionId;
+					break;
+				}
+			}
+			if (sessionId) break;
+		}
+		if (!sessionId) return [];
+		for (const track of timeline()) {
+			for (const clip of track.clips) {
+				if (clip.captureSessionId !== sessionId) continue;
+				const kind = captureKindFromSourceId(clip.sourceId);
+				if (kind) kinds.push(kind);
+			}
+		}
+		return kinds;
 	});
 
 	// Selecting a clip or transition is an edit intent: bring the Inspector tab
@@ -2162,6 +2203,24 @@ export function App() {
 				break;
 			case 'live-chain-error':
 				setStatusLine(`Live audio chain: ${msg.message}`);
+				break;
+			case 'capture-status':
+				setRecorderStatus({
+					state: msg.state,
+					elapsedUs: msg.elapsedUs,
+					bytesWritten: msg.bytesWritten,
+					remainingSeconds: msg.remainingSeconds,
+					sources: msg.sources
+				});
+				break;
+			case 'capture-error':
+				setStatusLine(`Recorder: ${msg.detail}`);
+				break;
+			case 'capture-landed':
+				setRecorderLandedSessionId(msg.sessionId);
+				setStatusLine(
+					`Recorder landed ${msg.trackIds.length} track${msg.trackIds.length === 1 ? '' : 's'}.`
+				);
 				break;
 			// Phase 36: Voice Cleanup
 			case 'voice-cleanup-analysis-progress':
@@ -3973,6 +4032,11 @@ export function App() {
 														bridge?.send({ type: 'set-beauty-effect', trackId, clipId, beauty });
 													}}
 													beautyAvailable={beautyAvailable()}
+													recorderSessionState={recorderStatus()?.state ?? 'idle'}
+													onRetakeRequested={(clipId) => {
+														setRetakeClipId(clipId);
+														setActiveSideRailTab('record');
+													}}
 													beautyModelStatus={beautyModelStatus()}
 													beautyModelSizeBytes={beautyModelSizeBytes() ?? undefined}
 													beautyModelDownloadedBytes={beautyModelDownloadedBytes() ?? undefined}
@@ -4097,6 +4161,44 @@ export function App() {
 															presetId
 														})
 													}
+												/>
+											</div>
+										</Show>
+										<Show when={activeSideRailTab() === 'record'}>
+											<div
+												id="panel-record"
+												class="side-rail-tab-panel"
+												role="tabpanel"
+												aria-labelledby="tab-record"
+											>
+												<RecordPanel
+													probe={capabilityProbeV2()}
+													status={recorderStatus()}
+													retakeClipId={retakeClipId()}
+													retakeSourceKinds={retakeSourceKinds()}
+													landedSessionId={recorderLandedSessionId()}
+													onAddSource={(source, track, transfer) =>
+														bridge?.send({ type: 'capture-add-source', source, track }, transfer)
+													}
+													onStart={(settings, writerPort, activeRetakeClipId, transfer) => {
+														setRecorderLandedSessionId(null);
+														bridge?.send(
+															{
+																type: 'capture-start',
+																settings,
+																writerPort,
+																retakeClipId: activeRetakeClipId ?? undefined
+															},
+															transfer
+														);
+													}}
+													onPause={() => bridge?.send({ type: 'capture-pause' })}
+													onResume={() => bridge?.send({ type: 'capture-resume' })}
+													onStop={() => bridge?.send({ type: 'capture-stop' })}
+													onApplyRegion={(sourceId, mode) =>
+														bridge?.send({ type: 'capture-apply-region', sourceId, mode })
+													}
+													onRetakeCleared={() => setRetakeClipId(null)}
 												/>
 											</div>
 										</Show>

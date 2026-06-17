@@ -1,5 +1,5 @@
 import { Show, For, createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
-import { ChevronLeft, ChevronRight, Diamond, Upload } from 'lucide-solid';
+import { ChevronLeft, ChevronRight, Diamond, RotateCcw, Upload } from 'lucide-solid';
 import { DEFAULT_BEAUTY_EFFECT, DEFAULT_SKIN_MASK } from '../protocol';
 import type {
 	BeautyEffectSnapshot,
@@ -31,6 +31,7 @@ export interface SelectedClip {
 	trackId: string;
 	clipId: string;
 	kind?: import('../protocol').ClipKindSnapshot;
+	sourceId: string;
 	start: number;
 	duration: number;
 	effects: ClipEffectParamsSnapshot;
@@ -44,6 +45,8 @@ export interface SelectedClip {
 	timeRemap?: import('../protocol').TimeRemapSnapshot;
 	/** Phase 32b: optional landmark-driven beauty configuration. */
 	beauty?: BeautyEffectSnapshot;
+	/** Phase 42: origin capture session id for retake detection. */
+	captureSessionId?: string;
 }
 
 export interface SelectedClipTransform {
@@ -166,6 +169,9 @@ interface InspectorProps {
 	beautyModelError?: string;
 	/** Phase 32b: request an on-device beauty model download (explicit user action). */
 	onLoadBeautyModel?: () => void;
+	/** Phase 42: opens the Record panel in retake mode for the selected clip. */
+	onRetakeRequested?: (clipId: string) => void;
+	recorderSessionState?: 'idle' | 'armed' | 'recording' | 'paused' | 'stopping';
 }
 
 type TransformSliderKey = 'x' | 'y' | 'scale' | 'rotation' | 'opacity';
@@ -1146,6 +1152,26 @@ export function Inspector(props: InspectorProps) {
 								<dd>{clip().clipId}</dd>
 							</div>
 						</dl>
+						<Show when={clip().captureSessionId && props.onRetakeRequested}>
+							<div class="inspector-retake-row">
+								<button
+									type="button"
+									onClick={() => props.onRetakeRequested?.(clip().clipId)}
+									disabled={(props.recorderSessionState ?? 'idle') !== 'idle'}
+									title={
+										(props.recorderSessionState ?? 'idle') !== 'idle'
+											? 'Recording in progress'
+											: undefined
+									}
+								>
+									<RotateCcw size={14} aria-hidden="true" />
+									Retake
+								</button>
+								<Show when={(props.recorderSessionState ?? 'idle') !== 'idle'}>
+									<span>Recording in progress</span>
+								</Show>
+							</div>
+						</Show>
 						<Show when={titleDraft()}>
 							{(title) => (
 								<div class="title-controls">

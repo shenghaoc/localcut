@@ -48,7 +48,11 @@ export class TrackPipeline {
 	private preEncodeDrops = 0;
 	private audioOverrunCount = 0;
 	private running = false;
+	private paused = false;
 	private ended = false;
+	private activeRun: Promise<void> | null = null;
+	private activeRunId = 0;
+	private pausedRunId: number | null = null;
 	private keyframeIntervalUs = DEFAULT_KEYFRAME_INTERVAL_US;
 	private lastKeyframeTs: number | null = null;
 	private inFlightChunks = 0;
@@ -63,27 +67,65 @@ export class TrackPipeline {
 	}
 
 	start(keyframeIntervalUs?: number): void {
+		if (this.running) return;
 		if (keyframeIntervalUs !== undefined && keyframeIntervalUs > 0) {
 			this.keyframeIntervalUs = keyframeIntervalUs;
 		}
+		const runId = this.activeRunId + 1;
+		this.activeRunId = runId;
 		this.running = true;
 		this.ended = false;
+		this.pausedRunId = null;
+		let runner: Promise<void> | null = null;
 		if (this.kind === 'screen' || this.kind === 'webcam') {
 			if (this.options.videoEncodeConfig) {
-				this.runVideoPipeline(this.options.videoEncodeConfig).catch((err) => {
-					if (!this.abort.signal.aborted) {
-						this.callbacks.onEncodeError(this.sourceId, String(err));
-					}
-				});
+				runner = this.runVideoPipeline(this.options.videoEncodeConfig, runId);
 			}
 		} else {
 			if (this.options.audioEncodeConfig) {
-				this.runAudioPipeline(this.options.audioEncodeConfig).catch((err) => {
-					if (!this.abort.signal.aborted) {
-						this.callbacks.onEncodeError(this.sourceId, String(err));
-					}
-				});
+				runner = this.runAudioPipeline(this.options.audioEncodeConfig, runId);
 			}
+		}
+		if (!runner) {
+			this.running = false;
+			return;
+		}
+		const run = runner
+			.catch((err) => {
+				if (!this.abort.signal.aborted) {
+					this.callbacks.onEncodeError(this.sourceId, String(err));
+				}
+			})
+			.finally(() => {
+				if (this.activeRun === run) {
+					this.activeRun = null;
+				}
+			});
+		this.activeRun = run;
+	}
+
+	private isRunActive(runId: number): boolean {
+		return this.running && this.activeRunId === runId;
+	}
+
+	private cancelReader(): void {
+		if (this.reader) {
+			try {
+				void this.reader.cancel();
+			} catch {
+				// best-effort cancel
+			}
+		}
+	}
+
+	private async waitForActiveRun(): Promise<void> {
+		const run = this.activeRun;
+		if (run) {
+			await run.catch((err) => {
+				if (!this.abort.signal.aborted) {
+					this.callbacks.onEncodeError(this.sourceId, String(err));
+				}
+			});
 		}
 	}
 
@@ -102,7 +144,7 @@ export class TrackPipeline {
 		preEncodeDrops: number
 	): Promise<void> {
 		await this.waitForChunkSlot();
-		if (!this.running) return;
+		if (this.abort.signal.aborted) return;
 
 		this.inFlightChunks++;
 		this.callbacks.onEncodedChunk(this.sourceId, packet, fromUs, toUs, keyFrame, preEncodeDrops);
@@ -138,7 +180,7 @@ export class TrackPipeline {
 		this.resolveChunkWaiters();
 	}
 
-	private async runVideoPipeline(config: VideoEncoderConfig): Promise<void> {
+	private async runVideoPipeline(config: VideoEncoderConfig, runId: number): Promise<void> {
 		const processor = new MediaStreamTrackProcessor({ track: this.track as MediaStreamVideoTrack });
 
 		const encoderInit: VideoEncoderInit = {
@@ -167,7 +209,7 @@ export class TrackPipeline {
 		const reader = processor.readable.getReader();
 		this.reader = reader;
 		try {
-			while (this.running && !this.abort.signal.aborted) {
+			while (this.isRunActive(runId) && !this.abort.signal.aborted) {
 				const result = await reader.read();
 				if (result.done) {
 					break;
@@ -200,7 +242,9 @@ export class TrackPipeline {
 			} catch {
 				// best-effort teardown — the pipeline is already stopping
 			}
-			this.reader = null;
+			if (this.reader === reader) {
+				this.reader = null;
+			}
 			this.clearChunkWaiters();
 			try {
 				await encoder.flush();
@@ -212,9 +256,15 @@ export class TrackPipeline {
 			} catch {
 				// best-effort teardown — the pipeline is already stopping
 			}
-			this.encoder = null;
-			this.running = false;
-			this.emitEnded();
+			if (this.encoder === encoder) {
+				this.encoder = null;
+			}
+			if (this.activeRunId === runId) {
+				this.running = false;
+			}
+			if (this.pausedRunId !== runId) {
+				this.emitEnded();
+			}
 		}
 	}
 
@@ -229,7 +279,7 @@ export class TrackPipeline {
 		return false;
 	}
 
-	private async runAudioPipeline(config: AudioEncoderConfig): Promise<void> {
+	private async runAudioPipeline(config: AudioEncoderConfig, runId: number): Promise<void> {
 		const processor = new MediaStreamTrackProcessor({ track: this.track as MediaStreamAudioTrack });
 
 		const encoderInit: AudioEncoderInit = {
@@ -256,7 +306,7 @@ export class TrackPipeline {
 		const reader = processor.readable.getReader();
 		this.reader = reader;
 		try {
-			while (this.running && !this.abort.signal.aborted) {
+			while (this.isRunActive(runId) && !this.abort.signal.aborted) {
 				const result = await reader.read();
 				if (result.done) {
 					break;
@@ -295,7 +345,9 @@ export class TrackPipeline {
 			} catch {
 				// best-effort teardown — the pipeline is already stopping
 			}
-			this.reader = null;
+			if (this.reader === reader) {
+				this.reader = null;
+			}
 			this.clearChunkWaiters();
 			try {
 				await encoder.flush();
@@ -307,35 +359,67 @@ export class TrackPipeline {
 			} catch {
 				// best-effort teardown — the pipeline is already stopping
 			}
-			this.encoder = null;
-			this.running = false;
-			this.emitEnded();
+			if (this.encoder === encoder) {
+				this.encoder = null;
+			}
+			if (this.activeRunId === runId) {
+				this.running = false;
+			}
+			if (this.pausedRunId !== runId) {
+				this.emitEnded();
+			}
 		}
 	}
 
 	async stop(): Promise<void> {
 		this.running = false;
+		this.paused = false;
+		this.pausedRunId = null;
 		this.clearChunkWaiters();
-		if (this.reader) {
-			try {
-				await this.reader.cancel();
-			} catch {
-				// best-effort cancel — the read loop is already winding down
-			}
+		this.cancelReader();
+		await this.waitForActiveRun();
+	}
+
+	/**
+	 * Phase 42: Pause — suspends the MSTP reader loop by setting paused=true.
+	 * The async read loop will exit on its next iteration; the encoder is flushed
+	 * and closed in the finally block. emitEnded() is suppressed while paused.
+	 * Call resume() to restart with a fresh encoder and reader.
+	 */
+	async pause(): Promise<void> {
+		if (!this.running || this.paused) return;
+		this.paused = true;
+		const runId = this.activeRunId;
+		this.pausedRunId = runId;
+		this.running = false;
+		this.clearChunkWaiters();
+		this.cancelReader();
+		await this.waitForActiveRun();
+		if (this.pausedRunId === runId) {
+			this.pausedRunId = null;
 		}
+	}
+
+	/**
+	 * Phase 42: Resume — restarts the MSTP reader loop and encoder.
+	 * Cancels any lingering reader from the paused loop before restarting.
+	 */
+	async resume(): Promise<void> {
+		if (!this.paused || this.ended) return;
+		await this.waitForActiveRun();
+		if (!this.paused || this.ended) return;
+		this.paused = false;
+		this.pausedRunId = null;
+		this.start(this.keyframeIntervalUs);
 	}
 
 	dispose(): void {
 		this.running = false;
+		this.paused = false;
+		this.pausedRunId = null;
 		this.clearChunkWaiters();
 		this.track.stop();
-		if (this.reader) {
-			try {
-				void this.reader.cancel();
-			} catch {
-				// best-effort cancel during dispose
-			}
-		}
+		this.cancelReader();
 		if (this.encoder) {
 			try {
 				this.encoder.close();

@@ -40,6 +40,7 @@ function createClip(overrides: Partial<SelectedClip> = {}): SelectedClip {
 	return {
 		trackId: 'track-1',
 		clipId: 'clip-1',
+		sourceId: 'source-1',
 		start: 0,
 		duration: 5,
 		effects: defaultEffects,

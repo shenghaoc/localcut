@@ -689,6 +689,7 @@ export function Timeline(props: TimelineProps) {
 								{(track) => (
 									<div
 										class={`track-surface${dropTrackId() === track.id ? ' is-drop-target' : ''}`}
+										data-testid="timeline-track"
 										data-track-id={track.id}
 										style={{ width: `${contentWidth()}px` }}
 										onDragOver={(event) => onTrackDragOver(track.id, event)}
@@ -763,6 +764,7 @@ export function Timeline(props: TimelineProps) {
 									{(marker) => (
 										<div
 											class="timeline-marker"
+											data-testid="timeline-marker"
 											style={{ left: `${marker.time * pxPerSecond()}px` }}
 										>
 											<button
