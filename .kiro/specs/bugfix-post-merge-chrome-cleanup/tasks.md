@@ -154,6 +154,14 @@ context.
   heads from field labels in the Inspector form ladder.
 - [ ] **T10.3** Per-panel walkthrough at 1280×800 / 1440×900: export
   popover, bundle popover, audio-cleanup, ASR, smart-reframe,
-  language-tools, render-queue, replay-buffer, live-audio-chain. Each
-  inherits the new tokens via the bridge but was not individually
-  reviewed in this spec.
+  language-tools, render-queue. Each inherits the new tokens via the bridge
+  but was not individually reviewed in this spec.
+
+## T11 — Product Design polish follow-up
+
+- [x] **T11.1** Narrow the duplicate title hide to direct panel children so
+  nested side-rail headers (`Replay Buffer`, `Live Audio Chain`,
+  `Voice Cleanup`) stay visible.
+- [x] **T11.2** Default the side-rail `VoiceCleanupPanel` open to match the
+  `ReplayBufferPanel` and `LiveAudioChainPanel` treatment, avoiding a sparse
+  one-line cleanup tab.

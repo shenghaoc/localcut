@@ -4154,68 +4154,68 @@ export function App() {
 					>
 						<Show when={previewSurfaceAvailable()}>
 							<aside class="dock-left" aria-label="Library">
-							<MediaBin
-								assets={assets}
-								unresolvedIds={unresolvedIds}
-								getThumbnail={(sourceId, timestamp) => thumbnailStore.get(sourceId, timestamp)}
-								thumbnailVersion={thumbnailVersion}
-								requestThumbnails={(sourceId, timestamps) =>
-									bridge?.send({ type: 'request-thumbnails', sourceId, timestamps })
-								}
-								onPlace={(sourceId) => bridge?.send({ type: 'place-clip', sourceId })}
-								onRemove={(sourceId) => bridge?.send({ type: 'remove-asset', sourceId })}
-							/>
-							<BeatPanel
-								assets={assets}
-								beatResults={beatResults}
-								beatSettings={beatSettings}
-								analysisProgress={beatProgress}
-								onAnalyse={(sourceId) => bridge?.send({ type: 'analyze-beats', sourceId })}
-								onCancel={(sourceId) => {
-									bridge?.send({ type: 'cancel-beat-analysis', sourceId });
-									// The worker intentionally sends no terminal message for an
-									// explicit cancel (cancellation isn't an error). Clear the
-									// progress entry optimistically so the BeatPanel row exits
-									// the analysing state immediately.
-									setBeatProgress((prev) => {
-										if (!prev.has(sourceId)) return prev;
-										const next = new Map(prev);
-										next.delete(sourceId);
-										return next;
-									});
-								}}
-								onToggleSource={(sourceId, enabled) => {
-									const current = beatSettings();
-									const ids = enabled
-										? [...current.enabledSourceIds, sourceId]
-										: current.enabledSourceIds.filter((id) => id !== sourceId);
-									bridge?.send({
-										type: 'set-beat-settings',
-										enabledSourceIds: ids,
-										globalOffsetMs: current.globalOffsetMs
-									});
-									setBeatSettings({ ...current, enabledSourceIds: ids });
-								}}
-								onOffsetChange={(offsetMs) => {
-									const current = beatSettings();
-									bridge?.send({
-										type: 'set-beat-settings',
-										enabledSourceIds: current.enabledSourceIds,
-										globalOffsetMs: offsetMs
-									});
-									setBeatSettings({ ...current, globalOffsetMs: offsetMs });
-								}}
-								onAutoCut={(mode) => {
-									const selected = selectedClipRefs();
-									if (selected.length === 0) return;
-									bridge?.send({
-										type: 'beat-auto-cut',
-										mode,
-										clipRefs: selected.map((r) => ({ trackId: r.trackId, clipId: r.clipId }))
-									});
-								}}
-								selectedClipCount={() => selectedClipRefs().length}
-							/>
+								<MediaBin
+									assets={assets}
+									unresolvedIds={unresolvedIds}
+									getThumbnail={(sourceId, timestamp) => thumbnailStore.get(sourceId, timestamp)}
+									thumbnailVersion={thumbnailVersion}
+									requestThumbnails={(sourceId, timestamps) =>
+										bridge?.send({ type: 'request-thumbnails', sourceId, timestamps })
+									}
+									onPlace={(sourceId) => bridge?.send({ type: 'place-clip', sourceId })}
+									onRemove={(sourceId) => bridge?.send({ type: 'remove-asset', sourceId })}
+								/>
+								<BeatPanel
+									assets={assets}
+									beatResults={beatResults}
+									beatSettings={beatSettings}
+									analysisProgress={beatProgress}
+									onAnalyse={(sourceId) => bridge?.send({ type: 'analyze-beats', sourceId })}
+									onCancel={(sourceId) => {
+										bridge?.send({ type: 'cancel-beat-analysis', sourceId });
+										// The worker intentionally sends no terminal message for an
+										// explicit cancel (cancellation isn't an error). Clear the
+										// progress entry optimistically so the BeatPanel row exits
+										// the analysing state immediately.
+										setBeatProgress((prev) => {
+											if (!prev.has(sourceId)) return prev;
+											const next = new Map(prev);
+											next.delete(sourceId);
+											return next;
+										});
+									}}
+									onToggleSource={(sourceId, enabled) => {
+										const current = beatSettings();
+										const ids = enabled
+											? [...current.enabledSourceIds, sourceId]
+											: current.enabledSourceIds.filter((id) => id !== sourceId);
+										bridge?.send({
+											type: 'set-beat-settings',
+											enabledSourceIds: ids,
+											globalOffsetMs: current.globalOffsetMs
+										});
+										setBeatSettings({ ...current, enabledSourceIds: ids });
+									}}
+									onOffsetChange={(offsetMs) => {
+										const current = beatSettings();
+										bridge?.send({
+											type: 'set-beat-settings',
+											enabledSourceIds: current.enabledSourceIds,
+											globalOffsetMs: offsetMs
+										});
+										setBeatSettings({ ...current, globalOffsetMs: offsetMs });
+									}}
+									onAutoCut={(mode) => {
+										const selected = selectedClipRefs();
+										if (selected.length === 0) return;
+										bridge?.send({
+											type: 'beat-auto-cut',
+											mode,
+											clipRefs: selected.map((r) => ({ trackId: r.trackId, clipId: r.clipId }))
+										});
+									}}
+									selectedClipCount={() => selectedClipRefs().length}
+								/>
 							</aside>
 						</Show>
 						<section
@@ -5042,6 +5042,7 @@ export function App() {
 													timelineEmpty={timeline().length === 0}
 													denoiserStatus={voiceCleanupDenoiserStatus()}
 													denoiserUnavailableReason={voiceCleanupDenoiserUnavailableReason()}
+													initiallyExpanded={true}
 												/>
 											</div>
 										</Show>

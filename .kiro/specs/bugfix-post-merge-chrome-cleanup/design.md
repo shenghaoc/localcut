@@ -246,17 +246,20 @@ The redesign uncovered three pre-existing issues that are not addressed
 here and are flagged for follow-up:
 
 1. The Inspector panel's content has a top-level `<h2 class="panel-title">`
-   that duplicates the tab label above it. The override section hides it
-   via `.side-rail-tab-panel .panel-title:first-child { display: none }`
-   as a defensive fix, but a content-level cleanup of every Inspector
-   subsection title belongs in a separate spec.
+   that duplicates the tab label above it. The override section hides only
+   the immediate panel-child title via
+   `.side-rail-tab-panel > .panel > .panel-title:first-child { display: none }`
+   as a defensive fix, so nested panel headers such as Replay Buffer, Live
+   Audio Chain, and Voice Cleanup remain visible. A content-level cleanup of
+   every Inspector subsection title belongs in a separate spec.
 2. The Inspector subsections (Source, Transform, Effects, Speed, Beauty,
    Matte, Time Remap, Look) all share the same eyebrow weight. A future
    spec should introduce a typography hierarchy that distinguishes
    section heads from field labels.
-3. The export popover, bundle popover, audio-cleanup panel, ASR panel,
-   smart-reframe panel, language-tools panel, render-queue panel, and
-   replay-buffer panel inherit the new tokens via the bridge but were not
-   individually reviewed for any pixel-level alignment regressions. A
-   follow-up spec should walk every panel at 1280×800 and 1440×900 and
-   tighten anything that reads off.
+3. The right-rail Replay Buffer, Live Audio Chain, and Voice Cleanup sparse
+   states were checked during the Product Design follow-up pass. The export
+   popover, bundle popover, audio-cleanup panel, ASR panel, smart-reframe
+   panel, language-tools panel, and render-queue panel still inherit the new
+   tokens via the bridge but were not individually reviewed for any
+   pixel-level alignment regressions. A follow-up spec should walk those
+   panels at 1280×800 and 1440×900 and tighten anything that reads off.

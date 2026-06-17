@@ -136,7 +136,11 @@
 	--shadow-lg: 0 16px 40px -12px rgb(0 0 0 / 70%), 0 4px 12px rgb(0 0 0 / 40%);
 	--shadow-primary: 0 0 0 1px var(--cyan), var(--cyan-glow);
 	--focus-ring: 0 0 0 1px var(--cyan), 0 0 0 3px rgb(34 211 238 / 25%);
-	--gradient-primary: linear-gradient(180deg, var(--cyan), color-mix(in oklab, var(--cyan), #000 10%));
+	--gradient-primary: linear-gradient(
+		180deg,
+		var(--cyan),
+		color-mix(in oklab, var(--cyan), #000 10%)
+	);
 	--glow-primary: 0 0 18px rgb(34 211 238 / 32%);
 	--glass-bg: var(--ink);
 	--glass-blur: 0px;
@@ -6166,7 +6170,7 @@ button.status-badge:hover {
 	text-transform: uppercase;
 	color: var(--ink-700);
 }
-.side-rail-tab-panel .panel-title:first-child {
+.side-rail-tab-panel > .panel > .panel-title:first-child {
 	/* Tab label above already states the section — keep the title as a
 	   secondary signpost rather than a duplicate heading. */
 	display: none;
@@ -6408,8 +6412,13 @@ button.status-badge:hover {
 	animation: pulse-live 1.6s ease-in-out infinite;
 }
 @keyframes pulse-live {
-	0%, 100% { opacity: 1; }
-	50% { opacity: 0.3; }
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.3;
+	}
 }
 
 /* ── Status bar — instrument footer ── */
@@ -6547,9 +6556,7 @@ button.status-badge:hover {
 
 /* ── Preview stage — calibration well ── */
 .preview {
-	background:
-		linear-gradient(180deg, rgb(255 255 255 / 1.5%) 0%, transparent 30%),
-		var(--well);
+	background: linear-gradient(180deg, rgb(255 255 255 / 1.5%) 0%, transparent 30%), var(--well);
 	border: 1px solid var(--edge);
 	border-radius: var(--radius-md);
 	overflow: hidden;
@@ -6574,11 +6581,7 @@ button.status-badge:hover {
 }
 .preview-empty {
 	background:
-		radial-gradient(
-			ellipse 60% 40% at 50% 50%,
-			rgb(34 211 238 / 4%) 0%,
-			transparent 70%
-		),
+		radial-gradient(ellipse 60% 40% at 50% 50%, rgb(34 211 238 / 4%) 0%, transparent 70%),
 		linear-gradient(180deg, transparent, rgb(0 0 0 / 30%));
 	gap: 1.1rem;
 	padding: 2.5rem;
@@ -6861,4 +6864,3 @@ input[type='range']::-moz-range-thumb {
 	background: rgb(34 211 238 / 30%);
 	color: var(--ink-100);
 }
-
