@@ -41,19 +41,23 @@ const GCS_ORIGIN = 'https://storage.googleapis.com';
  * (COEP: require-corp) and pins the version. Keep `ORT_RUNTIME_BASE` in sync with
  * the `onnxruntime-web` version in package.json.
  *
- * `ORT_ALLOWED_FILES` pins the exact set the runtime fetches at this version: the
- * `.bundle.` build variants we use embed the emscripten `.mjs` glue inline, so
- * only the `.wasm` binaries are fetched at runtime (`.wasm` for the CPU build,
- * `.jsep.wasm` for the WebGPU + `all` builds). Any other path under the pinned
- * upstream is rejected — defence in depth against the proxy becoming an open
- * jsDelivr-bouncer.
+ * `ORT_ALLOWED_FILES` pins the exact set the runtime may fetch at this version:
+ * the `.mjs` glue modules plus their matching `.wasm` binaries. Any other path
+ * under the pinned upstream is rejected — defence in depth against the proxy
+ * becoming an open jsDelivr-bouncer.
  */
 const ORT_PROXY_PREFIX = '/_ort/';
 const JSDELIVR_ORIGIN = 'https://cdn.jsdelivr.net';
 const ORT_RUNTIME_BASE = '/npm/onnxruntime-web@1.26.0/dist/';
 const ORT_ALLOWED_FILES: ReadonlySet<string> = new Set([
-	'ort-wasm-simd-threaded.wasm',
-	'ort-wasm-simd-threaded.jsep.wasm'
+	'ort-wasm-simd-threaded.asyncify.mjs',
+	'ort-wasm-simd-threaded.asyncify.wasm',
+	'ort-wasm-simd-threaded.jsep.mjs',
+	'ort-wasm-simd-threaded.jsep.wasm',
+	'ort-wasm-simd-threaded.jspi.mjs',
+	'ort-wasm-simd-threaded.jspi.wasm',
+	'ort-wasm-simd-threaded.mjs',
+	'ort-wasm-simd-threaded.wasm'
 ]);
 
 const FORWARDED_RESPONSE_HEADERS = [
@@ -117,6 +121,8 @@ async function proxyModel(
 		if (value) headers.set(name, value);
 	}
 	headers.set('Cross-Origin-Resource-Policy', 'same-origin');
+	headers.set('Cross-Origin-Opener-Policy', 'same-origin');
+	headers.set('Cross-Origin-Embedder-Policy', 'require-corp');
 	if (upstream.ok) {
 		headers.set('Cache-Control', 'public, max-age=31536000, immutable');
 	}

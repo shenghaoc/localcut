@@ -9,11 +9,10 @@
  *    type-checked program — `allowJs` is off) keeps that augmentation out of the
  *    TypeScript program. The typed surface is declared in `litert-loader.d.ts`.
  *
- * 2. It is a **static** import so the whole module bundles into the (classic) ASR
- *    worker. LiteRT's WASM loader uses `importScripts`, which only works in a
- *    classic worker, so the ASR worker is spawned with `{ type: 'classic' }` —
- *    and classic workers cannot use dynamic `import()`. Bundling LiteRT in keeps
- *    every import in that worker static.
+ * 2. It is a **static** import so the whole module bundles into the lazily spawned
+ *    ASR worker and never enters the startup app graph. The typed surface stays
+ *    declared in `litert-loader.d.ts`, and the WASM runtime is still loaded only
+ *    after the user explicitly loads a LiteRT-backed model.
  */
 import * as litert from '@litertjs/core';
 

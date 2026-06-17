@@ -18,8 +18,7 @@
  * Execution provider: **WASM** (CPU tensors). ASR is not frame-coupled, so the
  * hard gate that forbids CPU fallback does not apply; the per-token decoder is
  * latency-bound by graph dispatch, where a GPU EP's per-call sync overhead and
- * patchier Whisper op coverage make WASM the robust default. The renderer's
- * `GPUDevice` is not available in this classic ASR worker anyway. The runtime is
+ * patchier Whisper op coverage make WASM the robust default. The runtime is
  * built only inside the ASR worker on an explicit user load — never on the main
  * thread, never at startup — and reaches `onnxruntime-web` solely through
  * `ort-loader`'s dynamic import.
@@ -132,10 +131,15 @@ class OrtWhisperRuntimeImpl implements OrtWhisperRuntime {
 		for (const [name, tensor] of Object.entries(outputs)) {
 			if (name !== this.io.encoderOutput) tensor.dispose();
 		}
+		let disposed = false;
 		const encoded: OrtEncodedAudio = {
 			frames: this.melFrames,
 			hidden,
-			dispose: () => hidden.dispose()
+			dispose: () => {
+				if (disposed) return;
+				disposed = true;
+				hidden.dispose();
+			}
 		};
 		return encoded;
 	}
@@ -158,6 +162,9 @@ class OrtWhisperRuntimeImpl implements OrtWhisperRuntime {
 		if (!logitsTensor) {
 			for (const tensor of Object.values(outputs)) tensor.dispose();
 			throw new Error(`ONNX decoder produced no "${this.io.decoderLogits}" output`);
+		}
+		for (const [name, tensor] of Object.entries(outputs)) {
+			if (name !== this.io.decoderLogits) tensor.dispose();
 		}
 		try {
 			// logits dims are [1, T, vocab]; the next token is predicted at the last row.

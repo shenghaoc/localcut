@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 const h = vi.hoisted(() => {
 	class FakeTensor {
 		disposed = false;
+		disposeCount = 0;
 		constructor(
 			readonly type: string,
 			readonly data: unknown,
@@ -12,6 +13,7 @@ const h = vi.hoisted(() => {
 		) {}
 		dispose() {
 			this.disposed = true;
+			this.disposeCount += 1;
 		}
 	}
 	interface RunCall {
@@ -21,6 +23,7 @@ const h = vi.hoisted(() => {
 	return {
 		FakeTensor,
 		runCalls: [] as RunCall[],
+		decoderAuxOutputs: [] as Array<InstanceType<typeof FakeTensor>>,
 		sessions: [] as Array<{ released: boolean }>,
 		createSessionArgs: [] as Array<{ manifest: { frameCoupled: boolean; model: { url: string } } }>
 	};
@@ -60,7 +63,13 @@ vi.mock('../ml/ort/ort-session', () => ({
 					for (let r = 0; r < T; r++) {
 						for (let c = 0; c < vocab; c++) data[r * vocab + c] = r * 10 + c;
 					}
-					return { logits: new h.FakeTensor('float32', data, [1, T, vocab]) };
+					const outputs: Record<string, InstanceType<typeof h.FakeTensor>> = {
+						logits: new h.FakeTensor('float32', data, [1, T, vocab])
+					};
+					for (const [index, tensor] of h.decoderAuxOutputs.entries()) {
+						outputs[`present.${index}`] = tensor;
+					}
+					return outputs;
 				},
 				async release() {
 					released.released = true;
@@ -128,6 +137,7 @@ const bytes = () => new Uint8Array([1]);
 
 beforeEach(() => {
 	h.runCalls.length = 0;
+	h.decoderAuxOutputs.length = 0;
 	h.sessions.length = 0;
 	h.createSessionArgs.length = 0;
 });
@@ -169,6 +179,8 @@ describe('createOrtWhisperRuntime', () => {
 
 		encoded.dispose();
 		expect(hidden.disposed).toBe(true);
+		encoded.dispose();
+		expect(hidden.disposeCount).toBe(1);
 		rt.dispose();
 	});
 
@@ -197,6 +209,24 @@ describe('createOrtWhisperRuntime', () => {
 		// The transient input_ids tensor is released after the run.
 		expect(ids.disposed).toBe(true);
 
+		encoded.dispose();
+		rt.dispose();
+	});
+
+	it('disposes auxiliary decoder outputs when ORT returns more than logits', async () => {
+		const rt = await createOrtWhisperRuntime({
+			encoderBytes: bytes(),
+			decoderBytes: bytes(),
+			manifest: manifest()
+		});
+		const encoded = await rt.encode({ data: new Float32Array([1, 2, 3, 4]), nMel: 2, nFrames: 2 });
+		const present = new h.FakeTensor('float32', new Float32Array([1]), [1]);
+		h.decoderAuxOutputs.push(present);
+
+		await rt.decode(Int32Array.from([50258, 7]), encoded);
+
+		expect(present.disposed).toBe(true);
+		expect(present.disposeCount).toBe(1);
 		encoded.dispose();
 		rt.dispose();
 	});
