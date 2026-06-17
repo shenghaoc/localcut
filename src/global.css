@@ -11,57 +11,100 @@
 :root {
 	color-scheme: dark;
 
-	--background: #0c0d18;
-	--foreground: #ecedf5;
-	--card: #151728;
-	--card-foreground: #ecedf5;
-	--popover: #181a30;
-	--popover-foreground: #ecedf5;
+	/* ── Precision-instrument palette ──
+	 * Ink → plate → panel → elevated → border are the surface stops.
+	 * Cyan is the single confident accent (scrubhead, focus, selection).
+	 * Amber/vermillion/sage are signal colours, used only as such.
+	 */
 
-	--primary: #8b6fff;
-	--primary-foreground: #0e0820;
-	--primary-soft: rgb(139 111 255 / 14%);
+	/* Surfaces (darkest → lightest) */
+	--ink: #07070a;
+	--plate: #0d0d12;
+	--panel: #14141b;
+	--elevated: #1b1b24;
+	--well: #0a0a10;
 
-	--secondary: #1c1e35;
-	--secondary-foreground: #a8adc4;
-	--muted: #191b30;
-	--muted-foreground: #8889aa;
+	/* Hairlines and edges */
+	--edge: #232330;
+	--edge-strong: #34344a;
+	--edge-soft: rgb(255 255 255 / 5%);
 
-	--accent: #36d399;
-	--accent-foreground: #041a0f;
-	--accent-soft: rgb(54 211 153 / 14%);
+	/* Type */
+	--ink-100: #f4f6fa;
+	--ink-300: #c7c9d6;
+	--ink-500: #8e90a3;
+	--ink-700: #5a5c70;
+	--ink-900: #3b3d4e;
 
-	--warn: #f4b740;
-	--warn-foreground: #241803;
-	--destructive: #f87171;
-	--destructive-foreground: #1e0805;
-	--destructive-soft: rgb(248 113 113 / 14%);
+	/* Single confident accent */
+	--cyan: #22d3ee;
+	--cyan-soft: rgb(34 211 238 / 14%);
+	--cyan-glow: 0 0 0 1px rgb(34 211 238 / 25%), 0 0 16px rgb(34 211 238 / 25%);
 
-	--border: #262845;
-	--border-strong: #353760;
-	--input: #2a2c4a;
-	--ring: var(--primary);
+	/* Signal colours */
+	--amber: #f5b942;
+	--amber-soft: rgb(245 185 66 / 14%);
+	--vermillion: #ef4f4f;
+	--vermillion-soft: rgb(239 79 79 / 14%);
+	--sage: #6ee7b7;
+	--sage-soft: rgb(110 231 183 / 14%);
 
-	--stage: #050610;
+	/* shadcn token bridge — map to new palette so existing component CSS adopts the
+	   precision-instrument language automatically. Variants kept identical so the
+	   ~5000 existing rules don't need to be touched. */
+	--background: var(--ink);
+	--foreground: var(--ink-100);
+	--card: var(--panel);
+	--card-foreground: var(--ink-100);
+	--popover: var(--elevated);
+	--popover-foreground: var(--ink-100);
+
+	--primary: var(--cyan);
+	--primary-foreground: #04161a;
+	--primary-soft: var(--cyan-soft);
+
+	--secondary: var(--elevated);
+	--secondary-foreground: var(--ink-300);
+	--muted: var(--panel);
+	--muted-foreground: var(--ink-500);
+
+	--accent: var(--sage);
+	--accent-foreground: #001a10;
+	--accent-soft: var(--sage-soft);
+
+	--warn: var(--amber);
+	--warn-foreground: #1a1100;
+	--destructive: var(--vermillion);
+	--destructive-foreground: #1a0405;
+	--destructive-soft: var(--vermillion-soft);
+
+	--border: var(--edge);
+	--border-strong: var(--edge-strong);
+	--input: var(--elevated);
+	--ring: var(--cyan);
+
+	--stage: var(--well);
 	--stage-dot: rgb(255 255 255 / 4%);
-	--scrubhead: var(--primary);
-	--clip-video: var(--primary);
-	--clip-audio: var(--accent);
-	--waveform: #38bdf8;
+	--scrubhead: var(--cyan);
+	--clip-video: var(--cyan);
+	--clip-audio: var(--sage);
+	--waveform: var(--cyan);
 
-	--bg-app: var(--background);
-	--bg-app-top: var(--background);
-	--toolbar-bg: color-mix(in srgb, var(--card) 72%, transparent);
-	--bg-panel: var(--card);
-	--bg-elevated: var(--muted);
-	--bg-control: var(--secondary);
-	--bg-control-hover: color-mix(in oklab, var(--secondary), var(--foreground) 8%);
-	--text: var(--foreground);
-	--text-muted: var(--muted-foreground);
-	--accent-strong: var(--primary);
-	--danger: var(--destructive);
-	--success: var(--accent);
+	--bg-app: var(--ink);
+	--bg-app-top: var(--ink);
+	--toolbar-bg: var(--ink);
+	--bg-panel: var(--panel);
+	--bg-elevated: var(--elevated);
+	--bg-control: var(--elevated);
+	--bg-control-hover: color-mix(in oklab, var(--elevated), var(--ink-100) 8%);
+	--text: var(--ink-100);
+	--text-muted: var(--ink-500);
+	--accent-strong: var(--cyan);
+	--danger: var(--vermillion);
+	--success: var(--sage);
 
+	/* Type — DM Sans for chrome at the smaller end, JetBrains Mono ruthlessly for
+	   technical numerics (timecodes, fps, codecs, sample rates, IDs, percentages). */
 	--font-display:
 		'DM Sans', 'Noto Sans SC', 'Noto Sans JP', system-ui, -apple-system, 'Segoe UI', sans-serif;
 	--font-ui:
@@ -70,44 +113,40 @@
 		'JetBrains Mono', 'Noto Sans SC', 'Noto Sans JP', ui-monospace, 'SF Mono', monospace;
 	--font-mono: var(--font-mono-stack);
 
-	--text-2xs: 0.625rem;
-	--text-xs: 0.74rem;
-	--text-sm: 0.8125rem;
-	--text-base: 0.9375rem;
-	--text-md: 1.0625rem;
-	--text-lg: 1.375rem;
-	--text-xl: 2rem;
+	--text-2xs: 10.5px;
+	--text-xs: 11.5px;
+	--text-sm: 12.5px;
+	--text-base: 13.5px;
+	--text-md: 16px;
+	--text-lg: 20px;
+	--text-xl: 28px;
 
-	--tracking-eyebrow: 0.04em;
-	--tracking-wide: 0.06em;
-	--tracking-display: -0.02em;
+	--tracking-eyebrow: 0.12em;
+	--tracking-wide: 0.08em;
+	--tracking-display: -0.018em;
 
-	--radius-xs: 4px;
-	--radius-sm: 6px;
-	--radius-md: 10px;
-	--radius-lg: 14px;
+	--radius-xs: 2px;
+	--radius-sm: 3px;
+	--radius-md: 4px;
+	--radius-lg: 6px;
 	--radius-pill: 999px;
 
-	--shadow-sm: 0 1px 3px rgb(0 0 0 / 22%), 0 1px 2px rgb(0 0 0 / 18%);
-	--shadow-md: 0 4px 12px rgb(0 0 0 / 28%), 0 12px 28px -8px rgb(0 0 0 / 42%);
-	--shadow-lg: 0 8px 24px rgb(0 0 0 / 34%), 0 24px 48px -12px rgb(0 0 0 / 52%);
-	--shadow-primary: 0 2px 8px rgb(139 111 255 / 24%), 0 16px 36px -12px rgb(139 111 255 / 46%);
-	--focus-ring: 0 0 0 3px color-mix(in oklab, var(--ring) 28%, transparent);
-	--gradient-primary: linear-gradient(
-		135deg,
-		var(--primary),
-		color-mix(in oklab, var(--primary) 70%, #c084fc)
-	);
-	--glow-primary: 0 0 24px color-mix(in srgb, var(--primary) 28%, transparent);
-	--glass-bg: color-mix(in srgb, var(--card) 72%, transparent);
-	--glass-blur: 16px;
-	--glass-border: color-mix(in srgb, var(--border) 55%, transparent);
+	--shadow-sm: 0 1px 2px rgb(0 0 0 / 45%);
+	--shadow-md: 0 6px 18px -4px rgb(0 0 0 / 55%), 0 2px 6px rgb(0 0 0 / 35%);
+	--shadow-lg: 0 16px 40px -12px rgb(0 0 0 / 70%), 0 4px 12px rgb(0 0 0 / 40%);
+	--shadow-primary: 0 0 0 1px var(--cyan), var(--cyan-glow);
+	--focus-ring: 0 0 0 1px var(--cyan), 0 0 0 3px rgb(34 211 238 / 25%);
+	--gradient-primary: linear-gradient(180deg, var(--cyan), color-mix(in oklab, var(--cyan), #000 10%));
+	--glow-primary: 0 0 18px rgb(34 211 238 / 32%);
+	--glass-bg: var(--ink);
+	--glass-blur: 0px;
+	--glass-border: var(--edge);
 
-	--toolbar-h: 88px;
-	--status-h: 32px;
-	--timeline-h: 214px;
-	--control-h: 34px;
-	--icon-btn-w: 36px;
+	--toolbar-h: 56px;
+	--status-h: 28px;
+	--timeline-h: 234px;
+	--control-h: 28px;
+	--icon-btn-w: 28px;
 }
 
 /**
@@ -168,23 +207,11 @@ body,
 body {
 	font-family: var(--font-ui);
 	font-size: var(--text-base);
-	/* Restore the pre-Tailwind default; preflight sets 1.5, which can shift the
-     dense timeline layout. Component-level `leading-*` utilities still override. */
-	line-height: normal;
+	font-feature-settings: 'ss01', 'cv11';
+	line-height: 1.35;
 	color: var(--text);
-	background-color: var(--background);
-	background-image:
-		radial-gradient(
-			1100px 500px at 100% -10%,
-			color-mix(in srgb, var(--primary) 8%, transparent),
-			transparent 55%
-		),
-		radial-gradient(
-			900px 420px at -10% 0%,
-			color-mix(in srgb, var(--waveform) 6%, transparent),
-			transparent 52%
-		);
-	background-attachment: fixed;
+	background-color: var(--ink);
+	background-image: none;
 	-webkit-font-smoothing: antialiased;
 	text-rendering: optimizeLegibility;
 }
@@ -6081,3 +6108,751 @@ button.status-badge:hover {
 	transform-origin: left;
 	will-change: transform;
 }
+/* =============================================================
+   Precision-instrument redesign
+   Last-loaded section. Re-shapes the visible chrome (toolbar,
+   side rail, status bar, brand, workspace dock, preview empty
+   state) on top of the existing rules. Tokens above carry the
+   palette/typography to every other component automatically.
+   ============================================================= */
+
+/* ── Workspace grid: explicit left dock holds the library + beat panel ── */
+.workspace {
+	gap: 6px;
+	padding: 6px;
+}
+.workspace.has-bin {
+	grid-template-columns: 236px minmax(0, 1fr) 304px;
+}
+.workspace.has-bin.rail-collapsed {
+	grid-template-columns: 236px minmax(0, 1fr) 28px;
+}
+.dock-left {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	min-width: 0;
+	min-height: 0;
+	overflow: hidden;
+}
+.dock-left > .media-bin {
+	flex: 1 1 auto;
+	min-height: 140px;
+}
+.dock-left > .beat-panel {
+	flex: 0 0 auto;
+	max-height: 36vh;
+	overflow-y: auto;
+}
+
+/* ── Panel chrome — flat, hairline, no glass blur ── */
+.panel {
+	background: var(--panel);
+	border: 1px solid var(--edge);
+	border-radius: var(--radius-md);
+	box-shadow: none;
+}
+.panel-title {
+	margin: 0 0 0.65rem;
+	font-size: 9.5px;
+	font-weight: 700;
+	letter-spacing: var(--tracking-eyebrow);
+	text-transform: uppercase;
+	color: var(--ink-700);
+}
+.side-rail-tab-panel .panel-title:first-child {
+	/* Tab label above already states the section — keep the title as a
+	   secondary signpost rather than a duplicate heading. */
+	display: none;
+}
+
+/* ── Toolbar — instrument header strip ── */
+.toolbar {
+	display: grid;
+	grid-template-rows: var(--toolbar-h) 26px;
+	gap: 0;
+	min-height: calc(var(--toolbar-h) + 26px);
+	padding: 0;
+	border-bottom: 1px solid var(--edge);
+	background: var(--ink);
+	backdrop-filter: none;
+	-webkit-backdrop-filter: none;
+}
+.toolbar-main {
+	grid-template-columns: auto 1fr auto;
+	gap: 14px;
+	padding: 0 14px;
+	height: var(--toolbar-h);
+}
+.toolbar-left,
+.toolbar-center,
+.toolbar-right {
+	gap: 8px;
+}
+.toolbar-right {
+	gap: 6px;
+}
+
+/* Brand mark — replace the gradient glyph with a hairline reticle */
+.app-brand {
+	gap: 10px;
+	padding-right: 14px;
+	margin-right: 4px;
+	border-right: 1px solid var(--edge);
+	height: 36px;
+}
+.app-glyph {
+	width: 28px;
+	height: 28px;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+	color: var(--cyan);
+	position: relative;
+}
+.app-glyph::after {
+	content: none;
+}
+.app-glyph::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'><g fill='none' stroke='%2322d3ee' stroke-width='1.25'><circle cx='14' cy='14' r='9'/><circle cx='14' cy='14' r='2.2' fill='%2322d3ee'/><path d='M14 1v6M14 21v6M1 14h6M21 14h6'/></g></svg>");
+	background-repeat: no-repeat;
+	background-position: center;
+	background-size: contain;
+}
+.app-brand-copy {
+	gap: 1px;
+}
+.app-title {
+	font-family: var(--font-mono);
+	font-size: 12px;
+	font-weight: 700;
+	letter-spacing: 0.02em;
+	text-transform: uppercase;
+	color: var(--ink-100);
+}
+.app-kicker {
+	font-family: var(--font-mono);
+	font-size: 9.5px;
+	font-weight: 500;
+	letter-spacing: 0.18em;
+	color: var(--ink-700);
+	text-transform: uppercase;
+}
+
+/* File name — monospaced source readout */
+.file-name {
+	height: 28px;
+	min-height: 28px;
+	padding: 0 10px;
+	border-radius: var(--radius-sm);
+	border: 1px solid var(--edge);
+	background: var(--well);
+	color: var(--ink-300);
+	font-family: var(--font-mono);
+	font-size: 11.5px;
+	letter-spacing: 0.01em;
+	max-width: min(36vw, 520px);
+}
+.file-name::before {
+	content: '◉';
+	margin-right: 8px;
+	color: var(--ink-700);
+	font-size: 9px;
+	transform: translateY(-1px);
+	display: inline-block;
+}
+
+/* Transport / edit clusters — paired, hairline */
+.transport-controls,
+.edit-controls,
+.master-mix {
+	padding: 2px;
+	border: 1px solid var(--edge);
+	border-radius: var(--radius-sm);
+	background: var(--plate);
+	height: 30px;
+}
+.master-mix {
+	height: 30px;
+	padding: 0 8px 0 6px;
+	gap: 8px;
+}
+.master-fader {
+	grid-template-columns: auto 80px auto;
+	gap: 6px;
+}
+.master-fader-label {
+	font-family: var(--font-mono);
+	font-size: 9.5px;
+	letter-spacing: 0.14em;
+	color: var(--ink-700);
+	text-transform: uppercase;
+}
+.master-fader-value {
+	font-family: var(--font-mono);
+	font-size: 11px;
+	letter-spacing: 0.02em;
+	color: var(--ink-300);
+}
+.master-fader-input {
+	width: 80px;
+	accent-color: var(--cyan);
+	height: 14px;
+}
+.transport-play {
+	min-width: 56px;
+}
+
+/* ── Pipeline strip — status row, NOT an action menu ──
+   Restyles the existing `.pipeline-strip` chrome. The action buttons
+   inside it (Capabilities, Audio Cleanup, etc.) are visually demoted to
+   small monospaced text buttons so the row reads as a single
+   monitor-style strip. Toolbar.tsx wraps them in groups below. */
+.pipeline-strip {
+	gap: 0;
+	padding: 0 14px;
+	height: 26px;
+	border-top: 1px solid var(--edge);
+	background: var(--plate);
+	overflow-x: auto;
+	scrollbar-width: none;
+}
+.pipeline-strip::-webkit-scrollbar {
+	display: none;
+}
+.pipeline-chip {
+	gap: 6px;
+	height: 26px;
+	min-height: 26px;
+	padding: 0 10px;
+	border: none;
+	border-right: 1px solid var(--edge);
+	border-radius: 0;
+	background: transparent;
+	color: var(--ink-500);
+	font-family: var(--font-mono);
+	font-size: 10px;
+	font-weight: 600;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+}
+.pipeline-chip:first-child {
+	padding-left: 0;
+}
+.pipeline-chip svg {
+	opacity: 0.62;
+}
+.pipeline-chip.is-ok {
+	color: var(--sage);
+	background: transparent;
+	border-right-color: var(--edge);
+}
+.pipeline-chip.is-ok svg {
+	opacity: 1;
+}
+.pipeline-chip.is-waiting {
+	color: var(--amber);
+	background: transparent;
+	border-right-color: var(--edge);
+}
+.pipeline-chip.is-warn {
+	color: var(--vermillion);
+	background: transparent;
+	border-right-color: var(--edge);
+}
+.pipeline-chip-button:hover {
+	background: rgb(255 255 255 / 4%);
+	color: var(--ink-100);
+}
+/* Visual separator between status chips and action buttons in the strip */
+.pipeline-tools-divider {
+	flex: 1;
+	min-width: 14px;
+}
+.pipeline-chip.is-tool {
+	font-family: var(--font-ui);
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: none;
+	color: var(--ink-300);
+}
+.pipeline-chip.is-tool svg {
+	opacity: 0.55;
+}
+.pipeline-chip.is-tool:hover {
+	color: var(--cyan);
+	background: rgb(34 211 238 / 6%);
+}
+.pipeline-chip.is-tool:hover svg {
+	opacity: 1;
+	color: var(--cyan);
+}
+.pipeline-chip.is-tool.is-ok {
+	color: var(--vermillion);
+	background: rgb(239 79 79 / 8%);
+}
+.pipeline-chip.is-tool.is-ok::before {
+	content: '●';
+	margin-right: 4px;
+	font-size: 8px;
+	animation: pulse-live 1.6s ease-in-out infinite;
+}
+@keyframes pulse-live {
+	0%, 100% { opacity: 1; }
+	50% { opacity: 0.3; }
+}
+
+/* ── Status bar — instrument footer ── */
+.status-bar {
+	display: flex;
+	align-items: center;
+	gap: 0;
+	height: var(--status-h);
+	padding: 0 14px;
+	border-top: 1px solid var(--edge);
+	background: var(--plate);
+	color: var(--ink-500);
+	font-family: var(--font-mono);
+	font-size: 10.5px;
+	letter-spacing: 0.06em;
+}
+.status-bar > [role='status'] {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	letter-spacing: 0.02em;
+	text-transform: none;
+	color: var(--ink-300);
+	font-family: var(--font-ui);
+	font-size: 11.5px;
+}
+.status-meta {
+	display: flex;
+	align-items: center;
+	gap: 0;
+	height: 100%;
+}
+.status-badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	height: 100%;
+	padding: 0 12px;
+	border: none;
+	border-left: 1px solid var(--edge);
+	border-radius: 0;
+	background: transparent;
+	color: var(--ink-500);
+	font-family: var(--font-mono);
+	font-size: 10px;
+	font-weight: 600;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	cursor: pointer;
+}
+.status-badge:hover {
+	background: rgb(255 255 255 / 4%);
+	color: var(--ink-100);
+}
+.status-badge.status-warn {
+	color: var(--amber);
+}
+.status-ok {
+	display: inline-flex;
+	align-items: center;
+	height: 100%;
+	padding: 0 12px;
+	border-left: 1px solid var(--edge);
+	color: var(--sage);
+	font-family: var(--font-mono);
+	font-size: 10px;
+	font-weight: 600;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+}
+.status-ok::before {
+	content: '●';
+	margin-right: 6px;
+	font-size: 7px;
+}
+
+/* ── Side rail — proper tab card on the right ── */
+.side-rail {
+	gap: 0;
+}
+.side-rail-tabs {
+	border: 1px solid var(--edge);
+	border-radius: var(--radius-md);
+	background: var(--panel);
+}
+.side-rail-tab-bar {
+	background: var(--plate);
+	border-bottom: 1px solid var(--edge);
+	gap: 0;
+	height: 32px;
+}
+.side-rail-tab {
+	flex: 1 1 0;
+	min-width: 0;
+	padding: 0 2px;
+	height: 32px;
+	border-bottom: 1px solid transparent;
+	color: var(--ink-500);
+	font-family: var(--font-mono);
+	font-size: 9px;
+	font-weight: 700;
+	letter-spacing: 0.02em;
+	text-transform: uppercase;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.side-rail-tab:hover {
+	color: var(--ink-100);
+	background: rgb(255 255 255 / 3%);
+}
+.side-rail-tab.active {
+	color: var(--cyan);
+	background: var(--panel);
+	border-bottom: 1px solid var(--cyan);
+}
+.side-rail-collapse,
+.side-rail-expand {
+	color: var(--ink-500);
+	background: var(--plate);
+	border: none;
+	border-radius: var(--radius-md);
+	font-family: var(--font-mono);
+}
+.side-rail-collapse {
+	width: 28px;
+	border-radius: 0;
+	border-left: 1px solid var(--edge);
+}
+.side-rail-expand {
+	border: 1px solid var(--edge);
+}
+
+/* ── Preview stage — calibration well ── */
+.preview {
+	background:
+		linear-gradient(180deg, rgb(255 255 255 / 1.5%) 0%, transparent 30%),
+		var(--well);
+	border: 1px solid var(--edge);
+	border-radius: var(--radius-md);
+	overflow: hidden;
+}
+.preview::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	background-image:
+		linear-gradient(rgb(255 255 255 / 2%) 1px, transparent 1px),
+		linear-gradient(90deg, rgb(255 255 255 / 2%) 1px, transparent 1px);
+	background-size: 32px 32px;
+	background-position: -1px -1px;
+	pointer-events: none;
+}
+.preview-canvas {
+	border: 1px solid var(--edge);
+	border-radius: 0;
+	box-shadow:
+		0 0 0 1px rgb(34 211 238 / 6%),
+		0 30px 60px -20px rgb(0 0 0 / 85%);
+}
+.preview-empty {
+	background:
+		radial-gradient(
+			ellipse 60% 40% at 50% 50%,
+			rgb(34 211 238 / 4%) 0%,
+			transparent 70%
+		),
+		linear-gradient(180deg, transparent, rgb(0 0 0 / 30%));
+	gap: 1.1rem;
+	padding: 2.5rem;
+	text-align: center;
+}
+.preview-empty::before,
+.preview-empty::after {
+	content: '';
+	position: absolute;
+	width: 22px;
+	height: 22px;
+	border: 1px solid var(--cyan);
+	opacity: 0.55;
+	pointer-events: none;
+}
+.preview-empty::before {
+	top: 12px;
+	left: 12px;
+	border-right: none;
+	border-bottom: none;
+}
+.preview-empty::after {
+	bottom: 12px;
+	right: 12px;
+	border-left: none;
+	border-top: none;
+}
+.preview-empty-eyebrow {
+	margin: 0 0 0.6rem;
+	font-family: var(--font-mono);
+	font-size: 10px;
+	font-weight: 700;
+	letter-spacing: 0.32em;
+	color: var(--cyan);
+	text-transform: uppercase;
+	opacity: 0.7;
+}
+.preview-empty-title {
+	font-family: var(--font-mono);
+	font-size: 22px;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--ink-100);
+}
+.preview-empty-copy {
+	margin: 0.25rem 0 0;
+	color: var(--ink-500);
+	font-size: 12.5px;
+	max-width: 32ch;
+}
+.preview-empty .import-picker {
+	margin-top: 0.5rem;
+	min-width: 140px;
+	height: 36px;
+	padding: 0 18px;
+	background: var(--cyan);
+	color: #04161a;
+	border: 1px solid var(--cyan);
+	border-radius: var(--radius-sm);
+	box-shadow: var(--cyan-glow);
+	font-family: var(--font-mono);
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: 0.16em;
+	text-transform: uppercase;
+}
+.preview-empty .import-picker:hover {
+	background: color-mix(in oklab, var(--cyan), #fff 10%);
+}
+
+/* Safe-area / phase39 overlay controls — pull them into the corners cleanly */
+.safe-area-toggle {
+	top: 12px;
+	right: 12px;
+	height: 24px;
+	padding: 0 10px;
+	border-radius: var(--radius-sm);
+	background: rgb(7 7 10 / 75%);
+	border-color: var(--edge);
+	font-family: var(--font-mono);
+	font-size: 9.5px;
+	font-weight: 700;
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+	color: var(--ink-300);
+	backdrop-filter: blur(8px);
+}
+.safe-area-toggle.is-active {
+	color: var(--cyan);
+	border-color: var(--cyan);
+	background: rgb(34 211 238 / 10%);
+	box-shadow: none;
+}
+.phase39-controls {
+	right: 12px;
+	bottom: 12px;
+	gap: 4px;
+	width: auto;
+	max-width: calc(100% - 24px);
+	padding: 4px;
+	background: rgb(7 7 10 / 75%);
+	border: 1px solid var(--edge);
+	border-radius: var(--radius-sm);
+	backdrop-filter: blur(8px);
+}
+.phase39-controls fieldset > button {
+	height: 22px;
+	padding: 0 8px;
+	font-family: var(--font-mono);
+	font-size: 9.5px;
+	font-weight: 700;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+}
+
+/* ── Restore + source-health banners — instrument warning strip ── */
+.restore-banner,
+.source-health-banner {
+	background: var(--plate);
+	border-bottom: 1px solid var(--edge);
+	min-height: 36px;
+	padding: 6px 14px;
+}
+.restore-banner {
+	border-left: 2px solid var(--amber);
+}
+.source-health-banner {
+	border-left: 2px solid var(--amber);
+}
+.restore-banner-title {
+	font-family: var(--font-mono);
+	font-size: 10.5px;
+	font-weight: 700;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+	color: var(--ink-100);
+}
+.restore-banner-detail {
+	color: var(--ink-500);
+	font-size: 11px;
+}
+
+/* ── Media bin ── */
+.media-bin.panel {
+	padding: 10px;
+}
+.media-bin-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 8px;
+	padding-bottom: 8px;
+	border-bottom: 1px solid var(--edge);
+}
+.media-bin-title {
+	font-family: var(--font-mono);
+	font-size: 10px;
+	font-weight: 700;
+	letter-spacing: 0.16em;
+	color: var(--ink-100);
+	text-transform: uppercase;
+}
+.media-bin-count {
+	font-family: var(--font-mono);
+	font-size: 10px;
+	color: var(--ink-700);
+}
+.media-bin-empty {
+	color: var(--ink-500);
+	font-size: 11.5px;
+	line-height: 1.5;
+}
+
+/* ── Beat panel sits in the dock ── */
+.beat-panel {
+	background: var(--panel);
+	border: 1px solid var(--edge);
+	border-radius: var(--radius-md);
+	padding: 10px;
+}
+.beat-panel h2,
+.beat-panel h3 {
+	font-family: var(--font-mono);
+	font-size: 10px;
+	font-weight: 700;
+	letter-spacing: 0.16em;
+	text-transform: uppercase;
+	color: var(--ink-100);
+	margin: 0 0 6px;
+}
+
+/* ── Buttons inherit instrument vibe ── */
+.button,
+.transport-controls button,
+.edit-controls button {
+	border-radius: var(--radius-sm);
+	font-family: var(--font-ui);
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+}
+
+/* ── Tighter focus ring (cyan, hairline) everywhere ── */
+:where(button, a, input, select, textarea):focus-visible {
+	outline: none;
+	box-shadow: var(--focus-ring);
+}
+
+/* ── Timeline header — frame-accurate timecode hierarchy ── */
+.timeline {
+	margin: 0 6px 6px;
+	padding: 10px 12px;
+}
+.timeline-header {
+	font-family: var(--font-mono);
+	font-size: 14px;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+}
+.timeline-header .cur {
+	color: var(--cyan);
+}
+
+/* ── Range input universal styling — thin track, cyan thumb ── */
+input[type='range'] {
+	-webkit-appearance: none;
+	appearance: none;
+	background: transparent;
+	height: 14px;
+}
+input[type='range']::-webkit-slider-runnable-track {
+	height: 2px;
+	background: var(--edge);
+	border-radius: 1px;
+}
+input[type='range']::-webkit-slider-thumb {
+	-webkit-appearance: none;
+	width: 12px;
+	height: 12px;
+	margin-top: -5px;
+	border-radius: 50%;
+	background: var(--cyan);
+	box-shadow: 0 0 0 3px rgb(34 211 238 / 18%);
+	cursor: pointer;
+}
+input[type='range']::-moz-range-track {
+	height: 2px;
+	background: var(--edge);
+	border-radius: 1px;
+}
+input[type='range']::-moz-range-thumb {
+	width: 10px;
+	height: 10px;
+	border: none;
+	border-radius: 50%;
+	background: var(--cyan);
+	box-shadow: 0 0 0 3px rgb(34 211 238 / 18%);
+	cursor: pointer;
+}
+
+/* ── Scrollbar — narrow, ink ── */
+*::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+*::-webkit-scrollbar-track {
+	background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+	background: var(--edge);
+	border-radius: 4px;
+}
+*::-webkit-scrollbar-thumb:hover {
+	background: var(--edge-strong);
+}
+
+/* ── Selection ── */
+::selection {
+	background: rgb(34 211 238 / 30%);
+	color: var(--ink-100);
+}
+

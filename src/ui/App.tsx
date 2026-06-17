@@ -4153,6 +4153,7 @@ export function App() {
 						class={`workspace${previewSurfaceAvailable() ? ' has-bin' : ''}${sideRailCollapsed() ? ' rail-collapsed' : ''}`}
 					>
 						<Show when={previewSurfaceAvailable()}>
+							<aside class="dock-left" aria-label="Library">
 							<MediaBin
 								assets={assets}
 								unresolvedIds={unresolvedIds}
@@ -4215,6 +4216,7 @@ export function App() {
 								}}
 								selectedClipCount={() => selectedClipRefs().length}
 							/>
+							</aside>
 						</Show>
 						<section
 							class="preview panel"

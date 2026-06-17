@@ -92,8 +92,8 @@ export function Toolbar(props: ToolbarProps) {
 					<div class="app-brand">
 						<span class="app-glyph" aria-hidden="true" />
 						<div class="app-brand-copy">
-							<h1 class="app-title">Browser Editor</h1>
-							<span class="app-kicker">Browser-native NLE</span>
+							<h1 class="app-title">LocalCut</h1>
+							<span class="app-kicker">0.1 · Browser NLE</span>
 						</div>
 					</div>
 					<Button
@@ -221,114 +221,115 @@ export function Toolbar(props: ToolbarProps) {
 						props.pipelineMode === 'blocked' && 'is-warn'
 					)}
 				>
-					<Gauge size={13} aria-hidden="true" />
+					<Gauge size={11} aria-hidden="true" />
 					{props.pipelineLabel}
 				</span>
 				<span class="pipeline-chip">
-					<Cpu size={13} aria-hidden="true" />
-					Client compute
+					<Cpu size={11} aria-hidden="true" />
+					Client
 				</span>
 				<span class={cn('pipeline-chip', props.crossOriginIsolated ? 'is-ok' : 'is-warn')}>
-					<ShieldCheck size={13} aria-hidden="true" />
-					{props.crossOriginIsolated ? 'COOP/COEP OK' : 'COOP/COEP needed'}
+					<ShieldCheck size={11} aria-hidden="true" />
+					{props.crossOriginIsolated ? 'COOP/COEP' : 'NO ISOLATE'}
 				</span>
 				<Show when={props.previewLabel !== null}>
 					<span class="pipeline-chip">
-						<Activity size={13} aria-hidden="true" />
-						Preview {props.previewLabel}
+						<Activity size={11} aria-hidden="true" />
+						PV {props.previewLabel}
 					</span>
 				</Show>
 				<Show when={props.encodeFps !== null}>
 					<span class="pipeline-chip">
-						<Gauge size={13} aria-hidden="true" />
-						Encode {Math.round(props.encodeFps ?? 0)} fps
+						<Gauge size={11} aria-hidden="true" />
+						{Math.round(props.encodeFps ?? 0)} fps
 					</span>
 				</Show>
+				<span class="pipeline-tools-divider" aria-hidden="true" />
 				<button
 					type="button"
-					class="pipeline-chip pipeline-chip-button"
-					onClick={() => props.onOpenCapabilities?.()}
-					title="View browser capabilities and recovery steps"
+					class={cn('pipeline-chip pipeline-chip-button is-tool', props.publishLive && 'is-ok')}
+					onClick={() => props.onOpenPublish?.()}
+					title="Stream the program output to a WHIP endpoint"
 				>
-					<Info size={13} aria-hidden="true" />
-					Capabilities
+					<Radio size={11} aria-hidden="true" />
+					{props.publishLive ? 'Live' : 'Go Live'}
 				</button>
 				<button
 					type="button"
-					class="pipeline-chip pipeline-chip-button"
+					class="pipeline-chip pipeline-chip-button is-tool"
 					onClick={() => props.onOpenAudioCleanup?.()}
 					title="Local Audio Cleanup (Experimental) — on-device noise suppression"
 				>
-					<AudioWaveform size={13} aria-hidden="true" />
-					Audio Cleanup
+					<AudioWaveform size={11} aria-hidden="true" />
+					Cleanup
 				</button>
 				<button
 					type="button"
-					class="pipeline-chip pipeline-chip-button"
+					class="pipeline-chip pipeline-chip-button is-tool"
 					onClick={() => props.onOpenAutoCaptions?.()}
 					title="Auto Captions (Experimental) — on-device speech recognition"
 				>
-					<Languages size={13} aria-hidden="true" />
-					Auto Captions
+					<Languages size={11} aria-hidden="true" />
+					Captions
 				</button>
 				<Show when={props.onOpenLanguageTools}>
 					<button
 						type="button"
-						class="pipeline-chip pipeline-chip-button"
+						class="pipeline-chip pipeline-chip-button is-tool"
 						onClick={() => props.onOpenLanguageTools?.()}
 						title="Language Tools — translate captions and draft copy on-device"
 					>
-						<Globe size={13} aria-hidden="true" />
-						Language Tools
+						<Globe size={11} aria-hidden="true" />
+						Translate
 					</button>
 				</Show>
 				<button
 					type="button"
-					class="pipeline-chip pipeline-chip-button"
+					class="pipeline-chip pipeline-chip-button is-tool"
 					onClick={() => props.onOpenSmartReframe?.()}
 					title="Smart Reframe (Experimental) — auto crop-path between aspect ratios"
 				>
-					<Crop size={13} aria-hidden="true" />
-					Smart Reframe
+					<Crop size={11} aria-hidden="true" />
+					Reframe
 				</button>
 				<button
 					type="button"
-					class="pipeline-chip pipeline-chip-button"
+					class="pipeline-chip pipeline-chip-button is-tool"
 					onClick={() => props.onOpenSilenceReview?.()}
 					title="Silence Review — propose ripple-delete cuts at detected dead air"
 				>
-					<VolumeX size={13} aria-hidden="true" />
-					Silence Review
+					<VolumeX size={11} aria-hidden="true" />
+					Silence
 				</button>
 				{props.calloutTool}
 				<Show when={props.keystrokeOverlayAvailable}>
 					<button
 						type="button"
-						class="pipeline-chip pipeline-chip-button"
+						class="pipeline-chip pipeline-chip-button is-tool"
 						onClick={() => props.onImportKeystrokeOverlay?.()}
 						title="Import recorded shortcuts from the active capture session as a keystroke overlay track"
 					>
-						<Keyboard size={13} aria-hidden="true" />
-						Keystroke Overlay
+						<Keyboard size={11} aria-hidden="true" />
+						Keys
 					</button>
 				</Show>
 				<button
 					type="button"
-					class="pipeline-chip pipeline-chip-button"
-					onClick={() => props.onOpenHelp?.()}
-					title="Open help and user guide"
+					class="pipeline-chip pipeline-chip-button is-tool"
+					onClick={() => props.onOpenCapabilities?.()}
+					title="View browser capabilities and recovery steps"
 				>
-					<CircleQuestionMark size={13} aria-hidden="true" />
-					Help
+					<Info size={11} aria-hidden="true" />
+					Capabilities
 				</button>
 				<button
 					type="button"
-					class={cn('pipeline-chip pipeline-chip-button', props.publishLive && 'is-ok')}
-					onClick={() => props.onOpenPublish?.()}
-					title="Stream the program output to a WHIP endpoint"
+					class="pipeline-chip pipeline-chip-button is-tool"
+					onClick={() => props.onOpenHelp?.()}
+					title="Open help and user guide"
 				>
-					<Radio size={13} aria-hidden="true" />
-					{props.publishLive ? 'Live' : 'Go Live'}
+					<CircleQuestionMark size={11} aria-hidden="true" />
+					Help
 				</button>
 			</div>
 		</header>
