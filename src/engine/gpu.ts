@@ -80,6 +80,8 @@ const TRANSITION_KIND_MAP: Record<string, number> = {
 	slide: 3
 };
 const TRANSITION_DIR_MAP: Record<string, number> = { left: 0, right: 1, up: 2, down: 3 };
+const DEFAULT_SCOPE_FRAME_INTERVAL = 6;
+const COMPOSITOR_WORKING_FORMAT: GPUTextureFormat = 'rgba16float';
 
 export interface DeviceLostInfo {
 	readonly reason: GPUDeviceLostReason;
@@ -417,6 +419,8 @@ export class PreviewRenderer {
 	// Phase 21: scopes SAB reference (set by worker for scope output).
 	private scopeSab: Float32Array | null = null;
 	private scopesEnabled = false;
+	private scopeForceNextFrame = false;
+	private scopeFrameModulo = 0;
 	// Phase 21: scope compute pipelines + atomic storage buffers + staging pool.
 	private readonly scopesPipeline: GPUComputePipeline;
 	private readonly vectorscopePipeline: GPUComputePipeline;
@@ -445,6 +449,18 @@ export class PreviewRenderer {
 	private lastPresentView: GPUTextureView | null = null;
 	/** Phase 21: pre-output-conversion accumulator for zebra overlay + scopes. */
 	private _lastAccView: GPUTextureView | null = null;
+	/** Phase 21: matching texture for `_lastAccView`, so the scope pass can
+	 *  copyTextureToTexture into a dedicated sampled-only source. */
+	private _lastAccTex: GPUTexture | null = null;
+	/** Phase 21: dedicated COPY_DST | TEXTURE_BINDING texture the scope pass
+	 *  samples from. Decouples the scope read from the accumulator's storage
+	 *  write inside the same encoder — some implementations don't transition
+	 *  cleanly between `texture_storage_2d<write>` and `texture_2d<f32>`
+	 *  bindings on the same texture, which surfaces as all-zero scope output.
+	 *  Uses the float compositor format so clipping detection sees values before
+	 *  final output conversion clamps to rgba8unorm. */
+	private scopeSrcTex: GPUTexture | null = null;
+	private scopeSrcView: GPUTextureView | null = null;
 	/** Per-layer transform uniform buffers (grown on demand; one submission, many layers). */
 	private readonly transformBuffers: GPUBuffer[] = [];
 	private width = 0;
@@ -588,7 +604,10 @@ export class PreviewRenderer {
 		});
 
 		// Phase 21: scope pipelines. The WGSL is f32-only (atomic<u32> accumulators)
-		// so there is no f16 variant — `useF16` does not gate these.
+		// so there is no f16 variant — `useF16` does not gate these. Compilation
+		// errors here are surfaced via the device-level `uncapturederror` listener
+		// set up in `initGpu`; a silent invalid pipeline produced all-zero scope
+		// readbacks before that listener existed.
 		this.scopesPipeline = createComputePipeline(device, scopesSource, 'scopes');
 		this.vectorscopePipeline = createComputePipeline(device, vectorscopeSource, 'vectorscope');
 		this.scopesGroupLayout = this.scopesPipeline.getBindGroupLayout(0);
@@ -662,7 +681,15 @@ export class PreviewRenderer {
 	 * this is a no-op, so no scope pass can ever run by default.
 	 */
 	setScopesEnabled(enabled: boolean): void {
-		this.scopesEnabled = enabled && SCOPES_FEATURE_ENABLED;
+		const next = enabled && SCOPES_FEATURE_ENABLED;
+		if (next && !this.scopesEnabled) {
+			this.scopeForceNextFrame = true;
+			this.scopeFrameModulo = 0;
+		} else if (!next) {
+			this.scopeForceNextFrame = false;
+			this.scopeFrameModulo = 0;
+		}
+		this.scopesEnabled = next;
 	}
 
 	/** Whether scope dispatch will actually run on the next frame (test/diagnostics). */
@@ -698,22 +725,38 @@ export class PreviewRenderer {
 		});
 
 		const usage = GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING;
+		// Phase 21: accumulator also needs COPY_SRC so the scope pass can
+		// copyTextureToTexture into the dedicated scope source texture. The other
+		// scratch textures don't, so widening usage only where required.
+		const accUsage = usage | GPUTextureUsage.COPY_SRC;
 		const size = { width: w, height: h };
 
 		this.destroyTextures();
 
-		this.storageA = this.device.createTexture({ size, format: 'rgba8unorm', usage });
-		this.storageB = this.device.createTexture({ size, format: 'rgba8unorm', usage });
-		this.storageC = this.device.createTexture({ size, format: 'rgba8unorm', usage });
-		this.transformTex = this.device.createTexture({ size, format: 'rgba8unorm', usage });
-		this.transformTexB = this.device.createTexture({ size, format: 'rgba8unorm', usage });
+		this.storageA = this.device.createTexture({ size, format: COMPOSITOR_WORKING_FORMAT, usage });
+		this.storageB = this.device.createTexture({ size, format: COMPOSITOR_WORKING_FORMAT, usage });
+		this.storageC = this.device.createTexture({ size, format: COMPOSITOR_WORKING_FORMAT, usage });
+		this.transformTex = this.device.createTexture({
+			size,
+			format: COMPOSITOR_WORKING_FORMAT,
+			usage
+		});
+		this.transformTexB = this.device.createTexture({
+			size,
+			format: COMPOSITOR_WORKING_FORMAT,
+			usage
+		});
 		// Phase 21: output-conversion scratch
 		this.outConvTex = this.device.createTexture({ size, format: 'rgba8unorm', usage });
 		// Phase 21: opacity scratch (dedicated to avoid aliasing)
-		this.opacityTex = this.device.createTexture({ size, format: 'rgba8unorm', usage });
+		this.opacityTex = this.device.createTexture({
+			size,
+			format: COMPOSITOR_WORKING_FORMAT,
+			usage
+		});
 		this.accTex = [
-			this.device.createTexture({ size, format: 'rgba8unorm', usage }),
-			this.device.createTexture({ size, format: 'rgba8unorm', usage })
+			this.device.createTexture({ size, format: COMPOSITOR_WORKING_FORMAT, usage: accUsage }),
+			this.device.createTexture({ size, format: COMPOSITOR_WORKING_FORMAT, usage: accUsage })
 		];
 		this.storageAView = this.storageA.createView();
 		this.storageBView = this.storageB.createView();
@@ -747,7 +790,7 @@ export class PreviewRenderer {
 		}
 
 		// Phase 21: scope dispatch when enabled (post-composite, pre-present)
-		if (this.scopesEnabled && this._lastAccView && this.scopeSab) {
+		if (this.scopeSab && this._lastAccView && this.shouldDispatchScopes()) {
 			this.dispatchScopes(encoder, this._lastAccView);
 		}
 
@@ -1120,6 +1163,7 @@ export class PreviewRenderer {
 		}
 
 		this._lastAccView = accView[acc];
+		this._lastAccTex = this.accTex![acc] ?? null;
 		return this.encodeOutputConvert(encoder, accView[acc], wgX, wgY);
 	}
 
@@ -1378,7 +1422,7 @@ export class PreviewRenderer {
 
 		// Pass 7: apply — compose with mask and strength
 		{
-			// Destination is one of the chain's rgba8unorm ping-pong storage textures.
+			// Destination is one of the chain's float ping-pong storage textures.
 			const bg = this.device.createBindGroup({
 				layout: this.skinSmoothApplyGroupLayout,
 				entries: [
@@ -1782,8 +1826,14 @@ export class PreviewRenderer {
 		// rather than a crash so the renderer keeps one queue.submit per frame.
 		if (sab.length < scopeTotalBufferFloats(SCOPE_RES_X)) return;
 		if (this.width <= 0 || this.height <= 0) return;
+		// Need the underlying accumulator texture to copy from. If `_lastAccTex`
+		// isn't paired with `_lastAccView`, we'd be sampling stale content.
+		const srcTex = this._lastAccTex;
+		if (!srcTex) return;
+		void accView; // legacy parameter kept for the call site; scope reads from a copy now.
 
 		this.ensureScopeResources();
+		this.ensureScopeSrcTexture();
 
 		const staging = this.scopeStagingFree.pop();
 		// Pool exhausted → skip this frame's scopes. Old frame's SAB data remains
@@ -1795,6 +1845,21 @@ export class PreviewRenderer {
 		const wfBytes = scopeWaveformDataFloats(SCOPE_RES_X) * 4;
 		const paradeBytes = scopeParadeDataFloats(SCOPE_RES_X) * 4;
 		const vecBytes = scopeVectorscopeDataFloats() * 4;
+
+		// Copy the composite accumulator into a dedicated COPY_DST | TEXTURE_BINDING
+		// texture FIRST. The scope compute pass then samples from this copy instead
+		// of the accumulator directly. The accumulator is bound as a write-only
+		// storage texture during compositing in the SAME encoder; binding it again
+		// as `texture_2d<f32>` in the scope pass relies on an implicit storage→
+		// sampled transition that empirically produces all-zero reads on at least
+		// one Chrome/Tint configuration. copyTextureToTexture has its own barrier
+		// semantics and reliably yields the actual pixels.
+		encoder.copyTextureToTexture(
+			{ texture: srcTex },
+			{ texture: this.scopeSrcTex! },
+			{ width: this.width, height: this.height, depthOrArrayLayers: 1 }
+		);
+		const sourceView = this.scopeSrcView!;
 
 		// Reset accumulators BEFORE the dispatch:
 		//   histogram + vectorscope + clip use atomicAdd → zero-init via
@@ -1823,7 +1888,7 @@ export class PreviewRenderer {
 				layout: this.scopesGroupLayout,
 				entries: [
 					{ binding: 0, resource: { buffer: this.scopeUniformBuf! } },
-					{ binding: 1, resource: accView },
+					{ binding: 1, resource: sourceView },
 					{ binding: 2, resource: { buffer: this.scopeHistogramBuf! } },
 					{ binding: 3, resource: { buffer: this.scopeWaveformBuf! } },
 					{ binding: 4, resource: { buffer: this.scopeParadeBuf! } },
@@ -1844,7 +1909,7 @@ export class PreviewRenderer {
 				layout: this.vectorscopeGroupLayout,
 				entries: [
 					{ binding: 0, resource: { buffer: this.scopeVecUniformBuf! } },
-					{ binding: 1, resource: accView },
+					{ binding: 1, resource: sourceView },
 					{ binding: 2, resource: { buffer: this.scopeVecBuf! } }
 				]
 			});
@@ -1869,33 +1934,48 @@ export class PreviewRenderer {
 		off += 4;
 		encoder.copyBufferToBuffer(this.scopeVecBuf!, 0, staging, off, vecBytes);
 
-		// Async readback. mapAsync resolves after the still-pending queue.submit
-		// completes, so the staging contents reflect the GPU writes. Capture the
-		// SAB reference so a destroy()/SAB-swap mid-flight drops the result
-		// instead of writing into a stale view.
+		// Async readback. mapAsync must be called AFTER queue.submit — calling it
+		// while encoder commands referencing the buffer are still pending puts the
+		// buffer into "mapPending" state, and the subsequent submit then rejects
+		// the whole command buffer as invalid (manifested previously as all-zero
+		// scope output). Defer via microtask: present() finishes the encoder and
+		// submits before the microtask drains.
 		const sabRef = sab;
-		void staging
-			.mapAsync(GPUMapMode.READ)
-			.then(() => {
-				try {
-					if (this.scopeSab === sabRef) {
-						const u32 = new Uint32Array(staging.getMappedRange());
-						this.writeScopeFrameToSab(u32);
-					}
-				} finally {
+		queueMicrotask(() => {
+			void staging
+				.mapAsync(GPUMapMode.READ)
+				.then(() => {
 					try {
-						staging.unmap();
-					} catch {
-						// Buffer destroyed during/after destroy(); pool entry is gone too.
+						if (this.scopeSab === sabRef) {
+							const u32 = new Uint32Array(staging.getMappedRange());
+							this.writeScopeFrameToSab(u32);
+						}
+					} finally {
+						try {
+							staging.unmap();
+						} catch {
+							// Buffer destroyed during/after destroy(); pool entry is gone too.
+						}
+						this.scopeStagingFree.push(staging);
 					}
+				})
+				.catch(() => {
+					// Device lost, buffer destroyed, or other mapping failure. Return the
+					// buffer to the pool so subsequent frames keep flowing.
 					this.scopeStagingFree.push(staging);
-				}
-			})
-			.catch(() => {
-				// Device lost, buffer destroyed, or other mapping failure. Return the
-				// buffer to the pool so subsequent frames keep flowing.
-				this.scopeStagingFree.push(staging);
-			});
+				});
+		});
+	}
+
+	private shouldDispatchScopes(): boolean {
+		if (!this.scopesEnabled) return false;
+		if (this.scopeForceNextFrame) {
+			this.scopeForceNextFrame = false;
+			this.scopeFrameModulo = 0;
+			return true;
+		}
+		this.scopeFrameModulo = (this.scopeFrameModulo + 1) % DEFAULT_SCOPE_FRAME_INTERVAL;
+		return this.scopeFrameModulo === 0;
 	}
 
 	/**
@@ -1978,6 +2058,28 @@ export class PreviewRenderer {
 			this.scopeStagingFree.push(buf);
 			this.scopeStagingBuffers.push(buf);
 		}
+	}
+
+	/**
+	 * Phase 21: lazily (re)allocate the scope source texture at the current
+	 * preview size. Reallocated when the preview resizes; otherwise reused.
+	 */
+	private ensureScopeSrcTexture(): void {
+		if (
+			this.scopeSrcTex &&
+			this.scopeSrcTex.width === this.width &&
+			this.scopeSrcTex.height === this.height
+		) {
+			return;
+		}
+		this.scopeSrcTex?.destroy();
+		this.scopeSrcTex = this.device.createTexture({
+			label: 'scope-source',
+			size: { width: this.width, height: this.height },
+			format: COMPOSITOR_WORKING_FORMAT,
+			usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING
+		});
+		this.scopeSrcView = this.scopeSrcTex.createView();
 	}
 
 	/**
@@ -2105,6 +2207,9 @@ export class PreviewRenderer {
 		this.scopeUniformBuf = null;
 		this.scopeVecUniformBuf?.destroy();
 		this.scopeVecUniformBuf = null;
+		this.scopeSrcTex?.destroy();
+		this.scopeSrcTex = null;
+		this.scopeSrcView = null;
 		// Destroy via the master list so in-flight buffers (popped from `free`
 		// but mid-mapAsync) are released too — not just whatever happens to be
 		// idle in `scopeStagingFree` at teardown time.
@@ -2141,6 +2246,11 @@ export class PreviewRenderer {
 		this._zebraUniform?.destroy();
 		this._zebraUniform = null;
 		this.accTex = null;
+		this._lastAccTex = null;
+		this._lastAccView = null;
+		this.scopeSrcTex?.destroy();
+		this.scopeSrcTex = null;
+		this.scopeSrcView = null;
 		this.storageAView = null;
 		this.storageBView = null;
 		this.storageCView = null;
@@ -2217,6 +2327,15 @@ async function initGpuWithOptions(
 		const val = (device.limits as unknown as Record<string, unknown>)[key];
 		if (typeof val === 'number') limits[key] = val;
 	}
+
+	// Surface uncaptured WebGPU errors to the worker console — silent validation
+	// failures otherwise mask scope/preview bugs (the dispatch keeps "running"
+	// but writes nothing into its bound buffers because the whole command buffer
+	// was rejected).
+	device.addEventListener('uncapturederror', (e) => {
+		const detail = e as unknown as { error?: { message?: string } };
+		console.warn('[gpu] uncapturederror:', detail.error?.message ?? e);
+	});
 
 	const deviceLost = device.lost.then((info) => ({
 		reason: info.reason,

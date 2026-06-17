@@ -11,7 +11,7 @@ struct Params {
 
 @group(0) @binding(0) var<uniform> params : Params;
 @group(0) @binding(1) var srcTexture : texture_2d<f32>;
-@group(0) @binding(2) var dstTexture : texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(2) var dstTexture : texture_storage_2d<rgba16float, write>;
 
 const LUMA : vec3<f16> = vec3<f16>(0.2126h, 0.7152h, 0.0722h);
 

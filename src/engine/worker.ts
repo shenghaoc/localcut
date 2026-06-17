@@ -2376,7 +2376,9 @@ async function handleInit(
 			lastGpuUnavailableReason = gpu.unavailableReason;
 		}
 
-		// Phase 21: wire scope SAB to renderer if provided
+		// Phase 21: wire scope SAB. The renderer stays off until the UI sends
+		// 'toggle-scopes' on first ScopePanel expansion — no point burning GPU
+		// time on dispatches whose results no one is reading.
 		if (scopeSab && renderer) {
 			renderer.setScopeSab(scopeSab);
 		}
@@ -9037,7 +9039,11 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			handleSetTrackEditTarget(cmd);
 			break;
 		case 'toggle-scopes': {
+			const wasActive = renderer?.scopesActive ?? false;
 			renderer?.setScopesEnabled(cmd.enabled);
+			if (cmd.enabled && renderer && !wasActive) {
+				playback?.refresh();
+			}
 			break;
 		}
 		case 'toggle-zebra': {

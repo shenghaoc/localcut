@@ -173,7 +173,7 @@ describe('Scope SAB ring-buffer', () => {
 });
 
 describe('Scopes feature flag (B7)', () => {
-	it('ships disabled so no scope pass runs by default', () => {
-		expect(SCOPES_FEATURE_ENABLED).toBe(false);
+	it('ships enabled now that the end-to-end scope pipeline is wired', () => {
+		expect(SCOPES_FEATURE_ENABLED).toBe(true);
 	});
 });

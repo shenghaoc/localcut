@@ -88,5 +88,6 @@ The preview always shows the timeline at the playhead, composited with all effec
 - **Adaptive resolution**: to keep playback smooth, the preview may render below full resolution; the current preview size shows in the pipeline strip. Export is always full resolution regardless of the preview setting.
 - **Audio is the clock**: video synchronises to audio, so under load the app drops video frames rather than letting audio drift.
 - **Safe areas**: toggle title/action safe-area guides with the **Safe areas** button on the preview.
+- **Scopes (Experimental)**: on WebGPU-backed tiers, expand **Scopes** in the preview corner to inspect the histogram, luma waveform, RGB parade, and vectorscope. The panel is hidden in Limited WebCodecs and Shell Only tiers because those modes do not produce WebGPU scope summaries. A clipping badge appears in the scope header when clipped pixels are detected.
 
 If playback stutters, see [Performance](/docs/performance).

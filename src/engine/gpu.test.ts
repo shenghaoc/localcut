@@ -2,13 +2,21 @@ import { beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import { PreviewRenderer, type CompositeLayer } from './gpu';
 import { DEFAULT_CLIP_EFFECTS } from './effects';
 import { DEFAULT_TRANSFORM } from './transform';
+import { SCOPE_RES_X, scopeTotalBufferBytes } from './scopes';
 
 // WebGPU usage-flag enums are host globals the renderer ORs together; the values
 // are irrelevant to the mock, only that the symbols resolve.
 beforeAll(() => {
 	const g = globalThis as Record<string, unknown>;
-	g.GPUTextureUsage ??= { STORAGE_BINDING: 1, TEXTURE_BINDING: 2 };
-	g.GPUBufferUsage ??= { UNIFORM: 1, COPY_DST: 2 };
+	g.GPUTextureUsage ??= { STORAGE_BINDING: 1, TEXTURE_BINDING: 2, COPY_SRC: 4, COPY_DST: 8 };
+	g.GPUBufferUsage ??= {
+		UNIFORM: 1,
+		COPY_DST: 2,
+		STORAGE: 4,
+		COPY_SRC: 8,
+		MAP_READ: 16
+	};
+	g.GPUMapMode ??= { READ: 1 };
 });
 
 /**
@@ -19,6 +27,9 @@ beforeAll(() => {
 function fakeDevice() {
 	const submit = vi.fn();
 	const writeBuffer = vi.fn();
+	const copyTextureToTexture = vi.fn();
+	const clearBuffer = vi.fn();
+	const copyBufferToBuffer = vi.fn();
 	const pass = {
 		setPipeline: vi.fn(),
 		setBindGroup: vi.fn(),
@@ -29,6 +40,9 @@ function fakeDevice() {
 	const encoder = {
 		beginComputePass: () => pass,
 		beginRenderPass: () => pass,
+		copyTextureToTexture,
+		clearBuffer,
+		copyBufferToBuffer,
 		finish: () => ({})
 	};
 	const pipeline = { getBindGroupLayout: () => ({}) };
@@ -38,10 +52,18 @@ function fakeDevice() {
 		createRenderPipeline: () => pipeline,
 		createSampler: () => ({}),
 		createBindGroup: () => ({}),
-		createTexture: () => ({ createView: () => ({}), destroy: vi.fn() }),
+		createTexture: (descriptor: { size?: { width?: number; height?: number } } = {}) => ({
+			width: descriptor.size?.width ?? 0,
+			height: descriptor.size?.height ?? 0,
+			createView: () => ({}),
+			destroy: vi.fn()
+		}),
 		createBuffer: (descriptor: { size?: number } = {}) => ({
 			size: descriptor.size,
-			destroy: vi.fn()
+			destroy: vi.fn(),
+			mapAsync: vi.fn(() => Promise.resolve()),
+			getMappedRange: vi.fn(() => new ArrayBuffer(descriptor.size ?? 0)),
+			unmap: vi.fn()
 		}),
 		createCommandEncoder: () => encoder,
 		importExternalTexture: () => ({}),
@@ -52,7 +74,11 @@ function fakeDevice() {
 		},
 		destroy: vi.fn()
 	} as unknown as GPUDevice;
-	return { device, submit, writeBuffer };
+	return { device, submit, writeBuffer, copyTextureToTexture, clearBuffer, copyBufferToBuffer };
+}
+
+function scopeSab(): SharedArrayBuffer {
+	return new SharedArrayBuffer(scopeTotalBufferBytes(SCOPE_RES_X));
 }
 
 function fakeContext(): GPUCanvasContext {
@@ -144,31 +170,42 @@ describe('PreviewRenderer single submission', () => {
 });
 
 describe('PreviewRenderer scope gating (B7)', () => {
-	it('does not enable scopes via setScopesEnabled while the feature flag is off', () => {
+	it('enables scopes when the feature flag is on and setScopesEnabled(true)', () => {
 		const { device, submit } = fakeDevice();
 		const renderer = new PreviewRenderer(device, fakeContext(), 'rgba8unorm', fakeCanvas(), false);
 		renderer.setPreviewSize(64, 64);
-		renderer.setScopeSab(new SharedArrayBuffer(64));
+		renderer.setScopeSab(scopeSab());
 		renderer.setScopesEnabled(true);
 
-		expect(renderer.scopesActive).toBe(false);
+		expect(renderer.scopesActive).toBe(true);
 		renderer.present([layer(1920, 1080)]);
 		expect(submit).toHaveBeenCalledTimes(1);
 	});
 
-	it('keeps a single submission per frame even when scope dispatch is forced on', () => {
-		const { device, submit } = fakeDevice();
+	it('disables scopes via setScopesEnabled(false) regardless of the feature flag', () => {
+		const { device } = fakeDevice();
 		const renderer = new PreviewRenderer(device, fakeContext(), 'rgba8unorm', fakeCanvas(), false);
 		renderer.setPreviewSize(64, 64);
-		renderer.setScopeSab(new SharedArrayBuffer(64));
-		// Force the internal flag past the feature gate to prove the dispatch itself
-		// never adds a queue.submit; it runs inside the one per-frame encoder.
-		(renderer as unknown as { scopesEnabled: boolean }).scopesEnabled = true;
+		renderer.setScopeSab(scopeSab());
+		renderer.setScopesEnabled(true);
+		renderer.setScopesEnabled(false);
+		expect(renderer.scopesActive).toBe(false);
+	});
+
+	it('keeps a single submission per frame even when scope dispatch is forced on', () => {
+		const { device, submit, copyTextureToTexture, clearBuffer, copyBufferToBuffer } = fakeDevice();
+		const renderer = new PreviewRenderer(device, fakeContext(), 'rgba8unorm', fakeCanvas(), false);
+		renderer.setPreviewSize(64, 64);
+		renderer.setScopeSab(scopeSab());
+		renderer.setScopesEnabled(true);
 
 		submit.mockClear();
 		renderer.present([layer(1920, 1080)]);
 		expect(submit).toHaveBeenCalledTimes(1);
 		expect(renderer.lastFrameSubmissionCount).toBe(1);
+		expect(copyTextureToTexture).toHaveBeenCalledTimes(1);
+		expect(clearBuffer).toHaveBeenCalledTimes(3);
+		expect(copyBufferToBuffer).toHaveBeenCalledTimes(5);
 	});
 });
 

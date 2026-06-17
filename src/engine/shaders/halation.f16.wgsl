@@ -2,7 +2,7 @@ enable f16;
 
 @group(0) @binding(0) var<uniform> u: HalationUniforms;
 @group(0) @binding(1) var src: texture_2d<f32>;
-@group(0) @binding(2) var dst: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(2) var dst: texture_storage_2d<rgba16float, write>;
 
 struct HalationUniforms {
 	threshold: f32,

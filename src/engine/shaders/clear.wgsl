@@ -2,7 +2,7 @@
 // once per frame before any layer composites over it, so an empty stack reads
 // black and the final frame stays opaque for export.
 
-@group(0) @binding(0) var dstTexture : texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(0) var dstTexture : texture_storage_2d<rgba16float, write>;
 
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
