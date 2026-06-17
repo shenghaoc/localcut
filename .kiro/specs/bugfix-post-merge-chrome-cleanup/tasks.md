@@ -165,3 +165,13 @@ context.
 - [x] **T11.2** Default the side-rail `VoiceCleanupPanel` open to match the
   `ReplayBufferPanel` and `LiveAudioChainPanel` treatment, avoiding a sparse
   one-line cleanup tab.
+
+## T12 — Review comment follow-up
+
+- [x] **T12.1** Restate the narrow toolbar layout overrides after the final
+  redesign block so sub-900px viewports keep the intended stacked toolbar.
+- [x] **T12.2** Move the calibration grid from the unconditional preview
+  pseudo-element into the empty preview background so loaded program images are
+  not covered by the grid.
+- [x] **T12.3** Restate the narrow status-bar overrides after the final
+  redesign block so stacked status text and badges can expand vertically.

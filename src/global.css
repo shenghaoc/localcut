@@ -6562,15 +6562,7 @@ button.status-badge:hover {
 	overflow: hidden;
 }
 .preview::before {
-	content: '';
-	position: absolute;
-	inset: 0;
-	background-image:
-		linear-gradient(rgb(255 255 255 / 2%) 1px, transparent 1px),
-		linear-gradient(90deg, rgb(255 255 255 / 2%) 1px, transparent 1px);
-	background-size: 32px 32px;
-	background-position: -1px -1px;
-	pointer-events: none;
+	content: none;
 }
 .preview-canvas {
 	border: 1px solid var(--edge);
@@ -6581,8 +6573,20 @@ button.status-badge:hover {
 }
 .preview-empty {
 	background:
+		linear-gradient(rgb(255 255 255 / 2%) 1px, transparent 1px),
+		linear-gradient(90deg, rgb(255 255 255 / 2%) 1px, transparent 1px),
 		radial-gradient(ellipse 60% 40% at 50% 50%, rgb(34 211 238 / 4%) 0%, transparent 70%),
 		linear-gradient(180deg, transparent, rgb(0 0 0 / 30%));
+	background-position:
+		-1px -1px,
+		-1px -1px,
+		center,
+		center;
+	background-size:
+		32px 32px,
+		32px 32px,
+		auto,
+		auto;
 	gap: 1.1rem;
 	padding: 2.5rem;
 	text-align: center;
@@ -6863,4 +6867,63 @@ input[type='range']::-moz-range-thumb {
 ::selection {
 	background: rgb(34 211 238 / 30%);
 	color: var(--ink-100);
+}
+
+@media (max-width: 900px) {
+	.toolbar {
+		grid-template-rows: auto 30px;
+		padding-top: 0.55rem;
+	}
+
+	.toolbar-main {
+		grid-template-columns: 1fr;
+		align-items: stretch;
+		gap: 0.55rem;
+		height: auto;
+	}
+
+	.toolbar-left,
+	.toolbar-center,
+	.toolbar-right {
+		justify-content: flex-start;
+		width: 100%;
+	}
+
+	.toolbar-right {
+		flex-wrap: wrap;
+	}
+
+	.toolbar-center {
+		order: 2;
+	}
+
+	.pipeline-strip {
+		width: 100%;
+		overflow-x: auto;
+		padding-bottom: 0.1rem;
+	}
+
+	.pipeline-chip {
+		flex: 0 0 auto;
+	}
+
+	.status-bar {
+		align-items: flex-start;
+		flex-direction: column;
+		gap: 0.25rem;
+		height: auto;
+		min-height: var(--status-h);
+		padding-block: 6px;
+	}
+
+	.status-meta {
+		flex-wrap: wrap;
+		justify-content: flex-start;
+		height: auto;
+	}
+
+	.status-badge,
+	.status-ok {
+		height: 24px;
+	}
 }
