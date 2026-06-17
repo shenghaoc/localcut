@@ -8141,7 +8141,9 @@ async function handleProgramStart(
 			{
 				onStatusChange(status) {
 					const programState =
-						status.state === 'recording' || status.state === 'paused' ? 'running' : status.state;
+						status.state === 'recording' || status.state === 'paused'
+							? 'running'
+							: (status.state as 'idle' | 'armed' | 'running' | 'stopping');
 					post({
 						type: 'program-status',
 						state: programState,

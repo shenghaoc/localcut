@@ -51,7 +51,7 @@ export function buildLayoutClips(
 	let segmentStartUs = 0;
 
 	for (const sw of switches) {
-		const switchOffsetUs = sw.atUs - epochUs;
+		const switchOffsetUs = Math.max(0, sw.atUs - epochUs);
 		if (switchOffsetUs > segmentStartUs) {
 			segments.push({
 				sceneId: currentSceneId,
@@ -64,7 +64,7 @@ export function buildLayoutClips(
 	}
 
 	// Close the last segment
-	const sessionEndUs = endUs - epochUs;
+	const sessionEndUs = Math.max(0, endUs - epochUs);
 	if (sessionEndUs > segmentStartUs) {
 		segments.push({
 			sceneId: currentSceneId,
@@ -78,7 +78,7 @@ export function buildLayoutClips(
 	return segments
 		.map((seg) => {
 			const scene = scenes.find((s) => s.id === seg.sceneId);
-			if (!scene) return null;
+			if (!scene || seg.endUs <= seg.startUs) return null;
 			return {
 				id: `layout-clip-${clipIdCounter++}`,
 				kind: 'layout' as const,

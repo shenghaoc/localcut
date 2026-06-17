@@ -259,6 +259,7 @@ const DEFAULT_PROGRAM_LAYER_TRANSFORM = {
 
 interface ProgramSourceHandle {
 	descriptor: ProgramSourceDescriptor;
+	monitorTrack?: MediaStreamTrack;
 }
 
 function formatSourceSummary(source: SourceDescriptorSnapshot): string {
@@ -639,6 +640,7 @@ export function App() {
 	);
 	const [programError, setProgramError] = createSignal<string | null>(null);
 	let programSourceHandles = new Map<string, ProgramSourceHandle>();
+	let activeProgramMonitorTracks = new Map<string, MediaStreamTrack>();
 	let programWriterWorker: Worker | null = null;
 	const [liveChainConfig, setLiveChainConfig] = createSignal<LiveAudioChainConfig>(
 		DEFAULT_LIVE_AUDIO_CHAIN_CONFIG
@@ -1789,10 +1791,18 @@ export function App() {
 		programWriterWorker = null;
 	}
 
+	function releaseActiveProgramMonitorTracks(): void {
+		for (const track of activeProgramMonitorTracks.values()) {
+			track.stop();
+		}
+		activeProgramMonitorTracks = new Map();
+	}
+
 	function releasePendingProgramSources(stopTracks = true): void {
 		if (stopTracks) {
-			for (const { descriptor } of programSourceHandles.values()) {
+			for (const { descriptor, monitorTrack } of programSourceHandles.values()) {
 				descriptor.track?.stop();
+				monitorTrack?.stop();
 			}
 		}
 		programSourceHandles = new Map();
@@ -1802,7 +1812,10 @@ export function App() {
 	function removeProgramSource(sourceId: string): void {
 		const handle = programSourceHandles.get(sourceId);
 		handle?.descriptor.track?.stop();
+		handle?.monitorTrack?.stop();
 		programSourceHandles.delete(sourceId);
+		activeProgramMonitorTracks.get(sourceId)?.stop();
+		activeProgramMonitorTracks.delete(sourceId);
 		refreshProgramSourceList();
 		updateProgramScenes((prev) =>
 			prev.map((scene) => ({
@@ -1812,8 +1825,11 @@ export function App() {
 		);
 	}
 
-	function addProgramSource(descriptor: ProgramSourceDescriptor): void {
-		programSourceHandles.set(descriptor.sourceId, { descriptor });
+	function addProgramSource(
+		descriptor: ProgramSourceDescriptor,
+		monitorTrack?: MediaStreamTrack
+	): void {
+		programSourceHandles.set(descriptor.sourceId, { descriptor, monitorTrack });
 		refreshProgramSourceList();
 		ensureProgramSceneForSource(descriptor);
 	}
@@ -1847,14 +1863,18 @@ export function App() {
 			const track = stream.getVideoTracks()[0];
 			if (!track) throw new Error('Screen picker returned no video track.');
 			const sourceId = makeProgramId('screen');
-			track.addEventListener('ended', () => removeProgramSource(sourceId), { once: true });
-			addProgramSource({
-				sourceId,
-				kind: 'screen',
-				label: track.label || 'Screen',
-				track,
-				encoderConfig: videoConfigForTrack(track)
-			});
+			const monitorTrack = track.clone();
+			monitorTrack.addEventListener('ended', () => removeProgramSource(sourceId), { once: true });
+			addProgramSource(
+				{
+					sourceId,
+					kind: 'screen',
+					label: track.label || 'Screen',
+					track,
+					encoderConfig: videoConfigForTrack(track)
+				},
+				monitorTrack
+			);
 			setProgramError(null);
 		} catch (error) {
 			if (
@@ -1876,14 +1896,18 @@ export function App() {
 			const track = stream.getVideoTracks()[0];
 			if (!track) throw new Error('Camera capture returned no video track.');
 			const sourceId = makeProgramId('camera');
-			track.addEventListener('ended', () => removeProgramSource(sourceId), { once: true });
-			addProgramSource({
-				sourceId,
-				kind: 'webcam',
-				label: track.label || 'Camera',
-				track,
-				encoderConfig: videoConfigForTrack(track)
-			});
+			const monitorTrack = track.clone();
+			monitorTrack.addEventListener('ended', () => removeProgramSource(sourceId), { once: true });
+			addProgramSource(
+				{
+					sourceId,
+					kind: 'webcam',
+					label: track.label || 'Camera',
+					track,
+					encoderConfig: videoConfigForTrack(track)
+				},
+				monitorTrack
+			);
 			setProgramError(null);
 		} catch (error) {
 			if (
@@ -1905,14 +1929,18 @@ export function App() {
 			const track = stream.getAudioTracks()[0];
 			if (!track) throw new Error('Microphone capture returned no audio track.');
 			const sourceId = makeProgramId('mic');
-			track.addEventListener('ended', () => removeProgramSource(sourceId), { once: true });
-			addProgramSource({
-				sourceId,
-				kind: 'mic',
-				label: track.label || 'Microphone',
-				track,
-				encoderConfig: audioConfigForTrack(track)
-			});
+			const monitorTrack = track.clone();
+			monitorTrack.addEventListener('ended', () => removeProgramSource(sourceId), { once: true });
+			addProgramSource(
+				{
+					sourceId,
+					kind: 'mic',
+					label: track.label || 'Microphone',
+					track,
+					encoderConfig: audioConfigForTrack(track)
+				},
+				monitorTrack
+			);
 			setProgramError(null);
 		} catch (error) {
 			if (
@@ -1979,6 +2007,7 @@ export function App() {
 		const sources = [...programSourceHandles.values()].map(({ descriptor }) => descriptor);
 		if (sources.length === 0 || programScenes().length === 0) return;
 		stopProgramWriter();
+		releaseActiveProgramMonitorTracks();
 		const writerWorker = new CaptureWriterWorker();
 		const { port1, port2 } = new MessageChannel();
 		writerWorker.postMessage({ type: 'init', port: port1 }, [port1]);
@@ -2005,6 +2034,11 @@ export function App() {
 		setProgramActiveSceneId(initialSceneId);
 		setProgramSourceStatus([]);
 		setProgramError(null);
+		const monitorEntries: [string, MediaStreamTrack][] = [];
+		for (const [sourceId, handle] of programSourceHandles.entries()) {
+			if (handle.monitorTrack) monitorEntries.push([sourceId, handle.monitorTrack]);
+		}
+		activeProgramMonitorTracks = new Map(monitorEntries);
 		releasePendingProgramSources(false);
 	}
 
@@ -2533,6 +2567,7 @@ export function App() {
 				setProgramError(msg.detail);
 				setProgramSessionState('idle');
 				setProgramActiveSceneId(null);
+				releaseActiveProgramMonitorTracks();
 				stopProgramWriter();
 				setStatusLine(`Program Mode: ${msg.detail}`);
 				break;
@@ -2540,6 +2575,7 @@ export function App() {
 				setProgramSessionState('idle');
 				setProgramActiveSceneId(null);
 				setProgramSourceStatus([]);
+				releaseActiveProgramMonitorTracks();
 				stopProgramWriter();
 				setStatusLine(
 					`Program landed · ${msg.isoTrackIds.length} ISO track${msg.isoTrackIds.length === 1 ? '' : 's'} + layout`
@@ -3628,6 +3664,7 @@ export function App() {
 				bridge?.send({ type: 'program-stop' });
 			}
 			releasePendingProgramSources(true);
+			releaseActiveProgramMonitorTracks();
 			stopProgramWriter();
 			unsubscribePublish();
 			publishController.dispose();

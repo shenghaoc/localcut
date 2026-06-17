@@ -179,12 +179,12 @@ export function createProgramSession(
 				state = 'idle';
 			}
 
+			const landingSources = captureSession.getLandingSources();
 			const epochUs =
 				captureSession.epochValue ??
-				Math.min(
-					...captureSession.getLandingSources().map((source) => source.firstSampleUs),
-					startUs ?? endUs
-				);
+				(landingSources.length > 0
+					? Math.min(...landingSources.map((source) => source.firstSampleUs))
+					: (startUs ?? endUs));
 			const { layoutTrack } = landProgramSession(sceneSwitches as CaptureManifestRecord[], {
 				sessionId: captureSession.sessionId,
 				scenes,

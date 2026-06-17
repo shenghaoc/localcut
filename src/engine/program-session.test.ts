@@ -50,29 +50,36 @@ function config(): ProgramSessionConfig {
 	};
 }
 
-function fakeCaptureSession() {
+function fakeCaptureSession(options?: {
+	epochValue?: number | null;
+	landingSources?: ReturnType<CaptureSession['getLandingSources']>;
+}) {
 	const start = vi.fn(async () => {});
 	const stop = vi.fn(async () => {});
 	const appendSceneSwitch = vi.fn();
+	const getLandingSources = vi.fn(
+		() =>
+			options?.landingSources ?? [
+				{
+					sourceId: 'cam-1',
+					kind: 'webcam' as const,
+					label: 'Camera',
+					firstSampleUs: 1_000_000,
+					lastSampleUs: 2_500_000,
+					bytesWritten: 1024,
+					captureMode: 'full' as const
+				}
+			]
+	);
 	const session = {
 		sessionId: 'program-test',
 		start,
 		stop,
 		appendSceneSwitch,
-		epochValue: 1_000_000,
-		getLandingSources: vi.fn(() => [
-			{
-				sourceId: 'cam-1',
-				kind: 'webcam' as const,
-				label: 'Camera',
-				firstSampleUs: 1_000_000,
-				lastSampleUs: 2_500_000,
-				bytesWritten: 1024,
-				captureMode: 'full' as const
-			}
-		])
+		epochValue: options?.epochValue === undefined ? 1_000_000 : options.epochValue,
+		getLandingSources
 	} as unknown as CaptureSession;
-	return { session, start, stop, appendSceneSwitch };
+	return { session, start, stop, appendSceneSwitch, getLandingSources };
 }
 
 function fakeCompositor() {
@@ -132,5 +139,26 @@ describe('createProgramSession', () => {
 		expect(budget.available()).toBe(2);
 		expect(disposeCompositor).toHaveBeenCalledOnce();
 		expect(disposeTap).toHaveBeenCalledOnce();
+	});
+
+	it('falls back to the session start when no capture source establishes an epoch', async () => {
+		vi.spyOn(performance, 'now').mockReturnValueOnce(2_000).mockReturnValueOnce(2_500);
+		const capture = fakeCaptureSession({ epochValue: null, landingSources: [] });
+		const budget = createEncoderBudget(2);
+		const { compositor } = fakeCompositor();
+		const { tap } = fakeTap();
+
+		const session = createProgramSession(config(), budget, capture.session, compositor, tap);
+
+		await session.start();
+		const result = await session.stop();
+
+		expect(capture.getLandingSources).toHaveBeenCalledOnce();
+		expect(result.layoutTrack?.layoutClips).toHaveLength(1);
+		expect(result.layoutTrack?.layoutClips?.[0]).toMatchObject({
+			sceneId: 'scene-1',
+			startTime: 0
+		});
+		expect(result.layoutTrack?.layoutClips?.[0]?.duration).toBeCloseTo(0.5);
 	});
 });

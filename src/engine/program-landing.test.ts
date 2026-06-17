@@ -135,6 +135,42 @@ describe('buildLayoutClips', () => {
 		expect(clips[1].startTime).toBeCloseTo(5.344);
 	});
 
+	it('clamps scene switches before the capture epoch', () => {
+		const records: CaptureManifestRecord[] = [
+			{ kind: 'scene-switch', sceneId: 'scene-2', atUs: 500_000 },
+			{ kind: 'scene-switch', sceneId: 'scene-1', atUs: 1_000_000 }
+		];
+		const config = {
+			sessionId: 'test',
+			scenes,
+			initialSceneId: 'scene-1',
+			epochUs: 1_000_000,
+			endUs: 2_000_000
+		};
+		const clips = buildLayoutClips(records, config);
+
+		expect(clips).toHaveLength(1);
+		expect(clips[0].sceneId).toBe('scene-1');
+		expect(clips[0].startTime).toBe(0);
+		expect(clips[0].duration).toBeCloseTo(1);
+	});
+
+	it('omits layout clips when the session end is not after the epoch', () => {
+		const records: CaptureManifestRecord[] = [
+			{ kind: 'scene-switch', sceneId: 'scene-2', atUs: 500_000 }
+		];
+		const config = {
+			sessionId: 'test',
+			scenes,
+			initialSceneId: 'scene-1',
+			epochUs: 1_000_000,
+			endUs: 900_000
+		};
+		const clips = buildLayoutClips(records, config);
+
+		expect(clips).toHaveLength(0);
+	});
+
 	it('skips clips for unknown scenes', () => {
 		const records: CaptureManifestRecord[] = [
 			{ kind: 'scene-switch', sceneId: 'unknown', atUs: 5_000_000 }
