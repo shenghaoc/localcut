@@ -38,11 +38,14 @@ import {
 	getTimelineDuration,
 	isTitleClip,
 	resolveAllAt,
+	resolveLayoutAt,
 	sharedSourceIncomingLayers,
 	type Timeline,
 	type TimelineClip,
 	type TimelineTrack
 } from './timeline';
+import { applyProgramLayoutToResolvedLayers } from './program-layout-resolve';
+import { normalizeTransform } from './transform';
 import type { TitleTexture } from './titles';
 import { SecondaryFrameSourcePool } from './frame-source';
 import { sampleClipParamsAt } from './keyframes';
@@ -1048,6 +1051,8 @@ async function encodeVideoRange(
 				Math.min(timelineTime, plan.rangeStartS + plan.exportDuration - 1e-6),
 				options.videoTransitions
 			);
+			const layoutClip = resolveLayoutAt(timeline, timelineTime);
+			const arrangedLayers = applyProgramLayoutToResolvedLayers(resolvedLayers, layoutClip);
 			const secondarySinkLayers = sharedSourceIncomingLayers(resolvedLayers);
 
 			// Decode each layer's source frame, build the composite stack, and render
@@ -1058,7 +1063,8 @@ async function encodeVideoRange(
 			let exportFrame: VideoFrame;
 			try {
 				let decodedCount = 0;
-				for (const layer of resolvedLayers) {
+				for (const arranged of arrangedLayers) {
+					const { layer, layoutLayer } = arranged;
 					// Title layers composite from the cached raster (no decode, no budget),
 					// preserving z-order — matching preview's makeGetLayers.
 					if (isTitleClip(layer.clip)) {
@@ -1070,7 +1076,9 @@ async function encodeVideoRange(
 							view: texture.view,
 							sourceWidth: texture.width,
 							sourceHeight: texture.height,
-							transform: sampled.transform,
+							transform: layoutLayer
+								? normalizeTransform(layoutLayer.transform)
+								: sampled.transform,
 							transition: layer.transition
 						});
 						continue;
@@ -1123,7 +1131,7 @@ async function encodeVideoRange(
 						kind: 'frame',
 						frame: videoFrame,
 						effects: sampled.effects,
-						transform: sampled.transform,
+						transform: layoutLayer ? normalizeTransform(layoutLayer.transform) : sampled.transform,
 						lut: layer.clip.lut,
 						skinMask: layer.clip.skinMask,
 						skinSmoothBypass: false,

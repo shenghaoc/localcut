@@ -9,6 +9,7 @@ import type {
 	ProjectAspect,
 	ProjectFormat,
 	RingBufferConfig,
+	SceneDoc,
 	SourceColorHintsSnapshot,
 	SourceDescriptorSnapshot,
 	SourceFrameRateModeSnapshot,
@@ -43,6 +44,7 @@ import {
 	sortMarkers,
 	type Timeline,
 	type TimelineClip,
+	type LayoutClip,
 	type TimelineMarker,
 	type TimelineTrack,
 	type TimelineTransition,
@@ -53,6 +55,7 @@ import { cloneClipLut, parsePersistedClipLut } from './lut';
 import { normalizeSkinMask } from './skin-smooth';
 import { normalizeBeautyEffect } from './beauty/beauty-params';
 import { parseExportPresetDoc } from './export-presets';
+import { validateSceneDoc } from './program-scenes';
 
 export const PROJECT_SCHEMA_VERSION = 19;
 
@@ -100,6 +103,8 @@ export interface ProjectDoc {
 	projectFormat?: ProjectFormat;
 	/** Phase 39: optional cover frame for export. */
 	cover?: CoverFrameDoc;
+	/** Phase 45: Program Mode scene definitions. */
+	scenes?: SceneDoc | null;
 }
 
 export interface SerializeProjectOptions {
@@ -121,6 +126,7 @@ export interface SerializeProjectOptions {
 	beatSettings?: { enabledSourceIds: string[]; globalOffsetMs: number };
 	projectFormat?: ProjectFormat;
 	cover?: CoverFrameDoc;
+	scenes?: SceneDoc | null;
 }
 
 export type DeserializeProjectResult =
@@ -277,6 +283,29 @@ function cloneClip(clip: TimelineClip): TimelineClip {
 	return cloned;
 }
 
+export function cloneSceneDefinition(
+	scene: LayoutClip['sceneSnapshot']
+): LayoutClip['sceneSnapshot'] {
+	return {
+		...scene,
+		layers: scene.layers.map((layer) => ({
+			...layer,
+			transform: { ...layer.transform }
+		}))
+	};
+}
+
+function cloneLayoutClip(clip: LayoutClip): LayoutClip {
+	return {
+		id: clip.id,
+		kind: 'layout',
+		startTime: clip.startTime,
+		duration: clip.duration,
+		sceneId: clip.sceneId,
+		sceneSnapshot: cloneSceneDefinition(clip.sceneSnapshot)
+	};
+}
+
 /** Deep-clone a TimeRemapSnapshot (Phase 35). */
 function cloneTimeRemap(remap: TimeRemapSnapshot): TimeRemapSnapshot {
 	return {
@@ -352,7 +381,8 @@ export function cloneTimelineSnapshot(timeline: Timeline): Timeline {
 		visible: track.visible,
 		syncLocked: track.syncLocked,
 		editTarget: track.editTarget,
-		clips: track.clips.map(cloneClip)
+		clips: track.clips.map(cloneClip),
+		layoutClips: track.layoutClips?.map(cloneLayoutClip)
 	}));
 }
 
@@ -529,6 +559,18 @@ export function serializeProject(options: SerializeProjectOptions): ProjectDoc {
 	}
 	if (options.cover) {
 		doc.cover = { timeS: options.cover.timeS, titleClipId: options.cover.titleClipId ?? null };
+	}
+	if (options.scenes) {
+		doc.scenes = {
+			sceneSchemaVersion: 1,
+			scenes: options.scenes.scenes.map((s) => ({
+				...s,
+				layers: s.layers.map((l) => ({
+					...l,
+					transform: { ...l.transform }
+				}))
+			}))
+		};
 	}
 	return doc;
 }
@@ -813,7 +855,8 @@ function parseCaptionTracks(value: unknown): CaptionTrack[] | null {
 function parseTrack(value: unknown): TimelineTrack | null {
 	if (!isRecord(value)) return null;
 	const id = requiredString(value.id);
-	const type = value.type === 'video' || value.type === 'audio' ? value.type : null;
+	const type =
+		value.type === 'video' || value.type === 'audio' || value.type === 'layout' ? value.type : null;
 	const gain = finiteNumber(value.gain);
 	const pan = finiteNumber(value.pan) ?? DEFAULT_TRACK_MIX.pan;
 	if (
@@ -837,6 +880,21 @@ function parseTrack(value: unknown): TimelineTrack | null {
 		clips.push(parsed);
 	}
 
+	let layoutClips: LayoutClip[] | undefined;
+	if (type === 'layout') {
+		if (value.layoutClips !== undefined) {
+			if (!Array.isArray(value.layoutClips)) return null;
+			layoutClips = [];
+			for (const clip of value.layoutClips) {
+				const parsed = parseLayoutClip(clip);
+				if (!parsed) return null;
+				layoutClips.push(parsed);
+			}
+		} else {
+			layoutClips = [];
+		}
+	}
+
 	return {
 		id,
 		type,
@@ -850,7 +908,32 @@ function parseTrack(value: unknown): TimelineTrack | null {
 		syncLocked:
 			typeof value.syncLocked === 'boolean' ? value.syncLocked : DEFAULT_TRACK_MIX.syncLocked,
 		editTarget:
-			typeof value.editTarget === 'boolean' ? value.editTarget : DEFAULT_TRACK_MIX.editTarget
+			typeof value.editTarget === 'boolean' ? value.editTarget : DEFAULT_TRACK_MIX.editTarget,
+		layoutClips
+	};
+}
+
+function parseLayoutClip(value: unknown): LayoutClip | null {
+	if (!isRecord(value)) return null;
+	const id = requiredString(value.id);
+	const startTime = finiteNumber(value.startTime);
+	const duration = finiteNumber(value.duration);
+	const sceneId = requiredString(value.sceneId);
+	if (id === null || startTime === null || duration === null || sceneId === null) return null;
+	if (value.kind !== 'layout' || startTime < 0 || duration <= 0) return null;
+	const sceneDoc = validateSceneDoc({
+		sceneSchemaVersion: 1,
+		scenes: [value.sceneSnapshot]
+	});
+	const sceneSnapshot = sceneDoc?.scenes[0];
+	if (!sceneSnapshot) return null;
+	return {
+		id,
+		kind: 'layout',
+		startTime,
+		duration,
+		sceneId,
+		sceneSnapshot
 	};
 }
 
@@ -1607,18 +1690,24 @@ function deserializeV14(value: Record<string, unknown>): DeserializeProjectResul
 	};
 }
 
+function parseSceneDocFromValue(value: unknown): SceneDoc | null {
+	// Delegate detailed validation to validateSceneDoc from program-scenes
+	return validateSceneDoc(value);
+}
+
 function deserializeV19(value: Record<string, unknown>): DeserializeProjectResult {
 	const result = deserializeV14(value);
 	if (!result.ok) return result;
-	// v19 (Phase 39): adds optional projectFormat and cover on top of v14.
-	// Invalid/absent falls back to defaults at the consumer.
+	// v19 adds Phase 39 projectFormat/cover and Phase 45 Program Mode scenes.
+	// Invalid/absent optional values fall back at their consumers.
 	return {
 		ok: true,
 		doc: {
 			...result.doc,
 			schemaVersion: PROJECT_SCHEMA_VERSION,
 			projectFormat: parseProjectFormat(value.projectFormat),
-			cover: parseCoverFrame(value.cover)
+			cover: parseCoverFrame(value.cover),
+			scenes: parseSceneDocFromValue(value.scenes) ?? undefined
 		}
 	};
 }
@@ -1677,7 +1766,7 @@ export function deserializeProject(value: unknown): DeserializeProjectResult {
 			// ClipEffectParams — backwards-compatible, filled by normalizeClipEffects.
 			return deserializeV14(value);
 		case 19:
-			// v19 (Phase 39): adds optional projectFormat and cover.
+			// v19 adds Phase 39 projectFormat/cover and Phase 45 scenes.
 			return deserializeV19(value);
 		default:
 			return { ok: false, reason: `Unsupported project schemaVersion ${schemaVersion}.` };

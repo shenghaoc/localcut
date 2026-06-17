@@ -543,6 +543,13 @@ export function recordingAvailable(probe: CapabilityProbeResult): boolean {
 	);
 }
 
+/** Phase 45: Program mode derivation follows Phase 41 recording availability. */
+export function deriveProgramModeSupport(probe: CapabilityProbeResult): FeatureSupport {
+	return recordingAvailable(probe) && probe.webGPUCore !== 'unsupported'
+		? 'supported'
+		: 'unsupported';
+}
+
 export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 	// Probe both adapters independently so the diagnostic panel reports each one's
 	// true availability. Short-circuiting webGPUCompat to 'unsupported' whenever the
@@ -596,14 +603,19 @@ export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 		offscreenCanvas: supportFromBoolean(typeof OffscreenCanvas !== 'undefined'),
 		livePublish
 	};
-	const result: CapabilityProbeResult = {
+	const tier = deriveCapabilityTierV2(probeWithoutTier);
+	const probeWithTier: CapabilityProbeResult = {
 		...probeWithoutTier,
-		tier: deriveCapabilityTierV2(probeWithoutTier),
+		tier
+	};
+	const result: CapabilityProbeResult = {
+		...probeWithTier,
 		cleanup,
 		asr: probeAsr(),
 		smartReframe: probeSmartReframe(),
 		imageDecoder: probeImageDecoder(),
-		beauty: probeBeauty()
+		beauty: probeBeauty(),
+		programMode: deriveProgramModeSupport(probeWithTier)
 	};
 
 	// Dev-only override hook for tests (Vite tree-shakes this in production).

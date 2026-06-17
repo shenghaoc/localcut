@@ -7,7 +7,7 @@
  * never a measurement after the fact.
  */
 
-export type EncoderConsumer = 'export' | 'iso-record' | 'whip-publish';
+export type EncoderConsumer = 'export' | 'iso-record' | 'whip-publish' | 'program-iso';
 
 export interface EncoderLease {
 	readonly consumer: EncoderConsumer;

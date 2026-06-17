@@ -1005,6 +1005,53 @@ describe('Phase 30 (v13) — customAnimCaptionPresets', () => {
 		expect(result.doc.captionTracks[0]!.segments[0]!.text).toBe('Hello');
 		expect(result.doc.captionTracks[0]!.segments[0]!.words).toBeUndefined();
 	});
+
+	it('round-trips Program Mode layout tracks and scene snapshots', () => {
+		const timeline: Timeline = [
+			...timelineFixture(),
+			{
+				id: 'layout-program-1',
+				type: 'layout',
+				...DEFAULT_TRACK_MIX,
+				clips: [],
+				layoutClips: [
+					{
+						id: 'layout-clip-1',
+						kind: 'layout',
+						startTime: 0,
+						duration: 5,
+						sceneId: 'scene-1',
+						sceneSnapshot: {
+							id: 'scene-1',
+							name: 'Scene 1',
+							hotkey: '1',
+							layers: [
+								{
+									sourceRef: 'source-1',
+									transform: { ...defaultClipTransform(), scale: 0.8 },
+									visible: true,
+									zIndex: 0
+								}
+							]
+						}
+					}
+				]
+			}
+		];
+
+		const doc = serializeProject({
+			projectId: 'program-layout',
+			timeline,
+			sources: [sourceFixture()]
+		});
+		const result = deserializeProject(doc);
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		const layoutTrack = result.doc.timeline.find((track) => track.type === 'layout');
+		expect(layoutTrack?.layoutClips).toHaveLength(1);
+		expect(layoutTrack?.layoutClips?.[0]?.sceneSnapshot.layers[0]?.transform.scale).toBe(0.8);
+	});
 });
 
 describe('Phase 39: projectFormat and cover', () => {

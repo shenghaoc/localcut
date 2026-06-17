@@ -17,7 +17,6 @@ export interface CaptureSessionCallbacks {
 		sources: CaptureSourceStatusSnapshot[];
 	}): void;
 	onError(sourceId: string | null, code: string, detail: string): void;
-	onLanded(sessionId: string, trackIds: string[]): void;
 }
 
 interface SourceEntry {
@@ -50,7 +49,14 @@ interface WriterChunkErrorMessage {
 	error: string;
 }
 
-type WriterPortMessage = WriterChunkAckMessage | WriterChunkErrorMessage;
+interface WriterFinalizeAckMessage {
+	type: 'finalize-ack';
+	sessionId: string;
+}
+
+type WriterPortMessage = WriterChunkAckMessage | WriterChunkErrorMessage | WriterFinalizeAckMessage;
+
+const FINALIZE_ACK_TIMEOUT_MS = 10_000;
 
 export class CaptureSession {
 	readonly sessionId: string;
@@ -61,6 +67,7 @@ export class CaptureSession {
 	private epochUs: number | null = null;
 	private totalBytesWritten = 0;
 	private lastEncodedFrameTs = 0;
+	private lastEncodedFramePerfTime = 0;
 	private pendingResumeRecord = false;
 	private pendingPauseAtUs: number | null = null;
 	private pauseResumePairs: PauseResumePair[] = [];
@@ -70,6 +77,10 @@ export class CaptureSession {
 	private abort = new AbortController();
 	private callbacks: CaptureSessionCallbacks;
 	private writerPort: MessagePort | null;
+	private finalizeWaiters = new Map<
+		string,
+		{ resolve: () => void; reject: (error: Error) => void }
+	>();
 	private readonly writerMessageHandler = (event: MessageEvent<WriterPortMessage>) => {
 		const message = event.data;
 		switch (message.type) {
@@ -77,9 +88,18 @@ export class CaptureSession {
 				this.handleChunkAck(message.sourceId);
 				break;
 			case 'chunk-error':
+				this.rejectFinalizeWaiter(new Error(message.error));
 				this.handleSourceError(message.sourceId, message.error);
 				break;
+			case 'finalize-ack':
+				this.resolveFinalizeWaiter(message.sessionId);
+				break;
 		}
+	};
+	private readonly writerPortFailureHandler = () => {
+		this.rejectFinalizeWaiter(
+			new Error('Capture writer closed before acknowledging finalization.')
+		);
 	};
 
 	constructor(sessionId: string, callbacks: CaptureSessionCallbacks, writerPort?: MessagePort) {
@@ -88,6 +108,8 @@ export class CaptureSession {
 		this.writerPort = writerPort ?? null;
 		if (this.writerPort) {
 			this.writerPort.addEventListener('message', this.writerMessageHandler);
+			this.writerPort.addEventListener('messageerror', this.writerPortFailureHandler);
+			this.writerPort.addEventListener('close', this.writerPortFailureHandler);
 		}
 	}
 
@@ -98,7 +120,8 @@ export class CaptureSession {
 		track: MediaStreamTrack,
 		videoEncodeConfig?: VideoEncoderConfig,
 		audioEncodeConfig?: AudioEncoderConfig,
-		sourceInfo: { width?: number; height?: number; frameRate?: number | null } = {}
+		sourceInfo: { width?: number; height?: number; frameRate?: number | null } = {},
+		onVideoFrame?: (sourceId: string, frame: VideoFrame) => void
 	): void {
 		const pipelineCallbacks: TrackPipelineCallbacks = {
 			onEncodedChunk: (srcId, packet, fromUs, toUs, keyFrame, preEncodeDrops) => {
@@ -122,6 +145,7 @@ export class CaptureSession {
 			track,
 			videoEncodeConfig,
 			audioEncodeConfig,
+			onVideoFrame,
 			callbacks: pipelineCallbacks,
 			abort: this.abort
 		});
@@ -201,15 +225,27 @@ export class CaptureSession {
 			}
 		}
 		if (this.writerPort) {
+			const finalizeAck = this.waitForFinalizeAck(this.sessionId);
 			this.writerPort.postMessage({
 				type: 'write-finalize',
 				sessionId: this.sessionId,
 				reason
 			});
+			await finalizeAck;
 		}
 
 		this.state = 'idle';
 		this.emitStatus();
+	}
+
+	appendSceneSwitch(sceneId: string, atUs: number): void {
+		if (this.state !== 'recording') return;
+		this.writerPort?.postMessage({
+			type: 'write-scene-switch',
+			sessionId: this.sessionId,
+			sceneId,
+			atUs
+		});
 	}
 
 	/**
@@ -291,6 +327,7 @@ export class CaptureSession {
 		entry.bytesWritten += packet.byteLength;
 		this.totalBytesWritten += packet.byteLength;
 		this.lastEncodedFrameTs = Math.max(this.lastEncodedFrameTs, toUs);
+		this.lastEncodedFramePerfTime = performance.now();
 		entry.lastSampleUs = Math.max(entry.lastSampleUs ?? toUs, toUs);
 
 		// Write the resume manifest record on the first encoded frame after resume.
@@ -357,11 +394,56 @@ export class CaptureSession {
 		entry.pipeline.onChunkAck();
 	}
 
-	private handleSourceError(sourceId: string, _error: string): void {
+	private waitForFinalizeAck(sessionId: string): Promise<void> {
+		return new Promise((resolve, reject) => {
+			const timeout = setTimeout(() => {
+				this.finalizeWaiters.delete(sessionId);
+				reject(
+					new Error(
+						`Timed out waiting ${FINALIZE_ACK_TIMEOUT_MS}ms for capture writer finalization.`
+					)
+				);
+			}, FINALIZE_ACK_TIMEOUT_MS);
+			this.finalizeWaiters.set(sessionId, {
+				resolve: () => {
+					clearTimeout(timeout);
+					resolve();
+				},
+				reject: (error) => {
+					clearTimeout(timeout);
+					reject(error);
+				}
+			});
+		});
+	}
+
+	private resolveFinalizeWaiter(sessionId: string): void {
+		const waiter = this.finalizeWaiters.get(sessionId);
+		if (!waiter) return;
+		this.finalizeWaiters.delete(sessionId);
+		waiter.resolve();
+	}
+
+	private rejectFinalizeWaiter(error: Error): void {
+		// A CaptureSession owns a single writer session and creates at most one
+		// finalization waiter, so any writer failure invalidates the pending stop.
+		for (const [, waiter] of this.finalizeWaiters) {
+			waiter.reject(error);
+		}
+		this.finalizeWaiters.clear();
+	}
+
+	private handleSourceError(sourceId: string, error: string): void {
 		const entry = this.sources.get(sourceId);
 		if (entry) {
 			entry.state = 'error';
 		}
+		const code = /quota/i.test(error)
+			? 'quota-exceeded'
+			: sourceId
+				? 'encoder-error'
+				: 'writer-error';
+		this.callbacks.onError(sourceId || null, code, error);
 		this.emitStatus();
 
 		const remainingVideo = [...this.sources.values()].filter(
@@ -441,6 +523,18 @@ export class CaptureSession {
 		});
 	}
 
+	currentMediaTimeUs(): number {
+		if (this.lastEncodedFrameTs > 0 && this.lastEncodedFramePerfTime > 0) {
+			return Math.max(
+				this.lastEncodedFrameTs,
+				this.lastEncodedFrameTs +
+					Math.round((performance.now() - this.lastEncodedFramePerfTime) * 1000)
+			);
+		}
+		const elapsedUs = Math.max(0, Math.round((performance.now() - this.startTime) * 1000));
+		return (this.epochUs ?? 0) + elapsedUs;
+	}
+
 	private emitStatus(): void {
 		const now = performance.now();
 		const rawElapsedUs = Math.round((now - this.startTime) * 1000);
@@ -476,6 +570,8 @@ export class CaptureSession {
 	reset(): void {
 		if (this.writerPort) {
 			this.writerPort.removeEventListener('message', this.writerMessageHandler);
+			this.writerPort.removeEventListener('messageerror', this.writerPortFailureHandler);
+			this.writerPort.removeEventListener('close', this.writerPortFailureHandler);
 		}
 		this.abort.abort();
 		for (const [, entry] of this.sources) {
@@ -485,6 +581,7 @@ export class CaptureSession {
 		this.state = 'idle';
 		this.totalBytesWritten = 0;
 		this.lastEncodedFrameTs = 0;
+		this.lastEncodedFramePerfTime = 0;
 		this.pendingResumeRecord = false;
 		this.pendingPauseAtUs = null;
 		this.pauseResumePairs = [];
@@ -493,6 +590,7 @@ export class CaptureSession {
 		this.pauseDrain = null;
 		this.epochUs = null;
 		this.currentKeyframeIntervalUs = 2_000_000;
+		this.rejectFinalizeWaiter(new Error('Capture session reset before writer finalization.'));
 	}
 
 	getSourceSnapshots(): CaptureSourceSnapshot[] {

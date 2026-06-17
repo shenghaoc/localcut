@@ -35,7 +35,8 @@ import {
 	DEFAULT_BEAUTY_EFFECT,
 	TIMELINE_EPSILON,
 	type CleanedAudioRefSnapshot,
-	type ClipMatteSnapshot
+	type ClipMatteSnapshot,
+	type SceneDefinition
 } from '../protocol';
 import { normalizeBeautyEffect } from './beauty/beauty-params';
 
@@ -98,9 +99,20 @@ export function isTitleClip(clip: TimelineClip): boolean {
 	return clip.kind === 'title';
 }
 
+/** Phase 45: layout clip for Program Mode re-export. */
+export interface LayoutClip {
+	id: string;
+	kind: 'layout';
+	startTime: number;
+	duration: number;
+	sceneId: string;
+	/** Full SceneDefinition snapshot at this segment. */
+	sceneSnapshot: SceneDefinition;
+}
+
 export interface TimelineTrack {
 	id: string;
-	type: 'video' | 'audio';
+	type: 'video' | 'audio' | 'layout';
 	clips: TimelineClip[];
 	gain: number;
 	pan: number;
@@ -110,6 +122,8 @@ export interface TimelineTrack {
 	visible: boolean;
 	syncLocked: boolean;
 	editTarget: boolean;
+	/** Phase 45: layout clips for Program Mode; only on 'layout' tracks. */
+	layoutClips?: LayoutClip[];
 }
 
 export interface TimelineMarker {
@@ -204,7 +218,17 @@ function cloneTimeline(timeline: Timeline): Timeline {
 		visible: track.visible,
 		syncLocked: track.syncLocked,
 		editTarget: track.editTarget,
-		clips: track.clips.map(cloneClip)
+		clips: track.clips.map(cloneClip),
+		layoutClips: track.layoutClips?.map((clip) => ({
+			...clip,
+			sceneSnapshot: {
+				...clip.sceneSnapshot,
+				layers: clip.sceneSnapshot.layers.map((layer) => ({
+					...layer,
+					transform: { ...layer.transform }
+				}))
+			}
+		}))
 	}));
 }
 
@@ -408,6 +432,39 @@ export function sharedSourceIncomingLayers(
 /** Finds the owning audio clip at a timeline timestamp. */
 export function resolveAudioAt(timeline: Timeline, time: number): ResolveResult | null {
 	return resolveOnTrackType(timeline, time, 'audio');
+}
+
+/**
+ * Phase 45: Returns the active LayoutClip at the given timeline time, or
+ * `null` if no layout track exists or time is outside all layout clips.
+ */
+export function resolveLayoutAt(timeline: Timeline, time: number): LayoutClip | null {
+	if (!finite(time) || time < 0) return null;
+	for (const track of timeline) {
+		if (track.type !== 'layout') continue;
+		if (!track.visible) continue;
+		if (!track.layoutClips) continue;
+		if (track.clips.length > 0) {
+			for (const timelineClip of track.clips) {
+				const layoutClip = track.layoutClips.find((clip) => clip.id === timelineClip.id);
+				if (!layoutClip) continue;
+				if (time >= timelineClip.start && time < timelineClip.start + timelineClip.duration) {
+					return {
+						...layoutClip,
+						startTime: timelineClip.start,
+						duration: timelineClip.duration
+					};
+				}
+			}
+			continue;
+		}
+		for (const clip of track.layoutClips) {
+			if (time >= clip.startTime && time < clip.startTime + clip.duration) {
+				return clip;
+			}
+		}
+	}
+	return null;
 }
 
 function transitionsEqual(a: TimelineTransition, b: TimelineTransition): boolean {

@@ -84,6 +84,13 @@ interface WriteSourceRegionAppliedMessage {
 	atUs: number;
 }
 
+interface WriteSceneSwitchMessage {
+	type: 'write-scene-switch';
+	sessionId: string;
+	sceneId: string;
+	atUs: number;
+}
+
 interface ScanSessionsMessage {
 	type: 'scan-sessions';
 }
@@ -103,6 +110,7 @@ type WriterMessage =
 	| WriteResumeMessage
 	| WriteSourceAddedMessage
 	| WriteSourceRegionAppliedMessage
+	| WriteSceneSwitchMessage
 	| ScanSessionsMessage
 	| DiscardSessionMessage;
 
@@ -117,6 +125,11 @@ interface ChunkErrorMessage {
 	error: string;
 }
 
+interface FinalizeAckMessage {
+	type: 'finalize-ack';
+	sessionId: string;
+}
+
 interface RecoveryListMessage {
 	type: 'recovery-list';
 	sessions: Array<{
@@ -128,7 +141,7 @@ interface RecoveryListMessage {
 	}>;
 }
 
-type ClientMessage = ChunkAckMessage | ChunkErrorMessage | RecoveryListMessage;
+type ClientMessage = ChunkAckMessage | ChunkErrorMessage | FinalizeAckMessage | RecoveryListMessage;
 
 interface OpenFile {
 	handle: FileSystemSyncAccessHandle;
@@ -190,6 +203,13 @@ class CaptureWriter {
 						kind: 'source-region-applied',
 						sourceId: msg.sourceId,
 						mode: msg.mode,
+						atUs: msg.atUs
+					});
+					break;
+				case 'write-scene-switch':
+					await this.appendManifest(msg.sessionId, {
+						kind: 'scene-switch',
+						sceneId: msg.sceneId,
 						atUs: msg.atUs
 					});
 					break;
@@ -342,6 +362,7 @@ class CaptureWriter {
 
 		this.sessions.delete(sessionId);
 		this.manifestHandles.delete(sessionId);
+		this.post({ type: 'finalize-ack', sessionId });
 	}
 
 	private async handleScanSessions(): Promise<void> {

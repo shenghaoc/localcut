@@ -47,6 +47,8 @@ export interface WorkerDiagnosticInput {
 	readonly voiceCleanup?: VoiceCleanupSettings;
 	/** Phase 47: live-publish probe results from the main-thread capability probe. */
 	readonly livePublish?: LivePublishProbeResult | null;
+	/** Phase 45: program mode capability (derived from capture + WebGPU probes). */
+	readonly programMode?: FeatureSupport;
 }
 
 function makeSnapshotId(): string {
@@ -396,6 +398,20 @@ async function buildCapabilityReport(input: WorkerDiagnosticInput): Promise<Capa
 	];
 	if (input.livePublish) {
 		findings.push(...publishFindings(input.livePublish));
+	}
+	if (input.programMode) {
+		findings.push(
+			finding(
+				'program.mode',
+				input.programMode === 'supported',
+				input.programMode === 'supported'
+					? 'Program Mode is available (WebGPU + capture probes OK).'
+					: 'Program Mode requires a Chromium browser with WebGPU and WebCodecs capture support.',
+				input.programMode === 'supported'
+					? undefined
+					: 'Program Mode requires a Chromium browser with WebGPU and WebCodecs.'
+			)
+		);
 	}
 	if (!input.webgpuReady && input.gpuUnavailableReason) {
 		findings.push({

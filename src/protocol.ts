@@ -144,6 +144,8 @@ export interface CapabilityProbeResult {
 	/** Phase 32b (Beauty): display/feature-gate only — never
 	 *  consulted by tier derivation or any pipeline code path. */
 	beauty?: BeautyProbeResult;
+	/** Phase 45 (Program Mode): derived from recordingAvailable + WebGPU core. */
+	programMode?: FeatureSupport;
 }
 
 // ── Phase 28: Local Audio Cleanup (LiteRT DTLN) ──
@@ -1262,9 +1264,18 @@ export interface TimelineClipSnapshot {
 	captureSessionId?: string;
 }
 
+export interface LayoutClipSnapshot {
+	id: string;
+	kind: 'layout';
+	startTime: number;
+	duration: number;
+	sceneId: string;
+	sceneSnapshot: SceneDefinition;
+}
+
 export interface TimelineTrackSnapshot {
 	id: string;
-	type: 'video' | 'audio';
+	type: 'video' | 'audio' | 'layout';
 	clips: TimelineClipSnapshot[];
 	gain: number;
 	pan: number;
@@ -1274,6 +1285,8 @@ export interface TimelineTrackSnapshot {
 	visible: boolean;
 	syncLocked: boolean;
 	editTarget: boolean;
+	/** Phase 45: layout clips for Program Mode re-export tracks. */
+	layoutClips?: LayoutClipSnapshot[];
 }
 
 export interface TimelineMarkerSnapshot {
@@ -2114,6 +2127,69 @@ export interface CaptureRecoverySessionSnapshot {
 	totalBytes: number;
 }
 
+// ── Phase 45: Program Mode (Live Scenes) ──
+
+export type ProgramSourceKind = 'webcam' | 'screen' | 'mic' | 'still' | 'title';
+
+export interface ProgramSourceDescriptor {
+	sourceId: string;
+	kind: ProgramSourceKind;
+	label: string;
+	/** Transferred from main; null for still/title sources. */
+	track: MediaStreamTrack | null;
+	/** Null for still/title sources. */
+	encoderConfig: VideoEncoderConfig | AudioEncoderConfig | null;
+}
+
+export interface ProgramSessionConfig {
+	scenes: SceneDefinition[];
+	initialSceneId: string;
+	sources: ProgramSourceDescriptor[];
+	chunkTargetS: number;
+	/** 0 = instant (default), 200 = eased crossfade. */
+	transitionMs: 0 | 200;
+}
+
+export type ProgramErrorCode =
+	| 'budget-exhausted'
+	| 'source-failed'
+	| 'compositor-error'
+	| 'session-error'
+	| 'storage-quota';
+
+export interface ProgramSourceStatusSnapshot {
+	sourceId: string;
+	kind: ProgramSourceKind;
+	label: string;
+	state: 'active' | 'dropped' | 'failed';
+	preEncodeDrops: number;
+}
+
+export interface ProgramLandedResult {
+	sessionId: string;
+	isoTrackIds: string[];
+	layoutTrackId: string;
+}
+
+export interface SceneLayer {
+	sourceRef: string;
+	transform: TransformParamsSnapshot;
+	visible: boolean;
+	zIndex: number;
+}
+
+export interface SceneDefinition {
+	id: string;
+	name: string;
+	hotkey: '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | null;
+	layers: SceneLayer[];
+}
+
+export interface SceneDoc {
+	sceneSchemaVersion: 1;
+	scenes: SceneDefinition[];
+}
+
 export type WorkerCommand =
 	| WorkerInit
 	| WorkerInitV2
@@ -2292,6 +2368,11 @@ export type WorkerCommand =
 	| { type: 'capture-apply-region'; sourceId: string; mode: 'crop' | 'element' }
 	| { type: 'capture-recovery-import'; sessionId: string }
 	| { type: 'capture-recovery-discard'; sessionId: string }
+	// Phase 45: Program Mode
+	| { type: 'program-start'; config: ProgramSessionConfig; writerPort?: MessagePort }
+	| { type: 'program-stop' }
+	| { type: 'program-scene-switch'; sceneId: string; transitionMs: 0 | 200 }
+	| { type: 'program-update-scenes'; scenes: SceneDefinition[] }
 	| { type: 'set-skin-mask'; trackId: string; clipId: string; mask: SkinMaskSnapshot }
 	| { type: 'set-skin-smooth-bypass'; trackId: string; clipId: string; bypass: boolean }
 	// Phase 36: Voice Cleanup
@@ -2608,6 +2689,22 @@ export type WorkerStateMessage =
 			type: 'capture-landed';
 			sessionId: string;
 			trackIds: string[];
+	  }
+	// Phase 45: Program Mode
+	| {
+			type: 'program-status';
+			state: 'idle' | 'armed' | 'running' | 'stopping';
+			elapsedUs: number;
+			activeSceneId: string | null;
+			sources: ProgramSourceStatusSnapshot[];
+	  }
+	| { type: 'program-error'; code: ProgramErrorCode; detail: string }
+	| { type: 'program-scenes'; scenes: SceneDefinition[] }
+	| {
+			type: 'program-landed';
+			sessionId: string;
+			isoTrackIds: string[];
+			layoutTrackId: string;
 	  }
 	// Phase 36: Voice Cleanup
 	| { type: 'voice-cleanup-analysis-progress'; fraction: number; currentWindowS: number }

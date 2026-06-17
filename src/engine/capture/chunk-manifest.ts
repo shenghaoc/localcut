@@ -28,7 +28,9 @@ export type CaptureManifestRecord =
 	| { kind: 'pause'; atUs: number }
 	| { kind: 'resume'; atUs: number }
 	| { kind: 'source-added'; source: CaptureSourceSnapshot; atUs: number }
-	| { kind: 'source-region-applied'; sourceId: string; mode: 'crop' | 'element'; atUs: number };
+	| { kind: 'source-region-applied'; sourceId: string; mode: 'crop' | 'element'; atUs: number }
+	// Phase 45: Program Mode scene-switch events.
+	| { kind: 'scene-switch'; sceneId: string; atUs: number };
 
 export const MANIFEST_VERSION = 1;
 
@@ -118,6 +120,9 @@ export function parseManifestLine(line: string): CaptureManifestRecord | undefin
 			case 'source-region-applied':
 				if (typeof obj.sourceId !== 'string' || !isFiniteNumber(obj.atUs)) return undefined;
 				if (obj.mode !== 'crop' && obj.mode !== 'element') return undefined;
+				return obj as CaptureManifestRecord;
+			case 'scene-switch':
+				if (typeof obj.sceneId !== 'string' || !isFiniteNumber(obj.atUs)) return undefined;
 				return obj as CaptureManifestRecord;
 			default:
 				return undefined;

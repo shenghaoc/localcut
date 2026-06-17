@@ -43,6 +43,11 @@ import {
 	type WorkerStateMessage,
 	type WaveformPeaks,
 	type MatteEngineStatusSnapshot,
+	type FeatureSupport,
+	type ProgramSourceDescriptor,
+	type ProgramSourceStatusSnapshot,
+	type SceneDefinition,
+	type SceneLayer,
 	DEFAULT_LIVE_AUDIO_CHAIN_CONFIG,
 	DEFAULT_VOICE_CLEANUP_SETTINGS,
 	type CaptureSessionState,
@@ -83,6 +88,7 @@ import { ReplayBufferPanel } from './ReplayBufferPanel';
 import { RecordPanel, type RecorderStatusSnapshot } from './RecordPanel';
 import { LiveAudioChainPanel } from './LiveAudioChainPanel';
 import { VoiceCleanupPanel, voiceCleanupLatencyMs } from './VoiceCleanupPanel';
+import { ProgramPanel } from './ProgramPanel';
 import { probeMediaStreamTrackProcessor, startCapture, stopCaptureStreams } from './capture-bridge';
 import { BundleDialog } from './BundleDialog';
 import { InterchangeMenu } from './InterchangeMenu';
@@ -116,6 +122,7 @@ import {
 	exportConstraintsForProbe,
 	probeCapabilities as probeCapabilitiesV2
 } from '../engine/capability-probe-v2';
+import { budgetSessionsForProbe } from '../engine/encoder-budget';
 import { compatibilityReadiness } from '../engine/compatibility/compat-status';
 import { extractCompatibilityPreview } from '../compatibility/thumbnail';
 import {
@@ -167,6 +174,7 @@ import { languageToolsSurfaceVisible } from '../protocol';
 import { probeLanguageTools } from '../engine/language-tools/probe';
 import { languageSuffixedStem } from '../engine/language-tools/bilingual-export';
 import PipelineWorker from '../engine/worker.ts?worker';
+import CaptureWriterWorker from '../engine/capture/writer-worker.ts?worker';
 
 const VIDEO_ACCEPT =
 	'video/mp4,video/quicktime,video/webm,image/*,audio/*,.mp4,.mov,.webm,.png,.jpg,.jpeg,.webp,.gif,.mp3,.m4a,.wav,.ogg';
@@ -236,6 +244,22 @@ function initialOnlineStatus(): boolean {
 
 function isAbortError(error: unknown): boolean {
 	return error instanceof DOMException && error.name === 'AbortError';
+}
+
+const DEFAULT_PROGRAM_LAYER_TRANSFORM = {
+	x: 0,
+	y: 0,
+	scale: 1,
+	rotation: 0,
+	opacity: 1,
+	anchorX: 0.5,
+	anchorY: 0.5,
+	fit: 'fill' as const
+};
+
+interface ProgramSourceHandle {
+	descriptor: ProgramSourceDescriptor;
+	monitorTrack?: MediaStreamTrack;
 }
 
 function formatSourceSummary(source: SourceDescriptorSnapshot): string {
@@ -317,6 +341,7 @@ const SIDE_RAIL_TABS = [
 	{ id: 'inspector', label: 'Inspector' },
 	{ id: 'captions', label: 'Captions' },
 	{ id: 'record', label: 'Record' },
+	{ id: 'program', label: 'Program' },
 	{ id: 'replay', label: 'Replay' },
 	{ id: 'live-audio', label: 'Audio' },
 	{ id: 'voice-cleanup', label: 'Cleanup' }
@@ -604,6 +629,20 @@ export function App() {
 	const [retakeClipId, setRetakeClipId] = createSignal<string | null>(null);
 	const [replayBufferState, setReplayBufferState] = createSignal<RingBufferState | null>(null);
 	const [replaySaveInProgress, setReplaySaveInProgress] = createSignal(false);
+	const [programSources, setProgramSources] = createSignal<ProgramSourceDescriptor[]>([]);
+	const [programScenes, setProgramScenes] = createSignal<SceneDefinition[]>([]);
+	const [programSessionState, setProgramSessionState] = createSignal<
+		'idle' | 'armed' | 'running' | 'stopping'
+	>('idle');
+	const [programActiveSceneId, setProgramActiveSceneId] = createSignal<string | null>(null);
+	const [programSourceStatus, setProgramSourceStatus] = createSignal<ProgramSourceStatusSnapshot[]>(
+		[]
+	);
+	const [programError, setProgramError] = createSignal<string | null>(null);
+	const [programTransitionMs, setProgramTransitionMs] = createSignal<0 | 200>(0);
+	let programSourceHandles = new Map<string, ProgramSourceHandle>();
+	let activeProgramMonitorTracks = new Map<string, MediaStreamTrack>();
+	let programWriterWorker: Worker | null = null;
 	const [liveChainConfig, setLiveChainConfig] = createSignal<LiveAudioChainConfig>(
 		DEFAULT_LIVE_AUDIO_CHAIN_CONFIG
 	);
@@ -1664,6 +1703,356 @@ export function App() {
 		releaseReplayCaptureStream();
 	}
 
+	const programModeSupport = createMemo<FeatureSupport>(
+		() => capabilityProbeV2()?.programMode ?? 'unsupported'
+	);
+
+	const programBudgetUsage = createMemo(() => {
+		const pendingVideo = programSources().filter(
+			(source) => source.kind === 'screen' || source.kind === 'webcam'
+		).length;
+		const activeVideo = programSourceStatus().filter(
+			(source) => source.kind === 'screen' || source.kind === 'webcam'
+		).length;
+		const max = budgetSessionsForProbe(
+			capabilityProbeV2()?.livePublish.hardwareH264Encode === 'supported'
+		);
+		return {
+			active: (publishBusy() ? 1 : 0) + Math.max(pendingVideo, activeVideo),
+			max
+		};
+	});
+
+	function makeProgramId(prefix: string): string {
+		return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+			? `${prefix}-${crypto.randomUUID()}`
+			: `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+	}
+
+	function sanitizedProgramSources(): ProgramSourceDescriptor[] {
+		return [...programSourceHandles.values()].map(({ descriptor }) => ({
+			...descriptor,
+			track: null,
+			encoderConfig: descriptor.encoderConfig ? { ...descriptor.encoderConfig } : null
+		}));
+	}
+
+	function refreshProgramSourceList(): void {
+		setProgramSources(sanitizedProgramSources());
+	}
+
+	function programVideoSources(): ProgramSourceDescriptor[] {
+		return [...programSourceHandles.values()]
+			.map(({ descriptor }) => descriptor)
+			.filter((source) => source.kind === 'screen' || source.kind === 'webcam');
+	}
+
+	function programLayerForSource(source: ProgramSourceDescriptor, zIndex: number): SceneLayer {
+		return {
+			sourceRef: source.sourceId,
+			transform: { ...DEFAULT_PROGRAM_LAYER_TRANSFORM },
+			visible: true,
+			zIndex
+		};
+	}
+
+	function syncProgramScenes(next: SceneDefinition[]): SceneDefinition[] {
+		bridge?.send({ type: 'program-update-scenes', scenes: next });
+		return next;
+	}
+
+	function updateProgramScenes(mutator: (scenes: SceneDefinition[]) => SceneDefinition[]): void {
+		setProgramScenes((prev) => syncProgramScenes(mutator(prev)));
+	}
+
+	function ensureProgramSceneForSource(source: ProgramSourceDescriptor): void {
+		if (source.kind !== 'screen' && source.kind !== 'webcam') return;
+		updateProgramScenes((prev) => {
+			if (prev.length === 0) {
+				return [
+					{
+						id: makeProgramId('scene'),
+						name: 'Scene 1',
+						hotkey: '1',
+						layers: [programLayerForSource(source, 0)]
+					}
+				];
+			}
+			return prev.map((scene) => ({
+				...scene,
+				layers: scene.layers.some((layer) => layer.sourceRef === source.sourceId)
+					? scene.layers
+					: [...scene.layers, programLayerForSource(source, scene.layers.length)]
+			}));
+		});
+	}
+
+	function stopProgramWriter(): void {
+		programWriterWorker?.terminate();
+		programWriterWorker = null;
+	}
+
+	function releaseActiveProgramMonitorTracks(): void {
+		for (const track of activeProgramMonitorTracks.values()) {
+			track.stop();
+		}
+		activeProgramMonitorTracks = new Map();
+	}
+
+	function releasePendingProgramSources(stopTracks = true): void {
+		if (stopTracks) {
+			for (const { descriptor, monitorTrack } of programSourceHandles.values()) {
+				descriptor.track?.stop();
+				monitorTrack?.stop();
+			}
+		}
+		programSourceHandles = new Map();
+		refreshProgramSourceList();
+	}
+
+	function removeProgramSource(sourceId: string): void {
+		const handle = programSourceHandles.get(sourceId);
+		handle?.descriptor.track?.stop();
+		handle?.monitorTrack?.stop();
+		programSourceHandles.delete(sourceId);
+		activeProgramMonitorTracks.get(sourceId)?.stop();
+		activeProgramMonitorTracks.delete(sourceId);
+		refreshProgramSourceList();
+		updateProgramScenes((prev) =>
+			prev.map((scene) => ({
+				...scene,
+				layers: scene.layers.filter((layer) => layer.sourceRef !== sourceId)
+			}))
+		);
+	}
+
+	function addProgramSource(
+		descriptor: ProgramSourceDescriptor,
+		monitorTrack?: MediaStreamTrack
+	): void {
+		programSourceHandles.set(descriptor.sourceId, { descriptor, monitorTrack });
+		refreshProgramSourceList();
+		ensureProgramSceneForSource(descriptor);
+	}
+
+	function videoConfigForTrack(track: MediaStreamTrack): VideoEncoderConfig {
+		const settings = track.getSettings();
+		return {
+			codec: 'avc1.42001E',
+			width: settings.width ?? 1920,
+			height: settings.height ?? 1080,
+			bitrate: 5_000_000,
+			framerate: settings.frameRate,
+			latencyMode: 'realtime',
+			hardwareAcceleration: 'prefer-hardware'
+		};
+	}
+
+	function audioConfigForTrack(track: MediaStreamTrack): AudioEncoderConfig {
+		const settings = track.getSettings();
+		return {
+			codec: 'opus',
+			sampleRate: settings.sampleRate ?? 48_000,
+			numberOfChannels: settings.channelCount ?? 2,
+			bitrate: 128_000
+		};
+	}
+
+	async function addProgramScreen(): Promise<void> {
+		try {
+			const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+			const track = stream.getVideoTracks()[0];
+			if (!track) throw new Error('Screen picker returned no video track.');
+			const sourceId = makeProgramId('screen');
+			const monitorTrack = track.clone();
+			monitorTrack.addEventListener('ended', () => removeProgramSource(sourceId), { once: true });
+			addProgramSource(
+				{
+					sourceId,
+					kind: 'screen',
+					label: track.label || 'Screen',
+					track,
+					encoderConfig: videoConfigForTrack(track)
+				},
+				monitorTrack
+			);
+			setProgramError(null);
+		} catch (error) {
+			if (
+				isAbortError(error) ||
+				(error instanceof DOMException && error.name === 'NotAllowedError')
+			) {
+				return;
+			}
+			setProgramError(error instanceof Error ? error.message : String(error));
+		}
+	}
+
+	async function addProgramCamera(deviceId: string): Promise<void> {
+		try {
+			const stream = await navigator.mediaDevices.getUserMedia({
+				video: deviceId ? { deviceId: { exact: deviceId } } : true,
+				audio: false
+			});
+			const track = stream.getVideoTracks()[0];
+			if (!track) throw new Error('Camera capture returned no video track.');
+			const sourceId = makeProgramId('camera');
+			const monitorTrack = track.clone();
+			monitorTrack.addEventListener('ended', () => removeProgramSource(sourceId), { once: true });
+			addProgramSource(
+				{
+					sourceId,
+					kind: 'webcam',
+					label: track.label || 'Camera',
+					track,
+					encoderConfig: videoConfigForTrack(track)
+				},
+				monitorTrack
+			);
+			setProgramError(null);
+		} catch (error) {
+			if (
+				isAbortError(error) ||
+				(error instanceof DOMException && error.name === 'NotAllowedError')
+			) {
+				return;
+			}
+			setProgramError(error instanceof Error ? error.message : String(error));
+		}
+	}
+
+	async function addProgramMic(deviceId: string): Promise<void> {
+		try {
+			const stream = await navigator.mediaDevices.getUserMedia({
+				audio: deviceId ? { deviceId: { exact: deviceId } } : true,
+				video: false
+			});
+			const track = stream.getAudioTracks()[0];
+			if (!track) throw new Error('Microphone capture returned no audio track.');
+			const sourceId = makeProgramId('mic');
+			const monitorTrack = track.clone();
+			monitorTrack.addEventListener('ended', () => removeProgramSource(sourceId), { once: true });
+			addProgramSource(
+				{
+					sourceId,
+					kind: 'mic',
+					label: track.label || 'Microphone',
+					track,
+					encoderConfig: audioConfigForTrack(track)
+				},
+				monitorTrack
+			);
+			setProgramError(null);
+		} catch (error) {
+			if (
+				isAbortError(error) ||
+				(error instanceof DOMException && error.name === 'NotAllowedError')
+			) {
+				return;
+			}
+			setProgramError(error instanceof Error ? error.message : String(error));
+		}
+	}
+
+	function addProgramScene(): void {
+		updateProgramScenes((prev) => {
+			if (prev.length >= 9) return prev;
+			const sources = programVideoSources();
+			const index = prev.length;
+			return [
+				...prev,
+				{
+					id: makeProgramId('scene'),
+					name: `Scene ${index + 1}`,
+					hotkey: index < 9 ? (`${index + 1}` as SceneDefinition['hotkey']) : null,
+					layers: sources.map((source, sourceIndex) => programLayerForSource(source, sourceIndex))
+				}
+			];
+		});
+	}
+
+	function removeProgramScene(sceneId: string): void {
+		updateProgramScenes((prev) => prev.filter((scene) => scene.id !== sceneId));
+	}
+
+	function renameProgramScene(sceneId: string, name: string): void {
+		updateProgramScenes((prev) =>
+			prev.map((scene) =>
+				scene.id === sceneId ? { ...scene, name: name.trim() || scene.name } : scene
+			)
+		);
+	}
+
+	function setProgramSceneHotkey(sceneId: string, hotkey: string | null): void {
+		const nextHotkey = /^[1-9]$/.test(hotkey ?? '') ? (hotkey as SceneDefinition['hotkey']) : null;
+		updateProgramScenes((prev) =>
+			prev.map((scene) => ({
+				...scene,
+				hotkey:
+					scene.id === sceneId ? nextHotkey : scene.hotkey === nextHotkey ? null : scene.hotkey
+			}))
+		);
+	}
+
+	function updateProgramSceneLayers(sceneId: string, layers: SceneLayer[]): void {
+		updateProgramScenes((prev) =>
+			prev.map((scene) => (scene.id === sceneId ? { ...scene, layers } : scene))
+		);
+	}
+
+	function startProgramSession(initialSceneId: string): void {
+		if (!bridge) {
+			setProgramError('Pipeline worker is not ready.');
+			return;
+		}
+		const sources = [...programSourceHandles.values()].map(({ descriptor }) => descriptor);
+		if (sources.length === 0 || programScenes().length === 0) return;
+		stopProgramWriter();
+		releaseActiveProgramMonitorTracks();
+		const writerWorker = new CaptureWriterWorker();
+		const { port1, port2 } = new MessageChannel();
+		writerWorker.postMessage({ type: 'init', port: port1 }, [port1]);
+		programWriterWorker = writerWorker;
+		const transfer: Transferable[] = [port2];
+		for (const source of sources) {
+			if (source.track) transfer.push(source.track as unknown as Transferable);
+		}
+		bridge.send(
+			{
+				type: 'program-start',
+				config: {
+					scenes: programScenes(),
+					initialSceneId,
+					sources,
+					chunkTargetS: 2,
+					transitionMs: programTransitionMs()
+				},
+				writerPort: port2
+			},
+			transfer
+		);
+		setProgramSessionState('armed');
+		setProgramActiveSceneId(initialSceneId);
+		setProgramSourceStatus([]);
+		setProgramError(null);
+		const monitorEntries: [string, MediaStreamTrack][] = [];
+		for (const [sourceId, handle] of programSourceHandles.entries()) {
+			if (handle.monitorTrack) monitorEntries.push([sourceId, handle.monitorTrack]);
+		}
+		activeProgramMonitorTracks = new Map(monitorEntries);
+		releasePendingProgramSources(false);
+	}
+
+	function stopProgramSession(): void {
+		bridge?.send({ type: 'program-stop' });
+		setProgramSessionState('stopping');
+	}
+
+	function switchProgramScene(sceneId: string): void {
+		setProgramActiveSceneId(sceneId);
+		bridge?.send({ type: 'program-scene-switch', sceneId, transitionMs: programTransitionMs() });
+	}
+
 	function handleState(msg: WorkerStateMessage) {
 		// Publish tap messages route to the controller (it owns the track/frames).
 		if (publishController.handleWorkerMessage(msg)) return;
@@ -2166,6 +2555,33 @@ export function App() {
 				break;
 			case 'project-warning':
 				setStatusLine(msg.message);
+				break;
+			case 'program-status':
+				setProgramSessionState(msg.state);
+				setProgramActiveSceneId(msg.activeSceneId);
+				setProgramSourceStatus([...msg.sources]);
+				break;
+			case 'program-scenes':
+				setProgramScenes([...msg.scenes]);
+				break;
+			case 'program-error':
+				setProgramError(msg.detail);
+				setProgramSessionState('idle');
+				setProgramActiveSceneId(null);
+				releaseActiveProgramMonitorTracks();
+				stopProgramWriter();
+				setStatusLine(`Program Mode: ${msg.detail}`);
+				break;
+			case 'program-landed':
+				setProgramSessionState('idle');
+				setProgramActiveSceneId(null);
+				setProgramSourceStatus([]);
+				releaseActiveProgramMonitorTracks();
+				stopProgramWriter();
+				setStatusLine(
+					`Program landed · ${msg.isoTrackIds.length} ISO track${msg.isoTrackIds.length === 1 ? '' : 's'} + layout`
+				);
+				setActiveSideRailTab('inspector');
 				break;
 			// Phase 46: Replay Buffer + Live Audio Chain
 			case 'replay-capture-state':
@@ -3245,6 +3661,12 @@ export function App() {
 		onCleanup(() => {
 			unregisterKeyboard();
 			releaseReplayCaptureStream();
+			if (programSessionState() !== 'idle') {
+				bridge?.send({ type: 'program-stop' });
+			}
+			releasePendingProgramSources(true);
+			releaseActiveProgramMonitorTracks();
+			stopProgramWriter();
 			unsubscribePublish();
 			publishController.dispose();
 			window.removeEventListener('popstate', handlePopState);
@@ -4199,6 +4621,39 @@ export function App() {
 														bridge?.send({ type: 'capture-apply-region', sourceId, mode })
 													}
 													onRetakeCleared={() => setRetakeClipId(null)}
+												/>
+											</div>
+										</Show>
+										<Show when={activeSideRailTab() === 'program'}>
+											<div
+												id="panel-program"
+												class="side-rail-tab-panel"
+												role="tabpanel"
+												aria-labelledby="tab-program"
+											>
+												<ProgramPanel
+													programMode={programModeSupport}
+													scenes={programScenes}
+													sessionState={programSessionState}
+													activeSceneId={programActiveSceneId}
+													sourceStatus={programSourceStatus}
+													budgetUsage={programBudgetUsage}
+													acquiredSources={programSources}
+													error={programError}
+													transitionMs={programTransitionMs}
+													onAddScreen={() => void addProgramScreen()}
+													onAddCamera={(deviceId) => void addProgramCamera(deviceId)}
+													onAddMic={(deviceId) => void addProgramMic(deviceId)}
+													onRemoveSource={removeProgramSource}
+													onAddScene={addProgramScene}
+													onRemoveScene={removeProgramScene}
+													onRenameScene={renameProgramScene}
+													onSetHotkey={setProgramSceneHotkey}
+													onUpdateLayers={updateProgramSceneLayers}
+													onSetTransitionMs={setProgramTransitionMs}
+													onStart={startProgramSession}
+													onStop={stopProgramSession}
+													onSwitchScene={switchProgramScene}
 												/>
 											</div>
 										</Show>

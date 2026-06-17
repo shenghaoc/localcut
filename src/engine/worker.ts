@@ -30,6 +30,8 @@ import {
 	DEFAULT_LIVE_AUDIO_CHAIN_CONFIG,
 	DEFAULT_RING_BUFFER_CONFIG,
 	DEFAULT_VOICE_CLEANUP_SETTINGS,
+	type SceneDefinition,
+	type SceneDoc,
 	type CaptureSessionState,
 	type CaptureStreamSettings,
 	type LiveAudioChainConfig,
@@ -122,6 +124,7 @@ import {
 	reorderTrack,
 	revalidateTransitions,
 	resolveAllAt,
+	resolveLayoutAt,
 	sharedSourceIncomingLayers,
 	setClipDuration,
 	setTransition,
@@ -173,7 +176,6 @@ import {
 	DEFAULT_MASTER_GAIN,
 	DEFAULT_TRACK_MIX,
 	DEFAULT_TITLE_DURATION_S,
-	normalizeTransform,
 	maxTransitionDurationS,
 	type Timeline,
 	type TimelineClip,
@@ -185,6 +187,8 @@ import {
 	type MoveClipTarget,
 	type TransformParams
 } from './timeline';
+import { applyProgramLayoutToResolvedLayers } from './program-layout-resolve';
+import { normalizeTransform } from './transform';
 import type { SourceVideoTrackInspection } from './media-adapters/types';
 import { sampleClipParamsAt } from './keyframes';
 import { clipLutFromCubeFile, cloneClipLut, lutSnapshot, type ClipLut } from './lut';
@@ -260,6 +264,7 @@ import {
 import { exportTimelineReduced } from './compatibility/compat-export';
 import { exportConstraintsForProbe } from './capability-probe-v2';
 import { createPublishFrameTap, type PublishFrameTap } from './publish-frame-tap';
+import type { EncoderConsumer, EncoderLease } from './encoder-budget';
 import {
 	CanvasCompatibilityRenderer,
 	type CanvasCompatibilityLayer
@@ -533,6 +538,120 @@ let audioWriteFrames = 0;
 let audioPumpGen = 0;
 const AUTOSAVE_DEBOUNCE_MS = 300;
 
+// ── Phase 45: Program Mode ──
+let programSession: import('./program-session').ProgramSession | null = null;
+let programCompositor: import('./program-compositor').ProgramCompositor | null = null;
+let programTap: import('./live-compose-tap').LiveComposeTap | null = null;
+let programEncoderBudget: import('./encoder-budget').EncoderBudget | null = null;
+let programExternalEncoderLeases: EncoderLease[] = [];
+let programStopInFlight: Promise<void> | null = null;
+let programLandingSettings: import('../protocol').CaptureSettingsSnapshot | null = null;
+let programSceneDoc: SceneDoc | null = null;
+let programPendingError: import('../protocol').ProgramErrorCode | null = null;
+let programPendingErrorDetail: string | null = null;
+let programRenderFrame: { kind: 'raf' | 'timeout'; id: number } | null = null;
+let programRenderDirty = false;
+
+const PROGRAM_RENDER_FRAME_MS = 1000 / 60;
+
+function requestProgramRenderFrame(callback: () => void): { kind: 'raf' | 'timeout'; id: number } {
+	const scope = globalThis as typeof globalThis & {
+		requestAnimationFrame?: (callback: FrameRequestCallback) => number;
+		cancelAnimationFrame?: (id: number) => void;
+	};
+	if (scope.requestAnimationFrame) {
+		return { kind: 'raf', id: scope.requestAnimationFrame(() => callback()) };
+	}
+	return {
+		kind: 'timeout',
+		id: setTimeout(callback, PROGRAM_RENDER_FRAME_MS)
+	};
+}
+
+function cancelProgramRenderFrame(): void {
+	if (!programRenderFrame) return;
+	const frame = programRenderFrame;
+	programRenderFrame = null;
+	const scope = globalThis as typeof globalThis & {
+		cancelAnimationFrame?: (id: number) => void;
+	};
+	if (frame.kind === 'raf') {
+		scope.cancelAnimationFrame?.(frame.id);
+	} else {
+		clearTimeout(frame.id);
+	}
+	programRenderDirty = false;
+}
+
+function scheduleProgramRenderFrame(): void {
+	if (programRenderFrame) return;
+	programRenderFrame = requestProgramRenderFrame(runProgramRenderFrame);
+}
+
+function scheduleProgramRender(): void {
+	programRenderDirty = true;
+	scheduleProgramRenderFrame();
+}
+
+function runProgramRenderFrame(): void {
+	programRenderFrame = null;
+	const compositor = programCompositor;
+	const shouldRender = programRenderDirty || (compositor?.hasActiveTransition() ?? false);
+	programRenderDirty = false;
+	if (!compositor || !shouldRender) return;
+	try {
+		compositor.renderTick();
+	} catch (error) {
+		programPendingError = 'compositor-error';
+		programPendingErrorDetail = errorMessage(error);
+		void handleProgramStop();
+		return;
+	}
+	if (programCompositor?.hasActiveTransition()) {
+		scheduleProgramRenderFrame();
+	}
+}
+
+function cloneSceneDefinitionForWorker(scene: SceneDefinition): SceneDefinition {
+	return {
+		...scene,
+		layers: scene.layers.map((layer) => ({
+			...layer,
+			transform: { ...layer.transform }
+		}))
+	};
+}
+
+function cloneSceneDocForWorker(doc: SceneDoc | null | undefined): SceneDoc | null {
+	if (!doc) return null;
+	return {
+		sceneSchemaVersion: 1,
+		scenes: doc.scenes.map(cloneSceneDefinitionForWorker)
+	};
+}
+
+function sceneDocFromDefinitions(scenes: readonly SceneDefinition[]): SceneDoc | null {
+	if (scenes.length === 0) return null;
+	return {
+		sceneSchemaVersion: 1,
+		scenes: scenes.map(cloneSceneDefinitionForWorker)
+	};
+}
+
+function postProgramScenes(): void {
+	post({
+		type: 'program-scenes',
+		scenes: programSceneDoc ? programSceneDoc.scenes.map(cloneSceneDefinitionForWorker) : []
+	});
+}
+
+function releaseProgramExternalEncoderLeases(): void {
+	for (const lease of programExternalEncoderLeases) {
+		lease.release();
+	}
+	programExternalEncoderLeases = [];
+}
+
 // ── Phase 46: Replay Buffer + Live Audio Chain ──
 const CAPTURE_KEYFRAME_INTERVAL_S = 2;
 const CAPTURE_STATS_INTERVAL_MS = 500;
@@ -691,10 +810,17 @@ function findTimelineClipById(clipId: string): { trackIndex: number; clipIndex: 
 function applyCaptureLanding(
 	session: CaptureSession,
 	settings: import('../protocol').CaptureSettingsSnapshot,
-	retakeClipId?: string
+	retakeClipId?: string,
+	extraTracks: TimelineTrack[] = []
 ): string[] {
 	const sources = session.getLandingSources();
-	if (sources.length === 0) return [];
+	if (sources.length === 0 && extraTracks.length === 0) return [];
+	if (sources.length === 0) {
+		commitTimelineMutation(() => [...timeline, ...extraTracks], {
+			refreshPlayback: 'refresh'
+		});
+		return [];
+	}
 
 	const pairs = session.getPauseResumePairs();
 	const epochUs = session.epochValue ?? Math.min(...sources.map((source) => source.firstSampleUs));
@@ -794,7 +920,8 @@ function applyCaptureLanding(
 							clips: [item.clip],
 							...DEFAULT_TRACK_MIX
 						};
-					})
+					}),
+					...extraTracks
 				];
 			}
 
@@ -986,7 +1113,10 @@ function postTimelineState() {
 			matte: clip.matte ? { ...clip.matte } : undefined,
 			audioFadeIn: clip.audioFadeIn,
 			audioFadeOut: clip.audioFadeOut,
-			offline: clip.kind === 'title' || sourceInputs.has(clip.sourceId) ? undefined : true,
+			offline:
+				track.type === 'layout' || clip.kind === 'title' || sourceInputs.has(clip.sourceId)
+					? undefined
+					: true,
 			linkedGroupId: clip.linkedGroupId,
 			captureSessionId: clip.captureSessionId,
 			skinMask: clip.skinMask ? { ...clip.skinMask } : undefined,
@@ -994,6 +1124,20 @@ function postTimelineState() {
 				? { ...clip.timeRemap, keyframes: [...clip.timeRemap.keyframes] }
 				: undefined,
 			beauty: clip.beauty ? { ...clip.beauty } : undefined
+		})),
+		layoutClips: track.layoutClips?.map((clip) => ({
+			id: clip.id,
+			kind: 'layout',
+			startTime: clip.startTime,
+			duration: clip.duration,
+			sceneId: clip.sceneId,
+			sceneSnapshot: {
+				...clip.sceneSnapshot,
+				layers: clip.sceneSnapshot.layers.map((layer) => ({
+					...layer,
+					transform: { ...layer.transform }
+				}))
+			}
 		}))
 	}));
 	const captionSnapshot: CaptionTrackSnapshot[] = captionTracks.map((track) => ({
@@ -1674,7 +1818,8 @@ async function persistCurrentProject(): Promise<void> {
 				: undefined,
 		// Phase 39: persist project format and cover frame.
 		projectFormat,
-		cover: cover ?? undefined
+		cover: cover ?? undefined,
+		scenes: programSceneDoc
 	});
 	await saveStoredProject(doc);
 }
@@ -2313,7 +2458,8 @@ function projectHasRestorableContent(doc: ProjectDoc): boolean {
 		projectHasClips(doc) ||
 		doc.transitions.length > 0 ||
 		doc.markers.length > 0 ||
-		doc.sources.length > 0
+		doc.sources.length > 0 ||
+		(doc.scenes?.scenes.length ?? 0) > 0
 	);
 }
 
@@ -2323,7 +2469,8 @@ function currentProjectIsEmpty(): boolean {
 		timelineSourceIds().size === 0 &&
 		captionTracks.every((track) => track.segments.length === 0) &&
 		transitions.length === 0 &&
-		markers.length === 0
+		markers.length === 0 &&
+		(programSceneDoc?.scenes.length ?? 0) === 0
 	);
 }
 
@@ -2417,6 +2564,7 @@ async function handleRestoreProject(): Promise<void> {
 	timeline = cloneTimelineSnapshot(doc.timeline);
 	captionTracks = cloneCaptionTracksSnapshot(doc.captionTracks);
 	markers = cloneMarkersSnapshot(doc.markers);
+	programSceneDoc = cloneSceneDocForWorker(doc.scenes);
 	syncTimelineLuts();
 	syncRemapLuts();
 	lastExportSettings = doc.exportSettings ?? null;
@@ -2460,6 +2608,7 @@ async function handleRestoreProject(): Promise<void> {
 	postHistoryState();
 	postPresetsState();
 	postQueueState();
+	postProgramScenes();
 	post({
 		type: 'restore-result',
 		projectId,
@@ -2494,6 +2643,7 @@ async function handleNewProject(): Promise<void> {
 	customAnimCaptionPresets = [];
 	post({ type: 'caption-custom-presets-updated', presets: [] });
 	markers = [];
+	programSceneDoc = null;
 	masterGain = DEFAULT_MASTER_GAIN;
 	if (capture) requestCaptureStop();
 	replayRing.updateConfig({ ...DEFAULT_RING_BUFFER_CONFIG });
@@ -2518,6 +2668,7 @@ async function handleNewProject(): Promise<void> {
 	postHistoryState();
 	postPresetsState();
 	postQueueState();
+	postProgramScenes();
 	let message = 'Started a new project.';
 	try {
 		await deleteStoredProject();
@@ -2822,7 +2973,9 @@ type LayerMeta =
  */
 function makeGetLayers() {
 	return async (timestamp: number): Promise<DecodedLayer<LayerMeta>[] | null> => {
+		const layoutClip = resolveLayoutAt(timeline, timestamp);
 		const layers = resolveAllAt(timeline, timestamp, transitions);
+		const arrangedLayers = applyProgramLayoutToResolvedLayers(layers, layoutClip);
 		// Same-source transition pairs route the incoming side through a secondary
 		// sink so the two cut sides don't keyframe-re-seek each other (T2.2).
 		const secondarySinkLayers = sharedSourceIncomingLayers(layers);
@@ -2831,7 +2984,8 @@ function makeGetLayers() {
 		let decodedCount = 0;
 		let overBudget = false;
 		try {
-			for (const layer of layers) {
+			for (const arranged of arrangedLayers) {
+				const { layer, layoutLayer } = arranged;
 				// Title layers carry no decode and don't consume the decode budget; they
 				// composite from the cached title texture, preserving z-order.
 				if (isTitleClip(layer.clip)) {
@@ -2843,7 +2997,9 @@ function makeGetLayers() {
 							kind: 'title',
 							clipId: layer.clip.id,
 							content: layer.clip.title,
-							transform: sampled.transform,
+							transform: layoutLayer
+								? normalizeTransform(layoutLayer.transform)
+								: sampled.transform,
 							animUniforms: CAPTION_ANIM_IDENTITY,
 							transition: layer.transition
 						}
@@ -2938,7 +3094,7 @@ function makeGetLayers() {
 					meta: {
 						kind: 'frame',
 						effects: sampled.effects,
-						transform: sampled.transform,
+						transform: layoutLayer ? normalizeTransform(layoutLayer.transform) : sampled.transform,
 						lut: layer.clip.lut,
 						skinMask: layer.clip.skinMask,
 						skinSmoothBypass: skinSmoothBypassMap.get(layer.clip.id) ?? false,
@@ -5184,7 +5340,8 @@ function handleExportInterchange(
 		markers,
 		sources: currentProjectSources(),
 		masterGain,
-		exportSettings: lastExportSettings ?? undefined
+		exportSettings: lastExportSettings ?? undefined,
+		scenes: programSceneDoc
 	});
 	const displayName = projectDisplayName();
 	try {
@@ -5254,6 +5411,7 @@ async function applyImportedDoc(doc: ProjectDoc): Promise<void> {
 
 	transitions = reconcileTransitions(timeline, doc.transitions);
 	postMediaAssets();
+	postProgramScenes();
 	setupPlayback();
 	syncTitleRasters();
 	ensureClockAndTimeline();
@@ -5275,7 +5433,8 @@ const bundleWorkerContext: BundleWorkerContext = {
 		customAnimCaptionPresets:
 			customAnimCaptionPresets.length > 0 ? customAnimCaptionPresets : undefined,
 		projectFormat,
-		cover: cover ?? undefined
+		cover: cover ?? undefined,
+		scenes: programSceneDoc
 	}),
 	resolveSourceFile: makeStoredSourceResolver(loadStoredSource, fileFromHandle),
 	collectLuts: collectTimelineLuts,
@@ -7904,6 +8063,343 @@ async function handleRequestCoverThumbnail(
 	}
 }
 
+// ── Phase 45: Program Mode handlers ──
+
+function isProgramVideoSource(kind: import('../protocol').ProgramSourceKind): boolean {
+	return kind === 'screen' || kind === 'webcam';
+}
+
+function programSourceKindToCapture(
+	kind: import('../protocol').ProgramSourceKind
+): import('../protocol').CaptureSourceKind | null {
+	switch (kind) {
+		case 'screen':
+		case 'webcam':
+		case 'mic':
+			return kind;
+		default:
+			return null;
+	}
+}
+
+function programVideoConfig(
+	config: VideoEncoderConfig | AudioEncoderConfig | null
+): VideoEncoderConfig {
+	const partial = (config ?? {}) as Partial<VideoEncoderConfig>;
+	return {
+		codec: partial.codec ?? 'avc1.42001E',
+		width: partial.width ?? 1920,
+		height: partial.height ?? 1080,
+		bitrate: partial.bitrate ?? 5_000_000,
+		framerate: partial.framerate,
+		latencyMode: 'realtime',
+		hardwareAcceleration: 'prefer-hardware'
+	};
+}
+
+function programAudioConfig(
+	config: VideoEncoderConfig | AudioEncoderConfig | null
+): AudioEncoderConfig {
+	const partial = (config ?? {}) as Partial<AudioEncoderConfig>;
+	return {
+		codec: partial.codec ?? 'opus',
+		sampleRate: partial.sampleRate ?? 48_000,
+		numberOfChannels: partial.numberOfChannels ?? 2,
+		bitrate: partial.bitrate ?? 128_000
+	};
+}
+
+function captureSourceStatusToProgram(
+	source: import('../protocol').CaptureSourceStatusSnapshot
+): import('../protocol').ProgramSourceStatusSnapshot {
+	return {
+		sourceId: source.sourceId,
+		kind: source.kind === 'screen' || source.kind === 'webcam' ? source.kind : 'mic',
+		label: source.label,
+		state:
+			source.state === 'error' ? 'failed' : source.state === 'capturing' ? 'active' : 'dropped',
+		preEncodeDrops: source.preEncodeDrops
+	};
+}
+
+function activeExternalEncoderConsumers(): EncoderConsumer[] {
+	const consumers: EncoderConsumer[] = [];
+	if (publishTap) {
+		consumers.push('whip-publish');
+	}
+	if (exportAbort || queueRunning) {
+		consumers.push('export');
+	}
+	return consumers;
+}
+
+function programLandingSettingsFromConfig(
+	config: import('../protocol').ProgramSessionConfig
+): import('../protocol').CaptureSettingsSnapshot {
+	const videoSource = config.sources.find((source) => isProgramVideoSource(source.kind));
+	const videoConfig = (videoSource?.encoderConfig ?? {}) as Partial<VideoEncoderConfig>;
+	const audioSource = config.sources.find((source) => source.kind === 'mic');
+	const audioConfig = (audioSource?.encoderConfig ?? {}) as Partial<AudioEncoderConfig>;
+	return {
+		chunkDurationS: config.chunkTargetS,
+		videoCodec: videoConfig.codec ?? 'avc1.42001E',
+		audioCodec: audioConfig.codec ?? 'opus',
+		videoBitrate: videoConfig.bitrate ?? 5_000_000,
+		canvasWidth: videoConfig.width,
+		canvasHeight: videoConfig.height
+	};
+}
+
+async function handleProgramStart(
+	cmd: Extract<WorkerCommand, { type: 'program-start' }>
+): Promise<void> {
+	let sessionForStart: CaptureSession | null = null;
+	try {
+		if (!renderer) {
+			throw new Error('Program Mode requires the accelerated preview renderer.');
+		}
+		if (programSession) {
+			throw new Error('Program session is already running.');
+		}
+		if (captureSession) {
+			throw new Error('Capture engine is already active.');
+		}
+		const mod = await import('./program-session');
+		const { createProgramCompositor } = await import('./program-compositor');
+		const { createLiveComposeTap } = await import('./live-compose-tap');
+		const { createEncoderBudget, budgetSessionsForProbe } = await import('./encoder-budget');
+
+		releaseProgramExternalEncoderLeases();
+		const maxEncoderSessions = budgetSessionsForProbe(
+			currentCapabilityProbe?.livePublish.hardwareH264Encode === 'supported'
+		);
+		programEncoderBudget = createEncoderBudget(maxEncoderSessions);
+		for (const consumer of activeExternalEncoderConsumers()) {
+			const lease = programEncoderBudget.acquire(consumer);
+			if (!lease) {
+				throw new Error(
+					`Encoder budget is already full with active ${programEncoderBudget.activeConsumers().join(', ')} work.`
+				);
+			}
+			programExternalEncoderLeases.push(lease);
+		}
+		programLandingSettings = programLandingSettingsFromConfig(cmd.config);
+		programSceneDoc = sceneDocFromDefinitions(cmd.config.scenes);
+		scheduleAutosave();
+
+		// Create compositor
+		programCompositor = createProgramCompositor({
+			renderer: renderer!,
+			scenes: cmd.config.scenes,
+			sourceWidth: 1920,
+			sourceHeight: 1080
+		});
+
+		// Create tap
+		programTap = createLiveComposeTap(programCompositor);
+
+		sessionForStart = new CaptureSession(
+			`program-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+			{
+				onStatusChange(status) {
+					const programState = (
+						status.state === 'recording' || status.state === 'paused' ? 'running' : status.state
+					) as 'idle' | 'armed' | 'running' | 'stopping';
+					post({
+						type: 'program-status',
+						state: programState,
+						elapsedUs: status.elapsedUs,
+						activeSceneId: programSession?.getCurrentSceneId() ?? cmd.config.initialSceneId,
+						sources: status.sources.map(captureSourceStatusToProgram)
+					});
+				},
+				onError(_sourceId, code, detail) {
+					programPendingError = code === 'quota-exceeded' ? 'storage-quota' : 'source-failed';
+					programPendingErrorDetail = detail;
+					void handleProgramStop();
+				}
+			},
+			cmd.writerPort
+		);
+
+		let capturedSourceCount = 0;
+		for (const source of cmd.config.sources) {
+			if (!source.track) continue;
+			const captureKind = programSourceKindToCapture(source.kind);
+			if (!captureKind) continue;
+			const videoConfig = isProgramVideoSource(source.kind)
+				? programVideoConfig(source.encoderConfig)
+				: undefined;
+			const audioConfig =
+				source.kind === 'mic' ? programAudioConfig(source.encoderConfig) : undefined;
+			sessionForStart.addSource(
+				source.sourceId,
+				captureKind,
+				source.label,
+				source.track,
+				videoConfig,
+				audioConfig,
+				videoConfig
+					? {
+							width: videoConfig.width,
+							height: videoConfig.height,
+							frameRate: null
+						}
+					: {},
+				videoConfig
+					? (sourceId, frame) => {
+							programTap?.onFrame(sourceId, frame);
+							scheduleProgramRender();
+						}
+					: undefined
+			);
+			capturedSourceCount++;
+		}
+		if (capturedSourceCount === 0) {
+			throw new Error(
+				'Program Mode requires at least one captured screen, camera, or microphone source.'
+			);
+		}
+
+		// Create session (acquires encoder leases)
+		programSession = mod.createProgramSession(
+			cmd.config,
+			programEncoderBudget,
+			sessionForStart,
+			programCompositor,
+			programTap
+		);
+		captureSession = sessionForStart;
+		sessionForStart = null;
+		await programSession.start();
+
+		post({
+			type: 'program-status',
+			state: 'running',
+			elapsedUs: 0,
+			activeSceneId: cmd.config.initialSceneId,
+			sources: cmd.config.sources.map((s) => ({
+				sourceId: s.sourceId,
+				kind: s.kind,
+				label: s.label,
+				state: 'active' as const,
+				preEncodeDrops: 0
+			}))
+		});
+	} catch (err) {
+		if (err instanceof (await import('./program-session')).ProgramBudgetError) {
+			post({
+				type: 'program-error',
+				code: 'budget-exhausted',
+				detail: err.message
+			});
+		} else {
+			post({
+				type: 'program-error',
+				code: 'compositor-error',
+				detail: String(err)
+			});
+		}
+		const failedCaptureSession = sessionForStart ?? captureSession;
+		failedCaptureSession?.reset();
+		releaseProgramExternalEncoderLeases();
+		programSession = null;
+		cancelProgramRenderFrame();
+		programCompositor?.dispose();
+		programCompositor = null;
+		programTap?.dispose();
+		programTap = null;
+		programLandingSettings = null;
+		programPendingError = null;
+		programPendingErrorDetail = null;
+		if (captureSession === failedCaptureSession) {
+			captureSession = null;
+		}
+	}
+}
+
+async function handleProgramStop(): Promise<void> {
+	if (programStopInFlight) return programStopInFlight;
+	if (!programSession) return;
+	const session = programSession;
+	const activeCaptureSession = captureSession;
+	const landingSettings = programLandingSettings ?? {
+		chunkDurationS: 2,
+		videoCodec: 'avc1.42001E',
+		audioCodec: 'opus',
+		videoBitrate: 5_000_000
+	};
+	programStopInFlight = (async () => {
+		try {
+			const result = await session.stop();
+			const isoTrackIds = activeCaptureSession
+				? applyCaptureLanding(
+						activeCaptureSession,
+						landingSettings,
+						undefined,
+						result.layoutTrack ? [result.layoutTrack] : []
+					)
+				: [];
+			post({
+				type: 'program-landed',
+				sessionId: result.sessionId,
+				isoTrackIds,
+				layoutTrackId: result.layoutTrack?.id ?? ''
+			});
+			if (programPendingError && programPendingErrorDetail) {
+				post({
+					type: 'program-error',
+					code: programPendingError,
+					detail: programPendingErrorDetail
+				});
+			}
+		} catch (err) {
+			post({
+				type: 'program-error',
+				code: programPendingError ?? 'session-error',
+				detail: String(err)
+			});
+		} finally {
+			activeCaptureSession?.reset();
+			if (captureSession === activeCaptureSession) {
+				captureSession = null;
+			}
+			releaseProgramExternalEncoderLeases();
+			cancelProgramRenderFrame();
+			programCompositor?.dispose();
+			programTap?.dispose();
+			programSession = null;
+			programCompositor = null;
+			programTap = null;
+			programEncoderBudget = null;
+			programLandingSettings = null;
+			programPendingError = null;
+			programPendingErrorDetail = null;
+			programStopInFlight = null;
+		}
+	})();
+	return programStopInFlight;
+}
+
+function handleProgramSceneSwitch(sceneId: string, transitionMs: 0 | 200): void {
+	if (programSession) {
+		programSession.switchScene(sceneId, transitionMs);
+		scheduleProgramRender();
+	}
+}
+
+function handleProgramUpdateScenes(scenes: SceneDefinition[]): void {
+	programSceneDoc = sceneDocFromDefinitions(scenes);
+	scheduleAutosave();
+	if (programSession) {
+		programSession.updateScenes(scenes);
+		scheduleProgramRender();
+	} else if (programCompositor) {
+		programCompositor.updateScenes(scenes);
+		scheduleProgramRender();
+	}
+}
+
 self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 	const cmd = event.data;
 	switch (cmd.type) {
@@ -8506,9 +9002,6 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 							code: code as import('../protocol').CaptureErrorCode,
 							detail
 						});
-					},
-					onLanded(sessionId, trackIds) {
-						post({ type: 'capture-landed', sessionId, trackIds });
 					}
 				},
 				cmd.writerPort
@@ -8625,6 +9118,19 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 		case 'capture-recovery-discard':
 			// TODO: Phase 41 — T7 crash recovery: discard orphaned session
 			void cmd;
+			break;
+		// Phase 45: Program Mode
+		case 'program-start':
+			void handleProgramStart(cmd);
+			break;
+		case 'program-stop':
+			void handleProgramStop();
+			break;
+		case 'program-scene-switch':
+			handleProgramSceneSwitch(cmd.sceneId, cmd.transitionMs);
+			break;
+		case 'program-update-scenes':
+			handleProgramUpdateScenes(cmd.scenes);
 			break;
 		// Phase 36: Voice Cleanup
 		case 'voice-cleanup-analyse-loudness':
