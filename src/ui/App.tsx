@@ -90,6 +90,7 @@ import { LiveAudioChainPanel } from './LiveAudioChainPanel';
 import { VoiceCleanupPanel, voiceCleanupLatencyMs } from './VoiceCleanupPanel';
 import { ProgramPanel } from './ProgramPanel';
 import { probeMediaStreamTrackProcessor, startCapture, stopCaptureStreams } from './capture-bridge';
+import { createCaptureDomTap } from './capture-dom-tap';
 import { BundleDialog } from './BundleDialog';
 import { InterchangeMenu } from './InterchangeMenu';
 import { Button, buttonVariants } from './components/button';
@@ -625,6 +626,11 @@ export function App() {
 	// Phase 46: Replay Buffer + Live Audio Chain
 	const [captureSession, setCaptureSession] = createSignal<CaptureSessionState | null>(null);
 	const [recorderStatus, setRecorderStatus] = createSignal<RecorderStatusSnapshot | null>(null);
+	// Phase 41: own-tab DOM event tap — singleton driven by capture-dom-tap-init /
+	// capture-dom-tap-stop messages from the worker. Idle when no session is active
+	// (no DOM listeners installed). Cleaned up on App unmount.
+	const captureDomTap = createCaptureDomTap();
+	onCleanup(() => captureDomTap.stop());
 	const [recorderLandedSessionId, setRecorderLandedSessionId] = createSignal<string | null>(null);
 	const [retakeClipId, setRetakeClipId] = createSignal<string | null>(null);
 	const [replayBufferState, setReplayBufferState] = createSignal<RingBufferState | null>(null);
@@ -2637,6 +2643,15 @@ export function App() {
 				setStatusLine(
 					`Recorder landed ${msg.trackIds.length} track${msg.trackIds.length === 1 ? '' : 's'}.`
 				);
+				break;
+			case 'capture-dom-tap-init':
+				captureDomTap.start(msg.sessionId, msg.ring, msg.epochMs);
+				break;
+			case 'capture-dom-tap-stop':
+				// Idempotent: tap.stop() is a no-op if no session is bound, so a
+				// duplicate stop (e.g. from both the internal-stop and the capture-stop
+				// path) cleans up cleanly.
+				captureDomTap.stop();
 				break;
 			// Phase 36: Voice Cleanup
 			case 'voice-cleanup-analysis-progress':

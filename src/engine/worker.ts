@@ -332,6 +332,7 @@ import { serializeTimelineToOtio } from './interchange/otio';
 import { proxyStatusForAsset } from './proxy-jobs';
 import { buildWorkerDiagnosticSnapshot } from './diagnostics';
 import { CaptureSession } from './capture/capture-session';
+import { allocateCaptureEventRing } from './capture/event-ring';
 import { computeGapCollapsedUs, seamMarkerPositionsUs } from './capture/pause-resume';
 import { DEFAULT_WEBCAM_PRESET, deriveWebcamTransform } from './capture/webcam-preset';
 import {
@@ -523,6 +524,8 @@ let audioRing: AudioRingViews | null = null;
 let captureSession: CaptureSession | null = null;
 let captureLandingSettings: import('../protocol').CaptureSettingsSnapshot | null = null;
 let captureRetakeClipId: string | undefined;
+let captureDomTapGeneration = 0;
+let captureDomTapSessionId: string | null = null;
 interface PendingCaptureSource {
 	sourceId: string;
 	kind: import('../protocol').CaptureSourceKind;
@@ -8994,6 +8997,17 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 				{
 					onStatusChange(status) {
 						post({ type: 'capture-status', ...status });
+						// Internal-stop paths (audio-overrun, all-sources-ended) transition
+						// to 'idle' without going through the worker's 'capture-stop' case.
+						// Mirror the dom-tap stop here so main always uninstalls listeners.
+						if (
+							status.state === 'idle' &&
+							captureDomTapSessionId !== null &&
+							captureSession !== null
+						) {
+							post({ type: 'capture-dom-tap-stop', sessionId: captureDomTapSessionId });
+							captureDomTapSessionId = null;
+						}
 					},
 					onError(sourceId, code, detail) {
 						post({
@@ -9045,6 +9059,30 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 				);
 			}
 			pendingCaptureSources.clear();
+			// Phase 41 own-tab DOM event tap: allocate a fresh SAB ring per session
+			// (no reuse — avoids stale-record/GC concerns) and signal main to install
+			// listeners. Generation is informational; the SAB itself is authoritative.
+			try {
+				captureDomTapGeneration = (captureDomTapGeneration + 1) | 0;
+				const ring = allocateCaptureEventRing(captureDomTapGeneration);
+				captureSession.attachEventRing(ring);
+				captureDomTapSessionId = captureSession.sessionId;
+				post({
+					type: 'capture-dom-tap-init',
+					sessionId: captureSession.sessionId,
+					ring,
+					epochMs: performance.now()
+				});
+			} catch (err) {
+				// Event ring is non-fatal: recording itself must continue if SAB
+				// allocation fails (e.g. crossOriginIsolated dropped mid-session).
+				post({
+					type: 'capture-error',
+					sourceId: null,
+					code: 'session-error',
+					detail: `event-ring init failed: ${String(err)}`
+				});
+			}
 			void captureSession.start(settings.chunkDurationS).catch((err: Error) => {
 				post({ type: 'capture-error', sourceId: null, code: 'session-error', detail: String(err) });
 			});
@@ -9053,6 +9091,13 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 		case 'capture-stop':
 			if (captureSession) {
 				const session = captureSession;
+				// Signal main to remove DOM listeners *before* the async stop chain so
+				// no late event lands in a torn-down session. The SAB drain inside
+				// session.stop() handles any in-flight records already enqueued.
+				if (captureDomTapSessionId === session.sessionId) {
+					post({ type: 'capture-dom-tap-stop', sessionId: session.sessionId });
+					captureDomTapSessionId = null;
+				}
 				void (async () => {
 					try {
 						await session.stop();

@@ -100,6 +100,13 @@ interface DiscardSessionMessage {
 	sessionId: string;
 }
 
+interface WriteEventBatchMessage {
+	type: 'write-event-batch';
+	sessionId: string;
+	/** CaptureEventLogEntry[] — JSON-serialised one per line into events.ndjson. */
+	entries: ReadonlyArray<Record<string, unknown>>;
+}
+
 type WriterMessage =
 	| WriteChunkMessage
 	| WriteHeaderMessage
@@ -111,6 +118,7 @@ type WriterMessage =
 	| WriteSourceAddedMessage
 	| WriteSourceRegionAppliedMessage
 	| WriteSceneSwitchMessage
+	| WriteEventBatchMessage
 	| ScanSessionsMessage
 	| DiscardSessionMessage;
 
@@ -151,6 +159,8 @@ interface OpenFile {
 class CaptureWriter {
 	private sessions = new Map<string, Map<string, OpenFile>>();
 	private manifestHandles = new Map<string, FileSystemSyncAccessHandle>();
+	/** Phase 41 own-tab DOM events sidecar; one append-only handle per session. */
+	private eventHandles = new Map<string, FileSystemSyncAccessHandle>();
 	private port: MessagePort | null = null;
 
 	init(port: MessagePort): void {
@@ -213,6 +223,9 @@ class CaptureWriter {
 						atUs: msg.atUs
 					});
 					break;
+				case 'write-event-batch':
+					await this.handleWriteEventBatch(msg);
+					break;
 				case 'write-finalize':
 					await this.handleFinalize(msg.sessionId, msg.reason);
 					break;
@@ -267,6 +280,19 @@ class CaptureWriter {
 			const manifestHandle = await dirHandle.getFileHandle('manifest.ndjson', { create: true });
 			manifestAccess = await (manifestHandle as FileSystemFileHandle).createSyncAccessHandle();
 
+			// Phase 41 own-tab DOM events sidecar — opened alongside the manifest so
+			// recovery scan can find it without a separate probe. Lifetime mirrors the
+			// session: closed in handleFinalize (and best-effort on the error path).
+			let eventsAccess: FileSystemSyncAccessHandle | null = null;
+			try {
+				const eventsHandle = await dirHandle.getFileHandle('events.ndjson', { create: true });
+				eventsAccess = await (eventsHandle as FileSystemFileHandle).createSyncAccessHandle();
+				this.eventHandles.set(sessionId, eventsAccess);
+			} catch {
+				// Events sidecar is non-fatal: track recovery and recording itself must
+				// not depend on the events file existing. We just skip it on failure.
+			}
+
 			this.sessions.set(sessionId, fileMap);
 			this.manifestHandles.set(sessionId, manifestAccess);
 
@@ -298,6 +324,15 @@ class CaptureWriter {
 				} catch {
 					// best-effort cleanup on the error path; the original error is rethrown
 				}
+			}
+			const eventsAccess = this.eventHandles.get(sessionId);
+			if (eventsAccess) {
+				try {
+					eventsAccess.close();
+				} catch {
+					// best-effort cleanup on the error path; the original error is rethrown
+				}
+				this.eventHandles.delete(sessionId);
 			}
 			this.sessions.delete(sessionId);
 			this.manifestHandles.delete(sessionId);
@@ -334,6 +369,22 @@ class CaptureWriter {
 		this.post({ type: 'chunk-ack', sourceId: msg.sourceId });
 	}
 
+	private async handleWriteEventBatch(msg: WriteEventBatchMessage): Promise<void> {
+		const eventsAccess = this.eventHandles.get(msg.sessionId);
+		// Silently drop if no events sidecar handle was opened (header failure path)
+		// — events are non-fatal sidecar data, not part of the recording contract.
+		if (!eventsAccess) return;
+		if (msg.entries.length === 0) return;
+
+		let payload = '';
+		for (const entry of msg.entries) {
+			payload += JSON.stringify(entry) + '\n';
+		}
+		const encoded = new TextEncoder().encode(payload);
+		eventsAccess.write(encoded.buffer as ArrayBuffer, { at: eventsAccess.getSize() });
+		await eventsAccess.flush();
+	}
+
 	private async handleFinalize(sessionId: string, reason: string): Promise<void> {
 		const manifestAccess = this.manifestHandles.get(sessionId);
 		if (manifestAccess) {
@@ -347,6 +398,16 @@ class CaptureWriter {
 			manifestAccess.write(encoded.buffer as ArrayBuffer, { at: manifestAccess.getSize() });
 			await manifestAccess.flush();
 			manifestAccess.close();
+		}
+
+		const eventsAccess = this.eventHandles.get(sessionId);
+		if (eventsAccess) {
+			try {
+				eventsAccess.close();
+			} catch {
+				// best-effort close — finalize must release every handle it can
+			}
+			this.eventHandles.delete(sessionId);
 		}
 
 		const fileMap = this.sessions.get(sessionId);

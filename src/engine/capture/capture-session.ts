@@ -7,6 +7,8 @@ import type {
 } from '../../protocol';
 import type { PauseResumePair } from './pause-resume';
 import { TrackPipeline, type TrackPipelineCallbacks } from './track-pipeline';
+import { CaptureEventRingReader } from './event-ring';
+import type { CaptureEventLogEntry } from './event-log';
 
 export interface CaptureSessionCallbacks {
 	onStatusChange(status: {
@@ -81,6 +83,8 @@ export class CaptureSession {
 		string,
 		{ resolve: () => void; reject: (error: Error) => void }
 	>();
+	private eventRingReader: CaptureEventRingReader | null = null;
+	private eventDrainTimer: ReturnType<typeof setInterval> | null = null;
 	private readonly writerMessageHandler = (event: MessageEvent<WriterPortMessage>) => {
 		const message = event.data;
 		switch (message.type) {
@@ -111,6 +115,18 @@ export class CaptureSession {
 			this.writerPort.addEventListener('messageerror', this.writerPortFailureHandler);
 			this.writerPort.addEventListener('close', this.writerPortFailureHandler);
 		}
+	}
+
+	/** Wire a SAB ring the worker allocated for this session; subsequent drains
+	 *  (chunk-flush coupled + the 250ms backstop) forward entries to the writer
+	 *  worker as `write-event-batch` messages. */
+	attachEventRing(ring: SharedArrayBuffer): void {
+		if (this.eventRingReader) return;
+		this.eventRingReader = new CaptureEventRingReader(ring);
+		// Backstop timer: chunk flushes drive `emitStatus()` (and therefore the
+		// primary drain), but a silent screen with no encoded chunks would let the
+		// ring fill silently. 250ms covers pointer-drag bursts without burning CPU.
+		this.eventDrainTimer = setInterval(() => this.drainEventRing(), 250);
 	}
 
 	addSource(
@@ -224,6 +240,15 @@ export class CaptureSession {
 				// best-effort stop — keep stopping the remaining sources
 			}
 		}
+
+		// Final drain so any late-arriving event records land in the sidecar
+		// before the writer closes the events.ndjson handle.
+		this.drainEventRing();
+		if (this.eventDrainTimer !== null) {
+			clearInterval(this.eventDrainTimer);
+			this.eventDrainTimer = null;
+		}
+
 		if (this.writerPort) {
 			const finalizeAck = this.waitForFinalizeAck(this.sessionId);
 			this.writerPort.postMessage({
@@ -536,6 +561,10 @@ export class CaptureSession {
 	}
 
 	private emitStatus(): void {
+		// Piggyback the event-ring drain on every status emit: chunk flushes drive
+		// emitStatus, so this is the primary drain (the 250ms timer is a backstop).
+		this.drainEventRing();
+
 		const now = performance.now();
 		const rawElapsedUs = Math.round((now - this.startTime) * 1000);
 		const currentPausedUs =
@@ -560,6 +589,23 @@ export class CaptureSession {
 		});
 	}
 
+	private drainEventRing(): void {
+		if (!this.eventRingReader || !this.writerPort) return;
+		let entries: CaptureEventLogEntry[];
+		try {
+			entries = this.eventRingReader.drain();
+		} catch {
+			// A torn SAB (impossible in normal flow) should not take down the session.
+			return;
+		}
+		if (entries.length === 0) return;
+		this.writerPort.postMessage({
+			type: 'write-event-batch',
+			sessionId: this.sessionId,
+			entries
+		});
+	}
+
 	private finishPausedInterval(): void {
 		if (this.pausedAt > 0) {
 			this.accumulatedPausedUs += Math.round((performance.now() - this.pausedAt) * 1000);
@@ -573,6 +619,11 @@ export class CaptureSession {
 			this.writerPort.removeEventListener('messageerror', this.writerPortFailureHandler);
 			this.writerPort.removeEventListener('close', this.writerPortFailureHandler);
 		}
+		if (this.eventDrainTimer !== null) {
+			clearInterval(this.eventDrainTimer);
+			this.eventDrainTimer = null;
+		}
+		this.eventRingReader = null;
 		this.abort.abort();
 		for (const [, entry] of this.sources) {
 			entry.pipeline.dispose();
