@@ -6124,6 +6124,12 @@ button.status-badge:hover {
 .workspace.has-bin {
 	grid-template-columns: 236px minmax(0, 1fr) 304px;
 }
+/* Both rail-collapsed variants match the 28px `.side-rail-collapse`
+   button width; the legacy 34px in the rules above this section was
+   sized for the old, larger collapse glyph. */
+.workspace.rail-collapsed {
+	grid-template-columns: minmax(0, 1fr) 28px;
+}
 .workspace.has-bin.rail-collapsed {
 	grid-template-columns: 236px minmax(0, 1fr) 28px;
 }
