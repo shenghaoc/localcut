@@ -1667,6 +1667,7 @@ export function App() {
 			assets: assets(),
 			recentErrors: workerSnapshot?.recentErrors ?? recentErrorLog(),
 			workerSnapshot,
+			asr: { engine: asrState().engine, accelerator: asrState().accelerator },
 			voiceCleanup: {
 				denoiserEnabledTrackCount: voiceCleanupSettings().denoiserEnabledTracks.length,
 				wasmLoadStatus:

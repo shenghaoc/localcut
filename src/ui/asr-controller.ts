@@ -1,18 +1,21 @@
 /**
- * Orchestration for Auto Captions (Phase 29, LiteRT.js Whisper).
+ * Orchestration for Auto Captions (Phase 29, on-device Whisper).
  * Framework-free state machine between three parties:
  *
  *   pipeline worker  ──(extract-clip-audio PCM windows)──►  controller
- *   controller       ──(transcribe, transferred)──────────►  ASR worker (LiteRT)
+ *   controller       ──(transcribe, transferred)──────────►  ASR worker (LiteRT / ONNX)
  *   controller       ──(asr-create-caption-track)─────────►  pipeline worker
  *
- * The ASR worker owns LiteRT.js and all inference. The controller only extracts
- * 16 kHz mono PCM from the selected clip/range, streams it to the worker, tracks
- * progress, and turns the final result into a generated caption track. There is
- * no Browser SpeechRecognition path: LiteRT Whisper is the only engine.
+ * The ASR worker owns the Whisper runtime (LiteRT.js or ONNX Runtime Web, chosen
+ * per the selected model's manifest) and all inference. The controller only
+ * extracts 16 kHz mono PCM from the selected clip/range, streams it to the worker,
+ * tracks progress, and turns the final result into a generated caption track.
+ * There is no Browser SpeechRecognition path and no cloud fallback: on-device
+ * Whisper is the only engine.
  */
 import type {
 	AsrAccelerator,
+	AsrEngine,
 	AsrModelStatus,
 	AsrProbeResult,
 	AsrRecommendedEngine,
@@ -133,6 +136,8 @@ export interface AsrControllerState {
 	modelStatus: AsrModelStatus;
 	modelSizeBytes: number | null;
 	accelerator: AsrAccelerator | null;
+	/** Which Whisper runtime the loaded model uses (null until loaded). */
+	engine: AsrEngine | null;
 	/** Model download/compile progress in [0, 1] while loading, else null. */
 	downloadFraction: number | null;
 	downloadedBytes: number | null;
@@ -155,7 +160,7 @@ export interface ClipAudioRequest {
 export interface CreateCaptionTrackRequest {
 	segments: CaptionSegmentSnapshot[];
 	language: string | null;
-	engine: 'litert-whisper';
+	engine: AsrEngine;
 	accelerator: AsrAccelerator;
 	phraseLevel: boolean;
 	trackName: string;
@@ -205,6 +210,7 @@ export class AsrController {
 		modelStatus: 'not-loaded',
 		modelSizeBytes: null,
 		accelerator: null,
+		engine: null,
 		downloadFraction: null,
 		downloadedBytes: null,
 		cached: null,
@@ -292,6 +298,7 @@ export class AsrController {
 					modelStatus: msg.status,
 					modelSizeBytes: msg.sizeBytes ?? this.state.modelSizeBytes,
 					accelerator: msg.accelerator ?? this.state.accelerator,
+					engine: msg.status === 'loaded' ? (msg.engine ?? this.state.engine) : this.state.engine,
 					downloadFraction: msg.status === 'loading' ? (msg.fraction ?? 0) : null,
 					downloadedBytes: msg.status === 'loading' ? (msg.downloadedBytes ?? null) : null,
 					cached: msg.status === 'loaded' ? (msg.cached ?? null) : this.state.cached,
@@ -385,6 +392,7 @@ export class AsrController {
 			downloadFraction: 0,
 			downloadedBytes: null,
 			modelSizeBytes: this.state.model.sizeBytes,
+			engine: null,
 			cached: null
 		});
 		const pending = new Promise<boolean>((resolve) => {
@@ -434,6 +442,7 @@ export class AsrController {
 			modelStatus: 'not-loaded',
 			modelSizeBytes: null,
 			accelerator: null,
+			engine: null,
 			downloadFraction: null,
 			downloadedBytes: null,
 			cached: null,
@@ -598,7 +607,7 @@ export class AsrController {
 			this.ports.createCaptionTrack({
 				segments: shiftedSegments,
 				language: finalResult.language,
-				engine: 'litert-whisper',
+				engine: this.state.engine ?? 'litert-whisper',
 				accelerator: this.state.accelerator ?? ASR_DEFAULT_ACCELERATOR,
 				phraseLevel: finalResult.phraseLevel,
 				trackName
@@ -631,6 +640,7 @@ export class AsrController {
 			this.update({
 				modelStatus: 'not-loaded',
 				accelerator: null,
+				engine: null,
 				downloadFraction: null,
 				downloadedBytes: null,
 				cached: null,
@@ -665,7 +675,7 @@ export class AsrController {
 }
 
 export const ASR_PRIVACY_STATEMENT =
-	'All speech recognition runs on this device with LiteRT.js. No audio leaves your browser. No cloud API.';
+	'All speech recognition runs on this device (Whisper via ONNX Runtime Web or LiteRT.js). No audio leaves your browser. No cloud API.';
 
 export interface AsrActionAvailability {
 	loadModel: { enabled: boolean; reason: string | null };

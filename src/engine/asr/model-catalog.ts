@@ -54,25 +54,55 @@ export interface AsrModelCatalogEntry {
  * Shipped catalog. Add entries here to offer more models — each needs a manifest
  * (with real asset sizes + SHA-256 digests) reachable from an allowlisted host.
  * The models are fetched from Hugging Face through the same-origin `/_model/hf/`
- * Worker proxy; see `public/models/whisper/README.md`.
+ * Worker proxy; see `public/models/whisper-onnx/README.md` (ONNX) and
+ * `public/models/whisper/README.md` (LiteRT).
+ *
+ * The default is the **int8-quantized ONNX** Whisper Base on ONNX Runtime Web:
+ * ~77 MB versus the 290 MB LiteRT fp32 build — a far friendlier first download for
+ * a PWA — at comparable caption quality. The fp32 LiteRT builds stay selectable as
+ * the highest-fidelity / proven option (see `docs/ML-RUNTIME.md` for the size vs
+ * quality trade-off). The worker picks the runtime from each manifest's `runtime`
+ * field, so the two engines coexist behind one picker.
  */
 export const ASR_MODEL_CATALOG: readonly AsrModelCatalogEntry[] = [
 	{
+		id: 'whisper-base-onnx-int8',
+		name: 'Whisper Base (ONNX, int8)',
+		description: 'Multilingual (~74M params), int8-quantized — best balance of size and accuracy.',
+		provider: 'OpenAI · onnx-community',
+		infoUrl: 'https://huggingface.co/onnx-community/whisper-base',
+		license: 'Apache-2.0 / MIT',
+		languages: ['en', 'zh'],
+		sizeBytes: 77_347_042,
+		manifestUrl: '/models/whisper-onnx/manifest.json',
+		recommended: true
+	},
+	{
+		id: 'whisper-tiny-onnx-int8',
+		name: 'Whisper Tiny (ONNX, int8)',
+		description: 'Smaller & faster (~39M params), int8-quantized — quickest download (~41 MB).',
+		provider: 'OpenAI · onnx-community',
+		infoUrl: 'https://huggingface.co/onnx-community/whisper-tiny',
+		license: 'Apache-2.0 / MIT',
+		languages: ['en', 'zh'],
+		sizeBytes: 41_421_611,
+		manifestUrl: '/models/whisper-onnx/manifest-tiny.json'
+	},
+	{
 		id: 'whisper-base',
-		name: 'Whisper Base',
-		description: 'Multilingual speech-to-text (~74M params) — better accuracy on-device.',
+		name: 'Whisper Base (LiteRT, fp32)',
+		description: 'Full-precision (~74M params) on LiteRT.js — highest fidelity, ~290 MB download.',
 		provider: 'OpenAI · litert-community',
 		infoUrl: 'https://huggingface.co/litert-community/whisper-base',
 		license: 'Apache-2.0 / MIT',
 		languages: ['en', 'zh'],
 		sizeBytes: 290_918_186,
-		manifestUrl: '/models/whisper/manifest.json',
-		recommended: true
+		manifestUrl: '/models/whisper/manifest.json'
 	},
 	{
 		id: 'whisper-tiny',
-		name: 'Whisper Tiny',
-		description: 'Smaller & faster (~39M params) — quicker download, lower accuracy.',
+		name: 'Whisper Tiny (LiteRT, fp32)',
+		description: 'Full-precision (~39M params) on LiteRT.js — proven path, ~152 MB download.',
 		provider: 'OpenAI · litert-community',
 		infoUrl: 'https://huggingface.co/litert-community/whisper-tiny',
 		license: 'Apache-2.0 / MIT',

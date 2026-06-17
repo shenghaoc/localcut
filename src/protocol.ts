@@ -291,10 +291,18 @@ export type CleanupWorkerState =
 	| { type: 'cleanup-cancelled'; jobId?: number }
 	| { type: 'cleanup-error'; jobId?: number; message: string };
 
-// ── Phase 29: Auto Captions (ASR) — LiteRT.js Whisper ──
+// ── Phase 29: Auto Captions (ASR) — Whisper (LiteRT.js or ONNX Runtime Web) ──
 
-/** The only ASR engine: LiteRT.js Whisper, compiled on WebGPU, WebNN, or WASM. */
+/** ASR availability recommendation from the probe. Both Whisper runtimes need
+ *  only WebAssembly, so the probe does not distinguish between them — the chosen
+ *  engine is decided by the selected catalog model's manifest, not the probe. */
 export type AsrRecommendedEngine = 'litert-whisper' | 'none';
+
+/** Which Whisper runtime actually produced a transcript. `litert-whisper` is a
+ *  single-file TFLite graph run by LiteRT.js; `ort-whisper` is a separate
+ *  encoder/decoder ONNX pair run by ONNX Runtime Web (ORT). Recorded in the
+ *  generated caption track's metadata. */
+export type AsrEngine = 'litert-whisper' | 'ort-whisper';
 
 /** LiteRT accelerator used to compile the Whisper graphs. `wasm` is the
  *  baseline that works without WebGPU/WebNN; `webgpu` and `webnn` are optional
@@ -398,7 +406,7 @@ export interface AsrDecodeParams {
 /** Metadata marker for auto-generated caption tracks. */
 export interface AsrGeneratedCaptionMetadata {
 	generatedBy: 'auto-captions-phase-29';
-	engine: 'litert-whisper';
+	engine: AsrEngine;
 	accelerator: AsrAccelerator;
 	language: string | null;
 	phraseLevel: boolean;
@@ -447,6 +455,8 @@ export type AsrWorkerState =
 			type: 'asr-model-status';
 			status: AsrModelStatus;
 			accelerator?: AsrAccelerator;
+			/** On `loaded`: which Whisper runtime the worker built for this model. */
+			engine?: AsrEngine;
 			/** Total model size in bytes (from the manifest). */
 			sizeBytes?: number;
 			/** Bytes downloaded so far while `status === 'loading'`. */
@@ -526,7 +536,7 @@ export interface AsrCreateCaptionTrackCommand {
 	type: 'asr-create-caption-track';
 	segments: CaptionSegmentSnapshot[];
 	language: string | null;
-	engine: 'litert-whisper';
+	engine: AsrEngine;
 	accelerator: AsrAccelerator;
 	phraseLevel: boolean;
 	/** Human-readable name for the generated track. */

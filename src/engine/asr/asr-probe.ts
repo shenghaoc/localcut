@@ -59,4 +59,4 @@ export const ASR_UNAVAILABLE_MESSAGE =
 	'Auto captions require WebAssembly, which is unavailable in this browser.';
 
 export const ASR_ACCURACY_NOTE =
-	'On-device Whisper via LiteRT.js, preferring experimental WebNN, then WebGPU, and falling back to WASM. The first run downloads the model once, then caches it for offline reuse.';
+	'On-device Whisper — ONNX Runtime Web (WASM) for the default int8 models, or LiteRT.js (WebNN/WebGPU/WASM) for the full-precision models. The first run downloads the model once, then caches it for offline reuse.';

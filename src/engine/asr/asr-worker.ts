@@ -10,15 +10,16 @@
  */
 import type {
 	AsrAccelerator,
-	AsrModelManifestSnapshot,
+	AsrEngine,
+	AsrModelAssetSnapshot,
 	AsrModelStatus,
 	AsrWorkerCommand,
 	AsrWorkerState,
 	CaptionSegmentSnapshot
 } from '../../protocol';
 import { probeAsr } from './asr-probe';
-import { manifestAssets, validateAsrManifest } from './model-manifest';
-import { createOpfsAssetStore, loadVerifiedAsset } from './asset-cache';
+import { manifestAssets, validateAsrManifest, type AsrTranscribeConfig } from './model-manifest';
+import { createOpfsAssetStore, loadVerifiedAsset, type AssetStore } from './asset-cache';
 import { assertTrustedModelUrl } from './model-catalog';
 import { parseWhisperVocab } from './whisper-tokenizer';
 import { prepareMonoPcm } from './whisper-dsp';
@@ -29,16 +30,29 @@ import {
 	dropAdjacentRepeatedSegments,
 	filterHallucinations,
 	isEmptyTranscript,
-	transcribeWindow
+	transcribeWindow,
+	type WhisperRuntime
 } from './whisper-decode';
-import { createLiteRtWhisperRuntime, type LiteRtWhisperRuntime } from './litert-runtime';
+import { createLiteRtWhisperRuntime } from './litert-runtime';
+import {
+	isOrtWhisperManifestDocument,
+	ortWhisperManifestAssets,
+	validateOrtWhisperManifest
+} from './ort-whisper-manifest';
+import { createOrtWhisperRuntime } from './whisper-ort-runtime';
 import { appendSerialTask } from './serial-task-queue';
 
+/** A loaded Whisper runtime (LiteRT or ONNX) plus the accelerator it compiled on. */
+type AsrRuntime = WhisperRuntime & { readonly accelerator: AsrAccelerator };
+
 interface LoadedModel {
-	runtime: LiteRtWhisperRuntime;
+	runtime: AsrRuntime;
 	/** id → byte-level token string. */
 	vocab: string[];
-	manifest: AsrModelManifestSnapshot;
+	/** Engine-agnostic transcribe-time config (audio, tokens, decode params). */
+	config: AsrTranscribeConfig;
+	/** Which runtime built this model — recorded in the generated track's metadata. */
+	engine: AsrEngine;
 	accelerator: AsrAccelerator;
 }
 
@@ -77,6 +91,178 @@ function enqueue(
 	chain = appendSerialTask(chain, task, onError);
 }
 
+interface DownloadContext {
+	generation: number;
+	/** Accelerator label shown in the loading status (informational). */
+	accelerator: AsrAccelerator;
+	signal: AbortSignal;
+	store: AssetStore | null;
+	origin: string;
+	totalBytes: number;
+}
+
+/**
+ * Downloads + verifies a manifest's assets in order, posting aggregate progress.
+ * Returns `null` when a reload/dispose superseded this load mid-fetch (the caller
+ * must stop). Each asset URL is re-checked against the host allowlist.
+ */
+async function downloadVerifiedAssets(
+	assets: ReadonlyArray<{ key: string; asset: AsrModelAssetSnapshot }>,
+	ctx: DownloadContext
+): Promise<{ bytesByKey: Record<string, Uint8Array>; fromNetwork: boolean } | null> {
+	const downloaded: Record<string, number> = {};
+	const bytesByKey: Record<string, Uint8Array> = {};
+	let fromNetwork = false;
+	for (const { key, asset } of assets) {
+		assertTrustedModelUrl(asset.url, ctx.origin);
+		const bytes = await loadVerifiedAsset(asset, {
+			store: ctx.store,
+			signal: ctx.signal,
+			onSource: (source) => {
+				if (source === 'network') fromNetwork = true;
+			},
+			onProgress: (progress) => {
+				if (ctx.generation !== loadGeneration) return;
+				downloaded[key] = progress.receivedBytes;
+				const sum = Object.values(downloaded).reduce((a, b) => a + b, 0);
+				post({
+					type: 'asr-model-status',
+					status: 'loading',
+					accelerator: ctx.accelerator,
+					sizeBytes: ctx.totalBytes,
+					downloadedBytes: sum,
+					fraction: Math.min(sum / ctx.totalBytes, 0.99)
+				});
+			}
+		});
+		if (ctx.generation !== loadGeneration) return null; // disposed/reloaded mid-fetch
+		bytesByKey[key] = bytes;
+	}
+	return { bytesByKey, fromNetwork };
+}
+
+/** Posts the final "compiling graphs" tick before a runtime is built. */
+function postCompiling(accelerator: AsrAccelerator, totalBytes: number): void {
+	post({
+		type: 'asr-model-status',
+		status: 'loading',
+		accelerator,
+		sizeBytes: totalBytes,
+		downloadedBytes: totalBytes,
+		fraction: 0.99
+	});
+}
+
+/** Commits a freshly built runtime as the active model and posts `loaded`. */
+function commitLoadedModel(params: {
+	runtime: AsrRuntime;
+	vocab: string[];
+	config: AsrTranscribeConfig;
+	engine: AsrEngine;
+	fromNetwork: boolean;
+}): void {
+	model = {
+		runtime: params.runtime,
+		vocab: params.vocab,
+		config: params.config,
+		engine: params.engine,
+		accelerator: params.runtime.accelerator
+	};
+	status = 'loaded';
+	post({
+		type: 'asr-model-status',
+		status: 'loaded',
+		engine: params.engine,
+		accelerator: params.runtime.accelerator,
+		sizeBytes: params.config.sizeBytes,
+		fraction: 1,
+		cached: !params.fromNetwork
+	});
+}
+
+/** Loads a LiteRT.js Whisper model (single fused TFLite graph). */
+async function loadLiteRtModel(
+	json: unknown,
+	cmd: Extract<AsrWorkerCommand, { type: 'asr-load-model' }>,
+	generation: number,
+	signal: AbortSignal,
+	store: AssetStore | null,
+	origin: string
+): Promise<void> {
+	const manifest = validateAsrManifest(json);
+	const result = await downloadVerifiedAssets(manifestAssets(manifest), {
+		generation,
+		accelerator: cmd.accelerator,
+		signal,
+		store,
+		origin,
+		totalBytes: manifest.sizeBytes
+	});
+	if (!result) return;
+
+	postCompiling(cmd.accelerator, manifest.sizeBytes);
+	const runtime = await createLiteRtWhisperRuntime({
+		wasmPath: cmd.wasmPath,
+		accelerator: cmd.accelerator,
+		modelBytes: result.bytesByKey.model!,
+		manifest
+	});
+	if (generation !== loadGeneration) {
+		runtime.dispose();
+		return;
+	}
+	const vocab = parseWhisperVocab(new TextDecoder().decode(result.bytesByKey.tokenizer!));
+	commitLoadedModel({
+		runtime,
+		vocab,
+		config: manifest,
+		engine: 'litert-whisper',
+		fromNetwork: result.fromNetwork
+	});
+}
+
+/** Loads an ONNX Whisper model (encoder + no-past decoder) on ONNX Runtime Web. */
+async function loadOrtModel(
+	json: unknown,
+	generation: number,
+	signal: AbortSignal,
+	store: AssetStore | null,
+	origin: string
+): Promise<void> {
+	const manifest = validateOrtWhisperManifest(json);
+	// ORT runs on the EP pinned in the manifest (wasm for the shipped models), not
+	// the LiteRT-style accelerator the command requested.
+	const accelerator: AsrAccelerator = manifest.executionProviders[0] ?? 'wasm';
+	const result = await downloadVerifiedAssets(ortWhisperManifestAssets(manifest), {
+		generation,
+		accelerator,
+		signal,
+		store,
+		origin,
+		totalBytes: manifest.sizeBytes
+	});
+	if (!result) return;
+
+	postCompiling(accelerator, manifest.sizeBytes);
+	const runtime = await createOrtWhisperRuntime({
+		encoderBytes: result.bytesByKey.encoder!,
+		decoderBytes: result.bytesByKey.decoder!,
+		manifest
+	});
+	if (generation !== loadGeneration) {
+		runtime.dispose();
+		return;
+	}
+	const vocab = parseWhisperVocab(new TextDecoder().decode(result.bytesByKey.tokenizer!));
+	commitLoadedModel({
+		runtime,
+		vocab,
+		config: manifest,
+		engine: 'ort-whisper',
+		fromNetwork: result.fromNetwork
+	});
+}
+
 async function handleLoad(
 	cmd: Extract<AsrWorkerCommand, { type: 'asr-load-model' }>
 ): Promise<void> {
@@ -84,8 +270,9 @@ async function handleLoad(
 		post({
 			type: 'asr-model-status',
 			status: 'loaded',
+			engine: model.engine,
 			accelerator: model.accelerator,
-			sizeBytes: model.manifest.sizeBytes,
+			sizeBytes: model.config.sizeBytes,
 			fraction: 1
 		});
 		return;
@@ -99,7 +286,7 @@ async function handleLoad(
 
 	try {
 		if (typeof WebAssembly === 'undefined') {
-			throw new Error('WebAssembly is unavailable in this browser; LiteRT cannot run.');
+			throw new Error('WebAssembly is unavailable in this browser; Whisper cannot run.');
 		}
 
 		const origin = self.location.origin;
@@ -110,71 +297,16 @@ async function handleLoad(
 		if (!manifestResponse.ok) {
 			throw new Error(`Model manifest fetch failed: HTTP ${manifestResponse.status}`);
 		}
-		const manifest = validateAsrManifest(await manifestResponse.json());
+		const json: unknown = await manifestResponse.json();
 		const store = await createOpfsAssetStore();
 
-		const total = manifest.sizeBytes;
-		const downloaded: Record<string, number> = {};
-		const bytesByKey: Partial<Record<'model' | 'tokenizer', Uint8Array>> = {};
-		let fromNetwork = false;
-		for (const { key, asset } of manifestAssets(manifest)) {
-			assertTrustedModelUrl(asset.url, origin);
-			const bytes = await loadVerifiedAsset(asset, {
-				store,
-				signal,
-				onSource: (source) => {
-					if (source === 'network') fromNetwork = true;
-				},
-				onProgress: (progress) => {
-					if (generation !== loadGeneration) return;
-					downloaded[key] = progress.receivedBytes;
-					const sum = Object.values(downloaded).reduce((a, b) => a + b, 0);
-					post({
-						type: 'asr-model-status',
-						status: 'loading',
-						accelerator: cmd.accelerator,
-						sizeBytes: total,
-						downloadedBytes: sum,
-						fraction: Math.min(sum / total, 0.99)
-					});
-				}
-			});
-			if (generation !== loadGeneration) return; // disposed/reloaded mid-fetch
-			bytesByKey[key] = bytes;
+		// Route by the manifest's runtime discriminator: ONNX Whisper on ORT, else
+		// the LiteRT single-graph path.
+		if (isOrtWhisperManifestDocument(json)) {
+			await loadOrtModel(json, generation, signal, store, origin);
+		} else {
+			await loadLiteRtModel(json, cmd, generation, signal, store, origin);
 		}
-
-		// Compiling the graphs is the last (un-measured) step before ready.
-		post({
-			type: 'asr-model-status',
-			status: 'loading',
-			accelerator: cmd.accelerator,
-			sizeBytes: total,
-			downloadedBytes: total,
-			fraction: 0.99
-		});
-
-		const runtime = await createLiteRtWhisperRuntime({
-			wasmPath: cmd.wasmPath,
-			accelerator: cmd.accelerator,
-			modelBytes: bytesByKey.model!,
-			manifest
-		});
-		if (generation !== loadGeneration) {
-			runtime.dispose();
-			return;
-		}
-
-		const vocab = parseWhisperVocab(new TextDecoder().decode(bytesByKey.tokenizer!));
-		model = { runtime, vocab, manifest, accelerator: runtime.accelerator };
-		status = 'loaded';
-		post({
-			type: 'asr-model-status',
-			status: 'loaded',
-			accelerator: runtime.accelerator,
-			sizeBytes: total,
-			fraction: 1,
-			cached: !fromNetwork
-		});
 	} catch (error) {
 		if (generation !== loadGeneration || signal.aborted) return;
 		status = 'failed';
@@ -222,13 +354,13 @@ async function handleTranscribe(
 			runtime: activeModel.runtime,
 			monoPcm: mono,
 			vocab: activeModel.vocab,
-			special: activeModel.manifest.tokens,
-			maxTokens: activeModel.manifest.maxDecodeTokens,
-			chunkLengthS: activeModel.manifest.audio.chunkLengthS,
+			special: activeModel.config.tokens,
+			maxTokens: activeModel.config.maxDecodeTokens,
+			chunkLengthS: activeModel.config.audio.chunkLengthS,
 			offsetS: cmd.offsetS,
-			language: cmd.language ?? activeModel.manifest.defaultLanguage ?? undefined,
+			language: cmd.language ?? activeModel.config.defaultLanguage ?? undefined,
 			shouldCancel: () => job.cancelled,
-			decodeParams: activeModel.manifest.decode
+			decodeParams: activeModel.config.decode
 		});
 		if (job.cancelled) return;
 

@@ -1,4 +1,4 @@
-import type { ExportSettings, MediaAssetSnapshot } from '../protocol';
+import type { AsrAccelerator, AsrEngine, ExportSettings, MediaAssetSnapshot } from '../protocol';
 import {
 	DIAGNOSTIC_SNAPSHOT_SCHEMA_VERSION,
 	type CapabilityFinding,
@@ -7,6 +7,7 @@ import {
 	type DiagnosticSnapshot,
 	type ExportSettingsSummary,
 	type InterpolationDiagnosticSummary,
+	type MlRuntimeDiagnosticSummary,
 	type ProxyCacheDiagnosticSummary,
 	type RecentErrorLog,
 	type StorageDiagnosticSummary,
@@ -16,7 +17,9 @@ import { buildDefaultPerformanceBudgets } from '../diagnostics/performance-budge
 import type { CapabilitySnapshot, CapabilityTier } from './capabilities';
 
 const APP_VERSION = '0.1.0';
-const BUILD_ID = `${APP_VERSION}+${__BUILD_SHA__}`;
+// Guard the build-time global so the module is importable under unit tests (the
+// node test env doesn't `define` it), matching asr/cleanup/worker controllers.
+const BUILD_ID = `${APP_VERSION}+${typeof __BUILD_SHA__ === 'string' ? __BUILD_SHA__ : 'dev'}`;
 
 function makeSnapshotId(): string {
 	if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -299,6 +302,9 @@ export interface UiDiagnosticInput {
 	readonly recentErrors: RecentErrorLog;
 	readonly workerSnapshot?: DiagnosticSnapshot | null;
 	readonly interpolation?: InterpolationDiagnosticSummary;
+	/** Active Auto Captions engine + accelerator, so an ORT/WASM transcription is
+	 *  not misreported as LiteRT in support bundles. `null` engine ⇒ none loaded. */
+	readonly asr?: { readonly engine: AsrEngine | null; readonly accelerator: AsrAccelerator | null };
 	readonly voiceCleanup?: {
 		readonly denoiserEnabledTrackCount: number;
 		readonly wasmLoadStatus: VoiceCleanupDiagnosticSummary['wasmLoadStatus'];
@@ -310,6 +316,23 @@ export interface UiDiagnosticInput {
 		readonly normaliseGainDb: number;
 		readonly limiterCeilingDbtp: number;
 	};
+}
+
+/**
+ * Resolves the ML-runtime summary. When the active Auto Captions engine is the
+ * ONNX one, report `ort` + its execution provider so an exported support bundle
+ * reflects the runtime that actually ran; otherwise fall back to the worker's
+ * summary (LiteRT today). `AsrAccelerator` and `OrtExecutionProvider` share the
+ * same member set, so the accelerator maps straight to `ortEp`.
+ */
+export function mlRuntimeSummary(
+	asr: UiDiagnosticInput['asr'],
+	workerMlRuntime: MlRuntimeDiagnosticSummary | undefined
+): MlRuntimeDiagnosticSummary {
+	if (asr?.engine === 'ort-whisper') {
+		return { mlRuntime: 'ort', ortEp: asr.accelerator ?? 'wasm', tensorLocation: 'cpu' };
+	}
+	return workerMlRuntime ?? { mlRuntime: 'litert' };
 }
 
 export async function buildUiDiagnosticSnapshot(
@@ -331,7 +354,7 @@ export async function buildUiDiagnosticSnapshot(
 		voiceCleanup: input.voiceCleanup
 			? voiceCleanupSummary(input.voiceCleanup)
 			: (worker?.voiceCleanup ?? voiceCleanupSummary()),
-		mlRuntime: worker?.mlRuntime ?? { mlRuntime: 'litert' },
+		mlRuntime: mlRuntimeSummary(input.asr, worker?.mlRuntime),
 		activeExportSettings: exportSettingsSummary(input.exportSettings),
 		performanceBudgets: worker?.performanceBudgets ?? buildDefaultPerformanceBudgets(),
 		recentErrors: input.recentErrors,

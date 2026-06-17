@@ -324,6 +324,17 @@ export default defineConfig({
 						options: { cacheName: 'whisper-manifest' }
 					},
 					{
+						// ONNX Whisper backend manifest (`/models/whisper-onnx/`). Same
+						// NetworkFirst rationale as the LiteRT whisper manifest: schema
+						// evolves between app versions, the encoder/decoder ONNX assets are
+						// fetched cross-origin and cached in OPFS, so only the small manifest
+						// is served same-origin here. (The `whisper` rule above does not
+						// match this path — it requires `whisper/`, not `whisper-onnx/`.)
+						urlPattern: /\/models\/whisper-onnx\//,
+						handler: 'NetworkFirst',
+						options: { cacheName: 'whisper-onnx-manifest' }
+					},
+					{
 						// Phase 37: interpolation model manifest. NetworkFirst for the
 						// same reason as whisper — the manifest schema changes between
 						// app versions, and a CacheFirst copy would serve stale data.

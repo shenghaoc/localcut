@@ -1,5 +1,6 @@
 import type {
 	AsrAccelerator,
+	AsrEngine,
 	AsrGeneratedCaptionMetadata,
 	CaptionSegmentSnapshot
 } from '../../protocol';
@@ -10,7 +11,7 @@ export interface CreateAsrCaptionTrackOptions {
 	segments: readonly CaptionSegmentSnapshot[];
 	trackName: string;
 	language: string | null;
-	engine: 'litert-whisper';
+	engine: AsrEngine;
 	accelerator: AsrAccelerator;
 	phraseLevel: boolean;
 	createdAt?: Date;

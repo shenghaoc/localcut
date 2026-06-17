@@ -438,6 +438,7 @@ describe('asrActionAvailability', () => {
 			modelStatus: 'loaded',
 			modelSizeBytes: 600,
 			accelerator: 'wasm',
+			engine: 'litert-whisper',
 			downloadFraction: null,
 			downloadedBytes: null,
 			cached: null,

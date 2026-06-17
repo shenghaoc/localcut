@@ -1,0 +1,65 @@
+{
+	"id": "whisper-base-onnx-int8",
+	"version": "onnx-community-int8-2024",
+	"runtime": "ort-whisper",
+	"format": "onnx",
+	"license": "Apache-2.0 (onnx-community export) / MIT (OpenAI Whisper)",
+	"source": "https://huggingface.co/onnx-community/whisper-base",
+	"infoUrl": "https://huggingface.co/onnx-community/whisper-base",
+	"provider": "OpenAI · onnx-community (int8)",
+	"executionProviders": ["wasm"],
+	"sizeBytes": 77347042,
+	"encoder": {
+		"url": "/_model/hf/onnx-community/whisper-base/resolve/main/onnx/encoder_model_quantized.onnx",
+		"sizeBytes": 23201314,
+		"checksum": "sha256-5862993336bf33acd23736071aae2b32261d3b1b2f37780194460d4ef974dd46"
+	},
+	"decoder": {
+		"url": "/_model/hf/onnx-community/whisper-base/resolve/main/onnx/decoder_model_quantized.onnx",
+		"sizeBytes": 53310178,
+		"checksum": "sha256-c859636f4463dd5a9ea752546c6c7badeb48ab3e22b340cafef08a15552fcb2e"
+	},
+	"tokenizer": {
+		"url": "/_model/hf/openai/whisper-base/resolve/main/vocab.json",
+		"sizeBytes": 835550,
+		"checksum": "sha256-8f680bba319e01a653d2e8a5dbc17a9157179e0576e6ce74ce0c06356c6e24f9"
+	},
+	"io": {
+		"encoderInput": "input_features",
+		"encoderOutput": "last_hidden_state",
+		"decoderInputIds": "input_ids",
+		"decoderEncoderHidden": "encoder_hidden_states",
+		"decoderLogits": "logits",
+		"inputIdsDataType": "int64"
+	},
+	"audio": {
+		"sampleRate": 16000,
+		"channels": 1,
+		"hopLength": 160,
+		"nMel": 80,
+		"chunkLengthS": 30
+	},
+	"maxDecodeTokens": 128,
+	"vocabSize": 51865,
+	"encoderFramesPerSecond": 50,
+	"tokens": {
+		"startOfTranscript": 50258,
+		"endOfText": 50257,
+		"transcribe": 50359,
+		"noTimestamps": 50363,
+		"noSpeech": 50362,
+		"timestampBegin": 50364,
+		"language": {
+			"en": 50259,
+			"zh": 50260
+		}
+	},
+	"languages": ["en", "zh"],
+	"defaultLanguage": null,
+	"decode": {
+		"logProbThreshold": -1.0,
+		"noSpeechThreshold": 0.6,
+		"compressionRatioThreshold": 2.4,
+		"temperatures": [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
+	}
+}
