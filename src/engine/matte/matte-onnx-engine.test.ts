@@ -47,4 +47,19 @@ describe('MatteOnnxEngine — zero-copy hot path (source contract)', () => {
 		// The resolve pass (EMA smoothing + reset) is shared verbatim, not forked.
 		expect(engineSource).toContain('matte-resolve.wgsl');
 	});
+
+	it('frees GPU resources on a resolve-pass failure / device loss', () => {
+		// A pre-submit WebGPU throw destroys the alpha texture (the catch), and the
+		// output tensors are disposed via `.finally` so an onSubmittedWorkDone
+		// rejection (device loss) still frees them — never the leak-prone `.then`.
+		expect(engineSource).toContain('alphaTexture.destroy()');
+		expect(engineSource).toMatch(/onSubmittedWorkDone\(\)\.finally\(/);
+		expect(engineSource).not.toMatch(/onSubmittedWorkDone\(\)\.then\(/);
+	});
+
+	it('validates the ONNX output element count before binding the alpha buffer', () => {
+		// A model whose output isn't the declared single-channel W×H must fail with a
+		// clear contract error, not silently corrupt the matte / read past the buffer.
+		expect(engineSource).toContain('produced !== expected');
+	});
 });

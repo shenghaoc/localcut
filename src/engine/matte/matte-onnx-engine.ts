@@ -577,48 +577,66 @@ export class MatteOnnxEngine implements MatteBackendEngine {
 			usage:
 				GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC
 		});
-		const uniform = new ArrayBuffer(16);
-		new Uint32Array(uniform, 0, 2).set([model.width, model.height]);
-		new Float32Array(uniform, 8, 1)[0] = MATTE_TEMPORAL_SMOOTHING;
-		new Uint32Array(uniform, 12, 1)[0] = reset ? 1 : 0;
-		device.queue.writeBuffer(this.resolveUniform!, 0, uniform);
+		// Until the resolve pass is submitted, a WebGPU failure (device loss /
+		// validation in createBindGroup/submit) must free both the texture just
+		// created and the ORT output tensors — nothing else owns them yet. Once
+		// submitted, the GPU owns the read, so the tensors are freed by
+		// onSubmittedWorkDone and the cache owns the texture.
+		let submitted = false;
+		try {
+			const uniform = new ArrayBuffer(16);
+			new Uint32Array(uniform, 0, 2).set([model.width, model.height]);
+			new Float32Array(uniform, 8, 1)[0] = MATTE_TEMPORAL_SMOOTHING;
+			new Uint32Array(uniform, 12, 1)[0] = reset ? 1 : 0;
+			device.queue.writeBuffer(this.resolveUniform!, 0, uniform);
 
-		const resolveEncoder = device.createCommandEncoder();
-		const resolvePass = resolveEncoder.beginComputePass();
-		resolvePass.setPipeline(this.resolvePipeline!);
-		resolvePass.setBindGroup(
-			0,
-			device.createBindGroup({
-				layout: this.resolvePipeline!.getBindGroupLayout(0),
-				entries: [
-					{ binding: 0, resource: { buffer: this.resolveUniform! } },
-					{ binding: 1, resource: { buffer: alphaBuffer } },
-					{ binding: 2, resource: session.historyView },
-					{ binding: 3, resource: alphaTexture.createView() }
-				]
-			})
-		);
-		resolvePass.dispatchWorkgroups(Math.ceil(model.width / 8), Math.ceil(model.height / 8));
-		resolvePass.end();
-		// Next frame's history = this frame's smoothed alpha.
-		resolveEncoder.copyTextureToTexture(
-			{ texture: alphaTexture },
-			{ texture: session.history },
-			{ width: model.width, height: model.height }
-		);
-		device.queue.submit([resolveEncoder.finish()]);
+			const resolveEncoder = device.createCommandEncoder();
+			const resolvePass = resolveEncoder.beginComputePass();
+			resolvePass.setPipeline(this.resolvePipeline!);
+			resolvePass.setBindGroup(
+				0,
+				device.createBindGroup({
+					layout: this.resolvePipeline!.getBindGroupLayout(0),
+					entries: [
+						{ binding: 0, resource: { buffer: this.resolveUniform! } },
+						{ binding: 1, resource: { buffer: alphaBuffer } },
+						{ binding: 2, resource: session.historyView },
+						{ binding: 3, resource: alphaTexture.createView() }
+					]
+				})
+			);
+			resolvePass.dispatchWorkgroups(Math.ceil(model.width / 8), Math.ceil(model.height / 8));
+			resolvePass.end();
+			// Next frame's history = this frame's smoothed alpha.
+			resolveEncoder.copyTextureToTexture(
+				{ texture: alphaTexture },
+				{ texture: session.history },
+				{ width: model.width, height: model.height }
+			);
+			device.queue.submit([resolveEncoder.finish()]);
+			submitted = true;
 
-		// Free ORT's output tensors (and their GPU buffers) only after the resolve
-		// pass that reads the alpha has finished on the GPU — avoids a use-after-free.
-		void device.queue.onSubmittedWorkDone().then(() => {
-			for (const tensor of outputs) tensor.dispose();
-		});
+			// Free ORT's output tensors (and their GPU buffers) only after the resolve
+			// pass that reads the alpha has finished on the GPU — avoids a use-after-free.
+			// `.finally` (not `.then`) so a device-loss rejection still disposes them.
+			void device.queue.onSubmittedWorkDone().finally(() => {
+				for (const tensor of outputs) tensor.dispose();
+			});
 
-		session.lastSourceTimeS = request.sourceTimeS;
-		// History now matches this displayed frame again (fresh alpha was written).
-		session.historyStale = false;
-		// The cache owns alphaTexture from here (destroyed on eviction).
-		this.cache.set(cacheKey, alphaTexture, model.width, model.height);
+			session.lastSourceTimeS = request.sourceTimeS;
+			// History now matches this displayed frame again (fresh alpha was written).
+			session.historyStale = false;
+			// The cache owns alphaTexture from here (destroyed on eviction).
+			this.cache.set(cacheKey, alphaTexture, model.width, model.height);
+		} catch (error) {
+			alphaTexture.destroy();
+			// Pre-submit: the GPU never took the read, so dispose the output tensors
+			// here. Post-submit, onSubmittedWorkDone owns their disposal.
+			if (!submitted) {
+				for (const tensor of outputs) tensor.dispose();
+			}
+			throw error;
+		}
 		const view = this.cache.get(cacheKey);
 		if (view) this.lastView.set(request.clipId, view);
 		return view;
