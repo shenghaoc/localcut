@@ -212,7 +212,9 @@ body {
 	font-family: var(--font-ui);
 	font-size: var(--text-base);
 	font-feature-settings: 'ss01', 'cv11';
-	line-height: 1.35;
+	/* Restore the pre-Tailwind default; preflight sets 1.5, which can
+	   shift the dense timeline layout. */
+	line-height: normal;
 	color: var(--text);
 	background-color: var(--ink);
 	background-image: none;
@@ -6124,6 +6126,7 @@ button.status-badge:hover {
 .workspace {
 	gap: 6px;
 	padding: 6px;
+	grid-template-columns: minmax(0, 1fr) 304px;
 }
 .workspace.has-bin {
 	grid-template-columns: 236px minmax(0, 1fr) 304px;
@@ -6401,11 +6404,11 @@ button.status-badge:hover {
 	opacity: 1;
 	color: var(--cyan);
 }
-.pipeline-chip.is-tool.is-ok {
+.pipeline-chip.is-tool.is-live {
 	color: var(--vermillion);
 	background: rgb(239 79 79 / 8%);
 }
-.pipeline-chip.is-tool.is-ok::before {
+.pipeline-chip.is-tool.is-live::before {
 	content: '●';
 	margin-right: 4px;
 	font-size: 8px;

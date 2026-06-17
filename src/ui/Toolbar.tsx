@@ -247,7 +247,7 @@ export function Toolbar(props: ToolbarProps) {
 				<span class="pipeline-tools-divider" aria-hidden="true" />
 				<button
 					type="button"
-					class={cn('pipeline-chip pipeline-chip-button is-tool', props.publishLive && 'is-ok')}
+					class={cn('pipeline-chip pipeline-chip-button is-tool', props.publishLive && 'is-live')}
 					onClick={() => props.onOpenPublish?.()}
 					title="Stream the program output to a WHIP endpoint"
 				>

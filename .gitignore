@@ -173,3 +173,4 @@ public/litert/
 public/models/whisper/*.tflite
 public/models/whisper/*.bin
 public/models/whisper/vocab.json
+.claude/launch.json
