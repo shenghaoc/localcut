@@ -65,17 +65,17 @@ validated by `validateOrtManifest`) plus a face-detector `io` block and a
 
 ### `io`
 
-| Field             | Type                                            | Description                                                                        |
-| ----------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `layout`          | `'nchw'` \| `'nhwc'`                            | Image tensor layout.                                                               |
-| `inputWidth`      | positive integer                                | Model input width in pixels.                                                       |
-| `inputHeight`     | positive integer                                | Model input height in pixels.                                                      |
-| `inputChannels`   | `1` \| `3` \| `4`                               | RGB (3) is typical; gray (1) reads the red channel; RGBA (4) passes alpha through. |
-| `bytesPerElement` | `4`                                             | Float32 only for now (the loader builds a Float32 input tensor).                   |
-| `inputName`       | non-empty string                                | The ONNX graph's image input name.                                                 |
-| `inputRange`      | `'unit'` \| `'signed-unit'` \| `'mean-std'`     | `[0,1]`, `[-1,1]`, or per-channel `(x − mean) / std`.                              |
-| `mean`            | array of `inputChannels` numbers (only when `inputRange='mean-std'`) | Per-channel mean used during preprocessing.            |
-| `std`             | array of `inputChannels` numbers (only when `inputRange='mean-std'`) | Per-channel std-dev used during preprocessing.         |
+| Field             | Type                                                                 | Description                                                                        |
+| ----------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `layout`          | `'nchw'` \| `'nhwc'`                                                 | Image tensor layout.                                                               |
+| `inputWidth`      | positive integer                                                     | Model input width in pixels.                                                       |
+| `inputHeight`     | positive integer                                                     | Model input height in pixels.                                                      |
+| `inputChannels`   | `1` \| `3` \| `4`                                                    | RGB (3) is typical; gray (1) reads the red channel; RGBA (4) passes alpha through. |
+| `bytesPerElement` | `4`                                                                  | Float32 only for now (the loader builds a Float32 input tensor).                   |
+| `inputName`       | non-empty string                                                     | The ONNX graph's image input name.                                                 |
+| `inputRange`      | `'unit'` \| `'signed-unit'` \| `'mean-std'`                          | `[0,1]`, `[-1,1]`, or per-channel `(x − mean) / std`.                              |
+| `mean`            | array of `inputChannels` numbers (only when `inputRange='mean-std'`) | Per-channel mean used during preprocessing.                                        |
+| `std`             | array of `inputChannels` numbers (only when `inputRange='mean-std'`) | Per-channel std-dev used during preprocessing.                                     |
 
 ### `decode`
 

@@ -5,12 +5,17 @@ import type { OrtModelManifest } from '../ml/ort/ort-types';
 // The ORT runtime is not available in Node tests; the detector only needs the
 // `Tensor` constructor (CPU wrapper around a Float32Array), so a fake suffices.
 class FakeTensor {
+	static disposeCount = 0;
+
 	constructor(
 		public readonly type: string,
 		public readonly data: ArrayLike<number>,
 		public readonly dims: readonly number[]
 	) {}
-	dispose(): void {}
+
+	dispose(): void {
+		FakeTensor.disposeCount++;
+	}
 }
 vi.mock('../ml/ort/ort-loader', () => ({
 	loadOrtWasm: vi.fn(async () => ({ Tensor: FakeTensor })),
@@ -30,6 +35,7 @@ import type { FaceDetectorIoContract } from './face-detector-ort-manifest';
 
 afterEach(() => {
 	vi.clearAllMocks();
+	FakeTensor.disposeCount = 0;
 });
 
 const NCHW_3CH: FaceDetectorIoContract = {
@@ -281,9 +287,13 @@ describe('createOrtFaceDetector', () => {
 			loadModelBytes: async () => new Uint8Array(0),
 			createSession: async (opts) => {
 				// Sanity check: session creation receives the validated manifest.
-				const manifest = (opts as unknown as { manifest: OrtModelManifest }).manifest;
+				const { manifest, tensorLocation } = opts as unknown as {
+					manifest: OrtModelManifest;
+					tensorLocation?: string;
+				};
 				expect(manifest.id).toBe('face-detector');
 				expect(manifest.frameCoupled).toBe(false);
+				expect(tensorLocation).toBe('cpu');
 				return stubHandle('webgpu', stub);
 			},
 			resizeImageData: async () => new Uint8ClampedArray(4 * 4 * 4) // 4×4 RGBA
@@ -304,6 +314,77 @@ describe('createOrtFaceDetector', () => {
 		expect(detections[0]!.confidence).toBeGreaterThanOrEqual(detections[1]!.confidence);
 		expect(detections[0]!.x).toBeGreaterThanOrEqual(0);
 		expect(detections[0]!.width).toBeGreaterThan(0);
+		expect(FakeTensor.disposeCount).toBe(1);
+	});
+
+	it('disposes the input tensor when session.run rejects', async () => {
+		const session = {
+			run: vi.fn(async () => {
+				throw new Error('device lost');
+			}),
+			release: vi.fn(async () => {})
+		};
+		const handle = {
+			session: session as never,
+			executionProviders: ['webgpu'] as const,
+			primaryEp: 'webgpu' as const,
+			tensorLocation: 'gpu-buffer' as const
+		};
+		const detector = await createOrtFaceDetector({
+			manifestUrl: '/models/reframe-face/manifest.json',
+			fetchManifest: async () => VALID_MANIFEST,
+			loadModelBytes: async () => new Uint8Array(0),
+			createSession: async () => handle,
+			resizeImageData: async () => new Uint8ClampedArray(4 * 4 * 4)
+		});
+		const image: ImageData = {
+			data: new Uint8ClampedArray(256 * 256 * 4),
+			width: 256,
+			height: 256,
+			colorSpace: 'srgb'
+		} as ImageData;
+
+		await expect(detector.detect(image)).rejects.toThrow(/device lost/);
+		expect(FakeTensor.disposeCount).toBe(1);
+	});
+
+	it('disposes every output tensor after decoding', async () => {
+		const boxesDispose = vi.fn();
+		const scoresDispose = vi.fn();
+		const session = {
+			run: vi.fn(async () => ({
+				boxes: {
+					data: new Float32Array([0.1, 0.2, 0.4, 0.6]),
+					type: 'float32',
+					dispose: boxesDispose
+				},
+				scores: { data: new Float32Array([0.95]), type: 'float32', dispose: scoresDispose }
+			})),
+			release: vi.fn(async () => {})
+		};
+		const handle = {
+			session: session as never,
+			executionProviders: ['webgpu'] as const,
+			primaryEp: 'webgpu' as const,
+			tensorLocation: 'gpu-buffer' as const
+		};
+		const detector = await createOrtFaceDetector({
+			manifestUrl: '/models/reframe-face/manifest.json',
+			fetchManifest: async () => VALID_MANIFEST,
+			loadModelBytes: async () => new Uint8Array(0),
+			createSession: async () => handle,
+			resizeImageData: async () => new Uint8ClampedArray(4 * 4 * 4)
+		});
+		const image: ImageData = {
+			data: new Uint8ClampedArray(256 * 256 * 4),
+			width: 256,
+			height: 256,
+			colorSpace: 'srgb'
+		} as ImageData;
+
+		expect(await detector.detect(image)).toHaveLength(1);
+		expect(boxesDispose).toHaveBeenCalledTimes(1);
+		expect(scoresDispose).toHaveBeenCalledTimes(1);
 	});
 
 	it('returns an empty array for a zero-sized ImageData without running the session', async () => {
