@@ -13,7 +13,7 @@ struct Params {
 
 @group(0) @binding(0) var<uniform> params : Params;
 @group(0) @binding(1) var srcTexture : texture_2d<f32>;
-@group(0) @binding(2) var dstTexture : texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(2) var dstTexture : texture_storage_2d<rgba16float, write>;
 @group(0) @binding(3) var lutTexture : texture_3d<f32>;
 @group(0) @binding(4) var lutSampler : sampler;
 

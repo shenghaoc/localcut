@@ -80,6 +80,8 @@ const TRANSITION_KIND_MAP: Record<string, number> = {
 	slide: 3
 };
 const TRANSITION_DIR_MAP: Record<string, number> = { left: 0, right: 1, up: 2, down: 3 };
+const DEFAULT_SCOPE_FRAME_INTERVAL = 6;
+const COMPOSITOR_WORKING_FORMAT: GPUTextureFormat = 'rgba16float';
 
 export interface DeviceLostInfo {
 	readonly reason: GPUDeviceLostReason;
@@ -417,6 +419,8 @@ export class PreviewRenderer {
 	// Phase 21: scopes SAB reference (set by worker for scope output).
 	private scopeSab: Float32Array | null = null;
 	private scopesEnabled = false;
+	private scopeForceNextFrame = false;
+	private scopeFrameModulo = 0;
 	// Phase 21: scope compute pipelines + atomic storage buffers + staging pool.
 	private readonly scopesPipeline: GPUComputePipeline;
 	private readonly vectorscopePipeline: GPUComputePipeline;
@@ -452,7 +456,9 @@ export class PreviewRenderer {
 	 *  samples from. Decouples the scope read from the accumulator's storage
 	 *  write inside the same encoder — some implementations don't transition
 	 *  cleanly between `texture_storage_2d<write>` and `texture_2d<f32>`
-	 *  bindings on the same texture, which surfaces as all-zero scope output. */
+	 *  bindings on the same texture, which surfaces as all-zero scope output.
+	 *  Uses the float compositor format so clipping detection sees values before
+	 *  final output conversion clamps to rgba8unorm. */
 	private scopeSrcTex: GPUTexture | null = null;
 	private scopeSrcView: GPUTextureView | null = null;
 	/** Per-layer transform uniform buffers (grown on demand; one submission, many layers). */
@@ -675,7 +681,15 @@ export class PreviewRenderer {
 	 * this is a no-op, so no scope pass can ever run by default.
 	 */
 	setScopesEnabled(enabled: boolean): void {
-		this.scopesEnabled = enabled && SCOPES_FEATURE_ENABLED;
+		const next = enabled && SCOPES_FEATURE_ENABLED;
+		if (next && !this.scopesEnabled) {
+			this.scopeForceNextFrame = true;
+			this.scopeFrameModulo = 0;
+		} else if (!next) {
+			this.scopeForceNextFrame = false;
+			this.scopeFrameModulo = 0;
+		}
+		this.scopesEnabled = next;
 	}
 
 	/** Whether scope dispatch will actually run on the next frame (test/diagnostics). */
@@ -719,18 +733,30 @@ export class PreviewRenderer {
 
 		this.destroyTextures();
 
-		this.storageA = this.device.createTexture({ size, format: 'rgba8unorm', usage });
-		this.storageB = this.device.createTexture({ size, format: 'rgba8unorm', usage });
-		this.storageC = this.device.createTexture({ size, format: 'rgba8unorm', usage });
-		this.transformTex = this.device.createTexture({ size, format: 'rgba8unorm', usage });
-		this.transformTexB = this.device.createTexture({ size, format: 'rgba8unorm', usage });
+		this.storageA = this.device.createTexture({ size, format: COMPOSITOR_WORKING_FORMAT, usage });
+		this.storageB = this.device.createTexture({ size, format: COMPOSITOR_WORKING_FORMAT, usage });
+		this.storageC = this.device.createTexture({ size, format: COMPOSITOR_WORKING_FORMAT, usage });
+		this.transformTex = this.device.createTexture({
+			size,
+			format: COMPOSITOR_WORKING_FORMAT,
+			usage
+		});
+		this.transformTexB = this.device.createTexture({
+			size,
+			format: COMPOSITOR_WORKING_FORMAT,
+			usage
+		});
 		// Phase 21: output-conversion scratch
 		this.outConvTex = this.device.createTexture({ size, format: 'rgba8unorm', usage });
 		// Phase 21: opacity scratch (dedicated to avoid aliasing)
-		this.opacityTex = this.device.createTexture({ size, format: 'rgba8unorm', usage });
+		this.opacityTex = this.device.createTexture({
+			size,
+			format: COMPOSITOR_WORKING_FORMAT,
+			usage
+		});
 		this.accTex = [
-			this.device.createTexture({ size, format: 'rgba8unorm', usage: accUsage }),
-			this.device.createTexture({ size, format: 'rgba8unorm', usage: accUsage })
+			this.device.createTexture({ size, format: COMPOSITOR_WORKING_FORMAT, usage: accUsage }),
+			this.device.createTexture({ size, format: COMPOSITOR_WORKING_FORMAT, usage: accUsage })
 		];
 		this.storageAView = this.storageA.createView();
 		this.storageBView = this.storageB.createView();
@@ -764,7 +790,7 @@ export class PreviewRenderer {
 		}
 
 		// Phase 21: scope dispatch when enabled (post-composite, pre-present)
-		if (this.scopesEnabled && this._lastAccView && this.scopeSab) {
+		if (this.scopeSab && this._lastAccView && this.shouldDispatchScopes()) {
 			this.dispatchScopes(encoder, this._lastAccView);
 		}
 
@@ -1396,7 +1422,7 @@ export class PreviewRenderer {
 
 		// Pass 7: apply — compose with mask and strength
 		{
-			// Destination is one of the chain's rgba8unorm ping-pong storage textures.
+			// Destination is one of the chain's float ping-pong storage textures.
 			const bg = this.device.createBindGroup({
 				layout: this.skinSmoothApplyGroupLayout,
 				entries: [
@@ -1941,6 +1967,17 @@ export class PreviewRenderer {
 		});
 	}
 
+	private shouldDispatchScopes(): boolean {
+		if (!this.scopesEnabled) return false;
+		if (this.scopeForceNextFrame) {
+			this.scopeForceNextFrame = false;
+			this.scopeFrameModulo = 0;
+			return true;
+		}
+		this.scopeFrameModulo = (this.scopeFrameModulo + 1) % DEFAULT_SCOPE_FRAME_INTERVAL;
+		return this.scopeFrameModulo === 0;
+	}
+
 	/**
 	 * Lazily allocates GPU storage backing each scope binding, plus a small pool
 	 * of staging buffers for GPU→CPU readback. Sized once for SCOPE_RES_X; never
@@ -2039,7 +2076,7 @@ export class PreviewRenderer {
 		this.scopeSrcTex = this.device.createTexture({
 			label: 'scope-source',
 			size: { width: this.width, height: this.height },
-			format: 'rgba8unorm',
+			format: COMPOSITOR_WORKING_FORMAT,
 			usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING
 		});
 		this.scopeSrcView = this.scopeSrcTex.createView();

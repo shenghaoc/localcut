@@ -2023,6 +2023,7 @@ body {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
+	gap: 8px;
 }
 
 .scope-panel__toggle {
@@ -2035,6 +2036,26 @@ body {
 	cursor: pointer;
 	letter-spacing: 0.02em;
 	text-transform: uppercase;
+}
+
+.scope-panel__clip-badge {
+	flex: 0 0 auto;
+	border-radius: 3px;
+	padding: 2px 5px;
+	font-size: 9px;
+	font-weight: 700;
+	letter-spacing: 0.03em;
+	text-transform: uppercase;
+}
+
+.scope-panel__clip-badge--amber {
+	background: color-mix(in srgb, var(--warning, #f5b84b) 24%, transparent);
+	color: #ffd98a;
+}
+
+.scope-panel__clip-badge--red {
+	background: color-mix(in srgb, var(--destructive, #ef4444) 26%, transparent);
+	color: #ffb4b4;
 }
 
 .scope-panel__grid {

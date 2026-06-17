@@ -9039,7 +9039,11 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			handleSetTrackEditTarget(cmd);
 			break;
 		case 'toggle-scopes': {
+			const wasActive = renderer?.scopesActive ?? false;
 			renderer?.setScopesEnabled(cmd.enabled);
+			if (cmd.enabled && renderer && !wasActive) {
+				playback?.refresh();
+			}
 			break;
 		}
 		case 'toggle-zebra': {

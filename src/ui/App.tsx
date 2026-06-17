@@ -893,13 +893,22 @@ export function App() {
 		}
 	})();
 	const [scopePanelCollapsed, setScopePanelCollapsed] = createSignal(true);
+	const scopePanelAvailable = createMemo(
+		() =>
+			scopeSab !== null &&
+			(previewBackend() === 'core-webgpu' || previewBackend() === 'compat-webgpu')
+	);
+	const scopeFramePixelCount = createMemo(() => {
+		const size = previewSize();
+		return size ? size.width * size.height : null;
+	});
 	// Drive the worker's scope compute pass off panel visibility: collapsed →
 	// skip the per-frame dispatch entirely (GPU + readback are idle when the
 	// user isn't watching). The send is guarded on workerReady so commands
 	// don't drop before the bridge attaches.
 	createEffect(() => {
 		if (!workerReady() || !scopeSab) return;
-		const enabled = !scopePanelCollapsed();
+		const enabled = scopePanelAvailable() && !scopePanelCollapsed();
 		bridge?.send({ type: 'toggle-scopes', enabled });
 	});
 
@@ -4506,9 +4515,10 @@ export function App() {
 							<Show when={importing()}>
 								<div class="preview-overlay">Importing…</div>
 							</Show>
-							<Show when={scopeSab}>
+							<Show when={scopePanelAvailable()}>
 								<ScopePanel
 									scopeSab={scopeSab}
+									framePixelCount={scopeFramePixelCount}
 									collapsed={scopePanelCollapsed}
 									setCollapsed={setScopePanelCollapsed}
 								/>

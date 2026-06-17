@@ -121,6 +121,9 @@ The preview panel shows your video at the playhead position:
 - **Safe Area Guides**: Toggle title/action safe areas with the **Safe areas** button.
 - **Transform Gizmo**: When a video clip is selected, drag the gizmo handles to adjust position, scale, and rotation. Hold **Shift** to constrain proportions.
 - **Adaptive Resolution**: Preview resolution adapts to your machine's performance — the current resolution is shown in the toolbar.
+- **Scopes (Experimental)**: On WebGPU-backed preview tiers, expand **Scopes** in the lower-right of the preview to inspect the histogram, luma waveform, RGB parade, and vectorscope. The panel stays collapsed by default and updates at a reduced rate so playback remains responsive. If clipped pixels are detected, an amber or red badge appears in the scope header.
+
+Scopes are unavailable in Limited WebCodecs and Shell Only tiers because those modes do not have the WebGPU renderer that produces the scope summaries.
 
 ## Side Panel
 

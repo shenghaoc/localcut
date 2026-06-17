@@ -27,6 +27,8 @@ import {
 export interface ScopePanelProps {
 	/** SAB ring buffer filled by the worker compositor. `null` on tiers without SAB. */
 	scopeSab: SharedArrayBuffer | null;
+	/** Current preview pixel count, used to display clipping percentage. */
+	framePixelCount: () => number | null;
 	/** Collapsed state signal (read+write). */
 	collapsed: () => boolean;
 	setCollapsed: (v: boolean) => void;
@@ -40,6 +42,21 @@ const VEC_CANVAS_SIZE = SCOPE_VECTORSCOPE_SIZE;
 
 export default function ScopePanel(props: ScopePanelProps) {
 	const [fullscreenScope, setFullscreenScope] = createSignal<string | null>(null);
+	const [clipCount, setClipCount] = createSignal(0);
+	const clipPercent = createMemo(() => {
+		const pixels = props.framePixelCount();
+		if (!pixels || pixels <= 0) return 0;
+		return (clipCount() / pixels) * 100;
+	});
+	const clipSeverity = createMemo<'none' | 'amber' | 'red'>(() => {
+		const pct = clipPercent();
+		if (pct <= 0) return 'none';
+		return pct >= 5 ? 'red' : 'amber';
+	});
+	const clipLabel = createMemo(() => {
+		const pct = clipPercent();
+		return pct >= 1 ? `${pct.toFixed(1)}% clipped` : '<1% clipped';
+	});
 
 	let histCanvas: HTMLCanvasElement | undefined;
 	let wfCanvas: HTMLCanvasElement | undefined;
@@ -78,9 +95,13 @@ export default function ScopePanel(props: ScopePanelProps) {
 	});
 
 	function paintFrame(view: Float32Array): void {
+		let nextClipCount = 0;
 		if (histCanvas) {
 			const r = readScopeResult(view, histogramSlotOffset(), SCOPE_HISTOGRAM_DATA_FLOATS);
-			if (r) paintHistogram(histCanvas, r.data);
+			if (r) {
+				nextClipCount = Math.max(nextClipCount, r.clipCount);
+				paintHistogram(histCanvas, r.data);
+			}
 		}
 		if (wfCanvas) {
 			const r = readScopeResult(
@@ -88,7 +109,10 @@ export default function ScopePanel(props: ScopePanelProps) {
 				waveformSlotOffset(SCOPE_RES_X),
 				scopeWaveformDataFloats(SCOPE_RES_X)
 			);
-			if (r) paintWaveform(wfCanvas, r.data);
+			if (r) {
+				nextClipCount = Math.max(nextClipCount, r.clipCount);
+				paintWaveform(wfCanvas, r.data);
+			}
 		}
 		if (paradeCanvas) {
 			const r = readScopeResult(
@@ -96,7 +120,10 @@ export default function ScopePanel(props: ScopePanelProps) {
 				paradeSlotOffset(SCOPE_RES_X),
 				scopeParadeDataFloats(SCOPE_RES_X)
 			);
-			if (r) paintParade(paradeCanvas, r.data);
+			if (r) {
+				nextClipCount = Math.max(nextClipCount, r.clipCount);
+				paintParade(paradeCanvas, r.data);
+			}
 		}
 		if (vecCanvas) {
 			const r = readScopeResult(
@@ -104,8 +131,12 @@ export default function ScopePanel(props: ScopePanelProps) {
 				vectorscopeSlotOffset(SCOPE_RES_X),
 				scopeVectorscopeDataFloats()
 			);
-			if (r) paintVectorscope(vecCanvas, r.data);
+			if (r) {
+				nextClipCount = Math.max(nextClipCount, r.clipCount);
+				paintVectorscope(vecCanvas, r.data);
+			}
 		}
+		setClipCount((current) => (current === nextClipCount ? current : nextClipCount));
 	}
 
 	return (
@@ -124,6 +155,11 @@ export default function ScopePanel(props: ScopePanelProps) {
 					Scopes <span class="text-xs text-muted-foreground font-normal">(Experimental)</span>{' '}
 					{props.collapsed() ? '▸' : '▾'}
 				</button>
+				{clipSeverity() !== 'none' && (
+					<span class={`scope-panel__clip-badge scope-panel__clip-badge--${clipSeverity()}`}>
+						{clipLabel()}
+					</span>
+				)}
 			</header>
 
 			{!props.collapsed() && (
@@ -302,20 +338,25 @@ function paintParade(canvas: HTMLCanvasElement, data: Float32Array): void {
 
 	// Three side-by-side panels: R, G, B. Each is X columns × h tall.
 	const X = SCOPE_RES_X;
-	const panelW = w / 3;
-	const colW = panelW / X;
-	const channelColours = ['rgba(220,90,90,0.85)', 'rgba(90,220,110,0.85)', 'rgba(110,140,235,0.85)'];
+	const panelW = Math.floor(w / 3);
+	if (panelW <= 0) return;
+	const channelColours = [
+		'rgba(220,90,90,0.85)',
+		'rgba(90,220,110,0.85)',
+		'rgba(110,140,235,0.85)'
+	];
 
 	for (let c = 0; c < 3; c++) {
-		const baseOff = c * X * 2; // Each channel: X pairs of (min, max).
 		const xOffset = c * panelW;
 		ctx.strokeStyle = channelColours[c]!;
-		ctx.lineWidth = Math.max(1, colW);
+		ctx.lineWidth = 1;
 		ctx.beginPath();
-		for (let i = 0; i < X; i++) {
-			const min = data[baseOff + i * 2] ?? 0;
-			const max = data[baseOff + i * 2 + 1] ?? 0;
-			const x = xOffset + (i + 0.5) * colW;
+		for (let col = 0; col < panelW; col++) {
+			const i = Math.min(X - 1, Math.floor(col * (X / panelW)));
+			const baseOff = i * 6 + c * 2;
+			const min = data[baseOff] ?? 0;
+			const max = data[baseOff + 1] ?? 0;
+			const x = xOffset + col + 0.5;
 			const yMin = h - min * h;
 			const yMax = h - max * h;
 			ctx.moveTo(x, yMin);
