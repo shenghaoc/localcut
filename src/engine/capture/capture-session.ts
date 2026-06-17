@@ -8,7 +8,6 @@ import type {
 import type { PauseResumePair } from './pause-resume';
 import { TrackPipeline, type TrackPipelineCallbacks } from './track-pipeline';
 import { CaptureEventRingReader } from './event-ring';
-import type { CaptureEventLogEntry } from './event-log';
 
 export interface CaptureSessionCallbacks {
 	onStatusChange(status: {
@@ -121,12 +120,24 @@ export class CaptureSession {
 	 *  (chunk-flush coupled + the 250ms backstop) forward entries to the writer
 	 *  worker as `write-event-batch` messages. */
 	attachEventRing(ring: SharedArrayBuffer): void {
-		if (this.eventRingReader) return;
+		if (this.eventRingReader) {
+			// A second attach is unexpected — the worker only sends one
+			// capture-dom-tap-init per session. If we silently drop the new ring,
+			// events the restarted main-thread tap writes to it are lost (the reader
+			// would keep draining the stale first ring). Replace instead and warn so
+			// the unusual lifecycle path is visible in diagnostics.
+			console.warn(
+				`[CaptureSession ${this.sessionId}] attachEventRing called twice; replacing the reader.`
+			);
+		}
 		this.eventRingReader = new CaptureEventRingReader(ring);
-		// Backstop timer: chunk flushes drive `emitStatus()` (and therefore the
-		// primary drain), but a silent screen with no encoded chunks would let the
-		// ring fill silently. 250ms covers pointer-drag bursts without burning CPU.
-		this.eventDrainTimer = setInterval(() => this.drainEventRing(), 250);
+		if (this.eventDrainTimer === null) {
+			// Backstop timer: chunk flushes drive `emitStatus()` (and therefore the
+			// primary drain), but a silent screen with no encoded chunks would let
+			// the ring fill silently. 250ms covers pointer-drag bursts without
+			// burning CPU. Only install once per session even on re-attach.
+			this.eventDrainTimer = setInterval(() => this.drainEventRing(), 250);
+		}
 	}
 
 	addSource(
@@ -591,19 +602,24 @@ export class CaptureSession {
 
 	private drainEventRing(): void {
 		if (!this.eventRingReader || !this.writerPort) return;
-		let entries: CaptureEventLogEntry[];
 		try {
-			entries = this.eventRingReader.drain();
-		} catch {
-			// A torn SAB (impossible in normal flow) should not take down the session.
-			return;
+			const entries = this.eventRingReader.drain();
+			if (entries.length === 0) return;
+			this.writerPort.postMessage({
+				type: 'write-event-batch',
+				sessionId: this.sessionId,
+				entries
+			});
+		} catch (err) {
+			// A torn SAB or an invalidated writer port should not take down the
+			// session. Log so the silent failure is visible in diagnostics — a
+			// schema-mismatch bug would otherwise spin the 250ms timer indefinitely
+			// without any indication.
+			console.error(
+				`[CaptureSession ${this.sessionId}] drainEventRing failed; sidecar batch dropped.`,
+				err
+			);
 		}
-		if (entries.length === 0) return;
-		this.writerPort.postMessage({
-			type: 'write-event-batch',
-			sessionId: this.sessionId,
-			entries
-		});
 	}
 
 	private finishPausedInterval(): void {

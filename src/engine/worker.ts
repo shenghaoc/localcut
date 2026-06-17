@@ -9002,11 +9002,11 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 						post({ type: 'capture-status', ...status });
 						// Transition-edge DOM tap messages. Each fires exactly once per
 						// edge by comparing the previously seen state. We emit the stop on
-						// the first 'stopping' transition (not 'idle') so main removes
-						// listeners BEFORE the session's final ring drain — in-flight
-						// events still land in the SAB and are picked up by that drain.
-						// Without this, internal stops (audio-overrun, all-sources-ended)
-						// only signal main after the drain runs and late events are lost.
+						// the first 'stopping' transition so main removes listeners BEFORE
+						// the session's final ring drain — in-flight events still land in
+						// the SAB and are picked up by that drain. Without this, internal
+						// stops (audio-overrun, all-sources-ended) only signal main after
+						// the drain runs and late events are lost.
 						if (captureDomTapSessionId !== null) {
 							const prev = captureDomTapLastState;
 							if (prev !== 'paused' && status.state === 'paused') {
@@ -9014,11 +9014,12 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 							} else if (prev === 'paused' && status.state === 'recording') {
 								post({ type: 'capture-dom-tap-resume', sessionId: captureDomTapSessionId });
 							}
-							if (
-								prev !== 'stopping' &&
-								prev !== 'idle' &&
-								(status.state === 'stopping' || status.state === 'idle')
-							) {
+							// CaptureSession.stop() always transitions through 'stopping'
+							// before 'idle', so observing 'stopping' is sufficient. The
+							// previous code also matched 'idle' as a fallback, but that
+							// branch was dead and would have falsely fired on a hypothetical
+							// armed→idle transition; keep the guard strict.
+							if (prev !== 'stopping' && status.state === 'stopping') {
 								post({ type: 'capture-dom-tap-stop', sessionId: captureDomTapSessionId });
 								captureDomTapSessionId = null;
 							}
@@ -9119,6 +9120,9 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 					post({ type: 'capture-dom-tap-stop', sessionId: session.sessionId });
 					captureDomTapSessionId = null;
 				}
+				// Reset the edge-detection state so back-to-back sessions can't observe
+				// stale 'recording'/'paused' values left over from this one.
+				captureDomTapLastState = null;
 				void (async () => {
 					try {
 						await session.stop();

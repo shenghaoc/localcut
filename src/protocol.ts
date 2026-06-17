@@ -2466,7 +2466,11 @@ export type WorkerCommand =
 			/** Tracks the regions came from — restricts which tracks get split. */
 			trackIds: string[];
 	  }
-	// Phase 44: Keystroke overlay
+	// Phase 44: Keystroke overlay. Each clip's `startS` already includes any
+	// session offset (the panel applies it via `generateKeyOverlayClips` before
+	// sending), so the worker handler only needs the clips array — no separate
+	// `sessionOffsetS` field, which would be dead and invite a maintainer to
+	// remove the client-side offset assuming the worker handled it.
 	| {
 			type: 'generate-key-overlay';
 			clips: {
@@ -2475,7 +2479,6 @@ export type WorkerCommand =
 				durationS: number;
 				style: Partial<TitleStyleSnapshot>;
 			}[];
-			sessionOffsetS: number;
 	  }
 	| InterpolationWorkerCommand
 	// Phase 38a: Look presets

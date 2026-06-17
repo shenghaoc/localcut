@@ -43,10 +43,11 @@ export interface KeystrokeOverlayPanelProps {
 	 *  current `landedSessionId`. The Load button stays disabled until this is
 	 *  true so we never race the writer's still-open SyncAccessHandle. */
 	sidecarReady?: boolean;
-	/** Phase 41: when the landed session was a retake, this is the timeline
-	 *  start (seconds) of the retake clip so overlay clips land on top of the
-	 *  retake instead of at t=0. Null when not a retake. */
-	retakeStartS?: number | null;
+	/** Phase 41: lazy lookup for the timeline start of a session's first clip.
+	 *  Called on Insert click only, so the O(tracks×clips) scan doesn't run on
+	 *  every timeline mutation during recording. Returns null when no clip with
+	 *  the given session id exists (session was discarded, sources still landing). */
+	resolveSessionStartS?: (sessionId: string) => number | null;
 }
 
 function formatStamp(s: number): string {
@@ -132,15 +133,26 @@ export function KeystrokeOverlayPanel(props: KeystrokeOverlayPanelProps) {
 		// Sidecar t is session-relative. For retakes the session starts at the
 		// retake clip's timeline position, so overlay clips need that offset added.
 		// Manual mode is always relative to the panel's own session start, so
-		// offset there is 0.
-		const sessionOffsetS = source() === 'sidecar' ? (props.retakeStartS ?? 0) : 0;
+		// offset there is 0. We resolve the session start lazily here (not as a
+		// memo that re-runs on every timeline mutation) since it's only needed on
+		// this exact click.
+		let sessionOffsetS = 0;
+		if (source() === 'sidecar') {
+			const sid = sidecarSessionId();
+			if (sid && props.resolveSessionStartS) {
+				sessionOffsetS = props.resolveSessionStartS(sid) ?? 0;
+			}
+		}
 		const clips = generateKeyOverlayClips(entries(), sessionOffsetS).map((c) => ({
 			text: c.text,
 			startS: c.startS,
 			durationS: c.durationS,
 			style: c.style as Partial<TitleStyleSnapshot>
 		}));
-		props.sendCommand({ type: 'generate-key-overlay', clips, sessionOffsetS });
+		// sessionOffsetS is already baked into each clip's startS — don't send it
+		// on the command (the worker doesn't read it, and a redundant field
+		// invites a maintainer to remove the client-side offset).
+		props.sendCommand({ type: 'generate-key-overlay', clips });
 	}
 
 	function clearLog() {
@@ -207,7 +219,7 @@ export function KeystrokeOverlayPanel(props: KeystrokeOverlayPanelProps) {
 				any other title clip ({KEY_OVERLAY_DURATION_S.toFixed(1)} s each, monospace style).
 			</p>
 
-			<Show when={props.landedSessionId && source() !== 'sidecar'}>
+			<Show when={props.landedSessionId && source() !== 'sidecar' && !props.captureRecording}>
 				<div class="keystroke-overlay-sidecar-prompt">
 					<p>
 						A capture session landed (<code>{props.landedSessionId}</code>). The session's DOM tap

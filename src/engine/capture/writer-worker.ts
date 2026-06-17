@@ -156,6 +156,13 @@ interface OpenFile {
 	file: string;
 }
 
+/** Upper bound on pending batches per session before we drop the oldest. In
+ *  practice this never matters: the bound implied by ring capacity (1024) and
+ *  drain interval (250 ms) is ~4 batches, but a pathological slow-OPFS +
+ *  rapid-events scenario could grow without limit otherwise. Drop-oldest is
+ *  consistent with the ring's own overflow policy (writer never blocks). */
+const MAX_PENDING_EVENT_BATCHES = 16;
+
 class CaptureWriter {
 	private sessions = new Map<string, Map<string, OpenFile>>();
 	private manifestHandles = new Map<string, FileSystemSyncAccessHandle>();
@@ -165,7 +172,8 @@ class CaptureWriter {
 	 *  writer's per-message handlers are async-concurrent — a `write-event-batch`
 	 *  posted just after `capture-dom-tap-init` can land at the writer before its
 	 *  preceding `write-header` has finished opening files. Buffer the batch and
-	 *  drain on handleWriteHeader to avoid silently dropping early events. */
+	 *  drain on handleWriteHeader to avoid silently dropping early events. Capped
+	 *  at MAX_PENDING_EVENT_BATCHES with drop-oldest. */
 	private pendingEventBatches = new Map<string, WriteEventBatchMessage[]>();
 	private port: MessagePort | null = null;
 
@@ -407,7 +415,17 @@ class CaptureWriter {
 					pending = [];
 					this.pendingEventBatches.set(msg.sessionId, pending);
 				}
-				if (msg.entries.length > 0) pending.push(msg);
+				if (msg.entries.length === 0) return;
+				pending.push(msg);
+				if (pending.length > MAX_PENDING_EVENT_BATCHES) {
+					// Drop-oldest, mirroring the ring's own overflow policy. We
+					// shouldn't ever reach this in practice; surface to console so
+					// the unusual case is visible in diagnostics.
+					console.warn(
+						`[CaptureWriter ${msg.sessionId}] pendingEventBatches exceeded cap (${MAX_PENDING_EVENT_BATCHES}); dropping oldest batch.`
+					);
+					pending.shift();
+				}
 				return;
 			}
 			if (msg.entries.length === 0) return;
@@ -552,6 +570,39 @@ class CaptureWriter {
 
 	private async handleDiscard(sessionId: string): Promise<void> {
 		this.pendingEventBatches.delete(sessionId);
+		// Close + drop any open SyncAccessHandles before removing the directory.
+		// Without this, removeEntry races an open events handle (and on browsers
+		// that lock the file, removeEntry would throw with the handle still alive,
+		// leaking it for the remainder of the writer's lifetime).
+		const eventsAccess = this.eventHandles.get(sessionId);
+		if (eventsAccess) {
+			try {
+				eventsAccess.close();
+			} catch {
+				// best-effort close — discard must still try to remove the directory
+			}
+			this.eventHandles.delete(sessionId);
+		}
+		const manifestAccess = this.manifestHandles.get(sessionId);
+		if (manifestAccess) {
+			try {
+				manifestAccess.close();
+			} catch {
+				// best-effort close
+			}
+			this.manifestHandles.delete(sessionId);
+		}
+		const fileMap = this.sessions.get(sessionId);
+		if (fileMap) {
+			for (const [, openFile] of fileMap) {
+				try {
+					openFile.handle.close();
+				} catch {
+					// best-effort close
+				}
+			}
+			this.sessions.delete(sessionId);
+		}
 		try {
 			const captureDir = await this.getOrCreateCaptureDir();
 			await captureDir.removeEntry(sessionId, { recursive: true });

@@ -1358,22 +1358,21 @@ export function App() {
 	});
 
 	/** Phase 41 T13: timeline start (seconds) of any clip whose `captureSessionId`
-	 *  matches the most recently landed session. For retakes this is the retake
-	 *  clip's offset; for fresh captures it's still typically 0 but we read it
-	 *  from the clip so we don't have to special-case retakes. Null when no
-	 *  matching clip exists (session discarded, sources still landing). */
-	const landedSessionStartS = createMemo<number | null>(() => {
-		const sessionId = recorderLandedSessionId();
-		if (!sessionId) return null;
+	 *  matches the given session. For retakes this is the retake clip's offset;
+	 *  for fresh captures it's typically 0. Null when no matching clip exists
+	 *  (session discarded, sources still landing).
+	 *
+	 *  Plain function (not a memo) so the O(tracks×clips) scan runs only when
+	 *  the panel actually needs it (on user Load/Insert click), not on every
+	 *  `timeline()` mutation during recording. */
+	function resolveSessionStartS(sessionId: string): number | null {
 		for (const track of timeline()) {
 			for (const clip of track.clips) {
-				if (clip.captureSessionId === sessionId) {
-					return clip.start;
-				}
+				if (clip.captureSessionId === sessionId) return clip.start;
 			}
 		}
 		return null;
-	});
+	}
 
 	const retakeSourceKinds = createMemo<CaptureSourceKind[]>(() => {
 		const clipId = retakeClipId();
@@ -5110,7 +5109,7 @@ export function App() {
 								recorderStatus()?.state === 'recording' || recorderStatus()?.state === 'paused'
 							}
 							sidecarReady={sidecarReadySessionId() === recorderLandedSessionId()}
-							retakeStartS={landedSessionStartS()}
+							resolveSessionStartS={resolveSessionStartS}
 						/>
 					</Show>
 					<LanguageToolsPanel

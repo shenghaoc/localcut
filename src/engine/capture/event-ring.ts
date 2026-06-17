@@ -110,6 +110,12 @@ export class CaptureEventRingWriter {
 		y: number,
 		stringPayload: string
 	): RingWriteResult {
+		// Guard NaN/Infinity at the entry point: `BigInt(NaN)` throws TypeError, and
+		// if it threw mid-record (after the early field writes but before the
+		// WRITE_INDEX release-store), the ring would have a partially-written record
+		// the reader could later observe. Skip the record entirely instead.
+		if (!Number.isFinite(tUs)) return { written: false, dropped: false };
+
 		const capacity = CAPTURE_EVENT_RING_CAPACITY;
 		const writeIndex = Atomics.load(this.header, CaptureEventHeaderIndex.WRITE_INDEX) >>> 0;
 		const readIndex = Atomics.load(this.header, CaptureEventHeaderIndex.READ_INDEX) >>> 0;

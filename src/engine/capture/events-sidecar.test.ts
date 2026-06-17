@@ -7,7 +7,18 @@
  */
 
 import { describe, expect, it } from 'vite-plus/test';
-import { parseEventsSidecar } from './events-sidecar';
+import { parseEventsSidecar, parseEventsSidecarStream } from './events-sidecar';
+import type { CaptureEventLogEntry } from './event-log';
+
+function streamFromChunks(chunks: string[]): ReadableStream<Uint8Array> {
+	const encoder = new TextEncoder();
+	return new ReadableStream<Uint8Array>({
+		start(controller) {
+			for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
+			controller.close();
+		}
+	});
+}
 
 describe('parseEventsSidecar', () => {
 	it('returns an empty array for empty input', () => {
@@ -68,5 +79,46 @@ describe('parseEventsSidecar', () => {
 		const text = lines.map((l) => JSON.stringify(l)).join('\n') + '\n';
 		const parsed = parseEventsSidecar(text);
 		expect(parsed.map((e) => (e as { combo: string }).combo)).toEqual(['A', 'B', 'C']);
+	});
+});
+
+describe('parseEventsSidecarStream', () => {
+	it('parses an NDJSON stream chunked at arbitrary byte boundaries', async () => {
+		const entries: CaptureEventLogEntry[] = [
+			{ kind: 'key', combo: 'Ctrl+S', t: 0.5 },
+			{ kind: 'pointer-down', t: 0.6, x: 10, y: 20, modifierFlags: 0 },
+			{ kind: 'key', combo: 'Escape', t: 0.7 }
+		];
+		const text = entries.map((e) => JSON.stringify(e)).join('\n') + '\n';
+		// Split the text at a mid-line boundary so the parser must reassemble.
+		const mid = Math.floor(text.length / 2);
+		const chunks = [text.slice(0, mid), text.slice(mid)];
+		const parsed = await parseEventsSidecarStream(streamFromChunks(chunks));
+		expect(parsed).toEqual(entries);
+	});
+
+	it('tolerates a torn final line in the stream', async () => {
+		const text =
+			JSON.stringify({ kind: 'key', combo: 'Ctrl+S', t: 1 }) +
+			'\n' +
+			JSON.stringify({ kind: 'key', combo: 'Escape', t: 2 }) +
+			'\n' +
+			'{"kind":"key","combo":"Alt+';
+		const parsed = await parseEventsSidecarStream(streamFromChunks([text]));
+		expect(parsed).toHaveLength(2);
+		expect((parsed[1] as { combo: string }).combo).toBe('Escape');
+	});
+
+	it('returns an empty array for an empty stream', async () => {
+		const parsed = await parseEventsSidecarStream(streamFromChunks([]));
+		expect(parsed).toEqual([]);
+	});
+
+	it('splits a line that straddles a chunk boundary mid-JSON-token', async () => {
+		// Force a chunk boundary inside the combo string so the parser must
+		// keep accumulating before parsing.
+		const chunks = ['{"kind":"key","combo":"Ctrl+', 'Shift+Z","t":1}\n'];
+		const parsed = await parseEventsSidecarStream(streamFromChunks(chunks));
+		expect(parsed).toEqual([{ kind: 'key', combo: 'Ctrl+Shift+Z', t: 1 }]);
 	});
 });
