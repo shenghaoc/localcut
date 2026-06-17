@@ -29,7 +29,8 @@ export interface SmartReframePanelProps {
 	faceDetectionSupported: boolean;
 	workerAvailable: boolean;
 	onClose: () => void;
-	/** Download + initialise the MediaPipe face model (explicit user action). */
+	/** Download + initialise the face model — ORT/ONNX if configured, MediaPipe
+	 *  BlazeFace otherwise (explicit user action). */
 	onLoadFaceModel: () => void;
 	onAnalyse: (settings: ReframeAnalyseSettings) => void;
 	onCancel: () => void;
@@ -55,6 +56,18 @@ export const SmartReframePanel: Component<SmartReframePanelProps> = (props) => {
 	const status = () => props.state.status;
 	const busy = () => status() === 'resolving' || status() === 'analysing';
 	const faceModelStatus = () => props.state.faceModelStatus;
+	/** Human-readable name for the engine the worker reported on load — keeps
+	 *  the "ready" notice honest once a real ORT model is vendored. */
+	const faceEngineLabel = () => {
+		switch (props.state.faceModelEngine) {
+			case 'ort-onnx':
+				return 'ONNX face detector';
+			case 'mediapipe-blazeface':
+				return 'MediaPipe BlazeFace';
+			default:
+				return null;
+		}
+	};
 
 	// ARIA modal dialog pattern: move focus into the panel when it opens.
 	createEffect(() => {
@@ -140,7 +153,7 @@ export const SmartReframePanel: Component<SmartReframePanelProps> = (props) => {
 											? 'Loading the face model…'
 											: faceModelStatus() === 'failed'
 												? (props.state.faceModelError ?? 'Face model failed to load.')
-												: 'Using visual saliency. Load the BlazeFace model (MediaPipe, fetched once from Google) for face-aware reframing.'}
+												: 'Using visual saliency. Load the optional face detector (ONNX if configured, MediaPipe BlazeFace otherwise) for face-aware reframing.'}
 									</p>
 									<Button
 										size="sm"
@@ -153,7 +166,9 @@ export const SmartReframePanel: Component<SmartReframePanelProps> = (props) => {
 								</>
 							}
 						>
-							<p class="capability-panel-note">Face detection ready (MediaPipe BlazeFace).</p>
+							<p class="capability-panel-note">
+								Face detection ready{faceEngineLabel() ? ` (${faceEngineLabel()}).` : '.'}
+							</p>
 						</Show>
 					</section>
 				</Show>

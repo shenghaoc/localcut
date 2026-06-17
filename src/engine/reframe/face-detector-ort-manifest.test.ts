@@ -181,6 +181,51 @@ describe('validateReframeFaceDetectorManifest', () => {
 			})
 		).toThrow(/io\.mean/);
 	});
+
+	it('rejects unsupported inputChannels (preprocessor reads RGBA)', () => {
+		expect(() =>
+			validateReframeFaceDetectorManifest({
+				...BASE_VALID,
+				io: { ...BASE_VALID.io, inputChannels: 2 }
+			})
+		).toThrow(/inputChannels/);
+		expect(() =>
+			validateReframeFaceDetectorManifest({
+				...BASE_VALID,
+				io: { ...BASE_VALID.io, inputChannels: 5 }
+			})
+		).toThrow(/inputChannels/);
+	});
+
+	it('rejects non-float32 input dtypes', () => {
+		expect(() =>
+			validateReframeFaceDetectorManifest({
+				...BASE_VALID,
+				io: { ...BASE_VALID.io, bytesPerElement: 1 }
+			})
+		).toThrow(/bytesPerElement/);
+		expect(() =>
+			validateReframeFaceDetectorManifest({
+				...BASE_VALID,
+				io: { ...BASE_VALID.io, bytesPerElement: 2 }
+			})
+		).toThrow(/bytesPerElement/);
+	});
+
+	it('accepts RGBA inputChannels=4 with matching 4-element mean/std', () => {
+		const manifest = validateReframeFaceDetectorManifest({
+			...BASE_VALID,
+			io: {
+				...BASE_VALID.io,
+				inputChannels: 4,
+				inputRange: 'mean-std',
+				mean: [0.5, 0.5, 0.5, 0.5],
+				std: [0.5, 0.5, 0.5, 0.5]
+			}
+		});
+		expect(manifest.io.inputChannels).toBe(4);
+		expect(manifest.io.mean).toHaveLength(4);
+	});
 });
 
 describe('inputTensorBytes', () => {
@@ -189,11 +234,11 @@ describe('inputTensorBytes', () => {
 		expect(inputTensorBytes(manifest.io)).toBe(128 * 128 * 3 * 4);
 	});
 
-	it('reflects quantised models with smaller bytesPerElement', () => {
+	it('scales with inputChannels (RGBA pushes tensor bytes higher)', () => {
 		const manifest = validateReframeFaceDetectorManifest({
 			...BASE_VALID,
-			io: { ...BASE_VALID.io, bytesPerElement: 1 }
+			io: { ...BASE_VALID.io, inputChannels: 4 }
 		});
-		expect(inputTensorBytes(manifest.io)).toBe(128 * 128 * 3);
+		expect(inputTensorBytes(manifest.io)).toBe(128 * 128 * 4 * 4);
 	});
 });

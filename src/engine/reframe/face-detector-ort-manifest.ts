@@ -128,12 +128,23 @@ function requireBoolean(v: unknown, field: string): boolean {
 	return v;
 }
 
-function requireRgbTriple(v: unknown, field: string): readonly number[] {
-	if (!Array.isArray(v) || v.length !== 3) {
-		throw new ReframeFaceDetectorManifestError(`${field} must be an array of three numbers`);
+function requireFiniteNumberArray(
+	v: unknown,
+	field: string,
+	expectedLength: number
+): readonly number[] {
+	if (!Array.isArray(v) || v.length !== expectedLength) {
+		throw new ReframeFaceDetectorManifestError(
+			`${field} must be an array of ${expectedLength} numbers`
+		);
 	}
 	return v.map((entry, index) => requireFiniteNumber(entry, `${field}[${index}]`));
 }
+
+/** Channel counts the preprocessor's RGBA → tensor path actually supports. */
+const SUPPORTED_INPUT_CHANNELS: readonly number[] = [1, 3, 4];
+/** Float32 is currently the only input dtype the loader builds tensors for. */
+const SUPPORTED_BYTES_PER_ELEMENT: readonly number[] = [4];
 
 function validateIo(raw: unknown): FaceDetectorIoContract {
 	if (!isObject(raw)) throw new ReframeFaceDetectorManifestError('io must be an object');
@@ -147,18 +158,32 @@ function validateIo(raw: unknown): FaceDetectorIoContract {
 			'io.inputRange must be "unit", "signed-unit", or "mean-std"'
 		);
 	}
+	const inputChannels = requirePositiveInt(raw['inputChannels'], 'io.inputChannels');
+	if (!SUPPORTED_INPUT_CHANNELS.includes(inputChannels)) {
+		throw new ReframeFaceDetectorManifestError(
+			`io.inputChannels must be one of [${SUPPORTED_INPUT_CHANNELS.join(', ')}] ` +
+				`(the preprocessor reads from an RGBA buffer)`
+		);
+	}
+	const bytesPerElement = requirePositiveInt(raw['bytesPerElement'], 'io.bytesPerElement');
+	if (!SUPPORTED_BYTES_PER_ELEMENT.includes(bytesPerElement)) {
+		throw new ReframeFaceDetectorManifestError(
+			`io.bytesPerElement must be one of [${SUPPORTED_BYTES_PER_ELEMENT.join(', ')}] ` +
+				`(the loader currently only builds float32 input tensors)`
+		);
+	}
 	const io: FaceDetectorIoContract = {
 		layout,
 		inputWidth: requirePositiveInt(raw['inputWidth'], 'io.inputWidth'),
 		inputHeight: requirePositiveInt(raw['inputHeight'], 'io.inputHeight'),
-		inputChannels: requirePositiveInt(raw['inputChannels'], 'io.inputChannels'),
-		bytesPerElement: requirePositiveInt(raw['bytesPerElement'], 'io.bytesPerElement'),
+		inputChannels,
+		bytesPerElement,
 		inputName: requireName(raw['inputName'], 'io.inputName'),
 		inputRange,
 		...(inputRange === 'mean-std'
 			? {
-					mean: requireRgbTriple(raw['mean'], 'io.mean'),
-					std: requireRgbTriple(raw['std'], 'io.std')
+					mean: requireFiniteNumberArray(raw['mean'], 'io.mean', inputChannels),
+					std: requireFiniteNumberArray(raw['std'], 'io.std', inputChannels)
 				}
 			: {})
 	};

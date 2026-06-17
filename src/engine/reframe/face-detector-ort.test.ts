@@ -109,33 +109,51 @@ describe('normalizePixelsToTensor', () => {
 });
 
 describe('assertWasmEpAllowed', () => {
-	it('passes for a small detector on WASM (e.g. BlazeFace 128×128×3×fp32 = 192 KiB)', () => {
+	it('passes for a small detector on WASM-only (e.g. BlazeFace 128×128×3×fp32 = 192 KiB)', () => {
 		const io: FaceDetectorIoContract = {
 			...NCHW_3CH,
 			inputWidth: 128,
 			inputHeight: 128
 		};
-		expect(() => assertWasmEpAllowed(io, 'wasm')).not.toThrow();
+		expect(() => assertWasmEpAllowed(io, ['wasm'])).not.toThrow();
 	});
 
-	it('throws for a large detector on WASM (e.g. 640×640×3×fp32 ≈ 4.7 MiB)', () => {
+	it('throws for a large detector when WASM is in the EP list (e.g. 640×640×3×fp32 ≈ 4.7 MiB)', () => {
 		const io: FaceDetectorIoContract = {
 			...NCHW_3CH,
 			inputWidth: 640,
 			inputHeight: 640
 		};
-		expect(() => assertWasmEpAllowed(io, 'wasm')).toThrow(OrtFaceDetectorUnavailableError);
-		expect(() => assertWasmEpAllowed(io, 'wasm')).toThrow(/WASM/);
+		expect(() => assertWasmEpAllowed(io, ['wasm'])).toThrow(OrtFaceDetectorUnavailableError);
+		expect(() => assertWasmEpAllowed(io, ['wasm'])).toThrow(/WASM/);
 	});
 
-	it('does not gate WebGPU or WebNN EPs regardless of tensor size', () => {
+	it('throws for a large detector when WASM is a *fallback* behind an accelerator', () => {
+		// Regression for codex P2: gating only `primaryEp` lets an oversized
+		// detector through a `['webgpu','wasm']` list, even though ORT may run
+		// it on WASM if WebGPU init fails.
+		const io: FaceDetectorIoContract = {
+			...NCHW_3CH,
+			inputWidth: 640,
+			inputHeight: 640
+		};
+		expect(() => assertWasmEpAllowed(io, ['webgpu', 'wasm'])).toThrow(
+			OrtFaceDetectorUnavailableError
+		);
+		expect(() => assertWasmEpAllowed(io, ['webnn', 'wasm'])).toThrow(
+			OrtFaceDetectorUnavailableError
+		);
+	});
+
+	it('does not gate WebGPU- or WebNN-only EP lists regardless of tensor size', () => {
 		const io: FaceDetectorIoContract = {
 			...NCHW_3CH,
 			inputWidth: 1024,
 			inputHeight: 1024
 		};
-		expect(() => assertWasmEpAllowed(io, 'webgpu')).not.toThrow();
-		expect(() => assertWasmEpAllowed(io, 'webnn')).not.toThrow();
+		expect(() => assertWasmEpAllowed(io, ['webgpu'])).not.toThrow();
+		expect(() => assertWasmEpAllowed(io, ['webnn'])).not.toThrow();
+		expect(() => assertWasmEpAllowed(io, ['webgpu', 'webnn'])).not.toThrow();
 	});
 
 	it('uses the documented byte budget', () => {
