@@ -51,7 +51,7 @@ jobs:
           exit 1
 
       - name: Run WHIP integration tests
-        run: vp run test:e2e
+        run: vp run test:e2e tests/e2e/whip-publish.spec.ts
         env:
           MEDIAMTX_CONTAINER: whip-mediamtx
 
