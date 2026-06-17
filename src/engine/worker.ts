@@ -2376,11 +2376,11 @@ async function handleInit(
 			lastGpuUnavailableReason = gpu.unavailableReason;
 		}
 
-		// Phase 21: wire scope SAB to renderer if provided. Scopes default-on so the
-		// SAB starts receiving data on the first frame; UI can toggle via 'toggle-scopes'.
+		// Phase 21: wire scope SAB. The renderer stays off until the UI sends
+		// 'toggle-scopes' on first ScopePanel expansion — no point burning GPU
+		// time on dispatches whose results no one is reading.
 		if (scopeSab && renderer) {
 			renderer.setScopeSab(scopeSab);
-			renderer.setScopesEnabled(true);
 		}
 		if (renderer) {
 			titleCache = new TitleTextureCache(createCanvasTitleUploader(renderer.gpuDevice));

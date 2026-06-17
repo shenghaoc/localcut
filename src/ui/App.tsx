@@ -893,6 +893,15 @@ export function App() {
 		}
 	})();
 	const [scopePanelCollapsed, setScopePanelCollapsed] = createSignal(true);
+	// Drive the worker's scope compute pass off panel visibility: collapsed →
+	// skip the per-frame dispatch entirely (GPU + readback are idle when the
+	// user isn't watching). The send is guarded on workerReady so commands
+	// don't drop before the bridge attaches.
+	createEffect(() => {
+		if (!workerReady() || !scopeSab) return;
+		const enabled = !scopePanelCollapsed();
+		bridge?.send({ type: 'toggle-scopes', enabled });
+	});
 
 	// Phase 47: WHIP publish. The controller owns the WhipSession, the encoder
 	// lease, and the worker tap wiring; the component only mirrors its state into

@@ -7,7 +7,7 @@
  *  hit-count squares on a 2D canvas.
  */
 
-import { createEffect, createSignal, onCleanup } from 'solid-js';
+import { createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
 import {
 	SCOPE_HISTOGRAM_BINS,
 	SCOPE_HISTOGRAM_CHANNELS,
@@ -46,19 +46,19 @@ export default function ScopePanel(props: ScopePanelProps) {
 	let paradeCanvas: HTMLCanvasElement | undefined;
 	let vecCanvas: HTMLCanvasElement | undefined;
 
-	// Reuse the same Float32Array view across reads so we don't churn allocations
-	// at frame rate. The SAB itself is fixed for the panel's lifetime.
-	let sabView: Float32Array | null = null;
-	createEffect(() => {
+	// Reactive view of the SAB. createMemo so the rAF effect below can track it —
+	// a plain let-binding written from one createEffect and read from another
+	// breaks SolidJS's dependency graph (the read effect wouldn't re-run on SAB swap).
+	const sabView = createMemo(() => {
 		const sab = props.scopeSab;
-		sabView = sab ? new Float32Array(sab) : null;
+		return sab ? new Float32Array(sab) : null;
 	});
 
 	let rafHandle: number | null = null;
 	createEffect(() => {
 		// Re-arm whenever collapsed state flips or SAB swaps.
 		const collapsed = props.collapsed();
-		const view = sabView;
+		const view = sabView();
 		if (rafHandle !== null) {
 			cancelAnimationFrame(rafHandle);
 			rafHandle = null;
@@ -335,6 +335,13 @@ function paintParade(canvas: HTMLCanvasElement, data: Float32Array): void {
 	}
 }
 
+// Reused 128×128 RGBA8 buffer for the vectorscope paint. Allocating a fresh
+// ImageData at frame rate would churn the GC; we own the underlying ArrayBuffer
+// for the panel's lifetime instead.
+const vectorscopePixels = new Uint8ClampedArray(
+	SCOPE_VECTORSCOPE_SIZE * SCOPE_VECTORSCOPE_SIZE * 4
+);
+
 function paintVectorscope(canvas: HTMLCanvasElement, data: Float32Array): void {
 	const ctx = canvas.getContext('2d');
 	if (!ctx) return;
@@ -350,19 +357,31 @@ function paintVectorscope(canvas: HTMLCanvasElement, data: Float32Array): void {
 		const v = data[i] ?? 0;
 		if (v > peak) peak = v;
 	}
-	if (peak <= 0) return;
-
-	const cellW = w / size;
-	const cellH = h / size;
-	const invLog = 1 / Math.log(peak + 1);
-	for (let y = 0; y < size; y++) {
-		for (let x = 0; x < size; x++) {
-			const v = data[y * size + x] ?? 0;
-			if (v <= 0) continue;
-			const a = Math.log(v + 1) * invLog;
-			ctx.fillStyle = `rgba(180,220,255,${a.toFixed(3)})`;
-			ctx.fillRect(x * cellW, (size - 1 - y) * cellH, Math.max(1, cellW), Math.max(1, cellH));
+	if (peak > 0) {
+		// 16,384 cells filled via per-pixel ImageData rather than per-cell fillRect:
+		// one putImageData call replaces N fillRect calls.
+		const px = vectorscopePixels;
+		px.fill(0);
+		const invLog = 1 / Math.log(peak + 1);
+		for (let y = 0; y < size; y++) {
+			// Flip vertically: GPU bin y=0 is bottom, canvas y=0 is top.
+			const dstRow = (size - 1 - y) * size;
+			const srcRow = y * size;
+			for (let x = 0; x < size; x++) {
+				const v = data[srcRow + x] ?? 0;
+				if (v <= 0) continue;
+				const a = Math.log(v + 1) * invLog;
+				const idx = (dstRow + x) * 4;
+				px[idx] = 180;
+				px[idx + 1] = 220;
+				px[idx + 2] = 255;
+				px[idx + 3] = Math.round(a * 255);
+			}
 		}
+		// Canvas is fixed to SCOPE_VECTORSCOPE_SIZE × SCOPE_VECTORSCOPE_SIZE (1:1
+		// with the GPU hit-count grid), so a single putImageData paints the whole
+		// scope. Any future upsampling should drawImage from an offscreen buffer.
+		ctx.putImageData(new ImageData(px, size, size), 0, 0);
 	}
 
 	// Crosshair reference at the center (neutral grey lands here).

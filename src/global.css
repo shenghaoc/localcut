@@ -1994,6 +1994,108 @@ body {
 		color-mix(in srgb, var(--stage) 45%, transparent);
 }
 
+/* Phase 21: scope diagnostics — overlay in the preview's bottom-right corner.
+   Contained so the scope canvases never push the preview's layout. */
+.scope-panel {
+	position: absolute;
+	bottom: 8px;
+	right: 8px;
+	max-width: 280px;
+	max-height: calc(100% - 16px);
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 6px;
+	background: color-mix(in srgb, var(--background) 78%, transparent);
+	backdrop-filter: blur(8px);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	overflow: auto;
+	z-index: 4;
+}
+
+.scope-panel--collapsed {
+	max-height: none;
+	overflow: visible;
+}
+
+.scope-panel__header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+}
+
+.scope-panel__toggle {
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--foreground);
+	background: transparent;
+	border: 0;
+	padding: 2px 4px;
+	cursor: pointer;
+	letter-spacing: 0.02em;
+	text-transform: uppercase;
+}
+
+.scope-panel__grid {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 4px;
+}
+
+.scope-view {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	background: rgb(0 0 0 / 60%);
+	border-radius: 3px;
+	padding: 3px;
+	min-width: 0;
+}
+
+.scope-view__header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+}
+
+.scope-view__label {
+	font-size: 9px;
+	color: var(--muted-foreground);
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+}
+
+.scope-view__fullscreen-btn {
+	font-size: 11px;
+	background: transparent;
+	border: 0;
+	color: var(--muted-foreground);
+	cursor: pointer;
+	padding: 0 2px;
+}
+
+.scope-view__canvas {
+	width: 100%;
+	height: auto;
+	display: block;
+	image-rendering: pixelated;
+}
+
+.scope-view--fullscreen {
+	position: fixed;
+	inset: 24px;
+	z-index: 1000;
+	padding: 12px;
+	background: var(--background);
+}
+
+.scope-view--fullscreen .scope-view__canvas {
+	width: 100%;
+	height: calc(100% - 24px);
+	object-fit: contain;
+}
+
 .inspector {
 	padding: 0.95rem;
 	overflow: auto;
