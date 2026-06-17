@@ -639,6 +639,7 @@ export function App() {
 		[]
 	);
 	const [programError, setProgramError] = createSignal<string | null>(null);
+	const [programTransitionMs, setProgramTransitionMs] = createSignal<0 | 200>(0);
 	let programSourceHandles = new Map<string, ProgramSourceHandle>();
 	let activeProgramMonitorTracks = new Map<string, MediaStreamTrack>();
 	let programWriterWorker: Worker | null = null;
@@ -2024,7 +2025,7 @@ export function App() {
 					initialSceneId,
 					sources,
 					chunkTargetS: 2,
-					transitionMs: 0
+					transitionMs: programTransitionMs()
 				},
 				writerPort: port2
 			},
@@ -2049,7 +2050,7 @@ export function App() {
 
 	function switchProgramScene(sceneId: string): void {
 		setProgramActiveSceneId(sceneId);
-		bridge?.send({ type: 'program-scene-switch', sceneId, transitionMs: 0 });
+		bridge?.send({ type: 'program-scene-switch', sceneId, transitionMs: programTransitionMs() });
 	}
 
 	function handleState(msg: WorkerStateMessage) {
@@ -4639,6 +4640,7 @@ export function App() {
 													budgetUsage={programBudgetUsage}
 													acquiredSources={programSources}
 													error={programError}
+													transitionMs={programTransitionMs}
 													onAddScreen={() => void addProgramScreen()}
 													onAddCamera={(deviceId) => void addProgramCamera(deviceId)}
 													onAddMic={(deviceId) => void addProgramMic(deviceId)}
@@ -4648,6 +4650,7 @@ export function App() {
 													onRenameScene={renameProgramScene}
 													onSetHotkey={setProgramSceneHotkey}
 													onUpdateLayers={updateProgramSceneLayers}
+													onSetTransitionMs={setProgramTransitionMs}
 													onStart={startProgramSession}
 													onStop={stopProgramSession}
 													onSwitchScene={switchProgramScene}

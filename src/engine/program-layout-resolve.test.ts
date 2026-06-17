@@ -88,4 +88,47 @@ describe('applyProgramLayoutToResolvedLayers', () => {
 		expect(arranged).toHaveLength(1);
 		expect(arranged[0]!.layoutLayer?.transform.x).toBe(-0.2);
 	});
+
+	it('prefers source id over colliding track id fallback', () => {
+		const layers = [layer('camera', 'screen'), layer('screen', 'track-screen')];
+		const layout = layoutClip();
+		layout.sceneSnapshot.layers = [
+			{
+				sourceRef: 'screen',
+				transform: { ...transform, x: 0.1 },
+				visible: true,
+				zIndex: 0
+			}
+		];
+
+		const arranged = applyProgramLayoutToResolvedLayers(layers, layout);
+
+		expect(arranged).toHaveLength(1);
+		expect(arranged[0]!.layer.clip.sourceId).toBe('screen');
+	});
+
+	it('can reuse one source for duplicate scene layers', () => {
+		const layers = [layer('camera')];
+		const layout = layoutClip();
+		layout.sceneSnapshot.layers = [
+			{
+				sourceRef: 'camera',
+				transform: { ...transform, scale: 1 },
+				visible: true,
+				zIndex: 0
+			},
+			{
+				sourceRef: 'camera',
+				transform: { ...transform, scale: 0.35 },
+				visible: true,
+				zIndex: 1
+			}
+		];
+
+		const arranged = applyProgramLayoutToResolvedLayers(layers, layout);
+
+		expect(arranged).toHaveLength(2);
+		expect(arranged.map((entry) => entry.layer.clip.sourceId)).toEqual(['camera', 'camera']);
+		expect(arranged.map((entry) => entry.layoutLayer?.transform.scale)).toEqual([1, 0.35]);
+	});
 });

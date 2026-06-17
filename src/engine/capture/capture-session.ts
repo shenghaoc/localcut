@@ -56,6 +56,8 @@ interface WriterFinalizeAckMessage {
 
 type WriterPortMessage = WriterChunkAckMessage | WriterChunkErrorMessage | WriterFinalizeAckMessage;
 
+const FINALIZE_ACK_TIMEOUT_MS = 10_000;
+
 export class CaptureSession {
 	readonly sessionId: string;
 	private startedAtIso = '';
@@ -65,6 +67,7 @@ export class CaptureSession {
 	private epochUs: number | null = null;
 	private totalBytesWritten = 0;
 	private lastEncodedFrameTs = 0;
+	private lastEncodedFramePerfTime = 0;
 	private pendingResumeRecord = false;
 	private pendingPauseAtUs: number | null = null;
 	private pauseResumePairs: PauseResumePair[] = [];
@@ -93,6 +96,11 @@ export class CaptureSession {
 				break;
 		}
 	};
+	private readonly writerPortFailureHandler = () => {
+		this.rejectFinalizeWaiter(
+			new Error('Capture writer closed before acknowledging finalization.')
+		);
+	};
 
 	constructor(sessionId: string, callbacks: CaptureSessionCallbacks, writerPort?: MessagePort) {
 		this.sessionId = sessionId;
@@ -100,6 +108,8 @@ export class CaptureSession {
 		this.writerPort = writerPort ?? null;
 		if (this.writerPort) {
 			this.writerPort.addEventListener('message', this.writerMessageHandler);
+			this.writerPort.addEventListener('messageerror', this.writerPortFailureHandler);
+			this.writerPort.addEventListener('close', this.writerPortFailureHandler);
 		}
 	}
 
@@ -229,6 +239,7 @@ export class CaptureSession {
 	}
 
 	appendSceneSwitch(sceneId: string, atUs: number): void {
+		if (this.state !== 'recording') return;
 		this.writerPort?.postMessage({
 			type: 'write-scene-switch',
 			sessionId: this.sessionId,
@@ -316,6 +327,7 @@ export class CaptureSession {
 		entry.bytesWritten += packet.byteLength;
 		this.totalBytesWritten += packet.byteLength;
 		this.lastEncodedFrameTs = Math.max(this.lastEncodedFrameTs, toUs);
+		this.lastEncodedFramePerfTime = performance.now();
 		entry.lastSampleUs = Math.max(entry.lastSampleUs ?? toUs, toUs);
 
 		// Write the resume manifest record on the first encoded frame after resume.
@@ -384,7 +396,24 @@ export class CaptureSession {
 
 	private waitForFinalizeAck(sessionId: string): Promise<void> {
 		return new Promise((resolve, reject) => {
-			this.finalizeWaiters.set(sessionId, { resolve, reject });
+			const timeout = setTimeout(() => {
+				this.finalizeWaiters.delete(sessionId);
+				reject(
+					new Error(
+						`Timed out waiting ${FINALIZE_ACK_TIMEOUT_MS}ms for capture writer finalization.`
+					)
+				);
+			}, FINALIZE_ACK_TIMEOUT_MS);
+			this.finalizeWaiters.set(sessionId, {
+				resolve: () => {
+					clearTimeout(timeout);
+					resolve();
+				},
+				reject: (error) => {
+					clearTimeout(timeout);
+					reject(error);
+				}
+			});
 		});
 	}
 
@@ -396,6 +425,8 @@ export class CaptureSession {
 	}
 
 	private rejectFinalizeWaiter(error: Error): void {
+		// A CaptureSession owns a single writer session and creates at most one
+		// finalization waiter, so any writer failure invalidates the pending stop.
 		for (const [, waiter] of this.finalizeWaiters) {
 			waiter.reject(error);
 		}
@@ -492,6 +523,18 @@ export class CaptureSession {
 		});
 	}
 
+	currentMediaTimeUs(): number {
+		if (this.lastEncodedFrameTs > 0 && this.lastEncodedFramePerfTime > 0) {
+			return Math.max(
+				this.lastEncodedFrameTs,
+				this.lastEncodedFrameTs +
+					Math.round((performance.now() - this.lastEncodedFramePerfTime) * 1000)
+			);
+		}
+		const elapsedUs = Math.max(0, Math.round((performance.now() - this.startTime) * 1000));
+		return (this.epochUs ?? 0) + elapsedUs;
+	}
+
 	private emitStatus(): void {
 		const now = performance.now();
 		const rawElapsedUs = Math.round((now - this.startTime) * 1000);
@@ -527,6 +570,8 @@ export class CaptureSession {
 	reset(): void {
 		if (this.writerPort) {
 			this.writerPort.removeEventListener('message', this.writerMessageHandler);
+			this.writerPort.removeEventListener('messageerror', this.writerPortFailureHandler);
+			this.writerPort.removeEventListener('close', this.writerPortFailureHandler);
 		}
 		this.abort.abort();
 		for (const [, entry] of this.sources) {
@@ -536,6 +581,7 @@ export class CaptureSession {
 		this.state = 'idle';
 		this.totalBytesWritten = 0;
 		this.lastEncodedFrameTs = 0;
+		this.lastEncodedFramePerfTime = 0;
 		this.pendingResumeRecord = false;
 		this.pendingPauseAtUs = null;
 		this.pauseResumePairs = [];

@@ -2162,6 +2162,7 @@ body {
 .program-panel--disabled,
 .program-panel-error,
 .program-panel-budget,
+.program-panel-options,
 .program-panel-status {
 	border: 1px solid var(--border);
 	border-radius: var(--radius-md);
@@ -2191,11 +2192,18 @@ body {
 }
 
 .program-panel-source-actions,
-.program-panel-scenes-header {
+.program-panel-scenes-header,
+.program-panel-toggle {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
 	gap: 0.5rem;
+}
+
+.program-panel-toggle {
+	justify-content: flex-start;
+	color: var(--muted-foreground);
+	font-size: var(--text-xs);
 }
 
 .program-panel-btn,

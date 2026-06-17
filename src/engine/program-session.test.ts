@@ -53,10 +53,16 @@ function config(): ProgramSessionConfig {
 function fakeCaptureSession(options?: {
 	epochValue?: number | null;
 	landingSources?: ReturnType<CaptureSession['getLandingSources']>;
+	mediaTimesUs?: number[];
 }) {
 	const start = vi.fn(async () => {});
 	const stop = vi.fn(async () => {});
 	const appendSceneSwitch = vi.fn();
+	const currentMediaTimeUs = vi.fn();
+	for (const timeUs of options?.mediaTimesUs ?? [1_000_000, 1_500_000, 2_500_000]) {
+		currentMediaTimeUs.mockReturnValueOnce(timeUs);
+	}
+	currentMediaTimeUs.mockReturnValue(2_500_000);
 	const getLandingSources = vi.fn(
 		() =>
 			options?.landingSources ?? [
@@ -77,9 +83,10 @@ function fakeCaptureSession(options?: {
 		stop,
 		appendSceneSwitch,
 		epochValue: options?.epochValue === undefined ? 1_000_000 : options.epochValue,
+		currentMediaTimeUs,
 		getLandingSources
 	} as unknown as CaptureSession;
-	return { session, start, stop, appendSceneSwitch, getLandingSources };
+	return { session, start, stop, appendSceneSwitch, currentMediaTimeUs, getLandingSources };
 }
 
 function fakeCompositor() {
@@ -91,6 +98,7 @@ function fakeCompositor() {
 		renderTick: vi.fn(),
 		getCurrentSceneId: () => 'scene-1',
 		getScenes: () => [],
+		hasActiveTransition: () => false,
 		dispose
 	};
 	return { compositor, dispose };
@@ -111,10 +119,6 @@ afterEach(() => {
 
 describe('createProgramSession', () => {
 	it('starts capture, records scene switches, and returns the layout track', async () => {
-		vi.spyOn(performance, 'now')
-			.mockReturnValueOnce(1_000)
-			.mockReturnValueOnce(1_500)
-			.mockReturnValueOnce(2_500);
 		const capture = fakeCaptureSession();
 		const budget = createEncoderBudget(2);
 		const { compositor, dispose: disposeCompositor } = fakeCompositor();
@@ -142,8 +146,11 @@ describe('createProgramSession', () => {
 	});
 
 	it('falls back to the session start when no capture source establishes an epoch', async () => {
-		vi.spyOn(performance, 'now').mockReturnValueOnce(2_000).mockReturnValueOnce(2_500);
-		const capture = fakeCaptureSession({ epochValue: null, landingSources: [] });
+		const capture = fakeCaptureSession({
+			epochValue: null,
+			landingSources: [],
+			mediaTimesUs: [2_000_000, 2_500_000]
+		});
 		const budget = createEncoderBudget(2);
 		const { compositor } = fakeCompositor();
 		const { tap } = fakeTap();
@@ -160,5 +167,37 @@ describe('createProgramSession', () => {
 			startTime: 0
 		});
 		expect(result.layoutTrack?.layoutClips?.[0]?.duration).toBeCloseTo(0.5);
+	});
+
+	it('preserves the scene definition snapshot active at each switch', async () => {
+		const sessionConfig = config();
+		const capture = fakeCaptureSession({ mediaTimesUs: [1_000_000, 1_250_000, 2_000_000] });
+		const budget = createEncoderBudget(2);
+		const { compositor } = fakeCompositor();
+		const { tap } = fakeTap();
+
+		const session = createProgramSession(sessionConfig, budget, capture.session, compositor, tap);
+
+		await session.start();
+		session.switchScene('scene-2');
+		session.updateScenes(
+			sessionConfig.scenes.map((scene) =>
+				scene.id === 'scene-2'
+					? {
+							...scene,
+							layers: scene.layers.map((layer) => ({
+								...layer,
+								transform: { ...layer.transform, scale: 3 }
+							}))
+						}
+					: scene
+			)
+		);
+		const result = await session.stop();
+
+		const switchedClip = result.layoutTrack?.layoutClips?.find(
+			(clip) => clip.sceneId === 'scene-2'
+		);
+		expect(switchedClip?.sceneSnapshot.layers[0]?.transform.scale).toBe(1.4);
 	});
 });

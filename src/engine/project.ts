@@ -283,7 +283,9 @@ function cloneClip(clip: TimelineClip): TimelineClip {
 	return cloned;
 }
 
-function cloneSceneDefinition(scene: LayoutClip['sceneSnapshot']): LayoutClip['sceneSnapshot'] {
+export function cloneSceneDefinition(
+	scene: LayoutClip['sceneSnapshot']
+): LayoutClip['sceneSnapshot'] {
 	return {
 		...scene,
 		layers: scene.layers.map((layer) => ({

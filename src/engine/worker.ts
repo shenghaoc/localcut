@@ -176,7 +176,6 @@ import {
 	DEFAULT_MASTER_GAIN,
 	DEFAULT_TRACK_MIX,
 	DEFAULT_TITLE_DURATION_S,
-	normalizeTransform,
 	maxTransitionDurationS,
 	type Timeline,
 	type TimelineClip,
@@ -189,6 +188,7 @@ import {
 	type TransformParams
 } from './timeline';
 import { applyProgramLayoutToResolvedLayers } from './program-layout-resolve';
+import { normalizeTransform } from './transform';
 import type { SourceVideoTrackInspection } from './media-adapters/types';
 import { sampleClipParamsAt } from './keyframes';
 import { clipLutFromCubeFile, cloneClipLut, lutSnapshot, type ClipLut } from './lut';
@@ -549,6 +549,68 @@ let programLandingSettings: import('../protocol').CaptureSettingsSnapshot | null
 let programSceneDoc: SceneDoc | null = null;
 let programPendingError: import('../protocol').ProgramErrorCode | null = null;
 let programPendingErrorDetail: string | null = null;
+let programRenderFrame: { kind: 'raf' | 'timeout'; id: number } | null = null;
+let programRenderDirty = false;
+
+const PROGRAM_RENDER_FRAME_MS = 1000 / 60;
+
+function requestProgramRenderFrame(callback: () => void): { kind: 'raf' | 'timeout'; id: number } {
+	const scope = globalThis as typeof globalThis & {
+		requestAnimationFrame?: (callback: FrameRequestCallback) => number;
+		cancelAnimationFrame?: (id: number) => void;
+	};
+	if (scope.requestAnimationFrame) {
+		return { kind: 'raf', id: scope.requestAnimationFrame(() => callback()) };
+	}
+	return {
+		kind: 'timeout',
+		id: setTimeout(callback, PROGRAM_RENDER_FRAME_MS)
+	};
+}
+
+function cancelProgramRenderFrame(): void {
+	if (!programRenderFrame) return;
+	const frame = programRenderFrame;
+	programRenderFrame = null;
+	const scope = globalThis as typeof globalThis & {
+		cancelAnimationFrame?: (id: number) => void;
+	};
+	if (frame.kind === 'raf') {
+		scope.cancelAnimationFrame?.(frame.id);
+	} else {
+		clearTimeout(frame.id);
+	}
+	programRenderDirty = false;
+}
+
+function scheduleProgramRenderFrame(): void {
+	if (programRenderFrame) return;
+	programRenderFrame = requestProgramRenderFrame(runProgramRenderFrame);
+}
+
+function scheduleProgramRender(): void {
+	programRenderDirty = true;
+	scheduleProgramRenderFrame();
+}
+
+function runProgramRenderFrame(): void {
+	programRenderFrame = null;
+	const compositor = programCompositor;
+	const shouldRender = programRenderDirty || (compositor?.hasActiveTransition() ?? false);
+	programRenderDirty = false;
+	if (!compositor || !shouldRender) return;
+	try {
+		compositor.renderTick();
+	} catch (error) {
+		programPendingError = 'compositor-error';
+		programPendingErrorDetail = errorMessage(error);
+		void handleProgramStop();
+		return;
+	}
+	if (programCompositor?.hasActiveTransition()) {
+		scheduleProgramRenderFrame();
+	}
+}
 
 function cloneSceneDefinitionForWorker(scene: SceneDefinition): SceneDefinition {
 	return {
@@ -8140,10 +8202,9 @@ async function handleProgramStart(
 			`program-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
 			{
 				onStatusChange(status) {
-					const programState =
-						status.state === 'recording' || status.state === 'paused'
-							? 'running'
-							: (status.state as 'idle' | 'armed' | 'running' | 'stopping');
+					const programState = (
+						status.state === 'recording' || status.state === 'paused' ? 'running' : status.state
+					) as 'idle' | 'armed' | 'running' | 'stopping';
 					post({
 						type: 'program-status',
 						state: programState,
@@ -8188,13 +8249,7 @@ async function handleProgramStart(
 				videoConfig
 					? (sourceId, frame) => {
 							programTap?.onFrame(sourceId, frame);
-							try {
-								programCompositor?.renderTick();
-							} catch (error) {
-								programPendingError = 'compositor-error';
-								programPendingErrorDetail = errorMessage(error);
-								void handleProgramStop();
-							}
+							scheduleProgramRender();
 						}
 					: undefined
 			);
@@ -8249,6 +8304,7 @@ async function handleProgramStart(
 		failedCaptureSession?.reset();
 		releaseProgramExternalEncoderLeases();
 		programSession = null;
+		cancelProgramRenderFrame();
 		programCompositor?.dispose();
 		programCompositor = null;
 		programTap?.dispose();
@@ -8300,7 +8356,7 @@ async function handleProgramStop(): Promise<void> {
 		} catch (err) {
 			post({
 				type: 'program-error',
-				code: programPendingError ?? 'compositor-error',
+				code: programPendingError ?? 'session-error',
 				detail: String(err)
 			});
 		} finally {
@@ -8309,6 +8365,9 @@ async function handleProgramStop(): Promise<void> {
 				captureSession = null;
 			}
 			releaseProgramExternalEncoderLeases();
+			cancelProgramRenderFrame();
+			programCompositor?.dispose();
+			programTap?.dispose();
 			programSession = null;
 			programCompositor = null;
 			programTap = null;
@@ -8325,7 +8384,7 @@ async function handleProgramStop(): Promise<void> {
 function handleProgramSceneSwitch(sceneId: string, transitionMs: 0 | 200): void {
 	if (programSession) {
 		programSession.switchScene(sceneId, transitionMs);
-		programCompositor?.renderTick();
+		scheduleProgramRender();
 	}
 }
 
@@ -8334,10 +8393,10 @@ function handleProgramUpdateScenes(scenes: SceneDefinition[]): void {
 	scheduleAutosave();
 	if (programSession) {
 		programSession.updateScenes(scenes);
-		programCompositor?.renderTick();
+		scheduleProgramRender();
 	} else if (programCompositor) {
 		programCompositor.updateScenes(scenes);
-		programCompositor.renderTick();
+		scheduleProgramRender();
 	}
 }
 

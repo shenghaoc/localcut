@@ -10,14 +10,20 @@ import type { SceneDefinition } from '../protocol';
 import type { CaptureManifestRecord } from './capture/chunk-manifest';
 import type { LayoutClip, TimelineTrack } from './timeline';
 import { defaultTimelineClip } from './timeline';
+import { cloneSceneDefinition } from './project';
 
 export interface ProgramLandingConfig {
 	sessionId: string;
 	scenes: SceneDefinition[];
 	initialSceneId: string | undefined;
+	initialSceneSnapshot?: SceneDefinition;
 	epochUs: number;
 	endUs: number;
 }
+
+export type ProgramSceneSwitchRecord = Extract<CaptureManifestRecord, { kind: 'scene-switch' }> & {
+	sceneSnapshot?: SceneDefinition;
+};
 
 /**
  * Builds contiguous LayoutClip segments from scene-switch manifest records.
@@ -30,24 +36,29 @@ export interface ProgramLandingConfig {
  * 4. For each segment, create a LayoutClip with the SceneDefinition snapshot.
  */
 export function buildLayoutClips(
-	records: CaptureManifestRecord[],
+	records: readonly (CaptureManifestRecord | ProgramSceneSwitchRecord)[],
 	config: ProgramLandingConfig
 ): LayoutClip[] {
-	const { scenes, initialSceneId, epochUs, endUs } = config;
+	const { scenes, initialSceneId, initialSceneSnapshot, epochUs, endUs } = config;
 
 	// Extract scene-switch records in order
 	const switches = records
-		.filter(
-			(r): r is { kind: 'scene-switch'; sceneId: string; atUs: number } => r.kind === 'scene-switch'
-		)
+		.filter((r): r is ProgramSceneSwitchRecord => r.kind === 'scene-switch')
 		.sort((a, b) => a.atUs - b.atUs);
 
 	// If no initial scene and no switches, no layout track
 	if (!initialSceneId && switches.length === 0) return [];
 
 	// Build segments
-	const segments: { sceneId: string; startUs: number; endUs: number }[] = [];
+	const segments: {
+		sceneId: string;
+		startUs: number;
+		endUs: number;
+		sceneSnapshot?: SceneDefinition;
+	}[] = [];
 	let currentSceneId = initialSceneId ?? switches[0]?.sceneId ?? '';
+	let currentSceneSnapshot =
+		initialSceneSnapshot ?? scenes.find((scene) => scene.id === currentSceneId);
 	let segmentStartUs = 0;
 
 	for (const sw of switches) {
@@ -56,10 +67,12 @@ export function buildLayoutClips(
 			segments.push({
 				sceneId: currentSceneId,
 				startUs: segmentStartUs,
-				endUs: switchOffsetUs
+				endUs: switchOffsetUs,
+				sceneSnapshot: currentSceneSnapshot
 			});
 		}
 		currentSceneId = sw.sceneId;
+		currentSceneSnapshot = sw.sceneSnapshot ?? scenes.find((scene) => scene.id === sw.sceneId);
 		segmentStartUs = switchOffsetUs;
 	}
 
@@ -69,7 +82,8 @@ export function buildLayoutClips(
 		segments.push({
 			sceneId: currentSceneId,
 			startUs: segmentStartUs,
-			endUs: sessionEndUs
+			endUs: sessionEndUs,
+			sceneSnapshot: currentSceneSnapshot
 		});
 	}
 
@@ -77,7 +91,7 @@ export function buildLayoutClips(
 	let clipIdCounter = 0;
 	return segments
 		.map((seg) => {
-			const scene = scenes.find((s) => s.id === seg.sceneId);
+			const scene = seg.sceneSnapshot ?? scenes.find((s) => s.id === seg.sceneId);
 			if (!scene || seg.endUs <= seg.startUs) return null;
 			return {
 				id: `layout-clip-${clipIdCounter++}`,
@@ -85,7 +99,7 @@ export function buildLayoutClips(
 				startTime: seg.startUs / 1_000_000,
 				duration: (seg.endUs - seg.startUs) / 1_000_000,
 				sceneId: seg.sceneId,
-				sceneSnapshot: scene
+				sceneSnapshot: cloneSceneDefinition(scene)
 			};
 		})
 		.filter((c): c is LayoutClip => c !== null);

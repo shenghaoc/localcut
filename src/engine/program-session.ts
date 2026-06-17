@@ -13,9 +13,9 @@ import type { EncoderBudget, EncoderLease } from './encoder-budget';
 import type { CaptureSession } from './capture/capture-session';
 import type { ProgramCompositor } from './program-compositor';
 import type { LiveComposeTap } from './live-compose-tap';
-import { landProgramSession } from './program-landing';
-import type { CaptureManifestRecord } from './capture/chunk-manifest';
+import { landProgramSession, type ProgramSceneSwitchRecord } from './program-landing';
 import type { TimelineTrack } from './timeline';
+import { cloneSceneDefinition } from './project';
 
 /** Error thrown when the encoder budget is exhausted before session start. */
 export class ProgramBudgetError extends Error {
@@ -107,13 +107,19 @@ export function createProgramSession(
 
 	let state: 'idle' | 'armed' | 'running' | 'stopping' = 'armed';
 	let currentSceneId = config.initialSceneId;
-	let scenes = [...config.scenes];
+	let scenes = config.scenes.map(cloneSceneDefinition);
+	const initialSceneSnapshot = cloneSceneForId(config.initialSceneId);
 	let startUs: number | null = null;
 	let leasesReleased = false;
 	let disposed = false;
 
 	// Scene switch manifest records (appended on stop)
-	const sceneSwitches: Array<{ kind: 'scene-switch'; sceneId: string; atUs: number }> = [];
+	const sceneSwitches: ProgramSceneSwitchRecord[] = [];
+
+	function cloneSceneForId(sceneId: string): SceneDefinition | undefined {
+		const scene = scenes.find((candidate) => candidate.id === sceneId);
+		return scene ? cloneSceneDefinition(scene) : undefined;
+	}
 
 	function releaseLeases(): void {
 		if (leasesReleased) return;
@@ -135,9 +141,9 @@ export function createProgramSession(
 			if (state !== 'armed') {
 				throw new Error('Program session is not armed.');
 			}
-			startUs = Math.round(performance.now() * 1000);
 			compositor.switchScene(config.initialSceneId, 0);
 			await captureSession.start(config.chunkTargetS);
+			startUs = captureSession.currentMediaTimeUs();
 			state = 'running';
 		},
 
@@ -147,11 +153,12 @@ export function createProgramSession(
 			currentSceneId = sceneId;
 			// Record the switch for the manifest (relative to session start)
 			if (state === 'running') {
-				const atUs = Math.round(performance.now() * 1000);
+				const atUs = captureSession.currentMediaTimeUs();
 				const record = {
 					kind: 'scene-switch' as const,
 					sceneId,
-					atUs
+					atUs,
+					sceneSnapshot: cloneSceneForId(sceneId)
 				};
 				sceneSwitches.push(record);
 				captureSession.appendSceneSwitch(sceneId, atUs);
@@ -159,7 +166,7 @@ export function createProgramSession(
 		},
 
 		updateScenes(nextScenes: SceneDefinition[]): void {
-			const next = [...nextScenes];
+			const next = nextScenes.map(cloneSceneDefinition);
 			compositor.updateScenes(next);
 			scenes = next;
 		},
@@ -169,7 +176,7 @@ export function createProgramSession(
 				throw new Error('Program session is not running.');
 			}
 			state = 'stopping';
-			const endUs = Math.max(Math.round(performance.now() * 1000), startUs ?? 0);
+			const endUs = Math.max(captureSession.currentMediaTimeUs(), startUs ?? 0);
 
 			try {
 				await captureSession.stop('user-stop');
@@ -185,10 +192,11 @@ export function createProgramSession(
 				(landingSources.length > 0
 					? Math.min(...landingSources.map((source) => source.firstSampleUs))
 					: (startUs ?? endUs));
-			const { layoutTrack } = landProgramSession(sceneSwitches as CaptureManifestRecord[], {
+			const { layoutTrack } = landProgramSession(sceneSwitches, {
 				sessionId: captureSession.sessionId,
 				scenes,
 				initialSceneId: config.initialSceneId,
+				initialSceneSnapshot,
 				epochUs,
 				endUs
 			});

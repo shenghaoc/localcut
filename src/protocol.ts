@@ -2154,6 +2154,7 @@ export type ProgramErrorCode =
 	| 'budget-exhausted'
 	| 'source-failed'
 	| 'compositor-error'
+	| 'session-error'
 	| 'storage-quota';
 
 export interface ProgramSourceStatusSnapshot {

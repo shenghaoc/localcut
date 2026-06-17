@@ -7,7 +7,7 @@
  * reasons when unavailable.
  */
 
-import { For, Show, createEffect, createMemo, onCleanup } from 'solid-js';
+import { For, Show, createMemo } from 'solid-js';
 import type {
 	SceneDefinition,
 	SceneLayer,
@@ -37,6 +37,8 @@ export interface ProgramPanelProps {
 	acquiredSources: () => readonly ProgramSourceDescriptor[];
 	/** Error message to display. */
 	error: () => string | null;
+	/** Scene switch transition mode. */
+	transitionMs: () => 0 | 200;
 
 	// Actions
 	onAddScreen: () => void;
@@ -48,6 +50,7 @@ export interface ProgramPanelProps {
 	onRenameScene: (sceneId: string, name: string) => void;
 	onSetHotkey: (sceneId: string, hotkey: string | null) => void;
 	onUpdateLayers: (sceneId: string, layers: SceneLayer[]) => void;
+	onSetTransitionMs: (transitionMs: 0 | 200) => void;
 	onStart: (initialSceneId: string) => void;
 	onStop: () => void;
 	onSwitchScene: (sceneId: string) => void;
@@ -73,7 +76,6 @@ export function ProgramPanel(props: ProgramPanelProps) {
 		() => isIdle() && props.acquiredSources().length > 0 && props.scenes().length > 0
 	);
 
-	// Hotkey listener: active only when session is running
 	const handleKeydown = (e: KeyboardEvent) => {
 		if (!isRunning()) return;
 		if (
@@ -93,12 +95,6 @@ export function ProgramPanel(props: ProgramPanelProps) {
 		}
 	};
 
-	createEffect(() => {
-		if (!isRunning()) return;
-		window.addEventListener('keydown', handleKeydown);
-		onCleanup(() => window.removeEventListener('keydown', handleKeydown));
-	});
-
 	return (
 		<Show
 			when={!isDisabled()}
@@ -111,7 +107,13 @@ export function ProgramPanel(props: ProgramPanelProps) {
 				</div>
 			}
 		>
-			<div class="program-panel" role="region" aria-label="Program Mode" onKeyDown={handleKeydown}>
+			<div
+				class="program-panel"
+				role="region"
+				aria-label="Program Mode"
+				tabIndex={0}
+				onKeyDown={handleKeydown}
+			>
 				<h3 class="program-panel-title">Program Mode</h3>
 
 				{/* Error display */}
@@ -244,6 +246,17 @@ export function ProgramPanel(props: ProgramPanelProps) {
 					<span>
 						Encoder budget: {props.budgetUsage().active} / {props.budgetUsage().max}
 					</span>
+				</div>
+
+				<div class="program-panel-options" role="group" aria-label="Program transition options">
+					<label class="program-panel-toggle">
+						<input
+							type="checkbox"
+							checked={props.transitionMs() === 200}
+							onChange={(event) => props.onSetTransitionMs(event.currentTarget.checked ? 200 : 0)}
+						/>
+						<span>Crossfade scene switches</span>
+					</label>
 				</div>
 
 				{/* Start/Stop controls */}

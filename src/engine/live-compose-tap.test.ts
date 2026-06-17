@@ -22,6 +22,7 @@ function createOwningCompositor(): ProgramCompositor {
 		renderTick: vi.fn(),
 		getCurrentSceneId: () => 'scene-1',
 		getScenes: () => [],
+		hasActiveTransition: () => false,
 		dispose() {
 			for (const frame of frames.values()) {
 				frame.close();

@@ -49,6 +49,9 @@ export interface ProgramCompositor {
 	/** Returns the current scene definitions. */
 	getScenes(): readonly SceneDefinition[];
 
+	/** Whether a crossfade transition still needs render ticks. */
+	hasActiveTransition(): boolean;
+
 	/** Disposes the compositor, closing all held frames. */
 	dispose(): void;
 }
@@ -69,6 +72,7 @@ export function createProgramCompositor(config: ProgramCompositorConfig): Progra
 	let outgoingSceneId = '';
 	let transitionMs: 0 | 200 = 0;
 	let nextLayerObjectKey = 0;
+	let disposed = false;
 	const layerObjectKeys = new WeakMap<object, string>();
 
 	function layerObjectKey(object: object): string {
@@ -144,8 +148,20 @@ export function createProgramCompositor(config: ProgramCompositorConfig): Progra
 		return layers;
 	}
 
+	function hasActiveTransition(): boolean {
+		return (
+			transitionMs === 200 &&
+			outgoingSceneId.length > 0 &&
+			performance.now() - transitionStart < 200
+		);
+	}
+
 	return {
 		updateFrame(sourceId: string, frame: VideoFrame): void {
+			if (disposed) {
+				frame.close();
+				return;
+			}
 			// Close the previous held frame for this source (latest-frame-wins)
 			const prev = frames.get(sourceId);
 			if (prev) {
@@ -155,6 +171,7 @@ export function createProgramCompositor(config: ProgramCompositorConfig): Progra
 		},
 
 		switchScene(sceneId: string, ms: 0 | 200): void {
+			if (disposed) return;
 			if (sceneId === currentSceneId) return;
 			if (ms === 200) {
 				transitionStart = performance.now();
@@ -168,10 +185,12 @@ export function createProgramCompositor(config: ProgramCompositorConfig): Progra
 		},
 
 		updateScenes(newScenes: SceneDefinition[]): void {
+			if (disposed) return;
 			scenes = [...newScenes];
 		},
 
 		renderTick(): void {
+			if (disposed) return;
 			const layers = buildLayers();
 			// Use the existing PreviewRenderer's present() method.
 			// This handles the single queue.submit per frame.
@@ -187,7 +206,11 @@ export function createProgramCompositor(config: ProgramCompositorConfig): Progra
 			return scenes;
 		},
 
+		hasActiveTransition,
+
 		dispose(): void {
+			if (disposed) return;
+			disposed = true;
 			// Close all held frames
 			for (const frame of frames.values()) {
 				frame.close();

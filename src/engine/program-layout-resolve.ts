@@ -19,22 +19,30 @@ export function applyProgramLayoutToResolvedLayers(
 ): LayoutResolvedLayer[] {
 	if (!layoutClip) return layers.map((layer) => ({ layer, layoutLayer: null }));
 
-	const available = new Map<string, ResolveResult[]>();
+	const bySourceId = new Map<string, ResolveResult[]>();
+	const byTrackId = new Map<string, ResolveResult[]>();
 	for (const layer of layers) {
-		pushLayer(available, layer.clip.sourceId, layer);
-		pushLayer(available, layer.trackId, layer);
+		pushLayer(bySourceId, layer.clip.sourceId, layer);
+		pushLayer(byTrackId, layer.trackId, layer);
 	}
 
-	const used = new Set<ResolveResult>();
+	const usedTrackFallbacks = new Set<ResolveResult>();
 	const ordered: LayoutResolvedLayer[] = [];
 	const sceneLayers = [...layoutClip.sceneSnapshot.layers]
 		.filter((layer) => layer.visible)
 		.sort((a, b) => a.zIndex - b.zIndex);
 
 	for (const sceneLayer of sceneLayers) {
-		const candidate = (available.get(sceneLayer.sourceRef) ?? []).find((layer) => !used.has(layer));
+		const sourceMatch = bySourceId.get(sceneLayer.sourceRef)?.[0] ?? null;
+		const trackMatch =
+			sourceMatch === null
+				? (byTrackId.get(sceneLayer.sourceRef) ?? []).find(
+						(layer) => !usedTrackFallbacks.has(layer)
+					)
+				: null;
+		const candidate = sourceMatch ?? trackMatch;
 		if (!candidate) continue;
-		used.add(candidate);
+		if (trackMatch) usedTrackFallbacks.add(trackMatch);
 		ordered.push({ layer: candidate, layoutLayer: sceneLayer });
 	}
 
