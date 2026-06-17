@@ -4882,23 +4882,36 @@ function handleOverwriteEdit(cmd: Extract<WorkerCommand, { type: 'overwrite-edit
 	// untargeted partner stays put — silently splitting the A/V pair. Reject the
 	// edit before mutating so the link contract holds; the UI should expand the
 	// edit targeting or unlink the pair to proceed.
+	//
+	// Per-track region computation: `overwriteEdit` (timeline.ts) places every
+	// incoming clip's start at `cmd.atTime` regardless of any relative offset
+	// the cmd carries, and each clip overwrites its own region
+	// [atTime, atTime + clip.duration]. The union of those regions per track
+	// is therefore [atTime, atTime + max(clip.duration)] across all incoming
+	// clips on that track. We compute (regionStart, regionEnd) by iterating
+	// the clips explicitly so the calculation tracks `overwriteEdit`'s actual
+	// behaviour, not just the max-duration shortcut.
 	const targetSet = new Set(targetTrackIds);
-	const incomingByTrack = new Map<string, number>();
+	const regionByTrack = new Map<string, { start: number; end: number }>();
 	for (const item of cmd.clips) {
-		const cur = incomingByTrack.get(item.trackId);
-		if (cur === undefined || item.clip.duration > cur)
-			incomingByTrack.set(item.trackId, item.clip.duration);
+		const placedStart = cmd.atTime;
+		const placedEnd = placedStart + item.clip.duration;
+		const cur = regionByTrack.get(item.trackId);
+		if (cur) {
+			cur.start = Math.min(cur.start, placedStart);
+			cur.end = Math.max(cur.end, placedEnd);
+		} else {
+			regionByTrack.set(item.trackId, { start: placedStart, end: placedEnd });
+		}
 	}
-	for (const [trackId, dur] of incomingByTrack) {
+	for (const [trackId, region] of regionByTrack) {
 		if (!targetSet.has(trackId)) continue;
 		const track = timeline.find((t) => t.id === trackId);
 		if (!track) continue;
-		const regionStart = cmd.atTime;
-		const regionEnd = cmd.atTime + dur;
 		for (const existing of track.clips) {
 			const eStart = existing.start;
 			const eEnd = eStart + existing.duration;
-			if (eEnd <= regionStart || eStart >= regionEnd) continue;
+			if (eEnd <= region.start || eStart >= region.end) continue;
 			if (!existing.linkedGroupId) continue;
 			const linked = expandLinkedGroup(timeline, [{ trackId, clipId: existing.id }]);
 			for (const ref of linked) {

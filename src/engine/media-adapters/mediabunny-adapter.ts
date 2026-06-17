@@ -423,21 +423,25 @@ async function openImageFile(
 	const primaryVideo = inspection.tracks[0] as SourceVideoTrackInspection;
 	const { conformance, warnings: baseWarnings } = deriveConformance(inspection, primaryVideo, null);
 	// Static fallback for animated GIF/WebP/AVIF (e.g. Firefox without
-	// ImageDecoder, or a Chromium build missing the codec). Without this the
-	// user sees only the first frame and nothing in the UI explains why.
-	const warnings: SourceHealthWarning[] = ANIMATED_IMAGE_MIME_TYPES.has(mimeType)
-		? [
-				...baseWarnings,
-				{
-					code: 'animated-image-static-fallback',
-					severity: 'info',
-					blocking: false,
-					sourceId,
-					message: `${file.name}: animated frames are unavailable in this browser; importing as a static still.`,
-					details: { mimeType }
-				}
-			]
-		: [...baseWarnings];
+	// ImageDecoder, or a Chromium build missing the codec). Control only
+	// reaches this branch when `isAnimated` was false (the animated branch
+	// above already returned). We belt-and-brace with an explicit
+	// `!isAnimated` check so a future reader (or static analyser) reading
+	// only this block sees the gate without having to trace the control flow.
+	const warnings: SourceHealthWarning[] =
+		ANIMATED_IMAGE_MIME_TYPES.has(mimeType) && !isAnimated
+			? [
+					...baseWarnings,
+					{
+						code: 'animated-image-static-fallback',
+						severity: 'info',
+						blocking: false,
+						sourceId,
+						message: `${file.name}: animated frames are unavailable in this browser; importing as a static still.`,
+						details: { mimeType }
+					}
+				]
+			: [...baseWarnings];
 	const metadata = createMetadata(
 		file,
 		conformance.durationS,
