@@ -35,15 +35,12 @@ import { MatteCache, makeMatteCacheKey } from '../matte-cache';
 import { validateManifest } from './model-manifest';
 import { loadLiteRtModule } from './litert-loader';
 import { createOpfsAssetStore, loadVerifiedAsset } from '../asr/asset-cache';
+import { MATTE_TEMPORAL_SMOOTHING, shouldResetMatteHistory } from './matte-temporal';
 
 type AssetStore = Awaited<ReturnType<typeof createOpfsAssetStore>>;
 
 /** Same-origin manifest describing the deployed `.tflite` model. */
 const MATTE_MANIFEST_URL = '/models/matte/manifest.json';
-
-/** EMA history weight — the temporal-stability surrogate for single-frame
- *  models (R4). Fixed (also in test mode) so output is deterministic. */
-const TEMPORAL_SMOOTHING = 0.5;
 
 /** Reuse-cache budget. Correctness never depends on a hit (R3.3). */
 const MATTE_CACHE_BYTES = 32 * 1024 * 1024;
@@ -511,11 +508,12 @@ export class MatteEngine {
 
 		const session = this.sessionFor(request.clipId);
 		// Discontinuity policy (R4.2): seek / >1.5-frame jump / first frame resets
-		// temporal history.
-		const step = request.frameStepS > 0 ? request.frameStepS : 1 / 30;
-		const reset =
-			session.lastSourceTimeS === null ||
-			Math.abs(request.sourceTimeS - session.lastSourceTimeS) > 1.5 * step;
+		// temporal history (shared with the ORT backend — see matte-temporal.ts).
+		const reset = shouldResetMatteHistory(
+			session.lastSourceTimeS,
+			request.sourceTimeS,
+			request.frameStepS
+		);
 
 		// NHWC input buffer: H*W*3 float32. STORAGE for the preprocess pass +
 		// COPY_SRC/DST so LiteRT can import it as a GPU-buffer tensor.
@@ -587,7 +585,7 @@ export class MatteEngine {
 		});
 		const uniform = new ArrayBuffer(16);
 		new Uint32Array(uniform, 0, 2).set([model.width, model.height]);
-		new Float32Array(uniform, 8, 1)[0] = TEMPORAL_SMOOTHING;
+		new Float32Array(uniform, 8, 1)[0] = MATTE_TEMPORAL_SMOOTHING;
 		new Uint32Array(uniform, 12, 1)[0] = reset ? 1 : 0;
 		device.queue.writeBuffer(this.resolveUniform!, 0, uniform);
 

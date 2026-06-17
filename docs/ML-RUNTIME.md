@@ -140,9 +140,22 @@ New and in-flight ML work should target ORT, not LiteRT:
   (`format: 'onnx'`, pinned size + SHA), load bytes via `loadOrtModelAsset()`,
   and create the session via `createOrtSession()`. Choose the EP from the table
   above; default to `webgpu` unless the model is small and non-frame-coupled.
-- **Existing LiteRT features (DTLN, Whisper, matte)** keep working unchanged on
-  their current path. They migrate to ORT in their own dedicated PRs, not as a
-  side effect of unrelated work — this foundation does not touch them.
+- **Portrait matte ORT/ONNX backend (spike)** is the worked example of migrating
+  an existing LiteRT feature without regressing it. The **deployed default stays
+  LiteRT** MediaPipe Selfie Segmentation (`matte-engine.ts`); an **experimental**
+  ORT/ONNX backend (`matte-onnx-engine.ts`, manifest `public/models/matte-onnx/`)
+  runs a MODNet-class true-matting model on ORT-WebGPU with `gpu-buffer` tensor IO
+  on the renderer's device. It is gated twice — the `__MATTE_ONNX_SPIKE__` build
+  flag (off by default; `src/engine/matte/matte-backend.ts`) **and** a real pinned
+  ONNX model (the shipped manifest is a `template`, so the backend stays disabled).
+  The EMA temporal-smoothing and recurrent-state-reset contract is shared verbatim
+  with the LiteRT engine (`matte-temporal.ts` + `matte-resolve.wgsl`). GPL-family
+  weights (e.g. RVM) are rejected by `validateMatteOnnxManifest`. ORT-WebNN for
+  matte is allowed only after a per-operator support proof. `DEFAULT_MATTE_BACKEND`
+  flips to `ort-onnx` only once ORT quality + performance parity is proven.
+- **Existing LiteRT features (DTLN, Whisper)** keep working unchanged on their
+  current path. They migrate to ORT in their own dedicated PRs, not as a side
+  effect of unrelated work — this foundation does not touch them.
 
 ## Foundation module map
 
