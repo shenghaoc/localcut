@@ -296,6 +296,17 @@ export default defineConfig({
 						options: { cacheName: 'dtln-manifest' }
 					},
 					{
+						// DTLN ONNX backend manifest. NetworkFirst (offline fallback) like the
+						// other model manifests — the `/models/dtln/` rule above does NOT cover
+						// this path (no trailing slash after `dtln`), so without this rule an
+						// installed/offline PWA could not reload the ONNX engine even though its
+						// model bytes are OPFS-cached. The `.onnx` weights are fetched via the
+						// `/_model/gh/` proxy and cached in OPFS by the app, not here.
+						urlPattern: /\/models\/dtln-onnx\//,
+						handler: 'NetworkFirst',
+						options: { cacheName: 'dtln-onnx-manifest' }
+					},
+					{
 						// The Whisper model itself is fetched cross-origin (Hugging Face)
 						// and cached in OPFS by the app, so this same-origin rule only
 						// covers the small `manifest.json`. It MUST be NetworkFirst, not

@@ -20,7 +20,7 @@ Your current tier shows in the pipeline strip and the status bar. **Capabilities
 - **WebGPU** powers the accelerated preview and effects. It is mature in Chromium (Chrome, Edge, Brave), newer and more limited elsewhere. No WebGPU means a reduced preview path.
 - **WebCodecs** gives the app direct access to the browser's video decoders and encoders. The codec list is whatever your browser + operating system + GPU drivers provide — it is not the same everywhere. H.264 is near-universal; AV1 _encoding_ is rare without recent hardware.
 - **Cross-origin isolation (COOP/COEP)** is a security mode the app's server enables so the browser allows `SharedArrayBuffer`, which the app uses as its high-precision playback clock. If the badge says **COOP/COEP needed**, the app runs in a reduced tier.
-- **Optional on-device ML tools** such as Audio Cleanup and Auto Captions still need WebAssembly as the baseline. When available, they prefer experimental WebNN first, then WebGPU, and fall back to WASM; the panel shows which accelerator actually loaded.
+- **Optional on-device ML tools** such as Audio Cleanup and Auto Captions still need WebAssembly as the baseline. The LiteRT engine prefers experimental WebNN first, then WebGPU, and falls back to WASM; the panel shows which accelerator actually loaded. Audio Cleanup also offers an experimental **ONNX Runtime DTLN** engine, selectable in its panel, that runs the same model on the WASM (CPU) execution provider — useful as an alternative runtime while LiteRT remains the default.
 - **Codec licensing**: formats like AC-3 or DTS audio and some camera codecs are not licensed for browser decoding at all. Those tracks can't be read by any web app.
 
 ## Limits of browser-only editing

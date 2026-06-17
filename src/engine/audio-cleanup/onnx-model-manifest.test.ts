@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
+import viteConfigSource from '../../../vite.config.ts?raw';
 import { OnnxManifestError, validateOnnxCleanupManifest } from './onnx-model-manifest';
 import { DTLN_BLOCK_LEN, DTLN_BLOCK_SHIFT, DTLN_SAMPLE_RATE } from './dtln-dsp';
 
@@ -165,5 +166,13 @@ describe('shipped ONNX manifest asset', () => {
 		expect(manifest.io.model1.maskOutput).toBe('activation_2');
 		expect(manifest.io.model2.frameInput).toBe('input_4');
 		expect(manifest.io.model2.frameOutput).toBe('conv1d_3');
+	});
+
+	it('runtime-caches the ONNX manifest so an installed PWA reloads it offline', () => {
+		// The `/models/dtln/` Workbox rule does NOT cover `/models/dtln-onnx/` (no
+		// trailing slash after `dtln`), so a dedicated rule is required or the ONNX
+		// engine cannot reload offline even with OPFS-cached weights.
+		expect(viteConfigSource).toContain('dtln-onnx-manifest');
+		expect(viteConfigSource).toMatch(/models\\?\/dtln-onnx/);
 	});
 });
