@@ -121,6 +121,9 @@ The preview panel shows your video at the playhead position:
 - **Safe Area Guides**: Toggle title/action safe areas with the **Safe areas** button.
 - **Transform Gizmo**: When a video clip is selected, drag the gizmo handles to adjust position, scale, and rotation. Hold **Shift** to constrain proportions.
 - **Adaptive Resolution**: Preview resolution adapts to your machine's performance — the current resolution is shown in the toolbar.
+- **Scopes (Experimental)**: On WebGPU-backed preview tiers, expand **Scopes** in the lower-right of the preview to inspect the histogram, luma waveform, RGB parade, and vectorscope. The panel stays collapsed by default and updates at a reduced rate so playback remains responsive. If clipped pixels are detected, an amber or red badge appears in the scope header.
+
+Scopes are unavailable in Limited WebCodecs and Shell Only tiers because those modes do not have the WebGPU renderer that produces the scope summaries.
 
 ## Side Panel
 
@@ -312,10 +315,10 @@ The matte is computed **in real time** on the GPU as frames play or export — t
 
 LocalCut Studio can reduce background noise in audio clips entirely on your device using the DTLN model (Dual-Signal Transformation LSTM Network). Two on-device inference **engines** run the same DTLN model and are selectable in the panel:
 
-- **LiteRT DTLN** (default) — the two upstream TFLite models on LiteRT.js.
-- **ONNX Runtime DTLN** (experimental) — the upstream ONNX models on ONNX Runtime Web (ORT). DTLN's tensors are tiny, so this runs on the WASM (CPU) execution provider; the ONNX runtime is fetched on demand and never ships in the app's startup bundle.
+- **ONNX Runtime DTLN** (default) — the upstream ONNX models on ONNX Runtime Web (ORT). DTLN's tensors are tiny, so this runs on the WASM (CPU) execution provider; the ONNX runtime is fetched on demand and never ships in the app's startup bundle.
+- **LiteRT DTLN** — the two upstream TFLite models on LiteRT.js, kept as a selectable alternate engine.
 
-LiteRT remains the default until ONNX parity is verified on real audio. This feature is **experimental** and fully local:
+ONNX is the default after real-audio A/B parity against LiteRT was verified. This feature is **experimental** and fully local:
 
 > Runs on this device. No upload. No API key. No server inference.
 
@@ -548,7 +551,7 @@ The output is ordinary, **editable transform keyframes** — never a baked-in cr
 
 **Notes**:
 
-- Subject detection defaults to **visual saliency** (skin tone, edges, local contrast — pure DSP, always available). For face-aware reframing, click **Load face model** in the panel to fetch **MediaPipe BlazeFace** once from Google (on-device after that; nothing uploaded) — the same click-to-load pattern as Audio Cleanup and Auto Captions. Once loaded, analysis tracks faces and falls back to saliency for frames with none. The Capabilities panel shows a **Smart Reframe** row.
+- Subject detection defaults to **visual saliency** (skin tone, edges, local contrast — pure DSP, always available). For face-aware reframing, click **Load face model** in the panel — the same click-to-load pattern as Audio Cleanup and Auto Captions. Two engines coexist behind that button: an **ORT/ONNX face detector** built on the editor's ONNX runtime (catalog-pinned, currently disabled until a real model is vendored — the manifest at `public/models/reframe-face/manifest.json` ships as a placeholder) and **MediaPipe BlazeFace**, which the worker falls back to and which loads from Google's model store. Whichever engine resolves, analysis runs entirely on-device, nothing is uploaded, and analysis tracks faces while falling back to saliency for frames with none. The Capabilities panel shows a **Smart Reframe** row.
 - Pan velocity and acceleration are bounded so generated motion never whips; the subject may briefly leave centre during fast moves. The panel reports safe-zone compliance.
 - Shot boundaries (hard cuts) are detected and reset tracking so the crop does not slide across an edit.
 - Limitations: one subject per clip, faces/saliency only (no object-class tracking), no automatic cutting, and offline only (no live-camera reframe).

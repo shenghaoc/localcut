@@ -466,9 +466,13 @@ export function probeSmartReframe(): SmartReframeProbeResult {
 	const analysisWorker: FeatureSupport =
 		typeof Worker !== 'undefined' ? 'supported' : 'unsupported';
 
-	// Face detection runs MediaPipe BlazeFace in that worker, loaded on the
-	// user's explicit action (WASM + model fetched from remote). It's available
-	// wherever the analysis worker is; the actual download happens on use.
+	// Face detection runs in the analysis worker on the user's explicit action.
+	// Two engines coexist: the original MediaPipe BlazeFace path (WASM + model
+	// fetched from remote) and an optional ORT/ONNX detector built on the
+	// Phase-105 foundation (manifest currently ships as a `template`, so the
+	// path stays disabled until a real model is vendored). Capability is tied
+	// to the worker availability; the actual model download happens on use, and
+	// either engine failing falls back to saliency.
 	const faceDetection: FeatureSupport = analysisWorker;
 
 	return {

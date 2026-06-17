@@ -55,7 +55,7 @@ function fakeSession(inputNames: string[], outputNames: string[], run: RunFn): F
 function fakeOrt(sessions: FakeSession[]) {
 	let next = 0;
 	return {
-		env: { wasm: { wasmPaths: '' }, webgpu: {} },
+		env: { wasm: { wasmPaths: '', numThreads: 0, proxy: true }, webgpu: {} },
 		Tensor: FakeTensor,
 		InferenceSession: {
 			create: vi.fn(async () => sessions[next++])
@@ -213,6 +213,8 @@ describe('DtlnOrtRuntime', () => {
 			echoModel2()
 		]);
 		expect(ort.env.wasm.wasmPaths).toBe('/_ort/');
+		expect(ort.env.wasm.numThreads).toBe(1);
+		expect(ort.env.wasm.proxy).toBe(false);
 		expect(ort.InferenceSession.create).toHaveBeenCalledWith(
 			expect.anything(),
 			expect.objectContaining({ executionProviders: ['wasm'] })

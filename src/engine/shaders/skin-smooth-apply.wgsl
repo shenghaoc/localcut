@@ -20,7 +20,7 @@ const CR_SCALE : f32 = 0.713;
 @group(0) @binding(0) var<uniform> u : SkinApplyUniform;
 @group(0) @binding(1) var src : texture_2d<f32>;
 @group(0) @binding(2) var meanCoeffs : texture_2d<f32>;
-@group(0) @binding(3) var dst : texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(3) var dst : texture_storage_2d<rgba16float, write>;
 
 // sRGB OETF: linear → gamma-encoded (per-channel).
 fn linear_to_srgb(l : f32) -> f32 {

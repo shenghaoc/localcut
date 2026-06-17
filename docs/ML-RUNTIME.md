@@ -56,9 +56,13 @@ foundation never appends ORT's implicit WASM fallback.
 
 ### The frame-coupled hard gate
 
-A model is **frame-coupled** when it runs per video frame (matte, frame
-interpolation, smart-reframe detection — anything in the preview/export hot
-path). For these:
+A model is **frame-coupled** when it runs per video frame in the preview /
+export hot path — matte (Phase 31) and frame interpolation (Phase 37) qualify.
+Smart Reframe's optional ORT face detector runs in a one-shot analysis pass at
+the analysis fps (default 2 fps), **not** in the preview/export hot path, so it
+is **not** frame-coupled and is allowed to declare `wasm` alongside
+`webgpu`/`webnn`; the detector's own loader gates WASM by input tensor size to
+keep the analysis worker responsive. For frame-coupled models:
 
 - The EP list **must not** contain `wasm`, and **must** include at least one
   GPU-class EP (`webgpu` or `webnn`).
@@ -136,16 +140,30 @@ New and in-flight ML work should target ORT, not LiteRT:
   (`format: 'onnx'`, pinned size + SHA), load bytes via `loadOrtModelAsset()`,
   and create the session via `createOrtSession()`. Choose the EP from the table
   above; default to `webgpu` unless the model is small and non-frame-coupled.
-- **Existing LiteRT features (DTLN, Whisper, matte)** keep working unchanged on
-  their current path. They migrate to ORT in their own dedicated PRs, not as a
-  side effect of unrelated work — this foundation does not touch them.
+- **Portrait matte ORT/ONNX backend (spike)** is the worked example of migrating
+  an existing LiteRT feature without regressing it. The **deployed default stays
+  LiteRT** MediaPipe Selfie Segmentation (`matte-engine.ts`); an **experimental**
+  ORT/ONNX backend (`matte-onnx-engine.ts`, manifest `public/models/matte-onnx/`)
+  runs a MODNet-class true-matting model on ORT-WebGPU with `gpu-buffer` tensor IO
+  on the renderer's device. It is gated twice — the `__MATTE_ONNX_SPIKE__` build
+  flag (off by default; `src/engine/matte/matte-backend.ts`) **and** a real pinned
+  ONNX model (the shipped manifest is a `template`, so the backend stays disabled).
+  The EMA temporal-smoothing and recurrent-state-reset contract is shared verbatim
+  with the LiteRT engine (`matte-temporal.ts` + `matte-resolve.wgsl`). GPL-family
+  weights (e.g. RVM) are rejected by `validateMatteOnnxManifest`. ORT-WebNN for
+  matte is allowed only after a per-operator support proof. `DEFAULT_MATTE_BACKEND`
+  flips to `ort-onnx` only once ORT quality + performance parity is proven.
 - **DTLN audio cleanup** now also ships an **ORT/ONNX backend** alongside LiteRT,
   selectable in the Audio Cleanup panel (`src/engine/audio-cleanup/dtln-ort-runtime.ts`,
   `public/models/dtln-onnx/manifest.json`). DTLN's tensors are tiny, so it pins
   the `wasm` (CPU) execution provider with CPU tensors — it is **not**
-  frame-coupled, so the EP policy permits `wasm`. LiteRT stays the default until
-  ONNX parity is verified on real audio; this is the migration template for a
+  frame-coupled, so the EP policy permits `wasm`. ONNX is now the default after
+  real-audio A/B parity against LiteRT was verified; LiteRT remains selectable as
+  the rollback path. This is the migration template for a
   small, non-frame-coupled LiteRT feature moving onto the ORT foundation.
+- **Remaining LiteRT-default features (Whisper and deployed portrait matte)**
+  keep working unchanged on their current paths. They migrate to ORT in their own
+  dedicated PRs, not as a side effect of unrelated work.
 
 ## Foundation module map
 

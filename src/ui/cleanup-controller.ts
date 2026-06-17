@@ -151,7 +151,7 @@ export class CleanupController {
 	private state: CleanupControllerState = {
 		probe: null,
 		available: typeof WebAssembly !== 'undefined',
-		backend: 'litert',
+		backend: 'ort',
 		modelStatus: 'not-loaded',
 		accelerator: null,
 		modelSizeBytes: null,

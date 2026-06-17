@@ -92,6 +92,11 @@ export class DtlnOrtRuntime {
 		// Same-origin, version-pinned WASM runtime (no cross-origin CDN under COEP).
 		// Idempotent; must be set before the first session is created.
 		ort.env.wasm.wasmPaths = ortWasmBasePath();
+		// DTLN's tensors are tiny and sequential because of recurrent state; ORT's
+		// worker/proxy path adds overhead here and can stall in extension-controlled
+		// Chrome contexts. Keep this backend on the simple single-threaded WASM path.
+		ort.env.wasm.numThreads = 1;
+		ort.env.wasm.proxy = false;
 
 		const sessionOptions: InferenceSession.SessionOptions = { executionProviders: [...eps] };
 		let session1: InferenceSession | null = null;

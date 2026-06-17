@@ -52,20 +52,38 @@ confirm replacement first.
   analysis frame from a skin-tone mask (YCbCr), Sobel edge density, and local
   contrast, and takes the highest-scoring region as the subject centroid. This
   is the default, used until the face model is loaded.
-- **Face detection** uses **MediaPipe Tasks Vision** (`@mediapipe/tasks-vision`,
-  BlazeFace), which performs the anchor decode + NMS internally. Like Auto
-  Captions and Audio Cleanup, it is **click-to-load** (R0.7): the panel shows a
-  **Load face model** button, and only on that explicit action does the worker
-  fetch the MediaPipe WASM runtime (from jsDelivr, pinned to the installed
-  version) and the BlazeFace `.tflite` (from Google's `storage.googleapis.com`
-  model store). Both are loaded **from remote on demand** — not vendored or
-  digest-pinned (the `latest` model URL is intentionally mutable; if Google
-  relocates it, only `src/engine/reframe/face-models.ts` needs updating). The
-  service worker runtime-caches both after first load, so later use is instant
-  and offline. Once loaded, the worker keeps the detector for the session;
-  analysis tracks the highest-confidence face and falls back to saliency for
-  frames with no face. If the load fails (offline, blocked), analysis stays
-  saliency-only with a notice (R2.6 / R8.2).
+- **Face detection** is an **optional progressive enhancement** with two
+  engines behind the same **Load face model** button (R0.7 click-to-load):
+  - An **ORT/ONNX face detector** built on the Phase 105 ORT foundation
+    (`src/engine/ml/ort/`). The manifest at
+    `public/models/reframe-face/manifest.json` is properly catalog-pinned
+    (size + SHA-256; bytes flow through the same-origin `/_model/*` proxy
+    and OPFS-cache by digest under `loadOrtModelAsset`). It ships as a
+    `template`, so `validateReframeFaceDetectorManifest` rejects it and the
+    ORT path stays disabled until a real model is vendored. The detector
+    uses ORT-WebGPU or ORT-WebNN where available; ORT-WASM is permitted
+    only when the input tensor stays inside a 2 MiB budget (so worker
+    cancellation stays snappy). The detector decoder supports both raw-bbox
+    (YuNet / SCRFD-class) and anchor-offset (BlazeFace-class) graphs, with
+    score thresholding + greedy NMS handled in TypeScript.
+  - **MediaPipe Tasks Vision** (`@mediapipe/tasks-vision`, BlazeFace), which
+    performs the anchor decode + NMS internally. The worker fetches the
+    MediaPipe WASM runtime (from jsDelivr, pinned to the installed version)
+    and the BlazeFace `.tflite` (from Google's `storage.googleapis.com`
+    model store) on the user's explicit action. Both are loaded **from
+    remote on demand** — not vendored or digest-pinned (the `latest` model
+    URL is intentionally mutable; if Google relocates it, only
+    `src/engine/reframe/face-models.ts` needs updating). The service
+    worker runtime-caches both after first load, so later use is instant
+    and offline.
+
+  On click, the worker tries ORT first, then falls through to MediaPipe.
+  Once either succeeds the worker keeps the detector for the session;
+  analysis tracks the highest-confidence face and falls back to saliency
+  for frames with no face. If both load attempts fail (offline, template
+  manifest, EP policy rejection, …) analysis stays saliency-only with a
+  "face detector unavailable; using saliency" notice (R2.6 / R8.2). No
+  image upload, no cloud inference, no telemetry.
 
 A lightweight tracker (IoU association with one-euro smoothing) follows a single
 primary subject, and shot-boundary detection (chi-squared RGB histogram

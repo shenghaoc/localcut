@@ -203,44 +203,43 @@ describe('CleanupController', () => {
 		);
 	});
 
-	it('defaults to the LiteRT backend and loads its manifest', async () => {
+	it('defaults to the ONNX backend and loads its manifest', async () => {
 		const h = harness();
 		h.controller.setCleanupProbe(PROBE_OK);
-		expect(h.controller.getState().backend).toBe('litert');
+		expect(h.controller.getState().backend).toBe('ort');
 		expect(await h.controller.loadModel()).toBe(true);
-		expect(h.spawnedBackends).toEqual(['litert']);
+		expect(h.spawnedBackends).toEqual(['ort']);
 		expect(h.workerCommands).toContainEqual(
 			expect.objectContaining({
 				type: 'cleanup-load-model',
-				manifestUrl: '/models/dtln/manifest.json'
+				manifestUrl: '/models/dtln-onnx/manifest.json'
 			})
 		);
 	});
 
-	it('switching to the ONNX backend tears down the worker and loads the ONNX manifest', async () => {
+	it('switching to the LiteRT backend tears down the worker and loads the LiteRT manifest', async () => {
 		const h = harness();
 		h.controller.setCleanupProbe(PROBE_OK);
 		expect(await h.controller.loadModel()).toBe(true);
 		expect(h.controller.getState().modelStatus).toBe('loaded');
 
-		h.controller.setBackend('ort');
+		h.controller.setBackend('litert');
 		const switched = h.controller.getState();
-		expect(switched.backend).toBe('ort');
+		expect(switched.backend).toBe('litert');
 		expect(switched.modelStatus).toBe('not-loaded');
 		expect(switched.accelerator).toBeNull();
 
 		expect(await h.controller.loadModel()).toBe(true);
-		expect(h.spawnedBackends).toEqual(['litert', 'ort']);
+		expect(h.spawnedBackends).toEqual(['ort', 'litert']);
 		const loads = h.workerCommands.filter((cmd) => cmd.type === 'cleanup-load-model');
 		expect(loads.at(-1)).toEqual(
-			expect.objectContaining({ manifestUrl: '/models/dtln-onnx/manifest.json' })
+			expect.objectContaining({ manifestUrl: '/models/dtln/manifest.json' })
 		);
 	});
 
-	it('tags applied cleanup with the ONNX model id when the ONNX backend is active', async () => {
+	it('tags applied cleanup with the ONNX model id by default', async () => {
 		const h = harness();
 		h.controller.setCleanupProbe(PROBE_OK);
-		h.controller.setBackend('ort');
 		expect(await h.controller.applyCleanup({ ...CLIP, durationS: 4 })).toBe(true);
 		expect(h.applied[0]!.modelId).toBe('dtln-onnx');
 	});
@@ -249,7 +248,7 @@ describe('CleanupController', () => {
 		const h = harness();
 		h.controller.setCleanupProbe(PROBE_OK);
 		expect(await h.controller.loadModel()).toBe(true);
-		h.controller.setBackend('litert');
+		h.controller.setBackend('ort');
 		expect(h.controller.getState().modelStatus).toBe('loaded');
 		expect(h.spawnCount()).toBe(1);
 	});
@@ -280,7 +279,7 @@ describe('CleanupController', () => {
 		expect(request.fileName).toBe('interview.cleaned.wav');
 		expect(request.clipInPointS).toBe(1.5);
 		expect(request.durationS).toBe(12);
-		expect(request.modelId).toBe('dtln');
+		expect(request.modelId).toBe('dtln-onnx');
 		expect(h.controller.getState().job?.phase).toBe('applying');
 		h.controller.handlePipelineMessage({
 			type: 'audio-cleanup-applied',

@@ -17,12 +17,18 @@ struct HistogramBin {
   counts: array<atomic<u32>, 1024>,  // 4 channels × 256 bins
 }
 
+// Tint/Naga reject bare `atomic<u32>` as a storage variable's store type on
+// some backends — wrap it in a struct so the binding stays uniformly valid.
+struct ClipCounter {
+  value: atomic<u32>,
+}
+
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(0) @binding(1) var src: texture_2d<f32>;
 @group(0) @binding(2) var<storage, read_write> histogram: HistogramBin;
 @group(0) @binding(3) var<storage, read_write> waveform: array<atomic<u32>>;   // 2 × scopeResX: even=min, odd=max
 @group(0) @binding(4) var<storage, read_write> parade: array<atomic<u32>>;     // 6 × scopeResX: Rmin,Rmax,Gmin,Gmax,Bmin,Bmax
-@group(0) @binding(5) var<storage, read_write> clipCounter: atomic<u32>;
+@group(0) @binding(5) var<storage, read_write> clipCounter: ClipCounter;
 
 fn rgbToLuma(rgb: vec3<f32>) -> f32 {
   return 0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b;
@@ -40,7 +46,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
   // ── Clipping detection ──
   if (color.r < 0.0 || color.r > 1.0 || color.g < 0.0 || color.g > 1.0 || color.b < 0.0 || color.b > 1.0) {
-    atomicAdd(&clipCounter, 1u);
+    atomicAdd(&clipCounter.value, 1u);
   }
 
   // ── Histogram accumulation (scaled to 0..255 bins) ──

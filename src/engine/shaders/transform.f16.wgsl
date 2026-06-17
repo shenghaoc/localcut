@@ -15,7 +15,7 @@ struct Transform {
 @group(0) @binding(0) var<uniform> u : Transform;
 @group(0) @binding(1) var srcTexture : texture_2d<f32>;
 @group(0) @binding(2) var srcSampler : sampler;
-@group(0) @binding(3) var dstTexture : texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(3) var dstTexture : texture_storage_2d<rgba16float, write>;
 
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) gid : vec3<u32>) {

@@ -12,7 +12,7 @@ struct Uniforms {
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(0) @binding(1) var src: texture_2d<f32>;
-@group(0) @binding(2) var dst: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(2) var dst: texture_storage_2d<rgba16float, write>;
 
 fn inverseTransferSRGB(lin: vec3<f32>) -> vec3<f32> {
   // sRGB EOTF (approx for decoding — but we actually need the inverse: linearize)
