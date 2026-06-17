@@ -100,6 +100,13 @@ interface DiscardSessionMessage {
 	sessionId: string;
 }
 
+interface WriteEventBatchMessage {
+	type: 'write-event-batch';
+	sessionId: string;
+	/** CaptureEventLogEntry[] — JSON-serialised one per line into events.ndjson. */
+	entries: ReadonlyArray<Record<string, unknown>>;
+}
+
 type WriterMessage =
 	| WriteChunkMessage
 	| WriteHeaderMessage
@@ -111,6 +118,7 @@ type WriterMessage =
 	| WriteSourceAddedMessage
 	| WriteSourceRegionAppliedMessage
 	| WriteSceneSwitchMessage
+	| WriteEventBatchMessage
 	| ScanSessionsMessage
 	| DiscardSessionMessage;
 
@@ -148,9 +156,25 @@ interface OpenFile {
 	file: string;
 }
 
+/** Upper bound on pending batches per session before we drop the oldest. In
+ *  practice this never matters: the bound implied by ring capacity (1024) and
+ *  drain interval (250 ms) is ~4 batches, but a pathological slow-OPFS +
+ *  rapid-events scenario could grow without limit otherwise. Drop-oldest is
+ *  consistent with the ring's own overflow policy (writer never blocks). */
+const MAX_PENDING_EVENT_BATCHES = 16;
+
 class CaptureWriter {
 	private sessions = new Map<string, Map<string, OpenFile>>();
 	private manifestHandles = new Map<string, FileSystemSyncAccessHandle>();
+	/** Phase 41 own-tab DOM events sidecar; one append-only handle per session. */
+	private eventHandles = new Map<string, FileSystemSyncAccessHandle>();
+	/** Batches that arrived before `write-header` opened the events handle. The
+	 *  writer's per-message handlers are async-concurrent — a `write-event-batch`
+	 *  posted just after `capture-dom-tap-init` can land at the writer before its
+	 *  preceding `write-header` has finished opening files. Buffer the batch and
+	 *  drain on handleWriteHeader to avoid silently dropping early events. Capped
+	 *  at MAX_PENDING_EVENT_BATCHES with drop-oldest. */
+	private pendingEventBatches = new Map<string, WriteEventBatchMessage[]>();
 	private port: MessagePort | null = null;
 
 	init(port: MessagePort): void {
@@ -213,6 +237,9 @@ class CaptureWriter {
 						atUs: msg.atUs
 					});
 					break;
+				case 'write-event-batch':
+					await this.handleWriteEventBatch(msg);
+					break;
 				case 'write-finalize':
 					await this.handleFinalize(msg.sessionId, msg.reason);
 					break;
@@ -267,6 +294,32 @@ class CaptureWriter {
 			const manifestHandle = await dirHandle.getFileHandle('manifest.ndjson', { create: true });
 			manifestAccess = await (manifestHandle as FileSystemFileHandle).createSyncAccessHandle();
 
+			// Phase 41 own-tab DOM events sidecar — opened alongside the manifest so
+			// recovery scan can find it without a separate probe. Lifetime mirrors the
+			// session: closed in handleFinalize (and best-effort on the error path).
+			let eventsAccess: FileSystemSyncAccessHandle | null = null;
+			try {
+				const eventsHandle = await dirHandle.getFileHandle('events.ndjson', { create: true });
+				eventsAccess = await (eventsHandle as FileSystemFileHandle).createSyncAccessHandle();
+				this.eventHandles.set(sessionId, eventsAccess);
+				// Drain any batches that arrived before the events handle was open.
+				const pending = this.pendingEventBatches.get(sessionId);
+				if (pending && pending.length > 0) {
+					this.pendingEventBatches.delete(sessionId);
+					for (const batch of pending) {
+						try {
+							await this.writeEventBatch(eventsAccess, batch.entries);
+						} catch {
+							// Sidecar non-fatal — drop the batch and keep going.
+						}
+					}
+				}
+			} catch {
+				// Events sidecar is non-fatal: track recovery and recording itself must
+				// not depend on the events file existing. We just skip it on failure.
+				this.pendingEventBatches.delete(sessionId);
+			}
+
 			this.sessions.set(sessionId, fileMap);
 			this.manifestHandles.set(sessionId, manifestAccess);
 
@@ -299,6 +352,16 @@ class CaptureWriter {
 					// best-effort cleanup on the error path; the original error is rethrown
 				}
 			}
+			const eventsAccess = this.eventHandles.get(sessionId);
+			if (eventsAccess) {
+				try {
+					eventsAccess.close();
+				} catch {
+					// best-effort cleanup on the error path; the original error is rethrown
+				}
+				this.eventHandles.delete(sessionId);
+			}
+			this.pendingEventBatches.delete(sessionId);
 			this.sessions.delete(sessionId);
 			this.manifestHandles.delete(sessionId);
 			throw error;
@@ -334,6 +397,61 @@ class CaptureWriter {
 		this.post({ type: 'chunk-ack', sourceId: msg.sourceId });
 	}
 
+	private async handleWriteEventBatch(msg: WriteEventBatchMessage): Promise<void> {
+		// Events sidecar is non-fatal: a missing handle, a write failure, a flush
+		// failure must never surface as `chunk-error` (the pipeline worker would
+		// treat that as a source failure). Catch everything inside this method and
+		// drop the batch silently — the session's media tracks are unaffected.
+		try {
+			const eventsAccess = this.eventHandles.get(msg.sessionId);
+			if (!eventsAccess) {
+				// `write-header` may not have completed yet — the writer's handleMessage
+				// is async-concurrent. Buffer the batch and let handleWriteHeader flush
+				// it once the events handle opens. Sessions that never get a header
+				// (header failure path) have their pending batches dropped on
+				// handleFinalize / handleDiscard.
+				let pending = this.pendingEventBatches.get(msg.sessionId);
+				if (!pending) {
+					pending = [];
+					this.pendingEventBatches.set(msg.sessionId, pending);
+				}
+				if (msg.entries.length === 0) return;
+				pending.push(msg);
+				if (pending.length > MAX_PENDING_EVENT_BATCHES) {
+					// Drop-oldest, mirroring the ring's own overflow policy. We
+					// shouldn't ever reach this in practice; surface to console so
+					// the unusual case is visible in diagnostics.
+					console.warn(
+						`[CaptureWriter ${msg.sessionId}] pendingEventBatches exceeded cap (${MAX_PENDING_EVENT_BATCHES}); dropping oldest batch.`
+					);
+					pending.shift();
+				}
+				return;
+			}
+			if (msg.entries.length === 0) return;
+			await this.writeEventBatch(eventsAccess, msg.entries);
+		} catch {
+			// Swallow — sidecar failure must not take down the session.
+		}
+	}
+
+	private async writeEventBatch(
+		eventsAccess: FileSystemSyncAccessHandle,
+		entries: WriteEventBatchMessage['entries']
+	): Promise<void> {
+		let payload = '';
+		for (const entry of entries) {
+			payload += JSON.stringify(entry) + '\n';
+		}
+		const encoded = new TextEncoder().encode(payload);
+		// Pass the Uint8Array directly so byteLength tracks the encoded bytes
+		// exactly, not the (possibly larger) underlying ArrayBuffer. SyncAccessHandle
+		// accepts any BufferSource, so this is both safer and more idiomatic than
+		// reaching for `.buffer`.
+		eventsAccess.write(encoded, { at: eventsAccess.getSize() });
+		await eventsAccess.flush();
+	}
+
 	private async handleFinalize(sessionId: string, reason: string): Promise<void> {
 		const manifestAccess = this.manifestHandles.get(sessionId);
 		if (manifestAccess) {
@@ -349,6 +467,20 @@ class CaptureWriter {
 			manifestAccess.close();
 		}
 
+		// Drop any orphaned pending batches (a session may finalize before
+		// `write-header` ever opened the events handle).
+		this.pendingEventBatches.delete(sessionId);
+
+		const eventsAccess = this.eventHandles.get(sessionId);
+		if (eventsAccess) {
+			try {
+				eventsAccess.close();
+			} catch {
+				// best-effort close — finalize must release every handle it can
+			}
+			this.eventHandles.delete(sessionId);
+		}
+
 		const fileMap = this.sessions.get(sessionId);
 		if (fileMap) {
 			for (const [, openFile] of fileMap) {
@@ -362,6 +494,10 @@ class CaptureWriter {
 
 		this.sessions.delete(sessionId);
 		this.manifestHandles.delete(sessionId);
+		// finalize-ack also doubles as the sidecar-ready signal — at this point
+		// events.ndjson is flushed + closed alongside the manifest, so a reader
+		// can safely consume both. worker.ts forwards `capture-events-sidecar-ready`
+		// to main right after `capture-landed`, using the same handshake.
 		this.post({ type: 'finalize-ack', sessionId });
 	}
 
@@ -433,6 +569,40 @@ class CaptureWriter {
 	}
 
 	private async handleDiscard(sessionId: string): Promise<void> {
+		this.pendingEventBatches.delete(sessionId);
+		// Close + drop any open SyncAccessHandles before removing the directory.
+		// Without this, removeEntry races an open events handle (and on browsers
+		// that lock the file, removeEntry would throw with the handle still alive,
+		// leaking it for the remainder of the writer's lifetime).
+		const eventsAccess = this.eventHandles.get(sessionId);
+		if (eventsAccess) {
+			try {
+				eventsAccess.close();
+			} catch {
+				// best-effort close — discard must still try to remove the directory
+			}
+			this.eventHandles.delete(sessionId);
+		}
+		const manifestAccess = this.manifestHandles.get(sessionId);
+		if (manifestAccess) {
+			try {
+				manifestAccess.close();
+			} catch {
+				// best-effort close
+			}
+			this.manifestHandles.delete(sessionId);
+		}
+		const fileMap = this.sessions.get(sessionId);
+		if (fileMap) {
+			for (const [, openFile] of fileMap) {
+				try {
+					openFile.handle.close();
+				} catch {
+					// best-effort close
+				}
+			}
+			this.sessions.delete(sessionId);
+		}
 		try {
 			const captureDir = await this.getOrCreateCaptureDir();
 			await captureDir.removeEntry(sessionId, { recursive: true });

@@ -1,6 +1,6 @@
 # Tasks: Phase 41 — Capture Engine
 
-> Status: **Active / foundation implemented.** Protocol + manifest types (T1), capture probes + `recordingAvailable` gating + diagnostics rows (T2), per-track ingestion pipelines with backpressure, timestamp-based keyframe cadence, and close-exactly-once tests (T4), the writer worker with ordered chunk+manifest writes, ACK backpressure, and recovery scan (T6.2/T6.3/T6.5), and the pipeline-worker command handlers are implemented.
+> Status: **Active / foundation implemented.** Protocol + manifest types (T1), capture probes + `recordingAvailable` gating + diagnostics rows (T2), per-track ingestion pipelines with backpressure, timestamp-based keyframe cadence, and close-exactly-once tests (T4), the writer worker with ordered chunk+manifest writes, ACK backpressure, and recovery scan (T6.2/T6.3/T6.5), and the pipeline-worker command handlers are implemented. **Own-tab DOM event sidecar** (T13) lands the worker → main lifecycle hook, the SAB ring, the main-thread tap, the session drain, and the `events.ndjson` sidecar (panel migration + recovery wiring + docs remain).
 >
 > Open build-out, honestly labeled: **track files are not yet valid fMP4** — encoded packets are appended raw pending the Mediabunny fragmented muxer (T6.1); acquisition UI + Record panel (T3/T10); recovery wiring + dialog (T7); quota wiring (T8); landing (T9); remaining tests, Playwright, docs (T11/T12). Order matters: T6.1 before T7.3/T9; T9 before T10 happy path.
 
@@ -95,3 +95,19 @@
 - [x] **T12.2** Add Phase 41 to the AGENTS.md spec index.
 - [ ] **T12.3** Manual: 2-minute screen+mic recording on Chromium — tracks land aligned; static-window capture plays back without frame-skip cadence; kill-tab mid-record → recovery dialog → import succeeds.
 - [ ] **T12.4** Manual: system-audio toggle disabled-with-reason on an unsupported OS; Safari/Firefox show the disabled panel with per-probe reasons; no crash.
+
+## T13 — Own-tab DOM event sidecar
+
+Captures the editor's own DOM events (keystroke combos via the existing P44 `shouldRecordKey` gate; pointer-down/-up reserved for P43 cursor effects) into a per-session `events.ndjson` alongside the track files, without coupling listeners to the worker-owned session lifecycle. The worker drives both edges via `capture-dom-tap-init`/`capture-dom-tap-stop`, so DOM listeners are only installed while a session is live; main never observes the session ID independently.
+
+- [x] **T13.1** SAB ring layout in `src/protocol.ts`: 16-int32 header (magic, schema, capacity, record size, write/read indices, drop count, generation) + 1024 fixed 64-byte records (32-byte fixed fields + 32-byte UTF-8 string buffer); power-of-two capacity for `& (CAPACITY - 1)` slot math.
+- [x] **T13.2** Worker → main lifecycle messages `capture-dom-tap-init` (sessionId, SAB, epochMs) and `capture-dom-tap-stop` (sessionId).
+- [x] **T13.3** `src/engine/capture/event-ring.ts`: single-producer / single-consumer ring with `Atomics.load`/`store` on write/read indices and `Atomics.add` on the drop counter; never blocks the main thread on a full ring.
+- [x] **T13.4** `src/ui/capture-dom-tap.ts`: main-thread CaptureDomTap singleton. Default attaches `document` on session start; same-origin iframes opt-in via `attachDocument(doc)`. Capture-phase passive listeners; auto-detach on stop or App unmount.
+- [x] **T13.5** `CaptureSession.attachEventRing(ring)` drains the ring on every `emitStatus()` (chunk-flush cadence) plus a 250 ms backstop interval so silent-screen sessions don't fill the ring; final drain runs inside `stop()` before finalize.
+- [x] **T13.6** Writer worker opens `events.ndjson` per session alongside `manifest.ndjson` and appends `write-event-batch` JSON lines; non-fatal sidecar — track recovery never depends on it.
+- [x] **T13.7** Unit tests for ring layout, FIFO across wraparound, overflow drop counter, cross-origin attach rejection, gate-driven key recording, and start/stop idempotency.
+- [x] **T13.8** Wire `KeystrokeOverlayPanel` to consume the sidecar on session land: when a capture session has landed, the panel offers **Load events from last recording** and populates `entries` from `events.ndjson` via `readCaptureEventsSidecar`. While a capture is actively recording, the panel's manual `Start recording` button is disabled with an explanation, so the worker-driven DOM tap and the panel's `window` listener can never run concurrently.
+- [x] **T13.9** `readCaptureEventsSidecar(sessionId)` opens the OPFS file at `capture/<sessionId>/events.ndjson` and parses JSON lines tolerantly (torn final line skipped, blank lines skipped, non-object records skipped); returns `null` when the file is absent. Used by T13.8 today and ready for a future T7.3 recovery-import hook.
+- [x] **T13.10** User-guide section in [`src/features/docs/content/keystroke-overlay.md`](src/features/docs/content/keystroke-overlay.md): how to load shortcuts from a capture session, what's and isn't captured (no printable text, no password fields, no cross-origin iframes), and the manual-mode-disabled-during-recording rule.
+- [x] **T13.11** Chromium e2e regression: `TextDecoder.decode` rejects buffers backed by `SharedArrayBuffer` ("must not be shared"). Reader now copies the slice into a fresh `Uint8Array` before decoding; unit test guards against regression by spying on `TextDecoder.prototype.decode`. Node's `TextDecoder` doesn't enforce this gate, so the node-only tests passed before the e2e run surfaced the issue.

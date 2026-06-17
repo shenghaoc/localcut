@@ -212,8 +212,50 @@ interface CaptureLandedMessage   { type: 'capture-landed'; sessionId: string; tr
 | `src/engine/capture/chunk-manifest.ts` | NDJSON record types, append/parse (torn-tail tolerant), recovery truncation math |
 | `src/engine/capture/quota.ts` | Preflight + per-flush quota watch + graceful-stop floor |
 | `src/engine/capture/capture-fixtures.ts` | Mock MSTP readers, spy encoders, in-memory fault-injecting sync handle |
+| `src/engine/capture/event-ring.ts` | SAB layout helpers + single-producer writer + single-consumer reader (T13) |
+| `src/ui/capture-dom-tap.ts` | Main-thread DOM listener lifecycle, driven by worker init/stop messages (T13) |
 | `src/ui/RecordPanel.tsx`, `src/ui/CaptureRecoveryDialog.tsx` | Record panel + recovery dialog |
-| `src/protocol.ts` | Capture commands, status/error/recovery messages, snapshots, probe extensions |
+| `src/protocol.ts` | Capture commands, status/error/recovery messages, snapshots, probe extensions, SAB ring layout |
+
+## Own-tab DOM event sidecar (T13)
+
+Capture sessions also record the editor's own DOM events (keystroke combos via P44 `shouldRecordKey`; pointer-down/-up reserved for P43 cursor effects) into a per-session `events.ndjson` sibling of `manifest.ndjson`. The capture session runs in the pipeline worker (hard gate 1: no decode/GPU/encode on main), but DOM listeners must live on the main thread. The bridge is a single-producer / single-consumer SAB ring whose lifecycle is **driven from the worker** so the worker stays the single source of truth for "is a session active?".
+
+```
+worker (CaptureSession)                main thread (CaptureDomTap singleton)
+─────────────────────                   ────────────────────────────────────
+capture-start cmd                       ← receive capture-dom-tap-init
+  allocate SAB ring (fresh per session)   validate ring magic + schema
+  attachEventRing(ring)                   install capture-phase passive listeners
+  emit capture-dom-tap-init  ─────────→   on `document` (+ opt-in same-origin
+                                          iframe Documents via attachDocument)
+                                          │
+emitStatus()  (per chunk flush)          ▼
+  ring.drain() → write-event-batch  ←── keydown / pointerdown / pointerup
+  postMessage(writerWorker)                shouldRecordKey gate; printable text
+                                           and password fields never pass.
+backstop interval (250 ms)               packModifierFlags; performance.now()
+  ring.drain() → write-event-batch        offset by epochMs → microseconds
+                                           ↓
+                                          Atomics.store(writeIndex) — ring full
+                                          ⇒ Atomics.add(dropCount), drop event.
+
+capture-stop / internal stop             ← receive capture-dom-tap-stop
+  emit capture-dom-tap-stop ────────────→   remove all listeners synchronously
+  final drain → write-event-batch          (no late event lands in a torn session)
+  write-finalize → writer closes
+    events.ndjson + manifest.ndjson
+```
+
+**Why worker-owned:** if main drove start/stop, every internal-stop path (audio-overrun, all-sources-ended, quota, crash recovery) would need a parallel notification; the worker already knows. Crash recovery and Phase 45 program-mode sessions slot in as additional `init`/`stop` triggers without API changes.
+
+**Why per-session SAB:** allocating fresh and dropping the reference on stop avoids stale-record/generation bookkeeping. The header carries a generation field for sanity-checking, not authoritative lifecycle.
+
+**SAB layout** (`src/protocol.ts`): 64-byte header (`Int32Array` view: magic `0xCAB7DEC0`, schema version, capacity, record size, write index, read index, drop count, generation, 8 reserved) + 1024 × 64-byte fixed records. Each record = 32 bytes of typed fields (type u32, modifier flags u32, tUs BigUint64, x i32, y i32, reserved u32, stringLen u32) + 32-byte UTF-8 string buffer (key combo on key events; empty on pointer events). Power-of-two capacity for `index & (CAPACITY - 1)`. Drop policy: writer never blocks; full ring increments DROP_COUNT and skips the event.
+
+**Same-origin iframes** opt-in via `tap.attachDocument(doc)`. The tap rejects cross-origin documents by probing `doc.defaultView.location.origin` and catching the SecurityError. Callers `detachDocument(doc)` before iframe removal.
+
+**Sidecar policy:** `events.ndjson` is non-fatal — header-failure or missing sidecar must not block track recovery. Recovery scan reads it when present; absent or torn sidecars are silently ignored.
 
 ## Library policy
 

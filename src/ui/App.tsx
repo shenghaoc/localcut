@@ -90,6 +90,7 @@ import { LiveAudioChainPanel } from './LiveAudioChainPanel';
 import { VoiceCleanupPanel, voiceCleanupLatencyMs } from './VoiceCleanupPanel';
 import { ProgramPanel } from './ProgramPanel';
 import { probeMediaStreamTrackProcessor, startCapture, stopCaptureStreams } from './capture-bridge';
+import { createCaptureDomTap } from './capture-dom-tap';
 import { BundleDialog } from './BundleDialog';
 import { InterchangeMenu } from './InterchangeMenu';
 import { Button, buttonVariants } from './components/button';
@@ -625,6 +626,16 @@ export function App() {
 	// Phase 46: Replay Buffer + Live Audio Chain
 	const [captureSession, setCaptureSession] = createSignal<CaptureSessionState | null>(null);
 	const [recorderStatus, setRecorderStatus] = createSignal<RecorderStatusSnapshot | null>(null);
+	// Phase 41: own-tab DOM event tap — singleton driven by capture-dom-tap-init /
+	// capture-dom-tap-stop messages from the worker. Idle when no session is active
+	// (no DOM listeners installed). Cleaned up on App unmount.
+	const captureDomTap = createCaptureDomTap();
+	onCleanup(() => captureDomTap.stop());
+	/** Session id whose `events.ndjson` is flushed + closed by the writer worker.
+	 *  Drives the panel's "Load events from last recording" gating so we never read
+	 *  the sidecar while the writer's handle is still open. Cleared on each new
+	 *  capture-dom-tap-init so a stale ready signal can't gate the next session. */
+	const [sidecarReadySessionId, setSidecarReadySessionId] = createSignal<string | null>(null);
 	const [recorderLandedSessionId, setRecorderLandedSessionId] = createSignal<string | null>(null);
 	const [retakeClipId, setRetakeClipId] = createSignal<string | null>(null);
 	const [replayBufferState, setReplayBufferState] = createSignal<RingBufferState | null>(null);
@@ -1345,6 +1356,23 @@ export function App() {
 		}
 		return null;
 	});
+
+	/** Phase 41 T13: timeline start (seconds) of any clip whose `captureSessionId`
+	 *  matches the given session. For retakes this is the retake clip's offset;
+	 *  for fresh captures it's typically 0. Null when no matching clip exists
+	 *  (session discarded, sources still landing).
+	 *
+	 *  Plain function (not a memo) so the O(tracks×clips) scan runs only when
+	 *  the panel actually needs it (on user Load/Insert click), not on every
+	 *  `timeline()` mutation during recording. */
+	function resolveSessionStartS(sessionId: string): number | null {
+		for (const track of timeline()) {
+			for (const clip of track.clips) {
+				if (clip.captureSessionId === sessionId) return clip.start;
+			}
+		}
+		return null;
+	}
 
 	const retakeSourceKinds = createMemo<CaptureSourceKind[]>(() => {
 		const clipId = retakeClipId();
@@ -2638,6 +2666,25 @@ export function App() {
 					`Recorder landed ${msg.trackIds.length} track${msg.trackIds.length === 1 ? '' : 's'}.`
 				);
 				break;
+			case 'capture-dom-tap-init':
+				captureDomTap.start(msg.sessionId, msg.ring, msg.epochMs);
+				setSidecarReadySessionId(null);
+				break;
+			case 'capture-dom-tap-stop':
+				// Idempotent: tap.stop() is a no-op if no session is bound, so a
+				// duplicate stop (e.g. from both the internal-stop and the capture-stop
+				// path) cleans up cleanly.
+				captureDomTap.stop();
+				break;
+			case 'capture-dom-tap-pause':
+				captureDomTap.pause();
+				break;
+			case 'capture-dom-tap-resume':
+				captureDomTap.resume();
+				break;
+			case 'capture-events-sidecar-ready':
+				setSidecarReadySessionId(msg.sessionId);
+				break;
 			// Phase 36: Voice Cleanup
 			case 'voice-cleanup-analysis-progress':
 				setVoiceCleanupAnalysisState('running');
@@ -2770,6 +2817,11 @@ export function App() {
 		const crashState = recoveryMachine.recordCrash();
 		setWorkerRecoveryState(crashState);
 		setWorkerReady(false);
+		// Phase 41: the crashed worker can no longer send `capture-dom-tap-stop`,
+		// so the tap would keep writing into a SAB nobody reads. Tear it down here
+		// so DOM listeners are removed synchronously.
+		captureDomTap.stop();
+		setSidecarReadySessionId(null);
 		// The crashed worker no longer owns a WebGPU device; reflect that until the
 		// restarted worker re-publishes its `ready` (with the true webgpu flag).
 		setWebgpuAvailable(false);
@@ -5052,6 +5104,12 @@ export function App() {
 						<KeystrokeOverlayPanel
 							sendCommand={(cmd) => bridge?.send(cmd)}
 							onClose={() => setKeystrokeOverlayOpen(false)}
+							landedSessionId={recorderLandedSessionId()}
+							captureRecording={
+								recorderStatus()?.state === 'recording' || recorderStatus()?.state === 'paused'
+							}
+							sidecarReady={sidecarReadySessionId() === recorderLandedSessionId()}
+							resolveSessionStartS={resolveSessionStartS}
 						/>
 					</Show>
 					<LanguageToolsPanel

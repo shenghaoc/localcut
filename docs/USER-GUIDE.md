@@ -446,24 +446,45 @@ Detect silent regions in your audio tracks and remove them with a single click. 
 
 > Detection runs entirely in the pipeline worker — no audio data leaves your device. The same audio + same parameters always produce identical results.
 
-## Keystroke Overlay (Phase 44)
+## Keystroke Overlay (Phase 44 + Phase 41)
 
-Generate title clips that display keyboard shortcuts as rounded-rect keycap pills on the timeline. This is designed for tutorial and screencast recordings.
+Generate title clips that display keyboard shortcuts as rounded-rect keycap pills on the timeline. Two paths feed the overlay:
 
-### Requirements
+- **Capture-session sidecar** (Phase 41). Every Record session automatically writes shortcut events to an `events.ndjson` sidecar alongside the recorded media. After the session lands, open the Keystroke Overlay panel and press **Load events from last recording** to pull events from the sidecar without re-enacting the tutorial.
+- **Manual recording** (Phase 44 fallback). Open the panel, tick the consent box, press **Start recording**, and the panel listens to keydown events on the active tab until you press **Stop**.
 
-- An own-tab capture session with **"Record shortcuts"** enabled (Phase 43).
-- The capture session's event log must contain key events.
+### Loading events from a capture session
 
-### How to Use
+1. Use the **Record** panel to capture a screen/webcam session.
+2. After the session lands, open **Keystroke Overlay**.
+3. The panel shows a prompt: _"A capture session landed. Load events from last recording."_ The button stays disabled until the writer worker has flushed and closed the sidecar (typically <1 second).
+4. Press **Load events from last recording**. The entries list populates from the sidecar.
+5. Press **Insert overlay clips** to add the clips to the timeline.
 
-1. Import a capture session that has key-event log entries.
-2. Click **"Generate keystroke overlay"** in the Edit menu or the Capture import dialog.
-3. Title clips are created on the topmost video track. Each clip displays a keycap pill (monospace font, dark background, white outline) for 1.2 seconds.
-4. Key events less than 300 ms apart are merged into a single clip (combos joined with `·`).
-5. Edit or delete overlay clips like any other title clip.
+When the session was a **retake** of an existing clip, the overlay clips land at the retake clip's timeline position, not at `t = 0`.
 
-> Only non-text shortcuts are recorded (modifier combos, function keys, Escape, etc.). Single printable characters without modifiers and events from form fields are never recorded.
+While a capture session is **actively recording**, manual recording in the panel is disabled and any in-progress manual recording is stopped automatically — the capture session is already logging shortcuts via its DOM tap, and two listeners would double-record everything.
+
+### Manual recording (no capture session)
+
+1. Open **Keystroke Overlay** from the toolbar.
+2. Tick **I understand and want to record shortcuts**.
+3. Press **Start recording**. The panel listens to keydown events globally while focus is anywhere outside form fields.
+4. Use your tool as you normally would for the tutorial.
+5. Press **Stop recording**, then **Insert overlay clips**.
+
+### What's captured
+
+Both paths apply the same `shouldRecordKey` gate:
+
+- **Captured**: modifier combos (`Ctrl+S`, `Alt+Tab`, `Cmd+Shift+Z`), navigation keys (`Escape`, arrows, `PageUp`), function keys (`F5`, `F12`). The capture-session sidecar also records pointer-down/-up coordinates with held modifiers.
+- **Not captured**: any keystroke in an `<input>`, `<textarea>`, `<select>`, `[contenteditable]`, or `type="password"` field; bare printable characters (including `Shift+letter` capitalised text); events in cross-origin iframes the editor cannot read.
+
+The sidecar lives in browser-local storage (OPFS) alongside the recorded media — it never leaves your machine and is removed together with the session if you discard or import the recording.
+
+### Overlay clip layout
+
+Title clips are created on the topmost video track. Each clip displays a keycap pill (monospace font, dark background, white outline) for 1.2 seconds. Key events less than 300 ms apart are merged into a single clip (combos joined with `·`); the merge is also capped at 4 combos or 1 second of span so a rapid run never collapses into one giant clip. Edit or delete overlay clips like any other title clip.
 
 ## YouTube Chapters (Phase 44)
 

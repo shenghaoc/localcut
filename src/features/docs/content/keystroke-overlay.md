@@ -6,7 +6,9 @@ overlay track. Each clip is an ordinary title clip — once generated you can
 move, retime, restyle, or delete any of them.
 
 Recording is **opt-in**. Nothing is recorded until you tick the consent box and
-press **Start recording**.
+press **Start recording** — or, if you used the **Record** panel to capture a
+tutorial, you can pull shortcuts from that capture session's sidecar instead
+(see _Loading shortcuts from a capture session_ below).
 
 ## What is captured
 
@@ -49,11 +51,48 @@ Each combo is stored as a canonical string with modifiers sorted alphabetically
 - The keycap style is monospace on a dark pill, ready for screencasts. Edit
   any clip's text or style in the Inspector after insertion.
 
+## Loading shortcuts from a capture session
+
+When you record a tutorial via the **Record** panel, the capture session
+automatically logs the same kinds of shortcut events into a sidecar file
+(`events.ndjson`) alongside the recorded media — the same `Ctrl+S` /
+`Alt+Tab` / function-key filter applies, and printable typing and password
+fields are still excluded.
+
+After the recording finishes ("landed"), open the Keystroke Overlay panel
+and press **Load events from last recording**. The panel populates from the
+sidecar instead of running its own listener, so you don't have to re-enact
+the tutorial just to capture the keystroke overlay.
+
+While a capture session is **actively recording**, manual recording in this
+panel is disabled — the capture session is already logging shortcuts, and
+running two listeners would double-record everything. The panel shows a note
+explaining why.
+
+## What's captured during a recording
+
+The capture session's DOM tap applies the same `shouldRecordKey` gate as the
+manual mode in this panel:
+
+- **Captured**: modifier combos (`Ctrl+S`, `Alt+Tab`, `Cmd+Shift+Z`),
+  navigation keys (`Escape`, arrows, `PageUp`), function keys (`F5`, `F12`),
+  pointer-down/-up coordinates with held modifiers.
+- **Not captured**: any keystroke in an `<input>`, `<textarea>`, `<select>`,
+  `[contenteditable]`, or `type="password"` field; bare printable characters
+  (including `Shift+letter` capitalised text); events in cross-origin iframes
+  the editor cannot read.
+
+The sidecar lives in browser-local storage (OPFS) alongside the recorded
+media — it never leaves your machine and is removed together with the
+session if you discard or import the recording.
+
 ## Limitations
 
 - Recording only watches the active tab. It cannot read keystrokes in another
   window or in the operating system itself.
-- Shortcuts pressed before you click **Start recording** are not recoverable;
-  the log only collects events between Start and Stop.
+- Shortcuts pressed before you click **Start recording** (manual mode) are
+  not recoverable; the log only collects events between Start and Stop.
+  Sidecar mode covers the whole capture session, but it still cannot recover
+  events from before the session started.
 - The overlay is purely cosmetic — it does not control playback timing or fire
   any action.

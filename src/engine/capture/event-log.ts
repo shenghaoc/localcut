@@ -8,7 +8,10 @@
 /** A single entry in the capture session event log. */
 export type CaptureEventLogEntry =
 	| { kind: 'key'; combo: string; t: number }
-	// Phase 43 reserves additional variants here (mouse, clipboard, etc.).
+	/** Phase 41 own-tab pointer events, packed in the same SAB ring as keys. */
+	| { kind: 'pointer-down'; t: number; x: number; y: number; modifierFlags: number }
+	| { kind: 'pointer-up'; t: number; x: number; y: number; modifierFlags: number }
+	// Phase 43 reserves additional variants here (clipboard, gesture, etc.).
 	| { kind: string; [k: string]: unknown };
 
 /**

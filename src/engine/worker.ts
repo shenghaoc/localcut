@@ -332,6 +332,7 @@ import { serializeTimelineToOtio } from './interchange/otio';
 import { proxyStatusForAsset } from './proxy-jobs';
 import { buildWorkerDiagnosticSnapshot } from './diagnostics';
 import { CaptureSession } from './capture/capture-session';
+import { allocateCaptureEventRing } from './capture/event-ring';
 import { computeGapCollapsedUs, seamMarkerPositionsUs } from './capture/pause-resume';
 import { DEFAULT_WEBCAM_PRESET, deriveWebcamTransform } from './capture/webcam-preset';
 import {
@@ -523,6 +524,11 @@ let audioRing: AudioRingViews | null = null;
 let captureSession: CaptureSession | null = null;
 let captureLandingSettings: import('../protocol').CaptureSettingsSnapshot | null = null;
 let captureRetakeClipId: string | undefined;
+let captureDomTapGeneration = 0;
+let captureDomTapSessionId: string | null = null;
+/** Tracks the last broadcasted state so we can detect transitions on the
+ *  onStatusChange callback and emit pause/resume/stop messages on the right edge. */
+let captureDomTapLastState: 'idle' | 'armed' | 'recording' | 'paused' | 'stopping' | null = null;
 interface PendingCaptureSource {
 	sourceId: string;
 	kind: import('../protocol').CaptureSourceKind;
@@ -8994,6 +9000,31 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 				{
 					onStatusChange(status) {
 						post({ type: 'capture-status', ...status });
+						// Transition-edge DOM tap messages. Each fires exactly once per
+						// edge by comparing the previously seen state. We emit the stop on
+						// the first 'stopping' transition so main removes listeners BEFORE
+						// the session's final ring drain — in-flight events still land in
+						// the SAB and are picked up by that drain. Without this, internal
+						// stops (audio-overrun, all-sources-ended) only signal main after
+						// the drain runs and late events are lost.
+						if (captureDomTapSessionId !== null) {
+							const prev = captureDomTapLastState;
+							if (prev !== 'paused' && status.state === 'paused') {
+								post({ type: 'capture-dom-tap-pause', sessionId: captureDomTapSessionId });
+							} else if (prev === 'paused' && status.state === 'recording') {
+								post({ type: 'capture-dom-tap-resume', sessionId: captureDomTapSessionId });
+							}
+							// CaptureSession.stop() always transitions through 'stopping'
+							// before 'idle', so observing 'stopping' is sufficient. The
+							// previous code also matched 'idle' as a fallback, but that
+							// branch was dead and would have falsely fired on a hypothetical
+							// armed→idle transition; keep the guard strict.
+							if (prev !== 'stopping' && status.state === 'stopping') {
+								post({ type: 'capture-dom-tap-stop', sessionId: captureDomTapSessionId });
+								captureDomTapSessionId = null;
+							}
+						}
+						captureDomTapLastState = status.state;
 					},
 					onError(sourceId, code, detail) {
 						post({
@@ -9045,6 +9076,35 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 				);
 			}
 			pendingCaptureSources.clear();
+			// Phase 41 own-tab DOM event tap: allocate a fresh SAB ring per session
+			// (no reuse — avoids stale-record/GC concerns) and signal main to install
+			// listeners. Generation is informational; the SAB itself is authoritative.
+			try {
+				captureDomTapGeneration = (captureDomTapGeneration + 1) | 0;
+				const ring = allocateCaptureEventRing(captureDomTapGeneration);
+				captureSession.attachEventRing(ring);
+				captureDomTapSessionId = captureSession.sessionId;
+				captureDomTapLastState = 'recording';
+				post({
+					type: 'capture-dom-tap-init',
+					sessionId: captureSession.sessionId,
+					ring,
+					// epochMs is a wall-clock-equivalent absolute timestamp so the main
+					// thread can subtract its own `timeOrigin + now()` from it. Workers
+					// and windows have different `performance.timeOrigin` baselines but
+					// the same wall-clock UTC, so adding them gives a consistent epoch.
+					epochMs: performance.timeOrigin + performance.now()
+				});
+			} catch (err) {
+				// Event ring is non-fatal: recording itself must continue if SAB
+				// allocation fails (e.g. crossOriginIsolated dropped mid-session).
+				post({
+					type: 'capture-error',
+					sourceId: null,
+					code: 'session-error',
+					detail: `event-ring init failed: ${String(err)}`
+				});
+			}
 			void captureSession.start(settings.chunkDurationS).catch((err: Error) => {
 				post({ type: 'capture-error', sourceId: null, code: 'session-error', detail: String(err) });
 			});
@@ -9053,6 +9113,16 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 		case 'capture-stop':
 			if (captureSession) {
 				const session = captureSession;
+				// Signal main to remove DOM listeners *before* the async stop chain so
+				// no late event lands in a torn-down session. The SAB drain inside
+				// session.stop() handles any in-flight records already enqueued.
+				if (captureDomTapSessionId === session.sessionId) {
+					post({ type: 'capture-dom-tap-stop', sessionId: session.sessionId });
+					captureDomTapSessionId = null;
+				}
+				// Reset the edge-detection state so back-to-back sessions can't observe
+				// stale 'recording'/'paused' values left over from this one.
+				captureDomTapLastState = null;
 				void (async () => {
 					try {
 						await session.stop();
@@ -9067,6 +9137,12 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 							captureRetakeClipId
 						);
 						post({ type: 'capture-landed', sessionId: session.sessionId, trackIds });
+						// session.stop() already awaited the writer's finalize-ack, so
+						// events.ndjson is flushed + closed at this point and the panel can
+						// safely consume the sidecar via `readCaptureEventsSidecar`. Posted
+						// regardless of whether the sidecar contains data — absent sidecar
+						// still fires this so the panel's gating doesn't wait forever.
+						post({ type: 'capture-events-sidecar-ready', sessionId: session.sessionId });
 					} finally {
 						session.reset();
 						if (captureSession === session) {

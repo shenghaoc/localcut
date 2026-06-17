@@ -26,6 +26,64 @@ export const MeterIndex = {
 	RMS_R: 3
 } as const;
 
+// ── Phase 41: own-tab DOM capture event ring ──
+// Single-producer (main-thread CaptureDomTap) / single-consumer (pipeline-worker
+// CaptureSession) SAB ring carrying keystroke and pointer events alongside the
+// recorded media chunks. The worker allocates a fresh SAB per session and stamps
+// the header; main reads the header for layout but only writes record slots and
+// the writeIndex (DROP_COUNT is incremented atomically by main when full).
+//
+// Layout: [16-int32 header][CAPACITY × 64-byte fixed records]. Power-of-two
+// capacity so `index & (CAPACITY - 1)` is the slot mod. Each record is one
+// keystroke combo or pointer event; the trailing 32 bytes are a UTF-8 buffer
+// for the combo string (key events) or empty (pointer events).
+export const CAPTURE_EVENT_HEADER_FIELDS = 16;
+export const CAPTURE_EVENT_HEADER_BYTES =
+	CAPTURE_EVENT_HEADER_FIELDS * Int32Array.BYTES_PER_ELEMENT;
+export const CAPTURE_EVENT_RECORD_BYTES = 64;
+export const CAPTURE_EVENT_RECORD_STRING_OFFSET = 32;
+export const CAPTURE_EVENT_RECORD_STRING_CAPACITY =
+	CAPTURE_EVENT_RECORD_BYTES - CAPTURE_EVENT_RECORD_STRING_OFFSET;
+export const CAPTURE_EVENT_RING_CAPACITY = 1024;
+export const CAPTURE_EVENT_RING_BYTES =
+	CAPTURE_EVENT_HEADER_BYTES + CAPTURE_EVENT_RING_CAPACITY * CAPTURE_EVENT_RECORD_BYTES;
+
+/** Magic at header[0] — sanity-check the SAB was initialized as a capture event ring. */
+export const CAPTURE_EVENT_HEADER_MAGIC = 0xcab7dec0 | 0;
+/** Schema version at header[1]; bump on incompatible record-layout changes. */
+export const CAPTURE_EVENT_SCHEMA_VERSION = 1;
+
+export const CaptureEventHeaderIndex = {
+	MAGIC: 0,
+	SCHEMA_VERSION: 1,
+	CAPACITY: 2,
+	RECORD_BYTES: 3,
+	/** Atomic-store by main thread after each record write. Monotonic u32 (wraps). */
+	WRITE_INDEX: 4,
+	/** Atomic-store by worker thread after each drain. Monotonic u32 (wraps). */
+	READ_INDEX: 5,
+	/** Atomic-add by main thread when the ring is full and a record had to be skipped. */
+	DROP_COUNT: 6,
+	/** Stamped by the worker at install; main may verify but does not write. */
+	GENERATION: 7
+	// 8..15 reserved for lock-free state extensions (e.g. wake-up futex semantics).
+} as const;
+
+/** Record `type` slot (u32 at byte offset 0). */
+export const CaptureEventType = {
+	KEY: 1,
+	POINTER_DOWN: 2,
+	POINTER_UP: 3
+} as const;
+
+/** Record `modifierFlags` (u32 at byte offset 4). */
+export const CaptureEventModifier = {
+	ALT: 1 << 0,
+	CTRL: 1 << 1,
+	META: 1 << 2,
+	SHIFT: 1 << 3
+} as const;
+
 export type PlayState = 'paused' | 'playing';
 /** Source media kind. Images are stills serving one decoded frame for any timestamp. */
 export type MediaKind = 'video' | 'image' | 'audio';
@@ -2408,7 +2466,11 @@ export type WorkerCommand =
 			/** Tracks the regions came from — restricts which tracks get split. */
 			trackIds: string[];
 	  }
-	// Phase 44: Keystroke overlay
+	// Phase 44: Keystroke overlay. Each clip's `startS` already includes any
+	// session offset (the panel applies it via `generateKeyOverlayClips` before
+	// sending), so the worker handler only needs the clips array — no separate
+	// `sessionOffsetS` field, which would be dead and invite a maintainer to
+	// remove the client-side offset assuming the worker handled it.
 	| {
 			type: 'generate-key-overlay';
 			clips: {
@@ -2417,7 +2479,6 @@ export type WorkerCommand =
 				durationS: number;
 				style: Partial<TitleStyleSnapshot>;
 			}[];
-			sessionOffsetS: number;
 	  }
 	| InterpolationWorkerCommand
 	// Phase 38a: Look presets
@@ -2706,6 +2767,31 @@ export type WorkerStateMessage =
 			isoTrackIds: string[];
 			layoutTrackId: string;
 	  }
+	// Phase 41: own-tab DOM event tap lifecycle. Worker drives both edges — it
+	// allocates the SAB on session start, posts `init`, drains the ring into the
+	// session's `events.ndjson` sidecar, and posts `stop` so main can synchronously
+	// remove listeners. A fresh SAB is allocated per session (no reuse, no GC
+	// concerns); GENERATION in the header is informational, not authoritative.
+	| {
+			type: 'capture-dom-tap-init';
+			sessionId: string;
+			ring: SharedArrayBuffer;
+			/** Wall-clock-equivalent absolute timestamp at session start
+			 *  (`performance.timeOrigin + performance.now()` in the worker realm).
+			 *  Main computes event t against the same `timeOrigin + now()` in its
+			 *  realm so the difference is the wall-clock delta — immune to per-realm
+			 *  `timeOrigin` mismatches. */
+			epochMs: number;
+	  }
+	| { type: 'capture-dom-tap-stop'; sessionId: string }
+	/** Worker → main: session paused/resumed so the tap can gap-collapse its clock
+	 *  to mirror the media's pause-collapsed landing. Listeners stay attached. */
+	| { type: 'capture-dom-tap-pause'; sessionId: string }
+	| { type: 'capture-dom-tap-resume'; sessionId: string }
+	/** Writer-worker → pipeline-worker → main confirming that `events.ndjson` has
+	 *  been flushed and closed for the session. Panel waits for this before
+	 *  attempting to read the sidecar. */
+	| { type: 'capture-events-sidecar-ready'; sessionId: string }
 	// Phase 36: Voice Cleanup
 	| { type: 'voice-cleanup-analysis-progress'; fraction: number; currentWindowS: number }
 	| {
