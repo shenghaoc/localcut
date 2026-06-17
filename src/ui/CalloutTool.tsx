@@ -6,12 +6,7 @@
 
 import { createSignal, Show, For } from 'solid-js';
 import { MousePointer2 } from 'lucide-solid';
-import type {
-	CalloutKind,
-	CalloutPayload,
-	CalloutGeometry,
-	TransformParamsSnapshot
-} from '../protocol';
+import type { CalloutKind } from '../protocol';
 
 const CALLOUT_KINDS: { kind: CalloutKind; label: string }[] = [
 	{ kind: 'arrow', label: 'Arrow' },
@@ -26,7 +21,7 @@ interface CalloutToolProps {
 	capabilityTier: string;
 	onActivate: () => void;
 	onDeactivate: () => void;
-	onAddCallout: (payload: CalloutPayload, transform?: Partial<TransformParamsSnapshot>) => void;
+	onBeginPlacement: (kind: CalloutKind) => void;
 }
 
 export function CalloutTool(props: CalloutToolProps) {
@@ -49,27 +44,7 @@ export function CalloutTool(props: CalloutToolProps) {
 	const handleKindSelect = (kind: CalloutKind) => {
 		setSelectedKind(kind);
 		setShowPicker(false);
-	};
-
-	const handlePlacementComplete = (
-		geometry: CalloutGeometry,
-		transform?: Partial<TransformParamsSnapshot>
-	) => {
-		const payload: CalloutPayload = {
-			calloutKind: selectedKind(),
-			geometry,
-			style: {
-				color: '#FFD700',
-				strokeWidth: 3,
-				fillOpacity: selectedKind() === 'spotlight' ? 0.15 : 0,
-				fontSize: 28,
-				arrowheadSize: 14,
-				blurRadius: 12,
-				darkenStrength: 0.7
-			}
-		};
-		props.onAddCallout(payload, transform);
-		props.onDeactivate();
+		props.onBeginPlacement(kind);
 	};
 
 	return (
@@ -110,67 +85,6 @@ export function CalloutTool(props: CalloutToolProps) {
 							</button>
 						)}
 					</For>
-				</div>
-			</Show>
-
-			<Show when={props.active && !showPicker()}>
-				<div
-					class="callout-placement-overlay"
-					role="application"
-					aria-label="Draw callout"
-					onKeyDown={(e) => {
-						if (e.key === 'Escape') props.onDeactivate();
-					}}
-					onPointerDown={(e) => {
-						const target = e.currentTarget as HTMLElement;
-						const rect = target.getBoundingClientRect();
-						const startX = (e.clientX - rect.left) / rect.width;
-						const startY = (e.clientY - rect.top) / rect.height;
-
-						const onPointerUp = (upEvent: PointerEvent) => {
-							const endX = Math.max(0, Math.min(1, (upEvent.clientX - rect.left) / rect.width));
-							const endY = Math.max(0, Math.min(1, (upEvent.clientY - rect.top) / rect.height));
-
-							const kind = selectedKind();
-							const cx = (startX + endX) * 0.5;
-							const cy = (startY + endY) * 0.5;
-							const w = Math.max(0.05, Math.abs(endX - startX));
-							const h = Math.max(0.05, Math.abs(endY - startY));
-							const placementTransform: Partial<TransformParamsSnapshot> = {
-								x: cx - 0.5,
-								y: cy - 0.5,
-								scale: Math.max(w, h),
-								fit: 'fit'
-							};
-							let geometry: CalloutGeometry;
-
-							if (kind === 'arrow') {
-								geometry = { kind: 'arrow', x1: startX, y1: startY, x2: endX, y2: endY };
-							} else if (kind === 'box') {
-								geometry = {
-									kind: 'box',
-									x: Math.min(startX, endX),
-									y: Math.min(startY, endY),
-									w: Math.abs(endX - startX),
-									h: Math.abs(endY - startY)
-								};
-							} else if (kind === 'step') {
-								geometry = { kind: 'step', cx: startX, cy: startY, r: 0.05, number: 1 };
-							} else {
-								geometry = { kind } as CalloutGeometry;
-							}
-
-							handlePlacementComplete(
-								geometry,
-								kind === 'spotlight' || kind === 'blur' ? placementTransform : undefined
-							);
-							target.removeEventListener('pointerup', onPointerUp);
-						};
-
-						target.addEventListener('pointerup', onPointerUp);
-					}}
-				>
-					<p>Drag to place {selectedKind()} callout. Press Escape to cancel.</p>
 				</div>
 			</Show>
 		</div>

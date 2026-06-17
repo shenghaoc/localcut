@@ -27,6 +27,7 @@ interface ZoomPresetPanelProps {
 	trackId: string;
 	clipId: string;
 	hasExistingKeyframes: boolean;
+	onPickRegion?: (onPick: (x: number, y: number) => void) => void;
 	onSetKeyframes: (trackId: string, clipId: string, keyframes: ClipKeyframesSnapshot) => void;
 }
 
@@ -38,14 +39,16 @@ export function ZoomPresetPanel(props: ZoomPresetPanelProps) {
 	const [holdMs, setHoldMs] = createSignal(1500);
 	const [exitRampMs, setExitRampMs] = createSignal(400);
 	const [showWarning, setShowWarning] = createSignal(false);
-	const [regionPickActive, setRegionPickActive] = createSignal(false);
 
 	const applyPreset = (preset: ZoomPreset) => {
 		setScale(preset.scale);
 		setX(preset.x);
 		setY(preset.y);
 		if (preset.id === 'zoom-in-region') {
-			setRegionPickActive(true);
+			props.onPickRegion?.((nx, ny) => {
+				setX(nx - 0.5);
+				setY(ny - 0.5);
+			});
 		}
 	};
 
@@ -184,28 +187,6 @@ export function ZoomPresetPanel(props: ZoomPresetPanelProps) {
 					<button type="button" onClick={() => setShowWarning(false)}>
 						Cancel
 					</button>
-				</div>
-			</Show>
-
-			<Show when={regionPickActive()}>
-				<div
-					class="region-pick-overlay"
-					role="application"
-					aria-label="Drag to set zoom region"
-					tabIndex={0}
-					onPointerUp={(e) => {
-						const rect = e.currentTarget.getBoundingClientRect();
-						const nx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-						const ny = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
-						setX(nx - 0.5);
-						setY(ny - 0.5);
-						setRegionPickActive(false);
-					}}
-					onKeyDown={(e) => {
-						if (e.key === 'Escape') setRegionPickActive(false);
-					}}
-				>
-					<p>Drag on the preview to set the zoom region. Press Escape to cancel.</p>
 				</div>
 			</Show>
 

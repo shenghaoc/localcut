@@ -185,15 +185,17 @@ function mergeProposals(proposals: ZoomProposal[], mergeThresholdUs: number): Zo
  */
 export function applyProposal(
 	proposal: ZoomProposal,
-	params: AutoZoomParams = DEFAULT_AUTO_ZOOM_PARAMS
+	params: AutoZoomParams = DEFAULT_AUTO_ZOOM_PARAMS,
+	clipStartUs = 0
 ): ClipKeyframesSnapshot {
 	const { zoomInAtUs, zoomOutAtUs, centroidX, centroidY, scale } = proposal;
 	const rampS = Math.max(0.001, params.rampMs / 1000);
+	const toClipSeconds = (timeUs: number) => Math.max(0, (timeUs - clipStartUs) / 1e6);
 
 	// Convert µs to seconds relative to clip start
-	const tIn = zoomInAtUs / 1e6;
+	const tIn = toClipSeconds(zoomInAtUs);
 	const tInEnd = tIn + rampS;
-	const tOutStart = zoomOutAtUs / 1e6;
+	const tOutStart = toClipSeconds(zoomOutAtUs);
 	const tOut = tOutStart + rampS;
 
 	return {

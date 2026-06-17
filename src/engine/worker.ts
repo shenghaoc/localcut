@@ -8185,7 +8185,34 @@ async function renderCoverFrameBlob(
 						transform: layer.meta.transform,
 						transition: layer.meta.transition
 					});
-				} else if (layer.decoded) {
+				} else if (layer.meta.kind === 'callout-texture') {
+					const texture = calloutCache?.get(layer.meta.clipId);
+					if (!texture) continue;
+					stack.push({
+						kind: 'texture',
+						view: texture.view,
+						sourceWidth: texture.width,
+						sourceHeight: texture.height,
+						transform: layer.meta.transform,
+						transition: layer.meta.transition
+					});
+				} else if (layer.meta.kind === 'callout-effect') {
+					stack.push(
+						layer.meta.effect === 'spotlight'
+							? {
+									kind: 'spotlight',
+									transform: layer.meta.transform,
+									darkenStrength: layer.meta.darkenStrength ?? 0.7,
+									transition: layer.meta.transition
+								}
+							: {
+									kind: 'blur-region',
+									transform: layer.meta.transform,
+									blurRadius: layer.meta.blurRadius ?? 12,
+									transition: layer.meta.transition
+								}
+					);
+				} else if (layer.meta.kind === 'frame' && layer.decoded) {
 					const frame = layer.decoded.toVideoFrame();
 					frames.push(frame);
 					stack.push({

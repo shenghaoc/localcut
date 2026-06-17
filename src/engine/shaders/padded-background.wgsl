@@ -1,6 +1,8 @@
 @group(0) @binding(0) var<uniform> u: PaddedBgUniform;
 @group(0) @binding(1) var src: texture_2d<f32>;
 @group(0) @binding(2) var dst: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(3) var wallpaper: texture_2d<f32>;
+@group(0) @binding(4) var wallpaperSampler: sampler;
 
 struct PaddedBgUniform {
 	insetL: f32,
@@ -27,6 +29,9 @@ fn sdfRoundedRect(p: vec2f, centre: vec2f, halfExtent: vec2f, radius: f32) -> f3
 fn backgroundColour(uv: vec2f) -> vec4f {
 	if (u.bgKind == 0u) {
 		return u.solidColor;
+	}
+	if (u.bgKind == 2u) {
+		return textureSampleLevel(wallpaper, wallpaperSampler, uv, 0.0);
 	}
 
 	let centre = vec2f(0.5);

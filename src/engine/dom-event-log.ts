@@ -144,18 +144,20 @@ export class CaptureSessionDomEventLogger {
 export { CaptureSessionDomEventLogger as CaptureSessionEventLogger };
 
 /**
- * Get normalised scroll position from the event target (sub-element aware).
+ * Get normalised scroll position from the nearest scrollable ancestor.
  */
 function getScrollPosition(target: EventTarget | null): { x: number; y: number } {
-	// Try sub-element scroll first
-	if (target && target instanceof HTMLElement && target !== document.documentElement) {
-		const el = target;
-		const maxScrollX = Math.max(1, el.scrollWidth - el.clientWidth);
-		const maxScrollY = Math.max(1, el.scrollHeight - el.clientHeight);
-		return {
-			x: clamp01(el.scrollLeft / maxScrollX),
-			y: clamp01(el.scrollTop / maxScrollY)
-		};
+	let el = target instanceof HTMLElement ? target : null;
+	while (el && el !== document.documentElement) {
+		const maxScrollX = el.scrollWidth - el.clientWidth;
+		const maxScrollY = el.scrollHeight - el.clientHeight;
+		if (maxScrollX > 0 || maxScrollY > 0) {
+			return {
+				x: clamp01(el.scrollLeft / Math.max(1, maxScrollX)),
+				y: clamp01(el.scrollTop / Math.max(1, maxScrollY))
+			};
+		}
+		el = el.parentElement;
 	}
 	// Fall back to window/document scroll
 	const se = document.scrollingElement;

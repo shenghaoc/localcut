@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vite-plus/test';
-import { clusterEvents, DEFAULT_AUTO_ZOOM_PARAMS } from './auto-zoom';
+import { applyProposal, clusterEvents, DEFAULT_AUTO_ZOOM_PARAMS } from './auto-zoom';
 import type { DomEventLogEntry } from './dom-event-log';
 
 type Entry = DomEventLogEntry;
@@ -88,5 +88,20 @@ describe('clusterEvents', () => {
 		const elapsed = performance.now() - start;
 		expect(elapsed).toBeLessThan(100);
 		expect(result.length).toBeGreaterThan(0);
+	});
+});
+
+describe('applyProposal', () => {
+	it('converts proposal times to clip-local keyframe seconds', () => {
+		const proposal = clusterEvents(
+			[makeEntry(5_000_000, 0.5, 0.5)],
+			DEFAULT_AUTO_ZOOM_PARAMS,
+			4_000_000
+		)[0]!;
+
+		const keyframes = applyProposal(proposal, DEFAULT_AUTO_ZOOM_PARAMS, 4_000_000);
+
+		expect(keyframes.scale?.[0]?.t).toBeCloseTo(0.8, 6);
+		expect(keyframes.scale?.[2]?.t).toBeCloseTo(2.5, 6);
 	});
 });

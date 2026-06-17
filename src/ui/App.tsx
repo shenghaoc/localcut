@@ -26,6 +26,8 @@ import {
 	type InterpolationAvailability,
 	type InterpolationModelStatus,
 	type BeautyModelStatus,
+	type CalloutGeometry,
+	type CalloutKind,
 	type CalloutPayload,
 	type RenderQueueState,
 	type BundleIntegrityReportSnapshot,
@@ -56,6 +58,7 @@ import {
 	type LiveAudioChainConfig,
 	type RingBufferState,
 	type CaptureSourceKind,
+	type TransformParamsSnapshot,
 	type VoiceCleanupSettings,
 	VOICE_CLEANUP_NORMALISE_GAIN_DB
 } from '../protocol';
@@ -531,6 +534,11 @@ export function App() {
 		}
 	}
 	const [calloutToolActive, setCalloutToolActive] = createSignal(false);
+	const [calloutPlacementActive, setCalloutPlacementActive] = createSignal(false);
+	const [calloutPlacementKind, setCalloutPlacementKind] = createSignal<CalloutKind>('arrow');
+	const [previewRegionPickHandler, setPreviewRegionPickHandler] = createSignal<
+		((x: number, y: number) => void) | null
+	>(null);
 	const [encodeFps, setEncodeFps] = createSignal<number | null>(null);
 	const [timeline, setTimeline] = createSignal<TimelineTrackSnapshot[]>([]);
 	const coverTitleOptions = createMemo(() => {
@@ -1346,6 +1354,7 @@ export function App() {
 					kind: clip.kind,
 					sourceId: clip.sourceId,
 					start: clip.start,
+					inPoint: clip.inPoint,
 					duration: clip.duration,
 					effects: sampleEffectsAt(clip.effects, clip.keyframes, localTime),
 					transform: sampleTransformAt(clip.transform, clip.keyframes, localTime),
@@ -2088,10 +2097,7 @@ export function App() {
 		bridge?.send({ type: 'program-scene-switch', sceneId, transitionMs: programTransitionMs() });
 	}
 
-	function handleAddCallout(
-		payload: CalloutPayload,
-		transform?: Partial<import('../protocol').TransformParamsSnapshot>
-	) {
+	function handleAddCallout(payload: CalloutPayload, transform?: Partial<TransformParamsSnapshot>) {
 		bridge?.send({
 			type: 'add-callout',
 			start: Math.max(0, clock.currentTime()),
@@ -2099,6 +2105,74 @@ export function App() {
 			transform
 		});
 		setStatusLine('Callout added');
+	}
+
+	function requestPreviewRegionPick(onPick: (x: number, y: number) => void): void {
+		setCalloutPlacementActive(false);
+		setPreviewRegionPickHandler(() => onPick);
+	}
+
+	function beginCalloutPlacement(kind: CalloutKind): void {
+		setPreviewRegionPickHandler(null);
+		setCalloutPlacementKind(kind);
+		setCalloutPlacementActive(true);
+	}
+
+	function endCalloutPlacement(): void {
+		setCalloutToolActive(false);
+		setCalloutPlacementActive(false);
+	}
+
+	function completeCalloutPlacement(
+		kind: CalloutKind,
+		startX: number,
+		startY: number,
+		endX: number,
+		endY: number
+	): void {
+		const cx = (startX + endX) * 0.5;
+		const cy = (startY + endY) * 0.5;
+		const w = Math.max(0.05, Math.abs(endX - startX));
+		const h = Math.max(0.05, Math.abs(endY - startY));
+		const placementTransform: Partial<TransformParamsSnapshot> = {
+			x: cx - 0.5,
+			y: cy - 0.5,
+			scale: Math.max(w, h),
+			fit: 'fit'
+		};
+		let geometry: CalloutGeometry;
+		if (kind === 'arrow') {
+			geometry = { kind: 'arrow', x1: startX, y1: startY, x2: endX, y2: endY };
+		} else if (kind === 'box') {
+			geometry = {
+				kind: 'box',
+				x: Math.min(startX, endX),
+				y: Math.min(startY, endY),
+				w: Math.abs(endX - startX),
+				h: Math.abs(endY - startY)
+			};
+		} else if (kind === 'step') {
+			geometry = { kind: 'step', cx: startX, cy: startY, r: 0.05, number: 1 };
+		} else {
+			geometry = { kind };
+		}
+		handleAddCallout(
+			{
+				calloutKind: kind,
+				geometry,
+				style: {
+					color: '#FFD700',
+					strokeWidth: 3,
+					fillOpacity: kind === 'spotlight' ? 0.15 : 0,
+					fontSize: 28,
+					arrowheadSize: 14,
+					blurRadius: 12,
+					darkenStrength: 0.7
+				}
+			},
+			kind === 'spotlight' || kind === 'blur' ? placementTransform : undefined
+		);
+		endCalloutPlacement();
 	}
 
 	function handleState(msg: WorkerStateMessage) {
@@ -3850,8 +3924,8 @@ export function App() {
 							active={calloutToolActive()}
 							capabilityTier={capabilityProbeV2()?.tier ?? 'shell-only'}
 							onActivate={() => setCalloutToolActive(true)}
-							onDeactivate={() => setCalloutToolActive(false)}
-							onAddCallout={handleAddCallout}
+							onDeactivate={endCalloutPlacement}
+							onBeginPlacement={beginCalloutPlacement}
 						/>
 					}
 					masterGain={masterGain()}
@@ -4158,6 +4232,62 @@ export function App() {
 								sourceAspect={reframeState().context?.sourceAspect ?? 1}
 								targetAspect={reframeState().context?.targetAspectValue ?? 1}
 							/>
+							<Show when={previewSurfaceAvailable() && previewRegionPickHandler() !== null}>
+								<div
+									class="region-pick-overlay"
+									role="application"
+									aria-label="Drag to set zoom region"
+									tabIndex={0}
+									onPointerUp={(e) => {
+										const rect = e.currentTarget.getBoundingClientRect();
+										const nx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+										const ny = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+										const onPick = previewRegionPickHandler();
+										setPreviewRegionPickHandler(null);
+										onPick?.(nx, ny);
+									}}
+									onKeyDown={(e) => {
+										if (e.key === 'Escape') setPreviewRegionPickHandler(null);
+									}}
+								>
+									<p>Drag on the preview to set the zoom region. Press Escape to cancel.</p>
+								</div>
+							</Show>
+							<Show when={previewSurfaceAvailable() && calloutPlacementActive()}>
+								<div
+									class="callout-placement-overlay"
+									role="application"
+									aria-label="Draw callout"
+									tabIndex={0}
+									onKeyDown={(e) => {
+										if (e.key === 'Escape') endCalloutPlacement();
+									}}
+									onPointerDown={(e) => {
+										const target = e.currentTarget;
+										const rect = target.getBoundingClientRect();
+										const clamp = (value: number) => Math.max(0, Math.min(1, value));
+										const startX = clamp((e.clientX - rect.left) / rect.width);
+										const startY = clamp((e.clientY - rect.top) / rect.height);
+										target.setPointerCapture(e.pointerId);
+
+										const onPointerUp = (upEvent: PointerEvent) => {
+											const endX = clamp((upEvent.clientX - rect.left) / rect.width);
+											const endY = clamp((upEvent.clientY - rect.top) / rect.height);
+											try {
+												target.releasePointerCapture(upEvent.pointerId);
+											} catch {
+												// Pointer capture may already be gone after browser cancellation.
+											}
+											target.removeEventListener('pointerup', onPointerUp);
+											completeCalloutPlacement(calloutPlacementKind(), startX, startY, endX, endY);
+										};
+
+										target.addEventListener('pointerup', onPointerUp);
+									}}
+								>
+									<p>Drag to place {calloutPlacementKind()} callout. Press Escape to cancel.</p>
+								</div>
+							</Show>
 							<Show when={previewSurfaceAvailable()}>
 								<button
 									type="button"
@@ -4411,6 +4541,7 @@ export function App() {
 													selectedTransition={selectedTransition()}
 													capabilityTier={capabilityProbeV2()?.tier}
 													sessionEventLogs={sessionEventLogs()}
+													onPickPreviewRegion={requestPreviewRegionPick}
 													onSetTitle={(trackId, clipId, patch) =>
 														bridge?.send({ type: 'set-title', trackId, clipId, ...patch })
 													}

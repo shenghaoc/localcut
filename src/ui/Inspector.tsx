@@ -41,6 +41,7 @@ export interface SelectedClip {
 	kind?: import('../protocol').ClipKindSnapshot;
 	sourceId?: string;
 	start: number;
+	inPoint?: number;
 	duration: number;
 	effects: ClipEffectParamsSnapshot;
 	transform: TransformParamsSnapshot;
@@ -104,6 +105,7 @@ interface InspectorProps {
 	selectedTransition: SelectedTransition | null;
 	capabilityTier?: CapabilityTierV2;
 	sessionEventLogs?: readonly SessionEventLogRef[];
+	onPickPreviewRegion?: (onPick: (x: number, y: number) => void) => void;
 	playheadTime: number;
 	onSetTitle: (
 		trackId: string,
@@ -1520,11 +1522,13 @@ export function Inspector(props: InspectorProps) {
 												onSetKeyframes={(trackId, clipId, keyframes) =>
 													props.onReplaceKeyframeTracks?.(trackId, clipId, keyframes)
 												}
+												onPickRegion={props.onPickPreviewRegion}
 											/>
 											<AutoZoomPanel
 												trackId={selected().trackId}
 												clipId={selected().clipId}
 												sessionEventLogRef={selectedEventLogRef()}
+												clipStartUs={Math.round((selected().inPoint ?? 0) * 1_000_000)}
 												onSetKeyframes={(trackId, clipId, keyframes) =>
 													props.onReplaceKeyframeTracks?.(trackId, clipId, keyframes)
 												}

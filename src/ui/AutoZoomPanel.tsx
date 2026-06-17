@@ -18,6 +18,7 @@ import type { ClipKeyframesSnapshot, SessionEventLogRef } from '../protocol';
 interface AutoZoomPanelProps {
 	clipId: string;
 	trackId: string;
+	clipStartUs?: number;
 	sessionEventLogRef?: SessionEventLogRef;
 	onSetKeyframes: (trackId: string, clipId: string, keyframes: ClipKeyframesSnapshot) => void;
 }
@@ -78,12 +79,11 @@ export function AutoZoomPanel(props: AutoZoomPanelProps) {
 	const handleRecluster = () => {
 		const e = entries();
 		if (e.length === 0) return;
-		// Clip start at 0 for proposal timing
-		setProposals(clusterEvents(e, params(), 0));
+		setProposals(clusterEvents(e, params(), props.clipStartUs ?? 0));
 	};
 
 	const handleApply = (proposal: ZoomProposal) => {
-		const keyframes = applyProposal(proposal, params());
+		const keyframes = applyProposal(proposal, params(), props.clipStartUs ?? 0);
 		props.onSetKeyframes(props.trackId, props.clipId, keyframes);
 		setProposals((prev) =>
 			prev.map((p) => (p.id === proposal.id ? { ...p, status: 'applied' } : p))

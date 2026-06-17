@@ -3419,8 +3419,15 @@ body {
 
 .region-pick-overlay,
 .callout-placement-overlay {
-	position: fixed;
-	inset: 5.5rem 20rem 14rem 1rem;
+	position: absolute;
+	inset: 0;
+	top: var(--preview-canvas-top, 0);
+	right: auto;
+	bottom: auto;
+	left: var(--preview-canvas-left, 0);
+	width: var(--preview-canvas-width, 100%);
+	height: var(--preview-canvas-height, 100%);
+	box-sizing: border-box;
 	z-index: 40;
 	display: grid;
 	place-items: center;

@@ -253,7 +253,7 @@ function packPaddedBackgroundUniform(
 	f32[4] = clampRange(params.cornerRadius / Math.max(1, outputHeight), 0, 0.08);
 	f32[5] = clampUnit(params.shadowOpacity);
 	f32[6] = params.shadowOffsetY / Math.max(1, outputHeight);
-	u32[7] = params.background.kind === 'solid' ? 0 : 1;
+	u32[7] = params.background.kind === 'solid' ? 0 : params.background.kind === 'wallpaper' ? 2 : 1;
 	const defaultGradient =
 		DEFAULT_PADDED_BACKGROUND.background.kind === 'gradient'
 			? DEFAULT_PADDED_BACKGROUND.background
@@ -943,8 +943,7 @@ export class PreviewRenderer {
 					frameTimeSeed
 				);
 			}
-			const paddedBackgroundDst =
-				filmView === storage.a ? storage.b : filmView === storage.b ? storage.c : storage.a;
+			const paddedBackgroundDst = filmView === storage.a ? storage.b : storage.a;
 			const paddedBackgroundView =
 				layer.kind === 'frame' && layer.paddedBackground
 					? this.encodePaddedBackground(
@@ -1208,7 +1207,9 @@ export class PreviewRenderer {
 			entries: [
 				{ binding: 0, resource: { buffer } },
 				{ binding: 1, resource: srcView },
-				{ binding: 2, resource: dstView }
+				{ binding: 2, resource: dstView },
+				{ binding: 3, resource: srcView },
+				{ binding: 4, resource: this.sampler }
 			]
 		});
 		const pass = encoder.beginComputePass();
