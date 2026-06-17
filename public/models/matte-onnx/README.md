@@ -75,15 +75,20 @@ re-applied to ONNX where the **true-matting** options actually exist:
 
 ## To enable
 
-1. Pick a model whose **license is verified permissive** (commercial-OK). **GPL-family weights
-   are rejected** — both by policy and by the manifest validator.
+1. Pick a model whose **license is verified permissive** (commercial-OK). **Copyleft weights
+   (GPL/LGPL/AGPL, by SPDX id or spelled-out name) are rejected** — both by policy and by the
+   manifest validator (`isCopyleftLicense`).
 2. Export/obtain the **ONNX** graph; host it on an allowlisted host (HF / GitHub / GCS / R2).
 3. Confirm **every graph node runs on ORT-WebGPU** (no full-frame WASM/CPU fallback) with the
    browser-mode per-node-EP harness. If any node falls back, reject the model. ORT-WebNN is an
-   option only **after** a per-operator support proof.
-4. Replace `manifest.json`: remove `"template"`, set the real `model.url`, `model.sizeBytes`,
-   and `model.checksum` (sha256), and the real `io` contract (input/output names, layout,
-   `inputRange`, and the alpha output shape/range above) matching the exported graph.
+   option only **after** a per-operator support proof — and the engine has no WebNN tensor path
+   yet, so `validateMatteOnnxManifest` currently rejects any `executionProviders` other than
+   exactly `["webgpu"]`.
+4. Replace `manifest.json`: remove `"template"`, keep `executionProviders` as `["webgpu"]`, set
+   the real `model.url`, `model.sizeBytes`, and `model.checksum` (sha256), and the real `io`
+   contract (input/output names, layout, `inputRange`, and the alpha output shape/range above)
+   matching the exported graph. The runtime also re-validates the produced alpha tensor's element
+   count against the declared single-channel `inputWidth × inputHeight` before binding it.
 5. Verify temporal stability and preview/export performance against the deployed LiteRT
    default before considering any change to `DEFAULT_MATTE_BACKEND`.
 

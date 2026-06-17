@@ -73,15 +73,36 @@ describe('validateMatteOnnxManifest', () => {
 		);
 	});
 
-	// ── License gate (GPL-family rejected) ──
+	// ── License gate (copyleft rejected) ──
 
-	it('rejects a GPL-family license (e.g. RVM)', () => {
+	it('rejects an abbreviated copyleft license (e.g. RVM)', () => {
 		expect(() => validateMatteOnnxManifest({ ...validManifest(), license: 'GPL-3.0' })).toThrow(
-			/GPL-family license/
+			/copyleft license/
 		);
 		expect(() =>
 			validateMatteOnnxManifest({ ...validManifest(), license: 'AGPL-3.0-only' })
 		).toThrow(MatteOnnxManifestError);
+		expect(() => validateMatteOnnxManifest({ ...validManifest(), license: 'LGPL-2.1' })).toThrow(
+			MatteOnnxManifestError
+		);
+	});
+
+	it('rejects spelled-out copyleft licenses, not just the SPDX abbreviation', () => {
+		expect(() =>
+			validateMatteOnnxManifest({ ...validManifest(), license: 'GNU General Public License v3.0' })
+		).toThrow(/copyleft license/);
+		expect(() =>
+			validateMatteOnnxManifest({
+				...validManifest(),
+				license: 'GNU Affero General Public License'
+			})
+		).toThrow(MatteOnnxManifestError);
+	});
+
+	it('accepts permissive licenses (Apache-2.0, MIT, BSD)', () => {
+		for (const license of ['Apache-2.0', 'MIT', 'BSD-3-Clause']) {
+			expect(validateMatteOnnxManifest({ ...validManifest(), license }).license).toBe(license);
+		}
 	});
 
 	// ── Frame-coupled EP hard gate (no WASM/CPU per-frame fallback) ──
@@ -108,6 +129,20 @@ describe('validateMatteOnnxManifest', () => {
 		expect(() => validateMatteOnnxManifest({ ...validManifest(), tensorLocation: 'cpu' })).toThrow(
 			MatteOnnxManifestError
 		);
+	});
+
+	// ── EP gate: the spike runs only the WebGPU path (WebNN needs op-support proof) ──
+
+	it('rejects a WebNN-pinned manifest (no WebNN tensor path yet)', () => {
+		expect(() =>
+			validateMatteOnnxManifest({ ...validManifest(), executionProviders: ['webnn'] })
+		).toThrow(/exactly \["webgpu"\]/);
+	});
+
+	it('rejects a webgpu+webnn manifest (must be webgpu-only)', () => {
+		expect(() =>
+			validateMatteOnnxManifest({ ...validManifest(), executionProviders: ['webgpu', 'webnn'] })
+		).toThrow(/exactly \["webgpu"\]/);
 	});
 
 	// ── Base manifest integrity ──

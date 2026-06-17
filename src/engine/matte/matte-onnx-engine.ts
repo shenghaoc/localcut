@@ -72,6 +72,10 @@ interface ClipSession {
 	history: GPUTexture;
 	historyView: GPUTextureView;
 	lastSourceTimeS: number | null;
+	/** True when the last displayed frame for this clip came from the reuse cache,
+	 *  so the GPU history texture no longer matches it; the next inference resets
+	 *  rather than blending fresh alpha against stale history (after a seek). */
+	historyStale: boolean;
 }
 
 interface LoadedModel {
@@ -197,11 +201,28 @@ export class MatteOnnxEngine implements MatteBackendEngine {
 	deleteClip(clipId: string): void {
 		const session = this.sessions.get(clipId);
 		if (session) {
-			session.history.destroy();
 			this.sessions.delete(clipId);
+			this.retireSession(session);
 		}
 		this.lastView.delete(clipId);
 		this.cache.deleteByClip(clipId);
+	}
+
+	/**
+	 * Destroys a removed session's history texture — but not while an inference run
+	 * is in flight, because that run (which captured this session before the delete)
+	 * still binds `historyView` and copies into `history` in its resolve pass;
+	 * destroying it mid-flight is a WebGPU validation error / device-loss path.
+	 * Runs are serialized, so once `this.running` settles no run references this
+	 * session (a later frame for the same clip gets a fresh session via sessionFor).
+	 */
+	private retireSession(session: ClipSession): void {
+		const running = this.running;
+		if (running) {
+			void running.catch(() => {}).then(() => session.history.destroy());
+		} else {
+			session.history.destroy();
+		}
 	}
 
 	async dispose(): Promise<void> {
@@ -255,7 +276,8 @@ export class MatteOnnxEngine implements MatteBackendEngine {
 		});
 	}
 
-	private ensureModelLoaded(): Promise<void> {
+	/** Triggers a lazy, idempotent model load. Resolves when loaded or failed. */
+	ensureModelLoaded(): Promise<void> {
 		if (this.loadPromise) return this.loadPromise;
 		this.loadPromise = this.loadModel().catch((error) => {
 			this.modelStatus = 'failed';
@@ -263,13 +285,17 @@ export class MatteOnnxEngine implements MatteBackendEngine {
 			// compatible model configured" state; surface it as a clear, non-alarming
 			// message rather than an error spew. The deployed LiteRT default is the
 			// real matte path; this experimental backend stays dark until pinned.
-			this.loadError =
-				error instanceof MatteOnnxManifestError
-					? 'No compatible ONNX matte model configured (experimental backend).'
-					: error instanceof Error
-						? error.message
-						: String(error);
-			this.loadPromise = null; // Allow retry on the next matted frame.
+			const permanent = error instanceof MatteOnnxManifestError;
+			this.loadError = permanent
+				? 'No compatible ONNX matte model configured (experimental backend).'
+				: error instanceof Error
+					? error.message
+					: String(error);
+			// A manifest/template/license rejection is permanent — keep `loadPromise`
+			// resolved so `matteViewFor` (which calls this every frame while not
+			// loaded) stops refetching and revalidating the same invalid manifest.
+			// Only a transient failure (e.g. a network blip) clears it to allow retry.
+			if (!permanent) this.loadPromise = null;
 			this.postStatus();
 		});
 		return this.loadPromise;
@@ -380,26 +406,65 @@ export class MatteOnnxEngine implements MatteBackendEngine {
 				format: 'rgba8unorm',
 				usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC
 			});
-			session = { history, historyView: history.createView(), lastSourceTimeS: null };
+			session = {
+				history,
+				historyView: history.createView(),
+				lastSourceTimeS: null,
+				historyStale: false
+			};
 			this.sessions.set(clipId, session);
 		}
 		return session;
 	}
 
+	/**
+	 * Records a cache-served frame as the clip's last displayed frame. The cached
+	 * alpha is NOT copied into the history texture, so it marks history stale: the
+	 * next inferred frame must reset rather than blend against whatever inference
+	 * last wrote (which, after a scrub/seek, is not the preceding displayed frame).
+	 */
 	private touchSession(request: MatteFrameRequest): void {
 		const session = this.sessions.get(request.clipId);
-		if (session) session.lastSourceTimeS = request.sourceTimeS;
+		if (session) {
+			session.lastSourceTimeS = request.sourceTimeS;
+			session.historyStale = true;
+		}
 	}
 
 	private async runInference(
 		request: MatteFrameRequest,
 		cacheKey: string
 	): Promise<GPUTextureView | null> {
+		// The engine owns request.frame and must release it exactly once. The body
+		// frees it eagerly right after the preprocess import (so the scarce VideoFrame
+		// isn't held across the inference wait); this guarded finally still releases it
+		// if an earlier step throws (lost device, buffer allocation), and the flag stops
+		// a late failure from double-closing a frame the eager path already shut.
+		let frameClosed = false;
+		const closeFrame = (): void => {
+			if (frameClosed) return;
+			frameClosed = true;
+			request.frame.close();
+		};
+		try {
+			return await this.runInferenceBody(request, cacheKey, closeFrame);
+		} finally {
+			closeFrame();
+		}
+	}
+
+	private async runInferenceBody(
+		request: MatteFrameRequest,
+		cacheKey: string,
+		closeFrame: () => void
+	): Promise<GPUTextureView | null> {
+		// Model-independent GPU setup first, so a device failure here surfaces before
+		// any model/session work (and the frame-owning wrapper still releases the frame).
+		this.ensurePipelines();
 		const model = this.model!;
 		const ort = this.ort!;
 		const device = this.device;
 		const io = model.io;
-		this.ensurePipelines();
 
 		// Pin check (R1.2): warn once per clip on mismatch; never silently switch.
 		if (request.modelKey !== model.manifest.id && !this.pinWarned.has(request.clipId)) {
@@ -410,12 +475,12 @@ export class MatteOnnxEngine implements MatteBackendEngine {
 		}
 
 		const session = this.sessionFor(request.clipId);
-		// Discontinuity policy (R4.2), shared with the LiteRT engine.
-		const reset = shouldResetMatteHistory(
-			session.lastSourceTimeS,
-			request.sourceTimeS,
-			request.frameStepS
-		);
+		// Discontinuity policy (R4.2), shared with the LiteRT engine; also reset when
+		// the last displayed frame was a cache hit (history is stale — see touchSession),
+		// so fresh alpha never blends against pre-seek history.
+		const reset =
+			session.historyStale ||
+			shouldResetMatteHistory(session.lastSourceTimeS, request.sourceTimeS, request.frameStepS);
 
 		// Input buffer in the model's layout: W*H*C float32. STORAGE for the
 		// preprocess pass + COPY_SRC/DST so ORT can wrap it as a GPU-buffer tensor.
@@ -451,12 +516,9 @@ export class MatteOnnxEngine implements MatteBackendEngine {
 		prePass.dispatchWorkgroups(Math.ceil(model.width / 8), Math.ceil(model.height / 8));
 		prePass.end();
 		device.queue.submit([preEncoder.finish()]);
-		// The source frame is consumed by the import above; close it now.
-		try {
-			request.frame.close();
-		} catch {
-			// Already closed.
-		}
+		// The source frame is consumed by the import above; free it now (before the
+		// inference wait). Routed through the caller's guard so it closes exactly once.
+		closeFrame();
 
 		// 2. ORT inference with GPU-buffer tensor IO — input wraps our preprocess
 		// buffer (no upload), output stays a GPU buffer (no readback). Both live on
@@ -477,6 +539,20 @@ export class MatteOnnxEngine implements MatteBackendEngine {
 			outputs = Object.values(results);
 			const outputTensor = results[io.outputName];
 			if (!outputTensor) throw new Error(`ONNX matte output "${io.outputName}" missing.`);
+			// The resolve pass reads exactly width*height single-channel alpha values at
+			// y*W+x offsets, so a model whose output isn't that size would silently
+			// corrupt the matte (wrong offsets) or read past the buffer. Validate the
+			// produced shape against the declared single-channel contract and fail
+			// clearly instead.
+			const dims = outputTensor.dims as readonly number[];
+			const produced = dims.reduce((a, b) => a * b, 1);
+			const expected = model.width * model.height;
+			if (produced !== expected) {
+				throw new Error(
+					`ONNX matte output "${io.outputName}" produced ${produced} values (dims [${dims.join(', ')}]); ` +
+						`expected ${expected} for single-channel ${model.width}×${model.height} alpha.`
+				);
+			}
 			// 'gpu-buffer' output: a single-channel [1,1,H,W]|[1,H,W,1] alpha buffer
 			// the resolve pass binds directly (no intermediate copy, no getData).
 			alphaBuffer = outputTensor.gpuBuffer as GPUBuffer;
@@ -539,6 +615,8 @@ export class MatteOnnxEngine implements MatteBackendEngine {
 		});
 
 		session.lastSourceTimeS = request.sourceTimeS;
+		// History now matches this displayed frame again (fresh alpha was written).
+		session.historyStale = false;
 		// The cache owns alphaTexture from here (destroyed on eviction).
 		this.cache.set(cacheKey, alphaTexture, model.width, model.height);
 		const view = this.cache.get(cacheKey);

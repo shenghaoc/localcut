@@ -190,14 +190,39 @@ export function validateMatteOnnxManifest(value: unknown): MatteOnnxModelManifes
 		throw new MatteOnnxManifestError('matte models must declare "frameCoupled": true');
 	}
 
-	// License gate (hard fail): the app is MIT, so GPL-family weights are rejected
-	// even when fetched at runtime — same verdict as the LiteRT path (RVM rejected).
-	if (/gpl/i.test(base.license)) {
+	// EP gate: the ORT matte engine implements only the WebGPU path (it injects the
+	// renderer device, builds `Tensor.fromGpuBuffer` inputs, and reads
+	// `outputTensor.gpuBuffer`). A WebNN-pinned manifest passes the shared
+	// frame-coupled gate but cannot run here — the engine would force `gpu-buffer`
+	// IO on an `ml-tensor` EP. Require webgpu-only until a dedicated WebNN tensor
+	// path exists (which needs a per-operator support proof first).
+	if (base.executionProviders.length !== 1 || base.executionProviders[0] !== 'webgpu') {
 		throw new MatteOnnxManifestError(
-			`model "${base.id}" declares a GPL-family license (${base.license}); refusing to load`
+			`executionProviders must be exactly ["webgpu"] for the ORT matte spike; got ` +
+				`[${base.executionProviders.join(', ')}]. ORT-WebNN needs a separate tensor path ` +
+				`(per-operator support proof) before it can be pinned.`
+		);
+	}
+
+	// License gate (hard fail): the app is MIT, so copyleft weights are rejected even
+	// when fetched at runtime — same verdict as the LiteRT path (RVM rejected).
+	if (isCopyleftLicense(base.license)) {
+		throw new MatteOnnxManifestError(
+			`model "${base.id}" declares a copyleft license (${base.license}); refusing to load — ` +
+				`the app is MIT and ships only permissively-licensed weights`
 		);
 	}
 
 	const io = validateIo(isObject(value) ? value['io'] : undefined);
 	return { ...base, io };
+}
+
+/**
+ * True for GPL-family / copyleft licenses this MIT app refuses to ship weights
+ * under. Matches both the SPDX abbreviation and the spelled-out name, so
+ * `GPL-3.0`, `LGPL-2.1`, `AGPL-3.0-only`, `GNU General Public License v3.0`, and
+ * `GNU Affero General Public License` are all rejected — not just bare `gpl`.
+ */
+function isCopyleftLicense(license: string): boolean {
+	return /\b[al]?gpl\b|general public license|affero|copyleft/i.test(license);
 }
