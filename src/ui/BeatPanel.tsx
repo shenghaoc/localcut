@@ -86,7 +86,6 @@ export function BeatPanel(props: BeatPanelProps) {
 														aria-valuemax={100}
 														aria-label="Beat analysis progress"
 														style={{
-															// Bolt ⚡: Use hardware-accelerated transform instead of width to avoid layout thrashing
 															transform: `scaleX(${progress() ?? 0})`,
 															'transform-origin': 'left',
 															width: '100%',
