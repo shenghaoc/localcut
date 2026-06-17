@@ -18,7 +18,7 @@ interface LiteRtTensor {
 	delete(): void;
 }
 interface LiteRtCompiledModel {
-	run(signatureName: string, input: LiteRtTensor[]): Promise<LiteRtTensor[]>;
+	run(input: LiteRtTensor[]): Promise<LiteRtTensor[]>;
 	delete(): void;
 }
 interface LiteRtLoadOptions {
@@ -37,7 +37,6 @@ interface LiteRtApi {
 	};
 }
 
-const SIGNATURE = 'serving_default';
 let loadedRuntimeConfig: { wasmPath: string; options: LiteRtLoadOptions } | null = null;
 
 export interface DtlnRuntimeOptions {
@@ -170,7 +169,7 @@ export class DtlnRuntime {
 
 		let outputs: LiteRtTensor[];
 		try {
-			outputs = await this.compiled1.run(SIGNATURE, [inputTensor, stateTensor]);
+			outputs = await this.compiled1.run([inputTensor, stateTensor]);
 		} finally {
 			inputTensor.delete();
 			stateTensor.delete();
@@ -199,7 +198,7 @@ export class DtlnRuntime {
 
 		let outputs: LiteRtTensor[];
 		try {
-			outputs = await this.compiled2.run(SIGNATURE, [inputTensor, stateTensor]);
+			outputs = await this.compiled2.run([inputTensor, stateTensor]);
 		} finally {
 			inputTensor.delete();
 			stateTensor.delete();

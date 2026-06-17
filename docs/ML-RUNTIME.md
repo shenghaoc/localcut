@@ -153,9 +153,17 @@ New and in-flight ML work should target ORT, not LiteRT:
   weights (e.g. RVM) are rejected by `validateMatteOnnxManifest`. ORT-WebNN for
   matte is allowed only after a per-operator support proof. `DEFAULT_MATTE_BACKEND`
   flips to `ort-onnx` only once ORT quality + performance parity is proven.
-- **Existing LiteRT features (DTLN, Whisper)** keep working unchanged on their
-  current path. They migrate to ORT in their own dedicated PRs, not as a side
-  effect of unrelated work — this foundation does not touch them.
+- **DTLN audio cleanup** now also ships an **ORT/ONNX backend** alongside LiteRT,
+  selectable in the Audio Cleanup panel (`src/engine/audio-cleanup/dtln-ort-runtime.ts`,
+  `public/models/dtln-onnx/manifest.json`). DTLN's tensors are tiny, so it pins
+  the `wasm` (CPU) execution provider with CPU tensors — it is **not**
+  frame-coupled, so the EP policy permits `wasm`. ONNX is now the default after
+  real-audio A/B parity against LiteRT was verified; LiteRT remains selectable as
+  the rollback path. This is the migration template for a
+  small, non-frame-coupled LiteRT feature moving onto the ORT foundation.
+- **Remaining LiteRT-default features (Whisper and deployed portrait matte)**
+  keep working unchanged on their current paths. They migrate to ORT in their own
+  dedicated PRs, not as a side effect of unrelated work.
 
 ## Foundation module map
 

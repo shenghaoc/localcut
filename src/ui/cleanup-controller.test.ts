@@ -10,7 +10,13 @@ import {
 	type CleanupClipTarget,
 	type ClipAudioRequest
 } from './cleanup-controller';
-import type { CleanupProbeResult, CleanupWorkerCommand, CleanupWorkerState } from '../protocol';
+import type { CleanupWorkerPort } from './cleanup-bridge';
+import type {
+	CleanupBackendKind,
+	CleanupProbeResult,
+	CleanupWorkerCommand,
+	CleanupWorkerState
+} from '../protocol';
 
 const PROBE_OK: CleanupProbeResult = {
 	wasmAvailable: true,
@@ -43,6 +49,7 @@ const CLIP: CleanupClipTarget = {
 interface Harness {
 	controller: CleanupController;
 	spawnCount: () => number;
+	spawnedBackends: CleanupBackendKind[];
 	extractions: ClipAudioRequest[];
 	applied: ApplyCleanupRequest[];
 	workerCommands: CleanupWorkerCommand[];
@@ -54,6 +61,7 @@ interface Harness {
 
 function harness(): Harness {
 	let spawns = 0;
+	const spawnedBackends: CleanupBackendKind[] = [];
 	const extractions: ClipAudioRequest[] = [];
 	const applied: ApplyCleanupRequest[] = [];
 	const workerCommands: CleanupWorkerCommand[] = [];
@@ -63,8 +71,9 @@ function harness(): Harness {
 	let crash: (message: string) => void = () => undefined;
 
 	const controller = new CleanupController({
-		spawnWorker: async (onState, onCrash) => {
+		spawnWorker: async (backend, onState, onCrash) => {
 			spawns += 1;
+			spawnedBackends.push(backend);
 			postState = onState;
 			crash = onCrash;
 			return {
@@ -129,13 +138,17 @@ function harness(): Harness {
 			});
 		},
 		applyToClip: (request) => applied.push(request),
-		manifestUrl: '/models/dtln/manifest.json',
+		manifestUrls: {
+			litert: '/models/dtln/manifest.json',
+			ort: '/models/dtln-onnx/manifest.json'
+		},
 		wasmPath: '/litert/',
 		onError: (message) => errors.push(message)
 	});
 	return {
 		controller,
 		spawnCount: () => spawns,
+		spawnedBackends,
 		extractions,
 		applied,
 		workerCommands,
@@ -191,6 +204,127 @@ describe('CleanupController', () => {
 		);
 	});
 
+	it('defaults to the ONNX backend and loads its manifest', async () => {
+		const h = harness();
+		h.controller.setCleanupProbe(PROBE_OK);
+		expect(h.controller.getState().backend).toBe('ort');
+		expect(await h.controller.loadModel()).toBe(true);
+		expect(h.spawnedBackends).toEqual(['ort']);
+		expect(h.workerCommands).toContainEqual(
+			expect.objectContaining({
+				type: 'cleanup-load-model',
+				manifestUrl: '/models/dtln-onnx/manifest.json'
+			})
+		);
+	});
+
+	it('switching to the LiteRT backend tears down the worker and loads the LiteRT manifest', async () => {
+		const h = harness();
+		h.controller.setCleanupProbe(PROBE_OK);
+		expect(await h.controller.loadModel()).toBe(true);
+		expect(h.controller.getState().modelStatus).toBe('loaded');
+
+		h.controller.setBackend('litert');
+		const switched = h.controller.getState();
+		expect(switched.backend).toBe('litert');
+		expect(switched.modelStatus).toBe('not-loaded');
+		expect(switched.accelerator).toBeNull();
+
+		expect(await h.controller.loadModel()).toBe(true);
+		expect(h.spawnedBackends).toEqual(['ort', 'litert']);
+		const loads = h.workerCommands.filter((cmd) => cmd.type === 'cleanup-load-model');
+		expect(loads.at(-1)).toEqual(
+			expect.objectContaining({ manifestUrl: '/models/dtln/manifest.json' })
+		);
+	});
+
+	it('terminates a stale worker that resolves after a backend switch', async () => {
+		const spawnedBackends: CleanupBackendKind[] = [];
+		const resolveSpawn: Array<() => void> = [];
+		const terminated: CleanupBackendKind[] = [];
+		const commands: Array<{ backend: CleanupBackendKind; command: CleanupWorkerCommand }> = [];
+		const controller = new CleanupController({
+			spawnWorker: async (backend, onState): Promise<CleanupWorkerPort> => {
+				spawnedBackends.push(backend);
+				return new Promise((resolve) => {
+					resolveSpawn.push(() => {
+						resolve({
+							send(command) {
+								commands.push({ backend, command });
+								if (command.type === 'cleanup-load-model') {
+									queueMicrotask(() =>
+										onState({
+											type: 'cleanup-model-status',
+											status: 'loaded',
+											accelerator: 'wasm',
+											sizeBytes: 3_538_944
+										})
+									);
+								}
+							},
+							terminate() {
+								terminated.push(backend);
+							}
+						});
+					});
+				});
+			},
+			requestClipAudio: () => undefined,
+			applyToClip: () => undefined,
+			manifestUrls: {
+				litert: '/models/dtln/manifest.json',
+				ort: '/models/dtln-onnx/manifest.json'
+			},
+			wasmPath: '/litert/'
+		});
+		controller.setCleanupProbe(PROBE_OK);
+
+		const pendingOnnxLoad = controller.loadModel();
+		await vi.waitFor(() => expect(spawnedBackends).toEqual(['ort']));
+		controller.setBackend('litert');
+		resolveSpawn[0]!();
+
+		expect(await pendingOnnxLoad).toBe(false);
+		expect(terminated).toEqual(['ort']);
+		expect(commands).toEqual([]);
+		expect(controller.getState()).toMatchObject({
+			backend: 'litert',
+			modelStatus: 'not-loaded',
+			error: null
+		});
+
+		const pendingLitertLoad = controller.loadModel();
+		await vi.waitFor(() => expect(spawnedBackends).toEqual(['ort', 'litert']));
+		resolveSpawn[1]!();
+
+		expect(await pendingLitertLoad).toBe(true);
+		expect(commands).toEqual([
+			expect.objectContaining({
+				backend: 'litert',
+				command: expect.objectContaining({
+					type: 'cleanup-load-model',
+					manifestUrl: '/models/dtln/manifest.json'
+				})
+			})
+		]);
+	});
+
+	it('tags applied cleanup with the ONNX model id by default', async () => {
+		const h = harness();
+		h.controller.setCleanupProbe(PROBE_OK);
+		expect(await h.controller.applyCleanup({ ...CLIP, durationS: 4 })).toBe(true);
+		expect(h.applied[0]!.modelId).toBe('dtln-onnx');
+	});
+
+	it('re-selecting the active backend is a no-op that keeps the loaded model', async () => {
+		const h = harness();
+		h.controller.setCleanupProbe(PROBE_OK);
+		expect(await h.controller.loadModel()).toBe(true);
+		h.controller.setBackend('ort');
+		expect(h.controller.getState().modelStatus).toBe('loaded');
+		expect(h.spawnCount()).toBe(1);
+	});
+
 	it('runs a preview job over a bounded range and stores A/B buffers', async () => {
 		const h = harness();
 		h.controller.setCleanupProbe(PROBE_OK);
@@ -217,7 +351,7 @@ describe('CleanupController', () => {
 		expect(request.fileName).toBe('interview.cleaned.wav');
 		expect(request.clipInPointS).toBe(1.5);
 		expect(request.durationS).toBe(12);
-		expect(request.modelId).toBe('dtln');
+		expect(request.modelId).toBe('dtln-onnx');
 		expect(h.controller.getState().job?.phase).toBe('applying');
 		h.controller.handlePipelineMessage({
 			type: 'audio-cleanup-applied',

@@ -1005,7 +1005,10 @@ export function App() {
 				modelVersion: request.modelVersion
 			});
 		},
-		manifestUrl: `${import.meta.env.BASE_URL}models/dtln/manifest.json`,
+		manifestUrls: {
+			litert: `${import.meta.env.BASE_URL}models/dtln/manifest.json`,
+			ort: `${import.meta.env.BASE_URL}models/dtln-onnx/manifest.json`
+		},
 		wasmPath: CLEANUP_WASM_PATH,
 		onError: (message) => {
 			setRecentErrorLog((prev) =>
@@ -5202,6 +5205,7 @@ export function App() {
 						state={cleanupState()}
 						selectedClip={selectedAudioCleanupClip()}
 						appliedCleanup={appliedCleanupInfo()}
+						onSelectBackend={(backend) => cleanupController.setBackend(backend)}
 						onLoadModel={() => void cleanupController.loadModel()}
 						onPreview={() => {
 							const clip = selectedAudioCleanupClip();
