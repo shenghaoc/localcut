@@ -1347,12 +1347,17 @@ export function App() {
 		for (const ref of selectedClipRefs()) {
 			const clip = findTimelineClip(ref);
 			if (clip) {
+				const sourceVideo = clip.sourceId
+					? assets().find((asset) => asset.sourceId === clip.sourceId)?.video
+					: undefined;
 				const localTime = clipLocalTime(clip, clock.currentTime());
 				return {
 					trackId: ref.trackId,
 					clipId: clip.id,
 					kind: clip.kind,
 					sourceId: clip.sourceId,
+					sourceWidth: sourceVideo?.width,
+					sourceHeight: sourceVideo?.height,
 					start: clip.start,
 					inPoint: clip.inPoint,
 					duration: clip.duration,
@@ -4541,6 +4546,7 @@ export function App() {
 													selectedTransition={selectedTransition()}
 													capabilityTier={capabilityProbeV2()?.tier}
 													sessionEventLogs={sessionEventLogs()}
+													mediaAssets={assets()}
 													onPickPreviewRegion={requestPreviewRegionPick}
 													onSetTitle={(trackId, clipId, patch) =>
 														bridge?.send({ type: 'set-title', trackId, clipId, ...patch })

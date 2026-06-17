@@ -12,6 +12,7 @@ import {
 	type AutoZoomParams,
 	type ZoomProposal
 } from '../engine/auto-zoom';
+import { parseEventsSidecar } from '../engine/capture/events-sidecar';
 import { parseDomEventLog, type DomEventLogEntry } from '../engine/dom-event-log';
 import type { ClipKeyframesSnapshot, SessionEventLogRef } from '../protocol';
 
@@ -19,6 +20,8 @@ interface AutoZoomPanelProps {
 	clipId: string;
 	trackId: string;
 	clipStartUs?: number;
+	sourceWidth?: number;
+	sourceHeight?: number;
 	sessionEventLogRef?: SessionEventLogRef;
 	onSetKeyframes: (trackId: string, clipId: string, keyframes: ClipKeyframesSnapshot) => void;
 }
@@ -29,6 +32,40 @@ function formatTime(us: number): string {
 	const m = Math.floor((totalS % 3600) / 60);
 	const s = totalS % 60;
 	return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${s.toFixed(3).padStart(6, '0')}`;
+}
+
+function clamp01(value: number): number {
+	return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
+}
+
+function parseLoadedEvents(
+	text: string,
+	ref: SessionEventLogRef,
+	sourceWidth?: number,
+	sourceHeight?: number
+): DomEventLogEntry[] | null {
+	if (ref.opfsPath.endsWith('.ndjson')) {
+		const captureEntries = parseEventsSidecar(text).filter(
+			(
+				entry
+			): entry is Extract<
+				ReturnType<typeof parseEventsSidecar>[number],
+				{ kind: 'pointer-down' }
+			> => entry.kind === 'pointer-down'
+		);
+		const fallbackWidth = Math.max(1, ...captureEntries.map((entry) => entry.x));
+		const fallbackHeight = Math.max(1, ...captureEntries.map((entry) => entry.y));
+		const width = sourceWidth && sourceWidth > 0 ? sourceWidth : fallbackWidth;
+		const height = sourceHeight && sourceHeight > 0 ? sourceHeight : fallbackHeight;
+		return captureEntries.map((entry) => ({
+			t: Math.round(entry.t * 1_000_000),
+			kind: 'click',
+			x: clamp01(entry.x / width),
+			y: clamp01(entry.y / height)
+		}));
+	}
+	const log = parseDomEventLog(JSON.parse(text));
+	return log?.events ?? null;
 }
 
 export function AutoZoomPanel(props: AutoZoomPanelProps) {
@@ -62,9 +99,10 @@ export function AutoZoomPanel(props: AutoZoomPanelProps) {
 				const fileHandle = await dir.getFileHandle(fileName);
 				const file = await fileHandle.getFile();
 				const text = await file.text();
-				const log = parseDomEventLog(JSON.parse(text));
-				if (log) {
-					setEntries(log.events);
+				const parsed = parseLoadedEvents(text, ref, props.sourceWidth, props.sourceHeight);
+				if (parsed) {
+					setEntries(parsed);
+					setProposals(clusterEvents(parsed, params(), props.clipStartUs ?? 0));
 				} else {
 					setError('Invalid event log format');
 				}

@@ -5,13 +5,19 @@
  */
 
 import { createSignal, createEffect, Show, For, onCleanup } from 'solid-js';
-import type { PaddedBackgroundParams, PaddedBackgroundKind, GradientStop } from '../protocol';
+import type {
+	MediaAssetSnapshot,
+	PaddedBackgroundParams,
+	PaddedBackgroundKind,
+	GradientStop
+} from '../protocol';
 import { DEFAULT_PADDED_BACKGROUND } from '../engine/padded-background';
 
 interface PaddedBackgroundPanelProps {
 	trackId: string;
 	clipId: string;
 	paddedBackground?: PaddedBackgroundParams;
+	mediaAssets?: readonly MediaAssetSnapshot[];
 	onSetPaddedBackground: (
 		trackId: string,
 		clipId: string,
@@ -66,6 +72,8 @@ export function PaddedBackgroundPanel(props: PaddedBackgroundPanelProps) {
 	});
 
 	const bgKind = () => params().background.kind;
+	const wallpaperAssets = () =>
+		(props.mediaAssets ?? []).filter((asset) => asset.kind === 'video' || asset.kind === 'image');
 
 	return (
 		<section class="inspector-section">
@@ -181,6 +189,26 @@ export function PaddedBackgroundPanel(props: PaddedBackgroundPanelProps) {
 									updateParam('background', { ...bg, angleDeg: Number(e.currentTarget.value) });
 								}}
 							/>
+						</label>
+					</Show>
+
+					<Show when={bgKind() === 'wallpaper'}>
+						<label>
+							Wallpaper source
+							<select
+								value={(params().background as { kind: 'wallpaper'; sourceId: string }).sourceId}
+								onChange={(e) =>
+									updateParam('background', {
+										kind: 'wallpaper',
+										sourceId: e.currentTarget.value
+									})
+								}
+							>
+								<option value="">Select media...</option>
+								<For each={wallpaperAssets()}>
+									{(asset) => <option value={asset.sourceId}>{asset.fileName}</option>}
+								</For>
+							</select>
 						</label>
 					</Show>
 

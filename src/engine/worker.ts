@@ -953,6 +953,22 @@ function applyCaptureLanding(
 	);
 
 	if (!committed) return [];
+	const primaryScreenSourceId = sourceClips.find(({ source }) => source.kind === 'screen')?.source
+		.sourceId;
+	if (primaryScreenSourceId) {
+		const nextRef: import('../protocol').SessionEventLogRef = {
+			sessionId: session.sessionId,
+			sourceId: primaryScreenSourceId,
+			opfsPath: `capture/${session.sessionId}/events.ndjson`
+		};
+		sessionEventLogs = [
+			...sessionEventLogs.filter(
+				(ref) => !(ref.sessionId === nextRef.sessionId && ref.sourceId === nextRef.sourceId)
+			),
+			nextRef
+		];
+		postTimelineState();
+	}
 	postMediaAssets();
 	for (const descriptor of descriptors.values()) {
 		postSourceHealth(

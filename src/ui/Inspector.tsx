@@ -12,6 +12,7 @@ import type {
 	CapabilityTierV2,
 	FitModeSnapshot,
 	KeyframeEasingSnapshot,
+	MediaAssetSnapshot,
 	MediaMetadata,
 	PaddedBackgroundParams,
 	SessionEventLogRef,
@@ -40,6 +41,8 @@ export interface SelectedClip {
 	clipId: string;
 	kind?: import('../protocol').ClipKindSnapshot;
 	sourceId?: string;
+	sourceWidth?: number;
+	sourceHeight?: number;
 	start: number;
 	inPoint?: number;
 	duration: number;
@@ -105,6 +108,7 @@ interface InspectorProps {
 	selectedTransition: SelectedTransition | null;
 	capabilityTier?: CapabilityTierV2;
 	sessionEventLogs?: readonly SessionEventLogRef[];
+	mediaAssets?: readonly MediaAssetSnapshot[];
 	onPickPreviewRegion?: (onPick: (x: number, y: number) => void) => void;
 	playheadTime: number;
 	onSetTitle: (
@@ -1529,6 +1533,8 @@ export function Inspector(props: InspectorProps) {
 												clipId={selected().clipId}
 												sessionEventLogRef={selectedEventLogRef()}
 												clipStartUs={Math.round((selected().inPoint ?? 0) * 1_000_000)}
+												sourceWidth={selected().sourceWidth}
+												sourceHeight={selected().sourceHeight}
 												onSetKeyframes={(trackId, clipId, keyframes) =>
 													props.onReplaceKeyframeTracks?.(trackId, clipId, keyframes)
 												}
@@ -1538,6 +1544,7 @@ export function Inspector(props: InspectorProps) {
 													trackId={selected().trackId}
 													clipId={selected().clipId}
 													paddedBackground={selected().paddedBackground}
+													mediaAssets={props.mediaAssets}
 													onSetPaddedBackground={(trackId, clipId, params) =>
 														props.onSetPaddedBackground?.(trackId, clipId, params)
 													}
