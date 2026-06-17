@@ -486,7 +486,7 @@ export class CaptureSession {
 			(s) =>
 				(s.kind === 'screen' || s.kind === 'webcam') && s.state !== 'error' && s.state !== 'ended'
 		);
-		if (remainingVideo.length === 0 && this.state === 'recording') {
+		if (remainingVideo.length === 0 && (this.state === 'recording' || this.state === 'paused')) {
 			this.stop('error').catch(() => {});
 		}
 	}

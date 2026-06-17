@@ -486,6 +486,18 @@ unwrapped base64 blob — the chunking is dead code.
 **Expected:** `lines.join('" +\n\t"')` so the chunks become adjacent string
 literals separated by line breaks, matching the format the comment claims.
 
+### B35 — Phase 42 `handleSourceError` ignores paused state
+
+`capture-session.ts:371` auto-stops the session when all video sources error
+out, but only checks `this.state === 'recording'`. If the session is in
+`'paused'` state and all video sources fail, the session stays stuck in the
+paused state indefinitely — the user cannot stop it cleanly. Compare with
+`handlePipelineEnded` (line 396) which correctly checks both `'recording'`
+and `'paused'`.
+
+**Expected:** Check `this.state === 'recording' || this.state === 'paused'`
+so auto-stop fires regardless of the paused/recording distinction.
+
 ## Findings reviewed and intentionally excluded
 
 For audit transparency, several reviewer comments were checked and **not**
@@ -529,3 +541,11 @@ acted on. The reasons:
   `pcmAtForAudioCleanup` — both paths feed into ASR and Audio Cleanup, both
   LiteRT-dependent. Deferred to the ONNX migration so we don't fix code
   that's about to be rewritten.
+- **Phase 42 `appendManifest` flush not awaited:** Codex flagged
+  `writer-worker.ts:429` calling `manifestAccess.flush()` without `await`.
+  `manifestAccess` is a `FileSystemSyncAccessHandle` whose `flush()` returns
+  `void` synchronously — there is nothing to await. The reviewer confused
+  `SyncAccessHandle.flush()` (sync) with `FileSystemWritableFileStream.flush()`
+  (async). The existing `await flush()` calls elsewhere in the same file
+  produce the same `await-thenable` lint warning and are equally no-ops.
+  No change.

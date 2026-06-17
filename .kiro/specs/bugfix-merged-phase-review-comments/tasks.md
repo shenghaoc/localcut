@@ -203,6 +203,11 @@
 - [x] **T17.1** `scripts/build-wasm.mjs`: `lines.join('" +\n\t"')` so the
   generated TS embeds adjacent string literals.
 
+## T19 — Phase 42 Recorder UX (B35)
+
+- [x] **T19.1** `capture-session.ts handleSourceError`: check `this.state === 'recording' || this.state === 'paused'` so auto-stop fires when paused (B35).
+- [~] **T19.2** ~`writer-worker.ts appendManifest`: `await manifestAccess.flush()`~ — excluded: `SyncAccessHandle.flush()` is synchronous (returns `void`); the reviewer confused it with the async `FileSystemWritableFileStream.flush()`. No change.
+
 ## T18 — Gate
 
 - [x] **T18.1** `pnpm run check` green (format + lint + typecheck + 2010
