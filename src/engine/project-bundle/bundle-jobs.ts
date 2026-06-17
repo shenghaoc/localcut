@@ -53,6 +53,7 @@ export interface BundleWorkerContext {
 		customAnimCaptionPresets?: ProjectDoc['customAnimCaptionPresets'];
 		projectFormat?: ProjectDoc['projectFormat'];
 		cover?: ProjectDoc['cover'];
+		scenes?: ProjectDoc['scenes'];
 	};
 	resolveSourceFile: (sourceId: string) => Promise<File | null>;
 	collectLuts: () => readonly ClipLut[];
@@ -145,7 +146,8 @@ export async function runExportProjectBundle(
 		exportSettings: state.exportSettings,
 		customAnimCaptionPresets: state.customAnimCaptionPresets,
 		projectFormat: state.projectFormat,
-		cover: state.cover
+		cover: state.cover,
+		scenes: state.scenes
 	});
 
 	try {

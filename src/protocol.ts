@@ -2698,6 +2698,7 @@ export type WorkerStateMessage =
 			sources: ProgramSourceStatusSnapshot[];
 	  }
 	| { type: 'program-error'; code: ProgramErrorCode; detail: string }
+	| { type: 'program-scenes'; scenes: SceneDefinition[] }
 	| {
 			type: 'program-landed';
 			sessionId: string;

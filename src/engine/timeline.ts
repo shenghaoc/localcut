@@ -442,7 +442,22 @@ export function resolveLayoutAt(timeline: Timeline, time: number): LayoutClip | 
 	if (!finite(time) || time < 0) return null;
 	for (const track of timeline) {
 		if (track.type !== 'layout') continue;
+		if (!track.visible) continue;
 		if (!track.layoutClips) continue;
+		if (track.clips.length > 0) {
+			for (const timelineClip of track.clips) {
+				const layoutClip = track.layoutClips.find((clip) => clip.id === timelineClip.id);
+				if (!layoutClip) continue;
+				if (time >= timelineClip.start && time < timelineClip.start + timelineClip.duration) {
+					return {
+						...layoutClip,
+						startTime: timelineClip.start,
+						duration: timelineClip.duration
+					};
+				}
+			}
+			continue;
+		}
 		for (const clip of track.layoutClips) {
 			if (time >= clip.startTime && time < clip.startTime + clip.duration) {
 				return clip;

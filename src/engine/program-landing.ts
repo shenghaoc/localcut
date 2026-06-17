@@ -9,6 +9,7 @@
 import type { SceneDefinition } from '../protocol';
 import type { CaptureManifestRecord } from './capture/chunk-manifest';
 import type { LayoutClip, TimelineTrack } from './timeline';
+import { defaultTimelineClip } from './timeline';
 
 export interface ProgramLandingConfig {
 	sessionId: string;
@@ -99,7 +100,15 @@ export function createLayoutTrack(clips: LayoutClip[], trackId: string): Timelin
 	return {
 		id: trackId,
 		type: 'layout',
-		clips: [], // Layout tracks use layoutClips, not clips
+		clips: clips.map((clip) =>
+			defaultTimelineClip({
+				id: clip.id,
+				sourceId: clip.sceneId,
+				start: clip.startTime,
+				duration: clip.duration,
+				inPoint: 0
+			})
+		),
 		gain: 1,
 		pan: 0,
 		muted: false,
@@ -114,7 +123,7 @@ export function createLayoutTrack(clips: LayoutClip[], trackId: string): Timelin
 
 /**
  * Landing entry point: reads scene-switch records from the parsed manifest,
- * builds LayoutClip segments, and returns the layout track and ISO track IDs.
+ * builds LayoutClip segments, and returns the layout track plus sidecar clips.
  */
 export function landProgramSession(
 	records: CaptureManifestRecord[],

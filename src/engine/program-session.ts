@@ -4,17 +4,18 @@
  * Extends Phase 41's session model: acquires N EncoderLease objects up front
  * (or blocks with budget error), creates N TrackPipeline instances via the
  * existing CaptureSession, manages the ProgramCompositor and LiveComposeTap,
- * writes scene-switch manifest records, and on stop calls the landing routine.
+ * writes scene-switch manifest records, and on stop returns the layout overlay
+ * for the worker's shared capture landing routine.
  */
 
-import type { ProgramSessionConfig, ProgramLandedResult, SceneDefinition } from '../protocol';
+import type { ProgramSessionConfig, SceneDefinition } from '../protocol';
 import type { EncoderBudget, EncoderLease } from './encoder-budget';
 import type { CaptureSession } from './capture/capture-session';
 import type { ProgramCompositor } from './program-compositor';
 import type { LiveComposeTap } from './live-compose-tap';
 import { landProgramSession } from './program-landing';
 import type { CaptureManifestRecord } from './capture/chunk-manifest';
-import { DEFAULT_TRACK_MIX, defaultTimelineClip, type TimelineTrack } from './timeline';
+import type { TimelineTrack } from './timeline';
 
 /** Error thrown when the encoder budget is exhausted before session start. */
 export class ProgramBudgetError extends Error {
@@ -40,7 +41,7 @@ export interface ProgramSession {
 	/** Updates scene definitions mid-session. */
 	updateScenes(scenes: SceneDefinition[]): void;
 
-	/** Stops the session and lands the project. */
+	/** Stops the session and returns the layout overlay for worker-side landing. */
 	stop(): Promise<ProgramStopResult>;
 
 	/** Returns the current session state. */
@@ -53,8 +54,8 @@ export interface ProgramSession {
 	getScenes(): readonly SceneDefinition[];
 }
 
-export interface ProgramStopResult extends ProgramLandedResult {
-	isoTracks: TimelineTrack[];
+export interface ProgramStopResult {
+	sessionId: string;
 	layoutTrack: TimelineTrack | null;
 }
 
@@ -178,27 +179,12 @@ export function createProgramSession(
 				state = 'idle';
 			}
 
-			const epochUs = startUs ?? endUs;
-			const durationS = Math.max(0.001, (endUs - epochUs) / 1_000_000);
-			const sourceSnapshots = captureSession.getSourceSnapshots();
-			const isoTracks = sourceSnapshots.map((source) => ({
-				id: `iso-${captureSession.sessionId}-${source.sourceId}`,
-				type:
-					source.kind === 'screen' || source.kind === 'webcam'
-						? ('video' as const)
-						: ('audio' as const),
-				clips: [
-					defaultTimelineClip({
-						id: `clip-${captureSession.sessionId}-${source.sourceId}`,
-						sourceId: source.sourceId,
-						start: 0,
-						duration: durationS,
-						inPoint: 0
-					})
-				],
-				...DEFAULT_TRACK_MIX,
-				editTarget: false
-			}));
+			const epochUs =
+				captureSession.epochValue ??
+				Math.min(
+					...captureSession.getLandingSources().map((source) => source.firstSampleUs),
+					startUs ?? endUs
+				);
 			const { layoutTrack } = landProgramSession(sceneSwitches as CaptureManifestRecord[], {
 				sessionId: captureSession.sessionId,
 				scenes,
@@ -209,9 +195,6 @@ export function createProgramSession(
 
 			return {
 				sessionId: captureSession.sessionId,
-				isoTrackIds: isoTracks.map((track) => track.id),
-				layoutTrackId: layoutTrack?.id ?? '',
-				isoTracks,
 				layoutTrack
 			};
 		},

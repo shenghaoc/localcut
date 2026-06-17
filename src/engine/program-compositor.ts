@@ -68,6 +68,33 @@ export function createProgramCompositor(config: ProgramCompositorConfig): Progra
 	let transitionStart = 0;
 	let outgoingSceneId = '';
 	let transitionMs: 0 | 200 = 0;
+	let nextLayerObjectKey = 0;
+	const layerObjectKeys = new WeakMap<object, string>();
+
+	function layerObjectKey(object: object): string {
+		let key = layerObjectKeys.get(object);
+		if (!key) {
+			key = String(nextLayerObjectKey++);
+			layerObjectKeys.set(object, key);
+		}
+		return key;
+	}
+
+	function layerSourceKey(layer: CompositeLayer): string {
+		return layer.kind === 'frame'
+			? `frame:${layerObjectKey(layer.frame)}`
+			: `texture:${layerObjectKey(layer.view)}`;
+	}
+
+	function withOpacity(layer: CompositeLayer, opacity: number): CompositeLayer {
+		return {
+			...layer,
+			transform: {
+				...layer.transform,
+				opacity
+			}
+		};
+	}
 
 	function buildLayers(): CompositeLayer[] {
 		// Apply eased opacity during transition window
@@ -93,16 +120,20 @@ export function createProgramCompositor(config: ProgramCompositorConfig): Progra
 					sourceWidth,
 					sourceHeight
 				);
-				// Merge opacity: for each layer, lerp between outgoing and incoming opacity
-				for (const layer of layers) {
-					const outgoing = outgoingLayers.find((l) => l.transform === layer.transform);
-					if (outgoing) {
-						layer.transform = {
-							...layer.transform,
-							opacity: outgoing.transform.opacity * (1 - t) + layer.transform.opacity * t
-						};
-					}
-				}
+				const incomingKeys = new Set(layers.map(layerSourceKey));
+				const outgoingOnly = outgoingLayers
+					.filter((layer) => !incomingKeys.has(layerSourceKey(layer)))
+					.map((layer) => withOpacity(layer, layer.transform.opacity * (1 - t)));
+				const blendedIncoming = layers.map((layer) => {
+					const outgoing = outgoingLayers.find(
+						(candidate) => layerSourceKey(candidate) === layerSourceKey(layer)
+					);
+					const opacity = outgoing
+						? outgoing.transform.opacity * (1 - t) + layer.transform.opacity * t
+						: layer.transform.opacity * t;
+					return withOpacity(layer, opacity);
+				});
+				return [...outgoingOnly, ...blendedIncoming];
 			} else {
 				// Transition complete
 				transitionMs = 0;

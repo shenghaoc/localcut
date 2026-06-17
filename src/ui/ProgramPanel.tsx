@@ -7,7 +7,7 @@
  * reasons when unavailable.
  */
 
-import { For, Show, createMemo } from 'solid-js';
+import { For, Show, createEffect, createMemo, onCleanup } from 'solid-js';
 import type {
 	SceneDefinition,
 	SceneLayer,
@@ -76,6 +76,12 @@ export function ProgramPanel(props: ProgramPanelProps) {
 	// Hotkey listener: active only when session is running
 	const handleKeydown = (e: KeyboardEvent) => {
 		if (!isRunning()) return;
+		if (
+			e.target instanceof HTMLElement &&
+			e.target.closest('input, textarea, select, button, [contenteditable="true"]')
+		) {
+			return;
+		}
 		const key = e.key;
 		if (HOTKEYS.includes(key as (typeof HOTKEYS)[number])) {
 			const scene = props.scenes().find((s) => s.hotkey === key);
@@ -87,8 +93,11 @@ export function ProgramPanel(props: ProgramPanelProps) {
 		}
 	};
 
-	// Register hotkey listener on the program monitor area
-	// The listener is removed via onCleanup when the component unmounts
+	createEffect(() => {
+		if (!isRunning()) return;
+		window.addEventListener('keydown', handleKeydown);
+		onCleanup(() => window.removeEventListener('keydown', handleKeydown));
+	});
 
 	return (
 		<Show
@@ -188,10 +197,16 @@ export function ProgramPanel(props: ProgramPanelProps) {
 								<Show
 									when={isIdle()}
 									fallback={
-										<span class="program-panel-scene-name">
+										<button
+											type="button"
+											class="program-panel-scene-switch-btn"
+											onClick={() => props.onSwitchScene(scene.id)}
+											aria-pressed={props.activeSceneId() === scene.id}
+											disabled={props.sessionState() === 'stopping'}
+										>
 											{scene.hotkey ? `[${scene.hotkey}] ` : ''}
 											{scene.name}
-										</span>
+										</button>
 									}
 								>
 									<input

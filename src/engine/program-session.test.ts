@@ -59,13 +59,16 @@ function fakeCaptureSession() {
 		start,
 		stop,
 		appendSceneSwitch,
-		getSourceSnapshots: vi.fn(() => [
+		epochValue: 1_000_000,
+		getLandingSources: vi.fn(() => [
 			{
 				sourceId: 'cam-1',
 				kind: 'webcam' as const,
 				label: 'Camera',
-				encoderConfig: 'avc1.42001E',
-				hardwareAcceleration: 'prefer-hardware' as const
+				firstSampleUs: 1_000_000,
+				lastSampleUs: 2_500_000,
+				bytesWritten: 1024,
+				captureMode: 'full' as const
 			}
 		])
 	} as unknown as CaptureSession;
@@ -100,7 +103,7 @@ afterEach(() => {
 });
 
 describe('createProgramSession', () => {
-	it('starts capture, records scene switches, and lands ISO plus layout tracks', async () => {
+	it('starts capture, records scene switches, and returns the layout track', async () => {
 		vi.spyOn(performance, 'now')
 			.mockReturnValueOnce(1_000)
 			.mockReturnValueOnce(1_500)
@@ -120,9 +123,8 @@ describe('createProgramSession', () => {
 		expect(capture.appendSceneSwitch).toHaveBeenCalledWith('scene-2', 1_500_000);
 		expect(capture.stop).toHaveBeenCalledWith('user-stop');
 		expect(result.sessionId).toBe('program-test');
-		expect(result.isoTracks).toHaveLength(1);
-		expect(result.isoTrackIds).toEqual(['iso-program-test-cam-1']);
 		expect(result.layoutTrack?.layoutClips).toHaveLength(2);
+		expect(result.layoutTrack?.clips).toHaveLength(2);
 		expect(result.layoutTrack?.layoutClips?.map((clip) => clip.sceneId)).toEqual([
 			'scene-1',
 			'scene-2'

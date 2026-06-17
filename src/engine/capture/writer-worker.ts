@@ -125,6 +125,11 @@ interface ChunkErrorMessage {
 	error: string;
 }
 
+interface FinalizeAckMessage {
+	type: 'finalize-ack';
+	sessionId: string;
+}
+
 interface RecoveryListMessage {
 	type: 'recovery-list';
 	sessions: Array<{
@@ -136,7 +141,7 @@ interface RecoveryListMessage {
 	}>;
 }
 
-type ClientMessage = ChunkAckMessage | ChunkErrorMessage | RecoveryListMessage;
+type ClientMessage = ChunkAckMessage | ChunkErrorMessage | FinalizeAckMessage | RecoveryListMessage;
 
 interface OpenFile {
 	handle: FileSystemSyncAccessHandle;
@@ -357,6 +362,7 @@ class CaptureWriter {
 
 		this.sessions.delete(sessionId);
 		this.manifestHandles.delete(sessionId);
+		this.post({ type: 'finalize-ack', sessionId });
 	}
 
 	private async handleScanSessions(): Promise<void> {

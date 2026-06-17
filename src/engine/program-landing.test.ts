@@ -186,6 +186,13 @@ describe('createLayoutTrack', () => {
 		expect(track).not.toBeNull();
 		expect(track!.type).toBe('layout');
 		expect(track!.id).toBe('layout-test');
+		expect(track!.clips).toHaveLength(1);
+		expect(track!.clips[0]).toMatchObject({
+			id: 'clip-0',
+			sourceId: 'scene-1',
+			start: 0,
+			duration: 10
+		});
 		expect(track!.layoutClips).toEqual(clips);
 	});
 

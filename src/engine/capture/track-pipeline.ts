@@ -217,15 +217,17 @@ export class TrackPipeline {
 				}
 				const frame = result.value as VideoFrame;
 				try {
-					let composeFrame: VideoFrame | null = null;
-					try {
-						if (this.options.onVideoFrame) {
-							composeFrame = frame.clone();
+					if (this.options.onVideoFrame) {
+						const composeFrame = frame.clone();
+						let transferred = false;
+						try {
 							this.options.onVideoFrame(this.sourceId, composeFrame);
-							composeFrame = null;
+							transferred = true;
+						} finally {
+							if (!transferred) {
+								composeFrame.close();
+							}
 						}
-					} finally {
-						composeFrame?.close();
 					}
 
 					if (encoder.encodeQueueSize > VIDEO_QUEUE_BOUND) {

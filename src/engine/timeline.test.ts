@@ -54,6 +54,7 @@ import {
 	liftRegion,
 	extractRegion,
 	replaceClipKeyframeTracks,
+	resolveLayoutAt,
 	type TimelineClip,
 	type TimelineTrack,
 	type TimelineMarker,
@@ -2182,5 +2183,64 @@ describe('replaceClipKeyframeTracks (Phase 33 R7.5)', () => {
 		const next = replaceClipKeyframeTracks(tl, 'v', 'c', {}, 'fill');
 		expect(next).not.toBe(tl);
 		expect(next[0]!.clips[0]!.transform.fit).toBe('fill');
+	});
+
+	it('resolves layout clips from mirrored timeline timing', () => {
+		const layoutClip = {
+			id: 'layout-1',
+			kind: 'layout' as const,
+			startTime: 0,
+			duration: 5,
+			sceneId: 'scene-1',
+			sceneSnapshot: { id: 'scene-1', name: 'Scene', hotkey: null, layers: [] }
+		};
+		const tl: TimelineTrack[] = [
+			{
+				id: 'layout',
+				type: 'layout',
+				...DEFAULT_TRACK_MIX,
+				clips: [
+					clip({
+						id: 'layout-1',
+						sourceId: 'scene-1',
+						start: 3,
+						duration: 2,
+						inPoint: 0
+					})
+				],
+				layoutClips: [layoutClip]
+			}
+		];
+
+		expect(resolveLayoutAt(tl, 1)).toBeNull();
+		expect(resolveLayoutAt(tl, 3.5)).toMatchObject({
+			id: 'layout-1',
+			startTime: 3,
+			duration: 2
+		});
+	});
+
+	it('skips hidden layout tracks', () => {
+		const tl: TimelineTrack[] = [
+			{
+				id: 'layout',
+				type: 'layout',
+				...DEFAULT_TRACK_MIX,
+				visible: false,
+				clips: [],
+				layoutClips: [
+					{
+						id: 'layout-1',
+						kind: 'layout',
+						startTime: 0,
+						duration: 5,
+						sceneId: 'scene-1',
+						sceneSnapshot: { id: 'scene-1', name: 'Scene', hotkey: null, layers: [] }
+					}
+				]
+			}
+		];
+
+		expect(resolveLayoutAt(tl, 1)).toBeNull();
 	});
 });

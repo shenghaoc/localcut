@@ -2255,11 +2255,27 @@ body {
 }
 
 .program-panel-source-label,
-.program-panel-scene-name {
+.program-panel-scene-name,
+.program-panel-scene-switch-btn {
 	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+}
+
+.program-panel-scene-switch-btn {
+	border: 0;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+	padding: 0;
+}
+
+.program-panel-scene-switch-btn:disabled {
+	cursor: not-allowed;
+	opacity: 0.65;
 }
 
 .program-panel-scene--active {

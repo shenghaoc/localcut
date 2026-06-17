@@ -122,6 +122,7 @@ import {
 	exportConstraintsForProbe,
 	probeCapabilities as probeCapabilitiesV2
 } from '../engine/capability-probe-v2';
+import { budgetSessionsForProbe } from '../engine/encoder-budget';
 import { compatibilityReadiness } from '../engine/compatibility/compat-status';
 import { extractCompatibilityPreview } from '../compatibility/thumbnail';
 import {
@@ -1710,9 +1711,12 @@ export function App() {
 		const activeVideo = programSourceStatus().filter(
 			(source) => source.kind === 'screen' || source.kind === 'webcam'
 		).length;
+		const max = budgetSessionsForProbe(
+			capabilityProbeV2()?.livePublish.hardwareH264Encode === 'supported'
+		);
 		return {
 			active: (publishBusy() ? 1 : 0) + Math.max(pendingVideo, activeVideo),
-			max: 2
+			max
 		};
 	});
 
@@ -1750,9 +1754,7 @@ export function App() {
 	}
 
 	function syncProgramScenes(next: SceneDefinition[]): SceneDefinition[] {
-		if (programSessionState() !== 'idle') {
-			bridge?.send({ type: 'program-update-scenes', scenes: next });
-		}
+		bridge?.send({ type: 'program-update-scenes', scenes: next });
 		return next;
 	}
 
@@ -2523,6 +2525,9 @@ export function App() {
 				setProgramSessionState(msg.state);
 				setProgramActiveSceneId(msg.activeSceneId);
 				setProgramSourceStatus([...msg.sources]);
+				break;
+			case 'program-scenes':
+				setProgramScenes([...msg.scenes]);
 				break;
 			case 'program-error':
 				setProgramError(msg.detail);

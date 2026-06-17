@@ -17,7 +17,6 @@ export interface CaptureSessionCallbacks {
 		sources: CaptureSourceStatusSnapshot[];
 	}): void;
 	onError(sourceId: string | null, code: string, detail: string): void;
-	onLanded(sessionId: string, trackIds: string[]): void;
 }
 
 interface SourceEntry {
@@ -50,7 +49,12 @@ interface WriterChunkErrorMessage {
 	error: string;
 }
 
-type WriterPortMessage = WriterChunkAckMessage | WriterChunkErrorMessage;
+interface WriterFinalizeAckMessage {
+	type: 'finalize-ack';
+	sessionId: string;
+}
+
+type WriterPortMessage = WriterChunkAckMessage | WriterChunkErrorMessage | WriterFinalizeAckMessage;
 
 export class CaptureSession {
 	readonly sessionId: string;
@@ -70,6 +74,10 @@ export class CaptureSession {
 	private abort = new AbortController();
 	private callbacks: CaptureSessionCallbacks;
 	private writerPort: MessagePort | null;
+	private finalizeWaiters = new Map<
+		string,
+		{ resolve: () => void; reject: (error: Error) => void }
+	>();
 	private readonly writerMessageHandler = (event: MessageEvent<WriterPortMessage>) => {
 		const message = event.data;
 		switch (message.type) {
@@ -77,7 +85,11 @@ export class CaptureSession {
 				this.handleChunkAck(message.sourceId);
 				break;
 			case 'chunk-error':
+				this.rejectFinalizeWaiter(new Error(message.error));
 				this.handleSourceError(message.sourceId, message.error);
+				break;
+			case 'finalize-ack':
+				this.resolveFinalizeWaiter(message.sessionId);
 				break;
 		}
 	};
@@ -203,19 +215,17 @@ export class CaptureSession {
 			}
 		}
 		if (this.writerPort) {
+			const finalizeAck = this.waitForFinalizeAck(this.sessionId);
 			this.writerPort.postMessage({
 				type: 'write-finalize',
 				sessionId: this.sessionId,
 				reason
 			});
+			await finalizeAck;
 		}
 
 		this.state = 'idle';
 		this.emitStatus();
-		this.callbacks.onLanded(
-			this.sessionId,
-			[...this.sources.values()].map((source) => source.sourceId)
-		);
 	}
 
 	appendSceneSwitch(sceneId: string, atUs: number): void {
@@ -372,11 +382,37 @@ export class CaptureSession {
 		entry.pipeline.onChunkAck();
 	}
 
-	private handleSourceError(sourceId: string, _error: string): void {
+	private waitForFinalizeAck(sessionId: string): Promise<void> {
+		return new Promise((resolve, reject) => {
+			this.finalizeWaiters.set(sessionId, { resolve, reject });
+		});
+	}
+
+	private resolveFinalizeWaiter(sessionId: string): void {
+		const waiter = this.finalizeWaiters.get(sessionId);
+		if (!waiter) return;
+		this.finalizeWaiters.delete(sessionId);
+		waiter.resolve();
+	}
+
+	private rejectFinalizeWaiter(error: Error): void {
+		for (const [, waiter] of this.finalizeWaiters) {
+			waiter.reject(error);
+		}
+		this.finalizeWaiters.clear();
+	}
+
+	private handleSourceError(sourceId: string, error: string): void {
 		const entry = this.sources.get(sourceId);
 		if (entry) {
 			entry.state = 'error';
 		}
+		const code = /quota/i.test(error)
+			? 'quota-exceeded'
+			: sourceId
+				? 'encoder-error'
+				: 'writer-error';
+		this.callbacks.onError(sourceId || null, code, error);
 		this.emitStatus();
 
 		const remainingVideo = [...this.sources.values()].filter(
@@ -508,6 +544,7 @@ export class CaptureSession {
 		this.pauseDrain = null;
 		this.epochUs = null;
 		this.currentKeyframeIntervalUs = 2_000_000;
+		this.rejectFinalizeWaiter(new Error('Capture session reset before writer finalization.'));
 	}
 
 	getSourceSnapshots(): CaptureSourceSnapshot[] {
