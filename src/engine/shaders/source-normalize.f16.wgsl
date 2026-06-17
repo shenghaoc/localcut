@@ -9,7 +9,7 @@ struct Uniforms {
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(0) @binding(1) var src: texture_2d<f32>;
-@group(0) @binding(2) var dst: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(2) var dst: texture_storage_2d<rgba16float, write>;
 
 fn inverseTransferSRGB(lin: vec3<f16>) -> vec3<f16> {
   var result: vec3<f16>;

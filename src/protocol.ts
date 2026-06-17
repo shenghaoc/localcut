@@ -210,6 +210,11 @@ export interface CapabilityProbeResult {
 
 export type CleanupAccelerator = 'wasm' | 'webgpu' | 'webnn';
 
+/** Which DTLN inference backend runs the cleanup: the original LiteRT/TFLite
+ *  path, or the ONNX Runtime Web path. Selected in the UI; decides which worker
+ *  the bridge spawns and which manifest the controller loads. */
+export type CleanupBackendKind = 'litert' | 'ort';
+
 export interface CleanupProbeResult {
 	wasmAvailable: boolean;
 	accelerator: CleanupAccelerator;
@@ -562,8 +567,11 @@ export interface SmartReframeProbeResult {
 /** Detection mode used during the last analysis. */
 export type ReframeAnalysisMode = 'face' | 'saliency' | 'mixed';
 
-/** Load state of the optional MediaPipe face-detection model. */
+/** Load state of the optional face-detection model. */
 export type ReframeFaceModelStatus = 'not-loaded' | 'loading' | 'loaded' | 'failed';
+
+/** Which engine actually backs a loaded face detector. */
+export type ReframeFaceModelEngine = 'mediapipe-blazeface' | 'ort-onnx';
 
 /** Commands posted from the UI to the Smart Reframe worker. */
 export type SmartReframeWorkerCommand =
@@ -582,11 +590,17 @@ export type SmartReframeWorkerCommand =
 			accelerationBound?: number;
 			shotBoundaryThreshold?: number;
 	  }
-	// Load the MediaPipe BlazeFace detector on the user's explicit action
-	// (Phase 28/29 pattern). The WASM fileset + `.tflite` model are fetched from
-	// remote on demand. Once loaded the worker reuses the detector for analyses;
-	// until then analysis is saliency-only (R2.6 / R8.2).
-	| { type: 'reframe-load-face-model'; wasmPath: string; modelUrl: string }
+	// Load a face detector on the user's explicit action (Phase 28/29 pattern).
+	// When `ortManifestUrl` is provided the worker tries the ORT/ONNX detector
+	// first; if that manifest is a template / load fails it falls through to the
+	// MediaPipe BlazeFace path (`wasmPath` + `modelUrl`). Until either succeeds
+	// analysis is saliency-only (R2.6 / R8.2).
+	| {
+			type: 'reframe-load-face-model';
+			wasmPath: string;
+			modelUrl: string;
+			ortManifestUrl?: string;
+	  }
 	| { type: 'reframe-cancel' }
 	| { type: 'reframe-dispose' };
 
@@ -605,8 +619,14 @@ export type SmartReframeWorkerState =
 	  }
 	| { type: 'reframe-error'; reason: string }
 	| { type: 'reframe-cancelled' }
-	// Face-model load lifecycle (explicit user "Load face model" action).
-	| { type: 'reframe-face-model-status'; status: ReframeFaceModelStatus; message?: string };
+	// Face-model load lifecycle (explicit user "Load face model" action). When
+	// status is 'loaded', `engine` identifies which path resolved.
+	| {
+			type: 'reframe-face-model-status';
+			status: ReframeFaceModelStatus;
+			engine?: ReframeFaceModelEngine;
+			message?: string;
+	  };
 
 /** Analysis statistics returned with the reframe result. */
 export interface ReframeAnalysisStatsSnapshot {

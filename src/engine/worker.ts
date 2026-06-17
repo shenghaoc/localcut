@@ -240,6 +240,8 @@ import {
 import { probeEncodeThroughput } from './hardware-probe';
 import { FrameCache, makeFrameCacheKey } from './frame-cache';
 import { MatteEngine } from './matte/matte-engine';
+import { MatteOnnxEngine } from './matte/matte-onnx-engine';
+import { resolveMatteBackend, type MatteBackendEngine } from './matte/matte-backend';
 import {
 	DEFAULT_INTERPOLATION_MANIFEST_URL,
 	InterpolationEngine
@@ -357,21 +359,35 @@ let titleCache: TitleTextureCache | null = null;
 /** Phase 43 callout raster cache; shares the renderer GPU device with titles. */
 let calloutCache: CalloutTextureCache | null = null;
 /** Phase 31 matte engine — per-frame zero-copy inference on the renderer's
- *  device; created lazily on the first matted frame. */
-let matteEngine: MatteEngine | null = null;
+ *  device; created lazily on the first matted frame. The deployed default is the
+ *  LiteRT MediaPipe path; the experimental ORT/ONNX backend is selected only when
+ *  the `__MATTE_ONNX_SPIKE__` build flag is on (see matte/matte-backend.ts). */
+let matteEngine: MatteBackendEngine | null = null;
 
 /** Build-scoped LiteRT WASM runtime directory (shared with ASR/cleanup). */
 const MATTE_BUILD_SHA = typeof __BUILD_SHA__ === 'string' ? __BUILD_SHA__ : 'dev';
 const MATTE_WASM_PATH = `/litert/${MATTE_BUILD_SHA}/`;
 
-function ensureMatteEngine(): MatteEngine | null {
+/** Experimental ORT/ONNX matte backend feature flag (default false in production;
+ *  set MATTE_ONNX_SPIKE=1 at build time to evaluate it). Guarded `typeof` so the
+ *  worker still type-checks where the define is absent (e.g. unit tests). */
+const MATTE_ONNX_SPIKE =
+	typeof __MATTE_ONNX_SPIKE__ !== 'undefined' && __MATTE_ONNX_SPIKE__ === true;
+
+function ensureMatteEngine(): MatteBackendEngine | null {
 	if (!renderer) return null;
 	if (!matteEngine) {
-		matteEngine = new MatteEngine({
-			device: renderer.gpuDevice,
-			wasmPath: MATTE_WASM_PATH,
-			onStatus: (status) => post({ type: 'matte-status', status })
-		});
+		matteEngine =
+			resolveMatteBackend(MATTE_ONNX_SPIKE) === 'ort-onnx'
+				? new MatteOnnxEngine({
+						device: renderer.gpuDevice,
+						onStatus: (status) => post({ type: 'matte-status', status })
+					})
+				: new MatteEngine({
+						device: renderer.gpuDevice,
+						wasmPath: MATTE_WASM_PATH,
+						onStatus: (status) => post({ type: 'matte-status', status })
+					});
 	}
 	return matteEngine;
 }
@@ -2360,7 +2376,9 @@ async function handleInit(
 			lastGpuUnavailableReason = gpu.unavailableReason;
 		}
 
-		// Phase 21: wire scope SAB to renderer if provided
+		// Phase 21: wire scope SAB. The renderer stays off until the UI sends
+		// 'toggle-scopes' on first ScopePanel expansion — no point burning GPU
+		// time on dispatches whose results no one is reading.
 		if (scopeSab && renderer) {
 			renderer.setScopeSab(scopeSab);
 		}
@@ -9021,7 +9039,11 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			handleSetTrackEditTarget(cmd);
 			break;
 		case 'toggle-scopes': {
+			const wasActive = renderer?.scopesActive ?? false;
 			renderer?.setScopesEnabled(cmd.enabled);
+			if (cmd.enabled && renderer && !wasActive) {
+				playback?.refresh();
+			}
 			break;
 		}
 		case 'toggle-zebra': {

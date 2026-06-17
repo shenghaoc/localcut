@@ -279,11 +279,11 @@ function cleanupRow(probe: CapabilityProbeResult): CapabilityRow {
 	const cleanup = probe.cleanup;
 	const supported = cleanup?.wasmAvailable ?? typeof WebAssembly !== 'undefined';
 	return {
-		label: 'Audio cleanup (LiteRT DTLN)',
+		label: 'Audio cleanup (DTLN)',
 		support: supported ? 'supported' : 'unsupported',
 		active: false,
 		action: supported
-			? `Local Audio Cleanup (Experimental) available via LiteRT (${cleanup?.accelerator ?? 'wasm'}).`
+			? `Local Audio Cleanup (Experimental) available via LiteRT or ONNX Runtime (${cleanup?.accelerator ?? 'wasm'}).`
 			: 'Audio cleanup requires WebAssembly.'
 	};
 }

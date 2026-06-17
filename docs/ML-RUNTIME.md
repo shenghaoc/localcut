@@ -59,9 +59,13 @@ foundation never appends ORT's implicit WASM fallback.
 
 ### The frame-coupled hard gate
 
-A model is **frame-coupled** when it runs per video frame (matte, frame
-interpolation, smart-reframe detection — anything in the preview/export hot
-path). For these:
+A model is **frame-coupled** when it runs per video frame in the preview /
+export hot path — matte (Phase 31) and frame interpolation (Phase 37) qualify.
+Smart Reframe's optional ORT face detector runs in a one-shot analysis pass at
+the analysis fps (default 2 fps), **not** in the preview/export hot path, so it
+is **not** frame-coupled and is allowed to declare `wasm` alongside
+`webgpu`/`webnn`; the detector's own loader gates WASM by input tensor size to
+keep the analysis worker responsive. For frame-coupled models:
 
 - The EP list **must not** contain `wasm`, and **must** include at least one
   GPU-class EP (`webgpu` or `webnn`).
@@ -141,27 +145,50 @@ New and in-flight ML work should target ORT, not LiteRT:
   above; default to `webgpu` unless the model is small and non-frame-coupled.
 - **Whisper auto-captions** has migrated to ORT (this PR) — see the section
   below. The LiteRT Whisper path stays as a selectable fallback.
-- **Remaining LiteRT features (DTLN, matte)** keep working unchanged on their
-  current path. They migrate to ORT in their own dedicated PRs, not as a side
-  effect of unrelated work — this foundation does not touch them.
+- **Portrait matte ORT/ONNX backend (spike)** is the worked example of migrating
+  an existing LiteRT feature without regressing it. The **deployed default stays
+  LiteRT** MediaPipe Selfie Segmentation (`matte-engine.ts`); an **experimental**
+  ORT/ONNX backend (`matte-onnx-engine.ts`, manifest `public/models/matte-onnx/`)
+  runs a MODNet-class true-matting model on ORT-WebGPU with `gpu-buffer` tensor IO
+  on the renderer's device. It is gated twice — the `__MATTE_ONNX_SPIKE__` build
+  flag (off by default; `src/engine/matte/matte-backend.ts`) **and** a real pinned
+  ONNX model (the shipped manifest is a `template`, so the backend stays disabled).
+  The EMA temporal-smoothing and recurrent-state-reset contract is shared verbatim
+  with the LiteRT engine (`matte-temporal.ts` + `matte-resolve.wgsl`). GPL-family
+  weights (e.g. RVM) are rejected by `validateMatteOnnxManifest`. ORT-WebNN for
+  matte is allowed only after a per-operator support proof. `DEFAULT_MATTE_BACKEND`
+  flips to `ort-onnx` only once ORT quality + performance parity is proven.
+- **DTLN audio cleanup** now also ships an **ORT/ONNX backend** alongside LiteRT,
+  selectable in the Audio Cleanup panel (`src/engine/audio-cleanup/dtln-ort-runtime.ts`,
+  `public/models/dtln-onnx/manifest.json`). DTLN's tensors are tiny, so it pins
+  the `wasm` (CPU) execution provider with CPU tensors — it is **not**
+  frame-coupled, so the EP policy permits `wasm`. ONNX is now the default after
+  real-audio A/B parity against LiteRT was verified; LiteRT remains selectable as
+  the rollback path. This is the migration template for a
+  small, non-frame-coupled LiteRT feature moving onto the ORT foundation.
+- **Remaining LiteRT-default deployed features (portrait matte)** keep working
+  unchanged on their current path. They migrate to ORT only after dedicated
+  quality, performance, and licensing proof.
 
 ## Whisper auto-captions on ORT (non-frame-coupled exemplar)
 
-Auto Captions is the first shipped ORT feature and the template for a **small,
-non-frame-coupled** model — the opposite end of the policy from frame interpolation:
+Auto Captions is the first shipped ORT text/audio feature and the template for a
+**small, non-frame-coupled** model — the opposite end of the policy from frame
+interpolation:
 
 - **EP: `wasm`, tensor location `cpu`.** ASR is not per-video-frame, so the
-  no-WASM hard gate does not apply. The autoregressive decoder is latency-bound by
-  per-step graph dispatch, where a GPU EP's per-call sync overhead and patchier
-  Whisper op coverage make WASM the robust default. The ASR worker is a classic
-  worker with no renderer `GPUDevice`, so there is nothing to share anyway.
+  no-WASM hard gate does not apply. The autoregressive decoder is latency-bound
+  by per-step graph dispatch, where a GPU EP's per-call sync overhead and
+  patchier Whisper op coverage make WASM the robust default. The ASR worker is
+  lazily spawned as a module worker and does not share the renderer `GPUDevice`.
 - **Encoder + no-past decoder.** The model is an encoder/decoder **pair**
   (`onnx-community/whisper-*`), not one graph. The shipped `decoder` is the
   no-past graph; each greedy step re-runs it with the full token sequence and
   reads the last logits row, so the shared engine-agnostic `whisper-decode.ts`
   drives both the ORT and LiteRT runtimes unchanged. `whisper-ort-runtime.ts`
   builds both sessions via `createOrtSession()` and fetches only `logits` (the
-  no-past decoder also emits `present.*` KV tensors that are ignored).
+  no-past decoder can also emit `present.*` KV tensors, which are ignored and
+  disposed defensively).
 - **int8 by default.** Quantized ONNX is ~77 MB (base) / ~41 MB (tiny) versus the
   290 MB fp32 LiteRT base — a far friendlier PWA download. See
   `public/models/whisper-onnx/README.md` for the full size-vs-quality table and

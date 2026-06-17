@@ -121,6 +121,9 @@ The preview panel shows your video at the playhead position:
 - **Safe Area Guides**: Toggle title/action safe areas with the **Safe areas** button.
 - **Transform Gizmo**: When a video clip is selected, drag the gizmo handles to adjust position, scale, and rotation. Hold **Shift** to constrain proportions.
 - **Adaptive Resolution**: Preview resolution adapts to your machine's performance — the current resolution is shown in the toolbar.
+- **Scopes (Experimental)**: On WebGPU-backed preview tiers, expand **Scopes** in the lower-right of the preview to inspect the histogram, luma waveform, RGB parade, and vectorscope. The panel stays collapsed by default and updates at a reduced rate so playback remains responsive. If clipped pixels are detected, an amber or red badge appears in the scope header.
+
+Scopes are unavailable in Limited WebCodecs and Shell Only tiers because those modes do not have the WebGPU renderer that produces the scope summaries.
 
 ## Side Panel
 
@@ -310,20 +313,26 @@ The matte is computed **in real time** on the GPU as frames play or export — t
 
 ## Local Audio Cleanup (Experimental)
 
-LocalCut Studio can reduce background noise in audio clips entirely on your device using the DTLN model (Dual-Signal Transformation LSTM Network) running through LiteRT.js. This feature is **experimental** and fully local:
+LocalCut Studio can reduce background noise in audio clips entirely on your device using the DTLN model (Dual-Signal Transformation LSTM Network). Two on-device inference **engines** run the same DTLN model and are selectable in the panel:
+
+- **ONNX Runtime DTLN** (default) — the upstream ONNX models on ONNX Runtime Web (ORT). DTLN's tensors are tiny, so this runs on the WASM (CPU) execution provider; the ONNX runtime is fetched on demand and never ships in the app's startup bundle.
+- **LiteRT DTLN** — the two upstream TFLite models on LiteRT.js, kept as a selectable alternate engine.
+
+ONNX is the default after real-audio A/B parity against LiteRT was verified. This feature is **experimental** and fully local:
 
 > Runs on this device. No upload. No API key. No server inference.
 
-**Requirements**: a browser with WebAssembly support (all modern browsers). LiteRT prefers experimental WebNN first, then WebGPU, and falls back to the WASM accelerator when accelerated backends are unavailable or fail to compile on the current device. In browsers without WebAssembly the panel shows "WebAssembly is required for local audio cleanup." and everything else in the editor works exactly as before — there is no cloud fallback of any kind.
+**Requirements**: a browser with WebAssembly support (all modern browsers). LiteRT prefers experimental WebNN first, then WebGPU, and falls back to the WASM accelerator when accelerated backends are unavailable or fail to compile on the current device; ONNX Runtime DTLN runs on the WASM accelerator. In browsers without WebAssembly the panel shows "WebAssembly is required for local audio cleanup." and everything else in the editor works exactly as before — there is no cloud fallback of any kind.
 
 **How to use it**:
 
 1. Click **Audio Cleanup** in the toolbar to open the panel. Nothing is downloaded at app startup; the model loads only when you ask for it.
-2. Click **Load model** to fetch and verify the two DTLN TFLite models (~4 MB total, downloaded from GitHub via a same-origin proxy and SHA-256-verified). After one successful load the models are cached in OPFS for offline use.
-3. Select an audio clip on the timeline.
-4. Click **Preview cleanup** to denoise the first 10 seconds and A/B compare **Play original** vs **Play cleaned**.
-5. Click **Apply to export / create cleaned audio asset** to process the whole clip. This creates a derived `*.cleaned.wav` asset in the Media Bin and routes the clip's audio through it for both playback and export.
-6. Use **Cancel** at any time to stop a running model load or cleanup pass.
+2. (Optional) Pick the **Engine** — _LiteRT DTLN_ or _ONNX Runtime DTLN_ — at the top of the panel. Switching engines unloads the current model so the next action reloads with the chosen runtime.
+3. Click **Load model** to fetch and verify the two DTLN model files (~4 MB total, downloaded from GitHub via a same-origin proxy and SHA-256-verified). After one successful load the models are cached in OPFS for offline use (each engine caches its own files).
+4. Select an audio clip on the timeline.
+5. Click **Preview cleanup** to denoise the first 10 seconds and A/B compare **Play original** vs **Play cleaned**.
+6. Click **Apply to export / create cleaned audio asset** to process the whole clip. This creates a derived `*.cleaned.wav` asset in the Media Bin and routes the clip's audio through it for both playback and export.
+7. Use **Cancel** at any time to stop a running model load or cleanup pass.
 
 **Notes**:
 
@@ -331,7 +340,7 @@ LocalCut Studio can reduce background noise in audio clips entirely on your devi
 - Export is unchanged unless you applied cleanup; only clips you explicitly cleaned use the denoised audio.
 - If you later trim a cleaned clip beyond the range that was cleaned, the clip automatically falls back to its original audio (re-apply cleanup to cover the new range). If the cleaned asset goes missing (e.g. cleared storage), the original audio plays and a source-health warning appears.
 - One cleanup pass is limited to 12 minutes of audio.
-- The panel shows the accelerator that actually loaded (`webnn`, `webgpu`, or `wasm`), the model status and size, and the last analysis duration; the Capabilities panel has an **Audio cleanup (LiteRT DTLN)** row.
+- The panel shows the selected **Engine**, the accelerator that actually loaded (`webnn`, `webgpu`, or `wasm`), the model status and size, and the last analysis duration; the Capabilities panel has an **Audio cleanup (DTLN)** row.
 
 Model: DTLN (Nils L. Westhausen, Interspeech 2020 — MIT), from [breizhn/DTLN](https://github.com/breizhn/DTLN).
 
@@ -542,7 +551,7 @@ The output is ordinary, **editable transform keyframes** — never a baked-in cr
 
 **Notes**:
 
-- Subject detection defaults to **visual saliency** (skin tone, edges, local contrast — pure DSP, always available). For face-aware reframing, click **Load face model** in the panel to fetch **MediaPipe BlazeFace** once from Google (on-device after that; nothing uploaded) — the same click-to-load pattern as Audio Cleanup and Auto Captions. Once loaded, analysis tracks faces and falls back to saliency for frames with none. The Capabilities panel shows a **Smart Reframe** row.
+- Subject detection defaults to **visual saliency** (skin tone, edges, local contrast — pure DSP, always available). For face-aware reframing, click **Load face model** in the panel — the same click-to-load pattern as Audio Cleanup and Auto Captions. Two engines coexist behind that button: an **ORT/ONNX face detector** built on the editor's ONNX runtime (catalog-pinned, currently disabled until a real model is vendored — the manifest at `public/models/reframe-face/manifest.json` ships as a placeholder) and **MediaPipe BlazeFace**, which the worker falls back to and which loads from Google's model store. Whichever engine resolves, analysis runs entirely on-device, nothing is uploaded, and analysis tracks faces while falling back to saliency for frames with none. The Capabilities panel shows a **Smart Reframe** row.
 - Pan velocity and acceleration are bounded so generated motion never whips; the subject may briefly leave centre during fast moves. The panel reports safe-zone compliance.
 - Shot boundaries (hard cuts) are detected and reset tracking so the crop does not slide across an edit.
 - Limitations: one subject per clip, faces/saliency only (no object-class tracking), no automatic cutting, and offline only (no live-camera reframe).

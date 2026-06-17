@@ -249,7 +249,12 @@ export default defineConfig({
 		ignorePatterns: ['dist', 'dev-dist', 'coverage', '.kiro/', '.claude/', '.jules/']
 	},
 	define: {
-		__BUILD_SHA__: JSON.stringify(BUILD_SHA)
+		__BUILD_SHA__: JSON.stringify(BUILD_SHA),
+		// Phase 31 experimental ORT/ONNX matte backend feature flag. Off by default
+		// (production ships LiteRT MediaPipe); build with MATTE_ONNX_SPIKE=1 to
+		// evaluate the ONNX path. When false, the MatteOnnxEngine branch in the
+		// worker is dead-code-eliminated. See docs/ML-RUNTIME.md.
+		__MATTE_ONNX_SPIKE__: JSON.stringify(process.env.MATTE_ONNX_SPIKE === '1')
 	},
 	plugins: [
 		litertRuntimeAssetsPlugin(),
@@ -294,6 +299,17 @@ export default defineConfig({
 						urlPattern: /\/models\/dtln\//,
 						handler: 'NetworkFirst',
 						options: { cacheName: 'dtln-manifest' }
+					},
+					{
+						// DTLN ONNX backend manifest. NetworkFirst (offline fallback) like the
+						// other model manifests — the `/models/dtln/` rule above does NOT cover
+						// this path (no trailing slash after `dtln`), so without this rule an
+						// installed/offline PWA could not reload the ONNX engine even though its
+						// model bytes are OPFS-cached. The `.onnx` weights are fetched via the
+						// `/_model/gh/` proxy and cached in OPFS by the app, not here.
+						urlPattern: /\/models\/dtln-onnx\//,
+						handler: 'NetworkFirst',
+						options: { cacheName: 'dtln-onnx-manifest' }
 					},
 					{
 						// The Whisper model itself is fetched cross-origin (Hugging Face)

@@ -147,6 +147,8 @@ import { createRecoveryMachine, type WorkerRecoveryState } from '../engine/recov
 import { AppErrorBoundary } from './ErrorBoundary';
 import { AudioCleanupPanel, type AppliedCleanupInfo } from './AudioCleanupPanel';
 import { SilenceReviewPanel } from './SilenceReviewPanel';
+import ScopePanel from './ScopePanel';
+import { SCOPE_RES_X, scopeTotalBufferBytes } from '../engine/scopes';
 import { KeystrokeOverlayPanel } from './KeystrokeOverlayPanel';
 import {
 	CleanupController,
@@ -168,7 +170,11 @@ import { SmartReframePanel, type ReframeAnalyseSettings } from './SmartReframePa
 import { ReframeOverlay } from './ReframeOverlay';
 import { ReframeController, type ReframeControllerState } from './reframe-controller';
 import { spawnSmartReframeWorker } from './reframe-bridge';
-import { BLAZEFACE_SHORT_RANGE_URL, MEDIAPIPE_WASM_PATH } from '../engine/reframe/face-models';
+import {
+	BLAZEFACE_SHORT_RANGE_URL,
+	MEDIAPIPE_WASM_PATH,
+	REFRAME_FACE_ONNX_MANIFEST_URL
+} from '../engine/reframe/face-models';
 import { REFRAME_ASPECT_VALUES } from '../protocol';
 // Phase 40: On-Device Language Tools
 import { LanguageToolsPanel } from './LanguageToolsPanel';
@@ -875,6 +881,37 @@ export function App() {
 	const [meterSab, setMeterSab] = createSignal<SharedArrayBuffer | null>(null);
 	const [audioSabReady, setAudioSabReady] = createSignal(false);
 
+	// Phase 21: scope SAB ring buffer. Allocated once, passed to the worker on
+	// init, and read by ScopePanel on its own rAF loop. `null` when SAB isn't
+	// supported (non-isolated tier) — ScopePanel hides itself in that case.
+	const scopeSab = (() => {
+		if (typeof SharedArrayBuffer !== 'function') return null;
+		try {
+			return new SharedArrayBuffer(scopeTotalBufferBytes(SCOPE_RES_X));
+		} catch {
+			return null;
+		}
+	})();
+	const [scopePanelCollapsed, setScopePanelCollapsed] = createSignal(true);
+	const scopePanelAvailable = createMemo(
+		() =>
+			scopeSab !== null &&
+			(previewBackend() === 'core-webgpu' || previewBackend() === 'compat-webgpu')
+	);
+	const scopeFramePixelCount = createMemo(() => {
+		const size = previewSize();
+		return size ? size.width * size.height : null;
+	});
+	// Drive the worker's scope compute pass off panel visibility: collapsed →
+	// skip the per-frame dispatch entirely (GPU + readback are idle when the
+	// user isn't watching). The send is guarded on workerReady so commands
+	// don't drop before the bridge attaches.
+	createEffect(() => {
+		if (!workerReady() || !scopeSab) return;
+		const enabled = scopePanelAvailable() && !scopePanelCollapsed();
+		bridge?.send({ type: 'toggle-scopes', enabled });
+	});
+
 	// Phase 47: WHIP publish. The controller owns the WhipSession, the encoder
 	// lease, and the worker tap wiring; the component only mirrors its state into
 	// signals. No media objects live in component state.
@@ -968,7 +1005,10 @@ export function App() {
 				modelVersion: request.modelVersion
 			});
 		},
-		manifestUrl: `${import.meta.env.BASE_URL}models/dtln/manifest.json`,
+		manifestUrls: {
+			litert: `${import.meta.env.BASE_URL}models/dtln/manifest.json`,
+			ort: `${import.meta.env.BASE_URL}models/dtln-onnx/manifest.json`
+		},
 		wasmPath: CLEANUP_WASM_PATH,
 		onError: (message) => {
 			setRecentErrorLog((prev) =>
@@ -3048,7 +3088,7 @@ export function App() {
 				);
 			}
 		}
-		b.send({ type: 'init', canvas, sab, audioSab, probeResult: probe }, [canvas]);
+		b.send({ type: 'init', canvas, sab, audioSab, scopeSab, probeResult: probe }, [canvas]);
 	}
 
 	async function importCompatibilityMedia(file: File) {
@@ -4479,6 +4519,14 @@ export function App() {
 							<Show when={importing()}>
 								<div class="preview-overlay">Importing…</div>
 							</Show>
+							<Show when={scopePanelAvailable()}>
+								<ScopePanel
+									scopeSab={scopeSab}
+									framePixelCount={scopeFramePixelCount}
+									collapsed={scopePanelCollapsed}
+									setCollapsed={setScopePanelCollapsed}
+								/>
+							</Show>
 						</section>
 						<div id="side-rail" class="side-rail" role="region" aria-label="Side panel">
 							<Show
@@ -5158,6 +5206,7 @@ export function App() {
 						state={cleanupState()}
 						selectedClip={selectedAudioCleanupClip()}
 						appliedCleanup={appliedCleanupInfo()}
+						onSelectBackend={(backend) => cleanupController.setBackend(backend)}
 						onLoadModel={() => void cleanupController.loadModel()}
 						onPreview={() => {
 							const clip = selectedAudioCleanupClip();
@@ -5217,7 +5266,11 @@ export function App() {
 						}
 						workerAvailable={capabilityProbeV2()?.smartReframe?.analysisWorker !== 'unsupported'}
 						onLoadFaceModel={() =>
-							void reframeController.loadFaceModel(MEDIAPIPE_WASM_PATH, BLAZEFACE_SHORT_RANGE_URL)
+							void reframeController.loadFaceModel(
+								MEDIAPIPE_WASM_PATH,
+								BLAZEFACE_SHORT_RANGE_URL,
+								REFRAME_FACE_ONNX_MANIFEST_URL
+							)
 						}
 						onAnalyse={(settings) => void handleReframeAnalyse(settings)}
 						onCancel={() => reframeController.cancel()}
