@@ -169,6 +169,7 @@ export class CleanupController {
 	private readonly pendingExtractions = new Map<string, PendingExtraction>();
 	private modelLoadWaiters: Array<(ok: boolean) => void> = [];
 	private manifestVersion = 'unknown';
+	private workerGeneration = 0;
 
 	constructor(ports: CleanupControllerPorts) {
 		this.ports = ports;
@@ -205,6 +206,7 @@ export class CleanupController {
 	 */
 	setBackend(backend: CleanupBackendKind): void {
 		if (backend === this.state.backend) return;
+		this.workerGeneration += 1;
 		this.cancel();
 		if (this.worker) {
 			this.worker.send({ type: 'cleanup-dispose' });
@@ -322,10 +324,16 @@ export class CleanupController {
 
 	private async ensureWorker(): Promise<CleanupWorkerPort> {
 		if (this.worker) return this.worker;
+		const backend = this.state.backend;
+		const generation = this.workerGeneration;
 		this.workerSpawn ??= this.ports.spawnWorker(
-			this.state.backend,
-			(msg) => this.handleWorkerState(msg),
+			backend,
+			(msg) => {
+				if (generation !== this.workerGeneration || backend !== this.state.backend) return;
+				this.handleWorkerState(msg);
+			},
 			(message) => {
+				if (generation !== this.workerGeneration || backend !== this.state.backend) return;
 				this.update({
 					modelStatus: 'not-loaded',
 					accelerator: null,
@@ -345,7 +353,19 @@ export class CleanupController {
 				this.ports.onError?.(message);
 			}
 		);
-		this.worker = await this.workerSpawn;
+		const spawn = this.workerSpawn;
+		const worker = await spawn;
+		if (generation !== this.workerGeneration || backend !== this.state.backend) {
+			worker.terminate();
+			throw new CleanupCancelled();
+		}
+		if (this.worker) return this.worker;
+		if (this.workerSpawn !== spawn) {
+			worker.terminate();
+			throw new CleanupCancelled();
+		}
+		this.worker = worker;
+		this.workerSpawn = null;
 		return this.worker;
 	}
 
@@ -370,6 +390,7 @@ export class CleanupController {
 			});
 			return await done;
 		} catch (error) {
+			if (error instanceof CleanupCancelled) return false;
 			const message = error instanceof Error ? error.message : String(error);
 			this.update({ modelStatus: 'failed', error: message });
 			return false;
@@ -575,6 +596,7 @@ export class CleanupController {
 	}
 
 	dispose(): void {
+		this.workerGeneration += 1;
 		this.cancel();
 		this.worker?.send({ type: 'cleanup-dispose' });
 		this.worker?.terminate();

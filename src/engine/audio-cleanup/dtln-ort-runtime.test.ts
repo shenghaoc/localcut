@@ -49,7 +49,7 @@ interface FakeSession {
 }
 
 function fakeSession(inputNames: string[], outputNames: string[], run: RunFn): FakeSession {
-	return { inputNames, outputNames, run: vi.fn(run), release: vi.fn() };
+	return { inputNames, outputNames, run: vi.fn(run), release: vi.fn(async () => undefined) };
 }
 
 function fakeOrt(sessions: FakeSession[]) {
@@ -244,6 +244,58 @@ describe('DtlnOrtRuntime', () => {
 		).rejects.toThrow(/input_3/);
 		expect(model1.release).toHaveBeenCalledTimes(1);
 		expect(model2.release).toHaveBeenCalledTimes(1);
+	});
+
+	it('keeps the original creation error when release rejects during cleanup', async () => {
+		const model1 = fakeSession(
+			['input_2', 'input_3'],
+			['activation_2', 'tf_op_layer_stack_2'],
+			async () => ({})
+		);
+		model1.release.mockRejectedValueOnce(new Error('release failed'));
+		const ort = fakeOrt([model1]);
+		ort.InferenceSession.create
+			.mockResolvedValueOnce(model1)
+			.mockRejectedValueOnce(new Error('create failed'));
+		const { loadOrtWasm } = await import('../ml/ort/ort-loader');
+		vi.mocked(loadOrtWasm).mockResolvedValue(ort as never);
+		const { DtlnOrtRuntime } = await import('./dtln-ort-runtime');
+
+		await expect(
+			DtlnOrtRuntime.create({
+				model1Bytes: new Uint8Array([1]),
+				model2Bytes: new Uint8Array([2]),
+				stateShape: STATE_SHAPE,
+				io: IO,
+				executionProviders: ['wasm']
+			})
+		).rejects.toThrow('create failed');
+		expect(model1.release).toHaveBeenCalledTimes(1);
+		await Promise.resolve();
+	});
+
+	it('catches async release failures during destroy', async () => {
+		const model1 = fakeSession(
+			['input_2', 'input_3'],
+			['activation_2', 'tf_op_layer_stack_2'],
+			async () => ({
+				activation_2: new FakeTensor('float32', new Float32Array(DTLN_FREQ_BINS), [
+					1,
+					1,
+					DTLN_FREQ_BINS
+				]),
+				tf_op_layer_stack_2: new FakeTensor('float32', new Float32Array(STATE_SIZE), STATE_SHAPE)
+			})
+		);
+		const model2 = echoModel2();
+		model1.release.mockRejectedValueOnce(new Error('release failed'));
+		model2.release.mockRejectedValueOnce(new Error('release failed'));
+		const { runtime } = await loadRuntimeWith([model1, model2]);
+
+		runtime.destroy();
+		expect(model1.release).toHaveBeenCalledTimes(1);
+		expect(model2.release).toHaveBeenCalledTimes(1);
+		await Promise.resolve();
 	});
 
 	it('schedules one interleaved model1/model2 call per 128-sample frame', async () => {

@@ -10,6 +10,7 @@ import {
 	type CleanupClipTarget,
 	type ClipAudioRequest
 } from './cleanup-controller';
+import type { CleanupWorkerPort } from './cleanup-bridge';
 import type {
 	CleanupBackendKind,
 	CleanupProbeResult,
@@ -235,6 +236,77 @@ describe('CleanupController', () => {
 		expect(loads.at(-1)).toEqual(
 			expect.objectContaining({ manifestUrl: '/models/dtln/manifest.json' })
 		);
+	});
+
+	it('terminates a stale worker that resolves after a backend switch', async () => {
+		const spawnedBackends: CleanupBackendKind[] = [];
+		const resolveSpawn: Array<() => void> = [];
+		const terminated: CleanupBackendKind[] = [];
+		const commands: Array<{ backend: CleanupBackendKind; command: CleanupWorkerCommand }> = [];
+		const controller = new CleanupController({
+			spawnWorker: async (backend, onState): Promise<CleanupWorkerPort> => {
+				spawnedBackends.push(backend);
+				return new Promise((resolve) => {
+					resolveSpawn.push(() => {
+						resolve({
+							send(command) {
+								commands.push({ backend, command });
+								if (command.type === 'cleanup-load-model') {
+									queueMicrotask(() =>
+										onState({
+											type: 'cleanup-model-status',
+											status: 'loaded',
+											accelerator: 'wasm',
+											sizeBytes: 3_538_944
+										})
+									);
+								}
+							},
+							terminate() {
+								terminated.push(backend);
+							}
+						});
+					});
+				});
+			},
+			requestClipAudio: () => undefined,
+			applyToClip: () => undefined,
+			manifestUrls: {
+				litert: '/models/dtln/manifest.json',
+				ort: '/models/dtln-onnx/manifest.json'
+			},
+			wasmPath: '/litert/'
+		});
+		controller.setCleanupProbe(PROBE_OK);
+
+		const pendingOnnxLoad = controller.loadModel();
+		await vi.waitFor(() => expect(spawnedBackends).toEqual(['ort']));
+		controller.setBackend('litert');
+		resolveSpawn[0]!();
+
+		expect(await pendingOnnxLoad).toBe(false);
+		expect(terminated).toEqual(['ort']);
+		expect(commands).toEqual([]);
+		expect(controller.getState()).toMatchObject({
+			backend: 'litert',
+			modelStatus: 'not-loaded',
+			error: null
+		});
+
+		const pendingLitertLoad = controller.loadModel();
+		await vi.waitFor(() => expect(spawnedBackends).toEqual(['ort', 'litert']));
+		resolveSpawn[1]!();
+
+		expect(await pendingLitertLoad).toBe(true);
+		expect(commands).toEqual([
+			expect.objectContaining({
+				backend: 'litert',
+				command: expect.objectContaining({
+					type: 'cleanup-load-model',
+					manifestUrl: '/models/dtln/manifest.json'
+				})
+			})
+		]);
 	});
 
 	it('tags applied cleanup with the ONNX model id by default', async () => {

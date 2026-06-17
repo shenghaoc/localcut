@@ -69,6 +69,11 @@ function assertTensorNames(
 	}
 }
 
+function releaseSession(session: InferenceSession | null | undefined): void {
+	if (!session) return;
+	void session.release().catch(() => undefined);
+}
+
 export class DtlnOrtRuntime {
 	private constructor(
 		private readonly ort: OrtModule,
@@ -105,8 +110,8 @@ export class DtlnOrtRuntime {
 			session1 = await ort.InferenceSession.create(options.model1Bytes, sessionOptions);
 			session2 = await ort.InferenceSession.create(options.model2Bytes, sessionOptions);
 		} catch (error) {
-			void session1?.release();
-			void session2?.release();
+			releaseSession(session1);
+			releaseSession(session2);
 			throw error;
 		}
 
@@ -117,8 +122,8 @@ export class DtlnOrtRuntime {
 			assertTensorNames(session2, [model2.frameInput, model2.stateInput], 'input', 'model2');
 			assertTensorNames(session2, [model2.frameOutput, model2.stateOutput], 'output', 'model2');
 		} catch (error) {
-			void session1.release();
-			void session2.release();
+			releaseSession(session1);
+			releaseSession(session2);
 			throw error;
 		}
 
@@ -166,7 +171,7 @@ export class DtlnOrtRuntime {
 	destroy(): void {
 		// `release()` is async; the worker calls destroy() synchronously, so fire and
 		// forget — the sessions hold only WASM heap, freed on the next macrotask.
-		void this.session1.release();
-		void this.session2.release();
+		releaseSession(this.session1);
+		releaseSession(this.session2);
 	}
 }
