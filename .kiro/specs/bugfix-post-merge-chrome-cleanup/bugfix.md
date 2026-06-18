@@ -122,17 +122,17 @@ without a status dot, so it reads as a heading or label rather than a state.
 technical readouts, hairline dividers between badge groups, sage dot prefix
 on the `Ready Offline` / `COOP/COEP OK` state, neutral ink for buttons.
 
-### B6 — Side rail tabs truncate when 5 tabs occupy the 320px column (P2)
+### B6 — Side rail tabs need graceful compression with 7 labels (P2)
 
-The Phase 36 voice-cleanup work landed a fifth tab (`Cleanup`) without
-shrinking the `.side-rail-tab` typography. The five tab labels (`Inspector`,
-`Captions`, `Replay`, `Audio`, `Cleanup`) at the existing
-`font-size: var(--text-xs)` + `padding: 0 10px` + the 28px collapse-button on
-the right overflow the 320px column. The active label clips with an
-ellipsis or scrolls horizontally depending on viewport.
+The side rail now exposes seven tabs (`Inspector`, `Captions`, `Record`,
+`Program`, `Replay`, `Audio`, `Cleanup`). At the 304px rail width, the 28px
+collapse button leaves roughly 276px for tabs, or about 39px per equal-width
+tab. The previous five-tab test premise is stale, and long labels such as
+`Inspector` and `Captions` cannot remain fully visible at that width.
 
-**Expected:** All five tabs fit at the smallest column width the workspace
-can produce (304px after this spec's grid update) without truncation.
+**Expected:** All seven tabs stay equal width, keyboard/tablist semantics remain
+intact, and longer labels use clean ellipsis without half-visible glyphs or
+horizontal overflow at the smallest rail width.
 
 ### B7 — Preview empty-state reads as a generic empty card (P2)
 
@@ -176,7 +176,8 @@ elevated letter-spacing, a substantial cyan CTA, a readable but secondary
 - The brand glyph renders a recognisable reticle.
 - The status bar renders monospace technical readouts with hairline
   dividers; the COOP/COEP-OK state carries a sage dot.
-- All five side-rail tabs fit without truncation at the new column width.
+- All seven side-rail tabs fit the rail without overflow, with longer labels
+  ellipsized cleanly at the new column width.
 - The preview empty state shows cyan corner brackets, a calibration grid on
   the stage, and a substantial cyan import CTA with proper contrast.
 - `vp run typecheck` passes (strict TypeScript).

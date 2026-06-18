@@ -98,15 +98,15 @@
   NLE` in `Toolbar.tsx` to match the steering doc's product name
   (`LocalCut Studio`).
 
-## T7 — Side-rail tabs fit five labels (B6)
+## T7 — Side-rail tabs compress seven labels (B6)
 
 - [x] **T7.1** In the override section, set `.side-rail-tab` to
   `flex: 1 1 0; min-width: 0; padding: 0 2px;
   font-size: 9px; letter-spacing: 0.02em; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap`.
-- [x] **T7.2** Verify in the browser that all five tabs report
-  `truncated: false` and equal width (55px each at 1440×900 and
-  1280×800).
+- [x] **T7.2** Verify in the browser at 1280×800 that all seven tabs report
+  equal width (~39.14px each) in the 304px rail, longer labels ellipsize
+  cleanly, and the tab bar has no horizontal overflow.
 
 ## T8 — Quality gate
 
@@ -130,7 +130,8 @@
 - [x] **T9.5** Preview empty state shows the cyan eyebrow ("PREVIEW"),
   monospace title ("NO SOURCE LOADED"), cyan corner brackets, and a
   140×36 cyan IMPORT CTA.
-- [x] **T9.6** All five side-rail tabs fit without truncation.
+- [x] **T9.6** All seven side-rail tabs fit the rail; longer labels ellipsize
+  cleanly without horizontal overflow.
 - [x] **T9.7** Status bar shows monospace technical readouts with
   hairline dividers; "COOP/COEP OK" carries a sage dot.
 - [ ] **T9.8** Load a real clip end-to-end and verify the timeline +
@@ -186,3 +187,11 @@ context.
   reject the reticle.
 - [x] **T13.3** Escape CSS marker glyphs and scope custom WebKit scrollbar
   styling to known scroll containers instead of the universal selector.
+
+## T14 — Claude issue-comment follow-up
+
+- [x] **T14.1** Correct the stale five-tab / 55px test-plan language to match
+  the seven-tab side rail.
+- [x] **T14.2** Re-run browser verification against all seven side-rail tabs
+  at 1280×800: rail 304px, tab bar 302px with no overflow, and equal-width
+  tabs (~39.14px each) using ellipsis for longer labels.

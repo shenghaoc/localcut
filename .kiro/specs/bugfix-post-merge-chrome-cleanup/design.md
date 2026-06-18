@@ -40,8 +40,8 @@ occupy its own implicit grid track.
 
 The workspace grid also drops the gap from `12px` to `6px` and the column
 widths tighten to `236px / 1fr / 304px` (was `232 / 1fr / 320`) so the
-preview reclaims 16px and the rail shrinks just enough to keep the five
-tabs (D6) fitting.
+preview reclaims 16px while the rail still supports seven equal-width tabs
+with clean ellipsis (D6).
 
 Why not put BeatPanel as a side-rail tab: the beat results are scoped to
 imported audio sources and are consumed in the library context (the user
@@ -204,7 +204,7 @@ The reticle reads as a sighting / calibration mark — tying the brand
 glyph to the precision-instrument stance. SVG inlined as a data URL
 avoids a new file in `public/` and stays self-contained in the CSS.
 
-## D6 — Side-rail tabs fit five labels (B6)
+## D6 — Side-rail tabs compress seven labels (B6)
 
 `src/global.css`
 
@@ -226,10 +226,11 @@ avoids a new file in `public/` and stays self-contained in the CSS.
 ```
 
 `flex: 1 1 0` gives every tab equal share. `min-width: 0` is the standard
-flex-truncation enable. `padding: 0 2px` + `letter-spacing: 0.02em`
-brings `INSPECTOR` (the widest label) under 55px at the new 304px column
-width (5×55 = 275, leaves 28px for the collapse-button + a few px of
-borders). Verified at 1280×800 — all five tabs fit without truncation.
+flex-truncation enable. With seven tabs at the new 304px rail width, the 28px
+collapse button leaves roughly 276px for tab labels, or about 39px per tab.
+That is intentionally too narrow for the longest labels, so the target is
+clean ellipsis with no horizontal overflow or half-visible glyphs rather than
+full-label visibility.
 
 ## D7 — Preview empty state as calibration surface (B7)
 
