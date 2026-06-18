@@ -756,6 +756,10 @@ export function App() {
 			}
 		});
 	};
+	const openSideRailTab = (tab: SideRailTab) => {
+		setActiveSideRailTab(tab);
+		if (sideRailCollapsed()) toggleSideRail(false);
+	};
 	const [bundleMessage, setBundleMessage] = createSignal<string | null>(null);
 	// Phase 23: replace-on-import confirm. Replaces window.confirm() which is
 	// silently suppressed in cross-origin / gesture-lapsed contexts and would
@@ -794,6 +798,7 @@ export function App() {
 	let initSent = false;
 	let pendingInitCanvas: OffscreenCanvas | null = null;
 	let compatibilityImportGeneration = 0;
+	let dockImportInput: HTMLInputElement | undefined;
 	let relinkInput: HTMLInputElement | undefined;
 	let pendingRelinkSourceId: string | null = null;
 	const audioEngine = new AudioEngine({
@@ -3214,6 +3219,12 @@ export function App() {
 		}
 	}
 
+	async function openDockImport() {
+		if (importBlocked()) return;
+		const handled = await pickImportMedia();
+		if (!handled) dockImportInput?.click();
+	}
+
 	async function pickRelinkFile(sourceId: string) {
 		if (typeof window.showOpenFilePicker === 'function') {
 			try {
@@ -4212,13 +4223,18 @@ export function App() {
 						<Show when={previewSurfaceAvailable()}>
 							<aside class="dock-left" aria-label="Library">
 								<nav class="dock-rail" aria-label="Workspace sections">
-									<button type="button" onClick={() => void pickImportMedia()}>
+									<button
+										type="button"
+										onClick={() => void openDockImport()}
+										disabled={importBlocked()}
+										title={importHint() ?? 'Import media'}
+									>
 										Project
 									</button>
 									<button type="button" aria-current="page">
 										Media
 									</button>
-									<button type="button" onClick={() => setActiveSideRailTab('record')}>
+									<button type="button" onClick={() => openSideRailTab('record')}>
 										Record
 									</button>
 									<button type="button" onClick={() => setScopePanelCollapsed((open) => !open)}>
@@ -4227,7 +4243,7 @@ export function App() {
 									<button type="button" onClick={() => setAsrPanelOpen(true)}>
 										AI
 									</button>
-									<button type="button" onClick={() => setActiveSideRailTab('captions')}>
+									<button type="button" onClick={() => openSideRailTab('captions')}>
 										Captions
 									</button>
 									<button type="button" onClick={() => setSmartReframeOpen(true)}>
@@ -4244,6 +4260,18 @@ export function App() {
 										Output
 									</button>
 								</nav>
+								<input
+									ref={(el) => {
+										dockImportInput = el;
+									}}
+									type="file"
+									accept={VIDEO_ACCEPT}
+									multiple
+									onChange={handleImportInput}
+									disabled={importBlocked()}
+									aria-label="Import media from workspace dock"
+									hidden
+								/>
 								<div class="dock-library">
 									<MediaBin
 										assets={assets}

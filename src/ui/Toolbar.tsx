@@ -125,6 +125,9 @@ export function Toolbar(props: ToolbarProps) {
 		const handled = (await props.onPickImport?.()) ?? false;
 		if (!handled) importInput?.click();
 	};
+	const openCommandPalette = () => {
+		setCommandOpen(true);
+	};
 	const sourceFormatLabel = () => {
 		const video = props.metadata?.video;
 		if (!video) return 'No source';
@@ -192,41 +195,55 @@ export function Toolbar(props: ToolbarProps) {
 					<button
 						type="button"
 						class="toolbar-menu-item"
-						onClick={() => void openImport()}
-						disabled={props.importBlocked}
+						onClick={openCommandPalette}
+						aria-haspopup="dialog"
+						title="Open project actions"
 					>
 						Project
 					</button>
 					<button
 						type="button"
 						class="toolbar-menu-item"
-						onClick={() => props.onUndo()}
-						disabled={!props.canUndo}
+						onClick={openCommandPalette}
+						aria-haspopup="dialog"
+						title="Open edit actions"
 					>
 						Edit
 					</button>
 					<button
 						type="button"
 						class="toolbar-menu-item"
-						onClick={() => props.onOpenSmartReframe?.()}
+						onClick={openCommandPalette}
+						aria-haspopup="dialog"
+						title="Open clip actions"
 					>
 						Clip
 					</button>
 					<button
 						type="button"
 						class="toolbar-menu-item"
-						onClick={() => props.onOpenSilenceReview?.()}
+						onClick={openCommandPalette}
+						aria-haspopup="dialog"
+						title="Open timeline actions"
 					>
 						Timeline
 					</button>
 					<button
 						type="button"
 						class="toolbar-menu-item"
-						onClick={() => props.onOpenCapabilities?.()}
+						onClick={openCommandPalette}
+						aria-haspopup="dialog"
+						title="Open view actions"
 					>
 						View
 					</button>
-					<button type="button" class="toolbar-menu-item" onClick={() => props.onOpenHelp?.()}>
+					<button
+						type="button"
+						class="toolbar-menu-item"
+						onClick={openCommandPalette}
+						aria-haspopup="dialog"
+						title="Open help actions"
+					>
 						Help
 					</button>
 				</nav>
@@ -367,13 +384,13 @@ export function Toolbar(props: ToolbarProps) {
 						<small>/</small>
 						<span>{formatToolbarDuration(props.duration())}</span>
 					</div>
-					<div class="timeline-toggles" role="group" aria-label="Timeline edit toggles">
-						<button type="button" aria-pressed="true">
+					<div class="timeline-toggles" role="status" aria-label="Timeline edit modes">
+						<span class="timeline-toggle-status is-on" title="Snapping is enabled">
 							Snap
-						</button>
-						<button type="button" aria-pressed="false">
+						</span>
+						<span class="timeline-toggle-status" title="Ripple editing is inactive">
 							Ripple
-						</button>
+						</span>
 					</div>
 					<div class="master-mix" role="group" aria-label="Master mix">
 						<MeterStrip meterSab={props.meterSab} />

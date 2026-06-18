@@ -7021,7 +7021,6 @@ body::-webkit-scrollbar-thumb:hover,
 
 /* =============================================================
    Editor-kit PPTX + Ark UI migration
-   Last chrome pass for the single-slide editor-kit-demo reference.
    The outer workspace remains: dock-left / preview / side-rail.
    ============================================================= */
 
@@ -7413,7 +7412,9 @@ body::-webkit-scrollbar-thumb:hover,
 	background: var(--plate);
 }
 
-.timeline-toggles button {
+.timeline-toggle-status {
+	display: inline-flex;
+	align-items: center;
 	height: 24px;
 	padding: 0 8px;
 	border: 0;
@@ -7427,7 +7428,7 @@ body::-webkit-scrollbar-thumb:hover,
 	text-transform: uppercase;
 }
 
-.timeline-toggles button[aria-pressed='true'] {
+.timeline-toggle-status.is-on {
 	background: var(--cyan-soft);
 	color: var(--cyan);
 }
@@ -7452,15 +7453,21 @@ body::-webkit-scrollbar-thumb:hover,
 	min-height: 30px;
 }
 
-.workspace,
-.workspace.has-bin {
-	grid-template-columns: 364px minmax(480px, 1fr) 360px;
+.workspace {
+	grid-template-columns: minmax(480px, 1fr) 360px;
 	gap: 8px;
 	padding: 8px;
 	background: var(--well);
 }
 
-.workspace.rail-collapsed,
+.workspace.has-bin {
+	grid-template-columns: 364px minmax(480px, 1fr) 360px;
+}
+
+.workspace.rail-collapsed {
+	grid-template-columns: minmax(480px, 1fr) 28px;
+}
+
 .workspace.has-bin.rail-collapsed {
 	grid-template-columns: 364px minmax(480px, 1fr) 28px;
 }
@@ -7509,6 +7516,11 @@ body::-webkit-scrollbar-thumb:hover,
 .dock-rail button[aria-current='page'] {
 	color: var(--cyan);
 	background: var(--cyan-soft);
+}
+
+.dock-rail button:disabled {
+	cursor: not-allowed;
+	opacity: 0.42;
 }
 
 .dock-library {
@@ -7580,6 +7592,126 @@ body::-webkit-scrollbar-thumb:hover,
 .export-popover,
 .media-info-popover {
 	z-index: 55;
+}
+
+@media (max-width: 900px) {
+	.toolbar {
+		grid-template-rows: auto auto 30px;
+		height: auto;
+		min-height: var(--toolbar-h);
+	}
+
+	.toolbar-menu {
+		grid-template-columns: auto minmax(0, 1fr);
+		height: auto;
+		min-height: 34px;
+	}
+
+	.toolbar-menu-nav {
+		display: none;
+	}
+
+	.command-search {
+		width: 100%;
+		margin-right: 8px;
+	}
+
+	.toolbar-main {
+		grid-template-columns: 1fr;
+		height: auto;
+		min-height: 48px;
+	}
+
+	.toolbar-left,
+	.toolbar-center,
+	.toolbar-right {
+		justify-content: flex-start;
+		width: 100%;
+	}
+
+	.toolbar-right {
+		flex-wrap: wrap;
+	}
+
+	.file-name {
+		max-width: 100%;
+	}
+
+	.pipeline-strip {
+		overflow-x: auto;
+	}
+
+	.pipeline-chip {
+		flex: 0 0 auto;
+	}
+
+	.workspace,
+	.workspace.has-bin,
+	.workspace.rail-collapsed,
+	.workspace.has-bin.rail-collapsed {
+		display: flex;
+		flex-direction: column;
+		min-height: auto;
+		overflow: visible;
+	}
+
+	.dock-left {
+		grid-template-columns: 48px minmax(0, 1fr);
+		gap: 6px;
+		min-height: 260px;
+	}
+
+	.dock-rail button {
+		min-height: 44px;
+	}
+
+	.preview {
+		min-height: 260px;
+	}
+
+	.side-rail {
+		height: auto;
+	}
+
+	.side-rail-tabs {
+		flex: none;
+		height: 380px;
+	}
+
+	.side-rail-tab-bar {
+		overflow-x: auto;
+		-webkit-overflow-scrolling: touch;
+	}
+
+	.side-rail-tab {
+		flex: 0 0 auto;
+		white-space: nowrap;
+	}
+}
+
+@media (max-width: 560px) {
+	.toolbar-main {
+		gap: 0.45rem;
+	}
+
+	.toolbar-left,
+	.toolbar-center {
+		flex-wrap: wrap;
+	}
+
+	.edit-controls,
+	.master-mix,
+	.timeline-toggles {
+		display: none;
+	}
+
+	.transport-controls {
+		flex-wrap: wrap;
+	}
+
+	.source-format {
+		white-space: normal;
+	}
 }
 
 /* ── Selection ── */

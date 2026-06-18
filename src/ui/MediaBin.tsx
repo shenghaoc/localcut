@@ -1,4 +1,5 @@
 import { createEffect, For, Show } from 'solid-js';
+import { Portal } from 'solid-js/web';
 import { Popover } from '@ark-ui/solid/popover';
 import {
 	AlertTriangle,
@@ -110,41 +111,43 @@ function MetaInfoPopover(props: { asset: MediaAssetSnapshot }) {
 			>
 				<Info size={13} aria-hidden="true" />
 			</Popover.Trigger>
-			<Popover.Positioner>
-				<Popover.Content class="media-info-popover panel">
-					<p class="media-info-filename">{props.asset.fileName}</p>
-					<dl class="media-info-rows">
-						<For each={metaRows(props.asset)}>
-							{(row) => (
-								<>
-									<dt class="media-info-label">{row.label}</dt>
-									<dd class="media-info-value">{row.value}</dd>
-								</>
-							)}
-						</For>
-					</dl>
-					<Show when={(props.asset.health?.warnings.length ?? 0) > 0}>
-						<ul class="media-info-health">
-							<For each={props.asset.health?.warnings}>
-								{(w) => (
-									<li class={`media-info-health-item is-${w.severity}`}>
-										<AlertTriangle size={11} aria-hidden="true" />
-										<span>{w.message}</span>
-									</li>
+			<Portal>
+				<Popover.Positioner>
+					<Popover.Content class="media-info-popover panel">
+						<p class="media-info-filename">{props.asset.fileName}</p>
+						<dl class="media-info-rows">
+							<For each={metaRows(props.asset)}>
+								{(row) => (
+									<>
+										<dt class="media-info-label">{row.label}</dt>
+										<dd class="media-info-value">{row.value}</dd>
+									</>
 								)}
 							</For>
-						</ul>
-					</Show>
-					<Show when={proxy()} keyed>
-						{(label) => (
-							<p class="media-info-proxy">
-								<Gauge size={11} aria-hidden="true" />
-								<span>{label}</span>
-							</p>
-						)}
-					</Show>
-				</Popover.Content>
-			</Popover.Positioner>
+						</dl>
+						<Show when={(props.asset.health?.warnings.length ?? 0) > 0}>
+							<ul class="media-info-health">
+								<For each={props.asset.health?.warnings}>
+									{(w) => (
+										<li class={`media-info-health-item is-${w.severity}`}>
+											<AlertTriangle size={11} aria-hidden="true" />
+											<span>{w.message}</span>
+										</li>
+									)}
+								</For>
+							</ul>
+						</Show>
+						<Show when={proxy()} keyed>
+							{(label) => (
+								<p class="media-info-proxy">
+									<Gauge size={11} aria-hidden="true" />
+									<span>{label}</span>
+								</p>
+							)}
+						</Show>
+					</Popover.Content>
+				</Popover.Positioner>
+			</Portal>
 		</Popover.Root>
 	);
 }
