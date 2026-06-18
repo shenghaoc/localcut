@@ -4601,11 +4601,72 @@ button.status-badge:hover {
 		align-items: flex-start;
 		flex-direction: column;
 		gap: 0.25rem;
+		height: auto;
+		min-height: var(--status-h);
+		padding-block: 6px;
 	}
 
 	.status-meta {
 		justify-content: flex-start;
 		flex-wrap: wrap;
+		height: auto;
+	}
+
+	.status-badge,
+	.status-ok {
+		height: 24px;
+	}
+
+	/* ── PPTX chrome mobile overrides ── */
+
+	/* Collapse the 3-row toolbar: hide the menu nav, keep brand + command search */
+	.toolbar {
+		grid-template-rows: auto auto 30px;
+	}
+
+	.toolbar-menu {
+		grid-template-columns: auto 1fr;
+		height: auto;
+		min-height: 34px;
+	}
+
+	.toolbar-menu-nav {
+		display: none;
+	}
+
+	.command-search {
+		width: 100%;
+		margin-right: 8px;
+	}
+
+	/* Dock-left: collapse the 66px icon rail to 48px */
+	.dock-left {
+		grid-template-columns: 48px minmax(0, 1fr);
+		gap: 6px;
+	}
+
+	.dock-rail button {
+		min-height: 44px;
+	}
+
+	/* Workspace: override the PPTX 3-column grid */
+	.workspace,
+	.workspace.has-bin,
+	.workspace.rail-collapsed,
+	.workspace.has-bin.rail-collapsed {
+		grid-template-columns: 1fr;
+		background: var(--well);
+	}
+
+	/* Side-rail tab bar: scroll horizontally on narrow screens */
+	.side-rail-tab-bar {
+		overflow-x: auto;
+		-webkit-overflow-scrolling: touch;
+	}
+
+	.side-rail-tab {
+		flex: 0 0 auto;
+		white-space: nowrap;
 	}
 }
 
@@ -4633,6 +4694,40 @@ button.status-badge:hover {
 
 	.transport-controls {
 		flex-wrap: wrap;
+	}
+}
+
+/* ── Touch-friendly targets for coarse pointers (phones, tablets) ─────── */
+@media (pointer: coarse) {
+	/* WCAG 2.5.5: minimum 44×44 CSS px touch target */
+	.toolbar-menu-item,
+	.side-rail-tab,
+	.dock-rail button,
+	.pipeline-chip-button,
+	.timeline-toggle,
+	.command-action {
+		min-height: 44px;
+	}
+
+	/* Prevent double-tap zoom on interactive elements */
+	button,
+	a,
+	input,
+	select,
+	textarea,
+	[role='tab'],
+	[role='button'] {
+		touch-action: manipulation;
+	}
+
+	/* Larger tap targets for small inline controls */
+	.button-size-sm {
+		min-height: 36px;
+	}
+
+	.button-size-icon {
+		min-width: 40px;
+		min-height: 40px;
 	}
 }
 
@@ -7491,65 +7586,6 @@ body::-webkit-scrollbar-thumb:hover,
 ::selection {
 	background: rgb(34 211 238 / 30%);
 	color: var(--ink-100);
-}
-
-@media (max-width: 900px) {
-	.toolbar {
-		grid-template-rows: auto 30px;
-		padding-top: 0.55rem;
-	}
-
-	.toolbar-main {
-		grid-template-columns: 1fr;
-		align-items: stretch;
-		gap: 0.55rem;
-		height: auto;
-	}
-
-	.toolbar-left,
-	.toolbar-center,
-	.toolbar-right {
-		justify-content: flex-start;
-		width: 100%;
-	}
-
-	.toolbar-right {
-		flex-wrap: wrap;
-	}
-
-	.toolbar-center {
-		order: 2;
-	}
-
-	.pipeline-strip {
-		width: 100%;
-		overflow-x: auto;
-		padding-bottom: 0.1rem;
-	}
-
-	.pipeline-chip {
-		flex: 0 0 auto;
-	}
-
-	.status-bar {
-		align-items: flex-start;
-		flex-direction: column;
-		gap: 0.25rem;
-		height: auto;
-		min-height: var(--status-h);
-		padding-block: 6px;
-	}
-
-	.status-meta {
-		flex-wrap: wrap;
-		justify-content: flex-start;
-		height: auto;
-	}
-
-	.status-badge,
-	.status-ok {
-		height: 24px;
-	}
 }
 
 /* Bundle replace modal — Phase 23 (replaces window.confirm which is suppressed
