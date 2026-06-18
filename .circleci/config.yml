@@ -1,75 +1,81 @@
 # CircleCI configuration for browser-editor.
 #
-# Migrated 1:1 from the GitHub Actions workflows under .github/workflows/:
+# Migrated from the four CI workflows previously under .github/workflows/:
 #   - ci.yml                → quality_gate
 #   - browser-tests.yml     → browser_tests
 #   - otio-validation.yml   → otio_validation
 #   - whip-integration.yml  → whip_integration
 #
-# Why CircleCI: the GitHub-hosted runners (Azure) intermittently hang during
-# `playwright install --with-deps`, which the browser_tests and whip
-# workflows both rely on. CircleCI's machine images ship apt mirrors that
-# don't share Azure's egress path, so the install completes deterministically.
+# Each design choice traces to one of the official docs the project follows:
+#   - pnpm CI:        https://pnpm.io/continuous-integration
+#   - Playwright CI:  https://playwright.dev/docs/ci
+#   - CircleCI Docker executor:
+#                     https://circleci.com/docs/guides/execution-managed/using-docker/
+#   - CircleCI Python:
+#                     https://circleci.com/docs/guides/getting-started/language-python/
+#   - vite-plus CI:   https://viteplus.dev/guide/ci (no CircleCI support —
+#                     `vp` is invoked through `pnpm exec` since vite-plus is
+#                     a project devDependency, so the binary is on
+#                     node_modules/.bin/ after `pnpm install`).
 #
-# claude.yml stays on GitHub: it triggers on GitHub-native events
-# (issue_comment, pull_request_review, etc.) that CircleCI cannot receive
-# without an external webhook relay. The deny-list in that workflow keeps
-# Claude out of `.github/workflows/*` — `.circleci/*` is intentionally not
-# denied so Claude can iterate on this config from review comments.
+# claude.yml stays on GitHub Actions: it triggers on GitHub-native events
+# (issue_comment, pull_request_review_comment, …) that CircleCI cannot
+# receive without an external webhook relay. The deny-list in that workflow
+# keeps Claude out of `.github/workflows/*`; `.circleci/*` is intentionally
+# not denied so Claude can iterate on this config from review comments.
 #
-# CircleCI-specific optimizations versus the original workflows:
-#   * Reusable `executors` + `commands` deduplicate the pnpm/install setup
-#     four jobs would otherwise repeat.
-#   * pnpm content-addressable store is cached at ~/.pnpm-store, keyed on the
-#     lockfile — install collapses to symlink creation on cache hit.
-#   * Vite+ task cache (node_modules/.vite/task-cache) is keyed on lockfile +
-#     commit SHA with restore-key fallback, so unchanged check:* steps replay
-#     from cache between runs (same contract as ci.yml).
-#   * Playwright browser cache is keyed on the resolved Playwright version
-#     extracted from the installed binary.
-#   * WHIP runs on `machine: ubuntu-2404` (not docker + setup_remote_docker)
-#     because the WebRTC ICE host candidates from MediaMTX (--network host)
-#     must be reachable from Playwright's Chromium on the same network
-#     namespace — a remote-docker daemon on a separate VM would break that.
-#   * docker_layer_caching on the machine executor speeds up the MediaMTX
-#     image pull between runs.
-#   * Auto-cancel-redundant-builds for in-progress workflows is a per-project
-#     CircleCI setting (Project Settings → Advanced) — enable it to match the
-#     `concurrency.cancel-in-progress: true` semantics from the GH workflows.
+# Auto-cancel-redundant-builds (the equivalent of the GH workflows'
+# `concurrency.cancel-in-progress: true`) is a per-project CircleCI setting:
+# Project Settings → Advanced → Auto-cancel redundant workflows. Enable it
+# there; it can't be expressed in this file.
 
 version: 2.1
 
 # --------------------------------- executors --------------------------------
 
 executors:
-  # Pinned to .node-version (Node 26). The official `node:` image guarantees a
-  # specific major; CircleCI's `cimg/node:current` tracks the LTS line and
-  # would silently downgrade. node:26-bookworm includes git/curl/openssh so
-  # `checkout`, `restore_cache`, and pnpm fetch work without extra setup.
+  # quality_gate uses node:26-bookworm because tsgo (@typescript/native-
+  # preview) and the project's catalog versions are validated against the
+  # exact major in .node-version. cimg/node:current tracks the LTS line and
+  # would silently downgrade. Per CircleCI's Docker-executor guide, any
+  # public image works as an executor.
   node:
     docker:
       - image: node:26-bookworm
     resource_class: large
     working_directory: /root/project
     environment:
-      # Keep pnpm's store out of the working tree so workspace persist/restore
-      # never touches it, and so the store cache key isolates dependency
-      # changes from source changes.
-      PNPM_HOME: /root/.pnpm
       PNPM_STORE_PATH: /root/.pnpm-store
 
-  # OTIO validation is a CI-only Python step (Phase 48) — kept off the node
-  # executor so the Python toolchain stays out of the main build matrix.
+  # browser_tests uses Playwright's official prebuilt image, per
+  # https://playwright.dev/docs/ci — it ships with the browser binaries AND
+  # all browser system dependencies preinstalled at /ms-playwright (Vitest's
+  # browser provider auto-discovers them). The image tag pins to our
+  # @playwright/test devDep version (1.60.0) so the bundled browsers match
+  # the JS package on disk. This is what skips the `playwright install
+  # --with-deps chromium` step entirely — the same step that was hanging on
+  # GitHub's Azure runners.
+  playwright:
+    docker:
+      - image: mcr.microsoft.com/playwright:v1.60.0-noble
+    resource_class: large
+    working_directory: /root/project
+    environment:
+      PNPM_STORE_PATH: /root/.pnpm-store
+
+  # otio_validation: standard CircleCI Python convenience image, per
+  # https://circleci.com/docs/guides/getting-started/language-python/.
   python:
     docker:
       - image: cimg/python:3.12
     resource_class: small
     working_directory: ~/project
 
-  # WHIP integration: WebRTC ICE host candidates from `--network host`
-  # MediaMTX must be reachable from Playwright's Chromium. The docker
-  # executor + setup_remote_docker isolates the daemon on a separate VM, so
-  # we use a Linux machine VM instead and run Docker on the host network.
+  # whip_integration: machine executor is mandatory — MediaMTX
+  # (`docker run --network host`) and Playwright's Chromium must share a
+  # network namespace so WebRTC ICE host candidates resolve. The docker
+  # executor + setup_remote_docker isolates the daemon on a separate VM and
+  # breaks that. docker_layer_caching warms the MediaMTX pull between runs.
   linux_machine:
     machine:
       image: ubuntu-2404:current
@@ -85,11 +91,13 @@ commands:
     steps:
       - run:
           name: Install pnpm (version from package.json packageManager)
-          # Corepack used to be the obvious choice here, but it's no longer
-          # bundled with the Node distribution in recent majors (the previous
-          # CircleCI run hit exit 127 on `corepack enable`). Parsing the
-          # `packageManager` field and installing via `npm -g` is the
-          # version-pinned, corepack-free equivalent.
+          # https://pnpm.io/continuous-integration#circleci recommends
+          # corepack, but corepack is no longer reliably bundled in recent
+          # Node majors (the first CircleCI run on this branch hit exit 127
+          # on `corepack enable` inside node:26-bookworm). Resolving the
+          # version out of `packageManager` and `npm install -g`'ing it
+          # gives the same version-pinned install with no corepack
+          # dependency.
           command: |
             PNPM_VERSION=$(node -p "require('./package.json').packageManager.split('@')[1].split('+')[0]")
             echo "Installing pnpm@${PNPM_VERSION}"
@@ -97,15 +105,17 @@ commands:
             pnpm --version
             pnpm config set store-dir "${PNPM_STORE_PATH:-$HOME/.pnpm-store}"
       - restore_cache:
+          # pnpm's CI guide caches the content-addressable store keyed on
+          # the lockfile — install collapses to symlink creation on hit.
           name: Restore pnpm content store
           keys:
             - pnpm-v1-{{ arch }}-{{ checksum "pnpm-lock.yaml" }}
             - pnpm-v1-{{ arch }}-
       - run:
           name: pnpm install --frozen-lockfile
-          # `prepare` in package.json runs `vp config` after install completes;
-          # vite-plus is a devDependency so its bin is on node_modules/.bin by
-          # then. Nothing extra to wire up.
+          # `prepare` in package.json runs `vp config` after install
+          # completes; vite-plus is a devDependency so its bin is already
+          # on node_modules/.bin by then.
           command: pnpm install --frozen-lockfile
       - save_cache:
           name: Save pnpm content store
@@ -117,9 +127,9 @@ commands:
 # ----------------------------------- jobs -----------------------------------
 
 jobs:
-  # Mirrors .github/workflows/ci.yml. `vp run check` chains format:check,
-  # lint, typecheck (tsgo), Vitest, and production build — each declared as a
-  # cached task in vite.config.ts so the task cache replays unchanged steps.
+  # Mirrors ci.yml. `vp run check` chains format:check + lint + typecheck
+  # (tsgo) + Vitest + production build; each is declared as a cached task in
+  # vite.config.ts, so the task cache replays content-unchanged steps.
   quality_gate:
     executor: node
     steps:
@@ -133,9 +143,10 @@ jobs:
             - vp-task-v1-{{ arch }}-
       - run:
           name: vp run check
-          # BUILD_SHA is baked into the bundle via `define` in vite.config.ts;
-          # surface CircleCI's SHA1 under the env name the check:build task
-          # already lists as a cache input.
+          # check:build lists LOCALCUT_BUILD_SHA as a cache input (the SHA
+          # is baked into the bundle via `define` in vite.config.ts) —
+          # surface CircleCI's commit SHA under that name so a new commit
+          # forces a rebuild instead of replaying a stale bundle.
           command: |
             export LOCALCUT_BUILD_SHA="${CIRCLE_SHA1}"
             pnpm exec vp run check
@@ -145,49 +156,31 @@ jobs:
             - node_modules/.vite/task-cache
           key: vp-task-v1-{{ arch }}-{{ checksum "pnpm-lock.yaml" }}-{{ .Revision }}
 
-  # Mirrors .github/workflows/browser-tests.yml. Real-Chromium Vitest browser
-  # mode; Playwright browsers cached by their resolved version.
+  # Mirrors browser-tests.yml. Real-Chromium Vitest browser mode. With the
+  # Playwright image as base, there is no separate `playwright install`
+  # step — the browsers are already at /ms-playwright inside the image
+  # (PLAYWRIGHT_BROWSERS_PATH is set by the image), so Vitest's browser
+  # provider finds them on first use.
   browser_tests:
-    executor: node
+    executor: playwright
     steps:
       - checkout
       - install_pnpm_deps
       - run:
-          name: Resolve Playwright version
-          # Exported into BASH_ENV so later steps (including the cache keys
-          # below) can read $PLAYWRIGHT_VERSION via shell interpolation.
-          command: |
-            PLAYWRIGHT_VERSION=$(pnpm exec playwright --version | awk '{print $2}')
-            echo "Playwright version: ${PLAYWRIGHT_VERSION}"
-            echo "export PLAYWRIGHT_VERSION=${PLAYWRIGHT_VERSION}" >> "$BASH_ENV"
-      - restore_cache:
-          name: Restore Playwright browsers
-          keys:
-            - playwright-v1-{{ arch }}-${PLAYWRIGHT_VERSION}
-      - run:
-          name: Install Playwright Chromium (with system deps)
-          # `--with-deps` apt-installs the browser sandbox libs the first
-          # time; cached browsers skip the download itself on warm runs.
-          command: pnpm exec playwright install --with-deps chromium
-      - save_cache:
-          name: Save Playwright browsers
-          paths:
-            - /root/.cache/ms-playwright
-            - ~/.cache/ms-playwright
-          key: playwright-v1-{{ arch }}-${PLAYWRIGHT_VERSION}
-      - run:
           name: vp run test:browser
           command: pnpm exec vp run test:browser
 
-  # Mirrors .github/workflows/otio-validation.yml. Parses the golden .otio
-  # fixtures with the reference opentimelineio package; the app itself never
-  # ships or requires Python — this is a CI-only gate.
+  # Mirrors otio-validation.yml. CI-only Python validation of the golden
+  # .otio fixtures with the reference opentimelineio package; the app
+  # itself never ships or requires Python.
   otio_validation:
     executor: python
     steps:
       - checkout
       - restore_cache:
           name: Restore pip wheel cache
+          # Per the CircleCI Python guide, key on the requirements file
+          # checksum so a bump deliberately invalidates the cache.
           keys:
             - pip-otio-v1-{{ checksum "scripts/requirements-otio.txt" }}
             - pip-otio-v1-
@@ -203,23 +196,23 @@ jobs:
           name: Validate OTIO fixtures
           command: python scripts/validate-otio-fixtures.py
 
-  # Mirrors .github/workflows/whip-integration.yml. MediaMTX runs in Docker
-  # with --network host so Playwright's Chromium can reach the WebRTC ICE
-  # host candidates without per-port docker mappings.
+  # Mirrors whip-integration.yml. Cannot use the Playwright Docker image
+  # here — the host-network MediaMTX + Chromium requirement forces machine
+  # executor, so the Playwright browsers must be installed via the
+  # `playwright install` path documented at
+  # https://playwright.dev/docs/ci. Browsers are cached by their resolved
+  # version, so warm runs skip the download.
   whip_integration:
     executor: linux_machine
     steps:
       - checkout
       - run:
           name: Install Node (.node-version) from nodejs.org
-          # ubuntu-2404:current doesn't reliably ship nvm, and the previous
-          # `[ -s nvm.sh ] && . nvm.sh` chain silently no-ops when it's
-          # missing — making `nvm install` fail with a confusing exit 1.
-          # Pull the binary tarball straight from nodejs.org instead: it's
-          # version-precise (resolved from .node-version) and doesn't care
-          # what the machine image happens to bundle this month. /usr/local
-          # is already on PATH so no BASH_ENV plumbing required for later
-          # steps.
+          # ubuntu-2404:current doesn't reliably ship nvm. Resolve the
+          # latest patch of .node-version's major from
+          # https://nodejs.org/dist/index.tab and unpack the linux-x64
+          # tarball into /usr/local — version-precise, image-agnostic,
+          # /usr/local/bin is already on PATH so no BASH_ENV plumbing.
           command: |
             NODE_MAJOR="$(cat .node-version)"
             NODE_VERSION=$(curl -fsSL https://nodejs.org/dist/index.tab \
@@ -229,19 +222,39 @@ jobs:
               exit 1
             fi
             echo "Installing Node ${NODE_VERSION}"
-            curl -fsSL "https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-linux-x64.tar.xz" -o /tmp/node.tar.xz
+            curl -fsSL "https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-linux-x64.tar.xz" \
+              -o /tmp/node.tar.xz
             sudo tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1
             node --version
             npm --version
       - install_pnpm_deps
       - run:
-          name: Install Playwright Chromium
+          name: Resolve Playwright version
+          # Used by the cache keys below — Playwright's CI guide
+          # recommends keying browser caches on the binary's version.
+          command: |
+            PLAYWRIGHT_VERSION=$(pnpm exec playwright --version | awk '{print $2}')
+            echo "Playwright version: ${PLAYWRIGHT_VERSION}"
+            echo "export PLAYWRIGHT_VERSION=${PLAYWRIGHT_VERSION}" >> "$BASH_ENV"
+      - restore_cache:
+          name: Restore Playwright browsers
+          keys:
+            - playwright-v1-{{ arch }}-${PLAYWRIGHT_VERSION}
+      - run:
+          name: Install Playwright Chromium (with system deps)
+          # --with-deps apt-installs browser sandbox libs the first time;
+          # cached browsers skip the download itself on warm runs.
           command: pnpm exec playwright install --with-deps chromium
+      - save_cache:
+          name: Save Playwright browsers
+          paths:
+            - ~/.cache/ms-playwright
+          key: playwright-v1-{{ arch }}-${PLAYWRIGHT_VERSION}
       - run:
           name: Start MediaMTX (host network, API enabled)
-          # MTX_API exposes the read-only API the test polls. The reconnect
-          # test inside the spec restarts this container by name, which is
-          # why MEDIAMTX_CONTAINER is exported to the test environment.
+          # MTX_API exposes the read-only API the test polls. The
+          # reconnect test inside the spec restarts this container by
+          # name, hence MEDIAMTX_CONTAINER below.
           command: |
             docker run -d --name whip-mediamtx --network host \
               -e MTX_API=yes \
@@ -271,21 +284,16 @@ jobs:
 # --------------------------------- workflows --------------------------------
 
 workflows:
-  # Mirrors the trigger surface of the four GH workflows: every push, every
-  # PR. CircleCI runs all four jobs in parallel by default; gating them with
-  # branch filters would re-introduce the long PR feedback loop the user is
-  # trying to escape.
+  # Trigger surface mirrors the GH workflows: every push, every PR. The four
+  # jobs run in parallel by default; gating them with branch filters would
+  # re-introduce the long PR feedback loop the user is trying to escape.
   ci:
     jobs:
       - quality_gate
       - browser_tests
       - otio_validation
-      # whip-integration.yml was filtered to `branches: [main]` (push + PRs
-      # targeting main). CircleCI has no native PR-target awareness, so we
-      # run on every branch and let the WHIP test catch regressions earlier
-      # rather than at merge. Add a `filters:` block here if cost becomes a
-      # concern — the original behaviour was:
-      #   filters:
-      #     branches:
-      #       only: main
+      # whip-integration.yml was filtered to `branches: [main]`. CircleCI
+      # has no native PR-target awareness, so we run on every branch and
+      # catch regressions before merge instead of after. Add a `filters:`
+      # block here if WHIP run cost ever becomes a concern.
       - whip_integration
