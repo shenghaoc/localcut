@@ -4065,51 +4065,83 @@ export function App() {
 					}
 				/>
 				<Show keyed when={bundleReplacePrompt()}>
-					{(prompt) => (
-						<div
-							class="modal-backdrop bundle-replace-modal-backdrop"
-							role="dialog"
-							aria-modal="true"
-							aria-labelledby="bundle-replace-title"
-							aria-describedby="bundle-replace-message"
-						>
-							<div class="bundle-replace-modal" role="document">
-								<p id="bundle-replace-title" class="bundle-replace-modal-title">
-									Replace current project?
-								</p>
-								<p id="bundle-replace-message" class="bundle-replace-modal-message">
-									{prompt.message}
-								</p>
-								<div class="bundle-replace-modal-actions">
-									<Button
-										variant="outline"
-										onClick={() => {
-											bridge?.send({
-												type: 'bundle-replace-decision',
-												jobId: prompt.jobId,
-												action: 'cancel'
-											});
-											setBundleReplacePrompt(null);
-										}}
-									>
-										Cancel
-									</Button>
-									<Button
-										onClick={() => {
-											bridge?.send({
-												type: 'bundle-replace-decision',
-												jobId: prompt.jobId,
-												action: 'replace'
-											});
-											setBundleReplacePrompt(null);
-										}}
-									>
-										Replace
-									</Button>
+					{(prompt) => {
+						let modalRef: HTMLDivElement | undefined;
+						let replaceButtonRef: HTMLButtonElement | undefined;
+						const previouslyFocused = document.activeElement as HTMLElement | null;
+						const cancel = () => {
+							bridge?.send({
+								type: 'bundle-replace-decision',
+								jobId: prompt.jobId,
+								action: 'cancel'
+							});
+							setBundleReplacePrompt(null);
+						};
+						const replace = () => {
+							bridge?.send({
+								type: 'bundle-replace-decision',
+								jobId: prompt.jobId,
+								action: 'replace'
+							});
+							setBundleReplacePrompt(null);
+						};
+						const handleKeyDown = (e: KeyboardEvent) => {
+							if (e.key === 'Escape') {
+								e.preventDefault();
+								cancel();
+								return;
+							}
+							if (e.key !== 'Tab' || !modalRef) return;
+							const focusables = modalRef.querySelectorAll<HTMLElement>(
+								'button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+							);
+							if (focusables.length === 0) return;
+							const first = focusables[0];
+							const last = focusables[focusables.length - 1];
+							const active = document.activeElement as HTMLElement | null;
+							if (e.shiftKey && active === first) {
+								e.preventDefault();
+								last.focus();
+							} else if (!e.shiftKey && active === last) {
+								e.preventDefault();
+								first.focus();
+							}
+						};
+						onMount(() => {
+							replaceButtonRef?.focus();
+						});
+						onCleanup(() => {
+							previouslyFocused?.focus?.();
+						});
+						return (
+							<div
+								ref={modalRef}
+								class="modal-backdrop bundle-replace-modal-backdrop"
+								role="dialog"
+								aria-modal="true"
+								aria-labelledby="bundle-replace-title"
+								aria-describedby="bundle-replace-message"
+								onKeyDown={handleKeyDown}
+							>
+								<div class="bundle-replace-modal">
+									<p id="bundle-replace-title" class="bundle-replace-modal-title">
+										Replace current project?
+									</p>
+									<p id="bundle-replace-message" class="bundle-replace-modal-message">
+										{prompt.message}
+									</p>
+									<div class="bundle-replace-modal-actions">
+										<Button variant="outline" onClick={cancel}>
+											Cancel
+										</Button>
+										<Button ref={replaceButtonRef} onClick={replace}>
+											Replace
+										</Button>
+									</div>
 								</div>
 							</div>
-						</div>
-					)}
+						);
+					}}
 				</Show>
 				<Show when={restoreOffer() || unresolvedSources().length > 0}>
 					<section

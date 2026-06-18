@@ -9,7 +9,8 @@ import {
 	Info,
 	Music2,
 	Plus,
-	Trash2
+	Trash2,
+	X
 } from 'lucide-solid';
 import { formatClock } from '../lib/format';
 import type { MediaAssetSnapshot } from '../protocol';
@@ -113,7 +114,13 @@ function MetaInfoPopover(props: { asset: MediaAssetSnapshot }) {
 			</Popover.Trigger>
 			<Portal>
 				<Popover.Positioner>
-					<Popover.Content class="media-info-popover panel">
+					<Popover.Content
+						class="media-info-popover panel"
+						aria-label={`File details for ${props.asset.fileName}`}
+					>
+						<Popover.CloseTrigger class="media-info-close" aria-label="Close file details">
+							<X size={12} aria-hidden="true" />
+						</Popover.CloseTrigger>
 						<p class="media-info-filename">{props.asset.fileName}</p>
 						<dl class="media-info-rows">
 							<For each={metaRows(props.asset)}>

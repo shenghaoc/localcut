@@ -1,4 +1,5 @@
 import { createSignal, For, Show, type JSX } from 'solid-js';
+import { Portal } from 'solid-js/web';
 import { Popover } from '@ark-ui/solid/popover';
 import {
 	Activity,
@@ -258,31 +259,33 @@ export function Toolbar(props: ToolbarProps) {
 						<kbd>⌘</kbd>
 						<kbd>K</kbd>
 					</Popover.Trigger>
-					<Popover.Positioner>
-						<Popover.Content class="command-popover">
-							<header class="command-popover-header">
-								<Command size={14} aria-hidden="true" />
-								<span>Command palette</span>
-							</header>
-							<ul class="command-list">
-								<For each={commandActions()}>
-									{(action) => (
-										<li>
-											<button
-												type="button"
-												class="command-action"
-												disabled={action.disabled}
-												onClick={() => runCommand(action)}
-											>
-												<span>{action.label}</span>
-												<small>{action.detail}</small>
-											</button>
-										</li>
-									)}
-								</For>
-							</ul>
-						</Popover.Content>
-					</Popover.Positioner>
+					<Portal>
+						<Popover.Positioner>
+							<Popover.Content class="command-popover" aria-label="Command palette">
+								<header class="command-popover-header">
+									<Command size={14} aria-hidden="true" />
+									<span>Command palette</span>
+								</header>
+								<ul class="command-list">
+									<For each={commandActions()}>
+										{(action) => (
+											<li>
+												<button
+													type="button"
+													class="command-action"
+													disabled={action.disabled}
+													onClick={() => runCommand(action)}
+												>
+													<span>{action.label}</span>
+													<small>{action.detail}</small>
+												</button>
+											</li>
+										)}
+									</For>
+								</ul>
+							</Popover.Content>
+						</Popover.Positioner>
+					</Portal>
 				</Popover.Root>
 			</div>
 			<div class="toolbar-main">

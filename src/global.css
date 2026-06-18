@@ -4705,7 +4705,18 @@ button.status-badge:hover {
 	.dock-rail button,
 	.pipeline-chip-button,
 	.timeline-toggle,
-	.command-action {
+	.command-action,
+	.timeline-tool-button,
+	.side-rail-collapse,
+	.side-rail-expand,
+	.segmented-btn,
+	.preset-btn {
+		min-height: 44px;
+	}
+
+	.media-bin-button,
+	.track-control-button {
+		min-width: 44px;
 		min-height: 44px;
 	}
 
@@ -4716,7 +4727,12 @@ button.status-badge:hover {
 	select,
 	textarea,
 	[role='tab'],
-	[role='button'] {
+	[role='button'],
+	.timeline-clip,
+	.media-bin-item,
+	.preview-gizmo-body,
+	.preview-gizmo-handle,
+	.preview-gizmo-rotate {
 		touch-action: manipulation;
 	}
 
@@ -4922,10 +4938,33 @@ button.status-badge:hover {
 /* ── Media info popover ───────────────────────────────────────────────── */
 
 .media-info-popover {
+	position: relative;
 	z-index: 5;
 	width: min(280px, calc(100vw - 2rem));
 	padding: 0.75rem;
 	box-shadow: var(--shadow-lg);
+}
+
+.media-info-close {
+	position: absolute;
+	top: 0.35rem;
+	right: 0.35rem;
+	display: grid;
+	place-items: center;
+	width: 22px;
+	height: 22px;
+	padding: 0;
+	border: 0;
+	border-radius: var(--radius-sm);
+	background: transparent;
+	color: var(--text-muted);
+	cursor: pointer;
+}
+
+.media-info-close:hover,
+.media-info-close:focus-visible {
+	color: var(--text);
+	background: rgb(255 255 255 / 6%);
 }
 
 .media-info-filename {
@@ -7502,7 +7541,7 @@ body::-webkit-scrollbar-thumb:hover,
 	border: 0;
 	border-bottom: 1px solid var(--edge);
 	background: transparent;
-	color: var(--ink-500);
+	color: var(--ink-300);
 	font-family: var(--font-mono);
 	font-size: 9px;
 	font-weight: 800;

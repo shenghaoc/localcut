@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, For, Show, untrack } from 'solid-js';
+import { Portal } from 'solid-js/web';
 import { Popover } from '@ark-ui/solid/popover';
 import { Copy, Download, ListPlus, Save } from 'lucide-solid';
 import { Button, buttonVariants } from './components/button';
@@ -348,560 +349,571 @@ export function ExportDialog(props: ExportDialogProps) {
 				<Download size={14} aria-hidden="true" />
 				Export
 			</Popover.Trigger>
-			<Popover.Positioner>
-				<Popover.Content class="export-popover panel" aria-label="Export">
-					{/* Saved presets selector */}
-					<Show when={props.presets.length > 0}>
-						<p class="export-eyebrow">
-							Saved preset{' '}
-							<span class="text-xs text-muted-foreground font-normal">(Experimental)</span>
-						</p>
-						<div class="export-preset-selector">
-							<select
-								class="export-select"
-								value={selectedPresetId() ?? ''}
-								disabled={props.exporting}
-								onChange={(e) => {
-									const id = e.currentTarget.value;
-									if (!id) {
-										setSelectedPresetId(null);
-										return;
-									}
-									const preset = props.presets.find((p) => p.id === id);
-									if (preset) applyExportPreset(preset);
-								}}
-							>
-								<option value="">Custom</option>
-								<For each={props.presets}>
-									{(preset) => (
-										<option value={preset.id}>
-											{preset.name}
-											{preset.builtIn ? '' : ' *'}
-										</option>
-									)}
-								</For>
-							</select>
-							<Show
-								when={
-									selectedPresetId() &&
-									!props.presets.find((p) => p.id === selectedPresetId())?.builtIn
-								}
-							>
-								<button
-									type="button"
-									class="export-preset-delete"
-									aria-label="Delete preset"
+			<Portal>
+				<Popover.Positioner>
+					<Popover.Content class="export-popover panel" aria-label="Export">
+						{/* Saved presets selector */}
+						<Show when={props.presets.length > 0}>
+							<p class="export-eyebrow">
+								Saved preset{' '}
+								<span class="text-xs text-muted-foreground font-normal">(Experimental)</span>
+							</p>
+							<div class="export-preset-selector">
+								<select
+									class="export-select"
+									value={selectedPresetId() ?? ''}
 									disabled={props.exporting}
-									onClick={() => {
-										const id = selectedPresetId();
-										if (id) {
-											props.onDeletePreset(id);
+									onChange={(e) => {
+										const id = e.currentTarget.value;
+										if (!id) {
 											setSelectedPresetId(null);
+											return;
 										}
+										const preset = props.presets.find((p) => p.id === id);
+										if (preset) applyExportPreset(preset);
 									}}
 								>
-									×
-								</button>
-							</Show>
-						</div>
-					</Show>
-
-					<Show when={aspectMismatch()}>
-						<p class="export-aspect-warning" role="alert">
-							Export dimensions ({settings().width}×{settings().height}) do not match project format
-							({props.projectAspect}). The output may appear letterboxed.
-						</p>
-					</Show>
-					<Show when={platformCodecResolution() && 'blocked' in platformCodecResolution()!}>
-						<p class="export-preset-blocked" role="alert">
-							{(platformCodecResolution() as { blocked: true; reason: string }).reason}
-						</p>
-					</Show>
-					<Show
-						when={
-							platformCodecResolution() &&
-							!('blocked' in platformCodecResolution()!) &&
-							(platformCodecResolution() as { codec: ExportVideoCodec }).codec !== settings().codec
-						}
-					>
-						<p class="export-aspect-warning" role="status">
-							H.264 is not supported on this device; falling back to VP9 (WebM).
-						</p>
-					</Show>
-
-					<p class="export-eyebrow">Export preset</p>
-					<div class="export-presets" role="group" aria-label="Export preset">
-						<button
-							type="button"
-							class={`segmented-btn${settings().preset === 'quality' ? ' is-active' : ''}`}
-							aria-pressed={settings().preset === 'quality'}
-							disabled={props.exporting}
-							onClick={() => {
-								applyPreset('quality');
-								setSelectedPresetId(null);
-							}}
-						>
-							Quality
-						</button>
-						<button
-							type="button"
-							class={`segmented-btn${settings().preset === 'fast' ? ' is-active' : ''}`}
-							aria-pressed={settings().preset === 'fast'}
-							disabled={props.exporting}
-							onClick={() => {
-								applyPreset('fast');
-								setSelectedPresetId(null);
-							}}
-						>
-							Fast
-						</button>
-					</div>
-
-					<p class="export-eyebrow">Codec</p>
-					<div class="export-codecs" role="group" aria-label="Export codec">
-						<For each={CODEC_OPTIONS}>
-							{(entry) => {
-								const supported = createMemo(() =>
-									supportedCodecSet().has(`${entry.codec}:${entry.container}`)
-								);
-								return (
-									<button
-										type="button"
-										class={`segmented-btn${settings().codec === entry.codec ? ' is-active' : ''}`}
-										aria-pressed={settings().codec === entry.codec}
-										disabled={props.exporting || !supported()}
-										title={
-											supported()
-												? undefined
-												: disabledCodecReason(entry.codec, props.capabilityProbeV2)
-										}
-										onClick={() => setCodec(entry.codec)}
-									>
-										{codecLabel(entry.codec)} · {entry.container.toUpperCase()}
-									</button>
-								);
-							}}
-						</For>
-					</div>
-
-					<Show when={nonCoreProbe()}>
-						{(probe) => (
-							<details class="export-tier-constraints" open>
-								<summary>Current tier constraints</summary>
-								<p class="export-note">
-									{probe().tier} limits export to codecs and containers that this browser can encode
-									and mux.
-								</p>
-								<ul>
-									<For
-										each={CODEC_OPTIONS.filter(
-											(entry) => !supportedCodecSet().has(`${entry.codec}:${entry.container}`)
-										)}
-									>
-										{(entry) => (
-											<li>
-												<span>
-													{codecLabel(entry.codec)} · {entry.container.toUpperCase()}
-												</span>
-												<span>{disabledCodecReason(entry.codec, probe())}</span>
-											</li>
+									<option value="">Custom</option>
+									<For each={props.presets}>
+										{(preset) => (
+											<option value={preset.id}>
+												{preset.name}
+												{preset.builtIn ? '' : ' *'}
+											</option>
 										)}
 									</For>
-								</ul>
-								<button type="button" class="export-why-link" onClick={props.onWhyConstraints}>
-									Why?
-								</button>
-							</details>
-						)}
-					</Show>
+								</select>
+								<Show
+									when={
+										selectedPresetId() &&
+										!props.presets.find((p) => p.id === selectedPresetId())?.builtIn
+									}
+								>
+									<button
+										type="button"
+										class="export-preset-delete"
+										aria-label="Delete preset"
+										disabled={props.exporting}
+										onClick={() => {
+											const id = selectedPresetId();
+											if (id) {
+												props.onDeletePreset(id);
+												setSelectedPresetId(null);
+											}
+										}}
+									>
+										×
+									</button>
+								</Show>
+							</div>
+						</Show>
 
-					<div class="export-fields">
-						<label class="export-field">
-							<span>Width</span>
-							<input
-								type="number"
-								min="2"
-								step="2"
-								value={settings().width}
+						<Show when={aspectMismatch()}>
+							<p class="export-aspect-warning" role="alert">
+								Export dimensions ({settings().width}×{settings().height}) do not match project
+								format ({props.projectAspect}). The output may appear letterboxed.
+							</p>
+						</Show>
+						<Show when={platformCodecResolution() && 'blocked' in platformCodecResolution()!}>
+							<p class="export-preset-blocked" role="alert">
+								{(platformCodecResolution() as { blocked: true; reason: string }).reason}
+							</p>
+						</Show>
+						<Show
+							when={
+								platformCodecResolution() &&
+								!('blocked' in platformCodecResolution()!) &&
+								(platformCodecResolution() as { codec: ExportVideoCodec }).codec !==
+									settings().codec
+							}
+						>
+							<p class="export-aspect-warning" role="status">
+								H.264 is not supported on this device; falling back to VP9 (WebM).
+							</p>
+						</Show>
+
+						<p class="export-eyebrow">Export preset</p>
+						<div class="export-presets" role="group" aria-label="Export preset">
+							<button
+								type="button"
+								class={`segmented-btn${settings().preset === 'quality' ? ' is-active' : ''}`}
+								aria-pressed={settings().preset === 'quality'}
 								disabled={props.exporting}
-								onInput={(event) => {
-									setSettings((current) => ({
-										...current,
-										width: Number(event.currentTarget.value)
-									}));
+								onClick={() => {
+									applyPreset('quality');
 									setSelectedPresetId(null);
 								}}
-							/>
-						</label>
-						<label class="export-field">
-							<span>Height</span>
-							<input
-								type="number"
-								min="2"
-								step="2"
-								value={settings().height}
+							>
+								Quality
+							</button>
+							<button
+								type="button"
+								class={`segmented-btn${settings().preset === 'fast' ? ' is-active' : ''}`}
+								aria-pressed={settings().preset === 'fast'}
 								disabled={props.exporting}
-								onInput={(event) => {
-									setSettings((current) => ({
-										...current,
-										height: Number(event.currentTarget.value)
-									}));
+								onClick={() => {
+									applyPreset('fast');
 									setSelectedPresetId(null);
 								}}
-							/>
-						</label>
-						<label class="export-field">
-							<span>FPS</span>
-							<input
-								type="number"
-								min="1"
-								step="0.01"
-								value={settings().fps}
-								disabled={props.exporting}
-								onInput={(event) => {
-									setSettings((current) => ({
-										...current,
-										fps: Number(event.currentTarget.value)
-									}));
-									setSelectedPresetId(null);
+							>
+								Fast
+							</button>
+						</div>
+
+						<p class="export-eyebrow">Codec</p>
+						<div class="export-codecs" role="group" aria-label="Export codec">
+							<For each={CODEC_OPTIONS}>
+								{(entry) => {
+									const supported = createMemo(() =>
+										supportedCodecSet().has(`${entry.codec}:${entry.container}`)
+									);
+									return (
+										<button
+											type="button"
+											class={`segmented-btn${settings().codec === entry.codec ? ' is-active' : ''}`}
+											aria-pressed={settings().codec === entry.codec}
+											disabled={props.exporting || !supported()}
+											title={
+												supported()
+													? undefined
+													: disabledCodecReason(entry.codec, props.capabilityProbeV2)
+											}
+											onClick={() => setCodec(entry.codec)}
+										>
+											{codecLabel(entry.codec)} · {entry.container.toUpperCase()}
+										</button>
+									);
 								}}
-							/>
-						</label>
-						<label class="export-field">
-							<span>Bitrate (Mbps)</span>
-							<input
-								type="number"
-								min="0.1"
-								step="0.1"
-								value={(settings().videoBitrate / 1_000_000).toFixed(1)}
-								disabled={props.exporting}
-								onInput={(event) => {
-									setSettings((current) => ({
-										...current,
-										videoBitrate: Number(event.currentTarget.value) * 1_000_000
-									}));
-									setSelectedPresetId(null);
-								}}
-							/>
-						</label>
-						{/* Phase 37: Frame Interpolation controls */}
-						<Show when={props.interpolationExportAvailable}>
-							<label class="export-field export-field--toggle">
+							</For>
+						</div>
+
+						<Show when={nonCoreProbe()}>
+							{(probe) => (
+								<details class="export-tier-constraints" open>
+									<summary>Current tier constraints</summary>
+									<p class="export-note">
+										{probe().tier} limits export to codecs and containers that this browser can
+										encode and mux.
+									</p>
+									<ul>
+										<For
+											each={CODEC_OPTIONS.filter(
+												(entry) => !supportedCodecSet().has(`${entry.codec}:${entry.container}`)
+											)}
+										>
+											{(entry) => (
+												<li>
+													<span>
+														{codecLabel(entry.codec)} · {entry.container.toUpperCase()}
+													</span>
+													<span>{disabledCodecReason(entry.codec, probe())}</span>
+												</li>
+											)}
+										</For>
+									</ul>
+									<button type="button" class="export-why-link" onClick={props.onWhyConstraints}>
+										Why?
+									</button>
+								</details>
+							)}
+						</Show>
+
+						<div class="export-fields">
+							<label class="export-field">
+								<span>Width</span>
 								<input
-									type="checkbox"
-									checked={!!settings().interpolation}
+									type="number"
+									min="2"
+									step="2"
+									value={settings().width}
 									disabled={props.exporting}
-									onChange={(event) => {
+									onInput={(event) => {
 										setSettings((current) => ({
 											...current,
-											interpolation: event.currentTarget.checked
-												? {
-														mode: 'fps-upconvert',
-														factorCap: 4,
-														targetFps: Math.round(settings().fps * 2),
-														motionBlur: false
-													}
-												: undefined
+											width: Number(event.currentTarget.value)
 										}));
 										setSelectedPresetId(null);
 									}}
 								/>
-								<span>FPS upconvert (ML)</span>
 							</label>
-							<Show when={settings().interpolation}>
-								<label class="export-field">
-									<span>Target FPS</span>
+							<label class="export-field">
+								<span>Height</span>
+								<input
+									type="number"
+									min="2"
+									step="2"
+									value={settings().height}
+									disabled={props.exporting}
+									onInput={(event) => {
+										setSettings((current) => ({
+											...current,
+											height: Number(event.currentTarget.value)
+										}));
+										setSelectedPresetId(null);
+									}}
+								/>
+							</label>
+							<label class="export-field">
+								<span>FPS</span>
+								<input
+									type="number"
+									min="1"
+									step="0.01"
+									value={settings().fps}
+									disabled={props.exporting}
+									onInput={(event) => {
+										setSettings((current) => ({
+											...current,
+											fps: Number(event.currentTarget.value)
+										}));
+										setSelectedPresetId(null);
+									}}
+								/>
+							</label>
+							<label class="export-field">
+								<span>Bitrate (Mbps)</span>
+								<input
+									type="number"
+									min="0.1"
+									step="0.1"
+									value={(settings().videoBitrate / 1_000_000).toFixed(1)}
+									disabled={props.exporting}
+									onInput={(event) => {
+										setSettings((current) => ({
+											...current,
+											videoBitrate: Number(event.currentTarget.value) * 1_000_000
+										}));
+										setSelectedPresetId(null);
+									}}
+								/>
+							</label>
+							{/* Phase 37: Frame Interpolation controls */}
+							<Show when={props.interpolationExportAvailable}>
+								<label class="export-field export-field--toggle">
 									<input
-										type="number"
-										min="1"
-										max="240"
-										value={settings().interpolation?.targetFps ?? Math.round(settings().fps * 2)}
+										type="checkbox"
+										checked={!!settings().interpolation}
 										disabled={props.exporting}
-										onInput={(event) => {
+										onChange={(event) => {
 											setSettings((current) => ({
 												...current,
-												interpolation: current.interpolation
+												interpolation: event.currentTarget.checked
 													? {
-															...current.interpolation,
-															targetFps: Math.max(
-																1,
-																Math.min(240, Number(event.currentTarget.value) || 60)
-															)
+															mode: 'fps-upconvert',
+															factorCap: 4,
+															targetFps: Math.round(settings().fps * 2),
+															motionBlur: false
 														}
 													: undefined
 											}));
 											setSelectedPresetId(null);
 										}}
 									/>
+									<span>FPS upconvert (ML)</span>
 								</label>
-								<label class="export-field export-field--toggle">
-									<input
-										type="checkbox"
-										checked={settings().interpolation?.motionBlur ?? false}
-										disabled={props.exporting}
-										onChange={(event) => {
-											setSettings((current) => ({
-												...current,
-												interpolation: current.interpolation
-													? { ...current.interpolation, motionBlur: event.currentTarget.checked }
-													: undefined
-											}));
-											setSelectedPresetId(null);
-										}}
-									/>
-									<span>Motion blur</span>
-								</label>
+								<Show when={settings().interpolation}>
+									<label class="export-field">
+										<span>Target FPS</span>
+										<input
+											type="number"
+											min="1"
+											max="240"
+											value={settings().interpolation?.targetFps ?? Math.round(settings().fps * 2)}
+											disabled={props.exporting}
+											onInput={(event) => {
+												setSettings((current) => ({
+													...current,
+													interpolation: current.interpolation
+														? {
+																...current.interpolation,
+																targetFps: Math.max(
+																	1,
+																	Math.min(240, Number(event.currentTarget.value) || 60)
+																)
+															}
+														: undefined
+												}));
+												setSelectedPresetId(null);
+											}}
+										/>
+									</label>
+									<label class="export-field export-field--toggle">
+										<input
+											type="checkbox"
+											checked={settings().interpolation?.motionBlur ?? false}
+											disabled={props.exporting}
+											onChange={(event) => {
+												setSettings((current) => ({
+													...current,
+													interpolation: current.interpolation
+														? { ...current.interpolation, motionBlur: event.currentTarget.checked }
+														: undefined
+												}));
+												setSelectedPresetId(null);
+											}}
+										/>
+										<span>Motion blur</span>
+									</label>
+								</Show>
 							</Show>
-						</Show>
-					</div>
+						</div>
 
-					{/* Range mode */}
-					<p class="export-eyebrow">Range</p>
-					<div class="export-presets" role="group" aria-label="Export range">
-						<button
-							type="button"
-							class={`segmented-btn${rangeMode() === 'full' ? ' is-active' : ''}`}
-							aria-pressed={rangeMode() === 'full'}
-							disabled={props.exporting}
-							onClick={() => {
-								setRangeMode('full');
-								setUseRange(false);
-								setRangeError(null);
-							}}
-						>
-							Full
-						</button>
-						<button
-							type="button"
-							class={`segmented-btn${rangeMode() === 'range' ? ' is-active' : ''}`}
-							aria-pressed={rangeMode() === 'range'}
-							disabled={props.exporting || props.timelineDuration <= 0}
-							onClick={() => {
-								setRangeMode('range');
-								setUseRange(true);
-								setRangeError(null);
-							}}
-						>
-							Range
-						</button>
-						<Show when={props.markers.length >= 2}>
+						{/* Range mode */}
+						<p class="export-eyebrow">Range</p>
+						<div class="export-presets" role="group" aria-label="Export range">
 							<button
 								type="button"
-								class={`segmented-btn${rangeMode() === 'markers' ? ' is-active' : ''}`}
-								aria-pressed={rangeMode() === 'markers'}
+								class={`segmented-btn${rangeMode() === 'full' ? ' is-active' : ''}`}
+								aria-pressed={rangeMode() === 'full'}
 								disabled={props.exporting}
 								onClick={() => {
-									setRangeMode('markers');
+									setRangeMode('full');
 									setUseRange(false);
 									setRangeError(null);
 								}}
 							>
-								Markers
+								Full
 							</button>
-						</Show>
-					</div>
-
-					<Show when={rangeMode() === 'range'}>
-						<div class="export-fields">
-							<label class="export-field">
-								<span>In (s)</span>
-								<input
-									type="number"
-									min="0"
-									step="0.01"
-									max={props.timelineDuration}
-									value={rangeStart()}
+							<button
+								type="button"
+								class={`segmented-btn${rangeMode() === 'range' ? ' is-active' : ''}`}
+								aria-pressed={rangeMode() === 'range'}
+								disabled={props.exporting || props.timelineDuration <= 0}
+								onClick={() => {
+									setRangeMode('range');
+									setUseRange(true);
+									setRangeError(null);
+								}}
+							>
+								Range
+							</button>
+							<Show when={props.markers.length >= 2}>
+								<button
+									type="button"
+									class={`segmented-btn${rangeMode() === 'markers' ? ' is-active' : ''}`}
+									aria-pressed={rangeMode() === 'markers'}
 									disabled={props.exporting}
-									onInput={(event) => {
-										setRangeStart(Number(event.currentTarget.value));
+									onClick={() => {
+										setRangeMode('markers');
+										setUseRange(false);
 										setRangeError(null);
 									}}
-								/>
-							</label>
-							<label class="export-field">
-								<span>Out (s)</span>
-								<input
-									type="number"
-									min="0"
-									step="0.01"
-									max={props.timelineDuration}
-									value={rangeEnd()}
-									disabled={props.exporting}
-									onInput={(event) => {
-										setRangeEnd(Number(event.currentTarget.value));
-										setRangeError(null);
-									}}
-								/>
-							</label>
+								>
+									Markers
+								</button>
+							</Show>
 						</div>
-						<Show when={rangeError() ?? (rangeInvalid() ? 'Out must be greater than In.' : null)}>
-							{(message) => <p class="export-error">{message()}</p>}
-						</Show>
-					</Show>
 
-					<Show when={rangeMode() === 'markers'}>
-						<p class="export-note">
-							{props.markers.length} markers — {props.markers.length - 1} range
-							{props.markers.length - 1 !== 1 ? 's' : ''} will be queued
-						</p>
-					</Show>
-
-					<Show when={props.progress}>
-						{(progress) => (
-							<div class="export-progress">
-								<div class="export-progress-row">
-									<span>{progress().phase}</span>
-									<span class="tabular-nums">{percent()}%</span>
-								</div>
-								<progress max="1" value={progress().percent} />
-								<div class="export-estimate">
-									<span>{formatDuration(progress().etaSeconds)}</span>
-									<Show when={progress().subRealtime && progress().etaSeconds !== null}>
-										<span>Sub-real-time on this hardware</span>
-									</Show>
-								</div>
+						<Show when={rangeMode() === 'range'}>
+							<div class="export-fields">
+								<label class="export-field">
+									<span>In (s)</span>
+									<input
+										type="number"
+										min="0"
+										step="0.01"
+										max={props.timelineDuration}
+										value={rangeStart()}
+										disabled={props.exporting}
+										onInput={(event) => {
+											setRangeStart(Number(event.currentTarget.value));
+											setRangeError(null);
+										}}
+									/>
+								</label>
+								<label class="export-field">
+									<span>Out (s)</span>
+									<input
+										type="number"
+										min="0"
+										step="0.01"
+										max={props.timelineDuration}
+										value={rangeEnd()}
+										disabled={props.exporting}
+										onInput={(event) => {
+											setRangeEnd(Number(event.currentTarget.value));
+											setRangeError(null);
+										}}
+									/>
+								</label>
 							</div>
-						)}
-					</Show>
+							<Show when={rangeError() ?? (rangeInvalid() ? 'Out must be greater than In.' : null)}>
+								{(message) => <p class="export-error">{message()}</p>}
+							</Show>
+						</Show>
 
-					<Show when={props.lastResult}>
-						<p class="export-note">{props.lastResult}</p>
-					</Show>
-					<Show when={props.error}>
-						<p class="export-error">{props.error}</p>
-					</Show>
-					<Show when={props.warnings.length > 0}>
-						<div class="export-warning-list" role="status" aria-live="polite">
-							<For each={props.warnings}>{(warning) => <p class="export-note">{warning}</p>}</For>
-						</div>
-					</Show>
+						<Show when={rangeMode() === 'markers'}>
+							<p class="export-note">
+								{props.markers.length} markers — {props.markers.length - 1} range
+								{props.markers.length - 1 !== 1 ? 's' : ''} will be queued
+							</p>
+						</Show>
 
-					{/* Chapters section (Phase 44 T7.4) */}
-					<details class="export-chapters">
-						<summary>YouTube Chapters</summary>
-						<ChaptersSection
-							markers={props.markers}
-							timelineDuration={props.timelineDuration}
-							projectName={props.projectName ?? 'project'}
-						/>
-					</details>
-
-					{/* Save preset */}
-					<Show when={savingPreset()}>
-						<div class="export-fields" style={{ 'margin-top': '8px' }}>
-							<label class="export-field" style={{ flex: 1 }}>
-								<span>Preset name</span>
-								<input
-									type="text"
-									value={presetName()}
-									onInput={(e) => setPresetName(e.currentTarget.value)}
-									onKeyDown={(e) => {
-										if (e.key === 'Enter') handleSavePreset();
-									}}
-									placeholder="My Preset"
-								/>
-							</label>
-							<label class="export-field" style={{ flex: 1 }}>
-								<span>Filename template</span>
-								<input
-									type="text"
-									value={presetTemplate()}
-									onInput={(e) => {
-										setPresetTemplate(e.currentTarget.value);
-										setTemplateError(null);
-									}}
-									onKeyDown={(e) => {
-										if (e.key === 'Enter') handleSavePreset();
-									}}
-									placeholder="{project}_{preset}_{index}"
-								/>
-							</label>
-						</div>
-						<Show when={templateError()}>
-							{(message) => (
-								<p class="export-error" style={{ 'margin-bottom': '8px' }}>
-									{message()}
-								</p>
+						<Show when={props.progress}>
+							{(progress) => (
+								<div class="export-progress">
+									<div class="export-progress-row">
+										<span>{progress().phase}</span>
+										<span class="tabular-nums">{percent()}%</span>
+									</div>
+									<progress max="1" value={progress().percent} />
+									<div class="export-estimate">
+										<span>{formatDuration(progress().etaSeconds)}</span>
+										<Show when={progress().subRealtime && progress().etaSeconds !== null}>
+											<span>Sub-real-time on this hardware</span>
+										</Show>
+									</div>
+								</div>
 							)}
 						</Show>
-						<div class="export-actions" style={{ 'margin-top': '4px' }}>
-							<Button variant="default" disabled={!presetName().trim()} onClick={handleSavePreset}>
-								Save
-							</Button>
-							<Button
-								onClick={() => {
-									setSavingPreset(false);
-									setTemplateError(null);
-								}}
-							>
-								Cancel
-							</Button>
-						</div>
-					</Show>
 
-					<div class="export-actions">
-						<Button
-							variant="default"
-							disabled={
-								props.exporting ||
-								!props.hasMedia ||
-								effectiveSupportedCodecs().length === 0 ||
-								rangeInvalid()
-							}
-							onClick={handleStart}
-						>
-							Start
-						</Button>
-						<Button
-							disabled={
-								props.exporting ||
-								!props.hasMedia ||
-								effectiveSupportedCodecs().length === 0 ||
-								rangeInvalid()
-							}
-							onClick={handleEnqueue}
-						>
-							<ListPlus size={14} aria-hidden="true" />
-							Add to Queue{' '}
-							<span class="text-xs text-muted-foreground font-normal">(Experimental)</span>
-						</Button>
-						<Show when={props.exporting}>
-							<Button onClick={() => props.onCancel()}>Cancel</Button>
+						<Show when={props.lastResult}>
+							<p class="export-note">{props.lastResult}</p>
 						</Show>
-						<Show when={!savingPreset()}>
+						<Show when={props.error}>
+							<p class="export-error">{props.error}</p>
+						</Show>
+						<Show when={props.warnings.length > 0}>
+							<div class="export-warning-list" role="status" aria-live="polite">
+								<For each={props.warnings}>{(warning) => <p class="export-note">{warning}</p>}</For>
+							</div>
+						</Show>
+
+						{/* Chapters section (Phase 44 T7.4) */}
+						<details class="export-chapters">
+							<summary>YouTube Chapters</summary>
+							<ChaptersSection
+								markers={props.markers}
+								timelineDuration={props.timelineDuration}
+								projectName={props.projectName ?? 'project'}
+							/>
+						</details>
+
+						{/* Save preset */}
+						<Show when={savingPreset()}>
+							<div class="export-fields" style={{ 'margin-top': '8px' }}>
+								<label class="export-field" style={{ flex: 1 }}>
+									<span>Preset name</span>
+									<input
+										type="text"
+										value={presetName()}
+										onInput={(e) => setPresetName(e.currentTarget.value)}
+										onKeyDown={(e) => {
+											if (e.key === 'Enter') handleSavePreset();
+										}}
+										placeholder="My Preset"
+									/>
+								</label>
+								<label class="export-field" style={{ flex: 1 }}>
+									<span>Filename template</span>
+									<input
+										type="text"
+										value={presetTemplate()}
+										onInput={(e) => {
+											setPresetTemplate(e.currentTarget.value);
+											setTemplateError(null);
+										}}
+										onKeyDown={(e) => {
+											if (e.key === 'Enter') handleSavePreset();
+										}}
+										placeholder="{project}_{preset}_{index}"
+									/>
+								</label>
+							</div>
+							<Show when={templateError()}>
+								{(message) => (
+									<p class="export-error" style={{ 'margin-bottom': '8px' }}>
+										{message()}
+									</p>
+								)}
+							</Show>
+							<div class="export-actions" style={{ 'margin-top': '4px' }}>
+								<Button
+									variant="default"
+									disabled={!presetName().trim()}
+									onClick={handleSavePreset}
+								>
+									Save
+								</Button>
+								<Button
+									onClick={() => {
+										setSavingPreset(false);
+										setTemplateError(null);
+									}}
+								>
+									Cancel
+								</Button>
+							</div>
+						</Show>
+
+						<div class="export-actions">
 							<Button
-								disabled={props.exporting}
-								onClick={() => {
-									const preset = props.presets.find((p) => p.id === selectedPresetId());
-									setPresetTemplate(preset?.outputTemplate ?? '');
-									setTemplateError(null);
-									setSavingPreset(true);
-								}}
+								variant="default"
+								disabled={
+									props.exporting ||
+									!props.hasMedia ||
+									effectiveSupportedCodecs().length === 0 ||
+									rangeInvalid()
+								}
+								onClick={handleStart}
 							>
-								<Save size={14} aria-hidden="true" />
-								Save Preset{' '}
+								Start
+							</Button>
+							<Button
+								disabled={
+									props.exporting ||
+									!props.hasMedia ||
+									effectiveSupportedCodecs().length === 0 ||
+									rangeInvalid()
+								}
+								onClick={handleEnqueue}
+							>
+								<ListPlus size={14} aria-hidden="true" />
+								Add to Queue{' '}
 								<span class="text-xs text-muted-foreground font-normal">(Experimental)</span>
 							</Button>
+							<Show when={props.exporting}>
+								<Button onClick={() => props.onCancel()}>Cancel</Button>
+							</Show>
+							<Show when={!savingPreset()}>
+								<Button
+									disabled={props.exporting}
+									onClick={() => {
+										const preset = props.presets.find((p) => p.id === selectedPresetId());
+										setPresetTemplate(preset?.outputTemplate ?? '');
+										setTemplateError(null);
+										setSavingPreset(true);
+									}}
+								>
+									<Save size={14} aria-hidden="true" />
+									Save Preset{' '}
+									<span class="text-xs text-muted-foreground font-normal">(Experimental)</span>
+								</Button>
+							</Show>
+							<Popover.CloseTrigger
+								class={buttonVariants()}
+								type="button"
+								disabled={props.exporting}
+							>
+								Close
+							</Popover.CloseTrigger>
+						</div>
+						<Show when={props.onOpenGuide}>
+							{/* The popover portals outside the app shell, so close it before the guide covers the editor. */}
+							<button
+								type="button"
+								class="export-why-link"
+								onClick={() => {
+									setOpen(false);
+									props.onOpenGuide?.();
+								}}
+							>
+								Export guide: codecs, presets, and the render queue
+							</button>
 						</Show>
-						<Popover.CloseTrigger class={buttonVariants()} type="button" disabled={props.exporting}>
-							Close
-						</Popover.CloseTrigger>
-					</div>
-					<Show when={props.onOpenGuide}>
-						{/* The popover portals outside the app shell, so close it before the guide covers the editor. */}
-						<button
-							type="button"
-							class="export-why-link"
-							onClick={() => {
-								setOpen(false);
-								props.onOpenGuide?.();
-							}}
-						>
-							Export guide: codecs, presets, and the render queue
-						</button>
-					</Show>
-				</Popover.Content>
-			</Popover.Positioner>
+					</Popover.Content>
+				</Popover.Positioner>
+			</Portal>
 		</Popover.Root>
 	);
 }
