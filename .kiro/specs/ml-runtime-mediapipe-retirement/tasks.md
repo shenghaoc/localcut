@@ -18,7 +18,9 @@
       manifest.
 - [x] **T4 — Wire the ORT detector (R3).** `reframe-analyzer.ts` now creates
       `createOrtFaceDetector` only; saliency remains the pre-load/default path
-      and the failure fallback.
+      and the failure fallback. This is the analyzer fallback cleanup called out
+      in review: the old multi-engine try/fallback loader is gone, and ORT load
+      errors now report saliency-only status directly.
 - [x] **T5 — Delete the MediaPipe detector (R4.1).** Removed
       `createMediapipeFaceDetector`, Tasks Vision typings, `mediapipe-loader`
       files, and remote WASM/TFLite constants from `face-models.ts`. Kept the
@@ -27,7 +29,9 @@
       second runtime, and updated `face-detector.ts` / `face-models.ts`
       comments to describe the ORT-only path.
 - [x] **T6 — Drop the dependency (R4.2).** Removed `@mediapipe/tasks-vision` from
-      `package.json`; lockfile regenerated without the package.
+      `package.json`; lockfile regenerated without the package. Together with
+      T7, this also removes the classic-worker runtime constraint that existed
+      only for the retired MediaPipe `importScripts` path.
 - [x] **T7 — Probe + UI + bridge cleanup (R3, R4.3).** Updated
       `capability-probe-v2.ts`, `SmartReframePanel`, `reframe-controller.ts`,
       `reframe-bridge.ts`, and protocol types so the only model path is ORT.
