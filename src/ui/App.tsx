@@ -4067,7 +4067,6 @@ export function App() {
 				<Show keyed when={bundleReplacePrompt()}>
 					{(prompt) => {
 						let modalRef: HTMLDivElement | undefined;
-						let replaceButtonRef: HTMLButtonElement | undefined;
 						const previouslyFocused = document.activeElement as HTMLElement | null;
 						const cancel = () => {
 							bridge?.send({
@@ -4108,14 +4107,20 @@ export function App() {
 							}
 						};
 						onMount(() => {
-							replaceButtonRef?.focus();
+							modalRef
+								?.querySelector<HTMLButtonElement>(
+									'.bundle-replace-modal-actions button:last-of-type'
+								)
+								?.focus();
 						});
 						onCleanup(() => {
 							previouslyFocused?.focus?.();
 						});
 						return (
 							<div
-								ref={modalRef}
+								ref={(el) => {
+									modalRef = el;
+								}}
 								class="modal-backdrop bundle-replace-modal-backdrop"
 								role="dialog"
 								aria-modal="true"
@@ -4134,9 +4139,7 @@ export function App() {
 										<Button variant="outline" onClick={cancel}>
 											Cancel
 										</Button>
-										<Button ref={replaceButtonRef} onClick={replace}>
-											Replace
-										</Button>
+										<Button onClick={replace}>Replace</Button>
 									</div>
 								</div>
 							</div>
