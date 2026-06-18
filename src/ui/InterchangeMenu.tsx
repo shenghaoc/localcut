@@ -1,7 +1,7 @@
 import { createSignal, For, Show } from 'solid-js';
-import { Popover } from '@kobalte/core/popover';
+import { Popover } from '@ark-ui/solid/popover';
 import { FileOutput } from 'lucide-solid';
-import { Button } from './components/button';
+import { Button, buttonVariants } from './components/button';
 import type { InterchangeFormat } from '../protocol';
 
 export interface InterchangeVideoTrack {
@@ -35,10 +35,13 @@ export function InterchangeMenu(props: InterchangeMenuProps) {
 	};
 
 	return (
-		<Popover open={open()} onOpenChange={setOpen}>
+		<Popover.Root
+			open={open()}
+			onOpenChange={(details) => setOpen(details.open)}
+			positioning={{ placement: 'bottom-end', gutter: 8 }}
+		>
 			<Popover.Trigger
-				as={Button}
-				variant="outline"
+				class={buttonVariants({ variant: 'outline' })}
 				disabled={!props.hasTimeline}
 				title={
 					props.hasTimeline
@@ -49,7 +52,7 @@ export function InterchangeMenu(props: InterchangeMenuProps) {
 				<FileOutput size={14} aria-hidden="true" />
 				Interchange
 			</Popover.Trigger>
-			<Popover.Portal>
+			<Popover.Positioner>
 				<Popover.Content class="export-popover bundle-popover">
 					<div class="export-popover-header">
 						<h2 class="export-popover-title">Timeline interchange</h2>
@@ -100,7 +103,7 @@ export function InterchangeMenu(props: InterchangeMenuProps) {
 						</div>
 					</Show>
 				</Popover.Content>
-			</Popover.Portal>
-		</Popover>
+			</Popover.Positioner>
+		</Popover.Root>
 	);
 }

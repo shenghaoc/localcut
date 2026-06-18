@@ -1,7 +1,7 @@
 import { createSignal, For, Show } from 'solid-js';
-import { Popover } from '@kobalte/core/popover';
+import { Popover } from '@ark-ui/solid/popover';
 import { FolderArchive, FolderInput, FolderOutput } from 'lucide-solid';
-import { Button } from './components/button';
+import { Button, buttonVariants } from './components/button';
 import type {
 	BundleIntegrityItemSnapshot,
 	BundleIntegrityReportSnapshot,
@@ -71,10 +71,13 @@ export function BundleDialog(props: BundleDialogProps) {
 	};
 
 	return (
-		<Popover open={open()} onOpenChange={setOpen}>
+		<Popover.Root
+			open={open()}
+			onOpenChange={(details) => setOpen(details.open)}
+			positioning={{ placement: 'bottom-end', gutter: 8 }}
+		>
 			<Popover.Trigger
-				as={Button}
-				variant="outline"
+				class={buttonVariants({ variant: 'outline' })}
 				disabled={props.disabled || !props.directoryPickerAvailable}
 				title={
 					props.directoryPickerAvailable
@@ -85,7 +88,7 @@ export function BundleDialog(props: BundleDialogProps) {
 				<FolderArchive size={14} aria-hidden="true" />
 				Project
 			</Popover.Trigger>
-			<Popover.Portal>
+			<Popover.Positioner>
 				<Popover.Content class="export-popover bundle-popover">
 					<div class="export-popover-header">
 						<h2 class="export-popover-title">
@@ -166,7 +169,7 @@ export function BundleDialog(props: BundleDialogProps) {
 						</div>
 					</Show>
 				</Popover.Content>
-			</Popover.Portal>
-		</Popover>
+			</Popover.Positioner>
+		</Popover.Root>
 	);
 }

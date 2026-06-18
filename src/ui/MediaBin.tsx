@@ -1,5 +1,5 @@
 import { createEffect, For, Show } from 'solid-js';
-import { Popover } from '@kobalte/core/popover';
+import { Popover } from '@ark-ui/solid/popover';
 import {
 	AlertTriangle,
 	Film,
@@ -101,9 +101,8 @@ function metaRows(asset: MediaAssetSnapshot): { label: string; value: string }[]
 function MetaInfoPopover(props: { asset: MediaAssetSnapshot }) {
 	const proxy = () => proxyLabel(props.asset);
 	return (
-		<Popover placement="right-start" gutter={8}>
+		<Popover.Root positioning={{ placement: 'right-start', gutter: 8 }}>
 			<Popover.Trigger
-				as="button"
 				type="button"
 				class="media-bin-button"
 				aria-label={`File details for ${props.asset.fileName}`}
@@ -111,7 +110,7 @@ function MetaInfoPopover(props: { asset: MediaAssetSnapshot }) {
 			>
 				<Info size={13} aria-hidden="true" />
 			</Popover.Trigger>
-			<Popover.Portal>
+			<Popover.Positioner>
 				<Popover.Content class="media-info-popover panel">
 					<p class="media-info-filename">{props.asset.fileName}</p>
 					<dl class="media-info-rows">
@@ -145,8 +144,8 @@ function MetaInfoPopover(props: { asset: MediaAssetSnapshot }) {
 						)}
 					</Show>
 				</Popover.Content>
-			</Popover.Portal>
-		</Popover>
+			</Popover.Positioner>
+		</Popover.Root>
 	);
 }
 

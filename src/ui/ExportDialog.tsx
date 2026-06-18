@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createSignal, For, Show, untrack } from 'solid-js';
-import { Popover } from '@kobalte/core/popover';
+import { Popover } from '@ark-ui/solid/popover';
 import { Copy, Download, ListPlus, Save } from 'lucide-solid';
-import { Button } from './components/button';
+import { Button, buttonVariants } from './components/button';
 import { validateOutputTemplate, resolvePlatformPresetCodec } from '../engine/export-presets';
 import { aspectOutputSize } from '../engine/project';
 import { exportConstraintsForProbe } from '../engine/capability-probe-v2';
@@ -339,12 +339,16 @@ export function ExportDialog(props: ExportDialogProps) {
 	}
 
 	return (
-		<Popover open={open()} onOpenChange={handleOpenChange} placement="bottom-end" gutter={7}>
-			<Popover.Trigger as={Button} disabled={!props.hasMedia}>
+		<Popover.Root
+			open={open()}
+			onOpenChange={(details) => handleOpenChange(details.open)}
+			positioning={{ placement: 'bottom-end', gutter: 7 }}
+		>
+			<Popover.Trigger class={buttonVariants()} disabled={!props.hasMedia}>
 				<Download size={14} aria-hidden="true" />
 				Export
 			</Popover.Trigger>
-			<Popover.Portal>
+			<Popover.Positioner>
 				<Popover.Content class="export-popover panel" aria-label="Export">
 					{/* Saved presets selector */}
 					<Show when={props.presets.length > 0}>
@@ -879,9 +883,9 @@ export function ExportDialog(props: ExportDialogProps) {
 								<span class="text-xs text-muted-foreground font-normal">(Experimental)</span>
 							</Button>
 						</Show>
-						<Popover.CloseButton as={Button} disabled={props.exporting}>
+						<Popover.CloseTrigger class={buttonVariants()} type="button" disabled={props.exporting}>
 							Close
-						</Popover.CloseButton>
+						</Popover.CloseTrigger>
 					</div>
 					<Show when={props.onOpenGuide}>
 						{/* The popover portals outside the app shell, so close it before the guide covers the editor. */}
@@ -897,8 +901,8 @@ export function ExportDialog(props: ExportDialogProps) {
 						</button>
 					</Show>
 				</Popover.Content>
-			</Popover.Portal>
-		</Popover>
+			</Popover.Positioner>
+		</Popover.Root>
 	);
 }
 

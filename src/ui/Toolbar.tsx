@@ -1,8 +1,11 @@
-import { Show, type JSX } from 'solid-js';
+import { createSignal, For, Show, type JSX } from 'solid-js';
+import { Popover } from '@ark-ui/solid/popover';
 import {
 	Activity,
 	AudioWaveform,
+	Command,
 	Cpu,
+	Crosshair,
 	Crop,
 	FolderOpen,
 	Globe,
@@ -15,6 +18,7 @@ import {
 	Play,
 	Radio,
 	Redo2,
+	Search,
 	ShieldCheck,
 	SkipBack,
 	SkipForward,
@@ -30,6 +34,8 @@ import { MeterStrip } from './MeterStrip';
 interface ToolbarProps {
 	metadata: MediaMetadata | null;
 	playing: () => boolean;
+	currentTime: () => number;
+	duration: () => number;
 	importAccept: string;
 	onImportFile: (file: File) => void;
 	onPickImport?: () => Promise<boolean>;
@@ -67,9 +73,43 @@ interface ToolbarProps {
 	exportControl?: JSX.Element;
 }
 
+interface CommandAction {
+	label: string;
+	detail: string;
+	disabled?: boolean;
+	onSelect: () => void | Promise<void>;
+}
+
+function formatToolbarTimecode(seconds: number, fps: number | null): string {
+	const rate = fps && Number.isFinite(fps) && fps > 0 ? Math.round(fps) : 30;
+	const totalFrames = Math.max(0, Math.round(seconds * rate));
+	const frames = totalFrames % rate;
+	const totalSeconds = Math.floor(totalFrames / rate);
+	const secs = totalSeconds % 60;
+	const totalMinutes = Math.floor(totalSeconds / 60);
+	const mins = totalMinutes % 60;
+	const hours = Math.floor(totalMinutes / 60);
+	return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs
+		.toString()
+		.padStart(2, '0')}:${frames.toString().padStart(2, '0')}`;
+}
+
+function formatToolbarDuration(seconds: number): string {
+	if (!Number.isFinite(seconds) || seconds <= 0) return '00:00:00';
+	const rounded = Math.round(seconds);
+	const secs = rounded % 60;
+	const totalMinutes = Math.floor(rounded / 60);
+	const mins = totalMinutes % 60;
+	const hours = Math.floor(totalMinutes / 60);
+	return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs
+		.toString()
+		.padStart(2, '0')}`;
+}
+
 export function Toolbar(props: ToolbarProps) {
 	const hasVideo = () => props.metadata?.video != null;
 	const transportDisabled = () => props.transportDisabled || !hasVideo();
+	const [commandOpen, setCommandOpen] = createSignal(false);
 	let importInput: HTMLInputElement | undefined;
 	const handleImportInput = (event: Event) => {
 		const input = event.currentTarget as HTMLInputElement;
@@ -84,18 +124,151 @@ export function Toolbar(props: ToolbarProps) {
 		const handled = (await props.onPickImport?.()) ?? false;
 		if (!handled) importInput?.click();
 	};
+	const sourceFormatLabel = () => {
+		const video = props.metadata?.video;
+		if (!video) return 'No source';
+		const fps = video.frameRate ? `${Math.round(video.frameRate)} FPS` : 'FPS ?';
+		return `${video.width}×${video.height} · ${fps}`;
+	};
+	const commandActions = (): CommandAction[] => [
+		{
+			label: 'Import media',
+			detail: props.importHint ?? 'Add clips, images, or audio',
+			disabled: props.importBlocked,
+			onSelect: openImport
+		},
+		{
+			label: props.playing() ? 'Pause transport' : 'Play transport',
+			detail: 'Preview playback',
+			disabled: transportDisabled(),
+			onSelect: props.playing() ? props.onPause : props.onPlay
+		},
+		{
+			label: 'Go live',
+			detail: 'Open WHIP publish controls',
+			onSelect: () => props.onOpenPublish?.()
+		},
+		{
+			label: 'Auto captions',
+			detail: 'On-device speech recognition',
+			onSelect: () => props.onOpenAutoCaptions?.()
+		},
+		{
+			label: 'Smart reframe',
+			detail: 'Generate crop-path keyframes',
+			onSelect: () => props.onOpenSmartReframe?.()
+		},
+		{
+			label: 'Capabilities',
+			detail: 'Inspect browser pipeline support',
+			onSelect: () => props.onOpenCapabilities?.()
+		},
+		{
+			label: 'User guide',
+			detail: 'Open in-app documentation',
+			onSelect: () => props.onOpenHelp?.()
+		}
+	];
+	const runCommand = (action: CommandAction) => {
+		if (action.disabled) return;
+		void action.onSelect();
+		setCommandOpen(false);
+	};
 
 	return (
 		<header class="toolbar">
+			<div class="toolbar-menu">
+				<div class="app-brand">
+					<span class="app-glyph" aria-hidden="true">
+						<Crosshair size={20} strokeWidth={1.6} />
+					</span>
+					<div class="app-brand-copy">
+						<h1 class="app-title">Browser Editor</h1>
+						<span class="app-kicker">Client NLE</span>
+					</div>
+				</div>
+				<nav class="toolbar-menu-nav" aria-label="Application menu">
+					<button
+						type="button"
+						class="toolbar-menu-item"
+						onClick={() => void openImport()}
+						disabled={props.importBlocked}
+					>
+						Project
+					</button>
+					<button
+						type="button"
+						class="toolbar-menu-item"
+						onClick={() => props.onUndo()}
+						disabled={!props.canUndo}
+					>
+						Edit
+					</button>
+					<button
+						type="button"
+						class="toolbar-menu-item"
+						onClick={() => props.onOpenSmartReframe?.()}
+					>
+						Clip
+					</button>
+					<button
+						type="button"
+						class="toolbar-menu-item"
+						onClick={() => props.onOpenSilenceReview?.()}
+					>
+						Timeline
+					</button>
+					<button
+						type="button"
+						class="toolbar-menu-item"
+						onClick={() => props.onOpenCapabilities?.()}
+					>
+						View
+					</button>
+					<button type="button" class="toolbar-menu-item" onClick={() => props.onOpenHelp?.()}>
+						Help
+					</button>
+				</nav>
+				<Popover.Root
+					open={commandOpen()}
+					onOpenChange={(details) => setCommandOpen(details.open)}
+					positioning={{ placement: 'bottom-end', gutter: 8 }}
+				>
+					<Popover.Trigger class="command-search" aria-label="Search actions">
+						<Search size={13} aria-hidden="true" />
+						<span>Search actions, panels, clips…</span>
+						<kbd>⌘</kbd>
+						<kbd>K</kbd>
+					</Popover.Trigger>
+					<Popover.Positioner>
+						<Popover.Content class="command-popover">
+							<header class="command-popover-header">
+								<Command size={14} aria-hidden="true" />
+								<span>Command palette</span>
+							</header>
+							<ul class="command-list">
+								<For each={commandActions()}>
+									{(action) => (
+										<li>
+											<button
+												type="button"
+												class="command-action"
+												disabled={action.disabled}
+												onClick={() => runCommand(action)}
+											>
+												<span>{action.label}</span>
+												<small>{action.detail}</small>
+											</button>
+										</li>
+									)}
+								</For>
+							</ul>
+						</Popover.Content>
+					</Popover.Positioner>
+				</Popover.Root>
+			</div>
 			<div class="toolbar-main">
 				<div class="toolbar-left">
-					<div class="app-brand">
-						<span class="app-glyph" aria-hidden="true" />
-						<div class="app-brand-copy">
-							<h1 class="app-title">LocalCut</h1>
-							<span class="app-kicker">0.1 · Browser NLE</span>
-						</div>
-					</div>
 					<Button
 						variant="default"
 						class="import-picker"
@@ -126,6 +299,7 @@ export function Toolbar(props: ToolbarProps) {
 							{(meta) => meta().fileName}
 						</Show>
 					</span>
+					<span class="source-format">{sourceFormatLabel()}</span>
 				</div>
 				<div class="toolbar-right">
 					<div class="edit-controls" role="group" aria-label="Edit history">
@@ -184,6 +358,21 @@ export function Toolbar(props: ToolbarProps) {
 						>
 							<SkipForward size={14} aria-hidden="true" />
 						</Button>
+					</div>
+					<div class="toolbar-timecode" aria-label="Playback timecode">
+						<span>
+							{formatToolbarTimecode(props.currentTime(), props.metadata?.video?.frameRate ?? null)}
+						</span>
+						<small>/</small>
+						<span>{formatToolbarDuration(props.duration())}</span>
+					</div>
+					<div class="timeline-toggles" role="group" aria-label="Timeline edit toggles">
+						<button type="button" aria-pressed="true">
+							Snap
+						</button>
+						<button type="button" aria-pressed="false">
+							Ripple
+						</button>
 					</div>
 					<div class="master-mix" role="group" aria-label="Master mix">
 						<MeterStrip meterSab={props.meterSab} />
