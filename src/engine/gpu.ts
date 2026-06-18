@@ -1768,16 +1768,16 @@ export class PreviewRenderer {
 
 	/**
 	 * Renders a layer stack through the same compositor as preview, then captures
-	 * the compositor-backed canvas as the frame handed to the encoder. `renderTimeS`
-	 * defaults to `timestamp` so existing callers keep using output time as the
-	 * grain seed; pass the timeline time explicitly when those diverge (in/out
-	 * range export).
+	 * the compositor-backed canvas as the frame handed to the encoder. `timestamp`
+	 * is the WebCodecs timestamp in microseconds, while `renderTimeS` is the
+	 * grain seed in seconds; pass the timeline time explicitly when those diverge
+	 * (in/out range export).
 	 */
 	async renderLayeredForExport(
 		layers: readonly CompositeLayer[],
 		timestamp: number,
 		duration: number,
-		renderTimeS = timestamp
+		renderTimeS = timestamp / 1e6
 	): Promise<VideoFrame> {
 		this.present(layers, renderTimeS);
 		await this.device.queue.onSubmittedWorkDone();
@@ -1789,7 +1789,7 @@ export class PreviewRenderer {
 		if (this.width <= 0 || this.height <= 0) {
 			throw new Error('Export renderer has not been sized.');
 		}
-		return this.renderLayeredForExport([], timestamp, duration, timestamp);
+		return this.renderLayeredForExport([], timestamp, duration, timestamp / 1e6);
 	}
 
 	/** Phase 21: encodes the zebra clipping overlay composited on top of the frame. */

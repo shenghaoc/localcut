@@ -4071,7 +4071,7 @@ export function App() {
 						</>
 					}
 				/>
-				<Show when={bundleReplacePrompt()}>
+				<Show keyed when={bundleReplacePrompt()}>
 					{(prompt) => (
 						<div
 							class="modal-backdrop bundle-replace-modal-backdrop"
@@ -4085,7 +4085,7 @@ export function App() {
 									Replace current project?
 								</p>
 								<p id="bundle-replace-message" class="bundle-replace-modal-message">
-									{prompt().message}
+									{prompt.message}
 								</p>
 								<div class="bundle-replace-modal-actions">
 									<Button
@@ -4093,7 +4093,7 @@ export function App() {
 										onClick={() => {
 											bridge?.send({
 												type: 'bundle-replace-decision',
-												jobId: prompt().jobId,
+												jobId: prompt.jobId,
 												action: 'cancel'
 											});
 											setBundleReplacePrompt(null);
@@ -4105,7 +4105,7 @@ export function App() {
 										onClick={() => {
 											bridge?.send({
 												type: 'bundle-replace-decision',
-												jobId: prompt().jobId,
+												jobId: prompt.jobId,
 												action: 'replace'
 											});
 											setBundleReplacePrompt(null);

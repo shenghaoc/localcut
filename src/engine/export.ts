@@ -1170,7 +1170,7 @@ async function encodeVideoRange(
 								undefined)
 							: undefined;
 					decodedFrames.push(videoFrame);
-					const videoTrack = sourceHandle.inspection.tracks.find(
+					const videoTrack = sourceHandle?.inspection?.tracks?.find(
 						(t): t is import('./media-adapters/types').SourceVideoTrackInspection =>
 							t.kind === 'video'
 					);

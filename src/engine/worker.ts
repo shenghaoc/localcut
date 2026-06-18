@@ -5916,7 +5916,7 @@ function setupPlayback() {
 						});
 					}
 				}
-				renderer.present(stack, timestamp);
+				renderer.present(stack, timestamp / 1e6);
 				tapProgramFrame(timestamp);
 				return;
 			}

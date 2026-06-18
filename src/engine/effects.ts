@@ -570,7 +570,7 @@ export class EffectChain {
 
 		const wgX = Math.ceil(width / 8);
 		const wgY = Math.ceil(height / 8);
-		const slots = [storage.a, storage.b, storage.c];
+		const slots = [storage.b, storage.c, storage.a];
 		let currentSrc = srcView;
 		// Start ping-pong from the slot *after* the one currentSrc currently occupies,
 		// so the first dst is never the same view as src (WebGPU forbids a single pass
@@ -578,11 +578,11 @@ export class EffectChain {
 		// External / non-storage srcView (e.g. source-normalize output) falls through
 		// to bufIdx=0 (writes to storage.b) which never collides.
 		const srcSlotIdx =
-			currentSrc === storage.a
+			currentSrc === storage.b
 				? 0
-				: currentSrc === storage.b
+				: currentSrc === storage.c
 					? 1
-					: currentSrc === storage.c
+					: currentSrc === storage.a
 						? 2
 						: -1;
 		let bufIdx = srcSlotIdx >= 0 ? (srcSlotIdx + 1) % 3 : 0;

@@ -359,7 +359,7 @@ async function openImageFile(
 		// Decoding frame metadata is what lets `effectiveFps` report the real
 		// per-frame delays — otherwise the handle stores the placeholder 25 fps
 		// forever and consumers (timeline, scheduler) step at the wrong rate.
-		await animatedSource.ensureInitialized?.().catch(() => {});
+		await animatedSource.ensureInitialized();
 		const bitmap = await createImageBitmap(file);
 		const displayWidth = bitmap.width;
 		const displayHeight = bitmap.height;

@@ -614,7 +614,7 @@ export function Inspector(props: InspectorProps) {
 	// before the worker echoes back. Without this, dragging one slider then
 	// another within ~PARAM_DEBOUNCE_MS reads `currentSkinMask()` against the
 	// stale upstream value and overwrites the first slider's just-committed
-	// change. The draft is reset whenever the selected clip changes.
+	// change. External skin-mask updates reset the draft when no edit is active.
 	//
 	// `currentSkinMask()` returns a fresh object literal so direct mutation
 	// of the result is already safe, but we shallow-clone explicitly here so
@@ -622,6 +622,17 @@ export function Inspector(props: InspectorProps) {
 	// refactored to share a reference with upstream state.
 	let skinMaskDraft: ReturnType<typeof currentSkinMask> | null = null;
 	let skinMaskDraftClipId: string | null = null;
+	createEffect(
+		on(
+			() => props.selectedClip?.skinMask,
+			() => {
+				if (skinMaskPending.size === 0 && skinMaskDebouncers.size === 0) {
+					skinMaskDraft = null;
+				}
+			},
+			{ defer: true }
+		)
+	);
 	function getSkinMaskDraft() {
 		const clip = props.selectedClip;
 		if (!clip) return null;
