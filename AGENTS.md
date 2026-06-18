@@ -32,6 +32,8 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 
 **Active:**
 
+- [**ML runtime: compositor single-device adoption**](.kiro/specs/ml-runtime-compositor-device-adoption/tasks.md) — follow-up to the ORT device-ownership work: make `PreviewRenderer` adopt ORT's `GPUDevice` (it can't be injected — [onnxruntime#26107](https://github.com/microsoft/onnxruntime/issues/26107)) so frame-coupled ORT-WebGPU output (matte/interpolation/beauty) composites zero-copy on one device. Lazy renderer rebuild on `ort.env.webgpu.device` on first ORT-WebGPU activation; flips the `compositesOnRendererDevice` gate so the worker composites those views; preserves the no-ML/LiteRT path and no-startup-load. Plan only.
+
 - [**Phase 47: WHIP Publish**](.kiro/specs/phase-47-whip-publish/tasks.md) — RFC 9725 WHIP client over RTCPeerConnection; bearer-token endpoints; H.264 baseline default with probed AV1; encoder-session budget gating record+stream; ICE restart/reconnect policy; clean HTTP DELETE teardown; MediaMTX CI integration test.
 
 - [**Phase 48: OpenTimelineIO export**](.kiro/specs/phase-48-otio-export/tasks.md) — TypeScript `ProjectDoc` → `.otio` serialiser (tracks, gaps, clips with P23 fingerprints, markers, transitions); `metadata.localcut` round-trip namespace; `project.otio` in the bundle root beside authoritative `project.json`; cuts-only CMX3600 EDL; documented `otioconvert` path for AAF/FCPXML.
