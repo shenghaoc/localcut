@@ -292,7 +292,15 @@ export class BeautyEngine {
 
 		// Sequential: detector first (cheaper, gates landmark relevance), then landmarks.
 		const detector = await loadAsset(manifest.assets.detector);
-		const landmarks = await loadAsset(manifest.assets.landmarks);
+		// If the landmark load fails (network / session creation), the detector session
+		// is already created — release it before rethrowing so it can't leak.
+		let landmarks: LoadedSession;
+		try {
+			landmarks = await loadAsset(manifest.assets.landmarks);
+		} catch (error) {
+			await detector.handle.session.release();
+			throw error;
+		}
 
 		if (this.disposed) {
 			await detector.handle.session.release();
