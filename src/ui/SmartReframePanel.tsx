@@ -104,7 +104,7 @@ export const SmartReframePanel: Component<SmartReframePanelProps> = (props) => {
 		<Show when={props.open}>
 			<div class="capability-backdrop" onClick={() => props.onClose()} aria-hidden="true" />
 			<aside
-				ref={panelRef}
+				ref={(el) => (panelRef = el)}
 				class="diagnostics-panel panel"
 				role="dialog"
 				aria-modal="true"

@@ -1413,7 +1413,7 @@ export function replaceClipKeyframeTracks(
 	const clip = timeline[loc.trackIndex]!.clips[loc.clipIndex]!;
 	const incoming = normalizeClipKeyframes(tracks, clip.duration) ?? {};
 	const merged: ClipKeyframes = {
-		...(normalizeClipKeyframes(clip.keyframes, clip.duration) ?? {})
+		...normalizeClipKeyframes(clip.keyframes, clip.duration)
 	};
 	const effectPatch: Partial<ClipEffectParams> = {};
 	const transformPatch: Partial<TransformParams> = {};

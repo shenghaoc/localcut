@@ -179,7 +179,7 @@ export function activeCaptionPayloadsAt(
 		const titleStyle: TitleStyle = normalizeTitleStyle({
 			...layoutPresetStyle,
 			...preset.titleStyle,
-			...(style.overrides ?? {})
+			...style.overrides
 		});
 
 		// Wrap the segment text using the resolved title style + caption layout.
@@ -229,7 +229,7 @@ export function activeCaptionPayloadsAt(
 			if (mapped) {
 				textureId = captionTextureId(track.id, segment.id, `highlight:${activeWordIdx}`);
 				extras = {
-					...(baseExtras ?? {}),
+					...baseExtras,
 					highlightWord: {
 						wordIndex: mapped.wordIndex,
 						lineIndex: mapped.lineIndex,

@@ -191,39 +191,39 @@ class CaptureWriter {
 					await this.handleWriteHeader(msg.sessionId, msg.sources, msg.chunkTargetS);
 					break;
 				case 'write-chunk':
-					await this.handleWriteChunk(msg);
+					this.handleWriteChunk(msg);
 					break;
 				case 'write-epoch':
-					await this.appendManifest(msg.sessionId, { kind: 'epoch', epochUs: msg.epochUs });
+					this.appendManifest(msg.sessionId, { kind: 'epoch', epochUs: msg.epochUs });
 					break;
 				case 'write-source-ended':
-					await this.appendManifest(msg.sessionId, {
+					this.appendManifest(msg.sessionId, {
 						kind: 'source-ended',
 						sourceId: msg.sourceId,
 						reason: msg.reason
 					});
 					break;
 				case 'write-pause':
-					await this.appendManifest(msg.sessionId, {
+					this.appendManifest(msg.sessionId, {
 						kind: 'pause',
 						atUs: msg.atUs
 					});
 					break;
 				case 'write-resume':
-					await this.appendManifest(msg.sessionId, {
+					this.appendManifest(msg.sessionId, {
 						kind: 'resume',
 						atUs: msg.atUs
 					});
 					break;
 				case 'write-source-added':
-					await this.appendManifest(msg.sessionId, {
+					this.appendManifest(msg.sessionId, {
 						kind: 'source-added',
 						source: msg.source,
 						atUs: msg.atUs
 					});
 					break;
 				case 'write-source-region-applied':
-					await this.appendManifest(msg.sessionId, {
+					this.appendManifest(msg.sessionId, {
 						kind: 'source-region-applied',
 						sourceId: msg.sourceId,
 						mode: msg.mode,
@@ -231,17 +231,17 @@ class CaptureWriter {
 					});
 					break;
 				case 'write-scene-switch':
-					await this.appendManifest(msg.sessionId, {
+					this.appendManifest(msg.sessionId, {
 						kind: 'scene-switch',
 						sceneId: msg.sceneId,
 						atUs: msg.atUs
 					});
 					break;
 				case 'write-event-batch':
-					await this.handleWriteEventBatch(msg);
+					this.handleWriteEventBatch(msg);
 					break;
 				case 'write-finalize':
-					await this.handleFinalize(msg.sessionId, msg.reason);
+					this.handleFinalize(msg.sessionId, msg.reason);
 					break;
 				case 'scan-sessions':
 					await this.handleScanSessions();
@@ -252,7 +252,7 @@ class CaptureWriter {
 			}
 		} catch (err) {
 			const raw = msg as unknown as Record<string, unknown>;
-			const srcId = raw.sourceId !== undefined ? String(raw.sourceId) : '';
+			const srcId = typeof raw.sourceId === 'string' ? raw.sourceId : '';
 			this.post({
 				type: 'chunk-error',
 				sourceId: srcId,
@@ -308,7 +308,7 @@ class CaptureWriter {
 					this.pendingEventBatches.delete(sessionId);
 					for (const batch of pending) {
 						try {
-							await this.writeEventBatch(eventsAccess, batch.entries);
+							this.writeEventBatch(eventsAccess, batch.entries);
 						} catch {
 							// Sidecar non-fatal — drop the batch and keep going.
 						}
@@ -336,7 +336,7 @@ class CaptureWriter {
 
 			const encoded = new TextEncoder().encode(header);
 			manifestAccess.write(encoded.buffer as ArrayBuffer, { at: manifestAccess.getSize() });
-			await manifestAccess.flush();
+			manifestAccess.flush();
 		} catch (error) {
 			for (const openFile of openFiles) {
 				try {
@@ -368,7 +368,7 @@ class CaptureWriter {
 		}
 	}
 
-	private async handleWriteChunk(msg: WriteChunkMessage): Promise<void> {
+	private handleWriteChunk(msg: WriteChunkMessage): void {
 		const fileMap = this.sessions.get(msg.sessionId);
 		const manifestAccess = this.manifestHandles.get(msg.sessionId);
 		if (!fileMap || !manifestAccess) {
@@ -384,20 +384,20 @@ class CaptureWriter {
 		const byteOffset = openFile.handle.getSize();
 		openFile.handle.write(msg.data, { at: byteOffset });
 		// 2. Flush data
-		await openFile.handle.flush();
+		openFile.handle.flush();
 		// 3. Append manifest record
 		const record =
 			JSON.stringify({ ...msg.record, byteOffset, byteLength: msg.data.byteLength }) + '\n';
 		const encoded = new TextEncoder().encode(record);
 		manifestAccess.write(encoded.buffer as ArrayBuffer, { at: manifestAccess.getSize() });
 		// 4. Flush manifest
-		await manifestAccess.flush();
+		manifestAccess.flush();
 
 		// 5. Send ACK back to pipeline worker
 		this.post({ type: 'chunk-ack', sourceId: msg.sourceId });
 	}
 
-	private async handleWriteEventBatch(msg: WriteEventBatchMessage): Promise<void> {
+	private handleWriteEventBatch(msg: WriteEventBatchMessage): void {
 		// Events sidecar is non-fatal: a missing handle, a write failure, a flush
 		// failure must never surface as `chunk-error` (the pipeline worker would
 		// treat that as a source failure). Catch everything inside this method and
@@ -429,16 +429,16 @@ class CaptureWriter {
 				return;
 			}
 			if (msg.entries.length === 0) return;
-			await this.writeEventBatch(eventsAccess, msg.entries);
+			this.writeEventBatch(eventsAccess, msg.entries);
 		} catch {
 			// Swallow — sidecar failure must not take down the session.
 		}
 	}
 
-	private async writeEventBatch(
+	private writeEventBatch(
 		eventsAccess: FileSystemSyncAccessHandle,
 		entries: WriteEventBatchMessage['entries']
-	): Promise<void> {
+	): void {
 		let payload = '';
 		for (const entry of entries) {
 			payload += JSON.stringify(entry) + '\n';
@@ -449,10 +449,10 @@ class CaptureWriter {
 		// accepts any BufferSource, so this is both safer and more idiomatic than
 		// reaching for `.buffer`.
 		eventsAccess.write(encoded, { at: eventsAccess.getSize() });
-		await eventsAccess.flush();
+		eventsAccess.flush();
 	}
 
-	private async handleFinalize(sessionId: string, reason: string): Promise<void> {
+	private handleFinalize(sessionId: string, reason: string): void {
 		const manifestAccess = this.manifestHandles.get(sessionId);
 		if (manifestAccess) {
 			const record =
@@ -463,7 +463,7 @@ class CaptureWriter {
 				}) + '\n';
 			const encoded = new TextEncoder().encode(record);
 			manifestAccess.write(encoded.buffer as ArrayBuffer, { at: manifestAccess.getSize() });
-			await manifestAccess.flush();
+			manifestAccess.flush();
 			manifestAccess.close();
 		}
 
@@ -611,7 +611,7 @@ class CaptureWriter {
 		}
 	}
 
-	private async appendManifest(sessionId: string, record: Record<string, unknown>): Promise<void> {
+	private appendManifest(sessionId: string, record: Record<string, unknown>): void {
 		const manifestAccess = this.manifestHandles.get(sessionId);
 		if (!manifestAccess) return;
 		const line = JSON.stringify(record) + '\n';

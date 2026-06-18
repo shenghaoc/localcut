@@ -52,7 +52,6 @@ function formatMs(ms: number): string {
 }
 
 export function DiagnosticsPanel(props: DiagnosticsPanelProps) {
-	// eslint-disable-next-line eslint/no-unassigned-vars — SolidJS ref assigns via JSX
 	let panelRef: HTMLElement | undefined;
 	const [copyStatus, setCopyStatus] = createSignal<string | null>(null);
 
@@ -85,9 +84,9 @@ export function DiagnosticsPanel(props: DiagnosticsPanelProps) {
 
 	return (
 		<Show when={props.open}>
-			<div class="capability-backdrop" onClick={props.onClose} aria-hidden="true" />
+			<div class="capability-backdrop" onClick={() => props.onClose()} aria-hidden="true" />
 			<aside
-				ref={panelRef}
+				ref={(el) => (panelRef = el)}
 				class="diagnostics-panel panel"
 				role="dialog"
 				aria-modal="true"

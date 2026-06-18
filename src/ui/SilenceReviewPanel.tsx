@@ -62,6 +62,7 @@ export function SilenceReviewPanel(props: SilenceReviewPanelProps) {
 	let currentRequestId: string | null = null;
 
 	// Listen for worker messages.
+	// oxlint-disable-next-line solid/reactivity -- one-time subscription set up at mount, not a render-time read
 	const unsubscribe = props.onWorkerMessage((msg) => {
 		if (msg.type === 'silence-progress' && msg.requestId === currentRequestId) {
 			setProgress(msg.progressFraction);

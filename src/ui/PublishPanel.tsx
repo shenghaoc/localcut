@@ -85,7 +85,6 @@ export function PublishPanel(props: PublishPanelProps) {
 	const [settings, setSettings] = createSignal<PublishSettingsDoc>(defaultPublishSettings());
 	const [settingsLoaded, setSettingsLoaded] = createSignal(false);
 	const [retryRemainingS, setRetryRemainingS] = createSignal<number | null>(null);
-	// eslint-disable-next-line eslint/no-unassigned-vars — SolidJS ref assigns via JSX
 	let panelRef: HTMLElement | undefined;
 
 	onMount(() => {
@@ -179,9 +178,9 @@ export function PublishPanel(props: PublishPanelProps) {
 
 	return (
 		<Show when={props.open}>
-			<div class="capability-backdrop" onClick={props.onClose} aria-hidden="true" />
+			<div class="capability-backdrop" onClick={() => props.onClose()} aria-hidden="true" />
 			<aside
-				ref={panelRef}
+				ref={(el) => (panelRef = el)}
 				class="publish-panel panel"
 				role="dialog"
 				aria-modal="true"

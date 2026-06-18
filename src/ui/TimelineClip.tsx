@@ -77,6 +77,7 @@ export function TimelineClip(props: TimelineClipProps) {
 	const waveformWidth = () => Math.max(24, Math.floor(props.clip.duration * props.pxPerSecond));
 	const clipTitle = () => `${props.clip.id} (${props.clip.sourceId})`;
 	let trimDebounce: ReturnType<typeof setTimeout> | null = null;
+	// oxlint-disable-next-line solid/reactivity -- initial-value capture for drag tracking; live updates handled in the pointer handlers
 	let pendingTrimTime = props.clip.start;
 	let activeTrimEdge: 'in' | 'out' | null = null;
 	let cleanupPointerListeners: (() => void) | null = null;
@@ -215,6 +216,7 @@ export function TimelineClip(props: TimelineClipProps) {
 		window.addEventListener('pointermove', onMove);
 		window.addEventListener('pointerup', onUp);
 		window.addEventListener('pointercancel', onUp);
+		// oxlint-disable-next-line solid/reactivity -- cleanup closure only removes listeners, no reactive reads
 		cleanupPointerListeners = () => {
 			window.removeEventListener('pointermove', onMove);
 			window.removeEventListener('pointerup', onUp);
@@ -304,6 +306,7 @@ export function TimelineClip(props: TimelineClipProps) {
 		window.addEventListener('pointermove', onMove);
 		window.addEventListener('pointerup', onUp);
 		window.addEventListener('pointercancel', onUp);
+		// oxlint-disable-next-line solid/reactivity -- cleanup closure only removes listeners, no reactive reads
 		cleanupPointerListeners = () => {
 			window.removeEventListener('pointermove', onMove);
 			window.removeEventListener('pointerup', onUp);

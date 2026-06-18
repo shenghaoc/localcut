@@ -41,7 +41,7 @@ export function parseWhisperVocab(text: string): string[] {
 	const json = JSON.parse(text) as Record<string, number>;
 	let maxId = 0;
 	for (const id of Object.values(json)) if (id > maxId) maxId = id;
-	const idToToken = new Array<string>(maxId + 1).fill('');
+	const idToToken = Array.from({ length: maxId + 1 }, () => '');
 	for (const [token, id] of Object.entries(json)) idToToken[id] = token;
 	return idToToken;
 }

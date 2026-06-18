@@ -6,7 +6,7 @@
  *  the only I/O.
  */
 
-import { createMemo, createSignal, For, Show, onCleanup } from 'solid-js';
+import { createComputed, createMemo, createSignal, For, Show, onCleanup } from 'solid-js';
 import type { CaptionAnimStylePreset } from '../engine/captions/anim-style';
 import {
 	ANIM_CAPTION_PRESETS,
@@ -374,30 +374,21 @@ export function CaptionStyleInspector(props: CaptionStyleInspectorProps) {
 	);
 
 	// Draft override state, seeded from whichever preset is currently selected.
-	// Re-seeds whenever the selected preset id changes (createMemo recomputes
-	// when its tracked dependency — the preset id — changes).
-	const initialDraft = createMemo<Draft>(() => {
+	// `selectedPresetDraft` recomputes when its tracked dependency — the preset
+	// id, via `activePreset()` — changes.
+	const selectedPresetDraft = createMemo<Draft>(() => {
 		const preset = activePreset();
 		return preset ? draftFromPreset(preset) : draftFromPreset(ANIM_CAPTION_PRESETS[0]!);
 	});
-	const [draft, setDraft] = createSignal<Draft>(initialDraft());
-	const [draftKey, setDraftKey] = createSignal(props.presetId);
-	const ensureDraftSync = () => {
-		if (draftKey() !== props.presetId) {
-			setDraft(initialDraft());
-			setDraftKey(props.presetId);
-		}
-	};
-	// Cheap polling-in-getter pattern: every render of the form reconciles the
-	// draft signal with the selected preset id. SolidJS reads in the form will
-	// trigger this getter, which re-syncs without a createEffect.
-	const d = (): Draft => {
-		ensureDraftSync();
-		return draft();
-	};
+	const [draft, setDraft] = createSignal<Draft>(draftFromPreset(ANIM_CAPTION_PRESETS[0]!));
+	// Re-seed the draft synchronously (before the DOM updates) whenever the
+	// selected preset changes, so switching presets never flashes stale fields.
+	createComputed(() => {
+		setDraft(selectedPresetDraft());
+	});
+	const d = draft;
 
 	const updateDraft = <K extends keyof Draft>(key: K, value: Draft[K]) => {
-		ensureDraftSync();
 		setDraft((prev) => ({ ...prev, [key]: value }));
 	};
 

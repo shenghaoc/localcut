@@ -19,6 +19,7 @@ const PARAM_DEBOUNCE_MS = 80;
 export function CalloutInspector(props: CalloutInspectorProps) {
 	let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
+	// oxlint-disable-next-line solid/reactivity -- intentional initial seed; createEffect below syncs external changes
 	const [localStyle, setLocalStyle] = createSignal<CalloutStyle>({ ...props.callout.style });
 
 	// Sync when external callout changes

@@ -213,8 +213,7 @@ describe('CaptureEventRingReader — TextDecoder SAB regression', () => {
 		const reader = new CaptureEventRingReader(sab);
 		writer.writeKey('Ctrl+S', 0, 0);
 
-		// eslint-disable-next-line typescript/unbound-method -- intentionally storing the
-		// prototype function so we can spy on it and restore it in `finally`.
+		// oxlint-disable-next-line typescript/unbound-method -- stored to spy on and restore in `finally`
 		const original = TextDecoder.prototype.decode;
 		let seenSharedBuffer = false;
 		TextDecoder.prototype.decode = function (input?: BufferSource, options?: TextDecodeOptions) {

@@ -64,7 +64,7 @@ export function ProgramMonitor(props: ProgramMonitorProps) {
 				class="program-monitor"
 				role="region"
 				aria-label="Program output preview"
-				ref={containerRef}
+				ref={(el) => (containerRef = el)}
 			>
 				<div class="program-monitor-overlay" aria-live="polite">
 					<span class="program-monitor-scene">{props.activeSceneName()}</span>

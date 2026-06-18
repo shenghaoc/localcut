@@ -321,6 +321,7 @@ export function Timeline(props: TimelineProps) {
 		window.addEventListener('pointermove', onMove);
 		window.addEventListener('pointerup', onUp);
 		window.addEventListener('pointercancel', onUp);
+		// oxlint-disable-next-line solid/reactivity -- cleanup closure only removes listeners, no reactive reads
 		cleanupScrubListeners = () => {
 			window.removeEventListener('pointermove', onMove);
 			window.removeEventListener('pointerup', onUp);
@@ -362,6 +363,7 @@ export function Timeline(props: TimelineProps) {
 		window.addEventListener('pointermove', onMove);
 		window.addEventListener('pointerup', onUp);
 		window.addEventListener('pointercancel', onUp);
+		// oxlint-disable-next-line solid/reactivity -- cleanup closure only removes listeners, no reactive reads
 		cleanupTransitionListeners = () => {
 			window.removeEventListener('pointermove', onMove);
 			window.removeEventListener('pointerup', onUp);
@@ -471,6 +473,7 @@ export function Timeline(props: TimelineProps) {
 		window.addEventListener('pointermove', onMove);
 		window.addEventListener('pointerup', onUp);
 		window.addEventListener('pointercancel', onUp);
+		// oxlint-disable-next-line solid/reactivity -- cleanup closure only removes listeners, no reactive reads
 		cleanupMarqueeListeners = () => {
 			window.removeEventListener('pointermove', onMove);
 			window.removeEventListener('pointerup', onUp);

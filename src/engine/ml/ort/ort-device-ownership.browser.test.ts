@@ -127,6 +127,6 @@ describe('ORT-WebGPU device ownership spike', () => {
 
 		inputTensor.dispose();
 		shared.destroy();
-		handle.session.release();
+		void handle.session.release();
 	});
 });
