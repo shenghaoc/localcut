@@ -1,8 +1,9 @@
 # CI-only OTIO validation dependency (Phase 48). The app never ships or
-# requires Python — this is consumed solely by .github/workflows/otio-validation.yml
-# to parse the golden .otio fixtures with the reference implementation.
+# requires Python — this is consumed solely by the `otio_validation` job in
+# .circleci/config.yml to parse the golden .otio fixtures with the reference
+# implementation.
 #
 # Pinned to the release the golden fixtures were verified against; bump
 # deliberately alongside a fixture re-check. Keeping it in this file (rather
-# than inline in the workflow) lets actions/setup-python key its pip cache on it.
+# than inline in the CI config) lets the pip cache key on it.
 opentimelineio==0.18.1

@@ -2,8 +2,8 @@ import { defineConfig, devices } from '@playwright/test';
 
 /**
  * Phase 47: WHIP integration tests only (R8.5) — everything else is Vitest.
- * Requires a MediaMTX instance on localhost (see
- * .github/workflows/whip-integration.yml); run locally with:
+ * Requires a MediaMTX instance on localhost (see the `whip_integration` job
+ * in .circleci/config.yml); run locally with:
  *   docker run --rm -d --name whip-mediamtx --network host -e MTX_API=yes bluenviron/mediamtx
  *   vp run test:e2e
  */
