@@ -125,6 +125,19 @@ describe('decodeRawBboxCandidates', () => {
 		expect(out[0]!.width).toBeCloseTo(0.2, 6);
 		expect(out[0]!.confidence).toBeCloseTo(0.9, 6);
 	});
+	it('reads the configured face-class score from a multi-class score row', () => {
+		const boxes = new Float32Array([0, 0, 0.2, 0.2, 0.5, 0.5, 0.8, 0.8]);
+		// UltraFace-style scores: [background, face] for each candidate.
+		const scores = new Float32Array([0.99, 0.2, 0.1, 0.92]);
+		const out = decodeRawBboxCandidates(boxes, scores, {
+			...RAW_BASE,
+			scoreStride: 2,
+			scoreIndex: 1
+		});
+		expect(out).toHaveLength(1);
+		expect(out[0]!.x).toBeCloseTo(0.5, 6);
+		expect(out[0]!.confidence).toBeCloseTo(0.92, 6);
+	});
 	it('decodes xyxy-normalized boxes', () => {
 		const boxes = new Float32Array([0.1, 0.2, 0.4, 0.6]);
 		const scores = new Float32Array([0.9]);

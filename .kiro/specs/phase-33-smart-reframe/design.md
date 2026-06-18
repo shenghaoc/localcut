@@ -3,10 +3,10 @@
 > Status: **Implemented** — automatic crop-path generation producing editable
 > Phase 15 transform keyframes, reviewed through a preview overlay and applied
 > as a single undo step. Zero server infrastructure; dedicated, lazily-spawned
-> analysis worker. Subject detection defaults to pure-DSP saliency; **MediaPipe
-> BlazeFace** face detection is available on an explicit "Load face model"
-> action (click-to-load, fetched from remote — Phase 28/29 pattern) and falls
-> back to saliency for frames with no face (R2.6 / R8.2).
+> analysis worker. Subject detection defaults to pure-DSP saliency; **ORT/ONNX
+> UltraFace RFB-320** face detection is available on an explicit "Load face
+> model" action through the same-origin `reframe-face` manifest/proxy path and
+> falls back to saliency for frames with no face (R2.6 / R8.2).
 
 ## Goal
 
@@ -14,7 +14,7 @@ Given a clip and a target aspect ratio, generate a set of `x`, `y`, `scale`
 keyframe tracks that keep the primary subject centred in the output frame as
 the camera or subject moves. The keyframes are standard Phase 15 entries —
 the user can edit, delete, or extend them by hand after generation. The
-system detects faces via MediaPipe BlazeFace (Tasks Vision), loaded on the
+system detects faces via the ORT/ONNX UltraFace RFB-320 detector, loaded on the
 user's explicit action, falls back to a pure-DSP saliency estimator for
 faceless footage, and uses a One Euro–smoothed IoU tracker to follow one
 subject across the clip.
@@ -46,7 +46,7 @@ Shot boundaries are detected by histogram difference and reset the tracker.
   │  ├ target aspect      │  post    │  ├ FrameDecoder           │     │                │
   │  │ selector           │  Message │  │  (Mediabunny demux +   │     │ timeline model │
   │  ├ preview overlay    │ ──────►  │  │   VideoDecoder)        │     │ playback loop  │
-  │  │ (CSS/SVG on        │  start   │  ├ FaceDetector (MediaPipe)   │     │ compositing    │
+  │  │ (CSS/SVG on        │  start   │  ├ FaceDetector (ORT/ONNX)    │     │ compositing    │
   │  │  monitor)          │  ◄─────  │  ├ SaliencyEstimator     │     │ export         │
   │  ├ apply / discard    │  result  │  ├ SubjectTracker         │     └────────────────┘
   │  │ / adjust           │  (done)  │  ├ ShotBoundaryDetector   │
@@ -86,7 +86,7 @@ The worker entry point. Receives a `ReframeCommand` (`start` / `cancel` /
 ```
 source file → demux → decode at 2fps → for each frame:
   ├─ shot boundary detector (histogram delta)
-  ├─ face detector (MediaPipe) → bounding boxes
+  ├─ face detector (ORT/ONNX) → bounding boxes
   │   └─ if zero faces → saliency estimator → centroid
   └─ subject tracker (IoU + One Euro)
 → keyframe generator (trajectory → x/y/scale tracks with motion bounds)
@@ -140,7 +140,8 @@ interface ReframeAnalysisStats {
 
 ### `src/engine/reframe/face-detector.ts`
 
-Wraps MediaPipe Tasks Vision (BlazeFace) for face detection.
+Defines the worker-local face-detection contract shared by the ORT detector and
+unit-test mocks.
 
 ```typescript
 interface FaceDetection {
@@ -152,27 +153,23 @@ interface FaceDetection {
 }
 
 interface FaceDetector {
-  /** Run face detection on a downscaled ImageData. Async wrapper; MediaPipe detect runs synchronously in the worker. */
+  /** Run face detection on a downscaled ImageData in the analysis worker. */
   detect(imageData: ImageData): Promise<FaceDetection[]>;
   dispose(): void;
 }
 
-interface MediapipeFaceDetectorOptions {
-  wasmPath: string;   // FilesetResolver tasks-vision WASM (jsDelivr)
-  modelUrl: string;   // BlazeFace .tflite (Google model store)
-  minConfidence?: number;
-}
-
-// createMediapipeFaceDetector(options): Promise<FaceDetector>
 // createMockFaceDetector(detections): FaceDetector
 ```
 
 - Created once on the user's explicit "Load face model" action, then cached
   for the worker session (R2.2).
-- `createFromOptions` uses `delegate: 'GPU'` and falls back to `'CPU'`.
-- Inference on downscaled `ImageData` (longest edge ≤ 512 px, R2.3).
-- MediaPipe's pixel bounding boxes are mapped back to normalised source
-  coordinates; degenerate boxes are dropped.
+- `createOrtFaceDetector` loads the same-origin `reframe-face` manifest,
+  validates the SHA-256 pinned UltraFace ONNX model, creates an ORT-WASM
+  session, normalises the downscaled `ImageData`, and decodes raw bbox outputs.
+- Inference runs on downscaled `ImageData` (longest edge ≤ 512 px, R2.3) inside
+  the analysis worker. This path is not frame-coupled preview/export work.
+- Normalised source coordinates are returned after score thresholding and NMS;
+  degenerate boxes are dropped.
 - `createMockFaceDetector` allows test injection with canned detections
   (R11.2).
 
@@ -366,21 +363,22 @@ CSS/SVG overlay on the programme monitor (R7.2).
 
 ### `src/engine/reframe/face-models.ts`
 
-Light module (no MediaPipe import) holding the remote model + runtime URLs so
-both the UI and worker can read them without pulling MediaPipe into their
-graphs: the tasks-vision WASM path (jsDelivr, pinned to the installed version)
-and the BlazeFace short-/full-range `.tflite` URLs (Google's model store). Per
-the project's hobby-scope decision these load **from remote on demand** — not
-vendored or digest-pinned; the `latest` model URL is intentionally mutable.
+Light module holding the same-origin ORT face-detector manifest URL so the UI
+can request model loading without importing ORT or detector code into the main
+thread graph. The manifest pins the UltraFace model bytes by source commit,
+size, and SHA-256; model bytes load only after the user's explicit "Load face
+model" action.
 
 ## Modules
 
 | Module | Description |
 |--------|-------------|
 | `src/engine/reframe-analyzer.ts` | Smart Reframe worker entry; orchestrates decode → detect → track → generate; holds the loaded face detector. |
-| `src/engine/reframe/face-detector.ts` | MediaPipe Tasks Vision (BlazeFace) wrapper + test mock. |
-| `src/engine/reframe/mediapipe-loader.js` | Untyped lazy boundary to `@mediapipe/tasks-vision`. |
-| `src/engine/reframe/face-models.ts` | Remote model + WASM URLs (light, no MediaPipe import). |
+| `src/engine/reframe/face-detector.ts` | Shared face-detection interface + test mock. |
+| `src/engine/reframe/face-detector-ort.ts` | Lazy ORT/ONNX detector loader, manifest fetch/validation, tensor normalisation, session run. |
+| `src/engine/reframe/face-detector-ort-decode.ts` | Pure raw-bbox / anchor-offset decode helpers and NMS. |
+| `src/engine/reframe/face-detector-ort-manifest.ts` | Strict manifest validator for detector IO/decode contracts. |
+| `src/engine/reframe/face-models.ts` | Same-origin ORT manifest URL (light, no ORT import). |
 | `src/engine/reframe/saliency-estimator.ts` | Pure-DSP saliency: skin-tone + edge density + local contrast. |
 | `src/engine/reframe/subject-tracker.ts` | IoU association + One Euro smoothing; single-subject tracking. |
 | `src/engine/reframe/shot-boundary-detector.ts` | Chi-squared histogram distance for cut detection. |
@@ -394,18 +392,17 @@ vendored or digest-pinned; the `latest` model URL is intentionally mutable.
 
 ## Third-party additions
 
-- **`@mediapipe/tasks-vision`** (runtime dependency) — Google's official Tasks
-  Vision JS, providing `FaceDetector` (BlazeFace) with anchor decode + NMS done
-  internally, so no hand-rolled decoder. The package's ~300 KB JS is bundled
-  (lazy, worker-only); its ~11 MB WASM is **not** bundled — `FilesetResolver`
-  loads it from jsDelivr at runtime (pinned to the installed version), and the
-  `.tflite` model loads from Google's `storage.googleapis.com` model store.
-  Both load **from remote on the user's explicit "Load face model" action**
-  (R0.7) and are runtime-cached by the service worker for offline reuse; nothing
-  heavy enters the precache. Per the hobby-scope decision the model is **not**
-  vendored or digest-pinned (the `latest` URL is mutable). No ONNX runtime is
-  used. The model bytes are fetched by MediaPipe itself, so the `asset-cache`
-  digest path is not used here.
+- **UltraFace RFB-320 ONNX** (MIT) — sourced from
+  `Linzaer/Ultra-Light-Fast-Generic-Face-Detector-1MB` at the pinned
+  `dffdddda9794a50607cba8f318507a28c1c27cab` commit. The
+  `public/models/reframe-face/manifest.json` entry records the source URL,
+  byte size, SHA-256, IO contract, and raw-bbox decode contract. Model bytes
+  flow through the same-origin `/_model/gh/` proxy and OPFS/SHA-256 asset
+  cache, and load only on the user's explicit "Load face model" action.
+- **ONNX Runtime Web** — reused from the shared ORT foundation. Smart Reframe
+  analysis is not frame-coupled, so the small detector is allowed on ORT-WASM
+  inside the analysis worker under the input-tensor size gate. ORT is imported
+  only by the lazy detector path.
 - The One Euro filter, saliency estimator, histogram detector, IoU tracker, and
   keyframe generator are hand-written TypeScript. Mediabunny is already a
   project dependency.

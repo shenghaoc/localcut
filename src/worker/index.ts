@@ -29,7 +29,7 @@ const HF_ORIGIN = 'https://huggingface.co';
 const GH_PROXY_PREFIX = '/_model/gh/';
 const GH_ORIGIN = 'https://raw.githubusercontent.com';
 
-/** Same-origin path prefix that proxies to Google Cloud Storage (mediapipe-assets). */
+/** Same-origin path prefix that proxies to Google Cloud Storage model assets. */
 const GCS_PROXY_PREFIX = '/_model/gcs/';
 const GCS_ORIGIN = 'https://storage.googleapis.com';
 

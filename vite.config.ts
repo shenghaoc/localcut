@@ -290,6 +290,14 @@ export default defineConfig({
 						options: { cacheName: 'interpolation-manifest' }
 					},
 					{
+						// Phase 33: Smart Reframe face-detector manifest.
+						// NetworkFirst keeps model metadata fresh while the ORT asset
+						// loader handles byte-level OPFS caching by SHA-256.
+						urlPattern: /\/models\/reframe-face\//,
+						handler: 'NetworkFirst',
+						options: { cacheName: 'reframe-face-manifest' }
+					},
+					{
 						// ORT WASM, proxied same-origin from jsDelivr via the Worker's
 						// `/_ort/` route (version-pinned upstream). ~26 MB; cached only after
 						// the first ORT feature use, so later loads work offline.
@@ -305,26 +313,6 @@ export default defineConfig({
 						urlPattern: /onnxruntime/,
 						handler: 'CacheFirst',
 						options: { cacheName: 'ort-runtime-chunks-v1' }
-					},
-					{
-						// Phase 33 Smart Reframe: MediaPipe tasks-vision WASM (~11 MB) is
-						// loaded from jsdelivr on the user's explicit face-model action;
-						// cache it so later loads are instant / offline.
-						urlPattern: /^https:\/\/cdn\.jsdelivr\.net\/npm\/@mediapipe\/tasks-vision/,
-						handler: 'CacheFirst',
-						options: {
-							cacheName: 'mediapipe-vision-runtime',
-							matchOptions: { ignoreVary: true }
-						}
-					},
-					{
-						// MediaPipe BlazeFace model from Google's model store.
-						urlPattern: /^https:\/\/storage\.googleapis\.com\/mediapipe-models\//,
-						handler: 'CacheFirst',
-						options: {
-							cacheName: 'mediapipe-models',
-							matchOptions: { ignoreVary: true }
-						}
 					}
 				]
 			}

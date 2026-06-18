@@ -19,7 +19,7 @@ per model.
 - **ORT-WebNN is opt-in per model** and requires operator-support proof before a
   manifest may pin it.
 - **ORT-WASM is allowed for small, non-frame-coupled models** such as Whisper ASR
-  and DTLN audio cleanup.
+  and DTLN audio cleanup, plus low-rate Smart Reframe face detection.
 - **Full-frame inference must not silently fall back to CPU tensors.** A
   frame-coupled manifest that lists `wasm` or `tensorLocation: "cpu"` is rejected.
 - **Models are fetched on explicit user action only.** ORT itself is lazy-loaded
@@ -122,6 +122,15 @@ faster option.
 `src/engine/audio-cleanup/cleanup-ort-worker.ts` loads the ONNX DTLN manifest
 under `public/models/dtln-onnx/`. DTLN tensors are small, so cleanup also runs on
 the WASM EP. The UI exposes one engine: ONNX Runtime DTLN.
+
+### Smart Reframe Face Detection
+
+`src/engine/reframe/face-detector-ort.ts` loads the UltraFace RFB-320 ONNX
+manifest under `public/models/reframe-face/`. Smart Reframe analysis runs in its
+own lazy worker at a low analysis fps, so the model is non-frame-coupled and pins
+ORT-WASM with CPU output tensors. The decoder reads the graph's `boxes` output
+and the face-class column from `scores [N, 2]`, then applies TypeScript NMS before
+the existing tracker/keyframe pipeline consumes the normalized boxes.
 
 ### Frame Interpolation And Beauty
 

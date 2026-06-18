@@ -14,8 +14,7 @@
  * tests on synthetic tensors without spinning up an ORT session.
  *
  * The output is always a list of normalised {@link FaceDetection} boxes the
- * Smart Reframe tracker can consume directly — the same shape MediaPipe's path
- * already returns.
+ * Smart Reframe tracker can consume directly.
  */
 import type { FaceDetection } from './face-detector';
 
@@ -37,6 +36,10 @@ export interface BaseDecodeConfig {
 	maxDetections: number;
 	/** Apply a sigmoid to raw scores before thresholding (logit-output models). */
 	applySigmoid?: boolean;
+	/** Number of scalar score entries per candidate (default 1). */
+	scoreStride?: number;
+	/** Index inside each score row to read, e.g. 1 for `[background, face]`. */
+	scoreIndex?: number;
 }
 
 /** Decode parameters for direct-bbox models (YuNet / SCRFD class). */
@@ -152,10 +155,34 @@ function activatedScore(raw: number, applySigmoid: boolean): number {
 	return activated;
 }
 
+function scoreLayout(
+	scoresLength: number,
+	config: BaseDecodeConfig
+): {
+	readonly stride: number;
+	readonly scoreIndex: number;
+	readonly candidateCount: number;
+	readonly applySigmoid: boolean;
+} {
+	const stride = config.scoreStride ?? 1;
+	const scoreIndex = config.scoreIndex ?? 0;
+	const candidateCount =
+		stride <= 0 || scoreIndex < 0 || scoreIndex >= stride || scoreIndex >= scoresLength
+			? 0
+			: Math.floor((scoresLength - 1 - scoreIndex) / stride) + 1;
+	return {
+		stride,
+		scoreIndex,
+		candidateCount,
+		applySigmoid: config.applySigmoid === true
+	};
+}
+
 /**
  * Decode a flat boxes/scores pair from a raw-bbox model. `boxes` is laid out
- * `[N * 4]` — one box per candidate in the order matching `scores[i]`. Boxes
- * in `xywh-pixel` are normalised by the source's pixel dimensions.
+ * `[N * 4]` — one box per candidate in the order matching the configured score
+ * row (`scores[i * scoreStride + scoreIndex]`). Boxes in `xywh-pixel` are
+ * normalised by the source's pixel dimensions.
  *
  * Returns the candidates surviving {@link BaseDecodeConfig.scoreThreshold}
  * (degenerate boxes always dropped). NMS is applied separately by
@@ -168,10 +195,11 @@ export function decodeRawBboxCandidates(
 	sourceWidth: number = 1,
 	sourceHeight: number = 1
 ): DecodedCandidate[] {
-	const n = Math.min(scores.length, Math.floor(boxes.length / 4));
+	const { stride, scoreIndex, candidateCount, applySigmoid } = scoreLayout(scores.length, config);
+	const n = Math.min(candidateCount, Math.floor(boxes.length / 4));
 	const out: DecodedCandidate[] = [];
 	for (let i = 0; i < n; i++) {
-		const confidence = activatedScore(scores[i] as number, config.applySigmoid === true);
+		const confidence = activatedScore(scores[i * stride + scoreIndex] as number, applySigmoid);
 		if (confidence < config.scoreThreshold) continue;
 		const offset = i * 4;
 		const candidate = readBox(
@@ -248,7 +276,7 @@ export function decodeRawBboxOutput(
  * applying the score threshold (degenerate boxes always dropped). NMS is
  * applied separately by {@link decodeAnchorOffsetOutput}.
  *
- * Convention (per BlazeFace's TFLite export):
+ * Convention used by anchor-offset face detector exports:
  * - `offsets[i*4 + 0,1]` — centre offset `(dx, dy)` from the anchor's centre,
  *   in anchor-relative units (variance-scaled when configured).
  * - `offsets[i*4 + 2,3]` — `(dw, dh)` size offset; multiplied by the anchor
@@ -264,10 +292,11 @@ export function decodeAnchorOffsetCandidates(
 	config: AnchorOffsetDecodeConfig
 ): DecodedCandidate[] {
 	const variance = config.variance ?? [1, 1, 1, 1];
-	const n = Math.min(scores.length, Math.floor(offsets.length / 4), config.anchors.length);
+	const { stride, scoreIndex, candidateCount, applySigmoid } = scoreLayout(scores.length, config);
+	const n = Math.min(candidateCount, Math.floor(offsets.length / 4), config.anchors.length);
 	const out: DecodedCandidate[] = [];
 	for (let i = 0; i < n; i++) {
-		const confidence = activatedScore(scores[i] as number, config.applySigmoid === true);
+		const confidence = activatedScore(scores[i * stride + scoreIndex] as number, applySigmoid);
 		if (confidence < config.scoreThreshold) continue;
 		const anchor = config.anchors[i]!;
 		const dxRaw = offsets[i * 4] as number;

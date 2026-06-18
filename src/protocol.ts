@@ -521,7 +521,7 @@ export type ReframeAnalysisMode = 'face' | 'saliency' | 'mixed';
 export type ReframeFaceModelStatus = 'not-loaded' | 'loading' | 'loaded' | 'failed';
 
 /** Which engine actually backs a loaded face detector. */
-export type ReframeFaceModelEngine = 'mediapipe-blazeface' | 'ort-onnx';
+export type ReframeFaceModelEngine = 'ort-onnx';
 
 /** Commands posted from the UI to the Smart Reframe worker. */
 export type SmartReframeWorkerCommand =
@@ -540,16 +540,11 @@ export type SmartReframeWorkerCommand =
 			accelerationBound?: number;
 			shotBoundaryThreshold?: number;
 	  }
-	// Load a face detector on the user's explicit action (Phase 28/29 pattern).
-	// When `ortManifestUrl` is provided the worker tries the ORT/ONNX detector
-	// first; if that manifest is a template / load fails it falls through to the
-	// MediaPipe BlazeFace path (`wasmPath` + `modelUrl`). Until either succeeds
-	// analysis is saliency-only (R2.6 / R8.2).
+	// Load the ORT/ONNX face detector on the user's explicit action. Until this
+	// succeeds, analysis is saliency-only (R2.6 / R8.2).
 	| {
 			type: 'reframe-load-face-model';
-			wasmPath: string;
-			modelUrl: string;
-			ortManifestUrl?: string;
+			ortManifestUrl: string;
 	  }
 	| { type: 'reframe-cancel' }
 	| { type: 'reframe-dispose' };
@@ -607,7 +602,7 @@ export interface MatteProbeResult {
 /**
  * Pixel normalization the model expects on its NHWC input:
  * - `signed-unit`: [-1, 1] via `rgb * 2 - 1` (MODNet and most matting models).
- * - `unit`: [0, 1] raw RGB (MediaPipe Selfie Segmentation).
+ * - `unit`: [0, 1] raw RGB (legacy segmentation manifests and some ONNX exports).
  */
 export type MatteInputRange = 'signed-unit' | 'unit';
 

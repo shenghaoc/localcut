@@ -10,12 +10,10 @@
  *   normalised Float32 tensor) → `session.run` → {@link decodeRawBboxOutput}
  *   or {@link decodeAnchorOffsetOutput} → normalised `FaceDetection[]`.
  *
- * The detector implements the same {@link FaceDetector} interface the
- * MediaPipe BlazeFace path returns, so it slots into the Smart Reframe analysis
- * worker without changes elsewhere. The manifest currently ships as a
- * `template` — the validator rejects it and the loader throws a clear
- * "no model configured" error, which the worker maps to its saliency
- * fallback ("face detector unavailable; using saliency").
+ * The detector implements the shared {@link FaceDetector} interface, so it
+ * slots into the Smart Reframe analysis worker without changing the
+ * saliency/tracking/keyframe pipeline. The shipped manifest pins UltraFace
+ * RFB-320; any load failure maps to the saliency fallback.
  *
  * Constraints:
  * - **No startup model load.** `onnxruntime-web` is reached only through
@@ -74,7 +72,7 @@ export interface CreateOrtFaceDetectorOptions extends OrtFaceDetectorPorts {
 }
 
 /** Error raised when the ORT face-detector path cannot load. The reframe worker
- *  catches it and falls through to the MediaPipe path or saliency. */
+ *  catches it and keeps analysis on saliency. */
 export class OrtFaceDetectorUnavailableError extends Error {
 	constructor(message: string) {
 		super(message);
@@ -94,7 +92,7 @@ export async function createOrtFaceDetector(
 	const fetchManifest = options.fetchManifest ?? defaultFetchManifest;
 	const loadModelBytes = options.loadModelBytes ?? defaultLoadModelBytes;
 	const createSession = options.createSession ?? createOrtSession;
-	const resizeImageData = options.resizeImageData ?? defaultResizeImageData;
+	const resizeImageData = options.resizeImageData ?? createDefaultResizeImageData();
 
 	const manifestRaw = await fetchManifest(options.manifestUrl);
 	let manifest: ReframeFaceDetectorManifest;
@@ -227,14 +225,16 @@ function decodeOutputs(
 			scoreThreshold: decode.scoreThreshold,
 			iouThreshold: decode.iouThreshold,
 			maxDetections: decode.maxDetections,
-			...(decode.applySigmoid !== undefined ? { applySigmoid: decode.applySigmoid } : {})
+			...(decode.applySigmoid !== undefined ? { applySigmoid: decode.applySigmoid } : {}),
+			...(decode.scoreStride !== undefined ? { scoreStride: decode.scoreStride } : {}),
+			...(decode.scoreIndex !== undefined ? { scoreIndex: decode.scoreIndex } : {})
 		};
 		return decodeRawBboxOutput(boxes, scores, config, sourceWidth, sourceHeight);
 	}
 	// Anchor priors come from a session output named by `decode.anchorsOutputName`
 	// (laid out [N × 4] as `cx, cy, width, height` per candidate, normalised).
 	// Without that name we cannot decode anchor-offset predictions — abort
-	// cleanly so the caller falls through to its saliency / MediaPipe fallback.
+	// cleanly so the caller keeps analysis on saliency.
 	if (!decode.anchorsOutputName) {
 		throw new OrtFaceDetectorUnavailableError(
 			'anchor-offset decoder requires decode.anchorsOutputName so anchor ' +
@@ -250,6 +250,8 @@ function decodeOutputs(
 		iouThreshold: decode.iouThreshold,
 		maxDetections: decode.maxDetections,
 		...(decode.applySigmoid !== undefined ? { applySigmoid: decode.applySigmoid } : {}),
+		...(decode.scoreStride !== undefined ? { scoreStride: decode.scoreStride } : {}),
+		...(decode.scoreIndex !== undefined ? { scoreIndex: decode.scoreIndex } : {}),
 		...(decode.variance !== undefined ? { variance: decode.variance } : {})
 	};
 	return decodeAnchorOffsetOutput(boxes, scores, config);
@@ -260,11 +262,12 @@ function readAnchorPriors(data: ArrayLike<number>): AnchorPrior[] {
 	const count = Math.floor(data.length / 4);
 	const priors: AnchorPrior[] = [];
 	for (let i = 0; i < count; i++) {
+		const offset = i * 4;
 		priors.push({
-			cx: data[i * 4] as number,
-			cy: (data[i * 4 + 1] as number) ?? 0,
-			width: (data[i * 4 + 2] as number) ?? 0,
-			height: (data[i * 4 + 3] as number) ?? 0
+			cx: data[offset] as number,
+			cy: data[offset + 1] as number,
+			width: data[offset + 2] as number,
+			height: data[offset + 3] as number
 		});
 	}
 	return priors;
@@ -389,42 +392,45 @@ async function defaultLoadModelBytes(asset: OrtModelAsset): Promise<Uint8Array> 
 	return loadOrtModelAsset(asset, { store });
 }
 
-/** Reusable canvas + 2D context for {@link defaultResizeImageData}. The Smart
- *  Reframe worker is single-threaded per analysis and resizes to a fixed
- *  model-input size for every frame, so allocating a fresh canvas each call
- *  would churn the worker's heap. Reset when the model dims change. */
-let resizeCanvas: OffscreenCanvas | null = null;
-let resizeCtx: OffscreenCanvasRenderingContext2D | null = null;
+function createDefaultResizeImageData(): NonNullable<OrtFaceDetectorPorts['resizeImageData']> {
+	/** Reusable canvas + 2D context scoped to one detector instance. The Smart
+	 *  Reframe worker is single-threaded per analysis and resizes to a fixed
+	 *  model-input size for every frame, so allocating a fresh canvas each call
+	 *  would churn the worker's heap. Keeping this in the closure avoids a
+	 *  module-global canvas shared across future detector instances. */
+	let resizeCanvas: OffscreenCanvas | null = null;
+	let resizeCtx: OffscreenCanvasRenderingContext2D | null = null;
 
-async function defaultResizeImageData(
-	image: ImageData,
-	width: number,
-	height: number
-): Promise<Uint8ClampedArray> {
-	// createImageBitmap accepts ImageData; subsequent drawImage onto a
-	// model-size OffscreenCanvas scales it. Both APIs exist in DedicatedWorker.
-	if (typeof createImageBitmap !== 'function' || typeof OffscreenCanvas !== 'function') {
-		throw new OrtFaceDetectorUnavailableError(
-			'ORT face detector requires createImageBitmap + OffscreenCanvas (not available in this context).'
-		);
-	}
-	const bitmap = await createImageBitmap(image);
-	try {
-		if (!resizeCanvas || resizeCanvas.width !== width || resizeCanvas.height !== height) {
-			resizeCanvas = new OffscreenCanvas(width, height);
-			resizeCtx = resizeCanvas.getContext('2d');
-		}
-		const ctx = resizeCtx;
-		if (!ctx) {
+	return async function resizeImageData(
+		image: ImageData,
+		width: number,
+		height: number
+	): Promise<Uint8ClampedArray> {
+		// createImageBitmap accepts ImageData; subsequent drawImage onto a
+		// model-size OffscreenCanvas scales it. Both APIs exist in DedicatedWorker.
+		if (typeof createImageBitmap !== 'function' || typeof OffscreenCanvas !== 'function') {
 			throw new OrtFaceDetectorUnavailableError(
-				'ORT face detector could not obtain a 2D context for resize.'
+				'ORT face detector requires createImageBitmap + OffscreenCanvas (not available in this context).'
 			);
 		}
-		ctx.drawImage(bitmap, 0, 0, width, height);
-		return ctx.getImageData(0, 0, width, height).data;
-	} finally {
-		bitmap.close();
-	}
+		const bitmap = await createImageBitmap(image);
+		try {
+			if (!resizeCanvas || resizeCanvas.width !== width || resizeCanvas.height !== height) {
+				resizeCanvas = new OffscreenCanvas(width, height);
+				resizeCtx = resizeCanvas.getContext('2d', { willReadFrequently: true });
+			}
+			const ctx = resizeCtx;
+			if (!ctx) {
+				throw new OrtFaceDetectorUnavailableError(
+					'ORT face detector could not obtain a 2D context for resize.'
+				);
+			}
+			ctx.drawImage(bitmap, 0, 0, width, height);
+			return ctx.getImageData(0, 0, width, height).data;
+		} finally {
+			bitmap.close();
+		}
+	};
 }
 
 async function loadOrtTensor(): Promise<{ Tensor: typeof OrtTensor }> {

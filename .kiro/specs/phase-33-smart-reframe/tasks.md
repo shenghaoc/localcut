@@ -2,17 +2,15 @@
 
 > Status: **Implemented** — automatic crop-path generation producing editable
 > Phase 15 transform keyframes, reviewed via a preview overlay and applied as a
-> single undo step. Subject detection defaults to pure-DSP saliency; MediaPipe
-> BlazeFace face detection is available on an explicit, click-to-load action.
-> A follow-up PR adds an optional ORT/ONNX face detector built on the Phase 105
-> ORT foundation; the manifest ships as a `template` so the path stays disabled
-> until a real model is vendored (see T17).
+> single undo step. Subject detection defaults to pure-DSP saliency; the
+> optional ORT/ONNX UltraFace RFB-320 face detector loads only after the user's
+> explicit "Load face model" action through the pinned `reframe-face` manifest.
 
 ## Implementation status
 
 **Done:** protocol types + capability probe (T1); One Euro filter (T2); shot
 boundary detector (T3); saliency estimator (T4); subject tracker (T5); face
-detector via MediaPipe Tasks Vision (BlazeFace) with a test mock (T6);
+detector interface plus lazy ORT/ONNX UltraFace implementation with a test mock (T6/T17);
 keyframe generator with per-shot velocity/acceleration bounds, hold keyframes at
 cuts, and safe-zone compliance (T7); worker orchestration with in-point-aware
 sampling, clip-local timestamps, cancellation, and a persistent click-to-load
@@ -21,9 +19,9 @@ and review/apply flow (T9); the crop-preview overlay (T10); apply via the new
 `replace-keyframe-tracks` single-undo command and source-File resolution via
 `get-source-file` (R7.5 / file plumbing); the capability/diagnostics row (T12.1);
 unit tests including `face-detector.test.ts` and `replaceClipKeyframeTracks`
-coverage (T13); face-model integration via MediaPipe loaded from remote on the
-user's explicit action (T15); and docs in both `docs/SMART-REFRAME.md` and the
-in-app guide (T16.1/T16.1a).
+coverage (T13); face-model integration via the ORT manifest/proxy/cache path
+loaded from remote on the user's explicit action (T15/T17); and docs in both
+`docs/SMART-REFRAME.md` and the in-app guide (T16.1/T16.1a).
 
 **Deferred / not done:**
 
@@ -43,7 +41,7 @@ in-app guide (T16.1/T16.1a).
   and `ReframeAnalysisStats`. All types structured-clone-safe.
 - [ ] **T1.2** Extend `src/engine/capability-probe-v2.ts` and
   `CapabilityProbeResult` with `SmartReframeProbeResult`: `faceDetection`
-  (MediaPipe runs in the analysis worker, model loaded on action),
+  (ORT face detection runs in the analysis worker, model loaded on action),
   `saliency` (always `supported`),
   `analysisWorker` (Worker constructor). Follow the existing
   `FeatureSupport` pattern.
@@ -108,23 +106,20 @@ in-app guide (T16.1/T16.1a).
   `FaceDetector` interface (with `async detect()`), the `FaceDetection`
   type (normalised coordinates + confidence), and `createMockFaceDetector`
   for test injection.
-- [x] **T6.2** MediaPipe implementation (`createMediapipeFaceDetector`):
-  load `@mediapipe/tasks-vision` through the untyped `mediapipe-loader.js`
-  boundary, `FilesetResolver.forVisionTasks(wasmPath)`, then
-  `FaceDetector.createFromOptions` with `delegate: 'GPU'` falling back to
-  `'CPU'`; run `detect(image)` on the downscaled `ImageData` and map the
-  pixel bounding boxes to normalised source coordinates (dropping
-  degenerate boxes). MediaPipe does anchor-decode + NMS internally, so no
-  hand-rolled decoder is needed.
-- [x] **T6.3** Remote model + runtime URLs in
-  `src/engine/reframe/face-models.ts` (light module, no MediaPipe import):
-  the tasks-vision WASM path (jsDelivr, version-pinned) and the BlazeFace
-  short-/full-range `.tflite` URLs (Google model store). Loaded from remote
-  on demand per the hobby-scope decision — not vendored or digest-pinned.
-- [x] **T6.4** Unit tests (`face-detector.test.ts`): the loader is mocked;
-  tests cover pixel→normalised box mapping, degenerate-box drop, the
-  GPU→CPU delegate fallback, and `createMockFaceDetector` (no real model or
-  network in CI).
+- [x] **T6.2** ORT implementation (`createOrtFaceDetector`, detailed in
+  T17): load the same-origin face-detector manifest, validate the SHA-256
+  pinned UltraFace ONNX model, create an ORT-WASM session in the analysis
+  worker, run on downscaled `ImageData`, and decode normalised boxes with
+  score thresholding + NMS. Degenerate boxes are dropped.
+- [x] **T6.3** Remote model manifest URL in
+  `src/engine/reframe/face-models.ts` (light module, no ORT import):
+  `REFRAME_FACE_ONNX_MANIFEST_URL` points at
+  `/models/reframe-face/manifest.json`. Model bytes load through `/_model/gh/`
+  on demand and are verified by size + SHA-256.
+- [x] **T6.4** Unit tests (`face-detector.test.ts`,
+  `face-detector-ort-*.test.ts`): tests cover the mock detector, manifest
+  validation, score-row decode, tensor-size gates, raw-bbox decode, and failure
+  surfacing without real model/network access in CI.
 
 ## T7 — Keyframe generator (R6)
 
@@ -277,37 +272,33 @@ in-app guide (T16.1/T16.1a).
 
 ## T15 — Face-model integration
 
-- [x] **T15.1** Add `@mediapipe/tasks-vision` as the face-detection runtime
-  (Google Tasks Vision, BlazeFace). Its ~300 KB JS is bundled lazily
-  (worker-only via `mediapipe-loader.js`); the ~11 MB WASM is **not**
-  bundled — `FilesetResolver` loads it from jsDelivr at runtime.
-- [x] **T15.2** Load the BlazeFace `.tflite` from Google's
-  `storage.googleapis.com` model store on the user's explicit "Load face
-  model" action (R0.7 / Phase 28/29 click-to-load). Per the hobby-scope
-  decision the model is **not** vendored or digest-pinned — the `latest`
-  URL is mutable; only `face-models.ts` changes if Google relocates it.
-- [x] **T15.3** PWA service worker must not precache model weights or the
-  MediaPipe WASM at install; both are runtime-cached (`CacheFirst`,
-  `ignoreVary`) after first successful load (`vite.config.ts` workbox
-  `runtimeCaching`), the same pattern as Phase 28 RNNoise weights.
+- [x] **T15.1** Use the shared ONNX Runtime Web foundation as the only
+  face-detection runtime. The detector code imports ORT lazily inside the
+  analysis worker after the user's explicit "Load face model" action; the main
+  bundle and startup path do not load detector code or model bytes.
+- [x] **T15.2** Load the UltraFace RFB-320 ONNX model from the pinned
+  `public/models/reframe-face/manifest.json` entry through the same-origin
+  `/_model/gh/` proxy. The manifest records the upstream commit, license,
+  byte size, SHA-256, IO contract, and raw-bbox decode contract.
+- [x] **T15.3** PWA service worker must not precache model weights at install.
+  The same-origin manifest is runtime-cached, and verified model bytes are
+  cached by the shared ORT asset loader after first successful load.
 
-## T17 — Optional ORT/ONNX face detector (follow-up)
+## T17 — ORT/ONNX face detector
 
-The follow-up PR ("Smart Reframe ONNX face detector") adds a properly
-catalog-pinned face-detector path built on the Phase 105 ORT foundation,
-**replacing** the deferred-digest-pinned BlazeFace `.tflite` catalog entry
-(T15.2 stays as the hobby-scope MediaPipe fallback).
+The PR124 implementation adds a catalog-pinned face-detector path built on the
+shared ORT foundation and removes the old MediaPipe Tasks Vision fallback.
 
 - [x] **T17.1** Manifest at `public/models/reframe-face/manifest.json` —
   base ORT manifest (`validateOrtManifest`) plus a face-detector `io` block
   (`layout`/`inputWidth`/…/`inputName`/`inputRange`/optional `mean,std`)
   and a `decode` block (`type: 'raw-bbox' | 'anchor-offset'`,
   `scoreThreshold`/`iouThreshold`/`maxDetections`, optional `applySigmoid`,
-  optional `variance`). Ships as `template: true` so the path stays disabled
-  until a real model is vendored. Reframe analysis is not on the preview /
-  export hot path, so the manifest must declare `"frameCoupled": false`
-  (the validator rejects `true`) — that lets the manifest legally pin the
-  `wasm` execution provider alongside `webgpu`/`webnn`.
+  optional `variance`, optional multi-class score-row fields). Ships the
+  UltraFace RFB-320 model pinned by source commit, byte size, and SHA-256.
+  Reframe analysis is not on the preview/export hot path, so the manifest must
+  declare `"frameCoupled": false` (the validator rejects `true`) — that lets
+  the manifest legally pin the `wasm` execution provider.
 - [x] **T17.2** Pure decode helpers in
   `src/engine/reframe/face-detector-ort-decode.ts`: `sigmoid`, `clamp01`,
   `iou`, `nonMaxSuppression`, `decodeRawBboxOutput`, and
@@ -329,12 +320,11 @@ catalog-pinned face-detector path built on the Phase 105 ORT foundation,
   tensor stays inside that budget — a BlazeFace-class 128×128×3×fp32
   detector is fine, a 640×640 SCRFD is rejected to keep the analysis
   worker responsive and cancellation snappy.
-- [x] **T17.5** `reframe-load-face-model` carries an optional
-  `ortManifestUrl`. The analysis worker tries the ORT path first
-  (`tryLoadOrtFaceDetector`), falls back to MediaPipe BlazeFace, and
-  finally to saliency-only. The `reframe-face-model-status` message
-  reports which `engine` resolved on success and surfaces
-  "face detector unavailable; using saliency" on both-paths failure.
+- [x] **T17.5** `reframe-load-face-model` carries the ORT `ortManifestUrl`.
+  The analysis worker loads that path directly and falls back only to
+  saliency-only when the detector fails. The `reframe-face-model-status`
+  message reports the resolved `engine` on success and surfaces
+  "face detector unavailable; using saliency" on failure.
 - [x] **T17.6** Hard constraints upheld: no startup model download (`ORT`
   runtime imported only inside the lazy detector); no direct cross-origin
   fetch (manifest is same-origin, model bytes flow through the

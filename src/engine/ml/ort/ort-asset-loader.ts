@@ -35,7 +35,7 @@ export const ORT_TRUSTED_MODEL_HOSTS: readonly string[] = [
 	// Hugging Face model repos (onnx-community et al.) + their Xet/LFS CDNs.
 	'.huggingface.co',
 	'.hf.co',
-	// Google Cloud Storage (mediapipe / Google AI Edge assets).
+	// Google Cloud Storage model assets.
 	'storage.googleapis.com',
 	// GitHub repositories and raw content.
 	'github.com',
