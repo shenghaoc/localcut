@@ -32,6 +32,8 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 
 **Active:**
 
+- [**ML runtime: MediaPipe Tasks-Vision retirement**](.kiro/specs/ml-runtime-mediapipe-retirement/tasks.md) — final unify-on-ORT implementation: Smart Reframe face detection moves off `@mediapipe/tasks-vision` (BlazeFace `.tflite` on MediaPipe's runtime) to the ORT face-detector path (`face-detector-ort.ts` + `reframe-face` ONNX manifest), then deletes the MediaPipe dependency/assets/loader/copy. Non-frame-coupled analysis remains worker-side on ORT-WASM/CPU tensors; saliency remains the default fallback until the model is explicitly loaded. Leaves ORT as the sole ML runtime with PR123's LiteRT/TFLite retirement.
+
 - [**ML runtime: compositor single-device adoption**](.kiro/specs/ml-runtime-compositor-device-adoption/tasks.md) — follow-up to the ORT device-ownership work: make `PreviewRenderer` adopt ORT's `GPUDevice` (it can't be injected — [onnxruntime#26107](https://github.com/microsoft/onnxruntime/issues/26107)) so frame-coupled ORT-WebGPU output (matte/interpolation/beauty) composites zero-copy on one device. Lazy renderer rebuild on `ort.env.webgpu.device` on first ORT-WebGPU activation; flips the `compositesOnRendererDevice` gate so the worker composites those views; preserves no-startup-load.
 
 - [**ML runtime: LiteRT/TFLite retirement**](.kiro/specs/ml-runtime-litert-retirement/tasks.md) — implements the unify-on-ORT policy in code: portrait matte now loads the Apache-2.0 MODNet ONNX manifest on ORT-WebGPU, ASR and DTLN expose only ORT engines, diagnostics collapse to `mlRuntime: 'ort'`, and the old runtime dependency/assets/loaders/manifests/scripts are removed. The ORT-WASM floor stays for small non-frame-coupled models.
