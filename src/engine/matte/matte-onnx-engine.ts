@@ -26,7 +26,9 @@
  *   microsoft/onnxruntime#26107) and pins the manifest EPs under the frame-coupled
  *   gate — a per-frame matte can never resolve to WASM/CPU. The engine runs its
  *   own preprocess/resolve passes on ORT's device (`handle.device`); the renderer
- *   adopts that device to composite the matte output.
+ *   will adopt that device to composite the matte output once compositor
+ *   single-device adoption lands (tracked follow-up). Until then the worker does
+ *   not composite this engine's output (see `compositesOnRendererDevice`).
  * - {@link loadOrtModelAsset} fetches the ONNX bytes through the trusted-host
  *   `/_model/*` proxy, SHA-256-verifies them, and OPFS-caches by digest.
  * - The temporal contract ({@link MATTE_TEMPORAL_SMOOTHING},
@@ -105,7 +107,8 @@ export class MatteOnnxEngine implements MatteBackendEngine {
 	 */
 	readonly compositesOnRendererDevice = false;
 	/** ORT-owned device, set once the session is created in {@link loadModel}; the
-	 *  engine's own WGSL passes run on it and the renderer adopts it. */
+	 *  engine's own WGSL passes run on it; the renderer will adopt it once
+	 *  compositor single-device adoption lands (tracked follow-up). */
 	private device: GPUDevice | null = null;
 	private readonly onStatus: (status: MatteEngineStatusSnapshot) => void;
 	private readonly manifestUrl: string;
@@ -334,7 +337,8 @@ export class MatteOnnxEngine implements MatteBackendEngine {
 		// (microsoft/onnxruntime#26107). The frame-coupled EP policy forbids any
 		// WASM/CPU fallback, and 'gpu-buffer' output keeps the alpha on-device (no
 		// readback). The engine's own preprocess/resolve passes then run on
-		// handle.device, and the renderer adopts it to composite the matte.
+		// handle.device; the renderer will adopt it to composite the matte once
+		// compositor single-device adoption lands (tracked follow-up).
 		const handle = await createOrtSession({
 			modelBytes,
 			manifest,
@@ -541,7 +545,8 @@ export class MatteOnnxEngine implements MatteBackendEngine {
 
 		// 2. ORT inference with GPU-buffer tensor IO — input wraps our preprocess
 		// buffer (no upload), output stays a GPU buffer (no readback). Both live on
-		// ORT's own device (which the renderer adopts for compositing).
+		// ORT's own device (which the renderer will adopt for compositing once
+		// compositor single-device adoption lands).
 		const inputTensor = ort.Tensor.fromGpuBuffer(this.inputBuffer, {
 			dataType: 'float32',
 			dims: model.inputDims

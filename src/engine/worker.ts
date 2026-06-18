@@ -391,7 +391,7 @@ function ensureMatteEngine(): MatteBackendEngine | null {
 			resolveMatteBackend(MATTE_ONNX_SPIKE) === 'ort-onnx'
 				? // ORT owns its WebGPU device (it ignores an injected one —
 					// microsoft/onnxruntime#26107), so no device is passed; the engine runs
-					// on ORT's device and the renderer adopts it (see docs/ML-RUNTIME.md).
+					// on ORT's device and the renderer will adopt it once compositor single-device adoption lands (tracked follow-up; see docs/ML-RUNTIME.md).
 					// LiteRT, below, *can* share the renderer's device and is still given it.
 					new MatteOnnxEngine({
 						onStatus: (status) => post({ type: 'matte-status', status })
@@ -413,7 +413,7 @@ function ensureInterpolationEngine(): InterpolationEngine | null {
 	if (!renderer) return null;
 	if (!interpolationEngine) {
 		// ORT owns its WebGPU device (microsoft/onnxruntime#26107); the engine runs on
-		// ORT's device and the renderer adopts it (see docs/ML-RUNTIME.md).
+		// ORT's device and the renderer will adopt it once compositor single-device adoption lands (tracked follow-up; see docs/ML-RUNTIME.md).
 		interpolationEngine = new InterpolationEngine({
 			onStatus: (status, error) => {
 				const manifest = interpolationEngine?.getModelManifest();
@@ -438,7 +438,7 @@ function ensureBeautyEngine(): BeautyEngine | null {
 	if (!renderer) return null;
 	if (!beautyEngine) {
 		// ORT owns its WebGPU device (microsoft/onnxruntime#26107); the engine runs on
-		// ORT's device and the renderer adopts it (see docs/ML-RUNTIME.md).
+		// ORT's device and the renderer will adopt it once compositor single-device adoption lands (tracked follow-up; see docs/ML-RUNTIME.md).
 		beautyEngine = new BeautyEngine({
 			onStatus: (status, error) => {
 				const manifest = beautyEngine?.getModelManifest();

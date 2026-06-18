@@ -5,9 +5,11 @@
  * ONNX pair on the Phase-105 ORT foundation (`src/engine/ml/ort/`). ORT bootstraps
  * and owns the `GPUDevice` (`deviceOwner: 'ort-webgpu'`; ORT ignores an injected
  * device — microsoft/onnxruntime#26107); both sessions and the engine's own
- * preprocess passes run on it (`handle.device`), and the renderer adopts that
- * device for the compositor's beauty-warp pass. It runs a cadence-gated per-frame
- * solve:
+ * preprocess passes run on it (`handle.device`). The renderer will adopt that
+ * device for the compositor's beauty-warp pass once compositor single-device
+ * adoption lands (tracked follow-up); until then the worker does not composite
+ * this engine's output (see `compositesOnRendererDevice`). It runs a
+ * cadence-gated per-frame solve:
  *
  *   VideoFrame → importExternalTexture → beauty-preprocess WGSL (ROI resize/
  *   normalize → NHWC GPUBuffer) → `ort.Tensor.fromGpuBuffer` → detector
@@ -167,7 +169,8 @@ function ortManifestForAsset(
 
 export class BeautyEngine {
 	/** ORT-owned device, set once the sessions are created in {@link loadModels};
-	 *  the engine's own preprocess passes run on it and the renderer adopts it. */
+	 *  the engine's own preprocess passes run on it; the renderer will adopt it once
+	 *  compositor single-device adoption lands (tracked follow-up). */
 	private device: GPUDevice | null = null;
 	private readonly manifestUrl: string;
 	private readonly onStatus?: (status: BeautyEngineStatus, error?: string) => void;
@@ -312,8 +315,10 @@ export class BeautyEngine {
 			await landmarks.handle.session.release();
 			throw new Error('ORT-WebGPU beauty session exposed no GPUDevice.');
 		}
-		// Both sessions ran on ORT's own device; adopt it for the engine's preprocess
-		// passes (the renderer adopts the same device for beauty-warp compositing).
+		// Both sessions ran on ORT's own device — `ort.env.webgpu.device` is a
+		// process-level singleton, so the landmark session's device is the same object;
+		// adopt it for the engine's preprocess passes. (The renderer will adopt the same
+		// device for beauty-warp compositing once compositor single-device adoption lands.)
 		this.device = detector.handle.device;
 		this.ort = await loadOrtWebGpu();
 		this.models = { detector, landmarks, manifest };

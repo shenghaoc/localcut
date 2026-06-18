@@ -36,7 +36,7 @@ describe('MatteOnnxEngine — zero-copy hot path (source contract)', () => {
 		expect(engineSource).toContain('loadOrtWebGpu');
 	});
 
-	it('lets ORT own the device and adopts it (never injects a device — onnxruntime#26107)', () => {
+	it("lets ORT own the device and adopts it for the engine's own WGSL passes (never injects a device — onnxruntime#26107)", () => {
 		// ORT ignores an injected `env.webgpu.device`, so the engine must NOT pass a
 		// device into the session; it adopts the ORT-created device for its own passes.
 		expect(engineSource).not.toContain('device: this.device');
