@@ -738,7 +738,9 @@ export function Timeline(props: TimelineProps) {
 													<button
 														type="button"
 														class={`timeline-transition${props.selectedTransition?.()?.transitionId === transition.id ? ' is-selected' : ''}`}
-														style={{ left: `${px()}px` }}
+														// Bolt ⚡: Use hardware-accelerated translate instead of left to avoid
+														// layout thrashing and main-thread reflows during timeline zoom.
+														style={{ left: 0, translate: `${px()}px` }}
 														title={`${transition.kind} (${transition.durationS.toFixed(2)}s)`}
 														onClick={(e) => {
 															e.stopPropagation();
@@ -768,7 +770,9 @@ export function Timeline(props: TimelineProps) {
 										<div
 											class="timeline-marker"
 											data-testid="timeline-marker"
-											style={{ left: `${marker.time * pxPerSecond()}px` }}
+											// Bolt ⚡: Use hardware-accelerated translate instead of left to avoid
+											// layout thrashing and main-thread reflows during timeline zoom.
+											style={{ left: 0, translate: `${marker.time * pxPerSecond()}px` }}
 										>
 											<button
 												type="button"
@@ -811,7 +815,9 @@ export function Timeline(props: TimelineProps) {
 										{(tick) => (
 											<span
 												class="timeline-ruler-tick"
-												style={{ left: `${tick.time * pxPerSecond()}px` }}
+												// Bolt ⚡: Use hardware-accelerated translate instead of left to avoid
+												// layout thrashing and main-thread reflows during timeline zoom.
+												style={{ left: 0, translate: `${tick.time * pxPerSecond()}px` }}
 											>
 												<span>{tick.label}</span>
 											</span>
@@ -827,8 +833,11 @@ export function Timeline(props: TimelineProps) {
 										{(beatTime, index) => (
 											<span
 												class="timeline-ruler-tick timeline-beat-tick"
+												// Bolt ⚡: Use hardware-accelerated translate instead of left to avoid
+												// layout thrashing and main-thread reflows during timeline zoom.
 												style={{
-													left: `${beatTime * pxPerSecond()}px`,
+													left: 0,
+													translate: `${beatTime * pxPerSecond()}px`,
 													'--beat-index': index(),
 													background: '#b06cff',
 													height: index() === 0 ? '100%' : '50%'
@@ -852,11 +861,17 @@ export function Timeline(props: TimelineProps) {
 								{(box) => (
 									<div
 										class="timeline-marquee"
+										// Bolt ⚡: Use hardware-accelerated translate instead of left/top to avoid
+										// layout thrashing and main-thread reflows 60x a second during drag.
 										style={{
-											left: `${box().left}px`,
-											top: `${box().top}px`,
+											left: 0,
+											top: 0,
+											translate: `${box().left}px ${box().top}px`,
 											width: `${box().width}px`,
-											height: `${box().height}px`
+											height: `${box().height}px`,
+											// will-change lists only translate: width/height force layout
+											// regardless, so hinting them wastes memory without any gain.
+											'will-change': 'translate'
 										}}
 									/>
 								)}
