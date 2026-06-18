@@ -256,7 +256,10 @@ export class TranslationController {
 						return results[0] ?? { detectedLanguage: 'en', confidence: 0 };
 					})
 				);
-				if (sessionLost) this.detector = null;
+				if (sessionLost) {
+					this.detector?.destroy();
+					this.detector = null;
+				}
 				sourceLang = dominantLanguage(tops);
 			}
 			const resolvedTarget = targetLang ?? oppositeLanguage(sourceLang);
