@@ -1,7 +1,8 @@
 # Tasks: Bugfix — merged-phase review-comment fix-up
 
 > Status: **In review** (PR #112). Tasks map 1:1 to the bugs in `bugfix.md`
-> and the design in `design.md`. All tasks landed in a single commit.
+> and the design in `design.md`. The original fix bundle landed first; review
+> follow-ups and current-main rebase notes are tracked below.
 
 ## T1 — Phase 38 film-look correctness (B1–B4)
 
@@ -16,11 +17,12 @@
 - [x] **T1.4** `src/engine/gpu.ts`: thread `renderTimeS` through
   `present()` → `compositeLayers()` → `processLayer()` → `encodeFilmLooks`
   for grain seeding; default 0 for back-compat (B4).
-- [x] **T1.5** `src/engine/worker.ts:5113`: pass `timestamp` to
-  `renderer.present(stack, timestamp)`.
+- [x] **T1.5** `src/engine/worker.ts`: pass `timestamp / 1e6` to
+  `renderer.present(stack, timestamp / 1e6)` where playback timestamps are
+  WebCodecs microseconds.
 - [x] **T1.6** `src/engine/gpu.ts renderLayeredForExport`: add
-  `renderTimeS = timestamp` parameter; `renderBlackForExport` passes
-  `timestamp`.
+  `renderTimeS = timestamp / 1e6` parameter; `renderBlackForExport` passes
+  `timestamp / 1e6`.
 - [x] **T1.7** `src/engine/export.ts:1132`: pass `timelineTime` as the
   `renderTimeS` to `renderLayeredForExport`.
 
@@ -37,7 +39,8 @@
 - [x] **T2.4** `src/protocol.ts`: add
   `'animated-image-static-fallback'` to `SourceHealthWarningCodeSnapshot`.
 - [x] **T2.5** `mediabunny-adapter.ts openImageFile` static branch: push the
-  fallback warning when MIME is animated (B10).
+  fallback warning only when MIME is animated and the animated path is not
+  active (B10).
 - [x] **T2.6** `media-adapters/types.ts`: export `BlockedImportError` class
   carrying `warnings`, `inspection`, `conformance`.
 - [x] **T2.7** `mediabunny-adapter.ts open`: throw `BlockedImportError`
@@ -133,6 +136,11 @@
 - [x] **T10.4** `Inspector.tsx`: introduce `skinMaskDraft` keyed by
   `clipId`; route flush + schedule through `getSkinMaskDraft()` instead of
   re-reading `currentSkinMask()` each time.
+- [x] **T10.5** `Inspector.tsx`: reset the skin-mask draft when upstream
+  `selectedClip.skinMask` changes and no debounced edit is active.
+- [x] **T10.6** `Inspector.tsx`: reset both `skinMaskDraft` and
+  `skinMaskDraftClipId` when no clip is selected, avoiding same-clip stale
+  reuse after unselect/reselect.
 
 ## T11 — Phase 23 bundle-replace modal (B24)
 
@@ -165,7 +173,8 @@
 
 - [x] **T14.1** `translation-controller.ts` auto-detect path: set local
   `sessionLost = true` from the per-segment `.catch`; after `Promise.all`,
-  null out `this.detector` if `sessionLost`.
+  call `this.detector?.destroy()` and null out `this.detector` if
+  `sessionLost`.
 - [x] **T14.2** `protocol.ts`: add the
   `'translated-caption-track-error'` message.
 - [x] **T14.3** `translation-controller.ts`: new
@@ -203,16 +212,33 @@
 - [x] **T17.1** `scripts/build-wasm.mjs`: `lines.join('" +\n\t"')` so the
   generated TS embeds adjacent string literals.
 
-## T19 — Phase 42 Recorder UX (B35)
+## T18 — Phase 42 Recorder UX (B35)
 
-- [x] **T19.1** `capture-session.ts handleSourceError`: check `this.state === 'recording' || this.state === 'paused'` so auto-stop fires when paused (B35).
-- [~] **T19.2** ~`writer-worker.ts appendManifest`: `await manifestAccess.flush()`~ — excluded: `SyncAccessHandle.flush()` is synchronous (returns `void`); the reviewer confused it with the async `FileSystemWritableFileStream.flush()`. No change.
+- [x] **T18.1** `capture-session.ts handleSourceError`: check `this.state === 'recording' || this.state === 'paused'` so auto-stop fires when paused (B35).
+- [~] **T18.2** ~`writer-worker.ts appendManifest`: `await manifestAccess.flush()`~ — excluded: `SyncAccessHandle.flush()` is synchronous (returns `void`); the reviewer confused it with the async `FileSystemWritableFileStream.flush()`. No change.
 
-## T18 — Gate
+## T19 — Current-main rebase and review follow-ups
 
-- [x] **T18.1** `pnpm run check` green (format + lint + typecheck + 2010
+- [x] **T19.1** Rebase on `origin/main` at PR #114
+  (`879f9e79`). Conflict audit kept both active bugfix specs in
+  `AGENTS.md` and preserved the precision-instrument global CSS plus this
+  PR's bundle-replace modal styles.
+- [x] **T19.2** Newly merged PR #114 editor-chrome review findings were
+  re-checked against the rebased base. Required fixes are already present in
+  `origin/main` (28px collapsed rail in both workspace states, encoded SVG
+  data URI, escaped CSS content glyphs, targeted scrollbar selectors, and
+  narrow toolbar/status overrides after the redesign block), so PR #112
+  does not need extra code for that phase.
+- [x] **T19.3** Latest PR #112 Gemini review: rename reserved WGSL
+  identifier `sample` to `texel` in both halation shaders.
+- [x] **T19.4** Latest PR #112 Gemini review: clear the skin-mask draft and
+  draft clip id when no clip is selected.
+
+## T20 — Gate
+
+- [x] **T20.1** `pnpm run check` green (format + lint + typecheck + 2403
   tests + production build).
-- [x] **T18.2** Test count grows by at least 4 (the new transition
+- [x] **T20.2** Test count grows by at least 4 (the new transition
   tests).
 
 ## Out-of-scope follow-ups (deferred to separate work)
@@ -225,6 +251,6 @@
   limitation.
 - **OTIO `timeRemap` round-trip** — OTIO is export-only currently; deferred
   until the import path lands.
-- **Litert-coupled findings** (Phase 71 remap PCM extraction for
-  ASR / Audio Cleanup, etc.) — deferred to the ONNX migration so we don't
-  fix code about to be rewritten.
+- **LiteRT-era findings** (ASR / Audio Cleanup / matting paths that were
+  migration-bound during the original audit) — deferred to the ONNX migration
+  work rather than mixed into this cross-phase review fix-up.

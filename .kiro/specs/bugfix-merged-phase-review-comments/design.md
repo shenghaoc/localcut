@@ -11,20 +11,20 @@ how the fix actually lands.
 ### D1.1 `src/engine/effects.ts` — `encodeFilmLooks` ping-pong start (B1)
 
 ```ts
-const slots = [storage.a, storage.b, storage.c];
+const slots = [storage.b, storage.c, storage.a];
 let currentSrc = srcView;
 const srcSlotIdx =
-  currentSrc === storage.a ? 0 :
-  currentSrc === storage.b ? 1 :
-  currentSrc === storage.c ? 2 : -1;
+  currentSrc === storage.b ? 0 :
+  currentSrc === storage.c ? 1 :
+  currentSrc === storage.a ? 2 : -1;
 let bufIdx = srcSlotIdx >= 0 ? (srcSlotIdx + 1) % 3 : 0;
 ```
 
 The loop body then reads `slots[bufIdx]` for `currentDst` and advances `bufIdx`
 by 1 mod 3 per pass — same rotation as before, just starting at the slot
 after `currentSrc`. External / non-storage srcViews fall through to `bufIdx
-= 0` (`storage.a`), which never collides because the accumulator and
-external views are separate textures.
+= 0` (`storage.b`), matching the original ping-pong order and avoiding an
+early write to `storage.a`.
 
 ### D1.2 f16 look shaders — vector constructors (B2)
 
@@ -58,9 +58,9 @@ for (var i: u32 = 0u; i < 16u; i = i + 1u) {
   let r = radius * sqrt(t);        // even-area distribution
   let offset = vec2f(cos(angle), sin(angle)) * r;
   let coord = clamp(center + vec2i(round(offset)), vec2i(0), maxXY);
-  let sample = textureLoad(src, coord, 0);
+  let texel = textureLoad(src, coord, 0);
   let weight = exp(-(r * r) / sigma2);
-  halo += brightPass(sample.rgb, u.threshold) * weight;
+  halo += brightPass(texel.rgb, u.threshold) * weight;
   totalWeight += weight;
 }
 halo = halo / totalWeight;
@@ -94,14 +94,14 @@ instead of computing `frameTimeSeed = layer.frame.timestamp / 1e6`.
 
 Callers:
 
-- `worker.ts:5113`: `renderer.present(stack, timestamp)` — `timestamp` is the
-  timeline time in seconds, the same parameter `PlaybackController` already
-  passes to `renderFrames`.
-- `gpu.ts renderLayeredForExport`: add an optional `renderTimeS = timestamp`
-  parameter so existing callers default to output time. `export.ts:1132` is
-  updated to pass `timelineTime` explicitly (which is `plan.rangeStartS +
-  outputTimestamp`) — that keeps grain stable across in/out range edits of
-  the same project.
+- `worker.ts` playback: `renderer.present(stack, timestamp / 1e6)` because
+  playback frame timestamps are WebCodecs microseconds, while the renderer
+  consumes seconds.
+- `gpu.ts renderLayeredForExport`: add an optional
+  `renderTimeS = timestamp / 1e6` parameter so existing callers default to
+  output time in seconds. `export.ts` passes `timelineTime` explicitly
+  (which is `plan.rangeStartS + outputTimestamp`) — that keeps grain stable
+  across in/out range edits of the same project.
 
 ## D2 — Phase 38 Lottie + animated-image hardening
 
@@ -154,7 +154,7 @@ fallback). Each frame image is closed immediately — no buffering.
 In `mediabunny-adapter.ts openImageFile` static branch:
 
 ```ts
-const warnings: SourceHealthWarning[] = ANIMATED_IMAGE_MIME_TYPES.has(mimeType)
+const warnings: SourceHealthWarning[] = ANIMATED_IMAGE_MIME_TYPES.has(mimeType) && !isAnimated
   ? [
       ...baseWarnings,
       {
@@ -437,6 +437,9 @@ for (const [trackId, dur] of incomingByTrack) {
   `getSkinMaskDraft()` that returns a per-clipId draft reset on selection
   change. The flushed payload is built from the draft, not from
   `currentSkinMask()`.
+- Reset the draft on upstream `selectedClip.skinMask` changes when no edit is
+  pending, and reset both `skinMaskDraft` and `skinMaskDraftClipId` when there
+  is no selected clip.
 
 ## D11 — Phase 23 bundle-replace modal (B24)
 
@@ -488,7 +491,7 @@ named local (`isolationFinding`, `sabFinding`, `webgpuFinding`,
 `src/ui/language-tools/translation-controller.ts`:
 
 - `detect(...).catch(() => { sessionLost = true; return []; })`.
-- After `Promise.all`, `if (sessionLost) this.detector = null;`.
+- After `Promise.all`, `if (sessionLost) { this.detector?.destroy(); this.detector = null; }`.
 - New `onTranslatedTrackError(reason, message)` method that calls
   `updateJob({ phase: 'error', error: message })` if a job is active and
   forwards to `this.ports.onTranslatedTrackError?.(...)`.
@@ -562,6 +565,5 @@ constant has the same byte content as before; only the source layout changes.
   fix-up rebased; no longer a follow-up.)
 - **OTIO `timeRemap` import round-trip** — OTIO is export-only today; deferred
   until import lands.
-- **Litert-coupled findings** — Phase 71 remap PCM extraction and any other
-  finding under ASR / Audio Cleanup / matting engines defer to the ONNX
-  migration.
+- **LiteRT-era findings** — ASR / Audio Cleanup / matting findings that were
+  migration-bound during the original audit defer to the ONNX migration work.

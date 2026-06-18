@@ -30,15 +30,14 @@ main, are still present and are either:
 
 **Out of scope** — and explicitly skipped:
 
-1. **Any code path under LiteRT.** Phase 27 (Audio Cleanup, RNNoise→DTLN
-   migration), Phase 28 (DTLN cleanup), Phase 29 (Auto Captions / Whisper ASR),
-   and Phase 31 (Portrait Matting) all currently run on LiteRT.js. These are
-   being migrated to **ONNX Runtime Web** in a separate effort (see PR #105 for
-   the ORT foundation, and the in-flight Phase 37 Frame Interpolation work on
-   ORT). Fixing a finding in code that's about to be deleted or rewritten is
-   wasted churn, so any finding whose file lives under `src/engine/ml/litert/`,
-   `src/engine/asr/litert*/`, `src/engine/audio-cleanup/` (DTLN paths), or the
-   matte engine's LiteRT loader is deferred to the ONNX migration.
+1. **Any code path under LiteRT at the time of the original audit.** Phase 27
+   (Audio Cleanup, RNNoise→DTLN migration), Phase 28 (DTLN cleanup), Phase 29
+   (Auto Captions / Whisper ASR), and Phase 31 (Portrait Matting) were being
+   migrated to **ONNX Runtime Web** in adjacent work. Fixing a finding in code
+   about to be deleted or rewritten was wasted churn, so findings whose files
+   lived under `src/engine/ml/litert/`, `src/engine/asr/litert*/`,
+   `src/engine/audio-cleanup/` (DTLN paths), or the matte engine's LiteRT
+   loader were deferred to that migration rather than mixed into this fix-up.
 2. **Pure nit / style suggestions** — comment wording, variable rename
    preferences, "consider using X instead of Y" without a concrete bug.
 3. **Findings the agent surfaced but the current code already addresses.**
@@ -68,6 +67,12 @@ A workflow over all 41 merged phase PRs spawned one agent per PR. Each agent:
 
 50 findings came back as "actionable, still applicable, non-litert." That set
 is the bug list below, deduplicated and grouped by phase.
+
+After the PR was rebased on `origin/main` at `879f9e79`, the newly merged
+editor-chrome cleanup PR #114 was checked separately. Its bot review findings
+were either already fixed in the base branch or confirmed as non-issues by the
+later reviews, so this PR only records that current-base audit and does not
+carry additional #114 code.
 
 ## Bugs
 
@@ -411,8 +416,9 @@ falls through to `oppositeLanguage(sourceLang)`, and the user cannot
 auto-detect for the rest of the app session — they have to reload.
 
 **Expected:** When the per-segment `.catch` fires, set a local `sessionLost`
-flag. After the `Promise.all`, if `sessionLost`, null out `this.detector` so
-the next `translate()` calls `DetectorApi.create()` fresh.
+flag. After the `Promise.all`, if `sessionLost`, call
+`this.detector?.destroy()` and then null out `this.detector` so the next
+`translate()` calls `DetectorApi.create()` fresh.
 
 ### B28 — Phase 40 empty-segments post a success-shaped message with empty trackId
 
@@ -533,10 +539,10 @@ acted on. The reasons:
 - **Phase 35 OTIO `timeRemap` round-trip:** The OTIO import path does not
   exist yet (export-only). Verification deferred to whenever the import
   side ships.
-- **Phase 71 worker.ts `timeRemapSourceDuration` clip.duration derivation:**
+- **Phase 35 worker.ts `timeRemapSourceDuration` clip.duration derivation:**
   The function already takes `sourceDurationS` from the snapshot; the field
   is populated correctly. No change.
-- **Phase 71 worker.ts remap PCM single-timestamp:** This is a real issue
+- **Phase 35 worker.ts remap PCM single-timestamp:** This is a real issue
   but the fix requires iterating over LUT segments in `extractPcmForAsr` /
   `pcmAtForAudioCleanup` — both paths feed into ASR and Audio Cleanup, both
   LiteRT-dependent. Deferred to the ONNX migration so we don't fix code
