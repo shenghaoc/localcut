@@ -42,7 +42,6 @@ function formatPercent(fraction: number | null): string {
 }
 
 export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) => {
-	// eslint-disable-next-line no-unassigned-vars -- SolidJS ref assigns via JSX
 	let panelRef: HTMLElement | undefined;
 	const [selectedTrackId, setSelectedTrackId] = createSignal<string>('');
 	const [targetLang, setTargetLang] = createSignal<'auto' | 'zh' | 'en'>('auto');
@@ -110,7 +109,9 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 		<Show when={props.open}>
 			<div class="capability-backdrop" onClick={() => props.onClose()} aria-hidden="true" />
 			<aside
-				ref={panelRef}
+				ref={(element) => {
+					panelRef = element;
+				}}
 				class="diagnostics-panel panel"
 				role="dialog"
 				aria-modal="true"

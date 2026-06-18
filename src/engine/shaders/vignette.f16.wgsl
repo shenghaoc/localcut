@@ -21,7 +21,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 	let r = max(f16(u.roundness), f16(1e-5));
 	let len = f16(pow(pow(abs(uv.x), f32(r)) + pow(abs(uv.y), f32(r)), 1.0 / f32(r)));
 	let falloff = smoothstep(f16(1.0) - f16(u.feather), f16(1.0), len);
-	let darkened = f16(colour.rgb) * (f16(1.0) - f16(u.amount) * falloff);
+	let scale = f16(1.0) - f16(u.amount) * falloff;
+	let darkened = vec3<f16>(colour.rgb) * vec3<f16>(scale);
 
 	textureStore(dst, gid.xy, vec4f(vec3f(darkened), colour.a));
 }

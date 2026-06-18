@@ -22,6 +22,7 @@ import type {
 	ThroughputProbe
 } from '../protocol';
 import type { CompositeLayer, PreviewRenderer } from './gpu';
+import { colorMetadataFromHints } from './colour';
 import type { MediaInputHandle } from './media-io';
 import {
 	accumulateMix,
@@ -522,6 +523,11 @@ export function buildExportPlan(
 	const audioHandle = firstAudioHandleInRange(timeline, sources, rangeStartS, rangeEndS);
 	const estimatedFps = estimatedEncodeFps(probe, normalized.preset, normalized.codec);
 	const audioSampleRate = audioHandle?.audioSampleRate ?? 48_000;
+	// Mixed-rate sources are intentionally allowed — the polyphase resampler in
+	// `audio-resample` converts each source's PCM windows to `audioSampleRate`
+	// inside `pcmWindowAt`. The plan-time validation that previously rejected
+	// mismatched rates was removed when the resampler shipped (see the explicit
+	// test "allows mixed audible audio sample rates (resampler handles conversion)").
 
 	return {
 		settings: normalized,
@@ -1164,6 +1170,13 @@ async function encodeVideoRange(
 								undefined)
 							: undefined;
 					decodedFrames.push(videoFrame);
+					const videoTrack = sourceHandle?.inspection?.tracks?.find(
+						(t): t is import('./media-adapters/types').SourceVideoTrackInspection =>
+							t.kind === 'video'
+					);
+					const colorMetadata = videoTrack?.color
+						? colorMetadataFromHints(videoTrack.color)
+						: undefined;
 					layers.push({
 						kind: 'frame',
 						frame: videoFrame,
@@ -1173,6 +1186,7 @@ async function encodeVideoRange(
 						skinMask: layer.clip.skinMask,
 						skinSmoothBypass: false,
 						transition: layer.transition,
+						colorMetadata,
 						matteView,
 						matteStrength: matte?.enabled ? matte.strength : undefined,
 						matteMode: matte?.enabled ? matte.mode : undefined,
@@ -1195,7 +1209,7 @@ async function encodeVideoRange(
 				}
 				exportFrame =
 					layers.length > 0
-						? await renderer.renderLayeredForExport(layers, outputTimestamp, duration)
+						? await renderer.renderLayeredForExport(layers, outputTimestamp, duration, timelineTime)
 						: await renderer.renderBlackForExport(outputTimestamp, duration);
 			} finally {
 				for (const frame of decodedFrames) frame.close();
@@ -1203,12 +1217,20 @@ async function encodeVideoRange(
 
 			let sample: VideoSample;
 			try {
+				// Ownership: VideoSample is documented in mediabunny.d.ts as a
+				// "near zero-cost wrapper" around the VideoFrame and `sample.close()`
+				// "releases held resources" — i.e. the wrapper takes ownership of
+				// `exportFrame` and disposes it during close. On construction failure
+				// the frame is still ours, so we close it explicitly below.
 				sample = new VideoSample(exportFrame, { timestamp: outputTimestamp, duration });
 			} catch (error) {
 				exportFrame.close();
 				throw error;
 			}
 
+			// `sample.close()` releases the wrapped VideoFrame; do NOT also call
+			// `exportFrame.close()` here or VideoFrame.close() will throw
+			// InvalidStateError on double-close.
 			await videoSource
 				.add(sample, { keyFrame: frameIndex % keyFrameInterval === 0 })
 				.finally(() => sample.close());

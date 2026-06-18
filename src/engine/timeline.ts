@@ -526,11 +526,14 @@ function transitionBoundary(
 ): { fromClip: TimelineClip; toClip: TimelineClip } | null {
 	const track = timeline.find((item) => item.id === trackId);
 	if (!track || track.type !== 'video') return null;
-	const sorted = sortByStart(track.clips);
-	const fromIndex = sorted.findIndex((clip) => clip.id === fromClipId);
+	// track.clips is maintained in start-order by every mutator (insertClip,
+	// moveClips, paste, trim, split) — re-sorting here is O(n log n) per validation
+	// per edit and unnecessary. The adjacency check below already enforces order.
+	const clips = track.clips;
+	const fromIndex = clips.findIndex((clip) => clip.id === fromClipId);
 	if (fromIndex < 0) return null;
-	const fromClip = sorted[fromIndex]!;
-	const toClip = sorted[fromIndex + 1];
+	const fromClip = clips[fromIndex]!;
+	const toClip = clips[fromIndex + 1];
 	if (!toClip || toClip.id !== toClipId) return null;
 	if (Math.abs(clipEnd(fromClip) - toClip.start) > TIMELINE_EPSILON) return null;
 	return { fromClip, toClip };
@@ -538,7 +541,12 @@ function transitionBoundary(
 
 function sourceTailHandle(clip: TimelineClip, sourceDurations: TransitionSourceDurations): number {
 	const sourceDuration = sourceDurations.durationForSource(clip.sourceId);
-	if (sourceDuration === undefined || !finite(sourceDuration)) return 0;
+	// Unresolved / offline source: preserve any existing transition rather than
+	// reporting a zero-length tail handle (which `revalidateTransitions` reads as
+	// "no room for a transition" and deletes on the next project restore /
+	// undo-redo cycle). Returning +Infinity is the defensive default — the real
+	// duration is checked again once the source re-links.
+	if (sourceDuration === undefined || !finite(sourceDuration)) return Number.POSITIVE_INFINITY;
 	// Phase 35: a remapped clip consumes `timeRemap.sourceDurationS` of source —
 	// not `clip.duration` (which is output-time). The leftover source after the
 	// clip's consumed range is the tail handle available for an outgoing

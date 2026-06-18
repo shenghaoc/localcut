@@ -26,6 +26,7 @@ import {
 } from '../webcodecs-decoder';
 import { buildNormalizedSourceTiming, resolveNormalizedSourceTimestamp } from './source-timing';
 import { generateSourceHealthWarnings, reportFromWarnings } from './source-health';
+import { BlockedImportError } from './types';
 import type {
 	MediaAdapter,
 	MediaAdapterInspectionResult,
@@ -39,6 +40,7 @@ import type {
 	SourceContainerKind,
 	SourceFrameRateMode,
 	SourceHealthReport,
+	SourceHealthWarning,
 	SourceInspection,
 	SourceTrackInspection,
 	SourceVideoTrackInspection
@@ -338,13 +340,26 @@ async function openImageFile(
 	imageDecoder?: 'supported' | 'unsupported' | 'unknown'
 ): Promise<PrimaryMediaAdapterOpenResult> {
 	const mimeType = file.type || 'image/*';
+	// `typeof ImageDecoder !== 'undefined'` only proves the constructor exists,
+	// not that the codec for this MIME is supported. Browsers can ship the API
+	// without WebP / AVIF / GIF codecs (or have them gated behind flags) —
+	// constructing then decoding throws, which would surface as a generic
+	// import failure rather than the static-image fallback. Probe per-MIME.
+	const imageDecoderSupportsType =
+		typeof ImageDecoder !== 'undefined' &&
+		typeof ImageDecoder.isTypeSupported === 'function' &&
+		(await ImageDecoder.isTypeSupported(mimeType).catch(() => false));
 	const isAnimated =
 		ANIMATED_IMAGE_MIME_TYPES.has(mimeType) &&
 		imageDecoder === 'supported' &&
-		typeof ImageDecoder !== 'undefined';
+		imageDecoderSupportsType;
 
 	if (isAnimated) {
 		const animatedSource = new AnimatedImageFrameSource(file.stream(), mimeType);
+		// Decoding frame metadata is what lets `effectiveFps` report the real
+		// per-frame delays — otherwise the handle stores the placeholder 25 fps
+		// forever and consumers (timeline, scheduler) step at the wrong rate.
+		await animatedSource.ensureInitialized();
 		const bitmap = await createImageBitmap(file);
 		const displayWidth = bitmap.width;
 		const displayHeight = bitmap.height;
@@ -406,7 +421,27 @@ async function openImageFile(
 
 	const inspection = imageInspection(sourceId, file, displayWidth, displayHeight);
 	const primaryVideo = inspection.tracks[0] as SourceVideoTrackInspection;
-	const { conformance, warnings } = deriveConformance(inspection, primaryVideo, null);
+	const { conformance, warnings: baseWarnings } = deriveConformance(inspection, primaryVideo, null);
+	// Static fallback for animated GIF/WebP/AVIF (e.g. Firefox without
+	// ImageDecoder, or a Chromium build missing the codec). Control only
+	// reaches this branch when `isAnimated` was false (the animated branch
+	// above already returned). We belt-and-brace with an explicit
+	// `!isAnimated` check so a future reader (or static analyser) reading
+	// only this block sees the gate without having to trace the control flow.
+	const warnings: SourceHealthWarning[] =
+		ANIMATED_IMAGE_MIME_TYPES.has(mimeType) && !isAnimated
+			? [
+					...baseWarnings,
+					{
+						code: 'animated-image-static-fallback',
+						severity: 'info',
+						blocking: false,
+						sourceId,
+						message: `${file.name}: animated frames are unavailable in this browser; importing as a static still.`,
+						details: { mimeType }
+					}
+				]
+			: [...baseWarnings];
 	const metadata = createMetadata(
 		file,
 		conformance.durationS,
@@ -589,6 +624,10 @@ export const mediabunnyAdapter: MediaAdapter = {
 	},
 	async open(input: MediaAdapterOpenInput): Promise<PrimaryMediaAdapterOpenResult> {
 		if (isLottieZip(input.file)) {
+			// .lottie zip is recognised but we don't ship a zip dependency yet.
+			// Surface a structured BlockedImportError so the worker can render
+			// the `lottie-zip-unsupported` health warning instead of crashing on
+			// a null handle dereference.
 			const inspection = imageInspection(input.sourceId, input.file, 0, 0);
 			const conformance: SourceConformance = {
 				sourceId: input.sourceId,
@@ -614,7 +653,10 @@ export const mediabunnyAdapter: MediaAdapter = {
 					details: {}
 				}
 			];
-			return { handle: null as unknown as MediaInputHandle, inspection, conformance, warnings };
+			throw new BlockedImportError(
+				'Lottie zip (.lottie) is not yet supported; export plain .json from your Lottie tool.',
+				{ warnings, inspection, conformance }
+			);
 		}
 
 		if (isImageFile(input.file)) {

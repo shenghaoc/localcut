@@ -190,7 +190,7 @@ import PipelineWorker from '../engine/worker.ts?worker';
 import CaptureWriterWorker from '../engine/capture/writer-worker.ts?worker';
 
 const VIDEO_ACCEPT =
-	'video/mp4,video/quicktime,video/webm,image/*,audio/*,.mp4,.mov,.webm,.png,.jpg,.jpeg,.webp,.gif,.mp3,.m4a,.wav,.ogg';
+	'video/mp4,video/quicktime,video/webm,image/*,audio/*,application/json,.mp4,.mov,.webm,.png,.jpg,.jpeg,.webp,.gif,.mp3,.m4a,.wav,.ogg,.json';
 const VIDEO_PICKER_TYPES = [
 	{
 		description: 'Media files',
@@ -199,12 +199,16 @@ const VIDEO_PICKER_TYPES = [
 			'video/quicktime': ['.mov'],
 			'video/webm': ['.webm'],
 			'image/*': ['.png', '.jpg', '.jpeg', '.webp', '.gif'],
-			'audio/*': ['.mp3', '.m4a', '.wav', '.ogg']
+			'audio/*': ['.mp3', '.m4a', '.wav', '.ogg'],
+			// Phase 38b: plain Lottie .json (the mediabunny adapter recognises
+			// `"v":` / `"layers"` headers). `.lottie` zip containers are not yet
+			// supported and produce a structured import-blocked warning.
+			'application/json': ['.json']
 		}
 	}
 ];
 
-const MEDIA_FILE_PATTERN = /\.(mp4|mov|webm|png|jpe?g|webp|gif|bmp|avif|mp3|m4a|wav|ogg)$/i;
+const MEDIA_FILE_PATTERN = /\.(mp4|mov|webm|png|jpe?g|webp|gif|bmp|avif|mp3|m4a|wav|ogg|json)$/i;
 const INTERPOLATION_EXPORT_PIPELINE_WIRED = false;
 const INITIAL_INTERPOLATION_AVAILABILITY: InterpolationAvailability = {
 	state: 'unavailable',
@@ -227,6 +231,7 @@ function isImportableFile(file: File): boolean {
 		file.type.startsWith('video/') ||
 		file.type.startsWith('image/') ||
 		file.type.startsWith('audio/') ||
+		file.type === 'application/json' ||
 		MEDIA_FILE_PATTERN.test(file.name)
 	);
 }
@@ -769,6 +774,13 @@ export function App() {
 		event.preventDefault();
 	};
 	const [bundleMessage, setBundleMessage] = createSignal<string | null>(null);
+	// Phase 23: replace-on-import confirm. Replaces window.confirm() which is
+	// silently suppressed in cross-origin / gesture-lapsed contexts and would
+	// then read as "Cancel" without the user ever seeing a prompt.
+	const [bundleReplacePrompt, setBundleReplacePrompt] = createSignal<{
+		jobId: string;
+		message: string;
+	} | null>(null);
 	const [interchangeWarnings, setInterchangeWarnings] = createSignal<readonly string[]>([]);
 	const [interchangeMessage, setInterchangeMessage] = createSignal<string | null>(null);
 	const [thumbnailVersion, setThumbnailVersion] = createSignal(0);
@@ -2316,6 +2328,10 @@ export function App() {
 			case 'translated-caption-track-created':
 				translationController.onTranslatedTrackCreated(msg.trackId);
 				break;
+			case 'translated-caption-track-error':
+				translationController.onTranslatedTrackError?.(msg.reason, msg.message);
+				setRuntimeIssue(msg.message);
+				break;
 			case 'look-preset-exported': {
 				const blob = new Blob([msg.json], { type: 'application/json' });
 				const url = URL.createObjectURL(blob);
@@ -2689,12 +2705,10 @@ export function App() {
 				break;
 			}
 			case 'bundle-replace-prompt': {
-				const replace = window.confirm(msg.message);
-				bridge?.send({
-					type: 'bundle-replace-decision',
-					jobId: msg.jobId,
-					action: replace ? 'replace' : 'cancel'
-				});
+				// Queue the prompt for the in-app modal. The worker waits on the
+				// `bundle-replace-decision` reply, which is sent from the modal's
+				// click handlers (see the BundleReplaceModal markup below).
+				setBundleReplacePrompt({ jobId: msg.jobId, message: msg.message });
 				break;
 			}
 			case 'bundle-job-progress':
@@ -3310,7 +3324,20 @@ export function App() {
 				]
 			});
 			bridge?.send({ type: 'queue-job-output', jobId, handle });
-		} catch {
+		} catch (error) {
+			// `showSaveFilePicker` may reject with `SecurityError` when called
+			// without an active user gesture — every queue job after the first
+			// runs from a background completion callback, not a click, so the
+			// activation has expired. Without a distinct signal, the worker
+			// reads the skip as "user cancelled" and silently drops the job.
+			if (error instanceof DOMException && error.name === 'SecurityError') {
+				setStatusLine(
+					'Queue paused: pre-select all output files via Run Queue before starting (job activation expired).'
+				);
+				bridge?.send({ type: 'queue-job-skip', jobId });
+				bridge?.send({ type: 'queue-pause' });
+				return;
+			}
 			bridge?.send({ type: 'queue-job-skip', jobId });
 		}
 	}
@@ -4044,6 +4071,53 @@ export function App() {
 						</>
 					}
 				/>
+				<Show keyed when={bundleReplacePrompt()}>
+					{(prompt) => (
+						<div
+							class="modal-backdrop bundle-replace-modal-backdrop"
+							role="dialog"
+							aria-modal="true"
+							aria-labelledby="bundle-replace-title"
+							aria-describedby="bundle-replace-message"
+						>
+							<div class="bundle-replace-modal" role="document">
+								<p id="bundle-replace-title" class="bundle-replace-modal-title">
+									Replace current project?
+								</p>
+								<p id="bundle-replace-message" class="bundle-replace-modal-message">
+									{prompt.message}
+								</p>
+								<div class="bundle-replace-modal-actions">
+									<Button
+										variant="outline"
+										onClick={() => {
+											bridge?.send({
+												type: 'bundle-replace-decision',
+												jobId: prompt.jobId,
+												action: 'cancel'
+											});
+											setBundleReplacePrompt(null);
+										}}
+									>
+										Cancel
+									</Button>
+									<Button
+										onClick={() => {
+											bridge?.send({
+												type: 'bundle-replace-decision',
+												jobId: prompt.jobId,
+												action: 'replace'
+											});
+											setBundleReplacePrompt(null);
+										}}
+									>
+										Replace
+									</Button>
+								</div>
+							</div>
+						</div>
+					)}
+				</Show>
 				<Show when={restoreOffer() || unresolvedSources().length > 0}>
 					<section
 						class="restore-banner"

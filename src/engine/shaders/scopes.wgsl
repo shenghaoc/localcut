@@ -66,9 +66,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let wfColClamped = min(wfCol, u.scopeResX - 1u);
   let lumaQ = u32(y * 65535.0);  // quantized luma for min/max tracking
 
-  // Min: store as ~luma (lower is darker); we use atomicMin on the quantized value
+  // Min: tracks the darkest (minimum quantized luma) in the column.
   atomicMin(&waveform[wfColClamped * 2u], lumaQ);
-  // Max: store as ~luma
+  // Max: tracks the brightest (maximum quantized luma) in the column.
   atomicMax(&waveform[wfColClamped * 2u + 1u], lumaQ);
 
   // ── RGB Parade accumulation ──

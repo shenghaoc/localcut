@@ -1,4 +1,4 @@
-import { Show, For, createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
+import { Show, For, createEffect, createMemo, createSignal, on, onCleanup } from 'solid-js';
 import { ChevronLeft, ChevronRight, Diamond, RotateCcw, Upload } from 'lucide-solid';
 import { DEFAULT_BEAUTY_EFFECT, DEFAULT_SKIN_MASK } from '../protocol';
 import type {
@@ -201,6 +201,13 @@ interface InspectorProps {
 	/** Phase 42: opens the Record panel in retake mode for the selected clip. */
 	onRetakeRequested?: (clipId: string) => void;
 	recorderSessionState?: 'idle' | 'armed' | 'recording' | 'paused' | 'stopping';
+	/**
+	 * Phase 32a: whether the active preview tier supports the WebGPU skin-smooth
+	 * compute chain. When false, the strength slider is disabled and a note
+	 * explains why; without this gate, users can drag the slider, see no preview
+	 * change, and export with their changes silently dropped.
+	 */
+	previewTierSupportsSkinSmooth?: boolean;
 }
 
 type TransformSliderKey = 'x' | 'y' | 'scale' | 'rotation' | 'opacity';
@@ -534,6 +541,15 @@ export function Inspector(props: InspectorProps) {
 	let lookPresetInput: HTMLInputElement | undefined;
 
 	const [skinSmoothBypass, setSkinSmoothBypass] = createSignal(false);
+	// Bypass is a per-clip preview toggle; reset it whenever the selected clip
+	// changes so an A/B from one clip doesn't leak into the next clip's view.
+	createEffect(
+		on(
+			() => props.selectedClip?.clipId,
+			() => setSkinSmoothBypass(false),
+			{ defer: true }
+		)
+	);
 	const skinMaskPending = new Map<string, number>();
 	const skinMaskDebouncers = new Map<string, ReturnType<typeof setTimeout>>();
 	const skinMaskTarget = { trackId: '', clipId: '' };
@@ -594,11 +610,51 @@ export function Inspector(props: InspectorProps) {
 		};
 	}
 
+	type SkinMaskDraft = ReturnType<typeof currentSkinMask>;
+	let skinMaskDraft: SkinMaskDraft | null = null;
+	let skinMaskDraftClipId: string | null = null;
+
+	function cloneCurrentSkinMask(): SkinMaskDraft {
+		return { ...currentSkinMask() };
+	}
+
+	function resetSkinMaskDraft(): void {
+		skinMaskDraft = null;
+		skinMaskDraftClipId = null;
+	}
+
+	function resetSkinMaskDraftIfIdle(): void {
+		if (skinMaskPending.size === 0 && skinMaskDebouncers.size === 0) {
+			resetSkinMaskDraft();
+		}
+	}
+
+	createEffect(on(() => props.selectedClip?.skinMask, resetSkinMaskDraftIfIdle, { defer: true }));
+
+	function getSkinMaskDraft() {
+		const clip = props.selectedClip;
+		if (!clip) {
+			resetSkinMaskDraft();
+			return null;
+		}
+		if (skinMaskDraftClipId !== clip.clipId) {
+			skinMaskDraft = cloneCurrentSkinMask();
+			skinMaskDraftClipId = clip.clipId;
+		} else if (!skinMaskDraft) {
+			skinMaskDraft = cloneCurrentSkinMask();
+		}
+		return skinMaskDraft;
+	}
+
 	function flushSkinMaskPending() {
 		if (!skinMaskTarget.clipId || skinMaskPending.size === 0) return;
 		for (const handle of skinMaskDebouncers.values()) clearTimeout(handle);
 		skinMaskDebouncers.clear();
-		const mask = currentSkinMask();
+		const mask =
+			skinMaskDraft && skinMaskDraftClipId === skinMaskTarget.clipId
+				? skinMaskDraft
+				: getSkinMaskDraft();
+		if (!mask) return;
 		for (const [k, v] of skinMaskPending) mask[k as keyof typeof mask] = v;
 		skinMaskPending.clear();
 		props.onSkinMask?.(skinMaskTarget.trackId, skinMaskTarget.clipId, {
@@ -619,7 +675,8 @@ export function Inspector(props: InspectorProps) {
 		skinMaskPending.set(key, value);
 		const existing = skinMaskDebouncers.get(key);
 		if (existing) clearTimeout(existing);
-		const base = currentSkinMask();
+		const base = getSkinMaskDraft();
+		if (!base) return;
 		skinMaskDebouncers.set(
 			key,
 			setTimeout(() => {
@@ -1770,9 +1827,20 @@ export function Inspector(props: InspectorProps) {
 										)}
 									</For>
 									<div
-										class={`skin-smooth-panel${skinMaskControlsEnabled() ? ' is-active' : ' is-inactive'}${skinSmoothIsStrong() ? ' is-strong' : ''}`}
-										aria-disabled={skinMaskControlsEnabled() ? undefined : 'true'}
+										class={`skin-smooth-panel${skinMaskControlsEnabled() ? ' is-active' : ' is-inactive'}${skinSmoothIsStrong() ? ' is-strong' : ''}${props.previewTierSupportsSkinSmooth === false ? ' is-tier-unsupported' : ''}`}
+										aria-disabled={
+											props.previewTierSupportsSkinSmooth === false || !skinMaskControlsEnabled()
+												? 'true'
+												: undefined
+										}
 									>
+										<Show when={props.previewTierSupportsSkinSmooth === false}>
+											<p class="skin-smooth-tier-note" role="note">
+												Skin Smoothing requires WebGPU support. The current preview tier can't
+												render the effect, and any strength you set won't appear in preview or
+												export.
+											</p>
+										</Show>
 										<div class="skin-smooth-status">
 											<span class="skin-smooth-status-copy">
 												<span class="skin-smooth-title">Skin Smoothing</span>
@@ -1828,6 +1896,7 @@ export function Inspector(props: InspectorProps) {
 													max={SKIN_SMOOTH_STRENGTH_SLIDER.max}
 													step={SKIN_SMOOTH_STRENGTH_SLIDER.step}
 													value={effects().skinSmoothStrength}
+													disabled={props.previewTierSupportsSkinSmooth === false}
 													onInput={(e) =>
 														scheduleParam(
 															SKIN_SMOOTH_STRENGTH_SLIDER.key,

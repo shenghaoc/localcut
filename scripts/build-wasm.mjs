@@ -34,13 +34,16 @@ writeFileSync(wasmPath, Buffer.from(buffer));
 // Encode to base64
 const b64 = Buffer.from(buffer).toString('base64');
 
-// Wrap at 76 chars per line to match the existing file format
+// Wrap at 76 chars per line. The previous version joined chunks with '' which
+// made the chunking inert and produced one ~kilometres-long line; the
+// adjacent-string-literal concat below preserves the wrapping the format
+// claims to enforce and keeps formatters from rewriting one giant token.
 const CHUNK = 76;
 const lines = [];
 for (let i = 0; i < b64.length; i += CHUNK) {
 	lines.push(b64.slice(i, i + CHUNK));
 }
-const wrapped = lines.join('');
+const wrapped = lines.join('" +\n\t"');
 
 // Write TypeScript module in the exact format of the original file
 const ts = `export const WASM_SIMD_RESAMPLER_B64 = "${wrapped}";\n`;

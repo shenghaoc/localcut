@@ -208,8 +208,14 @@ import {
 	resetRingPointers,
 	type AudioRingViews
 } from './audio-ring';
-import { openMediaFile, STILL_DEFAULT_DURATION_S, type MediaInputHandle } from './media-io';
+import {
+	openMediaFile,
+	STILL_DEFAULT_DURATION_S,
+	STILL_MAX_DURATION_S,
+	type MediaInputHandle
+} from './media-io';
 import { healthReportForHandle } from './media-adapters/mediabunny-adapter';
+import { BlockedImportError } from './media-adapters/types';
 import {
 	SilenceStreamDetector,
 	intersectSilenceRegions,
@@ -227,6 +233,7 @@ import { sourceHealthReportFromError } from './media-adapters/source-health';
 import { cleanedAudioMissing, cleanedAudioSubstitute } from './audio-cleanup/cleaned-audio';
 import { ThumbnailGenerator } from './thumbnails';
 import { initCompatibilityGpu, initGpu, type CompositeLayer, type PreviewRenderer } from './gpu';
+import { colorMetadataFromHints, type ColorMetadata } from './colour';
 import { createCanvasTitleUploader, loadTitleFonts, TitleTextureCache } from './titles';
 import type { TitleContent } from './title';
 import { CalloutTextureCache } from './callout-textures';
@@ -1269,6 +1276,11 @@ function getPlaybackSource(): MediaInputHandle | null {
 	return null;
 }
 
+function colorMetadataForSource(sourceId: string): ColorMetadata | undefined {
+	const hints = sourceDescriptors.get(sourceId)?.video?.color;
+	return hints ? colorMetadataFromHints(hints) : undefined;
+}
+
 function trackEnd(tl: Timeline, trackId: string): number {
 	const track = tl.find((t) => t.id === trackId);
 	if (!track) return 0;
@@ -1344,7 +1356,16 @@ function placeAsset(
 
 	// Video or still image → a video track, with the linked audio sub-clip below.
 	const [withVideoTrack, videoTrackId] = ensureTrack(tl, 'video', trackId);
-	const clipDuration = handle.kind === 'image' ? STILL_DEFAULT_DURATION_S : handle.duration;
+	// Distinguish "animated image" (Lottie, animated WebP/GIF) from a literal
+	// still. Still adapters report `duration = STILL_MAX_DURATION_S` (very
+	// large sentinel) so the clip can be trimmed freely; animated content
+	// reports its real playback length. Use that real length when present so
+	// Lottie clips don't get the 5-second still default that loses the rest of
+	// the animation.
+	const isAnimatedImage =
+		handle.kind === 'image' && handle.duration > 0 && handle.duration < STILL_MAX_DURATION_S;
+	const clipDuration =
+		handle.kind === 'image' && !isAnimatedImage ? STILL_DEFAULT_DURATION_S : handle.duration;
 	const clipStart = start ?? trackEnd(withVideoTrack, videoTrackId);
 	let next = insertClip(
 		withVideoTrack,
@@ -3022,6 +3043,8 @@ type LayerMeta =
 			/** Phase 43: per-clip padded-background compositor sidecar. */
 			paddedBackground?: import('../protocol').PaddedBackgroundParams;
 			transition?: import('./timeline').TransitionResolveMeta;
+			/** Phase 21: per-clip source colour metadata for normalize. */
+			colorMetadata?: import('./colour').ColorMetadata;
 			/** Phase 31: smoothed alpha view from the matte engine, if enabled. */
 			matteView?: GPUTextureView;
 			/** Phase 31: matte strength (0..1). */
@@ -3211,6 +3234,7 @@ function makeGetLayers() {
 					}
 				}
 				decodedCount += 1;
+				const colorMetadata = colorMetadataForSource(layer.clip.sourceId);
 				decodedLayers.push({
 					decoded,
 					meta: {
@@ -3221,6 +3245,7 @@ function makeGetLayers() {
 						skinMask: layer.clip.skinMask,
 						skinSmoothBypass: skinSmoothBypassMap.get(layer.clip.id) ?? false,
 						transition: layer.transition,
+						colorMetadata,
 						matteView,
 						matteStrength: matte?.enabled ? matte.strength : undefined,
 						matteMode: matte?.enabled ? matte.mode : undefined,
@@ -3341,6 +3366,17 @@ async function handleImport(file: File, fileHandle?: FileSystemFileHandle | null
 			sourceInputs.delete(sourceId);
 			sourceDescriptors.delete(sourceId);
 			binSourceIds.delete(sourceId);
+		}
+		// A BlockedImportError carries a structured health report (e.g. unsupported
+		// .lottie zip). Surface that to the UI as a source-health warning instead
+		// of just a generic import-failed error toast.
+		if (e instanceof BlockedImportError) {
+			postSourceHealth({
+				sourceId: e.inspection.sourceId,
+				fileName: e.inspection.fileName,
+				status: 'blocked',
+				warnings: e.warnings
+			});
 		}
 		const message = errorMessage(e);
 		recordRecentError({
@@ -3736,14 +3772,28 @@ async function handleImportLookPreset(
 	let lut: ClipLut | null = null;
 	if (cmd.lutFile) {
 		if (!renderer) {
-			postProjectWarning('LUT import requires the accelerated WebGPU renderer.');
-		} else {
-			try {
-				lut = await clipLutFromCubeFile(cmd.lutFile);
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				postProjectWarning(`Could not import LUT: ${message}`);
-			}
+			// Paired LUT but no GPU renderer → can't apply the preset's intended look.
+			// Refuse the whole import so the clip isn't left in a half-themed state.
+			post({
+				type: 'look-preset-error',
+				clipId: cmd.clipId,
+				reason: 'LUT import requires the accelerated WebGPU renderer.'
+			});
+			return;
+		}
+		try {
+			lut = await clipLutFromCubeFile(cmd.lutFile);
+		} catch (error) {
+			// A bad LUT means the look preset and its paired LUT cannot ship
+			// together; treat the import as atomic and abort, rather than silently
+			// committing the look params without the LUT.
+			const message = error instanceof Error ? error.message : String(error);
+			post({
+				type: 'look-preset-error',
+				clipId: cmd.clipId,
+				reason: `Could not import LUT: ${message}`
+			});
+			return;
 		}
 	}
 
@@ -4524,16 +4574,20 @@ function handleAddTranslatedCaptionTrack(
 	for (const seg of cmd.segments) {
 		if (typeof seg.start !== 'number' || typeof seg.duration !== 'number') {
 			post({
-				type: 'translated-caption-track-created',
-				trackId: ''
+				type: 'translated-caption-track-error',
+				reason: 'malformed-segments',
+				message:
+					'Translated caption track rejected: at least one segment is missing a numeric start or duration.'
 			});
 			return;
 		}
 	}
 	if (cmd.segments.length === 0) {
 		post({
-			type: 'translated-caption-track-created',
-			trackId: ''
+			type: 'translated-caption-track-error',
+			reason: 'empty-segments',
+			message:
+				'Translated caption track rejected: the segment list is empty (nothing was translated).'
 		});
 		return;
 	}
@@ -4823,6 +4877,54 @@ function handleInsertEdit(cmd: Extract<WorkerCommand, { type: 'insert-edit' }>) 
 
 function handleOverwriteEdit(cmd: Extract<WorkerCommand, { type: 'overwrite-edit' }>) {
 	const targetTrackIds = getEditTargetTrackIds();
+	// Phase 20 linked-clip invariant: if an overwrite would trim/delete a clip on
+	// a targeted track that's linked to a partner on a non-targeted track, the
+	// untargeted partner stays put — silently splitting the A/V pair. Reject the
+	// edit before mutating so the link contract holds; the UI should expand the
+	// edit targeting or unlink the pair to proceed.
+	//
+	// Per-track region computation: `overwriteEdit` (timeline.ts) places every
+	// incoming clip's start at `cmd.atTime` regardless of any relative offset
+	// the cmd carries, and each clip overwrites its own region
+	// [atTime, atTime + clip.duration]. The union of those regions per track
+	// is therefore [atTime, atTime + max(clip.duration)] across all incoming
+	// clips on that track. We compute (regionStart, regionEnd) by iterating
+	// the clips explicitly so the calculation tracks `overwriteEdit`'s actual
+	// behaviour, not just the max-duration shortcut.
+	const targetSet = new Set(targetTrackIds);
+	const regionByTrack = new Map<string, { start: number; end: number }>();
+	for (const item of cmd.clips) {
+		const placedStart = cmd.atTime;
+		const placedEnd = placedStart + item.clip.duration;
+		const cur = regionByTrack.get(item.trackId);
+		if (cur) {
+			cur.start = Math.min(cur.start, placedStart);
+			cur.end = Math.max(cur.end, placedEnd);
+		} else {
+			regionByTrack.set(item.trackId, { start: placedStart, end: placedEnd });
+		}
+	}
+	for (const [trackId, region] of regionByTrack) {
+		if (!targetSet.has(trackId)) continue;
+		const track = timeline.find((t) => t.id === trackId);
+		if (!track) continue;
+		for (const existing of track.clips) {
+			const eStart = existing.start;
+			const eEnd = eStart + existing.duration;
+			if (eEnd <= region.start || eStart >= region.end) continue;
+			if (!existing.linkedGroupId) continue;
+			const linked = expandLinkedGroup(timeline, [{ trackId, clipId: existing.id }]);
+			for (const ref of linked) {
+				if (ref.trackId === trackId) continue;
+				if (!targetSet.has(ref.trackId)) {
+					postProjectWarning(
+						`Overwrite would trim "${existing.id}" but its linked partner is on an untargeted track. Add that track to the edit targets, or unlink the pair, before retrying.`
+					);
+					return;
+				}
+			}
+		}
+	}
 	commitTimelineMutation(() =>
 		overwriteEdit(timeline, targetTrackIds, cmd.clips.map(clipboardClipFromMessage), cmd.atTime)
 	);
@@ -5803,6 +5905,7 @@ function setupPlayback() {
 							skinMask: layer.meta.skinMask,
 							skinSmoothBypass: layer.meta.skinSmoothBypass,
 							transition: layer.meta.transition,
+							colorMetadata: layer.meta.colorMetadata,
 							matteView: layer.meta.matteView,
 							matteStrength: layer.meta.matteStrength,
 							matteMode: layer.meta.matteMode,
@@ -5813,7 +5916,7 @@ function setupPlayback() {
 						});
 					}
 				}
-				renderer.present(stack);
+				renderer.present(stack, timestamp / 1e6);
 				tapProgramFrame(timestamp);
 				return;
 			}
@@ -5929,7 +6032,13 @@ function firstExportVideoHandle(): MediaInputHandle | null {
 function exportSettingsForProbe(): ExportSettings | null {
 	const videoHandle = firstExportVideoHandle();
 	// Title-only timelines export over the default canvas (no decodable video).
-	if (!videoHandle && titleClips().length === 0) return null;
+	// Burned-in captions are a third source of renderable content (visible without
+	// a source clip) — mirror setupPlayback's gate so a caption-only export isn't
+	// advertised as unsupported when buildExportPlan would actually accept it.
+	const hasBurnedInCaptions = captionTracks.some(
+		(track) => track.burnedIn && track.visible && track.segments.length > 0
+	);
+	if (!videoHandle && titleClips().length === 0 && !hasBurnedInCaptions) return null;
 	const outputSize = aspectOutputSize(projectFormat.aspect);
 	const width = outputSize.width;
 	const height = outputSize.height;
@@ -9124,6 +9233,9 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			break;
 		case 'queue-job-skip':
 			handleQueueJobSkip(cmd);
+			break;
+		case 'queue-pause':
+			handleQueueCancelAll();
 			break;
 		case 'queue-set-stop-on-error':
 			handleQueueSetStopOnError(cmd);

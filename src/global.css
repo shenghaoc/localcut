@@ -6990,3 +6990,44 @@ body::-webkit-scrollbar-thumb:hover,
 		height: 24px;
 	}
 }
+
+/* Bundle replace modal — Phase 23 (replaces window.confirm which is suppressed
+   in cross-origin / gesture-lapsed contexts). */
+.modal-backdrop {
+	position: fixed;
+	inset: 0;
+	display: grid;
+	place-items: center;
+	background: rgb(0 0 0 / 55%);
+	z-index: 100;
+}
+
+.bundle-replace-modal {
+	background: var(--bg-panel);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-md);
+	padding: 1.25rem 1.5rem;
+	min-width: min(420px, 90vw);
+	max-width: 540px;
+	display: flex;
+	flex-direction: column;
+	gap: 0.85rem;
+}
+
+.bundle-replace-modal-title {
+	font-weight: 600;
+	font-size: var(--text-base);
+	margin: 0;
+}
+
+.bundle-replace-modal-message {
+	margin: 0;
+	font-size: var(--text-sm);
+	color: var(--foreground);
+}
+
+.bundle-replace-modal-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.65rem;
+}

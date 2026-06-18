@@ -144,7 +144,12 @@
   publish-flow spec; everything else stays in Vitest.
 - [x] **T10.2** New CI job (separate from build/test) running a
   `bluenviron/mediamtx` container; Chromium publishes a synthetic program
-  feed to `http://localhost:8889/<path>/whip`.
+  feed to `http://localhost:8889/<path>/whip`. The synthetic feed is built
+  from `HTMLCanvasElement.captureStream()` (Canvas2D drawing test frames at
+  the negotiated FPS, bypassing the WebGPU compositor so the CI image stays
+  generic) plus an `AudioContext` → `MediaStreamAudioDestinationNode` for
+  the audio track. The two tracks are added to a fresh `MediaStream` that the
+  Playwright spec hands to `WhipSession.start()`.
 - [x] **T10.3** Assert ingest via the MediaMTX API: session present and
   `bytesReceived` increasing.
 - [x] **T10.4** Assert teardown: user stop issues `DELETE` and the MediaMTX

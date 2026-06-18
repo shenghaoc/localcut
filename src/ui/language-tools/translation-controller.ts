@@ -83,6 +83,8 @@ export interface TranslationControllerPorts {
 	createTranslatedTrack(request: CreateTranslatedTrackRequest): void;
 	/** Called when the translated track is created (from worker state message). */
 	onTranslatedTrackCreated?(trackId: string): void;
+	/** Called when the worker rejects the translated track (empty / malformed). */
+	onTranslatedTrackError?(reason: 'empty-segments' | 'malformed-segments', message: string): void;
 	onError?(message: string): void;
 }
 
@@ -240,14 +242,24 @@ export class TranslationController {
 					});
 				}
 				const sampleSize = Math.min(5, track.segments.length);
+				let sessionLost = false;
 				const tops = await Promise.all(
 					track.segments.slice(0, sampleSize).map(async (seg) => {
-						const results = await this.detector!.detect(seg.text).catch(
-							() => [] as LanguageDetectionResult[]
-						);
+						const results = await this.detector!.detect(seg.text).catch(() => {
+							// Chrome can reclaim the cached LanguageDetector after a
+							// period of inactivity; subsequent detect() calls reject and
+							// silently fall back to oppositeLanguage(). Drop the stale
+							// reference so the next translate() recreates the session.
+							sessionLost = true;
+							return [] as LanguageDetectionResult[];
+						});
 						return results[0] ?? { detectedLanguage: 'en', confidence: 0 };
 					})
 				);
+				if (sessionLost) {
+					this.detector?.destroy();
+					this.detector = null;
+				}
 				sourceLang = dominantLanguage(tops);
 			}
 			const resolvedTarget = targetLang ?? oppositeLanguage(sourceLang);
@@ -340,6 +352,14 @@ export class TranslationController {
 	onTranslatedTrackCreated(trackId: string): void {
 		this.update({ lastTranslatedTrackId: trackId });
 		this.ports.onTranslatedTrackCreated?.(trackId);
+	}
+
+	/** Handle the worker rejecting the translated track (empty / malformed segments). */
+	onTranslatedTrackError(reason: 'empty-segments' | 'malformed-segments', message: string): void {
+		if (this.state.job) {
+			this.updateJob({ phase: 'error', error: message });
+		}
+		this.ports.onTranslatedTrackError?.(reason, message);
 	}
 
 	/** Destroy sessions and clean up. */

@@ -20,6 +20,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 	let p = vec2f(floor(vec2f(gid.xy) / f32(u.size)) + f32(u.frameTimeSeed));
 	let noise = f16(fract(sin(dot(p, vec2f(127.1, 311.7))) * 43758.5453));
 	let strength = f16(u.strength);
-	let grained = f16(colour.rgb) + (noise - f16(0.5)) * strength;
-	textureStore(dst, gid.xy, vec4f(vec3f(mix(f16(colour.rgb), grained, strength)), colour.a));
+	let rgb16 = vec3<f16>(colour.rgb);
+	let grained = rgb16 + vec3<f16>(noise - f16(0.5)) * strength;
+	textureStore(dst, gid.xy, vec4f(vec3f(mix(rgb16, grained, vec3<f16>(strength))), colour.a));
 }

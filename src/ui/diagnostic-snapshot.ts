@@ -82,42 +82,41 @@ function capabilityReport(
 	webgpuReady: boolean
 ): CapabilityReport {
 	const diagnosticTier: DiagnosticCapabilityTier = tier;
-	const findings = [
-		finding(
-			'capability.cross_origin_isolated',
-			snapshot.crossOriginIsolated,
-			snapshot.crossOriginIsolated
-				? 'COOP/COEP isolation is active.'
-				: 'COOP/COEP isolation is missing, so the accelerated SAB path is disabled.',
-			snapshot.crossOriginIsolated
-				? undefined
-				: 'Serve dev/preview/production with COOP/COEP headers, then reload.'
-		),
-		finding(
-			'capability.shared_array_buffer',
-			snapshot.sharedArrayBuffer,
-			snapshot.sharedArrayBuffer
-				? 'SharedArrayBuffer is available.'
-				: 'SharedArrayBuffer is unavailable.',
-			snapshot.sharedArrayBuffer ? undefined : 'Enable cross-origin isolation and reload.'
-		),
-		finding(
-			'capability.webgpu',
-			snapshot.webgpu && webgpuReady,
-			webgpuReady
-				? 'WebGPU device is ready in the worker.'
-				: (runtimeIssue ?? 'WebGPU API or device is not ready.'),
-			webgpuReady ? undefined : 'Use hardware-accelerated Chromium or inspect GPU diagnostics.'
-		),
-		finding(
-			'capability.webcodecs',
-			snapshot.webCodecs,
-			snapshot.webCodecs ? 'WebCodecs is exposed.' : 'WebCodecs is unavailable.',
-			snapshot.webCodecs
-				? undefined
-				: 'Use a recent Chromium-based browser for accelerated import/export.'
-		)
-	];
+	const isolationFinding = finding(
+		'capability.cross_origin_isolated',
+		snapshot.crossOriginIsolated,
+		snapshot.crossOriginIsolated
+			? 'COOP/COEP isolation is active.'
+			: 'COOP/COEP isolation is missing, so the accelerated SAB path is disabled.',
+		snapshot.crossOriginIsolated
+			? undefined
+			: 'Serve dev/preview/production with COOP/COEP headers, then reload.'
+	);
+	const sabFinding = finding(
+		'capability.shared_array_buffer',
+		snapshot.sharedArrayBuffer,
+		snapshot.sharedArrayBuffer
+			? 'SharedArrayBuffer is available.'
+			: 'SharedArrayBuffer is unavailable.',
+		snapshot.sharedArrayBuffer ? undefined : 'Enable cross-origin isolation and reload.'
+	);
+	const webgpuFinding = finding(
+		'capability.webgpu',
+		snapshot.webgpu && webgpuReady,
+		webgpuReady
+			? 'WebGPU device is ready in the worker.'
+			: (runtimeIssue ?? 'WebGPU API or device is not ready.'),
+		webgpuReady ? undefined : 'Use hardware-accelerated Chromium or inspect GPU diagnostics.'
+	);
+	const webcodecsFinding = finding(
+		'capability.webcodecs',
+		snapshot.webCodecs,
+		snapshot.webCodecs ? 'WebCodecs is exposed.' : 'WebCodecs is unavailable.',
+		snapshot.webCodecs
+			? undefined
+			: 'Use a recent Chromium-based browser for accelerated import/export.'
+	);
+	const findings = [isolationFinding, sabFinding, webgpuFinding, webcodecsFinding];
 	return {
 		tier: diagnosticTier,
 		tierReason:
@@ -125,7 +124,7 @@ function capabilityReport(
 				? 'UI and worker report full accelerated capability.'
 				: (runtimeIssue ?? 'One or more accelerated capabilities are unavailable.'),
 		crossOriginIsolated: snapshot.crossOriginIsolated,
-		sharedArrayBuffer: findings[1]!,
+		sharedArrayBuffer: sabFinding,
 		webGpu: {
 			status: webgpuReady ? 'ready' : snapshot.webgpu ? 'requesting' : 'unavailable',
 			features: [],

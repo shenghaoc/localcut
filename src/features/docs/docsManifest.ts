@@ -23,6 +23,8 @@ import faqContent from './content/faq.md?raw';
 import troubleshootingContent from './content/troubleshooting.md?raw';
 import liveStreamingContent from './content/live-streaming.md?raw';
 import frameInterpolationContent from './content/frame-interpolation.md?raw';
+import lookPacksContent from './content/look-packs.md?raw';
+import animatedOverlaysContent from './content/animated-overlays.md?raw';
 
 export interface DocSection {
 	/** URL segment under /docs; the index section maps to /docs itself. */
@@ -67,6 +69,8 @@ export const DOC_SECTIONS: readonly DocSection[] = [
 	{ slug: 'exporting', title: 'Exporting', content: exportingContent },
 	{ slug: 'captions', title: 'Captions', content: captionsContent },
 	{ slug: 'frame-interpolation', title: 'Frame interpolation', content: frameInterpolationContent },
+	{ slug: 'look-packs', title: 'Look packs', content: lookPacksContent },
+	{ slug: 'animated-overlays', title: 'Animated overlays', content: animatedOverlaysContent },
 	{ slug: 'language-tools', title: 'Language tools', content: languageToolsContent },
 	{ slug: 'live-streaming', title: 'Live streaming', content: liveStreamingContent },
 	{

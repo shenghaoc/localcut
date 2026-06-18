@@ -25,20 +25,31 @@ export class AnimatedImageFrameSource implements VideoFrameProvider {
 		});
 	}
 
-	private async ensureInitialized(): Promise<void> {
+	async ensureInitialized(): Promise<void> {
 		if (this.initialized) return;
-		const result = await this.decoder.decode({ frameIndex: 0 });
+		const firstResult = await this.decoder.decode({ frameIndex: 0 });
 		const track = this.decoder.tracks[0];
 		this.frameCount = track.frameCount;
 		this.repetitionCount = track.repetitionCount;
-		this.frameDurations = [];
-		const firstDuration = result.image.duration;
-		for (let i = 0; i < this.frameCount; i++) {
-			this.frameDurations.push(
-				firstDuration && firstDuration > 0 ? firstDuration / 1_000_000 : 0.033
-			);
+		// Decode every frame's header once up-front so animated GIF/WebP/AVIF
+		// with variable per-frame delays produce frame-accurate timing rather
+		// than cloning the first frame's duration across the entire track.
+		// We close each frame's image immediately — no buffering is retained.
+		const durations: number[] = new Array(this.frameCount);
+		durations[0] = toDurationSeconds(firstResult.image.duration);
+		firstResult.image.close();
+		for (let i = 1; i < this.frameCount; i++) {
+			try {
+				const result = await this.decoder.decode({ frameIndex: i });
+				durations[i] = toDurationSeconds(result.image.duration);
+				result.image.close();
+			} catch {
+				// If a specific frame fails to decode its header, fall back to the
+				// previous frame's duration so accumulation stays monotonic.
+				durations[i] = durations[i - 1] ?? 0.033;
+			}
 		}
-		result.image.close();
+		this.frameDurations = durations;
 		this.initialized = true;
 	}
 
@@ -127,4 +138,8 @@ export class AnimatedImageFrameSource implements VideoFrameProvider {
 		this.lruKeys.length = 0;
 		this.decoder.close();
 	}
+}
+
+function toDurationSeconds(durationMicros: number | null | undefined): number {
+	return durationMicros && durationMicros > 0 ? durationMicros / 1_000_000 : 0.033;
 }
