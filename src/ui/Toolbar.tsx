@@ -1,6 +1,7 @@
-import { createSignal, For, Show, type JSX } from 'solid-js';
+import { createMemo, createSignal, For, Show, type JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { Popover } from '@ark-ui/solid/popover';
+import { ToggleGroup } from '@ark-ui/solid/toggle-group';
 import {
 	Activity,
 	AudioWaveform,
@@ -68,6 +69,10 @@ interface ToolbarProps {
 	calloutTool?: JSX.Element;
 	/** True while a publish session is connecting/live/reconnecting. */
 	publishLive?: boolean;
+	timelineSnapEnabled: boolean;
+	timelineSnapToBeats: boolean;
+	onSetTimelineSnapEnabled: (enabled: boolean) => void;
+	onSetTimelineSnapToBeats: (enabled: boolean) => void;
 	masterGain: number;
 	meterSab: SharedArrayBuffer | null;
 	onMasterGain: (gain: number) => void;
@@ -112,6 +117,12 @@ export function Toolbar(props: ToolbarProps) {
 	const hasVideo = () => props.metadata?.video != null;
 	const transportDisabled = () => props.transportDisabled || !hasVideo();
 	const [commandOpen, setCommandOpen] = createSignal(false);
+	const timelineModeValues = createMemo(() => {
+		const values: string[] = [];
+		if (props.timelineSnapEnabled) values.push('snap');
+		if (props.timelineSnapEnabled && props.timelineSnapToBeats) values.push('beat');
+		return values;
+	});
 	let importInput: HTMLInputElement | undefined;
 	const handleImportInput = (event: Event) => {
 		const input = event.currentTarget as HTMLInputElement;
@@ -178,6 +189,12 @@ export function Toolbar(props: ToolbarProps) {
 		if (action.disabled) return;
 		void action.onSelect();
 		setCommandOpen(false);
+	};
+	const setTimelineModeValues = (details: { value: string[] }) => {
+		const next = new Set(details.value);
+		const snapEnabled = next.has('snap');
+		props.onSetTimelineSnapEnabled(snapEnabled);
+		props.onSetTimelineSnapToBeats(snapEnabled && next.has('beat'));
 	};
 
 	return (
@@ -387,14 +404,35 @@ export function Toolbar(props: ToolbarProps) {
 						<small>/</small>
 						<span>{formatToolbarDuration(props.duration())}</span>
 					</div>
-					<div class="timeline-toggles" role="status" aria-label="Timeline edit modes">
-						<span class="timeline-toggle-status is-on" title="Snapping is enabled">
+					<ToggleGroup.Root
+						class="timeline-toggles"
+						value={timelineModeValues()}
+						multiple
+						aria-label="Timeline snapping modes"
+						onValueChange={setTimelineModeValues}
+					>
+						<ToggleGroup.Item
+							value="snap"
+							class="timeline-toggle-status"
+							aria-label="Toggle timeline snapping"
+							title="Toggle timeline snapping"
+						>
 							Snap
-						</span>
-						<span class="timeline-toggle-status" title="Ripple editing is inactive">
-							Ripple
-						</span>
-					</div>
+						</ToggleGroup.Item>
+						<ToggleGroup.Item
+							value="beat"
+							class="timeline-toggle-status"
+							disabled={!props.timelineSnapEnabled}
+							aria-label="Toggle beat-grid snapping"
+							title={
+								props.timelineSnapEnabled
+									? 'Toggle beat-grid snapping'
+									: 'Enable snapping before beat-grid snapping'
+							}
+						>
+							Beat
+						</ToggleGroup.Item>
+					</ToggleGroup.Root>
 					<div class="master-mix" role="group" aria-label="Master mix">
 						<MeterStrip meterSab={props.meterSab} />
 						<label class="master-fader">

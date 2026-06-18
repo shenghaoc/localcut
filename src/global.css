@@ -3184,6 +3184,36 @@ body {
 	box-shadow: var(--focus-ring);
 }
 
+.timeline-toggle-group {
+	display: inline-flex;
+	align-items: center;
+	gap: 1px;
+	padding: 2px;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+	background: var(--secondary);
+}
+
+.timeline-toggle-group .timeline-toggle-item {
+	border: 0;
+	background: transparent;
+}
+
+.timeline-toggle-group .timeline-toggle-item:hover:not(:disabled, [data-disabled]),
+.timeline-toggle-group .timeline-toggle-item[data-state='on'] {
+	background: color-mix(in srgb, var(--primary-soft) 70%, var(--secondary));
+	color: var(--text);
+}
+
+.timeline-toggle-group .timeline-toggle-item[data-state='on'] {
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 42%, transparent);
+}
+
+.timeline-toggle-group .timeline-toggle-item:is(:disabled, [data-disabled]) {
+	cursor: default;
+	opacity: 0.45;
+}
+
 .timecode-sep {
 	margin: 0 0.4rem;
 	color: var(--text-muted);
@@ -4705,6 +4735,8 @@ button.status-badge:hover {
 	.dock-rail button,
 	.pipeline-chip-button,
 	.timeline-toggle,
+	.timeline-toggle-status,
+	.timeline-toggle-item,
 	.command-action,
 	.timeline-tool-button,
 	.side-rail-collapse,
@@ -7445,6 +7477,7 @@ body::-webkit-scrollbar-thumb:hover,
 	display: inline-flex;
 	align-items: center;
 	height: 30px;
+	gap: 1px;
 	padding: 2px;
 	border: 1px solid var(--edge);
 	border-radius: var(--radius-sm);
@@ -7460,16 +7493,38 @@ body::-webkit-scrollbar-thumb:hover,
 	border-radius: var(--radius-xs);
 	background: transparent;
 	color: var(--ink-500);
+	cursor: pointer;
 	font-family: var(--font-mono);
 	font-size: 9px;
 	font-weight: 800;
 	letter-spacing: 0.12em;
+	line-height: 1;
 	text-transform: uppercase;
+	transition:
+		background 140ms ease,
+		color 140ms ease,
+		box-shadow 140ms ease;
 }
 
-.timeline-toggle-status.is-on {
+.timeline-toggle-status:hover:not(:disabled, [data-disabled]) {
+	background: rgb(255 255 255 / 4%);
+	color: var(--ink-300);
+}
+
+.timeline-toggle-status[data-state='on'] {
 	background: var(--cyan-soft);
 	color: var(--cyan);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cyan) 32%, transparent);
+}
+
+.timeline-toggle-status:is(:disabled, [data-disabled]) {
+	cursor: not-allowed;
+	opacity: 0.42;
+}
+
+.timeline-toggle-status:focus-visible {
+	outline: none;
+	box-shadow: var(--focus-ring);
 }
 
 .master-mix {

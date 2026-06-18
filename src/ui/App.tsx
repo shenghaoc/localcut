@@ -729,6 +729,8 @@ export function App() {
 		enabledSourceIds: [],
 		globalOffsetMs: 0
 	});
+	const [timelineSnapEnabled, setTimelineSnapEnabled] = createSignal(true);
+	const [timelineSnapToBeats, setTimelineSnapToBeats] = createSignal(false);
 	const [assets, setAssets] = createSignal<MediaAssetSnapshot[]>([]);
 	const [latestHealthReport, setLatestHealthReport] =
 		createSignal<SourceHealthReportSnapshot | null>(null);
@@ -3985,6 +3987,13 @@ export function App() {
 					}
 					onOpenPublish={() => setPublishPanelOpen(true)}
 					publishLive={publishBusy()}
+					timelineSnapEnabled={timelineSnapEnabled()}
+					timelineSnapToBeats={timelineSnapToBeats()}
+					onSetTimelineSnapEnabled={(enabled) => {
+						setTimelineSnapEnabled(enabled);
+						if (!enabled) setTimelineSnapToBeats(false);
+					}}
+					onSetTimelineSnapToBeats={setTimelineSnapToBeats}
 					calloutTool={
 						<CalloutTool
 							active={calloutToolActive()}
@@ -5208,6 +5217,13 @@ export function App() {
 						selectedTransition={selectedTransition}
 						beatResults={beatResults}
 						beatSettings={beatSettings}
+						snapEnabled={timelineSnapEnabled()}
+						snapToBeats={timelineSnapToBeats()}
+						onSetSnapEnabled={(enabled) => {
+							setTimelineSnapEnabled(enabled);
+							if (!enabled) setTimelineSnapToBeats(false);
+						}}
+						onSetSnapToBeats={setTimelineSnapToBeats}
 						onSelectTransition={(transitionId, fromClipId, toClipId, trackId) => {
 							const transition = transitions().find((t) => t.id === transitionId);
 							if (transition) {
