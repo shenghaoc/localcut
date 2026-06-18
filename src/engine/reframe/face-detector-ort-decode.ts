@@ -155,17 +155,27 @@ function activatedScore(raw: number, applySigmoid: boolean): number {
 	return activated;
 }
 
-function scoreCandidateCount(scores: ArrayLike<number>, config: BaseDecodeConfig): number {
-	const stride = config.scoreStride ?? 1;
-	const index = config.scoreIndex ?? 0;
-	if (stride <= 0 || index < 0 || index >= stride || index >= scores.length) return 0;
-	return Math.floor((scores.length - 1 - index) / stride) + 1;
-}
-
-function scoreAt(scores: ArrayLike<number>, index: number, config: BaseDecodeConfig): number {
+function scoreLayout(
+	scoresLength: number,
+	config: BaseDecodeConfig
+): {
+	readonly stride: number;
+	readonly scoreIndex: number;
+	readonly candidateCount: number;
+	readonly applySigmoid: boolean;
+} {
 	const stride = config.scoreStride ?? 1;
 	const scoreIndex = config.scoreIndex ?? 0;
-	return scores[index * stride + scoreIndex] as number;
+	const candidateCount =
+		stride <= 0 || scoreIndex < 0 || scoreIndex >= stride || scoreIndex >= scoresLength
+			? 0
+			: Math.floor((scoresLength - 1 - scoreIndex) / stride) + 1;
+	return {
+		stride,
+		scoreIndex,
+		candidateCount,
+		applySigmoid: config.applySigmoid === true
+	};
 }
 
 /**
@@ -185,10 +195,11 @@ export function decodeRawBboxCandidates(
 	sourceWidth: number = 1,
 	sourceHeight: number = 1
 ): DecodedCandidate[] {
-	const n = Math.min(scoreCandidateCount(scores, config), Math.floor(boxes.length / 4));
+	const { stride, scoreIndex, candidateCount, applySigmoid } = scoreLayout(scores.length, config);
+	const n = Math.min(candidateCount, Math.floor(boxes.length / 4));
 	const out: DecodedCandidate[] = [];
 	for (let i = 0; i < n; i++) {
-		const confidence = activatedScore(scoreAt(scores, i, config), config.applySigmoid === true);
+		const confidence = activatedScore(scores[i * stride + scoreIndex] as number, applySigmoid);
 		if (confidence < config.scoreThreshold) continue;
 		const offset = i * 4;
 		const candidate = readBox(
@@ -281,14 +292,11 @@ export function decodeAnchorOffsetCandidates(
 	config: AnchorOffsetDecodeConfig
 ): DecodedCandidate[] {
 	const variance = config.variance ?? [1, 1, 1, 1];
-	const n = Math.min(
-		scoreCandidateCount(scores, config),
-		Math.floor(offsets.length / 4),
-		config.anchors.length
-	);
+	const { stride, scoreIndex, candidateCount, applySigmoid } = scoreLayout(scores.length, config);
+	const n = Math.min(candidateCount, Math.floor(offsets.length / 4), config.anchors.length);
 	const out: DecodedCandidate[] = [];
 	for (let i = 0; i < n; i++) {
-		const confidence = activatedScore(scoreAt(scores, i, config), config.applySigmoid === true);
+		const confidence = activatedScore(scores[i * stride + scoreIndex] as number, applySigmoid);
 		if (confidence < config.scoreThreshold) continue;
 		const anchor = config.anchors[i]!;
 		const dxRaw = offsets[i * 4] as number;
