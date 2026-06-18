@@ -22,6 +22,7 @@ export interface VoiceCleanupPanelProps {
 	timelineEmpty: boolean;
 	denoiserStatus: 'idle' | 'loading' | 'ready' | 'unavailable';
 	denoiserUnavailableReason: string;
+	initiallyExpanded?: boolean;
 }
 
 function InsertRow(props: {
@@ -145,7 +146,7 @@ export function voiceCleanupLatencyBudget(sampleRate: number): ReadonlyArray<{
 }
 
 export function VoiceCleanupPanel(props: VoiceCleanupPanelProps) {
-	const [expanded, setExpanded] = createSignal(false);
+	const [expanded, setExpanded] = createSignal(props.initiallyExpanded ?? false);
 	const [customTargetLufs, setCustomTargetLufs] = createSignal(-14);
 	const [useCustomTarget, setUseCustomTarget] = createSignal(false);
 
