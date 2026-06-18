@@ -1,77 +1,83 @@
 # Design — ML runtime: MediaPipe Tasks-Vision retirement (Smart Reframe → ORT)
 
-> **Plan only — not yet implemented.** Implementation is for a later agent. This
-> completes "one ML runtime, ORT": after `@litertjs/core` is gone (#123),
-> `@mediapipe/tasks-vision` is the last non-ORT runtime, and the ORT replacement is
-> already scaffolded — the work is to pin a model, prove parity, wire it, and delete
-> MediaPipe.
+PR124 finishes the runtime-consolidation chain: Smart Reframe face detection now
+uses ONNX Runtime Web only. The old MediaPipe Tasks Vision path is deleted, and
+saliency remains the default/fallback when the optional face model is not loaded
+or fails.
 
-## Key insight: the ORT path already exists, just disabled
+## Runtime Shape
 
-Smart Reframe's face detection is behind one interface, `FaceDetector`
-(`{ detect(image): FaceDetection[] }`), with two implementations:
+```
+SmartReframePanel
+  -> ReframeController.loadFaceModel(manifestUrl)
+  -> reframe-load-face-model
+  -> reframe-analyzer.ts
+  -> createOrtFaceDetector()
+  -> UltraFace RFB-320 ONNX on ORT-WASM
+  -> TS decode/NMS
+  -> FaceDetection[]
+  -> tracker/keyframe generator
+```
 
-- `createMediapipeFaceDetector` (`face-detector.ts`) — **deployed**:
-  `@mediapipe/tasks-vision` `FaceDetector` over BlazeFace `.tflite`; MediaPipe owns
-  decode + NMS. Loaded via the untyped `mediapipe-loader.js`; WASM fileset + model
-  URLs in `face-models.ts`.
-- `createOrtFaceDetector` (`face-detector-ort.ts`) — **built but disabled**: ORT
-  session (non-frame-coupled, CPU tensor outputs), with TS decode + NMS in
-  `face-detector-ort-decode.ts`, manifest validation in `face-detector-ort-manifest.ts`,
-  and a **template** `public/models/reframe-face/manifest.json` (so it refuses to
-  load and the analyzer falls back to MediaPipe or saliency).
+No path imports a second ML runtime. `face-detector.ts` is now a pure shared
+interface/test-mock module; ORT lives behind the lazy worker import.
 
-So this retirement is: supply a model → wire the ORT detector as the click-to-load
-path → delete the MediaPipe implementation + dependency.
+## Model
 
-## Why it's simpler than the LiteRT retirement
+The pinned model is UltraFace RFB-320:
 
-- **Not frame-coupled.** Face detection runs at the analysis fps (~2 fps) in the
-  reframe worker, not the preview/export hot path. The ORT detector reads outputs
-  back to CPU for TS decode — no `gpu-buffer` IO, no compositor device adoption
-  (unlike matte/interpolation/beauty). The non-frame-coupled EP policy lets it
-  declare `wasm` alongside `webgpu`/`webnn`, gated by input-tensor size.
-- **No live device sharing.** Nothing here touches `PreviewRenderer` / #122.
+- Repo: `Linzaer/Ultra-Light-Fast-Generic-Face-Detector-1MB`
+- Commit: `dffdddda9794a50607cba8f318507a28c1c27cab`
+- License: MIT
+- File: `models/onnx/version-RFB-320.onnx`
+- Size: `1,270,727` bytes
+- SHA-256:
+  `34cd7e60aeff28744c657de7a3dc64e872d506741de66987f3426f2b79f88017`
 
-## Sequencing & gates
+The model is fetched through `/_model/gh/`, verified by the shared ORT asset
+loader, and OPFS-cached by digest. It is not bundled and never loads at startup.
 
-1. **R2** Pick a permissively-licensed face-detection ONNX; pin it in
-   `reframe-face/manifest.json` (real url/size/sha + `io`/`decode`); make
-   `face-detector-ort-decode.ts` match its output convention; pass the
-   op-support/size gate; **prove parity** vs MediaPipe BlazeFace on the reframe
-   fixtures. **Gate: do not remove MediaPipe until parity holds.**
-2. **R3** Switch the reframe analyzer/worker click-to-load to `createOrtFaceDetector`;
-   keep saliency as the default and the unavailable→saliency degrade path.
-3. **R4** Delete `createMediapipeFaceDetector` + tasks-vision typings,
-   `mediapipe-loader.{js,d.ts}`, the fileset/`.tflite` config in `face-models.ts`,
-   the `@mediapipe/tasks-vision` dependency, and MediaPipe-specific probe/UI copy.
-4. **R5** ORT-only docs; `docs/ML-RUNTIME.md` declares ORT the sole ML runtime.
+## Decode
 
-## What stays
+The model graph signature is:
 
-- The `FaceDetector` interface + `createMockFaceDetector` (tests).
-- Pure-DSP saliency fallback, IoU primary-subject tracking, One-Euro smoothing,
-  histogram shot-boundary, and the whole reframe analysis/keyframe-output pipeline.
-- The ORT foundation (`src/engine/ml/ort/`) and the ORT-WASM EP.
+- Input `input [1, 3, 240, 320]`, NCHW RGB float32.
+- Output `boxes [1, 4420, 4]`, `xyxy-normalized`.
+- Output `scores [1, 4420, 2]`, `[background, face]`.
 
-## Risks
+`face-detector-ort-manifest.ts` adds `scoreStride` + `scoreIndex` to the decode
+schema so the manifest can say "read class index 1 out of each two-score row".
+`face-detector-ort-decode.ts` uses those fields before thresholding and greedy
+NMS. This keeps the decoder generic for future raw-bbox or anchor-offset models.
 
-- **Model supply / parity (highest).** A permissive face-detection ONNX (e.g. an
-  anchor-based SSD/BlazeFace-class export) whose decode convention is documented and
-  whose accuracy matches MediaPipe at 2 fps may need candidate evaluation. The
-  template manifest's `license: TBD` is the blocker. Until R2.3, keep MediaPipe.
-- **Decode/NMS fidelity.** MediaPipe hides anchor decode + NMS + score thresholds;
-  `face-detector-ort-decode.ts` must reproduce them for the chosen graph. Mismatched
-  anchors/score scaling silently degrade tracking.
-- **Capability-probe coupling.** `capability-probe-v2.ts` references MediaPipe; the
-  reframe availability signal must move cleanly to the ORT EP check without altering
-  `CapabilityTierV2` derivation.
+## Worker And UI
 
-## Touch points
+`reframe-bridge.ts` now creates a module worker; the previous classic-worker
+constraint only existed for a runtime that loaded WASM through `importScripts`.
+The controller and protocol send only `ortManifestUrl`. The panel copy names one
+optional ONNX face detector and reports the loaded engine as `ort-onnx`.
 
-`src/engine/reframe/{face-detector.ts, mediapipe-loader.{js,d.ts}, face-models.ts,
-face-detector-ort*.ts, reframe-analyzer.ts}`, `public/models/reframe-face/`,
-`src/engine/capability-probe-v2.ts`, `src/ui/{SmartReframePanel.tsx,
-reframe-controller.ts, reframe-bridge.ts}`, `package.json`, the Smart Reframe docs.
-Done-signal: `grep -riE '@mediapipe|tasks-vision' src/ public/ package.json` returns
-only historical spec text.
+When ORT loading, asset verification, session creation, or decode fails, the
+worker posts a failed face-model status and Smart Reframe remains saliency-only.
+The analysis flow, tracker, shot-boundary detection, and keyframe generator are
+unchanged.
+
+## Removed Surface
+
+- `@mediapipe/tasks-vision` dependency and lockfile entries.
+- `src/engine/reframe/mediapipe-loader.{js,d.ts}`.
+- `createMediapipeFaceDetector` and local Tasks Vision typings.
+- WASM/TFLite URL constants in `face-models.ts`.
+- MediaPipe-specific Workbox runtime caches.
+- UI/probe/docs copy that described a fallback engine.
+
+## Verification
+
+Automated coverage focuses on the new risk points:
+
+- shipped manifest validates and pins the expected UltraFace size/checksum;
+- score row selection decodes `[background, face]` outputs correctly;
+- WASM tensor-size gate remains enforced;
+- mock detector seam still supports saliency/tracker tests;
+- the runtime grep for `@mediapipe|tasks-vision` under `src/`, `public/`, and
+  `package.json` is empty.

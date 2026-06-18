@@ -16,7 +16,7 @@ describe('probeSmartReframe', () => {
 		const probe = probeSmartReframe();
 		// Saliency is pure DSP — always available.
 		expect(probe.saliency).toBe('supported');
-		// MediaPipe face detection runs in the analysis worker, so it tracks it.
+		// ORT face detection runs in the analysis worker, so it tracks it.
 		expect(['supported', 'unsupported']).toContain(probe.analysisWorker);
 		expect(probe.faceDetection).toBe(probe.analysisWorker);
 	});

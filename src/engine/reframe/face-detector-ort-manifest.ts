@@ -13,8 +13,8 @@
  *
  * Placeholder/template manifests are rejected: an unvalidatable or
  * `template`-flagged manifest hides the ORT face-detector path rather than
- * appearing loadable. Smart Reframe stays on saliency (or its existing
- * MediaPipe path) when this manifest cannot load.
+ * appearing loadable. Smart Reframe stays on saliency when this manifest cannot
+ * load.
  */
 import { OrtManifestError, validateOrtManifest } from '../ml/ort/ort-model-manifest';
 import type { OrtModelManifest } from '../ml/ort/ort-types';
@@ -48,6 +48,10 @@ export interface FaceDetectorDecodeBase {
 	readonly maxDetections: number;
 	/** True when the score output is unactivated logits rather than probabilities. */
 	readonly applySigmoid?: boolean;
+	/** Number of scalar score entries per candidate (default 1). */
+	readonly scoreStride?: number;
+	/** Index inside each score row to read, e.g. 1 for `[background, face]`. */
+	readonly scoreIndex?: number;
 }
 
 /** Decode contract for direct-bbox detectors (YuNet / SCRFD-class). */
@@ -95,6 +99,13 @@ function isObject(v: unknown): v is Record<string, unknown> {
 function requirePositiveInt(v: unknown, field: string): number {
 	if (typeof v !== 'number' || !Number.isInteger(v) || v <= 0) {
 		throw new ReframeFaceDetectorManifestError(`${field} must be a positive integer`);
+	}
+	return v;
+}
+
+function requireNonNegativeInt(v: unknown, field: string): number {
+	if (typeof v !== 'number' || !Number.isInteger(v) || v < 0) {
+		throw new ReframeFaceDetectorManifestError(`${field} must be a non-negative integer`);
 	}
 	return v;
 }
@@ -193,13 +204,33 @@ function validateIo(raw: unknown): FaceDetectorIoContract {
 function validateDecode(raw: unknown): FaceDetectorDecodeContract {
 	if (!isObject(raw)) throw new ReframeFaceDetectorManifestError('decode must be an object');
 	const type = raw['type'];
+	const scoreStride =
+		raw['scoreStride'] === undefined
+			? undefined
+			: requirePositiveInt(raw['scoreStride'], 'decode.scoreStride');
+	const scoreIndex =
+		raw['scoreIndex'] === undefined
+			? undefined
+			: requireNonNegativeInt(raw['scoreIndex'], 'decode.scoreIndex');
+	if ((scoreStride === undefined) !== (scoreIndex === undefined)) {
+		throw new ReframeFaceDetectorManifestError(
+			'decode.scoreStride and decode.scoreIndex must be provided together'
+		);
+	}
+	if (scoreStride !== undefined && scoreIndex !== undefined && scoreIndex >= scoreStride) {
+		throw new ReframeFaceDetectorManifestError(
+			'decode.scoreIndex must be less than decode.scoreStride'
+		);
+	}
 	const base = {
 		scoreThreshold: requireUnitFraction(raw['scoreThreshold'], 'decode.scoreThreshold'),
 		iouThreshold: requireUnitFraction(raw['iouThreshold'], 'decode.iouThreshold'),
 		maxDetections: requirePositiveInt(raw['maxDetections'], 'decode.maxDetections'),
 		...(raw['applySigmoid'] === undefined
 			? {}
-			: { applySigmoid: requireBoolean(raw['applySigmoid'], 'decode.applySigmoid') })
+			: { applySigmoid: requireBoolean(raw['applySigmoid'], 'decode.applySigmoid') }),
+		...(scoreStride === undefined ? {} : { scoreStride }),
+		...(scoreIndex === undefined ? {} : { scoreIndex })
 	};
 	if (type === 'raw-bbox') {
 		const boxFormat = raw['boxFormat'];
@@ -248,8 +279,8 @@ function validateVariance(raw: unknown): readonly [number, number, number, numbe
  * {@link validateOrtManifest} (ONNX format, provenance, integrity, EP policy)
  * and adds the face-detector `io` + `decode` contracts. Rejects
  * placeholder/template manifests so the ORT face-detector path stays hidden
- * until a real candidate is pinned — Smart Reframe falls back to its existing
- * saliency / MediaPipe path in that case.
+ * until a real candidate is pinned — Smart Reframe falls back to saliency in
+ * that case.
  */
 export function validateReframeFaceDetectorManifest(value: unknown): ReframeFaceDetectorManifest {
 	if (isObject(value) && value['template'] === true) {

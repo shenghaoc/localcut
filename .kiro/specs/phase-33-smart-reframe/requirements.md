@@ -27,12 +27,10 @@ the target output frame.
 - **R0.6** No baked crop, hard-coded rectangle, or opaque transform is
   stored. The output is exclusively Phase 15 keyframe tracks with
   standard `KeyframeSnapshot` format (`{ t, value, easing }`).
-- **R0.7** Face detection weights and the MediaPipe runtime are loaded only
-  after an explicit user "Load face model" action — the same click-to-load
-  gesture as Phase 28 (RNNoise) and Phase 29 (Whisper). Per the project's
-  hobby-scope decision they load from remote (Google model store + jsDelivr)
-  rather than same-origin static assets, and are runtime-cached by the
-  service worker (not precached). They are not digest-pinned.
+- **R0.7** Face detection weights and the ORT runtime are loaded only after an
+  explicit user "Load face model" action — the same click-to-load gesture as
+  Audio Cleanup and Auto Captions. Model bytes load through a same-origin proxy,
+  are size/SHA-256 verified, and are OPFS-cached by digest.
 
 ## R1 — Aspect Ratio Targets
 
@@ -53,17 +51,14 @@ the target output frame.
 
 ## R2 — Face Detection
 
-- **R2.1** Face detection uses a BlazeFace-class model (single-stage,
-  lightweight) running in the Smart Reframe worker via MediaPipe Tasks
-  Vision (`FaceDetector`), which detects faces and returns bounding boxes
-  with confidence scores (anchor decode + NMS handled internally).
+- **R2.1** Face detection uses the ORT/ONNX UltraFace RFB-320 model running in
+  the Smart Reframe worker. The detector returns normalized face boxes with
+  confidence scores; TypeScript decode reads the face-class score column and
+  applies greedy NMS.
 - **R2.2** The face detection model is loaded on the user's explicit "Load
-  face model" action (R0.7 — Phase 28/29 click-to-load), then cached for
-  the worker session. Per the project's hobby-scope decision the model and
-  MediaPipe WASM are fetched from remote (Google model store + jsDelivr) and
-  are **not** vendored or digest-pinned — there is no checksum gate. A load
-  failure (offline, blocked, relocated `latest` URL) falls through to
-  saliency with a notice (R2.6 / R8.2).
+  face model" action (R0.7), then cached for the worker session. A load failure
+  (offline, digest mismatch, ORT/session failure) falls through to saliency with
+  a notice (R2.6 / R8.2).
 - **R2.3** Detection runs on downscaled analysis frames (longest edge ≤
   512 px) to bound compute cost. Detection results are mapped back to
   source-resolution coordinates.

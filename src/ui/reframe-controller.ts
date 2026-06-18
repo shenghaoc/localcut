@@ -1,8 +1,7 @@
 /**
  * Smart Reframe controller (Phase 33). Owns the lazily-spawned analysis worker
- * and exposes a single observable state to the UI. The worker (and the MediaPipe
- * face model, only when the user explicitly loads it) loads on demand, never at
- * startup (R0.3).
+ * and exposes a single observable state to the UI. The worker and ORT face model
+ * load on demand, never at startup (R0.3).
  *
  * Flow: the App resolves the clip's source `File` from the pipeline worker,
  * calls {@link ReframeController.beginAnalysis} while it resolves, then
@@ -121,11 +120,9 @@ export class ReframeController {
 		return runId;
 	}
 
-	/** Load a face model on the user's explicit action (Phase 28/29 pattern).
-	 *  When `ortManifestUrl` is supplied the worker tries the ORT/ONNX detector
-	 *  first; on template/invalid manifest it falls back to MediaPipe BlazeFace.
-	 *  Idempotent while loading/loaded. */
-	async loadFaceModel(wasmPath: string, modelUrl: string, ortManifestUrl?: string): Promise<void> {
+	/** Load the ORT face model on the user's explicit action. Idempotent while
+	 *  loading/loaded. */
+	async loadFaceModel(ortManifestUrl: string): Promise<void> {
 		if (this.state.faceModelStatus === 'loaded' || this.state.faceModelStatus === 'loading') return;
 		this.update({ faceModelStatus: 'loading', faceModelError: null });
 		try {
@@ -133,9 +130,7 @@ export class ReframeController {
 			if (this.disposed) return;
 			worker.send({
 				type: 'reframe-load-face-model',
-				wasmPath,
-				modelUrl,
-				...(ortManifestUrl !== undefined ? { ortManifestUrl } : {})
+				ortManifestUrl
 			});
 		} catch (error) {
 			this.update({ faceModelStatus: 'failed', faceModelError: messageOf(error) });

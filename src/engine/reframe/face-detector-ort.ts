@@ -10,12 +10,10 @@
  *   normalised Float32 tensor) → `session.run` → {@link decodeRawBboxOutput}
  *   or {@link decodeAnchorOffsetOutput} → normalised `FaceDetection[]`.
  *
- * The detector implements the same {@link FaceDetector} interface the
- * MediaPipe BlazeFace path returns, so it slots into the Smart Reframe analysis
- * worker without changes elsewhere. The manifest currently ships as a
- * `template` — the validator rejects it and the loader throws a clear
- * "no model configured" error, which the worker maps to its saliency
- * fallback ("face detector unavailable; using saliency").
+ * The detector implements the shared {@link FaceDetector} interface, so it
+ * slots into the Smart Reframe analysis worker without changing the
+ * saliency/tracking/keyframe pipeline. The shipped manifest pins UltraFace
+ * RFB-320; any load failure maps to the saliency fallback.
  *
  * Constraints:
  * - **No startup model load.** `onnxruntime-web` is reached only through
@@ -74,7 +72,7 @@ export interface CreateOrtFaceDetectorOptions extends OrtFaceDetectorPorts {
 }
 
 /** Error raised when the ORT face-detector path cannot load. The reframe worker
- *  catches it and falls through to the MediaPipe path or saliency. */
+ *  catches it and keeps analysis on saliency. */
 export class OrtFaceDetectorUnavailableError extends Error {
 	constructor(message: string) {
 		super(message);
@@ -227,14 +225,16 @@ function decodeOutputs(
 			scoreThreshold: decode.scoreThreshold,
 			iouThreshold: decode.iouThreshold,
 			maxDetections: decode.maxDetections,
-			...(decode.applySigmoid !== undefined ? { applySigmoid: decode.applySigmoid } : {})
+			...(decode.applySigmoid !== undefined ? { applySigmoid: decode.applySigmoid } : {}),
+			...(decode.scoreStride !== undefined ? { scoreStride: decode.scoreStride } : {}),
+			...(decode.scoreIndex !== undefined ? { scoreIndex: decode.scoreIndex } : {})
 		};
 		return decodeRawBboxOutput(boxes, scores, config, sourceWidth, sourceHeight);
 	}
 	// Anchor priors come from a session output named by `decode.anchorsOutputName`
 	// (laid out [N × 4] as `cx, cy, width, height` per candidate, normalised).
 	// Without that name we cannot decode anchor-offset predictions — abort
-	// cleanly so the caller falls through to its saliency / MediaPipe fallback.
+	// cleanly so the caller keeps analysis on saliency.
 	if (!decode.anchorsOutputName) {
 		throw new OrtFaceDetectorUnavailableError(
 			'anchor-offset decoder requires decode.anchorsOutputName so anchor ' +
@@ -250,6 +250,8 @@ function decodeOutputs(
 		iouThreshold: decode.iouThreshold,
 		maxDetections: decode.maxDetections,
 		...(decode.applySigmoid !== undefined ? { applySigmoid: decode.applySigmoid } : {}),
+		...(decode.scoreStride !== undefined ? { scoreStride: decode.scoreStride } : {}),
+		...(decode.scoreIndex !== undefined ? { scoreIndex: decode.scoreIndex } : {}),
 		...(decode.variance !== undefined ? { variance: decode.variance } : {})
 	};
 	return decodeAnchorOffsetOutput(boxes, scores, config);

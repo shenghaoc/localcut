@@ -1,33 +1,37 @@
 {
-	"_comment": "TEMPLATE — NOT loadable. `template: true` makes validateReframeFaceDetectorManifest reject this manifest so the ORT face-detector path stays disabled and Smart Reframe falls back to saliency (or to the existing MediaPipe BlazeFace path, if the user loads that). To enable the ORT face detector: (1) pick a face-detection ONNX with a verified permissive licence, (2) host the bytes on an allowlisted host (same-origin `/_model/{hf,gh,gcs}/…` proxy), (3) remove `template`, (4) fill `model.url`/`model.sizeBytes`/`model.checksum` (sha256), (5) update `io` and `decode` to match the exported graph's signature. See README.md and docs/ML-RUNTIME.md.",
-	"template": true,
-	"id": "reframe-face-detector-template",
-	"version": "TEMPLATE",
-	"license": "TBD",
-	"source": "TBD",
+	"id": "ultraface-rfb-320",
+	"version": "linzaer-dffdddda-version-rfb-320",
+	"license": "MIT",
+	"source": "https://github.com/Linzaer/Ultra-Light-Fast-Generic-Face-Detector-1MB",
+	"infoUrl": "https://github.com/Linzaer/Ultra-Light-Fast-Generic-Face-Detector-1MB/blob/dffdddda9794a50607cba8f318507a28c1c27cab/README.md",
 	"format": "onnx",
 	"frameCoupled": false,
-	"executionProviders": ["webgpu", "webnn", "wasm"],
+	"executionProviders": ["wasm"],
+	"tensorLocation": "cpu",
 	"model": {
-		"url": "/_model/REPLACE_WITH_ALLOWLISTED_HOST_PATH/face-detector.onnx",
-		"sizeBytes": 1,
-		"checksum": "sha256-0000000000000000000000000000000000000000000000000000000000000000"
+		"url": "/_model/gh/Linzaer/Ultra-Light-Fast-Generic-Face-Detector-1MB/dffdddda9794a50607cba8f318507a28c1c27cab/models/onnx/version-RFB-320.onnx",
+		"sizeBytes": 1270727,
+		"checksum": "sha256-34cd7e60aeff28744c657de7a3dc64e872d506741de66987f3426f2b79f88017"
 	},
 	"io": {
 		"layout": "nchw",
-		"inputWidth": 128,
-		"inputHeight": 128,
+		"inputWidth": 320,
+		"inputHeight": 240,
 		"inputChannels": 3,
 		"bytesPerElement": 4,
 		"inputName": "input",
-		"inputRange": "unit"
+		"inputRange": "mean-std",
+		"mean": [0.4980392156862745, 0.4980392156862745, 0.4980392156862745],
+		"std": [0.5019607843137255, 0.5019607843137255, 0.5019607843137255]
 	},
 	"decode": {
 		"type": "raw-bbox",
 		"boxesOutputName": "boxes",
 		"scoresOutputName": "scores",
+		"scoreStride": 2,
+		"scoreIndex": 1,
 		"boxFormat": "xyxy-normalized",
-		"scoreThreshold": 0.5,
+		"scoreThreshold": 0.7,
 		"iouThreshold": 0.3,
 		"maxDetections": 16
 	}

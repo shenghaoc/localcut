@@ -29,8 +29,7 @@ export interface SmartReframePanelProps {
 	faceDetectionSupported: boolean;
 	workerAvailable: boolean;
 	onClose: () => void;
-	/** Download + initialise the face model — ORT/ONNX if configured, MediaPipe
-	 *  BlazeFace otherwise (explicit user action). */
+	/** Download + initialise the ORT/ONNX face model (explicit user action). */
 	onLoadFaceModel: () => void;
 	onAnalyse: (settings: ReframeAnalyseSettings) => void;
 	onCancel: () => void;
@@ -62,8 +61,6 @@ export const SmartReframePanel: Component<SmartReframePanelProps> = (props) => {
 		switch (props.state.faceModelEngine) {
 			case 'ort-onnx':
 				return 'ONNX face detector';
-			case 'mediapipe-blazeface':
-				return 'MediaPipe BlazeFace';
 			default:
 				return null;
 		}
@@ -153,7 +150,7 @@ export const SmartReframePanel: Component<SmartReframePanelProps> = (props) => {
 											? 'Loading the face model…'
 											: faceModelStatus() === 'failed'
 												? (props.state.faceModelError ?? 'Face model failed to load.')
-												: 'Using visual saliency. Load the optional face detector (ONNX if configured, MediaPipe BlazeFace otherwise) for face-aware reframing.'}
+												: 'Using visual saliency. Load the optional ONNX face detector for face-aware reframing.'}
 									</p>
 									<Button
 										size="sm"

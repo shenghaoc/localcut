@@ -4,6 +4,7 @@ import {
 	ReframeFaceDetectorManifestError,
 	validateReframeFaceDetectorManifest
 } from './face-detector-ort-manifest';
+import shippedManifestRaw from '../../../public/models/reframe-face/manifest.json?raw';
 
 const VALID_MODEL = {
 	url: '/_model/hf/example/face-detector/resolve/main/model.onnx',
@@ -51,6 +52,30 @@ describe('validateReframeFaceDetectorManifest', () => {
 		if (manifest.decode.type === 'raw-bbox') {
 			expect(manifest.decode.boxFormat).toBe('xyxy-normalized');
 		}
+	});
+
+	it('accepts a raw-bbox manifest with multi-class score row selection', () => {
+		const manifest = validateReframeFaceDetectorManifest({
+			...BASE_VALID,
+			decode: { ...BASE_VALID.decode, scoreStride: 2, scoreIndex: 1 }
+		});
+		expect(manifest.decode.scoreStride).toBe(2);
+		expect(manifest.decode.scoreIndex).toBe(1);
+	});
+
+	it('rejects incomplete or out-of-range score row selection', () => {
+		expect(() =>
+			validateReframeFaceDetectorManifest({
+				...BASE_VALID,
+				decode: { ...BASE_VALID.decode, scoreStride: 2 }
+			})
+		).toThrow(/scoreStride.*scoreIndex/);
+		expect(() =>
+			validateReframeFaceDetectorManifest({
+				...BASE_VALID,
+				decode: { ...BASE_VALID.decode, scoreStride: 2, scoreIndex: 2 }
+			})
+		).toThrow(/scoreIndex.*less than/);
 	});
 
 	it('accepts an anchor-offset manifest with variance', () => {
@@ -240,5 +265,28 @@ describe('inputTensorBytes', () => {
 			io: { ...BASE_VALID.io, inputChannels: 4 }
 		});
 		expect(inputTensorBytes(manifest.io)).toBe(128 * 128 * 4 * 4);
+	});
+});
+
+describe('shipped reframe-face manifest', () => {
+	it('pins UltraFace RFB-320 and passes validation', () => {
+		const raw = JSON.parse(shippedManifestRaw) as Record<string, unknown>;
+		expect(raw.template).toBeUndefined();
+		const manifest = validateReframeFaceDetectorManifest(raw);
+		expect(manifest.id).toBe('ultraface-rfb-320');
+		expect(manifest.license).toBe('MIT');
+		expect(manifest.model.sizeBytes).toBe(1_270_727);
+		expect(manifest.model.checksum).toBe(
+			'sha256-34cd7e60aeff28744c657de7a3dc64e872d506741de66987f3426f2b79f88017'
+		);
+		expect(manifest.executionProviders).toEqual(['wasm']);
+		expect(manifest.tensorLocation).toBe('cpu');
+		expect(manifest.io.inputWidth).toBe(320);
+		expect(manifest.io.inputHeight).toBe(240);
+		expect(manifest.io.inputName).toBe('input');
+		expect(manifest.decode.type).toBe('raw-bbox');
+		expect(manifest.decode.scoresOutputName).toBe('scores');
+		expect(manifest.decode.scoreStride).toBe(2);
+		expect(manifest.decode.scoreIndex).toBe(1);
 	});
 });
