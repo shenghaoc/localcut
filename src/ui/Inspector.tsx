@@ -650,7 +650,10 @@ export function Inspector(props: InspectorProps) {
 		if (!skinMaskTarget.clipId || skinMaskPending.size === 0) return;
 		for (const handle of skinMaskDebouncers.values()) clearTimeout(handle);
 		skinMaskDebouncers.clear();
-		const mask = getSkinMaskDraft();
+		const mask =
+			skinMaskDraft && skinMaskDraftClipId === skinMaskTarget.clipId
+				? skinMaskDraft
+				: getSkinMaskDraft();
 		if (!mask) return;
 		for (const [k, v] of skinMaskPending) mask[k as keyof typeof mask] = v;
 		skinMaskPending.clear();
