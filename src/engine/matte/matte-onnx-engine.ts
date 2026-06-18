@@ -271,7 +271,8 @@ export class MatteOnnxEngine implements MatteBackendEngine {
 		this.onStatus({
 			probe: {
 				webgpu: 'supported',
-				// The frame-coupled gate forbids a WASM matte fallback by design.
+				// Matte is frame-coupled and must stay on ORT-WebGPU; WASM is
+				// intentionally reported unavailable rather than probed as a fallback.
 				wasm: 'unsupported',
 				backend: 'webgpu'
 			},

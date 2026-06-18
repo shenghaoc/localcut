@@ -3,7 +3,6 @@
 	"version": "onnx-community-modnet-webnn-6af52070",
 	"license": "Apache-2.0",
 	"source": "https://huggingface.co/onnx-community/modnet-webnn",
-	"infoUrl": "https://huggingface.co/onnx-community/modnet-webnn",
 	"format": "onnx",
 	"frameCoupled": true,
 	"executionProviders": ["webgpu"],
