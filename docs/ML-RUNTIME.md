@@ -10,40 +10,91 @@ in this editor. It governs new ML features and the migration of existing ones.
 
 ## TL;DR
 
-- **ONNX is the preferred model format** for new ML features.
+- **ONNX is the model format.** ORT/ONNX is the runtime for all new ML features;
+  **LiteRT/TFLite is the legacy path being retired** feature-by-feature as
+  license-verified ONNX models land. No new feature targets LiteRT.
 - **ORT-WebGPU is the primary runtime** for full-frame / video-coupled models.
 - **ORT-WebNN is opt-in per model**, only after operator-support proof.
 - **ORT-WASM is allowed only** for small, non-frame-coupled models.
 - **Full-frame inference must never silently fall back to WASM or CPU tensors.**
-- **Models load from HF / GitHub / GCS / R2 via the same-origin proxy**, never a
-  direct cross-origin browser fetch, and every asset is pinned by size + SHA-256.
+- **Models are sourced directly from their ONNX publisher** (`onnx-community` on
+  Hugging Face) through the same-origin `/_model/hf` proxy (with GitHub / GCS for
+  vendor-published assets) — **not re-hosted on R2** — never a direct cross-origin
+  browser fetch, and every asset is pinned by size + SHA-256.
+- **ORT owns the WebGPU `GPUDevice`; the renderer adopts it.** ORT ignores an
+  externally-supplied device (microsoft/onnxruntime#26107), so you cannot hand it
+  the compositor's device: ORT bootstraps its own and the renderer adopts
+  `ort.env.webgpu.device` for its passes — never the other way round.
 
 ## Why ONNX Runtime Web
 
 The repo's first wave of ML features (DTLN audio cleanup, Whisper auto-captions,
-portrait matte) ship on **LiteRT.js**. LiteRT was chosen because, at the time,
+portrait matte) shipped on **LiteRT.js**. LiteRT was chosen because, at the time,
 it was the only runtime that let inference share the compositor's `GPUDevice` for
-zero-copy GPU-buffer tensor IO — ORT ≤ 1.25 ignored an injected
-`env.webgpu.device` (see the note in `src/engine/matte/matte-engine.ts`).
+zero-copy GPU-buffer tensor IO — ORT ignored an injected `env.webgpu.device` (see
+the note in `src/engine/matte/matte-engine.ts`).
 
-ORT 1.26+ closes that gap: a session can run on a caller-provided `GPUDevice`,
-and `env.webgpu.device` exposes the device ORT created so the app can share it.
-That, plus ONNX's far larger model ecosystem and the WebNN execution provider,
-makes **ONNX Runtime Web the repo's long-term model runtime.** **Whisper
-auto-captions** is the first feature to migrate: an int8-quantized ONNX
-encoder/decoder pair on the ORT-WASM EP now ships as the default Auto Captions
-model (see "Whisper auto-captions on ORT" below), with the LiteRT fp32 build kept
-as a selectable fallback. DTLN and matte stay on LiteRT until their own PRs.
+ONNX's far larger model ecosystem, the WebNN execution provider, and a single
+runtime for the whole app make **ONNX Runtime Web the repo's runtime, and LiteRT
+the legacy path being retired.** No new feature targets LiteRT, and the shipped
+LiteRT features migrate to ORT/ONNX as license-verified ONNX models land (each
+keeping LiteRT as a selectable rollback only until parity is proven). **Whisper
+auto-captions** migrated first: an int8-quantized ONNX encoder/decoder pair on the
+ORT-WASM EP is now the default Auto Captions model (see "Whisper auto-captions on
+ORT" below), with the LiteRT fp32 build kept as a selectable fallback.
 
-The two device-sharing directions are proven by the spikes in
-`src/engine/ml/ort/`:
+### One runtime, three execution providers
 
-- `ort-device-ownership.browser.test.ts` — a `GPUBuffer` created from
-  `ort.env.webgpu.device` is used by **both** an app WebGPU compute pass and
-  ORT's `Tensor.fromGpuBuffer`.
+ORT Web exposes the WebGPU, WebNN, **and** WASM execution providers from one
+library (`onnxruntime-web`); the EP is chosen per session. `ort-loader.ts` loads
+the **smallest build that covers a session's EPs**: `onnxruntime-web/webgpu` (the
+JSEP build, which also carries WASM CPU ops), `onnxruntime-web/all` (adds WebNN),
+or `onnxruntime-web/wasm` (a smaller WASM-only build for CPU-only sessions). Two
+consequences drive the unify-on-ORT policy:
+
+- The **WASM EP is a baseline we cannot ditch.** It is the only path that runs
+  where WebGPU/WebNN are unavailable (older browsers, software-rendered or headless
+  environments, locked-down enterprise). It is part of the same ORT runtime — the
+  WebGPU/JSEP build already includes the WASM CPU ops — so it adds no second ML
+  _runtime_, though a CPU-only feature that never touches WebGPU does fetch the
+  smaller WASM-only build (a separate, smaller artifact, not a second runtime).
+- Carrying LiteRT _in addition_ means shipping and maintaining a **second** ML
+  runtime for capabilities ORT already covers. So the policy is to run **as much as
+  possible on the single ORT runtime** — WebGPU where it helps, WebNN where proven,
+  WASM as the universal floor — and **retire LiteRT** rather than split features
+  across two engines. Earlier code treated WebGPU/WebNN/WASM as if they implied
+  separate _runtimes_; they are EPs of one.
+
+### GPU device ownership (ORT-owned, renderer adopts)
+
+ORT does **not** adopt an externally-created `GPUDevice`. A `device` set on
+`ort.env.webgpu` is ignored and ORT creates its own internally
+([microsoft/onnxruntime#26107][ort-26107], open) — a GPU buffer created on any
+other device then fails ORT's tensor validation. So there is exactly one WebGPU
+path, and it is the inverse of LiteRT's:
+
+- **ORT bootstraps and owns the device** (`deviceOwner: 'ort-webgpu'`). The device
+  ORT created is read back from `ort.env.webgpu.device` and returned as
+  `OrtSessionHandle.device`.
+- **The renderer adopts ORT's device** for its own WGSL passes — the compositor is
+  (re)built on `handle.device` so matte/interpolation/beauty output composites
+  zero-copy. (Frame-coupled ORT-WebGPU features are gated off until this compositor
+  single-device adoption ships with the first license-verified model; the engines
+  already run their own preprocess/resolve passes on `handle.device`.)
+- **WebNN is the one place a renderer device flows toward ORT**, and only via an
+  `MLContext` _pre-created_ from it (`deviceOwner: 'webnn-context'`) — a supported
+  API, unlike injecting a raw `GPUDevice`.
+
+This is proven by the spikes in `src/engine/ml/ort/`:
+
+- `ort-device-ownership.browser.test.ts` — a `GPUBuffer` created from the
+  ORT-owned `ort.env.webgpu.device` is used by **both** an app WebGPU compute pass
+  and ORT's `Tensor.fromGpuBuffer` (`deviceOwner` is `ort-webgpu`).
 - `webnn-shared-context.browser.test.ts` — an `MLContext` created from the
   renderer's `GPUDevice` is handed to ORT's WebNN EP, with `MLTensor` output
   staying on-device (no hot-path readback).
+
+[ort-26107]: https://github.com/microsoft/onnxruntime/issues/26107
 
 ## Execution-provider policy
 
@@ -51,11 +102,11 @@ The execution provider (EP) is **pinned per model** in the manifest and resolved
 by `src/engine/ml/ort/ep-policy.ts`. The list is handed to ORT verbatim — the
 foundation never appends ORT's implicit WASM fallback.
 
-| EP       | Use it for                                      | Tensor location | Notes                                                   |
-| -------- | ----------------------------------------------- | --------------- | ------------------------------------------------------- |
-| `webgpu` | Full-frame / video-coupled models (**primary**) | `gpu-buffer`    | Shares a `GPUDevice` with the compositor; zero-copy IO. |
-| `webnn`  | A specific model, **only after operator proof** | `ml-tensor`     | Opt-in per model; context created from the `GPUDevice`. |
-| `wasm`   | Small, **non-frame-coupled** models             | `cpu`           | Tokenizers, classifiers, one-shot helpers.              |
+| EP       | Use it for                                      | Tensor location | Notes                                                           |
+| -------- | ----------------------------------------------- | --------------- | --------------------------------------------------------------- |
+| `webgpu` | Full-frame / video-coupled models (**primary**) | `gpu-buffer`    | ORT owns the `GPUDevice`; the renderer adopts it. Zero-copy IO. |
+| `webnn`  | A specific model, **only after operator proof** | `ml-tensor`     | Opt-in per model; `MLContext` pre-created from the `GPUDevice`. |
+| `wasm`   | Small, **non-frame-coupled** models             | `cpu`           | Tokenizers, classifiers, one-shot helpers.                      |
 
 ### The frame-coupled hard gate
 
@@ -84,11 +135,12 @@ gate playback or export.
 Model assets are large binaries that ORT compiles and runs. They are therefore
 loaded under the same trust rules as the LiteRT assets:
 
-- **Same-origin or allowlisted host only.** Allowed hosts: Hugging Face
-  (`*.huggingface.co`, `*.hf.co`), GitHub (`raw.githubusercontent.com`,
-  `objects.githubusercontent.com`, `github.com`), Google Cloud Storage
-  (`storage.googleapis.com`), and Cloudflare R2 (`*.r2.dev`,
-  `*.r2.cloudflarestorage.com`). See `ORT_TRUSTED_MODEL_HOSTS`.
+- **Sourced directly from the ONNX publisher.** Models come from their publisher
+  (`onnx-community` on Hugging Face) — **not re-hosted on R2**. Allowed hosts:
+  Hugging Face (`*.huggingface.co`, `*.hf.co`), GitHub (`raw.githubusercontent.com`,
+  `objects.githubusercontent.com`, `github.com`), and Google Cloud Storage
+  (`storage.googleapis.com`) for vendor-published assets. See
+  `ORT_TRUSTED_MODEL_HOSTS`.
 - **Same-origin proxy, not direct fetch.** The app is cross-origin isolated
   (`COEP: require-corp`), so cross-origin model fetches go through the Worker's
   `/_model/hf/`, `/_model/gh/`, `/_model/gcs/` reverse proxies.
@@ -110,8 +162,9 @@ loaded under the same trust rules as the LiteRT assets:
   `vite.config.ts`), and `createOrtSession()` sets `ort.env.wasm.wasmPaths` to
   `/_ort/` (see `ortWasmBasePath()`). The browser fetch is therefore same-origin
   (the Worker fetches jsDelivr server-side), satisfying COEP `require-corp`
-  without a direct cross-origin browser request. Self-hosting the runtime from R2
-  is a drop-in alternative if a CDN dependency is undesirable.
+  without a direct cross-origin browser request. Self-hosting the runtime from the
+  app's own origin / object storage is a drop-in alternative if a CDN dependency is
+  undesirable.
 - **The ORT runtime never precaches.** The lazily-imported ORT JS chunks
   (`*onnxruntime*`) are excluded from the Workbox precache, and the proxied WASM
   (`/_ort/`) is runtime-cached (CacheFirst) rather than precached, so the service
@@ -123,22 +176,29 @@ loaded under the same trust rules as the LiteRT assets:
 The diagnostics snapshot carries an optional `mlRuntime` summary
 (`MlRuntimeDiagnosticSummary`):
 
-- `mlRuntime`: `'litert' | 'ort'` — which runtime is active. Today's shipped
-  features report `'litert'`.
+- `mlRuntime`: `'litert' | 'ort'` — what the diagnostic summary reports. Today only
+  Auto Captions on the ORT Whisper engine surfaces `'ort'` (via `mlRuntimeSummary`,
+  keyed on `asr.engine === 'ort-whisper'`); the worker snapshot otherwise reports
+  `'litert'`. Audio cleanup defaults to its ONNX backend at runtime but is **not**
+  yet folded into this summary, so its snapshot still reads `'litert'` — wiring
+  cleanup (and matte) into the summary is tracked separately.
 - `ortEp`: `'webgpu' | 'webnn' | 'wasm'` — the resolved EP (ORT only).
 - `tensorLocation`: `'cpu' | 'gpu-buffer' | 'ml-tensor'` — where tensors live.
-- `deviceOwner`: `'renderer' | 'ort-webgpu' | 'webnn-context'` — which subsystem
-  owns the compute device, so a device-sharing regression is visible.
+- `deviceOwner`: `'ort-webgpu' | 'webnn-context'` — which subsystem owns the
+  compute device, so a device-sharing regression is visible. WebGPU is always
+  `ort-webgpu` (ORT owns the device — #26107); there is no `'renderer'` owner.
 
 ## Migration guidance (PR101 / PR103 and future ML PRs)
 
-New and in-flight ML work should target ORT, not LiteRT:
+All ML work targets ORT, never LiteRT (which is being retired):
 
 - **Frame interpolation (PR101)** is frame-coupled: ship it as an ONNX model with
-  `executionProviders: ['webgpu']` and `frameCoupled: true`, running on the
-  shared compositor `GPUDevice` with `gpu-buffer` tensor IO. It must **not** list
-  `wasm` — the EP policy will reject it. Use `createOrtSession()` and inject the
-  renderer device so `deviceOwner` is `renderer`.
+  `executionProviders: ['webgpu']` and `frameCoupled: true`, with `gpu-buffer`
+  tensor IO. It must **not** list `wasm` — the EP policy will reject it. Use
+  `createOrtSession()` (no `device` argument): ORT owns the device
+  (`deviceOwner: 'ort-webgpu'`), the engine runs its preprocess/postprocess passes
+  on `handle.device`, and the renderer adopts that device to composite the result.
+  Do **not** try to inject the compositor's device — ORT ignores it (#26107).
 - **PR103** and any other new model feature: author an `OrtModelManifest`
   (`format: 'onnx'`, pinned size + SHA), load bytes via `loadOrtModelAsset()`,
   and create the session via `createOrtSession()`. Choose the EP from the table
@@ -150,9 +210,10 @@ New and in-flight ML work should target ORT, not LiteRT:
   LiteRT** MediaPipe Selfie Segmentation (`matte-engine.ts`); an **experimental**
   ORT/ONNX backend (`matte-onnx-engine.ts`, manifest `public/models/matte-onnx/`)
   runs a MODNet-class true-matting model on ORT-WebGPU with `gpu-buffer` tensor IO
-  on the renderer's device. It is gated twice — the `__MATTE_ONNX_SPIKE__` build
-  flag (off by default; `src/engine/matte/matte-backend.ts`) **and** a real pinned
-  ONNX model (the shipped manifest is a `template`, so the backend stays disabled).
+  on **ORT's own device** (the renderer adopts it; ORT ignores an injected device —
+  #26107). It is gated twice — the `__MATTE_ONNX_SPIKE__` build flag (off by
+  default; `src/engine/matte/matte-backend.ts`) **and** a real pinned ONNX model
+  (the shipped manifest is a `template`, so the backend stays disabled).
   The EMA temporal-smoothing and recurrent-state-reset contract is shared verbatim
   with the LiteRT engine (`matte-temporal.ts` + `matte-resolve.wgsl`). GPL-family
   weights (e.g. RVM) are rejected by `validateMatteOnnxManifest`. ORT-WebNN for
@@ -167,8 +228,9 @@ New and in-flight ML work should target ORT, not LiteRT:
   the rollback path. This is the migration template for a
   small, non-frame-coupled LiteRT feature moving onto the ORT foundation.
 - **Remaining LiteRT-default deployed features (portrait matte)** keep working
-  unchanged on their current path. They migrate to ORT only after dedicated
-  quality, performance, and licensing proof.
+  unchanged on their current path **as the legacy backend**. They migrate to
+  ORT/ONNX — retiring LiteRT — once a license-verified ONNX model and the
+  compositor's adoption of ORT's device pass quality + performance proof.
 
 ## Whisper auto-captions on ORT (non-frame-coupled exemplar)
 

@@ -176,7 +176,7 @@ const VALID_MANIFEST = {
 	frameCoupled: false,
 	executionProviders: ['webgpu'],
 	model: {
-		url: '/_model/r2/face-detector.onnx',
+		url: '/_model/hf/example/face-detector/resolve/main/model.onnx',
 		sizeBytes: 1024,
 		checksum: 'sha256-' + 'a'.repeat(64)
 	},

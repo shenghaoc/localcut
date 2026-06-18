@@ -8,9 +8,14 @@
  * - Load the matching ORT build lazily (WebGPU / `all`-with-WebNN / WASM).
  * - Pin the EP list verbatim into `SessionOptions` — ORT's own implicit WASM
  *   fallback is never appended.
- * - Wire device sharing: inject the renderer's `GPUDevice` when provided
- *   (`deviceOwner: 'renderer'`), otherwise read back the device ORT created
- *   (`deviceOwner: 'ort-webgpu'`); a WebNN `MLContext` yields `'webnn-context'`.
+ * - Wire device sharing. ORT does not adopt an externally-created `GPUDevice`:
+ *   a `device` set on `ort.env.webgpu` is ignored and ORT creates its own
+ *   internally (microsoft/onnxruntime#26107), so a buffer from any other device
+ *   fails validation. A WebGPU session therefore always lets ORT bootstrap and
+ *   own the device (`deviceOwner: 'ort-webgpu'`); the device ORT created — read
+ *   back from `ort.env.webgpu.device` — is returned as `handle.device` for the
+ *   renderer to adopt for its own passes. A WebNN `MLContext` (which *can* be
+ *   pre-created from a `GPUDevice`) yields `'webnn-context'`.
  *
  * Types come from `onnxruntime-web` via `import type` (erased); the runtime is
  * reached only through {@link file://./ort-loader.ts}'s dynamic imports.
@@ -37,12 +42,6 @@ export interface CreateOrtSessionOptions {
 	readonly manifest: OrtModelManifest;
 	/** Optional EP override; still subject to the frame-coupled policy. */
 	readonly executionProviders?: readonly OrtExecutionProvider[];
-	/**
-	 * Renderer-owned `GPUDevice` to inject into ORT's WebGPU backend. When set,
-	 * inference shares the compositor's device (`deviceOwner: 'renderer'`). Must be
-	 * provided before the first WebGPU session is created.
-	 */
-	readonly device?: GPUDevice;
 	/** WebNN `MLContext` (e.g. created from a `GPUDevice`) for the WebNN EP. */
 	readonly mlContext?: unknown;
 	/** WebNN device type; required by ORT when an `MLContext` is supplied. */
@@ -59,7 +58,11 @@ export interface OrtSessionHandle {
 	readonly tensorLocation: OrtTensorLocation;
 	/** Undefined for a WASM-only (deviceless) session. */
 	readonly deviceOwner?: OrtDeviceOwner;
-	/** The `GPUDevice` inference computes on, when the primary EP is WebGPU. */
+	/**
+	 * The ORT-owned `GPUDevice` inference computes on, when the primary EP is
+	 * WebGPU. The renderer adopts this for its own passes (ORT cannot adopt the
+	 * renderer's device — see {@link OrtDeviceOwner}).
+	 */
 	readonly device?: GPUDevice;
 }
 
@@ -74,20 +77,18 @@ function loadOrtFor(eps: readonly OrtExecutionProvider[]): Promise<OrtModule> {
 
 /**
  * Resolves which subsystem owns the compute device from the *primary* EP and the
- * resources the caller supplied. Pure and order-independent so the WebNN case is
- * never masked by a fallback WebGPU device: a `['webnn', 'webgpu']` model given
- * both an `MLContext` and a renderer `GPUDevice` still reports `webnn-context`,
- * because WebNN is the active path and a WebGPU device may be injected only as a
- * fallback. Returns `undefined` for a deviceless (WASM, or context-less WebNN)
- * session.
+ * resources the caller supplied. A WebGPU session is always `ort-webgpu` — ORT
+ * bootstraps and owns the device (it cannot adopt an externally-created one), and
+ * the renderer adopts what ORT created. A WebNN-primary session reports
+ * `webnn-context` only when an `MLContext` was supplied. Returns `undefined` for a
+ * deviceless (WASM, or context-less WebNN) session.
  */
 export function resolveDeviceOwner(
 	primaryEp: OrtExecutionProvider,
-	hasDevice: boolean,
 	hasMlContext: boolean
 ): OrtDeviceOwner | undefined {
 	if (primaryEp === 'webnn') return hasMlContext ? 'webnn-context' : undefined;
-	if (primaryEp === 'webgpu') return hasDevice ? 'renderer' : 'ort-webgpu';
+	if (primaryEp === 'webgpu') return 'ort-webgpu';
 	return undefined;
 }
 
@@ -137,17 +138,7 @@ export async function createOrtSession(
 	// COEP). Idempotent; must be set before the first session is created.
 	ort.env.wasm.wasmPaths = ortWasmBasePath();
 
-	const deviceOwner = resolveDeviceOwner(
-		primaryEp,
-		options.device !== undefined,
-		options.mlContext !== undefined
-	);
-	// Inject the renderer's device whenever WebGPU may run (primary or fallback);
-	// must be set before the first session. This does not change ownership: a
-	// WebNN-primary session still reports `webnn-context` above.
-	if (eps.includes('webgpu') && options.device) {
-		ort.env.webgpu.device = options.device;
-	}
+	const deviceOwner = resolveDeviceOwner(primaryEp, options.mlContext !== undefined);
 
 	const tensorLocation =
 		options.tensorLocation ?? options.manifest.tensorLocation ?? defaultTensorLocation(primaryEp);
@@ -161,10 +152,10 @@ export async function createOrtSession(
 	const session = await ort.InferenceSession.create(options.modelBytes, sessionOptions);
 
 	// Expose the WebGPU device only when WebGPU is the active (primary) path: the
-	// caller's device when injected, otherwise the one ORT created and owns.
+	// one ORT created and owns, for the renderer to adopt for its own passes.
 	let device: GPUDevice | undefined;
 	if (primaryEp === 'webgpu') {
-		device = options.device ?? (await ort.env.webgpu.device);
+		device = await ort.env.webgpu.device;
 	}
 
 	return {

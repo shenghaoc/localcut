@@ -18,14 +18,15 @@ describe('ORT trusted model URLs', () => {
 		expect(isTrustedOrtModelUrl(`${ORIGIN}/models/x/model.onnx`, ORIGIN)).toBe(true);
 	});
 
-	it('accepts allowlisted HTTPS hosts (HF, GCS, GitHub, R2)', () => {
+	it('accepts allowlisted HTTPS hosts (HF, GCS, GitHub) — models come direct from ONNX, not R2', () => {
 		expect(isTrustedOrtModelUrl('https://huggingface.co/org/repo/model.onnx', ORIGIN)).toBe(true);
 		expect(isTrustedOrtModelUrl('https://cas-bridge.xethub.hf.co/x/model.onnx', ORIGIN)).toBe(true);
 		expect(isTrustedOrtModelUrl('https://storage.googleapis.com/b/model.onnx', ORIGIN)).toBe(true);
 		expect(isTrustedOrtModelUrl('https://raw.githubusercontent.com/o/r/model.onnx', ORIGIN)).toBe(
 			true
 		);
-		expect(isTrustedOrtModelUrl('https://my-bucket.r2.dev/model.onnx', ORIGIN)).toBe(true);
+		// R2 is no longer a model host (models are sourced directly from onnx-community).
+		expect(isTrustedOrtModelUrl('https://my-bucket.r2.dev/model.onnx', ORIGIN)).toBe(false);
 	});
 
 	it('rejects arbitrary and non-HTTPS hosts', () => {
@@ -34,8 +35,8 @@ describe('ORT trusted model URLs', () => {
 		expect(isTrustedOrtModelUrl('https://nothuggingface.co.evil.com/model.onnx', ORIGIN)).toBe(
 			false
 		);
-		// A bare string with a scheme-like prefix that is still cross-origin.
-		expect(isTrustedOrtModelUrl('https://r2.dev.evil.com/model.onnx', ORIGIN)).toBe(false);
+		// A look-alike suffix on an allowlisted host must not match (anchored suffix).
+		expect(isTrustedOrtModelUrl('https://hf.co.evil.com/model.onnx', ORIGIN)).toBe(false);
 	});
 });
 

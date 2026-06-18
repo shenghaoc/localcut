@@ -35,7 +35,7 @@ the template (see below).
 Identical trust rules to every other on-device model (see `docs/ML-RUNTIME.md`):
 
 - Fetched **on explicit user action** through the same-origin Worker proxy
-  (`/_model/{hf,gh,gcs}/…`, `src/worker/index.ts`) or a Cloudflare **R2** bucket — never a
+  (`/_model/{hf,gh,gcs}/…`, `src/worker/index.ts`) — never a
   direct cross-origin browser fetch (COEP `require-corp`). The host allowlist is
   `assertTrustedOrtModelUrl` (`src/engine/ml/ort/ort-asset-loader.ts`).
 - **SHA-256 + size verified** before the session is created, and **OPFS-cached by digest**
@@ -78,7 +78,7 @@ re-applied to ONNX where the **true-matting** options actually exist:
 1. Pick a model whose **license is verified permissive** (commercial-OK). **Copyleft weights
    (GPL/LGPL/AGPL, by SPDX id or spelled-out name) are rejected** — both by policy and by the
    manifest validator (`isCopyleftLicense`).
-2. Export/obtain the **ONNX** graph; host it on an allowlisted host (HF / GitHub / GCS / R2).
+2. Export/obtain the **ONNX** graph; host it on an allowlisted host (HF / GitHub / GCS).
 3. Confirm **every graph node runs on ORT-WebGPU** (no full-frame WASM/CPU fallback) with the
    browser-mode per-node-EP harness. If any node falls back, reject the model. ORT-WebNN is an
    option only **after** a per-operator support proof — and the engine has no WebNN tensor path

@@ -98,7 +98,7 @@ model is pulled through the **same-origin Worker proxy** (`/_model/hf/…`,
 `src/worker/index.ts`), which fetches HF server-side and streams it back
 same-origin — sidestepping CORS and COEP entirely.
 
-- A host that _does_ send permissive CORS (e.g. an R2 bucket / `storage.googleapis.com`
+- A host that _does_ send permissive CORS (e.g. a `storage.googleapis.com`
   bucket with CORS enabled, on the allowlist) can be pointed at directly without
   the proxy.
 - **Don't** switch the page to `COEP: credentialless` to "fix" CORS — it isn't

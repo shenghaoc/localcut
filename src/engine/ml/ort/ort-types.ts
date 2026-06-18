@@ -7,8 +7,9 @@
  * `onnxruntime-web` into a bundle, which is what keeps the WebGPU/WebNN runtimes
  * lazy (see {@link file://./ort-loader.ts}).
  *
- * ORT is the repo's long-term model runtime; LiteRT features (DTLN, Whisper,
- * matte) continue to run unchanged on their existing path. See docs/ML-RUNTIME.md.
+ * ORT is the repo's model runtime. LiteRT/TFLite is the legacy path being retired
+ * feature-by-feature as license-verified ONNX models land; no new feature targets
+ * it. See docs/ML-RUNTIME.md.
  */
 
 /**
@@ -33,14 +34,15 @@ export type OrtTensorLocation = 'cpu' | 'gpu-buffer' | 'ml-tensor';
  * Which subsystem owns the `GPUDevice` (or `MLContext`) a session computes on.
  * Reported in diagnostics so a device-sharing regression is visible:
  *
- * - `renderer`       — the compositor's `GPUDevice` is injected into ORT
- *   (`env.webgpu.device = device`), so inference shares the preview device.
- * - `ort-webgpu`     — ORT created and owns the device; the app reuses
- *   `env.webgpu.device` for its own passes.
- * - `webnn-context`  — a WebNN `MLContext` (created from a `GPUDevice`) owns the
- *   compute path.
+ * - `ort-webgpu`     — ORT created and owns the WebGPU device. ORT does **not**
+ *   adopt an externally-created `GPUDevice`: a `device` set on `env.webgpu` is
+ *   ignored and ORT creates its own (microsoft/onnxruntime#26107). This is the
+ *   only WebGPU path: ORT bootstraps the device and the renderer adopts
+ *   `env.webgpu.device` for its own passes — never the other way round.
+ * - `webnn-context`  — a WebNN `MLContext` (which *can* be pre-created from the
+ *   renderer's `GPUDevice`) owns the compute path.
  */
-export type OrtDeviceOwner = 'renderer' | 'ort-webgpu' | 'webnn-context';
+export type OrtDeviceOwner = 'ort-webgpu' | 'webnn-context';
 
 /** Model serialization format. Only ONNX is accepted by the foundation. */
 export type OrtModelFormat = 'onnx';

@@ -30,6 +30,7 @@ interface FakeSession {
 /** Private surface the tests reach into to bypass model loading and stub inference. */
 interface MatteOnnxEngineInternals {
 	modelStatus: string;
+	device: GPUDevice | null;
 	runInference: (request: MatteFrameRequest, cacheKey: string) => Promise<GPUTextureView | null>;
 	lastView: Map<string, GPUTextureView>;
 	sessions: Map<string, FakeSession>;
@@ -41,14 +42,15 @@ function makeEngine(options?: { testMode?: boolean }): {
 	internals: MatteOnnxEngineInternals;
 } {
 	const engine = new MatteOnnxEngine({
-		device: {} as unknown as GPUDevice,
 		onStatus: vi.fn(),
 		testMode: options?.testMode
 	});
 	const internals = engine as unknown as MatteOnnxEngineInternals;
-	// Pretend the model is loaded so matteViewFor reaches the inference path; the
-	// real GPU work is replaced by the stub each test installs.
+	// Pretend the model is loaded (and adopt a stub ORT-owned device, which
+	// loadModel would normally set from handle.device) so matteViewFor reaches the
+	// inference path; the real GPU work is replaced by the stub each test installs.
 	internals.modelStatus = 'loaded';
+	internals.device = {} as unknown as GPUDevice;
 	return { engine, internals };
 }
 
@@ -160,18 +162,19 @@ describe('MatteOnnxEngine.matteViewFor concurrency', () => {
 		// A device that throws on the first GPU call runInference makes (building its
 		// pipelines) fails before the eager post-import frame close; the frame-owning
 		// guard must still release the frame, exactly once.
-		const engine = new MatteOnnxEngine({
-			device: {
-				createComputePipeline: () => {
-					throw new Error('device lost');
-				},
-				createShaderModule: () => {
-					throw new Error('device lost');
-				}
-			} as unknown as GPUDevice,
-			onStatus: vi.fn()
-		});
-		(engine as unknown as MatteOnnxEngineInternals).modelStatus = 'loaded';
+		const engine = new MatteOnnxEngine({ onStatus: vi.fn() });
+		const internals = engine as unknown as MatteOnnxEngineInternals;
+		internals.modelStatus = 'loaded';
+		// The ORT-owned device loadModel would adopt; here a stub that throws on the
+		// first GPU call so ensurePipelines fails before the eager frame close.
+		internals.device = {
+			createComputePipeline: () => {
+				throw new Error('device lost');
+			},
+			createShaderModule: () => {
+				throw new Error('device lost');
+			}
+		} as unknown as GPUDevice;
 		const close = vi.fn();
 
 		await expect(
@@ -235,7 +238,7 @@ describe('MatteOnnxEngine permanent manifest failure', () => {
 		vi.stubGlobal('fetch', fetchSpy);
 		try {
 			const onStatus = vi.fn();
-			const engine = new MatteOnnxEngine({ device: {} as unknown as GPUDevice, onStatus });
+			const engine = new MatteOnnxEngine({ onStatus });
 
 			await engine.ensureModelLoaded();
 			await engine.ensureModelLoaded();

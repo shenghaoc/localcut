@@ -370,6 +370,9 @@ let calloutCache: CalloutTextureCache | null = null;
  *  LiteRT MediaPipe path; the experimental ORT/ONNX backend is selected only when
  *  the `__MATTE_ONNX_SPIKE__` build flag is on (see matte/matte-backend.ts). */
 let matteEngine: MatteBackendEngine | null = null;
+/** One-shot guard so the "matte backend can't composite on the renderer device"
+ *  notice (ORT matte pending compositor device adoption) isn't reported per frame. */
+let matteCompositingUnavailableWarned = false;
 
 /** Build-scoped LiteRT WASM runtime directory (shared with ASR/cleanup). */
 const MATTE_BUILD_SHA = typeof __BUILD_SHA__ === 'string' ? __BUILD_SHA__ : 'dev';
@@ -386,8 +389,11 @@ function ensureMatteEngine(): MatteBackendEngine | null {
 	if (!matteEngine) {
 		matteEngine =
 			resolveMatteBackend(MATTE_ONNX_SPIKE) === 'ort-onnx'
-				? new MatteOnnxEngine({
-						device: renderer.gpuDevice,
+				? // ORT owns its WebGPU device (it ignores an injected one —
+					// microsoft/onnxruntime#26107), so no device is passed; the engine runs
+					// on ORT's device and the renderer will adopt it once compositor single-device adoption lands (tracked follow-up; see docs/ML-RUNTIME.md).
+					// LiteRT, below, *can* share the renderer's device and is still given it.
+					new MatteOnnxEngine({
 						onStatus: (status) => post({ type: 'matte-status', status })
 					})
 				: new MatteEngine({
@@ -406,8 +412,9 @@ let interpolationEngine: InterpolationEngine | null = null;
 function ensureInterpolationEngine(): InterpolationEngine | null {
 	if (!renderer) return null;
 	if (!interpolationEngine) {
+		// ORT owns its WebGPU device (microsoft/onnxruntime#26107); the engine runs on
+		// ORT's device and the renderer will adopt it once compositor single-device adoption lands (tracked follow-up; see docs/ML-RUNTIME.md).
 		interpolationEngine = new InterpolationEngine({
-			device: renderer.gpuDevice,
 			onStatus: (status, error) => {
 				const manifest = interpolationEngine?.getModelManifest();
 				post({
@@ -430,8 +437,9 @@ let beautyEngine: BeautyEngine | null = null;
 function ensureBeautyEngine(): BeautyEngine | null {
 	if (!renderer) return null;
 	if (!beautyEngine) {
+		// ORT owns its WebGPU device (microsoft/onnxruntime#26107); the engine runs on
+		// ORT's device and the renderer will adopt it once compositor single-device adoption lands (tracked follow-up; see docs/ML-RUNTIME.md).
 		beautyEngine = new BeautyEngine({
-			device: renderer.gpuDevice,
 			onStatus: (status, error) => {
 				const manifest = beautyEngine?.getModelManifest();
 				const ep = beautyEngine?.getExecutionProvider();
@@ -3182,7 +3190,23 @@ function makeGetLayers() {
 				const matte = layer.clip.matte;
 				if (matte?.enabled) {
 					const engine = ensureMatteEngine();
-					if (engine) {
+					if (engine && !engine.compositesOnRendererDevice) {
+						// The engine's matte views are on a device the compositor can't bind
+						// (the ORT backend runs on ORT's own device — onnxruntime#26107 — and
+						// compositor device adoption is a tracked follow-up). Compositing them
+						// cross-device would be a WebGPU validation error, so degrade to the
+						// unmatted frame and report once instead of feeding a foreign view in.
+						if (!matteCompositingUnavailableWarned) {
+							matteCompositingUnavailableWarned = true;
+							recordRecentError({
+								code: 'matte.compositing_unavailable',
+								subsystem: 'matte',
+								severity: 'warning',
+								message:
+									'ORT matte runs on ORT’s own GPU device; compositing is pending compositor device adoption. Showing the clip without the matte.'
+							});
+						}
+					} else if (engine) {
 						// A matte inference failure must NEVER blank the video — degrade
 						// to the unmatted frame and report once. Keeping this catch local
 						// (not in makeGetLayers' outer try) is what preserves the frame.

@@ -13,10 +13,12 @@
  *
  * Built entirely on the Phase-105 ORT foundation (`src/engine/ml/ort/`):
  * - {@link createOrtSession} pins the manifest's execution providers under the
- *   frame-coupled gate (a per-frame model can never resolve to WASM/CPU) and
- *   **injects the renderer's `GPUDevice`** (`env.webgpu.device = device`), so ORT
- *   computes on the compositor's device — the device-sharing path proven by the
- *   foundation's `ort-device-ownership.browser.test.ts`.
+ *   frame-coupled gate (a per-frame model can never resolve to WASM/CPU) and lets
+ *   **ORT bootstrap and own the `GPUDevice`** — ORT ignores an injected device
+ *   (microsoft/onnxruntime#26107). The engine runs its own preprocess/postprocess
+ *   passes on ORT's device (`handle.device`); the renderer will adopt it to
+ *   composite the synthesized frame once compositor single-device adoption lands
+ *   (tracked follow-up).
  * - {@link loadOrtModelAsset} fetches the ONNX bytes through the trusted-host
  *   `/_model/*` proxy, SHA-256-verifies them, and OPFS-caches by digest.
  * - The synthesis path keeps tensors on-device: `fromGpuBuffer` inputs, a
@@ -56,8 +58,6 @@ const OUT_BIAS = 0;
 export type InterpolationEngineStatus = 'not-loaded' | 'loading' | 'loaded' | 'failed';
 
 export interface InterpolationEngineOptions {
-	/** The renderer/compositor `GPUDevice`; injected into ORT so inference shares it. */
-	device: GPUDevice;
 	manifestUrl?: string;
 	onStatus?: (status: InterpolationEngineStatus, error?: string) => void;
 }
@@ -69,7 +69,10 @@ interface LoadedModel {
 }
 
 export class InterpolationEngine {
-	private readonly device: GPUDevice;
+	/** ORT-owned device, set once the session is created in {@link loadModel}; the
+	 *  engine's own WGSL passes run on it; the renderer will adopt it once
+	 *  compositor single-device adoption lands (tracked follow-up). */
+	private device: GPUDevice | null = null;
 	private readonly manifestUrl: string;
 	private readonly onStatus?: (status: InterpolationEngineStatus, error?: string) => void;
 
@@ -92,7 +95,6 @@ export class InterpolationEngine {
 	private frameSampler: GPUSampler | null = null;
 
 	constructor(options: InterpolationEngineOptions) {
-		this.device = options.device;
 		this.manifestUrl = options.manifestUrl ?? DEFAULT_INTERPOLATION_MANIFEST_URL;
 		this.onStatus = options.onStatus;
 	}
@@ -146,19 +148,25 @@ export class InterpolationEngine {
 		const modelBytes = await loadOrtModelAsset(manifest.model, { store });
 
 		const ort = await loadOrtWebGpu();
-		// Inject the renderer's device so ORT computes on the compositor's device
-		// (deviceOwner: 'renderer'); the frame-coupled EP policy forbids any WASM/CPU
-		// fallback, and 'gpu-buffer' output keeps the synthesized frame on-device.
+		// ORT bootstraps and owns the WebGPU device — it ignores an injected one
+		// (microsoft/onnxruntime#26107). The frame-coupled EP policy forbids any
+		// WASM/CPU fallback, and 'gpu-buffer' output keeps the synthesized frame
+		// on ORT's device; the renderer will adopt that device to composite it once
+		// compositor single-device adoption lands (tracked follow-up).
 		const handle = await createOrtSession({
 			modelBytes,
 			manifest,
-			device: this.device,
 			tensorLocation: 'gpu-buffer'
 		});
 		if (this.disposed) {
 			await handle.session.release();
 			return;
 		}
+		if (!handle.device) {
+			await handle.session.release();
+			throw new Error('ORT-WebGPU interpolation session exposed no GPUDevice.');
+		}
+		this.device = handle.device;
 		this.ort = ort;
 		this.model = { handle, io: manifest.io, manifest };
 		this.status = 'loaded';
@@ -216,7 +224,8 @@ export class InterpolationEngine {
 		plan: TilePlan
 	): Promise<GPUTexture> {
 		this.ensurePipelines();
-		const output = this.device.createTexture({
+		// Set in loadModel; synthesise() above guarantees status === 'loaded'.
+		const output = this.device!.createTexture({
 			size: { width: fullWidth, height: fullHeight },
 			format: 'rgba8unorm',
 			usage:
@@ -254,7 +263,7 @@ export class InterpolationEngine {
 		fullHeight: number,
 		output: GPUTexture
 	): Promise<void> {
-		const device = this.device;
+		const device = this.device!;
 		const ort = this.ort!;
 		const model = this.model!;
 		const io = model.io;
@@ -379,7 +388,7 @@ export class InterpolationEngine {
 		// queue, so destroying the shared buffers never races an executing pass.
 		await this.running?.catch(() => {});
 		try {
-			await this.device.queue.onSubmittedWorkDone();
+			await this.device?.queue.onSubmittedWorkDone();
 		} catch {
 			// device may be lost; tear down anyway
 		}
@@ -398,12 +407,14 @@ export class InterpolationEngine {
 		}
 		this.model = null;
 		this.ort = null;
+		this.device = null;
 		this.status = 'not-loaded';
 	}
 
 	private ensurePipelines(): void {
 		if (this.preprocessPipeline) return;
-		const device = this.device;
+		// Set in loadModel before any synthesis reaches ensurePipelines.
+		const device = this.device!;
 		this.preprocessPipeline = device.createComputePipeline({
 			layout: 'auto',
 			compute: {

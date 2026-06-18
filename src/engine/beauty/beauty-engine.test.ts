@@ -89,10 +89,8 @@ describe('mapRoiToFull', () => {
 });
 
 describe('BeautyEngine.solveFrame', () => {
-	const device = {} as unknown as GPUDevice;
-
 	it('returns null and closes the frame when no model is loaded', async () => {
-		const engine = new BeautyEngine({ device });
+		const engine = new BeautyEngine({});
 		const { frame, closes } = makeFrame();
 		const result = await engine.solveFrame({
 			clipId: 'c',
@@ -114,7 +112,7 @@ describe('BeautyEngine.solveFrame', () => {
 				reset: false
 			});
 		// projectFps == maxHz → solve interval 1 (every frame).
-		const engine = new BeautyEngine({ device, projectFps: 10, inference });
+		const engine = new BeautyEngine({ projectFps: 10, inference });
 
 		const f0 = makeFrame();
 		const r0 = await engine.solveFrame({
@@ -149,7 +147,7 @@ describe('BeautyEngine.solveFrame', () => {
 				faceId: 'face-0',
 				reset: false
 			});
-		const engine = new BeautyEngine({ device, projectFps: 10, inference });
+		const engine = new BeautyEngine({ projectFps: 10, inference });
 		await engine.solveFrame({
 			clipId: 'c',
 			frame: makeFrame().frame,

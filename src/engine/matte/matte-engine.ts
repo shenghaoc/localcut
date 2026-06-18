@@ -145,6 +145,8 @@ interface LoadedModel {
 }
 
 export class MatteEngine {
+	/** LiteRT adopts the renderer's device, so its matte views composite directly. */
+	readonly compositesOnRendererDevice = true;
 	private readonly device: GPUDevice;
 	private readonly onStatus: (status: MatteEngineStatusSnapshot) => void;
 	private readonly wasmPath: string;

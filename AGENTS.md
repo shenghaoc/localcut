@@ -76,6 +76,8 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 
 **Completed:**
 
+- [**ML runtime: ORT-owned GPU device + unify-on-ORT**](.kiro/specs/ml-runtime-ort-device-ownership/tasks.md) — ORT owns the WebGPU `GPUDevice` (it ignores an injected one — [onnxruntime#26107](https://github.com/microsoft/onnxruntime/issues/26107)); the renderer adopts `ort.env.webgpu.device` rather than the reverse. Frame-coupled ORT engines (matte-onnx/interpolation/beauty) self-bootstrap on ORT's device and run their own WGSL passes on it; `OrtDeviceOwner` drops `'renderer'`; the worker stops injecting `renderer.gpuDevice` (LiteRT matte still gets it). Policy: unify on the single ORT JSEP runtime (WebGPU/WebNN/WASM from one binary; WASM the un-droppable floor) and retire LiteRT/TFLite. Models sourced directly from `onnx-community` on Hugging Face; R2 dropped as a model host. Compositor single-device adoption and LiteRT code removal are tracked as follow-up specs.
+
 - [**Phase 27: WebCodecs decode bridge**](.kiro/specs/phase-27-webcodecs-decode-bridge/tasks.md) — direct `VideoDecoder`/`AudioDecoder` over Mediabunny demux; bounded backpressure; key-packet seek; `getDecoderConfig` extradata; codec support matrix; worker integration; DualStreamFrameSource; diagnostics surface.
 - [**Phase 13: Transitions**](.kiro/specs/phase-13-transitions/tasks.md) — cut-point transition model; dual-stream readahead; 2-input mix pass in the single submission; export parity.
 - [**WASM SIMD Audio Resampler**](.kiro/specs/wasm-simd-resampler/tasks.md) — hand-written WAT with wasm-simd128; Kaiser-windowed polyphase sinc; transparent JS fallback; build:wasm script; ≥2x throughput.
