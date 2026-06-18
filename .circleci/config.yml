@@ -81,13 +81,19 @@ executors:
 
 commands:
   install_pnpm_deps:
-    description: "Enable corepack-driven pnpm and pnpm install --frozen-lockfile"
+    description: "Install pnpm at the locked packageManager version + pnpm install --frozen-lockfile"
     steps:
       - run:
-          name: Enable corepack (resolves pnpm from packageManager)
+          name: Install pnpm (version from package.json packageManager)
+          # Corepack used to be the obvious choice here, but it's no longer
+          # bundled with the Node distribution in recent majors (the previous
+          # CircleCI run hit exit 127 on `corepack enable`). Parsing the
+          # `packageManager` field and installing via `npm -g` is the
+          # version-pinned, corepack-free equivalent.
           command: |
-            corepack enable
-            corepack prepare --activate
+            PNPM_VERSION=$(node -p "require('./package.json').packageManager.split('@')[1].split('+')[0]")
+            echo "Installing pnpm@${PNPM_VERSION}"
+            npm install -g "pnpm@${PNPM_VERSION}"
             pnpm --version
             pnpm config set store-dir "${PNPM_STORE_PATH:-$HOME/.pnpm-store}"
       - restore_cache:
@@ -205,9 +211,11 @@ jobs:
     steps:
       - checkout
       - run:
-          name: Install Node (.node-version) and enable corepack
+          name: Install Node (.node-version)
           # nvm is preinstalled on the ubuntu-2404 machine image; use it to
-          # honour .node-version exactly (Node 26).
+          # honour .node-version exactly (Node 26). pnpm itself is installed
+          # by the `install_pnpm_deps` command below — that path is corepack-
+          # free, see the comment there.
           command: |
             export NVM_DIR="$HOME/.nvm"
             # shellcheck source=/dev/null
@@ -215,11 +223,9 @@ jobs:
             NODE_VERSION="$(cat .node-version)"
             nvm install "$NODE_VERSION"
             nvm alias default "$NODE_VERSION"
-            sudo corepack enable
             node --version
-            pnpm --version
             # Persist nvm bootstrap into BASH_ENV so later steps see the
-            # correct node + pnpm without re-sourcing nvm.sh.
+            # correct node + npm without re-sourcing nvm.sh.
             echo "export NVM_DIR=$NVM_DIR" >> "$BASH_ENV"
             echo '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"' >> "$BASH_ENV"
       - install_pnpm_deps
