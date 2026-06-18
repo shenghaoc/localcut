@@ -618,9 +618,14 @@ export function Inspector(props: InspectorProps) {
 		return { ...currentSkinMask() };
 	}
 
+	function resetSkinMaskDraft(): void {
+		skinMaskDraft = null;
+		skinMaskDraftClipId = null;
+	}
+
 	function resetSkinMaskDraftIfIdle(): void {
 		if (skinMaskPending.size === 0 && skinMaskDebouncers.size === 0) {
-			skinMaskDraft = null;
+			resetSkinMaskDraft();
 		}
 	}
 
@@ -628,7 +633,10 @@ export function Inspector(props: InspectorProps) {
 
 	function getSkinMaskDraft() {
 		const clip = props.selectedClip;
-		if (!clip) return null;
+		if (!clip) {
+			resetSkinMaskDraft();
+			return null;
+		}
 		if (skinMaskDraftClipId !== clip.clipId) {
 			skinMaskDraft = cloneCurrentSkinMask();
 			skinMaskDraftClipId = clip.clipId;

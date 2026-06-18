@@ -40,9 +40,9 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 		let r = radius * sqrt(t);
 		let offset = vec2f(cos(angle), sin(angle)) * r;
 		let coord = clamp(center + vec2i(round(offset)), vec2i(0), maxXY);
-		let sample = textureLoad(src, coord, 0);
+		let texel = textureLoad(src, coord, 0);
 		let weight = f16(exp(-(r * r) / sigma2));
-		halo += brightPass(vec3<f16>(sample.rgb), threshold16) * weight;
+		halo += brightPass(vec3<f16>(texel.rgb), threshold16) * weight;
 		totalWeight += weight;
 	}
 	halo = halo / totalWeight;
