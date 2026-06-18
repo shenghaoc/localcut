@@ -25,10 +25,9 @@
  *   (`deviceOwner: 'ort-webgpu'`; ORT cannot adopt an externally-created device —
  *   microsoft/onnxruntime#26107) and pins the manifest EPs under the frame-coupled
  *   gate — a per-frame matte can never resolve to WASM/CPU. The engine runs its
- *   own preprocess/resolve passes on ORT's device (`handle.device`); the renderer
- *   will adopt that device to composite the matte output once compositor
- *   single-device adoption lands (tracked follow-up). Until then the worker does
- *   not composite this engine's output (see `compositesOnRendererDevice`).
+ *   own preprocess/resolve passes on ORT's device (`handle.device`); the worker
+ *   adopts the renderer to that device before the engine reports loaded, so the
+ *   compositor binds matte output on the same device.
  * - {@link loadOrtModelAsset} fetches the ONNX bytes through the trusted-host
  *   `/_model/*` proxy, SHA-256-verifies them, and OPFS-caches by digest.
  * - The temporal contract ({@link MATTE_TEMPORAL_SMOOTHING},
@@ -65,6 +64,7 @@ const MATTE_CACHE_BYTES = 32 * 1024 * 1024;
 
 export interface MatteOnnxEngineOptions {
 	onStatus: (status: MatteEngineStatusSnapshot) => void;
+	onDeviceReady?: (device: GPUDevice) => Promise<void>;
 	manifestUrl?: string;
 	/** Determinism mode (R8): disables the reuse-last-while-busy shortcut so
 	 *  repeated runs over a fixture produce identical alpha. */
@@ -98,19 +98,15 @@ interface LoadedModel {
 
 export class MatteOnnxEngine implements MatteBackendEngine {
 	/**
-	 * False: this engine's alpha textures live on ORT's own device, and the
-	 * compositor does not yet adopt it (onnxruntime#26107; tracked in the
-	 * `ml-runtime-compositor-device-adoption` spec). The worker therefore does not
-	 * composite this engine's views — doing so cross-device would be a WebGPU
-	 * validation error — so the experimental ORT matte degrades to unmatted until
-	 * that adoption ships.
+	 * The worker adopts the renderer onto ORT's device before the model is marked
+	 * loaded, so returned alpha views are renderer-device views.
 	 */
-	readonly compositesOnRendererDevice = false;
-	/** ORT-owned device, set once the session is created in {@link loadModel}; the
-	 *  engine's own WGSL passes run on it; the renderer will adopt it once
-	 *  compositor single-device adoption lands (tracked follow-up). */
+	readonly compositesOnRendererDevice = true;
+	/** ORT-owned device, set once the session is created in {@link loadModel};
+	 *  the renderer adopts it before the model is marked loaded. */
 	private device: GPUDevice | null = null;
 	private readonly onStatus: (status: MatteEngineStatusSnapshot) => void;
+	private readonly onDeviceReady?: (device: GPUDevice) => Promise<void>;
 	private readonly manifestUrl: string;
 	private readonly testMode: boolean;
 
@@ -138,6 +134,7 @@ export class MatteOnnxEngine implements MatteBackendEngine {
 
 	constructor(options: MatteOnnxEngineOptions) {
 		this.onStatus = options.onStatus;
+		this.onDeviceReady = options.onDeviceReady;
 		this.manifestUrl = options.manifestUrl ?? MATTE_ONNX_MANIFEST_URL;
 		this.testMode = options.testMode ?? false;
 		this.cache = new MatteCache({ maxBytes: MATTE_CACHE_BYTES });
@@ -337,8 +334,7 @@ export class MatteOnnxEngine implements MatteBackendEngine {
 		// (microsoft/onnxruntime#26107). The frame-coupled EP policy forbids any
 		// WASM/CPU fallback, and 'gpu-buffer' output keeps the alpha on-device (no
 		// readback). The engine's own preprocess/resolve passes then run on
-		// handle.device; the renderer will adopt it to composite the matte once
-		// compositor single-device adoption lands (tracked follow-up).
+		// handle.device; the renderer adopts it before the model is marked loaded.
 		const handle = await createOrtSession({
 			modelBytes,
 			manifest,
@@ -353,6 +349,12 @@ export class MatteOnnxEngine implements MatteBackendEngine {
 		if (!handle.device) {
 			await handle.session.release();
 			throw new Error('ORT-WebGPU matte session exposed no GPUDevice.');
+		}
+		try {
+			await this.onDeviceReady?.(handle.device);
+		} catch (error) {
+			await handle.session.release();
+			throw error;
 		}
 		this.device = handle.device;
 
@@ -545,8 +547,7 @@ export class MatteOnnxEngine implements MatteBackendEngine {
 
 		// 2. ORT inference with GPU-buffer tensor IO — input wraps our preprocess
 		// buffer (no upload), output stays a GPU buffer (no readback). Both live on
-		// ORT's own device (which the renderer will adopt for compositing once
-		// compositor single-device adoption lands).
+		// ORT's own device, which the renderer adopted before the model was marked loaded.
 		const inputTensor = ort.Tensor.fromGpuBuffer(this.inputBuffer, {
 			dataType: 'float32',
 			dims: model.inputDims

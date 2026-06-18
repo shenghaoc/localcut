@@ -291,6 +291,14 @@ export class PlaybackController<M = unknown> {
 		this.deps.writeClock(this.currentTime, false);
 	}
 
+	async cancelAndWaitForIdle(): Promise<void> {
+		this.playing = false;
+		this.generation += 1;
+		this.cancelTimer();
+		this.deps.writeClock(this.currentTime, false);
+		await this.decodeChain.catch(() => {});
+	}
+
 	seek(time: number): void {
 		const clamped = clampTime(time, this.deps.duration);
 		this.currentTime = clamped;

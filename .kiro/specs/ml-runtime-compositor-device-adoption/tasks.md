@@ -1,37 +1,33 @@
 # Tasks — ML runtime: compositor single-device adoption
 
-> **Plan only — not yet implemented.** All tasks are unchecked; a later agent
-> implements them. Maps to `requirements.md`.
+Maps to `requirements.md`.
 
-- [ ] **T1 — Decide & document the adoption seam (R2.1).** Confirm approach A
-      (lazy renderer rebuild on `ort.env.webgpu.device`); record the rejection of
-      up-front bootstrap (B) and cross-device copy (C). Spike the canvas-context
-      reconfigure on a new device in browser mode.
-- [ ] **T2 — Renderer rebuild path in `gpu.ts` (R3).** Add a way to (re)construct
-      `PreviewRenderer` on a supplied `GPUDevice` — reuse the constructor where
-      possible; if not, extract a `buildDeviceResources(device, useF16)` shared by
-      the constructor and the rebuild. Reconfigure the `GPUCanvasContext`; reset
-      size so per-size resources reallocate on the new device. Destroy old-device
-      resources + release the old device after draining in-flight work.
-- [ ] **T3 — Worker adoption trigger (R2.2, R2.3).** On the first ORT-WebGPU engine
-      load (matte-onnx / interpolation / beauty), call the adoption path with
-      `handle.device`; serialize against the render loop; idempotent; reversible on
-      teardown. Re-establish renderer-held state (size, scope SAB, title/callout
-      caches) and force a re-render.
-- [ ] **T4 — Re-enable compositing (R4).** Flip `compositesOnRendererDevice` (or
-      retire the flag) for the ORT backends; remove the worker's one-time
-      "compositing unavailable" guard; update the matte/interpolation/beauty engine
-      comments and `worker.ts` from "will adopt …" to the realised behaviour.
-- [ ] **T5 — Device-loss handling (R5).** ORT device loss tears down ORT sessions
-      and the adopted compositor coherently; surface a capability/diagnostic
-      message; no hung preview.
-- [ ] **T6 — Tests (R6).** Browser-mode test: a matte/beauty/interpolation output
-      texture produced on ORT's device composites on the renderer (same device, no
-      cross-device validation error). Node-level guard: no-ML / LiteRT-only path
-      still uses the `initGpu()` device (no rebuild).
-- [ ] **T7 — Docs (R7).** Update `docs/ML-RUNTIME.md` "GPU device ownership" to the
-      realised renderer-adoption mechanism (drop the "gated off until …" qualifier).
-- [ ] **T8 — Quality gate.** `format:check + lint + typecheck + test + build` green;
+- [x] **T1 — Decide & document the adoption seam (R2.1).** Approach A (lazy
+      renderer rebuild on `ort.env.webgpu.device`) is implemented; up-front
+      bootstrap and cross-device copy remain rejected for the accelerated path.
+- [x] **T2 — Renderer rebuild path in `gpu.ts` (R3).** `PreviewRenderer` can
+      rebuild on a supplied external `GPUDevice`, drains old queue work, recomputes
+      `shader-f16` from the adopted device, reconfigures the canvas through the
+      normal size path, and distinguishes owned vs ORT-owned device destruction.
+- [x] **T3 — Worker adoption trigger (R2.2, R2.3).** Matte-ONNX, interpolation,
+      and beauty load paths call a shared `adoptOrtDevice(handle.device)` hook.
+      The worker serializes adoption against preview and export/queue ownership,
+      disposes stale LiteRT matte state, replays size/scope/zebra/LUT/title/callout
+      state, and forces preview refresh.
+- [x] **T4 — Re-enable compositing (R4).** ORT matte reports renderer-device
+      compositing after adoption, the old planned-unavailable guard is removed, and
+      source/doc comments describe the realised behaviour.
+- [x] **T5 — Device-loss handling (R5).** The worker generation-guards device-loss
+      listeners, registers the adopted ORT device, tears down ORT sessions and the
+      compositor together, and surfaces recovery diagnostics without hanging
+      preview.
+- [x] **T6 — Tests (R6).** Node tests cover external-device ownership and f16
+      recomputation; browser-mode ORT spike covers same-device compositor binding
+      of an ORT-device matte texture.
+- [x] **T7 — Docs (R7).** `docs/ML-RUNTIME.md` "GPU device ownership" describes
+      the realised renderer-adoption transaction and drops the pending/gated
+      qualifier.
+- [x] **T8 — Quality gate.** `format:check + lint + typecheck + test + build` green;
       no test-count regression.
 
 ## Dependencies

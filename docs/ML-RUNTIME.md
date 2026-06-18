@@ -78,9 +78,10 @@ path, and it is the inverse of LiteRT's:
   `OrtSessionHandle.device`.
 - **The renderer adopts ORT's device** for its own WGSL passes — the compositor is
   (re)built on `handle.device` so matte/interpolation/beauty output composites
-  zero-copy. (Frame-coupled ORT-WebGPU features are gated off until this compositor
-  single-device adoption ships with the first license-verified model; the engines
-  already run their own preprocess/resolve passes on `handle.device`.)
+  zero-copy. Adoption is lazy: the first frame-coupled ORT-WebGPU model load
+  exposes `handle.device`, the worker pauses preview, waits for renderer/export
+  idleness, rebuilds `PreviewRenderer` on ORT's device, and replays LUT/scope/
+  title/callout state before any ORT texture view is composited.
 - **WebNN is the one place a renderer device flows toward ORT**, and only via an
   `MLContext` _pre-created_ from it (`deviceOwner: 'webnn-context'`) — a supported
   API, unlike injecting a raw `GPUDevice`.
@@ -89,7 +90,9 @@ This is proven by the spikes in `src/engine/ml/ort/`:
 
 - `ort-device-ownership.browser.test.ts` — a `GPUBuffer` created from the
   ORT-owned `ort.env.webgpu.device` is used by **both** an app WebGPU compute pass
-  and ORT's `Tensor.fromGpuBuffer` (`deviceOwner` is `ort-webgpu`).
+  and ORT's `Tensor.fromGpuBuffer` (`deviceOwner` is `ort-webgpu`), and a renderer
+  built on that same ORT device composites an ORT-device matte texture without a
+  cross-device validation error.
 - `webnn-shared-context.browser.test.ts` — an `MLContext` created from the
   renderer's `GPUDevice` is handed to ORT's WebNN EP, with `MLTensor` output
   staying on-device (no hot-path readback).
@@ -230,7 +233,7 @@ All ML work targets ORT, never LiteRT (which is being retired):
 - **Remaining LiteRT-default deployed features (portrait matte)** keep working
   unchanged on their current path **as the legacy backend**. They migrate to
   ORT/ONNX — retiring LiteRT — once a license-verified ONNX model and the
-  compositor's adoption of ORT's device pass quality + performance proof.
+  compositor's ORT-device path pass quality + performance proof.
 
 ## Whisper auto-captions on ORT (non-frame-coupled exemplar)
 

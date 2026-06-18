@@ -24,12 +24,13 @@ beforeAll(() => {
  * pipeline/texture/encoder calls. The submission counter is what matters: the
  * architecture demands exactly one `queue.submit` per composited frame.
  */
-function fakeDevice() {
+function fakeDevice(options: { features?: GPUFeatureName[] } = {}) {
 	const submit = vi.fn();
 	const writeBuffer = vi.fn();
 	const copyTextureToTexture = vi.fn();
 	const clearBuffer = vi.fn();
 	const copyBufferToBuffer = vi.fn();
+	const destroy = vi.fn();
 	const pass = {
 		setPipeline: vi.fn(),
 		setBindGroup: vi.fn(),
@@ -72,20 +73,39 @@ function fakeDevice() {
 			writeBuffer,
 			onSubmittedWorkDone: () => Promise.resolve()
 		},
-		destroy: vi.fn()
+		features: new Set(options.features ?? []),
+		destroy
 	} as unknown as GPUDevice;
-	return { device, submit, writeBuffer, copyTextureToTexture, clearBuffer, copyBufferToBuffer };
+	return {
+		device,
+		submit,
+		writeBuffer,
+		copyTextureToTexture,
+		clearBuffer,
+		copyBufferToBuffer,
+		destroy
+	};
 }
 
 function scopeSab(): SharedArrayBuffer {
 	return new SharedArrayBuffer(scopeTotalBufferBytes(SCOPE_RES_X));
 }
 
-function fakeContext(): GPUCanvasContext {
+type FakeGpuContext = GPUCanvasContext & {
+	configureMock: ReturnType<typeof vi.fn>;
+	unconfigureMock: ReturnType<typeof vi.fn>;
+};
+
+function fakeContext(): FakeGpuContext {
+	const configureMock = vi.fn();
+	const unconfigureMock = vi.fn();
 	return {
-		configure: vi.fn(),
+		configure: configureMock,
+		unconfigure: unconfigureMock,
+		configureMock,
+		unconfigureMock,
 		getCurrentTexture: () => ({ createView: () => ({}) })
-	} as unknown as GPUCanvasContext;
+	} as unknown as FakeGpuContext;
 }
 
 function fakeCanvas(): OffscreenCanvas {
@@ -166,6 +186,34 @@ describe('PreviewRenderer single submission', () => {
 		submit.mockClear();
 		renderer.present([layer(1280, 720)]);
 		expect(submit).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe('PreviewRenderer device adoption', () => {
+	it('rebuilds on an external device without taking ownership and recomputes f16', async () => {
+		const original = fakeDevice({ features: ['shader-f16'] });
+		const external = fakeDevice();
+		const context = fakeContext();
+		const canvas = fakeCanvas();
+		const renderer = new PreviewRenderer(original.device, context, 'rgba8unorm', canvas, true);
+		renderer.setPreviewSize(64, 64);
+
+		const adopted = await renderer.rebuildOnExternalDevice(external.device);
+		expect(adopted.gpuDevice).toBe(external.device);
+		expect(adopted.usesF16).toBe(false);
+		expect(context.unconfigureMock).toHaveBeenCalledTimes(1);
+		expect(context.configureMock).toHaveBeenCalledTimes(2);
+		expect(context.configureMock).toHaveBeenLastCalledWith({
+			device: external.device,
+			format: 'rgba8unorm',
+			alphaMode: 'premultiplied'
+		});
+		expect(original.destroy).toHaveBeenCalledTimes(1);
+		expect(external.destroy).not.toHaveBeenCalled();
+
+		adopted.destroy();
+		expect(context.unconfigureMock).toHaveBeenCalledTimes(2);
+		expect(external.destroy).not.toHaveBeenCalled();
 	});
 });
 

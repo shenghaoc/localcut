@@ -5,10 +5,9 @@
  * ONNX pair on the Phase-105 ORT foundation (`src/engine/ml/ort/`). ORT bootstraps
  * and owns the `GPUDevice` (`deviceOwner: 'ort-webgpu'`; ORT ignores an injected
  * device — microsoft/onnxruntime#26107); both sessions and the engine's own
- * preprocess passes run on it (`handle.device`). The renderer will adopt that
- * device for the compositor's beauty-warp pass once compositor single-device
- * adoption lands (tracked follow-up); until then the worker does not composite
- * this engine's output (see `compositesOnRendererDevice`). It runs a
+ * preprocess passes run on it (`handle.device`). The worker adopts the renderer
+ * to that device before the compositor's beauty-warp pass can use the solved
+ * landmarks. It runs a
  * cadence-gated per-frame solve:
  *
  *   VideoFrame → importExternalTexture → beauty-preprocess WGSL (ROI resize/
@@ -116,6 +115,7 @@ export interface BeautyEngineOptions {
 	manifestUrl?: string;
 	onStatus?: (status: BeautyEngineStatus, error?: string) => void;
 	onProgress?: (progress: BeautyLoadProgress) => void;
+	onDeviceReady?: (device: GPUDevice) => Promise<void>;
 	/** Timeline fps used to derive the solve cadence (defaults to 30). */
 	projectFps?: number;
 	/** Override the GPU/ORT inference path (tests inject synthetic landmarks). */
@@ -169,12 +169,12 @@ function ortManifestForAsset(
 
 export class BeautyEngine {
 	/** ORT-owned device, set once the sessions are created in {@link loadModels};
-	 *  the engine's own preprocess passes run on it; the renderer will adopt it once
-	 *  compositor single-device adoption lands (tracked follow-up). */
+	 *  the renderer adopts it before the model is marked loaded. */
 	private device: GPUDevice | null = null;
 	private readonly manifestUrl: string;
 	private readonly onStatus?: (status: BeautyEngineStatus, error?: string) => void;
 	private readonly onProgress?: (progress: BeautyLoadProgress) => void;
+	private readonly onDeviceReady?: (device: GPUDevice) => Promise<void>;
 
 	private readonly projectFps: number;
 	private readonly inference: BeautyInferenceFn;
@@ -207,6 +207,7 @@ export class BeautyEngine {
 		this.manifestUrl = options.manifestUrl ?? DEFAULT_BEAUTY_MANIFEST_URL;
 		this.onStatus = options.onStatus;
 		this.onProgress = options.onProgress;
+		this.onDeviceReady = options.onDeviceReady;
 		this.projectFps = options.projectFps ?? 30;
 		this.inferenceInjected = options.inference !== undefined;
 		this.inference =
@@ -317,8 +318,16 @@ export class BeautyEngine {
 		}
 		// Both sessions ran on ORT's own device — `ort.env.webgpu.device` is a
 		// process-level singleton, so the landmark session's device is the same object;
-		// adopt it for the engine's preprocess passes. (The renderer will adopt the same
-		// device for beauty-warp compositing once compositor single-device adoption lands.)
+		// adopt it for the engine's preprocess passes. The renderer adopts the same
+		// device before the model is reported loaded, so beauty-warp compositing stays
+		// on one device.
+		try {
+			await this.onDeviceReady?.(detector.handle.device);
+		} catch (error) {
+			await detector.handle.session.release();
+			await landmarks.handle.session.release();
+			throw error;
+		}
 		this.device = detector.handle.device;
 		this.ort = await loadOrtWebGpu();
 		this.models = { detector, landmarks, manifest };

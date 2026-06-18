@@ -1,8 +1,8 @@
 # Design — ML runtime: compositor single-device adoption
 
-> **Plan only — not yet implemented.** Implementation is intended for a later
-> agent. This document records the approach, the key risk (a live device swap of a
-> large compositor), and the recommended sequencing.
+This document records the implemented approach, the key risk (a live device swap
+of a large compositor), and the sequencing required to keep WebGPU resource
+ownership valid.
 
 ## Problem
 
@@ -27,24 +27,28 @@ state on the new device. That is why PR #121 explicitly deferred it.
 
 ## Recommended approach: lazy renderer rebuild (approach A)
 
-1. **Trigger.** The worker's `ensureMatteEngine` / `ensureInterpolationEngine` /
-   `ensureBeautyEngine` already construct the engines lazily. When the first such
-   engine finishes loading and exposes ORT's device, the worker calls a new
-   `adoptOrtDevice(ortDevice)` path.
-2. **Rebuild, don't mutate.** Reconstruct `PreviewRenderer` on `ortDevice` (reuse
-   the existing constructor — it already builds every pipeline/layout/sampler), so
-   no per-field device-swap and no de-`readonly`-ing is needed. Reconfigure the
-   canvas `GPUCanvasContext` for `ortDevice`. Reset size so the next render
-   reallocates per-size resources on the new device.
-3. **Re-establish worker-held renderer state** after the swap: current
-   width/height, scope SAB wiring (`setScopeSab`), title/callout texture caches
-   (which were created on the old device — rebuild on the new one), and force a
-   re-render of the current frame.
-4. **Destroy the old device** and its resources once no in-flight work references
-   them (drain `queue.onSubmittedWorkDone()` first).
-5. **Flip the gate.** `compositesOnRendererDevice` becomes `true` for the ORT
-   backends (or the flag is retired); the worker composites their views; update the
-   one-time notice and the engine comments.
+1. **Trigger.** `MatteOnnxEngine`, `InterpolationEngine`, and `BeautyEngine`
+   expose an `onDeviceReady(handle.device)` hook during model load, before any
+   ORT-device texture/view can be returned to the compositor. The worker routes all
+   three hooks through `adoptOrtDevice(ortDevice)`.
+2. **Serialize.** Adoption is rejected while a single export or render-queue job is
+   active. Otherwise the worker pauses preview, cancels pending renders, waits for
+   the playback decode/render chain to become idle, and drains old GPU queue work.
+3. **Release old-device dependants.** Before destroying the old renderer device,
+   dispose renderer-device state that lives outside `PreviewRenderer`: title and
+   callout texture caches, and any active LiteRT matte engine created with the old
+   `renderer.gpuDevice`.
+4. **Rebuild, don't mutate.** Reconstruct `PreviewRenderer` on `ortDevice` using
+   the existing constructor, with `ownsDevice: false` so renderer teardown never
+   destroys ORT's device. Recompute `useF16` from `ortDevice.features`.
+5. **Re-establish worker-held renderer state.** Replay size, scope SAB,
+   scopes/zebra flags, LUT uploads, title/callout caches, and force a re-render of
+   the current frame.
+6. **Listen for the adopted device.** Replace the initial `initGpu()` device-loss
+   listener with a generation-guarded listener on the adopted `ortDevice.lost`.
+7. **Flip the gate.** `compositesOnRendererDevice` is `true` for the ORT matte
+   backend; the worker composites its views after adoption and retains only an
+   unexpected-contract fallback.
 
 ### Alternatives (rejected / fallback)
 
@@ -67,6 +71,13 @@ state on the new device. That is why PR #121 explicitly deferred it.
   the end-to-end proof.
 - **Mid-frame swap.** Serialize adoption against the render loop; never swap while
   a frame's command buffer is in flight.
+- **Export swap.** Do not swap while export owns the renderer; reject model
+  load/adoption with an actionable error until export or queue work finishes.
+- **ORT device ownership.** Adopted renderers are external-device renderers:
+  `destroy()` releases renderer resources but does not destroy ORT's device.
+- **Matte self-lock.** ORT matte loading must not depend on first flipping the
+  compositing flag; the model-load hook adopts the device before returning a matte
+  view.
 - **No-ML regression.** Guard so adoption only triggers for ORT-WebGPU activation;
   the no-ML / LiteRT path keeps the `initGpu()` device untouched.
 

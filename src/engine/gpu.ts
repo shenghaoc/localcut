@@ -99,6 +99,11 @@ export interface GpuInit {
 	deviceLost: Promise<DeviceLostInfo> | null;
 }
 
+export interface PreviewRendererOptions {
+	/** Whether `destroy()` owns and should destroy the supplied `GPUDevice`. */
+	ownsDevice?: boolean;
+}
+
 /**
  * One composite layer.
  *  - `'frame'` — per-frame decoded video, re-imported every frame, colour-graded.
@@ -327,6 +332,8 @@ export class PreviewRenderer {
 	private readonly context: GPUCanvasContext;
 	private readonly format: GPUTextureFormat;
 	private readonly canvas: OffscreenCanvas;
+	private readonly ownsDevice: boolean;
+	private readonly useF16: boolean;
 
 	private readonly effectChain: EffectChain;
 	private readonly presentPipeline: GPURenderPipeline;
@@ -481,12 +488,15 @@ export class PreviewRenderer {
 		context: GPUCanvasContext,
 		format: GPUTextureFormat,
 		canvas: OffscreenCanvas,
-		useF16: boolean
+		useF16: boolean,
+		options: PreviewRendererOptions = {}
 	) {
 		this.device = device;
 		this.context = context;
 		this.format = format;
 		this.canvas = canvas;
+		this.ownsDevice = options.ownsDevice ?? true;
+		this.useF16 = useF16;
 
 		this.effectChain = new EffectChain(device, useF16);
 
@@ -653,6 +663,32 @@ export class PreviewRenderer {
 	/** The compositor's device — title textures must be uploaded on it (Phase 14). */
 	get gpuDevice(): GPUDevice {
 		return this.device;
+	}
+
+	get usesF16(): boolean {
+		return this.useF16;
+	}
+
+	isUsingDevice(device: GPUDevice): boolean {
+		return this.device === device;
+	}
+
+	async rebuildOnExternalDevice(device: GPUDevice): Promise<PreviewRenderer> {
+		if (this.device === device) return this;
+		const { context, format, canvas } = this;
+		try {
+			await this.device.queue.onSubmittedWorkDone();
+		} catch {
+			// The old device may already be lost; still release all tracked resources.
+		}
+		this.destroy();
+		context.configure({
+			device,
+			format,
+			alphaMode: 'premultiplied'
+		});
+		const useF16 = device.features.has('shader-f16');
+		return new PreviewRenderer(device, context, format, canvas, useF16, { ownsDevice: false });
 	}
 
 	/** Submissions issued by the last `present()` call (always 1 when a frame rendered). */
@@ -2243,7 +2279,10 @@ export class PreviewRenderer {
 		for (const buf of this.scopeStagingBuffers) buf.destroy();
 		this.scopeStagingBuffers.length = 0;
 		this.scopeStagingFree.length = 0;
-		this.device.destroy();
+		(this.context as GPUCanvasContext & { unconfigure?: () => void }).unconfigure?.();
+		if (this.ownsDevice) {
+			this.device.destroy();
+		}
 	}
 
 	private destroyTextures(): void {
@@ -2349,11 +2388,7 @@ async function initGpuWithOptions(
 		alphaMode: 'premultiplied'
 	});
 
-	const limits: Record<string, number> = {};
-	for (const key of DIAGNOSTIC_LIMIT_KEYS) {
-		const val = (device.limits as unknown as Record<string, unknown>)[key];
-		if (typeof val === 'number') limits[key] = val;
-	}
+	const limits = gpuDeviceLimits(device);
 
 	// Surface uncaptured WebGPU errors to the worker console — silent validation
 	// failures otherwise mask scope/preview bugs (the dispatch keeps "running"
@@ -2376,6 +2411,15 @@ async function initGpuWithOptions(
 		limits,
 		deviceLost
 	};
+}
+
+export function gpuDeviceLimits(device: GPUDevice): Record<string, number> {
+	const limits: Record<string, number> = {};
+	for (const key of DIAGNOSTIC_LIMIT_KEYS) {
+		const val = (device.limits as unknown as Record<string, unknown>)[key];
+		if (typeof val === 'number') limits[key] = val;
+	}
+	return limits;
 }
 
 export async function initGpu(canvas: OffscreenCanvas): Promise<GpuInit> {

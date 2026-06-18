@@ -1,11 +1,8 @@
 # Requirements: ML runtime — compositor single-device adoption
 
-> **Plan only — not yet implemented.** This spec is the follow-up to
-> `ml-runtime-ort-device-ownership` (PR #121). It wires the **compositor to adopt
-> ORT's `GPUDevice`** so frame-coupled ORT-WebGPU output (matte, interpolation,
-> beauty) composites zero-copy on a single device. Until it lands, those engines
-> stay gated off via `MatteBackendEngine.compositesOnRendererDevice = false` (and
-> the equivalent worker guards), so nothing composites ORT output today.
+This spec is the follow-up to `ml-runtime-ort-device-ownership` (PR #121). It
+wires the **compositor to adopt ORT's `GPUDevice`** so frame-coupled ORT-WebGPU
+output (matte, interpolation, beauty) composites zero-copy on a single device.
 
 ## Background
 
@@ -50,8 +47,9 @@ contract holds end to end.
   ORT's device, the renderer adopts it. Evaluate and choose between:
   - **(A) Lazy rebuild** — tear down the current `PreviewRenderer` and reconstruct
     it on `ort.env.webgpu.device`, reconfigure the canvas context for the new
-    device, re-establish size/scope/title/callout state, and re-render the current
-    frame. (Preferred; preserves no-startup-load.)
+    device, recompute `shader-f16` support from the adopted device, re-establish
+    size/scope/zebra/LUT/title/callout state, and re-render the current frame.
+    (Preferred; preserves no-startup-load.)
   - **(B) Up-front bootstrap** — create ORT's device before constructing the
     renderer. *Rejected* unless deferred to first ORT-WebGPU activation, because it
     otherwise forces the ORT runtime to load at GPU init (violates R0.1).
@@ -59,10 +57,14 @@ contract holds end to end.
     for the accelerated path (violates the zero-copy hard gate); only admissible as
     a separate, explicitly-labelled compatibility fallback.
 - **R2.2** Idempotent + safe: adopting when already on ORT's device is a no-op;
-  adoption never runs mid-frame (serialize against the render loop).
+  adoption never runs mid-frame (serialize against the render loop) and never
+  swaps while a single export or render-queue export owns the renderer.
 - **R2.3** Reversible on teardown: if all ORT-WebGPU features are released and the
   ORT device is torn down, the renderer returns to a valid device (or the editor
   degrades gracefully) without a dead canvas.
+- **R2.4** ORT model loaders expose a device-ready hook before any texture/view
+  produced on ORT's device can be returned to the compositor, so matte-onnx does
+  not self-deadlock behind `compositesOnRendererDevice`.
 
 ## R3 — Rebuild correctness (if approach A)
 
@@ -74,6 +76,13 @@ contract holds end to end.
   with no validation errors or use-after-free against in-flight work.
 - **R3.3** Canvas `GPUCanvasContext` is reconfigured for the new device
   (`context.configure({ device: ortDevice, … })`).
+- **R3.4** Renderer teardown distinguishes owned devices from adopted ORT devices:
+  `PreviewRenderer.destroy()` must not destroy an ORT-owned device while ORT
+  sessions may still reference it.
+- **R3.5** Renderer-device resources outside `PreviewRenderer` are rebuilt or
+  disposed during adoption: title/callout texture caches, LUT uploads, scope SAB
+  wiring, scopes/zebra enable flags, and any active LiteRT matte engine created on
+  the previous renderer device.
 
 ## R4 — Worker wiring
 
@@ -89,6 +98,8 @@ contract holds end to end.
 - **R5.1** ORT device loss tears down both the ORT sessions and the adopted
   compositor coherently; surfaces a clear capability/diagnostic message; never
   leaves a hung preview.
+- **R5.2** The worker registers a fresh `device.lost` listener for the adopted ORT
+  device and generation-guards stale listeners from destroyed devices.
 
 ## R6 — Verification
 
