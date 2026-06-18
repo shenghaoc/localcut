@@ -121,7 +121,7 @@ vp run typecheck   # tsc --noEmit
 vp cache clean     # Clear the Vite+ task cache (node_modules/.vite/task-cache)
 ```
 
-The `check` quality-gate steps (`format:check`, `lint`, `typecheck`, `test`, `build`) are declared as tasks in [`vite.config.ts`](vite.config.ts) under `run`, so invoking them via `vp run …` content-caches each one. CI persists `node_modules/.vite/task-cache` across runs, so a re-push only re-executes the steps whose inputs actually changed.
+The `check` quality-gate steps are declared as cached tasks (`check:format`, `check:lint`, `check:typecheck`, `check:test`, `check:build`) in [`vite.config.ts`](vite.config.ts) under `run` — prefixed because a Vite+ task may not share a name with a package.json script — so `vp run check` content-caches each step. CI persists `node_modules/.vite/task-cache` across runs, so a re-push only re-executes the steps whose inputs actually changed.
 
 ## TypeScript 6/7 transition
 
