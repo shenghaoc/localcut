@@ -232,7 +232,13 @@ import { WsolaStretcher, WSOLA_SEARCH_RADIUS_SAMPLES, WSOLA_WINDOW_SAMPLES } fro
 import { sourceHealthReportFromError } from './media-adapters/source-health';
 import { cleanedAudioMissing, cleanedAudioSubstitute } from './audio-cleanup/cleaned-audio';
 import { ThumbnailGenerator } from './thumbnails';
-import { initCompatibilityGpu, initGpu, type CompositeLayer, type PreviewRenderer } from './gpu';
+import {
+	gpuDeviceLimits,
+	initCompatibilityGpu,
+	initGpu,
+	type CompositeLayer,
+	type PreviewRenderer
+} from './gpu';
 import { colorMetadataFromHints, type ColorMetadata } from './colour';
 import { createCanvasTitleUploader, loadTitleFonts, TitleTextureCache } from './titles';
 import type { TitleContent } from './title';
@@ -361,6 +367,11 @@ let renderer: PreviewRenderer | null = null;
 let reducedRenderer: CanvasCompatibilityRenderer | null = null;
 let previewBackend: PreviewBackend = 'none';
 let exportBackend: ExportBackend = 'none';
+let rendererDeviceLossGeneration = 0;
+let rendererAdoptionInFlight: Promise<void> | null = null;
+let currentScopeSab: SharedArrayBuffer | null = null;
+let currentScopesEnabled = false;
+let currentZebraEnabled = false;
 /** Phase 14 title raster cache; created once the GPU device is ready. */
 let titleCache: TitleTextureCache | null = null;
 /** Phase 43 callout raster cache; shares the renderer GPU device with titles. */
@@ -370,8 +381,7 @@ let calloutCache: CalloutTextureCache | null = null;
  *  LiteRT MediaPipe path; the experimental ORT/ONNX backend is selected only when
  *  the `__MATTE_ONNX_SPIKE__` build flag is on (see matte/matte-backend.ts). */
 let matteEngine: MatteBackendEngine | null = null;
-/** One-shot guard so the "matte backend can't composite on the renderer device"
- *  notice (ORT matte pending compositor device adoption) isn't reported per frame. */
+/** One-shot guard for unexpected matte backend/device contract failures. */
 let matteCompositingUnavailableWarned = false;
 
 /** Build-scoped LiteRT WASM runtime directory (shared with ASR/cleanup). */
@@ -391,10 +401,11 @@ function ensureMatteEngine(): MatteBackendEngine | null {
 			resolveMatteBackend(MATTE_ONNX_SPIKE) === 'ort-onnx'
 				? // ORT owns its WebGPU device (it ignores an injected one —
 					// microsoft/onnxruntime#26107), so no device is passed; the engine runs
-					// on ORT's device and the renderer will adopt it once compositor single-device adoption lands (tracked follow-up; see docs/ML-RUNTIME.md).
+					// on ORT's device and notifies the worker to adopt the renderer before use.
 					// LiteRT, below, *can* share the renderer's device and is still given it.
 					new MatteOnnxEngine({
-						onStatus: (status) => post({ type: 'matte-status', status })
+						onStatus: (status) => post({ type: 'matte-status', status }),
+						onDeviceReady: (device) => adoptOrtDevice(device, 'matte-onnx')
 					})
 				: new MatteEngine({
 						device: renderer.gpuDevice,
@@ -413,8 +424,9 @@ function ensureInterpolationEngine(): InterpolationEngine | null {
 	if (!renderer) return null;
 	if (!interpolationEngine) {
 		// ORT owns its WebGPU device (microsoft/onnxruntime#26107); the engine runs on
-		// ORT's device and the renderer will adopt it once compositor single-device adoption lands (tracked follow-up; see docs/ML-RUNTIME.md).
+		// ORT's device and notifies the worker to adopt the renderer before use.
 		interpolationEngine = new InterpolationEngine({
+			onDeviceReady: (device) => adoptOrtDevice(device, 'interpolation'),
 			onStatus: (status, error) => {
 				const manifest = interpolationEngine?.getModelManifest();
 				post({
@@ -438,8 +450,9 @@ function ensureBeautyEngine(): BeautyEngine | null {
 	if (!renderer) return null;
 	if (!beautyEngine) {
 		// ORT owns its WebGPU device (microsoft/onnxruntime#26107); the engine runs on
-		// ORT's device and the renderer will adopt it once compositor single-device adoption lands (tracked follow-up; see docs/ML-RUNTIME.md).
+		// ORT's device and notifies the worker to adopt the renderer before use.
 		beautyEngine = new BeautyEngine({
+			onDeviceReady: (device) => adoptOrtDevice(device, 'beauty'),
 			onStatus: (status, error) => {
 				const manifest = beautyEngine?.getModelManifest();
 				const ep = beautyEngine?.getExecutionProvider();
@@ -464,6 +477,304 @@ function ensureBeautyEngine(): BeautyEngine | null {
 		});
 	}
 	return beautyEngine;
+}
+
+function rendererDeviceFeatures(device: GPUDevice): string[] {
+	return Array.from(device.features, (feature) => String(feature));
+}
+
+function cancelRendererDeviceLossWatch(): void {
+	rendererDeviceLossGeneration += 1;
+}
+
+function watchRendererDeviceLoss(device: GPUDevice): void {
+	const generation = ++rendererDeviceLossGeneration;
+	void device.lost.then((info) => {
+		if (generation !== rendererDeviceLossGeneration || info.reason === 'destroyed') return;
+		void handleRendererDeviceLost({
+			reason: info.reason,
+			message: info.message
+		}).catch((error) => {
+			recordRecentError({
+				code: 'gpu.device_lost_teardown_failed',
+				subsystem: 'gpu',
+				severity: 'error',
+				message: errorMessage(error),
+				recoveryActionIds: ['retry-gpu-device', 'reload-app']
+			});
+			post({
+				type: 'recovery-state',
+				state: 'failed',
+				actions: []
+			});
+		});
+	});
+}
+
+async function disposeAllMlEngines(): Promise<void> {
+	const matte = matteEngine;
+	const interpolation = interpolationEngine;
+	const beauty = beautyEngine;
+	matteEngine = null;
+	interpolationEngine = null;
+	beautyEngine = null;
+	await Promise.allSettled([matte?.dispose(), interpolation?.dispose(), beauty?.dispose()]);
+}
+
+async function disposeRendererBoundMatteForAdoption(): Promise<void> {
+	if (!(matteEngine instanceof MatteEngine)) return;
+	const matte = matteEngine;
+	matteEngine = null;
+	await matte.dispose();
+}
+
+function destroyRendererTextureCaches(): void {
+	titleCache?.destroy();
+	titleCache = null;
+	calloutCache?.dispose();
+	calloutCache = null;
+}
+
+function rebuildRendererTextureCaches(): void {
+	if (!renderer) return;
+	destroyRendererTextureCaches();
+	titleCache = new TitleTextureCache(createCanvasTitleUploader(renderer.gpuDevice));
+	calloutCache = new CalloutTextureCache(renderer.gpuDevice);
+	syncTitleRasters();
+	syncCalloutRasters();
+	void loadTitleFonts().then(() => {
+		titleCache?.retain(EMPTY_CLIP_IDS);
+		syncTitleRasters();
+		syncCalloutRasters();
+		playback?.refresh();
+	});
+}
+
+function assertRendererAdoptionAllowed(): void {
+	if (exportAbort || queueJobAbort || queueRunning) {
+		throw new Error(
+			'ORT-WebGPU device adoption is blocked while export or the render queue is active. Cancel or wait for export to finish, then load the model again.'
+		);
+	}
+}
+
+async function waitForRendererAdoptionToSettle(): Promise<void> {
+	while (rendererAdoptionInFlight) {
+		await rendererAdoptionInFlight.catch(() => {});
+	}
+}
+
+async function adoptOrtDevice(ortDevice: GPUDevice, source: string): Promise<void> {
+	await waitForRendererAdoptionToSettle();
+	if (!renderer) {
+		throw new Error(`${source} requires the accelerated WebGPU renderer.`);
+	}
+	if (renderer.isUsingDevice(ortDevice)) {
+		return;
+	}
+	assertRendererAdoptionAllowed();
+
+	const run = (async () => {
+		const activeRenderer = renderer;
+		if (!activeRenderer) {
+			throw new Error(`${source} requires the accelerated WebGPU renderer.`);
+		}
+		const wasPlaying = playback?.isPlaying() ?? false;
+		await playback?.cancelAndWaitForIdle();
+		assertRendererAdoptionAllowed();
+
+		const previousSize = activeRenderer.size;
+		await disposeRendererBoundMatteForAdoption();
+		destroyRendererTextureCaches();
+		cancelRendererDeviceLossWatch();
+
+		renderer = null;
+		renderer = await activeRenderer.rebuildOnExternalDevice(ortDevice);
+		lastWebgpuFeatures = rendererDeviceFeatures(ortDevice);
+		lastWebgpuLimits = gpuDeviceLimits(ortDevice);
+		lastGpuUnavailableReason = null;
+		previewBackend = 'core-webgpu';
+		exportBackend = 'core-webgpu';
+
+		if (currentScopeSab) {
+			renderer.setScopeSab(currentScopeSab);
+		}
+		renderer.setScopesEnabled(currentScopesEnabled);
+		renderer.setZebraEnabled(currentZebraEnabled);
+		if (previousSize.width > 0 && previousSize.height > 0) {
+			renderer.setPreviewSize(previousSize.width, previousSize.height);
+		}
+		rebuildRendererTextureCaches();
+		syncTimelineLuts();
+		matteCompositingUnavailableWarned = false;
+		watchRendererDeviceLoss(ortDevice);
+		post({
+			type: 'ready',
+			webgpu: true,
+			features: lastWebgpuFeatures,
+			gpuUnavailableReason: null,
+			previewBackend,
+			exportBackend,
+			previewReady: true,
+			exportReady: true
+		});
+		ensurePreview();
+		if (wasPlaying) {
+			playback?.play();
+		}
+	})().catch((error) => {
+		const message = errorMessage(error);
+		recordRecentError({
+			code: 'ml.ort_device_adoption_failed',
+			subsystem: 'gpu',
+			severity: 'error',
+			message,
+			recoveryActionIds: ['retry-gpu-device', 'reload-app']
+		});
+		throw error;
+	});
+
+	rendererAdoptionInFlight = run;
+	try {
+		await run;
+	} finally {
+		if (rendererAdoptionInFlight === run) {
+			rendererAdoptionInFlight = null;
+		}
+	}
+}
+
+async function handleRetryGpuDevice(actionId: string): Promise<void> {
+	await waitForRendererAdoptionToSettle();
+	post({ type: 'recovery-state', state: 'recovering', actions: [] });
+	try {
+		assertRendererAdoptionAllowed();
+		if (!previewCanvas) {
+			throw new Error('GPU recovery requires an initialized preview canvas.');
+		}
+
+		playback?.pause();
+		cancelRendererDeviceLossWatch();
+		await disposeAllMlEngines();
+		destroyRendererTextureCaches();
+		renderer?.destroy();
+		renderer = null;
+		reducedRenderer?.destroy();
+		reducedRenderer = null;
+		previewBackend = 'none';
+		exportBackend = 'none';
+
+		const useCompatibilityAdapter = currentCapabilityProbe?.compatibilityAdapter === true;
+		const gpu =
+			currentCapabilityProbe?.tier === 'limited-webcodecs'
+				? {
+						renderer: null,
+						features: [],
+						limits: {},
+						unavailableReason: null
+					}
+				: currentCapabilityProbe?.tier === 'shell-only'
+					? {
+							renderer: null,
+							features: [],
+							limits: {},
+							unavailableReason: 'Preview unavailable in shell-only tier.'
+						}
+					: useCompatibilityAdapter
+						? await initCompatibilityGpu(previewCanvas)
+						: await initGpu(previewCanvas);
+
+		if (currentCapabilityProbe?.tier === 'limited-webcodecs') {
+			reducedRenderer = new CanvasCompatibilityRenderer(previewCanvas);
+			previewBackend = 'canvas2d';
+			exportBackend = 'canvas2d';
+			lastGpuUnavailableReason =
+				'Limited WebCodecs tier active; preview/export use a reduced Canvas2D worker backend.';
+		}
+
+		renderer = gpu.renderer;
+		lastWebgpuFeatures = gpu.features;
+		lastWebgpuLimits = gpu.limits;
+		if (renderer) {
+			previewBackend = useCompatibilityAdapter ? 'compat-webgpu' : 'core-webgpu';
+			exportBackend = previewBackend;
+			lastGpuUnavailableReason = null;
+			lastDeviceLost = undefined;
+			if (currentScopeSab) {
+				renderer.setScopeSab(currentScopeSab);
+			}
+			renderer.setScopesEnabled(currentScopesEnabled);
+			renderer.setZebraEnabled(currentZebraEnabled);
+			rebuildRendererTextureCaches();
+			syncTimelineLuts();
+			watchRendererDeviceLoss(renderer.gpuDevice);
+		} else if (!reducedRenderer) {
+			lastGpuUnavailableReason = gpu.unavailableReason;
+			throw new Error(gpu.unavailableReason ?? 'GPU recovery did not create a preview backend.');
+		}
+
+		post({
+			type: 'ready',
+			webgpu: renderer !== null,
+			features: lastWebgpuFeatures,
+			gpuUnavailableReason: lastGpuUnavailableReason,
+			previewBackend,
+			exportBackend,
+			previewReady: previewBackend !== 'none',
+			exportReady: exportBackend !== 'none'
+		});
+		ensurePreview();
+		post({ type: 'recovery-state', state: 'idle', actions: [] });
+	} catch (error) {
+		const message = errorMessage(error);
+		lastGpuUnavailableReason = message;
+		recordRecentError({
+			code: 'gpu.recovery_failed',
+			subsystem: 'gpu',
+			severity: 'error',
+			message,
+			recoveryActionIds: ['retry-gpu-device', 'reload-app']
+		});
+		post({
+			type: 'error',
+			message: `GPU recovery failed (${actionId}): ${message}`
+		});
+		post({ type: 'recovery-state', state: 'failed', actions: [] });
+	}
+}
+
+async function handleRendererDeviceLost(info: {
+	reason: GPUDeviceLostReason;
+	message: string;
+}): Promise<void> {
+	cancelRendererDeviceLossWatch();
+	lastDeviceLost = {
+		reason: String(info.reason),
+		message: info.message,
+		occurredAt: new Date().toISOString(),
+		recoveryAttempts: 0,
+		fallbackMode: 'limited-preview'
+	};
+	lastGpuUnavailableReason = `GPU device lost: ${info.message || info.reason}`;
+	playback?.pause();
+	await disposeAllMlEngines();
+	destroyRendererTextureCaches();
+	renderer?.destroy();
+	renderer = null;
+	previewBackend = 'none';
+	exportBackend = 'none';
+	recordRecentError({
+		code: 'gpu.device_lost',
+		subsystem: 'gpu',
+		severity: 'error',
+		message: `GPU device lost (${info.reason}): ${info.message}`,
+		recoveryActionIds: ['retry-gpu-device', 'reload-app']
+	});
+	post({
+		type: 'recovery-state',
+		state: 'recovering',
+		actions: []
+	});
 }
 
 /** Conservative default per-tile calibration until a real micro-benchmark
@@ -2344,6 +2655,10 @@ async function handleInit(
 ) {
 	currentCapabilityProbe = probeResult ?? null;
 	previewCanvas = canvas;
+	currentScopeSab = scopeSab ?? null;
+	currentScopesEnabled = false;
+	currentZebraEnabled = false;
+	cancelRendererDeviceLossWatch();
 	if (probeResult) {
 		post({ type: 'capability-probe-v2', result: probeResult });
 	}
@@ -2405,27 +2720,15 @@ async function handleInit(
 			lastGpuUnavailableReason = gpu.unavailableReason;
 		}
 
-		// Phase 21: wire scope SAB. The renderer stays off until the UI sends
-		// 'toggle-scopes' on first ScopePanel expansion — no point burning GPU
-		// time on dispatches whose results no one is reading.
-		if (scopeSab && renderer) {
-			renderer.setScopeSab(scopeSab);
-		}
 		if (renderer) {
-			titleCache = new TitleTextureCache(createCanvasTitleUploader(renderer.gpuDevice));
-			calloutCache = new CalloutTextureCache(renderer.gpuDevice);
-			syncCalloutRasters();
-			// Load bundled fonts before the first raster; resolves even when a bundle
-			// is missing (generic fallback keeps titles offline-safe). Font availability
-			// isn't part of the content hash, so titles rastered during the load race
-			// hold fallback metrics — drop those textures, re-raster with the loaded
-			// faces, and refresh the current frame.
-			void loadTitleFonts().then(() => {
-				titleCache?.retain(EMPTY_CLIP_IDS);
-				syncTitleRasters();
-				syncCalloutRasters();
-				playback?.refresh();
-			});
+			// Phase 21: wire scope SAB. The renderer stays off until the UI sends
+			// 'toggle-scopes' on first ScopePanel expansion — no point burning GPU
+			// time on dispatches whose results no one is reading.
+			if (currentScopeSab) {
+				renderer.setScopeSab(currentScopeSab);
+			}
+			rebuildRendererTextureCaches();
+			watchRendererDeviceLoss(renderer.gpuDevice);
 		}
 		if (reducedRenderer) {
 			void loadTitleFonts().then(() => playback?.refresh());
@@ -2447,45 +2750,6 @@ async function handleInit(
 				severity: 'warning',
 				message: gpu.unavailableReason,
 				recoveryActionIds: ['retry-gpu-device', 'reload-app']
-			});
-		}
-		if (gpu.deviceLost) {
-			void gpu.deviceLost.then((info) => {
-				if (info.reason === 'destroyed') return;
-				lastDeviceLost = {
-					reason: String(info.reason),
-					message: info.message,
-					occurredAt: new Date().toISOString(),
-					recoveryAttempts: 0,
-					fallbackMode: 'limited-preview'
-				};
-				lastGpuUnavailableReason = `GPU device lost: ${info.message || info.reason}`;
-				playback?.pause();
-				// Dispose the matte engine before the renderer: it holds GPU
-				// resources on the lost device, and a stale engine would otherwise
-				// survive into reinit with a dead `GPUDevice`.
-				void matteEngine?.dispose();
-				matteEngine = null;
-				void interpolationEngine?.dispose();
-				interpolationEngine = null;
-				void beautyEngine?.dispose();
-				beautyEngine = null;
-				renderer?.destroy();
-				renderer = null;
-				previewBackend = 'none';
-				exportBackend = 'none';
-				recordRecentError({
-					code: 'gpu.device_lost',
-					subsystem: 'gpu',
-					severity: 'error',
-					message: `GPU device lost (${info.reason}): ${info.message}`,
-					recoveryActionIds: ['retry-gpu-device', 'reload-app']
-				});
-				post({
-					type: 'recovery-state',
-					state: 'recovering',
-					actions: []
-				});
 			});
 		}
 	} catch (e) {
@@ -3190,44 +3454,41 @@ function makeGetLayers() {
 				const matte = layer.clip.matte;
 				if (matte?.enabled) {
 					const engine = ensureMatteEngine();
-					if (engine && !engine.compositesOnRendererDevice) {
-						// The engine's matte views are on a device the compositor can't bind
-						// (the ORT backend runs on ORT's own device — onnxruntime#26107 — and
-						// compositor device adoption is a tracked follow-up). Compositing them
-						// cross-device would be a WebGPU validation error, so degrade to the
-						// unmatted frame and report once instead of feeding a foreign view in.
-						if (!matteCompositingUnavailableWarned) {
-							matteCompositingUnavailableWarned = true;
-							recordRecentError({
-								code: 'matte.compositing_unavailable',
-								subsystem: 'matte',
-								severity: 'warning',
-								message:
-									'ORT matte runs on ORT’s own GPU device; compositing is pending compositor device adoption. Showing the clip without the matte.'
-							});
-						}
-					} else if (engine) {
-						// A matte inference failure must NEVER blank the video — degrade
-						// to the unmatted frame and report once. Keeping this catch local
-						// (not in makeGetLayers' outer try) is what preserves the frame.
-						try {
-							matteView =
-								(await engine.matteViewFor({
-									clipId: layer.clip.id,
-									modelKey: matte.modelKey,
-									frame: decoded.toVideoFrame(),
-									sourceTimeS: sourceTimestamp.adapterTimestampS,
-									frameStepS: handle.frameRate > 0 ? 1 / handle.frameRate : 1 / 30,
-									quality: 'preview'
-								})) ?? undefined;
-						} catch (error) {
-							matteView = undefined;
-							recordRecentError({
-								code: 'matte.inference_failed',
-								subsystem: 'matte',
-								severity: 'warning',
-								message: `Portrait matte inference failed; showing the clip without the matte. ${errorMessage(error)}`
-							});
+					if (engine) {
+						if (!engine.compositesOnRendererDevice) {
+							if (!matteCompositingUnavailableWarned) {
+								matteCompositingUnavailableWarned = true;
+								recordRecentError({
+									code: 'matte.compositing_unavailable',
+									subsystem: 'matte',
+									severity: 'warning',
+									message:
+										'Matte backend did not provide renderer-device views; showing the clip without the matte.'
+								});
+							}
+						} else {
+							// A matte inference failure must NEVER blank the video — degrade
+							// to the unmatted frame and report once. Keeping this catch local
+							// (not in makeGetLayers' outer try) is what preserves the frame.
+							try {
+								matteView =
+									(await engine.matteViewFor({
+										clipId: layer.clip.id,
+										modelKey: matte.modelKey,
+										frame: decoded.toVideoFrame(),
+										sourceTimeS: sourceTimestamp.adapterTimestampS,
+										frameStepS: handle.frameRate > 0 ? 1 / handle.frameRate : 1 / 30,
+										quality: 'preview'
+									})) ?? undefined;
+							} catch (error) {
+								matteView = undefined;
+								recordRecentError({
+									code: 'matte.inference_failed',
+									subsystem: 'matte',
+									severity: 'warning',
+									message: `Portrait matte inference failed; showing the clip without the matte. ${errorMessage(error)}`
+								});
+							}
 						}
 					}
 				}
@@ -7375,6 +7636,7 @@ async function handleBeatAutoCut(
 }
 
 async function handleDispose(): Promise<void> {
+	await waitForRendererAdoptionToSettle();
 	restoreOfferGeneration += 1;
 	replaySaveAbort?.abort();
 	// Abort all in-flight beat analyses
@@ -7392,16 +7654,9 @@ async function handleDispose(): Promise<void> {
 	abortQueueWork();
 	teardownMedia();
 	await handlePublishTapStop();
-	titleCache?.destroy();
-	titleCache = null;
-	calloutCache?.dispose();
-	calloutCache = null;
-	void matteEngine?.dispose();
-	matteEngine = null;
-	void interpolationEngine?.dispose();
-	interpolationEngine = null;
-	void beautyEngine?.dispose();
-	beautyEngine = null;
+	cancelRendererDeviceLossWatch();
+	destroyRendererTextureCaches();
+	await disposeAllMlEngines();
 	renderer?.destroy();
 	renderer = null;
 	reducedRenderer?.destroy();
@@ -7409,6 +7664,9 @@ async function handleDispose(): Promise<void> {
 	previewBackend = 'none';
 	exportBackend = 'none';
 	currentCapabilityProbe = null;
+	currentScopeSab = null;
+	currentScopesEnabled = false;
+	currentZebraEnabled = false;
 	clockView = null;
 	audioRing = null;
 	post({ type: 'dispose-complete' });
@@ -9173,6 +9431,7 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			break;
 		case 'toggle-scopes': {
 			const wasActive = renderer?.scopesActive ?? false;
+			currentScopesEnabled = cmd.enabled;
 			renderer?.setScopesEnabled(cmd.enabled);
 			if (cmd.enabled && renderer && !wasActive) {
 				playback?.refresh();
@@ -9180,6 +9439,7 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			break;
 		}
 		case 'toggle-zebra': {
+			currentZebraEnabled = cmd.enabled;
 			renderer?.setZebraEnabled(cmd.enabled);
 			break;
 		}
@@ -9277,25 +9537,29 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			});
 			break;
 		case 'run-recovery-action':
-			post({
-				type: 'recovery-state',
-				state: 'idle',
-				actions: [
-					{
-						actionId: cmd.actionId,
-						kind: cmd.actionId === 'reload-app' ? 'reload-app' : 'export-project-bundle',
-						label: cmd.actionId === 'reload-app' ? 'Reload app' : 'Export project bundle',
-						description:
-							'Recovery actions are surfaced by diagnostics; UI-owned actions run on the main thread.',
-						enabled: false,
-						destructive: false,
-						requiresUserGesture: true,
-						reasonDisabled:
-							'This recovery action is handled by the UI in this implementation slice.',
-						relatedErrorIds: []
-					}
-				]
-			});
+			if (cmd.actionId === 'retry-gpu-device' || cmd.actionId === 'device-lost-recovery') {
+				void handleRetryGpuDevice(cmd.actionId);
+			} else {
+				post({
+					type: 'recovery-state',
+					state: 'idle',
+					actions: [
+						{
+							actionId: cmd.actionId,
+							kind: cmd.actionId === 'reload-app' ? 'reload-app' : 'export-project-bundle',
+							label: cmd.actionId === 'reload-app' ? 'Reload app' : 'Export project bundle',
+							description:
+								'Recovery actions are surfaced by diagnostics; UI-owned actions run on the main thread.',
+							enabled: false,
+							destructive: false,
+							requiresUserGesture: true,
+							reasonDisabled:
+								'This recovery action is handled by the UI in this implementation slice.',
+							relatedErrorIds: []
+						}
+					]
+				});
+			}
 			break;
 		// Phase 46: Replay Buffer + Live Audio Chain
 		case 'replay-capture-stop':

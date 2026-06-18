@@ -16,9 +16,8 @@
  *   frame-coupled gate (a per-frame model can never resolve to WASM/CPU) and lets
  *   **ORT bootstrap and own the `GPUDevice`** — ORT ignores an injected device
  *   (microsoft/onnxruntime#26107). The engine runs its own preprocess/postprocess
- *   passes on ORT's device (`handle.device`); the renderer will adopt it to
- *   composite the synthesized frame once compositor single-device adoption lands
- *   (tracked follow-up).
+ *   passes on ORT's device (`handle.device`); the worker adopts the renderer to
+ *   that device before synthesized textures are handed to the compositor.
  * - {@link loadOrtModelAsset} fetches the ONNX bytes through the trusted-host
  *   `/_model/*` proxy, SHA-256-verifies them, and OPFS-caches by digest.
  * - The synthesis path keeps tensors on-device: `fromGpuBuffer` inputs, a
@@ -60,6 +59,7 @@ export type InterpolationEngineStatus = 'not-loaded' | 'loading' | 'loaded' | 'f
 export interface InterpolationEngineOptions {
 	manifestUrl?: string;
 	onStatus?: (status: InterpolationEngineStatus, error?: string) => void;
+	onDeviceReady?: (device: GPUDevice) => Promise<void>;
 }
 
 interface LoadedModel {
@@ -69,12 +69,12 @@ interface LoadedModel {
 }
 
 export class InterpolationEngine {
-	/** ORT-owned device, set once the session is created in {@link loadModel}; the
-	 *  engine's own WGSL passes run on it; the renderer will adopt it once
-	 *  compositor single-device adoption lands (tracked follow-up). */
+	/** ORT-owned device, set once the session is created in {@link loadModel};
+	 *  the renderer adopts it before the model is marked loaded. */
 	private device: GPUDevice | null = null;
 	private readonly manifestUrl: string;
 	private readonly onStatus?: (status: InterpolationEngineStatus, error?: string) => void;
+	private readonly onDeviceReady?: (device: GPUDevice) => Promise<void>;
 
 	private ort: OrtModule | null = null;
 	private model: LoadedModel | null = null;
@@ -97,6 +97,7 @@ export class InterpolationEngine {
 	constructor(options: InterpolationEngineOptions) {
 		this.manifestUrl = options.manifestUrl ?? DEFAULT_INTERPOLATION_MANIFEST_URL;
 		this.onStatus = options.onStatus;
+		this.onDeviceReady = options.onDeviceReady;
 	}
 
 	getStatus(): InterpolationEngineStatus {
@@ -151,8 +152,7 @@ export class InterpolationEngine {
 		// ORT bootstraps and owns the WebGPU device — it ignores an injected one
 		// (microsoft/onnxruntime#26107). The frame-coupled EP policy forbids any
 		// WASM/CPU fallback, and 'gpu-buffer' output keeps the synthesized frame
-		// on ORT's device; the renderer will adopt that device to composite it once
-		// compositor single-device adoption lands (tracked follow-up).
+		// on ORT's device; the renderer adopts that device before this model is usable.
 		const handle = await createOrtSession({
 			modelBytes,
 			manifest,
@@ -165,6 +165,12 @@ export class InterpolationEngine {
 		if (!handle.device) {
 			await handle.session.release();
 			throw new Error('ORT-WebGPU interpolation session exposed no GPUDevice.');
+		}
+		try {
+			await this.onDeviceReady?.(handle.device);
+		} catch (error) {
+			await handle.session.release();
+			throw error;
 		}
 		this.device = handle.device;
 		this.ort = ort;

@@ -100,4 +100,36 @@ describe('diagnostics probe caching', () => {
 		const snapshot = await buildWorkerDiagnosticSnapshot(workerInput());
 		expect(snapshot.capability.findings.some((f) => f.code.startsWith('publish.'))).toBe(false);
 	});
+
+	it('enables GPU retry when WebGPU is unavailable', async () => {
+		const snapshot = await buildWorkerDiagnosticSnapshot({
+			...workerInput(),
+			webgpuReady: false,
+			webgpuStatus: 'failed',
+			gpuUnavailableReason: 'No adapter'
+		});
+		const action = snapshot.recoveryActions.find((item) => item.actionId === 'retry-gpu-device');
+		expect(action?.enabled).toBe(true);
+		expect(action?.reasonDisabled).toBeUndefined();
+	});
+
+	it('enables device-lost recovery when a GPU device was lost', async () => {
+		const snapshot = await buildWorkerDiagnosticSnapshot({
+			...workerInput(),
+			webgpuReady: false,
+			webgpuStatus: 'lost',
+			lastDeviceLost: {
+				reason: 'unknown',
+				message: 'device reset',
+				occurredAt: new Date().toISOString(),
+				recoveryAttempts: 0,
+				fallbackMode: 'limited-preview'
+			}
+		});
+		const action = snapshot.recoveryActions.find(
+			(item) => item.actionId === 'device-lost-recovery'
+		);
+		expect(action?.enabled).toBe(true);
+		expect(action?.reasonDisabled).toBeUndefined();
+	});
 });

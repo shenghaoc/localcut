@@ -16,6 +16,9 @@ import { loadOrtWebGpu } from './ort-loader';
 import { createOrtSession } from './ort-session';
 import { FIXTURE_INPUT_NAME, FIXTURE_OUTPUT_NAME, makeIdentityOnnxModel } from './onnx-fixture';
 import type { OrtModelManifest } from './ort-types';
+import { DEFAULT_CLIP_EFFECTS } from '../../effects';
+import { PreviewRenderer } from '../../gpu';
+import { DEFAULT_TRANSFORM } from '../../transform';
 
 const DIMS = [1, 4] as const;
 const INPUT = new Float32Array([1, 2, 3, 4]);
@@ -77,6 +80,18 @@ async function runAppDoublePass(device: GPUDevice, input: GPUBuffer): Promise<Fl
 	return result;
 }
 
+async function makeTinyFrame(): Promise<VideoFrame> {
+	const canvas = new OffscreenCanvas(2, 2);
+	const ctx = canvas.getContext('2d');
+	if (!ctx) throw new Error('2D canvas unavailable.');
+	ctx.fillStyle = 'rgb(255, 255, 255)';
+	ctx.fillRect(0, 0, 2, 2);
+	const bitmap = canvas.transferToImageBitmap();
+	const frame = new VideoFrame(bitmap, { timestamp: 0 });
+	bitmap.close();
+	return frame;
+}
+
 describe('ORT-WebGPU device ownership spike', () => {
 	it('shares one GPUBuffer (on ORT-owned device) between an app pass and ORT', async (ctx) => {
 		// `navigator.gpu` can exist while no adapter is actually available (e.g.
@@ -128,5 +143,73 @@ describe('ORT-WebGPU device ownership spike', () => {
 		inputTensor.dispose();
 		shared.destroy();
 		void handle.session.release();
+	});
+
+	it('composites a same-device matte texture with a renderer built on ORT device', async (ctx) => {
+		if (typeof navigator === 'undefined' || !navigator.gpu || typeof VideoFrame === 'undefined') {
+			ctx.skip();
+			return;
+		}
+		const probeAdapter = await navigator.gpu.requestAdapter();
+		if (!probeAdapter) {
+			ctx.skip();
+			return;
+		}
+
+		const handle = await createOrtSession({
+			modelBytes: makeIdentityOnnxModel([...DIMS]),
+			manifest: fixtureManifest
+		});
+		const device = handle.device;
+		expect(device).toBeTruthy();
+		if (!device) {
+			ctx.skip();
+			return;
+		}
+
+		const canvas = new OffscreenCanvas(4, 4);
+		const context = canvas.getContext('webgpu');
+		if (!context) {
+			ctx.skip();
+			return;
+		}
+		const renderer = new PreviewRenderer(
+			device,
+			context,
+			navigator.gpu.getPreferredCanvasFormat(),
+			canvas,
+			device.features.has('shader-f16'),
+			{ ownsDevice: false }
+		);
+		const frame = await makeTinyFrame();
+		const matte = device.createTexture({
+			size: { width: 2, height: 2 },
+			format: 'rgba8unorm',
+			usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
+		});
+
+		device.pushErrorScope('validation');
+		try {
+			renderer.setPreviewSize(4, 4);
+			renderer.present([
+				{
+					kind: 'frame',
+					frame,
+					effects: { ...DEFAULT_CLIP_EFFECTS },
+					transform: { ...DEFAULT_TRANSFORM },
+					matteView: matte.createView(),
+					matteStrength: 1,
+					matteMode: 'remove'
+				}
+			]);
+			await device.queue.onSubmittedWorkDone();
+			const validationError = await device.popErrorScope();
+			expect(validationError).toBeNull();
+		} finally {
+			frame.close();
+			matte.destroy();
+			renderer.destroy();
+			void handle.session.release();
+		}
 	});
 });
