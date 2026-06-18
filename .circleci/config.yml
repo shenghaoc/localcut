@@ -6,17 +6,49 @@
 #   - otio-validation.yml   → otio_validation
 #   - whip-integration.yml  → whip_integration
 #
-# Each design choice traces to one of the official docs the project follows:
-#   - pnpm CI:        https://pnpm.io/continuous-integration
-#   - Playwright CI:  https://playwright.dev/docs/ci
-#   - CircleCI Docker executor:
-#                     https://circleci.com/docs/guides/execution-managed/using-docker/
-#   - CircleCI Python:
-#                     https://circleci.com/docs/guides/getting-started/language-python/
-#   - vite-plus CI:   https://viteplus.dev/guide/ci (no CircleCI support —
-#                     `vp` is invoked through `pnpm exec` since vite-plus is
-#                     a project devDependency, so the binary is on
-#                     node_modules/.bin/ after `pnpm install`).
+# Design choices trace to the official docs each tool publishes:
+#   - pnpm CI:           https://pnpm.io/continuous-integration
+#   - Playwright CI:     https://playwright.dev/docs/ci
+#   - CircleCI Docker:   https://circleci.com/docs/guides/execution-managed/using-docker/
+#   - CircleCI Python:   https://circleci.com/docs/guides/getting-started/language-python/
+#   - CircleCI optimize: https://circleci.com/docs/guides/optimize/optimizations/
+#   - vite-plus CI:      https://viteplus.dev/guide/ci  (no CircleCI support
+#                        — vp is invoked via `pnpm exec` since vite-plus is
+#                        a devDep, so its bin is on node_modules/.bin/ after
+#                        `pnpm install`).
+#
+# Optimizations applied (each grounded in one of the above):
+#   * pnpm content store is cached, keyed on lockfile — warm install is
+#     symlink creation. (pnpm CI guide)
+#   * Vite+ task cache is keyed on lockfile + commit SHA, with restore-key
+#     fallback — content-unchanged check:* steps replay from cache.
+#   * browser_tests runs in the official Playwright Docker image so the
+#     `playwright install --with-deps` step is skipped entirely. (Playwright
+#     CI guide § Docker)
+#   * whip_integration does NOT cache Playwright browsers. The Playwright
+#     CI guide explicitly recommends against it on Linux ("restore time is
+#     comparable to download time"); the apt deps from --with-deps aren't
+#     cacheable anyway.
+#   * Resource classes are sized per workload (otio_validation = small,
+#     browser_tests = medium, quality_gate / whip = large) — medium costs
+#     half the credits of large on docker executors (CircleCI pricing).
+#   * Vitest + Playwright emit JUnit XML under CI=true; store_test_results
+#     feeds CircleCI Insights → test history + flaky-test detection.
+#     (CircleCI test-data guide)
+#
+# Intentionally NOT applied (with rationale, so reviewers don't re-litigate):
+#   * Vitest sharding via CIRCLE_NODE_INDEX/parallelism on browser_tests:
+#     suite is currently 7 tests, the per-shard image-pull + pnpm-install
+#     overhead would exceed the savings. Revisit if browser-mode test
+#     count grows past ~30.
+#   * persist_to_workspace for node_modules: the three executors (Node 26
+#     docker, Playwright docker, Ubuntu machine) have different filesystem
+#     layouts/users; per-job pnpm install on a warm cache is already cheap
+#     and avoids cross-executor symlink fragility.
+#   * Dynamic config + circleci/path-filtering orb for per-directory job
+#     skipping: only 4 jobs, all relatively cheap and reasonably orthogonal
+#     — payoff is small versus the added setup-workflow complexity. Worth
+#     a second look if the job count grows.
 #
 # claude.yml stays on GitHub Actions: it triggers on GitHub-native events
 # (issue_comment, pull_request_review_comment, …) that CircleCI cannot
@@ -54,11 +86,15 @@ executors:
   # @playwright/test devDep version (1.60.0) so the bundled browsers match
   # the JS package on disk. This is what skips the `playwright install
   # --with-deps chromium` step entirely — the same step that was hanging on
-  # GitHub's Azure runners.
+  # GitHub's Azure runners. Resource class is `medium` (2 vCPU, 10 cr/min)
+  # because the suite is currently 7 browser tests with one Chromium
+  # instance — `large` (20 cr/min, see CircleCI's resource-class pricing)
+  # would double the cost with no headroom benefit. Bump to `large` if
+  # browser-mode test count or parallel `instances:` grows.
   playwright:
     docker:
       - image: mcr.microsoft.com/playwright:v1.60.0-noble
-    resource_class: large
+    resource_class: medium
     working_directory: /root/project
     environment:
       PNPM_STORE_PATH: /root/.pnpm-store
@@ -155,6 +191,11 @@ jobs:
           paths:
             - node_modules/.vite/task-cache
           key: vp-task-v1-{{ arch }}-{{ checksum "pnpm-lock.yaml" }}-{{ .Revision }}
+      - store_test_results:
+          # JUnit XML produced by Vitest under CI=true (see vitest.config.ts).
+          # Feeds CircleCI Insights → test history + flaky-test detection.
+          path: test-results
+          when: always
 
   # Mirrors browser-tests.yml. Real-Chromium Vitest browser mode. With the
   # Playwright image as base, there is no separate `playwright install`
@@ -169,6 +210,10 @@ jobs:
       - run:
           name: vp run test:browser
           command: pnpm exec vp run test:browser
+      - store_test_results:
+          # Same JUnit pipeline as quality_gate (see vitest.browser.config.ts).
+          path: test-results
+          when: always
 
   # Mirrors otio-validation.yml. CI-only Python validation of the golden
   # .otio fixtures with the reference opentimelineio package; the app
@@ -229,27 +274,14 @@ jobs:
             npm --version
       - install_pnpm_deps
       - run:
-          name: Resolve Playwright version
-          # Used by the cache keys below — Playwright's CI guide
-          # recommends keying browser caches on the binary's version.
-          command: |
-            PLAYWRIGHT_VERSION=$(pnpm exec playwright --version | awk '{print $2}')
-            echo "Playwright version: ${PLAYWRIGHT_VERSION}"
-            echo "export PLAYWRIGHT_VERSION=${PLAYWRIGHT_VERSION}" >> "$BASH_ENV"
-      - restore_cache:
-          name: Restore Playwright browsers
-          keys:
-            - playwright-v1-{{ arch }}-${PLAYWRIGHT_VERSION}
-      - run:
           name: Install Playwright Chromium (with system deps)
-          # --with-deps apt-installs browser sandbox libs the first time;
-          # cached browsers skip the download itself on warm runs.
+          # No browser cache here. Playwright's CI guide explicitly states:
+          # "Caching browser binaries is not recommended, since the amount
+          # of time it takes to restore the cache is comparable to the time
+          # it takes to download the binaries" — and on Linux the apt
+          # packages from `--with-deps` aren't cacheable anyway. The
+          # earlier playwright-v1-* cache key was removed for this reason.
           command: pnpm exec playwright install --with-deps chromium
-      - save_cache:
-          name: Save Playwright browsers
-          paths:
-            - ~/.cache/ms-playwright
-          key: playwright-v1-{{ arch }}-${PLAYWRIGHT_VERSION}
       - run:
           name: Start MediaMTX (host network, API enabled)
           # MTX_API exposes the read-only API the test polls. The
@@ -277,7 +309,13 @@ jobs:
           name: MediaMTX logs (on failure)
           command: docker logs whip-mediamtx || true
           when: on_fail
+      - store_test_results:
+          # JUnit XML from Playwright (see playwright.config.ts).
+          path: test-results
+          when: always
       - store_artifacts:
+          # Traces, screenshots, videos from Playwright trace:
+          # retain-on-failure (see playwright.config.ts).
           path: test-results
           destination: playwright-traces
 

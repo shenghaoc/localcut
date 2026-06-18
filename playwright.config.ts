@@ -15,7 +15,12 @@ export default defineConfig({
 	fullyParallel: false,
 	workers: 1,
 	retries: process.env.CI ? 1 : 0,
-	reporter: process.env.CI ? [['list'], ['github']] : 'list',
+	// JUnit XML so .circleci/config.yml's `store_test_results` can feed
+	// CircleCI Insights. The `github` annotations reporter was removed when
+	// the WHIP test moved off GitHub Actions in PR #126.
+	reporter: process.env.CI
+		? [['list'], ['junit', { outputFile: 'test-results/junit-e2e.xml' }]]
+		: 'list',
 	use: {
 		baseURL: 'http://127.0.0.1:5173',
 		...devices['Desktop Chrome'],
