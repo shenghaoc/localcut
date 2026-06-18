@@ -81,6 +81,7 @@ interface CommandAction {
 }
 
 function formatToolbarTimecode(seconds: number, fps: number | null): string {
+	if (!Number.isFinite(seconds)) return '00:00:00:00';
 	const rate = fps && Number.isFinite(fps) && fps > 0 ? Math.round(fps) : 30;
 	const totalFrames = Math.max(0, Math.round(seconds * rate));
 	const frames = totalFrames % rate;

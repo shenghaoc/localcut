@@ -7472,8 +7472,7 @@ body::-webkit-scrollbar-thumb:hover,
 	font-size: 9.5px;
 }
 
-.side-rail-tab[data-selected],
-.side-rail-tab.active {
+.side-rail-tab[data-selected] {
 	color: var(--cyan);
 	background: color-mix(in srgb, var(--panel) 86%, var(--cyan-soft));
 	border-bottom-color: var(--cyan);

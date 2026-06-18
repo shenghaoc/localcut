@@ -4650,14 +4650,7 @@ export function App() {
 									<Tabs.List class="side-rail-tab-bar" aria-label="Side panel tabs">
 										<For each={SIDE_RAIL_TABS}>
 											{(tab) => (
-												<Tabs.Trigger
-													id={`tab-${tab.id}`}
-													value={tab.id}
-													classList={{
-														'side-rail-tab': true,
-														active: activeSideRailTab() === tab.id
-													}}
-												>
+												<Tabs.Trigger id={`tab-${tab.id}`} value={tab.id} class="side-rail-tab">
 													{tab.label}
 												</Tabs.Trigger>
 											)}
