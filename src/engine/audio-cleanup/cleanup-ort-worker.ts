@@ -3,14 +3,11 @@
  *
  * A thin shell over {@link file://./cleanup-worker-core.ts}: it supplies the ORT
  * runtime + ONNX manifest validator, and the core drives the rest (download,
- * caching, the chunked job lifecycle) exactly as the LiteRT entry does. Lazily
- * spawned by `src/ui/cleanup-bridge.ts` only when the ONNX engine is selected;
+ * caching, the chunked job lifecycle). Lazily spawned by `src/ui/cleanup-bridge.ts`;
  * never imported by the app shell or the pipeline worker.
  *
- * Spawned as an **ES-module** worker (unlike the classic LiteRT entry) so that
- * `onnxruntime-web` resolves through the foundation's dynamic `import()` and
- * stays out of the startup bundle. ORT loads its own WASM from `/_ort/`, so the
- * `wasmPath` in the load command (the LiteRT runtime dir) is unused here.
+ * Spawned as an **ES-module** worker so that `onnxruntime-web` resolves through
+ * the foundation's dynamic `import()` and stays out of the startup bundle.
  */
 
 import { startCleanupWorker, type CleanupBackend } from './cleanup-worker-core';

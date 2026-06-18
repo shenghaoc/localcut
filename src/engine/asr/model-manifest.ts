@@ -1,20 +1,11 @@
 /**
- * ASR model manifest validation (Phase 29, LiteRT.js WASM Whisper). Pure,
- * unit-testable functions that validate the Whisper model manifest before any
- * fetch or graph build.
+ * Shared Whisper manifest validation helpers (Phase 29).
  *
- * The manifest declares a single TFLite model (with `encode`/`decode`
- * signatures) and a tokenizer vocabulary, each with an exact byte size and a
- * SHA-256 digest, plus the special token ids for the model's vocabulary. Bytes
- * are verified against the digest before they reach LiteRT; a mismatch is a hard
- * error and must never trigger a silent retry against another source.
+ * ONNX Whisper manifests use these pure, unit-testable validators for the
+ * byte-exact asset contract, fixed 16 kHz audio contract, special token ids, and
+ * decode-quality thresholds before any model bytes are fetched or executed.
  */
-import type {
-	AsrDecodeParams,
-	AsrModelAssetSnapshot,
-	AsrModelManifestSnapshot,
-	AsrSpecialTokens
-} from '../../protocol';
+import type { AsrDecodeParams, AsrModelAssetSnapshot, AsrSpecialTokens } from '../../protocol';
 
 export class AsrManifestError extends Error {
 	constructor(reason: string) {
@@ -37,10 +28,6 @@ function isPositiveNumber(v: unknown): v is number {
 
 function isTokenId(v: unknown): v is number {
 	return typeof v === 'number' && Number.isInteger(v) && v >= 0;
-}
-
-function isArrayOfStrings(v: unknown): v is string[] {
-	return Array.isArray(v) && v.every(isString);
 }
 
 function isObject(v: unknown): v is Record<string, unknown> {
@@ -147,15 +134,20 @@ export function validateDecodeParams(value: unknown): AsrDecodeParams | null {
 	return params;
 }
 
-/** The fixed audio contract Whisper runs on (16 kHz mono), shared by the LiteRT
- *  and ONNX manifests. */
-export type AsrAudioConfig = AsrModelManifestSnapshot['audio'];
+/** The fixed audio contract Whisper runs on: 16 kHz mono log-mel input. */
+export interface AsrAudioConfig {
+	sampleRate: 16000;
+	channels: 1;
+	hopLength: number;
+	nMel: number;
+	/** Decoder context window in seconds (Whisper = 30). */
+	chunkLengthS: number;
+}
 
 /**
- * The transcribe-time configuration the worker's decode path depends on, shared
- * by every Whisper manifest regardless of runtime (LiteRT TFLite or ONNX). Both
- * {@link AsrModelManifestSnapshot} and the ONNX manifest snapshot satisfy this
- * structurally, so transcription stays engine-agnostic.
+ * The transcribe-time configuration the worker's decode path depends on. The
+ * ORT manifest snapshot satisfies this structurally, so transcription stays
+ * decoupled from the concrete runtime implementation.
  */
 export interface AsrTranscribeConfig {
 	/** Total download size — surfaced in the loaded-model status. */
@@ -187,84 +179,4 @@ export function validateAudioConfig(value: unknown): AsrAudioConfig {
 		nMel: value['nMel'],
 		chunkLengthS: value['chunkLengthS']
 	};
-}
-
-/**
- * Validates an untrusted manifest document. Throws {@link AsrManifestError} with
- * a precise reason on the first violation. Unknown fields are tolerated so the
- * manifest can carry extra provenance without breaking older clients.
- */
-export function validateAsrManifest(value: unknown): AsrModelManifestSnapshot {
-	if (!isObject(value)) throw new AsrManifestError('manifest must be an object');
-
-	if (!isNonEmptyString(value['id'])) throw new AsrManifestError('id must be a non-empty string');
-	if (!isNonEmptyString(value['version']))
-		throw new AsrManifestError('version must be a non-empty string');
-	if (!isNonEmptyString(value['license']))
-		throw new AsrManifestError('license must be a non-empty string');
-	if (!isNonEmptyString(value['source']))
-		throw new AsrManifestError('source must be a non-empty URL string');
-
-	const model = validateAsset(value['model'], 'model');
-	const tokenizer = validateAsset(value['tokenizer'], 'tokenizer');
-
-	const declaredSize = value['sizeBytes'];
-	if (!isPositiveNumber(declaredSize))
-		throw new AsrManifestError('sizeBytes must be a positive number');
-	const assetSum = model.sizeBytes + tokenizer.sizeBytes;
-	if (declaredSize !== assetSum)
-		throw new AsrManifestError(
-			`sizeBytes (${declaredSize}) must equal the sum of asset sizes (${assetSum})`
-		);
-
-	const audio = validateAudioConfig(value['audio']);
-
-	if (!isPositiveNumber(value['maxDecodeTokens']))
-		throw new AsrManifestError('maxDecodeTokens must be a positive number');
-	if (!isPositiveNumber(value['vocabSize']))
-		throw new AsrManifestError('vocabSize must be a positive number');
-	if (!isPositiveNumber(value['encoderFramesPerSecond']))
-		throw new AsrManifestError('encoderFramesPerSecond must be a positive number');
-
-	const tokens = validateSpecialTokens(value['tokens']);
-
-	const languages = value['languages'];
-	if (!isArrayOfStrings(languages) || languages.length === 0)
-		throw new AsrManifestError('languages must be a non-empty array of strings');
-
-	const defaultLanguage = value['defaultLanguage'];
-	if (defaultLanguage !== null && !isString(defaultLanguage))
-		throw new AsrManifestError('defaultLanguage must be a string or null');
-	if (isString(defaultLanguage) && !languages.includes(defaultLanguage))
-		throw new AsrManifestError('defaultLanguage must be one of languages');
-
-	const decode = validateDecodeParams(value['decode']);
-
-	return {
-		id: value['id'],
-		version: value['version'],
-		license: value['license'],
-		source: value['source'],
-		sizeBytes: declaredSize,
-		model,
-		tokenizer,
-		audio,
-		maxDecodeTokens: value['maxDecodeTokens'] as number,
-		vocabSize: value['vocabSize'] as number,
-		encoderFramesPerSecond: value['encoderFramesPerSecond'] as number,
-		tokens,
-		languages,
-		defaultLanguage: defaultLanguage ?? null,
-		decode
-	};
-}
-
-/** Lists the manifest assets in download order with stable keys. */
-export function manifestAssets(
-	manifest: AsrModelManifestSnapshot
-): ReadonlyArray<{ key: 'model' | 'tokenizer'; asset: AsrModelAssetSnapshot }> {
-	return [
-		{ key: 'model', asset: manifest.model },
-		{ key: 'tokenizer', asset: manifest.tokenizer }
-	];
 }

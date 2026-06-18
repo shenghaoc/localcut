@@ -80,7 +80,7 @@ describe('validateOnnxCleanupManifest', () => {
 	});
 
 	it('rejects a non-onnx format', () => {
-		expect(() => validateOnnxCleanupManifest({ ...validInput(), format: 'tflite' })).toThrow(
+		expect(() => validateOnnxCleanupManifest({ ...validInput(), format: 'json' })).toThrow(
 			OnnxManifestError
 		);
 	});
@@ -169,9 +169,6 @@ describe('shipped ONNX manifest asset', () => {
 	});
 
 	it('runtime-caches the ONNX manifest so an installed PWA reloads it offline', () => {
-		// The `/models/dtln/` Workbox rule does NOT cover `/models/dtln-onnx/` (no
-		// trailing slash after `dtln`), so a dedicated rule is required or the ONNX
-		// engine cannot reload offline even with OPFS-cached weights.
 		expect(viteConfigSource).toContain('dtln-onnx-manifest');
 		expect(viteConfigSource).toMatch(/models\\?\/dtln-onnx/);
 	});

@@ -1,9 +1,9 @@
 # Interpolation model assets (Phase 37 — Frame Interpolation)
 
 Phase 37 runs RIFE-class learned frame interpolation on **ONNX Runtime Web (ORT)**, WebGPU
-execution provider, built on the Phase 105 ORT foundation (`src/engine/ml/ort/`). The model is
-an **ONNX** graph (not LiteRT `.tflite` — no permissively-licensed interpolation `.tflite` is
-published; RIFE-class models ship as ONNX/PyTorch).
+execution provider, built on the shared ORT foundation (`src/engine/ml/ort/`). The model is
+an **ONNX** graph because the permissively licensed RIFE-class candidates ship as
+ONNX/PyTorch.
 
 ## Status: not yet configured (feature hidden)
 

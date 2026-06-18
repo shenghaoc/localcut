@@ -1,5 +1,9 @@
 # Tasks: Phase 28 — Local Audio Cleanup with WebNN RNNoise
 
+> Current runtime note: PR #123 supersedes this historical WebNN/RNNoise task set
+> for the shipped path. The current Audio Cleanup runtime is ORT DTLN, documented
+> by `public/models/dtln-onnx/README.md` and the PR123 runtime-retirement spec.
+
 > Status: **Active / foundation implemented.** Probe, manifest + checksummed weights asset, the dedicated lazy cleanup worker (TypeScript RNNoise DSP port + WebNN graph), the panel, undoable cleaned-audio routing through playback/export, docs, and the test suite are implemented. Open items: an Inspector/timeline badge for cleaned clips (the panel shows applied state), a dedicated DiagnosticsPanel section (status lives in the panel + capability matrix row), and the manual browser verification matrix (T10.3–T10.5). `npm run lint` / `npm run format:check` have pre-existing failures on files this phase does not touch; all Phase 28 files pass both.
 
 ## T1 — WebNN capability probe

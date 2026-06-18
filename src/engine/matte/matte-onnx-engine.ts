@@ -1,24 +1,18 @@
 /**
- * Portrait matting engine — Phase 31, **experimental ORT/ONNX backend** (spike).
+ * Portrait matting engine — Phase 31, ORT/ONNX backend.
  *
- * A second, opt-in matte backend that evaluates replacing the deployed LiteRT
- * MediaPipe Selfie Segmentation path with an ONNX matting/segmentation model on
- * **ONNX Runtime Web (ORT-WebGPU)**, built on the Phase 105 ORT foundation
- * (`src/engine/ml/ort/`). It does **not** change the deployed default — the
- * backend is selected only when the `__MATTE_ONNX_SPIKE__` flag is on AND a real
- * ONNX model is pinned (the shipped manifest is a `template`, so by default this
- * engine reports "no model configured" and the matte path degrades to unmatted).
- * See {@link file://./matte-backend.ts} and docs/ML-RUNTIME.md.
+ * The retained matte backend runs an ONNX matting/segmentation model on **ONNX
+ * Runtime Web (ORT-WebGPU)**, built on the shared ORT foundation
+ * (`src/engine/ml/ort/`). See {@link file://./matte-backend.ts} and
+ * docs/ML-RUNTIME.md.
  *
- * Per-frame pipeline (zero-copy, no CPU pixel round-trip — same contract as the
- * LiteRT engine, on the ORT runtime):
+ * Per-frame pipeline (zero-copy, no CPU pixel round-trip):
  *
  *   VideoFrame → importExternalTexture → matte-onnx-preprocess WGSL
  *   (resize / normalize → NCHW|NHWC float32 GPUBuffer) →
  *   `ort.Tensor.fromGpuBuffer` → `session.run` (output `gpu-buffer`) →
  *   matte-resolve WGSL (raw alpha buffer → rgba8unorm texture + EMA temporal
- *   smoothing, **shared with the LiteRT engine**) → matte-apply / matte-blur
- *   in the Phase 12 compositor.
+ *   smoothing) → matte-apply / matte-blur in the Phase 12 compositor.
  *
  * Foundation pieces it reuses verbatim:
  * - {@link createOrtSession} lets ORT bootstrap and own the `GPUDevice`
@@ -31,8 +25,8 @@
  * - {@link loadOrtModelAsset} fetches the ONNX bytes through the trusted-host
  *   `/_model/*` proxy, SHA-256-verifies them, and OPFS-caches by digest.
  * - The temporal contract ({@link MATTE_TEMPORAL_SMOOTHING},
- *   {@link shouldResetMatteHistory}) and the resolve shader are shared with the
- *   LiteRT engine, so EMA smoothing and recurrent-state resets are unchanged.
+ *   {@link shouldResetMatteHistory}) and the resolve shader preserve the shipped
+ *   EMA smoothing and recurrent-state reset behaviour.
  *
  * Local-only: the ONNX model loads on demand, manifest-validated and digest-pinned;
  * frames never leave the device; no WASM/CPU full-frame fallback and no cloud.
@@ -55,11 +49,10 @@ import {
 import { MATTE_TEMPORAL_SMOOTHING, shouldResetMatteHistory } from './matte-temporal';
 import type { MatteBackendEngine, MatteFrameRequest } from './matte-backend';
 
-/** Same-origin manifest describing the experimental ONNX matte model. */
+/** Same-origin manifest describing the ONNX matte model. */
 const MATTE_ONNX_MANIFEST_URL = '/models/matte-onnx/manifest.json';
 
-/** Reuse-cache budget (matches the LiteRT engine). Correctness never depends on a
- *  hit (R3.3). */
+/** Reuse-cache budget. Correctness never depends on a hit. */
 const MATTE_CACHE_BYTES = 32 * 1024 * 1024;
 
 export interface MatteOnnxEngineOptions {
@@ -295,11 +288,10 @@ export class MatteOnnxEngine implements MatteBackendEngine {
 			this.modelStatus = 'failed';
 			// A placeholder/template (or otherwise invalid) manifest is the "no
 			// compatible model configured" state; surface it as a clear, non-alarming
-			// message rather than an error spew. The deployed LiteRT default is the
-			// real matte path; this experimental backend stays dark until pinned.
+			// message rather than an error spew.
 			const permanent = error instanceof MatteOnnxManifestError;
 			this.loadError = permanent
-				? 'No compatible ONNX matte model configured (experimental backend).'
+				? 'No compatible ONNX matte model configured.'
 				: error instanceof Error
 					? error.message
 					: String(error);
@@ -360,7 +352,7 @@ export class MatteOnnxEngine implements MatteBackendEngine {
 
 		const io = manifest.io;
 		// Map the declared input range to a linear `rgb * scale + bias` normalize
-		// (same convention as the LiteRT preprocess).
+		// Preserve the normalization convention from the manifest.
 		const [normScale, normBias] = io.inputRange === 'unit' ? [1, 0] : [2, -1];
 		const layoutFlag = io.layout === 'nchw' ? 0 : 1;
 		const inputDims =
@@ -500,7 +492,7 @@ export class MatteOnnxEngine implements MatteBackendEngine {
 		}
 
 		const session = this.sessionFor(request.clipId);
-		// Discontinuity policy (R4.2), shared with the LiteRT engine; also reset when
+		// Discontinuity policy: reset when source time jumps or
 		// the last displayed frame was a cache hit (history is stale — see touchSession),
 		// so fresh alpha never blends against pre-seek history.
 		const reset =
@@ -592,8 +584,7 @@ export class MatteOnnxEngine implements MatteBackendEngine {
 			inputTensor.dispose();
 		}
 
-		// 3. Resolve: raw alpha buffer + history → smoothed alpha texture (shared
-		// shader + temporal constant with the LiteRT engine).
+		// 3. Resolve: raw alpha buffer + history → smoothed alpha texture.
 		const alphaTexture = device.createTexture({
 			size: { width: model.width, height: model.height },
 			// rgba8unorm, not r8unorm: r8unorm is not a storage-capable format, so it

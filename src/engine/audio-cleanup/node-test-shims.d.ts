@@ -1,9 +1,8 @@
 /**
- * Minimal Node built-in declarations for the audio-cleanup asset-verification
- * test, which reads `public/models/dtln/` from disk under Vitest's node
- * environment. The project intentionally omits `@types/node` (its globals
- * collide with DOM-typed engine code), so only the exact surface the test
- * uses is declared here.
+ * Minimal Node built-in declarations for audio-cleanup tests that read model
+ * manifests from disk under Vitest's node environment. The project intentionally
+ * omits `@types/node` (its globals collide with DOM-typed engine code), so only
+ * the exact surface the tests use is declared here.
  */
 
 declare module 'node:fs/promises' {

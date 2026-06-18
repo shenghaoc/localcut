@@ -131,7 +131,7 @@ describe('validateMatteOnnxManifest', () => {
 		);
 	});
 
-	// ── EP gate: the spike runs only the WebGPU path (WebNN needs op-support proof) ──
+	// ── EP gate: the backend runs only the WebGPU path (WebNN needs op-support proof) ──
 
 	it('rejects a WebNN-pinned manifest (no WebNN tensor path yet)', () => {
 		expect(() =>
@@ -153,7 +153,7 @@ describe('validateMatteOnnxManifest', () => {
 	});
 
 	it('rejects a format other than onnx', () => {
-		expect(() => validateMatteOnnxManifest({ ...validManifest(), format: 'tflite' })).toThrow(
+		expect(() => validateMatteOnnxManifest({ ...validManifest(), format: 'json' })).toThrow(
 			/"format" must be "onnx"/
 		);
 	});
@@ -181,13 +181,13 @@ describe('validateMatteOnnxManifest', () => {
 		);
 	});
 
-	it('requires RGB (inputChannels = 3) for the spike', () => {
+	it('requires RGB (inputChannels = 3)', () => {
 		expect(() => validateMatteOnnxManifest(withIo({ inputChannels: 1 }))).toThrow(
 			/io.inputChannels must be 3/
 		);
 	});
 
-	it('requires FP32 (bytesPerElement = 4) for the spike', () => {
+	it('requires FP32 (bytesPerElement = 4)', () => {
 		expect(() => validateMatteOnnxManifest(withIo({ bytesPerElement: 2 }))).toThrow(
 			/io.bytesPerElement must be 4/
 		);
@@ -248,9 +248,21 @@ describe('shipped matte-onnx manifest', () => {
 		expect(() => JSON.parse(shippedManifestRaw)).not.toThrow();
 	});
 
-	it('is a template, so the experimental backend ships disabled', () => {
+	it('pins the shipped MODNet ONNX model and passes validation', () => {
 		const doc = JSON.parse(shippedManifestRaw) as Record<string, unknown>;
-		expect(doc.template).toBe(true);
-		expect(() => validateMatteOnnxManifest(doc)).toThrow(/placeholder template/);
+		expect(doc.template).toBeUndefined();
+		const manifest = validateMatteOnnxManifest(doc);
+		expect(manifest.id).toBe('modnet-onnx-matte');
+		expect(manifest.license).toBe('Apache-2.0');
+		expect(manifest.model.sizeBytes).toBe(25_888_640);
+		expect(manifest.model.checksum).toBe(
+			'sha256-07c308cf0fc7e6e8b2065a12ed7fc07e1de8febb7dc7839d7b7f15dd66584df9'
+		);
+		expect(manifest.executionProviders).toEqual(['webgpu']);
+		expect(manifest.tensorLocation).toBe('gpu-buffer');
+		expect(manifest.io.inputWidth).toBe(256);
+		expect(manifest.io.inputHeight).toBe(256);
+		expect(manifest.io.inputName).toBe('input');
+		expect(manifest.io.outputName).toBe('output');
 	});
 });

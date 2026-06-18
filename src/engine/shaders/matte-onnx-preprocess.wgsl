@@ -3,9 +3,9 @@
 // writes a normalized float32 tensor into a storage buffer that ORT consumes
 // directly as a GPU-buffer Tensor (`ort.Tensor.fromGpuBuffer`) — no CPU upload.
 //
-// Unlike the LiteRT preprocess (NHWC-only), ONNX matting models are commonly
-// NCHW ([1, 3, H, W], PyTorch/MODNet convention), so the output layout is
-// selectable. Normalization is parameterized as `rgb * normScale + normBias`,
+// ONNX matting models commonly use NCHW ([1, 3, H, W],
+// PyTorch/MODNet convention), so the output layout is selectable. Normalization
+// is parameterized as `rgb * normScale + normBias`,
 // derived from the manifest `io.inputRange`:
 //   signed-unit, [-1, 1]:  normScale = 2,  normBias = -1   (== (x - 0.5) / 0.5)
 //   unit,        [0, 1]:   normScale = 1,  normBias =  0

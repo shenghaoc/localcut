@@ -53,7 +53,7 @@ export const TRUSTED_MODEL_HOSTS: readonly string[] = [
 	// Hugging Face model repos + their Xet/LFS CDNs.
 	'.huggingface.co',
 	'.hf.co',
-	// Kaggle Models / Google AI Edge (LiteRT) assets are served from GCS.
+	// Kaggle Models / Google AI Edge assets are served from GCS.
 	'www.kaggle.com',
 	'storage.googleapis.com',
 	// GitHub repositories and raw content.

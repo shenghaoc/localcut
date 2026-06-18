@@ -1,23 +1,26 @@
 /**
  * DTLN **ONNX** cleanup-model manifest (ONNX Runtime Web backend).
  *
- * Sibling to {@link file://./model-manifest.ts} (the LiteRT/TFLite manifest):
- * it declares the same two-model + audio + state contract, but for the upstream
- * `model_1.onnx` / `model_2.onnx` weights and adds the ORT-specific runtime
- * policy — the pinned execution providers and the graph IO tensor names the
- * runtime feeds and reads. Audio tensors are tiny, so the shipped manifest pins
- * the `wasm` (CPU) execution provider; see {@link file://./dtln-ort-runtime.ts}.
+ * Declares the two-model + audio + state contract for the upstream `model_1.onnx`
+ * / `model_2.onnx` weights and adds the ORT-specific runtime policy: pinned
+ * execution providers and the graph IO tensor names the runtime feeds and reads.
+ * Audio tensors are tiny, so the shipped manifest pins the `wasm` execution
+ * provider; see {@link file://./dtln-ort-runtime.ts}.
  *
  * Assets are fetched via the same-origin GitHub proxy (`/_model/gh/`) and cached
- * in OPFS by the shared asset-cache module (Phase 29), exactly like the TFLite
- * weights.
+ * in OPFS by the shared asset-cache module (Phase 29).
  */
 
 import type { OrtExecutionProvider } from '../ml/ort/ort-types';
 import { DTLN_BLOCK_LEN, DTLN_BLOCK_SHIFT, DTLN_SAMPLE_RATE } from './dtln-dsp';
-import type { CleanupModelAsset } from './model-manifest';
 
 export { DTLN_BLOCK_LEN, DTLN_BLOCK_SHIFT, DTLN_SAMPLE_RATE };
+
+export interface CleanupModelAsset {
+	url: string;
+	sizeBytes: number;
+	checksum: string;
+}
 
 /** Execution providers the ONNX cleanup runtime accepts (subset of ORT's). */
 const VALID_EXECUTION_PROVIDERS: readonly OrtExecutionProvider[] = ['webgpu', 'webnn', 'wasm'];

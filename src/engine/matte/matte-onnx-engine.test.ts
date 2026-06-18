@@ -43,7 +43,7 @@ describe('MatteOnnxEngine — zero-copy hot path (source contract)', () => {
 		expect(engineSource).toContain('this.device = handle.device');
 	});
 
-	it('shares the EMA temporal contract + resolve shader with the LiteRT engine', () => {
+	it('uses the shared EMA temporal contract + resolve shader', () => {
 		expect(engineSource).toContain("from './matte-temporal'");
 		expect(engineSource).toContain('shouldResetMatteHistory');
 		expect(engineSource).toContain('MATTE_TEMPORAL_SMOOTHING');

@@ -1,47 +1,44 @@
-# Tasks — ML runtime: LiteRT/TFLite retirement
+# Tasks: ML Runtime - LiteRT/TFLite Retirement
 
-> **Plan only — not yet implemented.** All tasks unchecked; a later agent
-> implements them. Maps to `requirements.md`. Tasks are ordered by the sequencing
-> gates in `design.md` — do not start T3+ before the parity gate (T2) passes.
-
-- [ ] **T1 — (dependency) compositor device adoption (R1.1).** Confirm
-      `ml-runtime-compositor-device-adoption` has landed so the ORT matte engine's
-      output composites; this gates the matte default flip.
-- [ ] **T2 — Pin ONNX matte model + parity proof (R2).** Choose a permissive
-      MODNet-class ONNX; fill `public/models/matte-onnx/manifest.json` (real url +
-      size + SHA + io); pass the full-WebGPU op-support gate; prove quality +
-      performance parity vs the LiteRT MediaPipe Selfie default on the fixture
-      matrix; document provenance in the model README. **Gate: do not proceed
-      until parity is accepted.**
-- [ ] **T3 — Flip matte default (R3.1).** `DEFAULT_MATTE_BACKEND` → `ort-onnx`;
-      retire `__MATTE_ONNX_SPIKE__`; keep `matte-temporal.ts` + `matte-resolve.wgsl`.
-- [ ] **T4 — Delete LiteRT matte (R4.1).** Remove `matte-engine.ts`,
-      `matte-engine.concurrency.test.ts`, `matte/litert-loader.{js,d.ts}`; collapse
-      `matte-backend.ts` to the single ORT engine.
-- [ ] **T5 — Remove LiteRT ASR fallback (R3.2, R4.2).** Drop the LiteRT entries from
-      the ASR `model-catalog` + Auto Captions panel; delete `asr/litert-runtime.ts`
-      (+ test), `asr/litert-loader.{js,d.ts}`, and the LiteRT Whisper manifests;
-      keep `whisper-decode.ts` + the ORT runtime.
-- [ ] **T6 — Remove LiteRT DTLN fallback (R3.2, R4.3).** Drop the LiteRT option from
-      the Audio Cleanup panel; delete `audio-cleanup/dtln-runtime.ts` (+ test) and
-      `public/models/dtln/`; keep the ORT DTLN runtime.
-- [ ] **T7 — Drop the LiteRT dependency + assets (R4.4).** Remove `@litertjs/core`
-      from `package.json` + lockfile, `scripts/setup-litert-assets.mjs`, the
-      `setup:litert` + `postinstall` scripts, and vendored `public/litert/`.
-- [ ] **T8 — Diagnostics & types cleanup (R5).** `mlRuntime` enum → `'ort'` only;
-      `buildWorkerDiagnosticSnapshot` / `mlRuntimeSummary` report `'ort'`
-      unconditionally; remove LiteRT probes/rows; retire `compositesOnRendererDevice`
-      (only ORT remains, and the compositor adopts ORT's device).
-- [ ] **T9 — Docs (R6).** `docs/ML-RUNTIME.md` → ORT-only (keep #26107 device
-      ownership + EP policy); update Phase 29/31 + audio-cleanup specs/READMEs.
-- [ ] **T10 — Verify (R7).** Full quality gate green; manual matrix for matte
-      (ONNX) / Auto Captions (ORT) / Audio Cleanup (ORT); a fresh `pnpm install`
-      fetches no LiteRT assets; `grep -riE 'litert|tflite|@litertjs' src/ public/
-      scripts/ package.json` returns only historical spec text.
-
-## Dependencies
-
-- Builds on `ml-runtime-ort-device-ownership` (merged, PR #121).
-- **T1–T4 depend on** `ml-runtime-compositor-device-adoption` landing first.
-- T5–T6 are independent (ORT is already the default for ASR/DTLN) but are one-way
-  removals of the rollback — confirm the ORT defaults are regression-free first.
+- [x] **T1 - Confirm compositor adoption dependency.** PR #122 landed
+      `.kiro/specs/ml-runtime-compositor-device-adoption/` and the renderer now
+      adopts ORT's `GPUDevice`, so frame-coupled ORT matte output can composite.
+- [x] **T2 - Pin ONNX matte model.** `public/models/matte-onnx/manifest.json`
+      pins `onnx-community/modnet-webnn` (`onnx/model.onnx`, Apache-2.0,
+      25,888,640 bytes,
+      `sha256-07c308cf0fc7e6e8b2065a12ed7fc07e1de8febb7dc7839d7b7f15dd66584df9`)
+      with a 256x256 NCHW signed-unit input and unit alpha output contract.
+- [x] **T3 - Flip matte default to ORT.** `DEFAULT_MATTE_BACKEND` is `ort-onnx`;
+      the spike flag is gone; `matte-temporal.ts` and `matte-resolve.wgsl` stay.
+- [x] **T4 - Delete retired matte path.** Removed `src/engine/matte/matte-engine.ts`,
+      `src/engine/matte/matte-engine.concurrency.test.ts`,
+      `src/engine/matte/litert-loader.{js,d.ts}`, retired matte manifest/tests,
+      `public/models/matte/`, and `src/engine/shaders/matte-preprocess.wgsl`;
+      `matte-backend.ts` now selects the single ORT engine.
+- [x] **T5 - Remove ASR fallback.** The ASR catalog contains only ORT Whisper;
+      protocol/probe/controller/panel/diagnostic copy use `ort-whisper`; retired
+      runtime, loader, manifest tests, and `public/models/whisper/` are gone.
+- [x] **T6 - Remove DTLN fallback.** Audio Cleanup exposes only ORT DTLN;
+      `CleanupBackendKind` is `'ort'`; `cleanup-bridge.ts` always spawns
+      `cleanup-ort-worker.ts`; `App.tsx` points to
+      `models/dtln-onnx/manifest.json`; deleted the retired DTLN runtime,
+      retired worker, retired manifests/tests, `public/models/dtln/`, and
+      `scripts/verify-dtln-onnx-parity.mjs`.
+- [x] **T7 - Drop dependency/assets/build hooks.** Removed `@litertjs/core` from
+      package metadata, deleted `scripts/setup-litert-assets.mjs`, removed
+      setup/postinstall hooks, deleted `public/litert/`, removed
+      `litertRuntimeAssetsPlugin()`, and removed Workbox runtime caches for the
+      retired runtime/model paths.
+- [x] **T8 - Collapse diagnostics and UI.** `mlRuntime` is ORT-only; capability
+      and panels no longer advertise retired engine choices; matte composition
+      relies on ORT device adoption.
+- [x] **T9 - Update docs/specs.** Updated `docs/ML-RUNTIME.md`,
+      `docs/USER-GUIDE.md`, bundled user-guide markdown under
+      `src/features/docs/content/`, model READMEs, and active Phase 28/29/31/40
+      specs to describe the ORT-only runtime state.
+- [x] **T10 - Verify current-reference scope.** Grep excludes only intentional
+      historical specs and Smart Reframe's out-of-scope MediaPipe Tasks Vision
+      model path; current `src/`, `public/`, docs, package, and Vite config do not
+      retain retired runtime code paths.
+- [x] **T11 - Final validation.** Run install/lockfile update, typecheck, relevant
+      unit tests, build/check, then re-fetch PR #123 review threads after push.

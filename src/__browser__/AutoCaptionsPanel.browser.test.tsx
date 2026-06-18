@@ -21,10 +21,10 @@ function createState(overrides: Partial<AsrControllerState> = {}): AsrController
 			webgpu: 'supported',
 			webnn: 'unsupported',
 			crossOriginIsolated: true,
-			recommended: 'litert-whisper'
+			recommended: 'ort-whisper'
 		},
 		available: true,
-		recommendedEngine: 'litert-whisper',
+		recommendedEngine: 'ort-whisper',
 		model: defaultModel(),
 		models: ASR_MODEL_CATALOG,
 		modelStatus: 'not-loaded',
@@ -71,20 +71,11 @@ afterEach(() => {
 });
 
 describe('AutoCaptionsPanel progress', () => {
-	it('shows the engine + accelerator label per selected model', () => {
-		// Default is the int8 ONNX model, which runs on the ORT WASM execution provider.
+	it('shows the ONNX engine + accelerator label', () => {
 		const onnx = renderPanel({ accelerator: null });
 		expect(onnx.container.textContent).toContain('ONNX Whisper (WASM)');
-
-		// The full-precision LiteRT model reports its compiled accelerator instead.
-		const litertModel = ASR_MODEL_CATALOG.find((m) => m.id === 'whisper-base')!;
-		const litert = renderPanel({ model: litertModel, accelerator: 'webgpu' });
-		expect(litert.container.textContent).toContain('LiteRT Whisper (WEBGPU)');
-
-		// Copy names both on-device runtimes and no cloud path.
-		expect(litert.container.textContent).toContain('ONNX Runtime Web');
-		expect(litert.container.textContent).toContain('LiteRT.js');
-		expect(litert.container.textContent).toContain('No cloud API');
+		expect(onnx.container.textContent).toContain('ONNX Runtime Web');
+		expect(onnx.container.textContent).toContain('No cloud API');
 	});
 
 	it('renders a dedicated download progress block', () => {

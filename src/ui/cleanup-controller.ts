@@ -9,7 +9,7 @@
  *
  * The cleanup worker is spawned lazily on the first action. All ports are
  * injected so the whole flow — lazy spawn, windowed extraction, progress,
- * cancellation — is unit-testable without workers, LiteRT, or the DOM.
+ * cancellation — is unit-testable without workers, ORT, or the DOM.
  */
 
 import type {
@@ -28,9 +28,6 @@ export const CLEANUP_SAMPLE_RATE = 16_000;
 export const CLEANUP_BLOCK_SHIFT = 128;
 /** Mirrors the cleanup worker's per-job bound (12 min @ 16 kHz / 128-sample shift). */
 export const CLEANUP_MAX_JOB_SECONDS = 720;
-
-const CLEANUP_BUILD_SHA = typeof __BUILD_SHA__ === 'string' ? __BUILD_SHA__ : 'dev';
-export const CLEANUP_WASM_PATH = `/litert/${CLEANUP_BUILD_SHA}/`;
 
 export const CLEANUP_UNAVAILABLE_MESSAGE = 'WebAssembly is required for local audio cleanup.';
 
@@ -70,7 +67,7 @@ export interface CleanupPreviewBuffers {
 export interface CleanupControllerState {
 	probe: CleanupProbeResult | null;
 	available: boolean;
-	/** Selected DTLN inference backend (LiteRT/TFLite or ONNX Runtime). */
+	/** Selected DTLN inference backend. ORT is the only retained runtime. */
 	backend: CleanupBackendKind;
 	modelStatus: CleanupModelStatus;
 	accelerator: CleanupAccelerator | null;
@@ -103,15 +100,13 @@ export interface ApplyCleanupRequest {
 
 export interface CleanupControllerPorts {
 	spawnWorker(
-		backend: CleanupBackendKind,
 		onState: (msg: CleanupWorkerState) => void,
 		onCrash: (message: string) => void
 	): Promise<CleanupWorkerPort>;
 	requestClipAudio(request: ClipAudioRequest): void;
 	applyToClip(request: ApplyCleanupRequest): void;
-	/** Per-backend manifest URL the worker fetches when loading the model. */
-	manifestUrls: Record<CleanupBackendKind, string>;
-	wasmPath: string;
+	/** Manifest URL the worker fetches when loading the ORT DTLN model. */
+	manifestUrl: string;
 	onError?(message: string): void;
 }
 
@@ -196,36 +191,6 @@ export class CleanupController {
 
 	setCleanupProbe(probe: CleanupProbeResult | null): void {
 		this.update({ probe, available: cleanupAvailable(probe) });
-	}
-
-	/**
-	 * Switches the DTLN inference backend. Because each backend has its own
-	 * worker, runtime, and model cache, an in-flight job is cancelled and any
-	 * spawned worker is torn down so the next action re-spawns the right one and
-	 * reloads from a clean (`not-loaded`) state.
-	 */
-	setBackend(backend: CleanupBackendKind): void {
-		if (backend === this.state.backend) return;
-		this.workerGeneration += 1;
-		this.cancel();
-		if (this.worker) {
-			this.worker.send({ type: 'cleanup-dispose' });
-			this.worker.terminate();
-		}
-		this.worker = null;
-		this.workerSpawn = null;
-		this.manifestVersion = 'unknown';
-		const waiters = this.modelLoadWaiters;
-		this.modelLoadWaiters = [];
-		for (const waiter of waiters) waiter(false);
-		this.update({
-			backend,
-			modelStatus: 'not-loaded',
-			accelerator: null,
-			modelSizeBytes: null,
-			preview: null,
-			error: null
-		});
 	}
 
 	handlePipelineMessage(msg: WorkerStateMessage): void {
@@ -324,16 +289,14 @@ export class CleanupController {
 
 	private async ensureWorker(): Promise<CleanupWorkerPort> {
 		if (this.worker) return this.worker;
-		const backend = this.state.backend;
 		const generation = this.workerGeneration;
 		this.workerSpawn ??= this.ports.spawnWorker(
-			backend,
 			(msg) => {
-				if (generation !== this.workerGeneration || backend !== this.state.backend) return;
+				if (generation !== this.workerGeneration) return;
 				this.handleWorkerState(msg);
 			},
 			(message) => {
-				if (generation !== this.workerGeneration || backend !== this.state.backend) return;
+				if (generation !== this.workerGeneration) return;
 				this.update({
 					modelStatus: 'not-loaded',
 					accelerator: null,
@@ -355,7 +318,7 @@ export class CleanupController {
 		);
 		const spawn = this.workerSpawn;
 		const worker = await spawn;
-		if (generation !== this.workerGeneration || backend !== this.state.backend) {
+		if (generation !== this.workerGeneration) {
 			worker.terminate();
 			throw new CleanupCancelled();
 		}
@@ -384,8 +347,7 @@ export class CleanupController {
 			const done = new Promise<boolean>((resolve) => this.modelLoadWaiters.push(resolve));
 			worker.send({
 				type: 'cleanup-load-model',
-				manifestUrl: this.ports.manifestUrls[this.state.backend],
-				wasmPath: this.ports.wasmPath,
+				manifestUrl: this.ports.manifestUrl,
 				preferredAccelerator: preferredCleanupAccelerator(this.state.probe)
 			});
 			return await done;
@@ -555,7 +517,7 @@ export class CleanupController {
 				fileName: cleanedFileName(clip.fileName),
 				clipInPointS: clip.inPointS,
 				durationS: Math.min(clip.durationS, CLEANUP_MAX_JOB_SECONDS),
-				modelId: this.state.backend === 'ort' ? 'dtln-onnx' : 'dtln',
+				modelId: 'dtln-onnx',
 				modelVersion: this.manifestVersion
 			});
 			return true;

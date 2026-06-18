@@ -43,7 +43,7 @@ evaluated and deferred below — that is still on-device, never cloud.)
 
 ## Why this runs on the main thread (architecture-gate compliance)
 
-Phases 28/29 put inference in dedicated workers because WebNN/ORT/LiteRT graphs are JS-driven
+Repo-owned ONNX inference runs in dedicated workers because ORT graphs are JS-driven
 compute. Chrome's built-in AI is fundamentally different and is correctly hosted on the main
 thread:
 
@@ -55,10 +55,8 @@ thread:
    dedicated workers for web pages (only extension service workers), so a worker cannot host it.
 3. **Model download needs transient user activation**, which a worker does not have. The
    "Download model" affordance must be a real user gesture on the document.
-4. **No frame coupling.** These are text APIs; there is nothing to zero-copy. (ORT-Web/onnxruntime
-   allocate their own GPU instance and cannot share the pipeline's `VideoFrame`s — a reason
-   Phase 28/29 standardised on LiteRT.js; irrelevant here because Language Tools never touches
-   frames.)
+4. **No frame coupling.** These are text APIs; there is nothing to zero-copy. Language Tools never
+   touches decoded video frames or the compositor's GPU device.
 
 The only worker hop is the existing, authoritative caption-track creation command, so the timeline
 stays worker-owned.
@@ -219,7 +217,7 @@ chosen track transcript = track.segments.map(s => s.text.trim()).filter(Boolean)
 - The approximate size is shown **before** any download (R5.2); live percentage comes from the
   `downloadprogress` monitor event.
 - We do **not** fetch or cache these; therefore the OPFS model-cache + digest-pinning rules that
-  govern the Phase 28/29 LiteRT.js runtime **do not apply** to Phase 40, and there is nothing for
+  govern app-owned ORT model assets **do not apply** to Phase 40, and there is nothing for
   the PWA bundle-cache to pin. This is the honest distinction between "Chrome-owned models" and
   "weights we host".
 - The repository now has an ORT/ONNX ML platform for app-owned model assets. Phase 40
@@ -252,25 +250,17 @@ commitCaptionMutation(...)` for undoable insertion, with the same empty-result g
 asserts segment count and per-segment `start`/`duration` were not altered (defence-in-depth on the
 timing invariant). No new dependency on ASR semantics is introduced.
 
-## Deferred: cross-browser path on the LiteRT.js runtime (cost/benefit)
+## Deferred: cross-browser app-owned text models (cost/benefit)
 
-Phase 29's Auto Captions already run on-device in **any** browser with WebAssembly. The
-**LiteRT.js (`@litertjs/core` ^2.5.2) runtime** shared by Phase 28 (DTLN cleanup) and Phase 29
-(Whisper) compiles its TFLite models with an accelerator ladder of **experimental WebNN → WebGPU →
-WASM**, where WASM is the universal fallback that gates availability (`probeAsr` recommends
-`litert-whisper` whenever `WebAssembly` exists). Models are SHA-256-verified and OPFS-cached behind
-a versioned manifest/catalog (`asr/asset-cache.ts`, `asr/model-manifest.ts`, `asr/model-catalog.ts`);
-the WASM runtime is self-hosted same-origin under `public/litert/<sha>/` via `pnpm setup:litert`
-(with a `/_model/gh/` proxy for upstream weights) and is reached through an untyped `litert-loader`
-boundary so its global type augmentation never enters the TS program. The project standardised on
-LiteRT.js rather than transformers.js/ORT-Web — ORT-Web allocates its own GPU instance and cannot
-share the pipeline's device/frames (`microsoft/onnxruntime#26107` / `#25324`); for these text-only
-models that coupling is moot, but LiteRT.js is the house runtime.
+Phase 29's Auto Captions already run on-device in **any** browser with WebAssembly through
+ORT-WASM. Only the **translation + drafting** layer is Chrome-only. A future cross-browser
+implementation would need app-owned MT/LLM models on ORT-WASM/WebGPU or a separately approved
+runtime, with the same explicit-load, size/SHA verification, OPFS cache, and no-cloud rules used
+by other app-owned model assets.
 
 The consequence: the **transcript that feeds the Draft panel is already cross-browser** (Phase 29
-produces it everywhere via WASM). Only the **translation + drafting** layer is Chrome-only. So the
-open question is narrow — give Firefox/Safari/older-Chromium users that layer too by running text
-MT/LLM models on the same LiteRT.js runtime?
+produces it everywhere via ORT-WASM). The open question is narrow: should Firefox/Safari/older
+Chromium users also get local translation and drafting through downloaded app-owned text models?
 
 **Cost.** Translation and a usable instruct LLM mean multi-GB downloads, materially lower quality
 than Chrome's tuned models, real maintenance for a non-Chrome minority, and licence review:
@@ -288,10 +278,9 @@ than Chrome's tuned models, real maintenance for a non-Chrome minority, and lice
 convenience feature that is explicitly optional.
 
 **Decision: defer.** Phase 40 stays Chrome-only progressive enhancement. A cross-browser path is
-recorded as a possible future phase on the existing LiteRT.js runtime, gated on (a) an
-MIT/Apache-licensed model meeting an acceptable size **and** quality bar, and (b) acceptable
-WASM-tier latency for interactive text generation. The download/quality/maintenance/licence cost
-outweighs the benefit today.
+recorded as a possible future phase on app-owned models, gated on (a) an MIT/Apache-licensed model
+meeting an acceptable size **and** quality bar, and (b) acceptable local latency for interactive
+text generation. The download/quality/maintenance/licence cost outweighs the benefit today.
 
 ## Dependencies & licensing
 

@@ -66,8 +66,8 @@ function validManifest(): Record<string, unknown> {
 describe('isOrtWhisperManifestDocument', () => {
 	it('routes only manifests tagged runtime="ort-whisper" to the ORT path', () => {
 		expect(isOrtWhisperManifestDocument(validManifest())).toBe(true);
-		expect(isOrtWhisperManifestDocument({ runtime: 'litert-whisper' })).toBe(false);
-		// A LiteRT manifest (no runtime field) is not claimed by the ORT path.
+		expect(isOrtWhisperManifestDocument({ runtime: 'legacy-whisper' })).toBe(false);
+		// A manifest without the ORT runtime field is not claimed by the ORT path.
 		expect(isOrtWhisperManifestDocument({ id: 'x', model: {} })).toBe(false);
 		expect(isOrtWhisperManifestDocument(null)).toBe(false);
 		expect(isOrtWhisperManifestDocument('ort-whisper')).toBe(false);
@@ -93,9 +93,9 @@ describe('validateOrtWhisperManifest', () => {
 	it('rejects non-objects and a missing/incorrect runtime or format', () => {
 		expect(() => validateOrtWhisperManifest(null)).toThrow(AsrManifestError);
 		expect(() =>
-			validateOrtWhisperManifest({ ...validManifest(), runtime: 'litert-whisper' })
+			validateOrtWhisperManifest({ ...validManifest(), runtime: 'legacy-whisper' })
 		).toThrow(/runtime must be "ort-whisper"/);
-		expect(() => validateOrtWhisperManifest({ ...validManifest(), format: 'tflite' })).toThrow(
+		expect(() => validateOrtWhisperManifest({ ...validManifest(), format: 'json' })).toThrow(
 			/format must be "onnx"/
 		);
 	});
@@ -245,8 +245,7 @@ for (const [name, raw] of [
 	});
 }
 
-// The ONNX assets ride the same digest-verified OPFS cache as the LiteRT ones, so
-// a corrupt cached entry must be dropped and re-fetched (never served silently).
+// Corrupt cached ONNX assets must be dropped and re-fetched, never served silently.
 describe('ONNX asset cache integrity (corruption behavior)', () => {
 	function memStore(initial: Record<string, Uint8Array> = {}): AssetStore & { puts: string[] } {
 		const map = new Map(Object.entries(initial));

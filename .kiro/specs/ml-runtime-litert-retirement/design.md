@@ -1,83 +1,71 @@
-# Design — ML runtime: LiteRT/TFLite retirement
+# Design: ML Runtime - LiteRT/TFLite Retirement
 
-> **Plan only — not yet implemented.** Records the removal scope, what stays, the
-> licensing bar, and the sequencing/gating. Implementation is for a later agent.
+PR #123 implements the runtime consolidation rather than only planning it. The
+design is deletion-heavy: once ORT backs the retained features, every fallback
+branch that can still instantiate the retired runtime is removed so the app has
+one model runtime surface to validate.
 
-## Goal
+## End State
 
-End state: **one ML runtime, ORT.** ORT already backs Auto Captions (default) and
-Audio Cleanup (default); LiteRT survives as (a) the deployed portrait-matte default
-and (b) selectable rollbacks for ASR/DTLN. This spec migrates matte to ONNX and
-then deletes everything LiteRT.
+- Portrait Matte: `MatteOnnxEngine` on ORT-WebGPU, using the Apache-2.0
+  `onnx-community/modnet-webnn` graph pinned in
+  `public/models/matte-onnx/manifest.json`.
+- Auto Captions: ORT Whisper only, using the existing ONNX manifests in
+  `public/models/whisper-onnx/`.
+- Audio Cleanup: ORT DTLN only, using `cleanup-ort-worker.ts` and
+  `public/models/dtln-onnx/manifest.json`.
+- Diagnostics: `MlRuntimeDiagnosticSummary.mlRuntime` is `'ort'`.
+- Build: no runtime-asset copy plugin, no setup/postinstall hook, and no Workbox
+  runtime caches for removed paths.
 
-## Current LiteRT footprint (inventory)
+## Removed Footprint
 
-- **Matte:** `src/engine/matte/matte-engine.ts` (LiteRT MediaPipe Selfie, the
-  deployed default), `matte-engine.concurrency.test.ts`, `matte/litert-loader.{js,d.ts}`.
-  The ORT path (`matte-onnx-engine.ts`, `matte-onnx-model.ts`,
-  `public/models/matte-onnx/`) already exists but is spike-flag + template gated.
-- **ASR:** `src/engine/asr/litert-runtime.ts` (+ test), `asr/litert-loader.{js,d.ts}`,
-  LiteRT Whisper manifests under `public/models/whisper/`. ORT runtime
-  (`whisper-ort-runtime.ts`) is the default; `whisper-decode.ts` is engine-agnostic.
-- **Audio Cleanup:** `src/engine/audio-cleanup/dtln-runtime.ts` (+ test),
-  `public/models/dtln/`. ORT runtime (`dtln-ort-runtime.ts`, `public/models/dtln-onnx/`)
-  is the default.
-- **Runtime/assets/build:** `@litertjs/core` (package.json + lockfile),
-  `scripts/setup-litert-assets.mjs`, `setup:litert` + `postinstall` scripts,
-  vendored `public/litert/` WASM.
-- **Diagnostics/UI:** `mlRuntime: 'litert'` in `src/diagnostics/types.ts`,
-  `src/engine/diagnostics.ts`, `src/ui/diagnostic-snapshot.ts`; LiteRT options in the
-  ASR `model-catalog` and the Audio Cleanup / Auto Captions panels; the
-  `compositesOnRendererDevice` flag in `matte-backend.ts`.
+- Matte: `src/engine/matte/matte-engine.ts`,
+  `src/engine/matte/matte-engine.concurrency.test.ts`,
+  `src/engine/matte/litert-loader.{js,d.ts}`,
+  `src/engine/matte/model-manifest.ts`, retired model tests,
+  `public/models/matte/`, and `src/engine/shaders/matte-preprocess.wgsl`.
+- ASR: `src/engine/asr/litert-runtime.ts`, its tests,
+  `src/engine/asr/litert-loader.{js,d.ts}`, old single-model manifest tests, and
+  `public/models/whisper/`.
+- Audio Cleanup: `src/engine/audio-cleanup/dtln-runtime.ts`, old model-manifest
+  files/tests, `src/engine/audio-cleanup/cleanup-worker.ts`,
+  `public/models/dtln/`, and `scripts/verify-dtln-onnx-parity.mjs`.
+- Build/assets: `@litertjs/core`, `scripts/setup-litert-assets.mjs`,
+  `setup:litert`, `postinstall`, `public/litert/`,
+  `litertRuntimeAssetsPlugin()`, and service-worker runtime caches for removed
+  runtime/model paths.
 
-## What stays (not LiteRT-specific)
+## Retained Boundaries
 
-- ORT engines + foundation (`src/engine/ml/ort/`), the WASM EP, `whisper-decode.ts`.
-- The shared matte temporal contract `matte-temporal.ts` and `matte-resolve.wgsl`
-  (used by the ORT engine too).
-- `face-detector.ts` / MediaPipe Tasks-Vision BlazeFace in Smart Reframe is a
-  separate `@mediapipe/tasks-vision` path, **not** LiteRT.js/TFLite — out of scope
-  here (its own ORT migration, if any, is tracked separately).
+- ORT foundation modules under `src/engine/ml/ort/`.
+- ORT-WASM as an execution provider for small non-frame-coupled work.
+- Smart Reframe's `@mediapipe/tasks-vision` BlazeFace model path. It is a
+  separate dependency and remains out of scope for this retirement.
+- Historical specs that describe the implementation history of previous PRs.
 
-## Sequencing & gates
+## Data Flow
 
-1. **(dep)** Land `ml-runtime-compositor-device-adoption` so the ORT matte engine's
-   ORT-device output can composite.
-2. **R2** Pin a real, permissive ONNX matte model; prove quality+perf parity vs the
-   LiteRT MediaPipe Selfie default on the fixture matrix.
-3. **R3.1** Flip `DEFAULT_MATTE_BACKEND` → `ort-onnx`; retire `__MATTE_ONNX_SPIKE__`.
-4. **R4.1** Delete the LiteRT matte engine + loader; collapse `matte-backend.ts`.
-5. **R3.2 + R4.2/R4.3** Remove the LiteRT ASR/DTLN selectable fallbacks + runtimes +
-   manifests (independent of step 1; gated only on accepting loss of the rollback).
-6. **R4.4** Drop `@litertjs/core`, the setup script + `postinstall`, `public/litert/`.
-7. **R5** Simplify diagnostics (`mlRuntime: 'ort'` only), retire the
-   `compositesOnRendererDevice` flag, drop LiteRT probes/rows.
-8. **R6** ORT-only docs.
+Portrait Matte now uses the same ORT-owned device adoption path as other
+frame-coupled ORT features:
 
-Steps 4–7 are deletions that must each keep the quality gate green; they can be
-separate commits/PRs if the diff is large, but all live under this spec.
+`VideoFrame` -> `importExternalTexture` -> `matte-onnx-preprocess.wgsl` ->
+`ort.Tensor.fromGpuBuffer` -> ORT `session.run` -> `matte-resolve.wgsl` ->
+Phase 12 compositor.
 
-## Licensing bar
+The renderer adopts ORT's `GPUDevice` before the model reports loaded, so the
+matte output is a renderer-device view with no CPU readback.
 
-The ONNX matte model must be permissively licensed (Apache-2.0 / MIT / BSD or
-equivalent). GPL-family weights (e.g. RVM) are rejected both by policy and by
-`validateMatteOnnxManifest` (`isCopyleftLicense`). Record digest provenance in
-`public/models/matte-onnx/README.md`.
+ASR and DTLN run on ORT-WASM because they are not frame-coupled. Their UI and
+protocol surfaces no longer expose runtime selection.
 
-## Risks
+## Review-Comment Resolution Notes
 
-- **Model supply / parity (highest).** A permissive MODNet-class ONNX that passes
-  the full-WebGPU op gate and matches MediaPipe Selfie quality may need evaluation
-  across candidates. Until R2.3 passes, **do not** flip the default or delete LiteRT
-  matte — the rollback is the safety net.
-- **Losing the ASR/DTLN rollback.** Removing the LiteRT fallbacks is a one-way door;
-  confirm the ORT defaults have shipped without regression first.
-- **Hidden LiteRT coupling.** Some UI copy and capability rows assume two runtimes;
-  grep-sweep `litert`/`tflite` to zero (outside historical spec text) as the
-  done-signal.
-
-## Touch points
-
-See the inventory above; the done-signal is `grep -riE 'litert|tflite|@litertjs'
-src/ public/ scripts/ package.json` returning only ORT-migration history in spec
-text, plus a clean `pnpm install` that fetches no LiteRT assets.
+- The matte loader path is the concrete
+  `src/engine/matte/litert-loader.{js,d.ts}`.
+- DTLN removal follows the dependency chain: ASR's shared loader goes away with
+  the ASR branch, and the DTLN worker is collapsed to ORT at the same time.
+- Cleanup backend plumbing includes `CleanupBackendKind`, `cleanup-bridge.ts`,
+  controller load commands, and `App.tsx` manifest selection.
+- Docs cover `docs/ML-RUNTIME.md`, `docs/USER-GUIDE.md`, bundled `/docs`
+  markdown, model READMEs, and impacted Phase 28/29/31/40 specs.

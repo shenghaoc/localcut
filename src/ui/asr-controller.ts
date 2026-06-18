@@ -3,11 +3,10 @@
  * Framework-free state machine between three parties:
  *
  *   pipeline worker  ──(extract-clip-audio PCM windows)──►  controller
- *   controller       ──(transcribe, transferred)──────────►  ASR worker (LiteRT / ONNX)
+ *   controller       ──(transcribe, transferred)──────────►  ASR worker (ORT)
  *   controller       ──(asr-create-caption-track)─────────►  pipeline worker
  *
- * The ASR worker owns the Whisper runtime (LiteRT.js or ONNX Runtime Web, chosen
- * per the selected model's manifest) and all inference. The controller only
+ * The ASR worker owns the ONNX Runtime Web Whisper runtime and all inference. The controller only
  * extracts 16 kHz mono PCM from the selected clip/range, streams it to the worker,
  * tracks progress, and turns the final result into a generated caption track.
  * There is no Browser SpeechRecognition path and no cloud fallback: on-device
@@ -78,15 +77,13 @@ export function planAsrWindows(durationS: number): AsrWindowPlan[] {
 	}
 	return plan;
 }
-const ASR_BUILD_SHA = typeof __BUILD_SHA__ === 'string' ? __BUILD_SHA__ : 'dev';
-export const ASR_WASM_PATH = `/litert/${ASR_BUILD_SHA}/`;
-/** Baseline accelerator; used when accelerated LiteRT backends are unavailable or fall back. */
+/** Baseline ORT execution provider for the shipped ASR models. */
 export const ASR_DEFAULT_ACCELERATOR: AsrAccelerator = 'wasm';
 
 /**
  * Prefer WebNN when enabled by this Chromium session, then WebGPU when the
- * browser exposes it; LiteRT falls back to WASM inside the worker when backend
- * compilation fails on a specific device/driver.
+ * browser exposes it. Shipped manifests currently pin WASM, but the label stays
+ * useful for future ORT EP-capable ASR manifests.
  */
 export function preferredAccelerator(probe: AsrProbeResult | null): AsrAccelerator {
 	if (probe?.webnn === 'supported') return 'webnn';
@@ -407,8 +404,7 @@ export class AsrController {
 			worker.send({
 				type: 'asr-load-model',
 				manifestUrl: this.state.model.manifestUrl,
-				accelerator: preferredAccelerator(this.state.probe),
-				wasmPath: ASR_WASM_PATH
+				accelerator: preferredAccelerator(this.state.probe)
 			});
 		} catch (error) {
 			if (this.loadPromise !== pending) return pending;
@@ -607,7 +603,7 @@ export class AsrController {
 			this.ports.createCaptionTrack({
 				segments: shiftedSegments,
 				language: finalResult.language,
-				engine: this.state.engine ?? 'litert-whisper',
+				engine: this.state.engine ?? 'ort-whisper',
 				accelerator: this.state.accelerator ?? ASR_DEFAULT_ACCELERATOR,
 				phraseLevel: finalResult.phraseLevel,
 				trackName
@@ -675,7 +671,7 @@ export class AsrController {
 }
 
 export const ASR_PRIVACY_STATEMENT =
-	'All speech recognition runs on this device (Whisper via ONNX Runtime Web or LiteRT.js). No audio leaves your browser. No cloud API.';
+	'All speech recognition runs on this device (Whisper via ONNX Runtime Web). No audio leaves your browser. No cloud API.';
 
 export interface AsrActionAvailability {
 	loadModel: { enabled: boolean; reason: string | null };

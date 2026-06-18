@@ -1,6 +1,6 @@
 /**
  * Chunked, cancellable scheduling for audio-cleanup jobs. Pure logic — no
- * LiteRT, no worker globals — so frame alignment, state carry-over, progress
+ * runtime imports, no worker globals — so frame alignment, state carry-over, progress
  * accounting, and cancellation are unit-testable with a fake runtime.
  */
 

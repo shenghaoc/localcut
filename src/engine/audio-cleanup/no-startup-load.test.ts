@@ -20,18 +20,15 @@ import probeSource from '../capability-probe-v2.ts?raw';
 
 describe('no model load at startup (module graph)', () => {
 	it('App.tsx never statically imports the cleanup workers or model modules', () => {
-		// Covers both backends: cleanup-worker (LiteRT) and cleanup-ort-worker (ORT),
-		// plus dtln-runtime / dtln-ort-runtime and the *-model-manifest validators.
-		expect(appSource).not.toMatch(/from\s+['"].*cleanup(-ort)?-worker/);
+		expect(appSource).not.toMatch(/from\s+['"].*cleanup-ort-worker/);
 		expect(appSource).not.toMatch(/dtln-runtime|dtln-ort-runtime|dtln-dsp|model-manifest/);
 	});
 
-	it('both cleanup workers are reachable only via URL constructor in cleanup-bridge', () => {
-		expect(bridgeSource).toMatch(/new\s+URL\(\s*['"]\.\.\/engine\/audio-cleanup\/cleanup-worker/);
+	it('the cleanup worker is reachable only via URL constructor in cleanup-bridge', () => {
 		expect(bridgeSource).toMatch(
 			/new\s+URL\(\s*['"]\.\.\/engine\/audio-cleanup\/cleanup-ort-worker/
 		);
-		expect(bridgeSource).not.toMatch(/^import .*cleanup(-ort)?-worker/m);
+		expect(bridgeSource).not.toMatch(/^import .*cleanup-ort-worker/m);
 	});
 
 	it('the pipeline worker imports no inference or model modules', () => {
@@ -40,7 +37,7 @@ describe('no model load at startup (module graph)', () => {
 		);
 		expect(
 			importPaths.filter((path) =>
-				/cleanup(-ort)?-worker|dtln-runtime|dtln-ort-runtime|dtln-dsp|model-manifest/i.test(path)
+				/cleanup-ort-worker|dtln-runtime|dtln-ort-runtime|dtln-dsp|model-manifest/i.test(path)
 			)
 		).toEqual([]);
 		expect(importPaths).toContain('./audio-cleanup/cleaned-audio');
@@ -51,8 +48,8 @@ describe('no model load at startup (module graph)', () => {
 	});
 
 	it('the toolbar and panel modules reference no weights URL or worker import', () => {
-		expect(toolbarSource).not.toMatch(/cleanup(-ort)?-worker|weights\.bin/);
-		expect(panelSource).not.toMatch(/cleanup(-ort)?-worker|weights\.bin|fetch\(/);
+		expect(toolbarSource).not.toMatch(/cleanup-ort-worker|weights\.bin/);
+		expect(panelSource).not.toMatch(/cleanup-ort-worker|weights\.bin|fetch\(/);
 	});
 
 	it('the controller only fetches through injected ports (no direct fetch)', () => {
@@ -70,7 +67,6 @@ describe('no model load at startup (runtime)', () => {
 			await import('../capability-probe-v2');
 			await import('../../ui/cleanup-controller');
 			await import('../../ui/cleanup-bridge');
-			await import('./model-manifest');
 			await import('./onnx-model-manifest');
 			expect(fetchSpy).not.toHaveBeenCalled();
 			expect(workerSpy).not.toHaveBeenCalled();

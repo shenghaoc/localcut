@@ -122,7 +122,7 @@ describe('validateBeautyManifest', () => {
 		expect(() => validateBeautyManifest({ ...VALID, sizeBytes: 999_999 })).toThrow('sizeBytes');
 	});
 
-	it('rejects non-ONNX assets and TFLite assumptions', () => {
+	it('rejects non-ONNX assets', () => {
 		expect(() =>
 			validateBeautyManifest({
 				...VALID,
@@ -130,8 +130,8 @@ describe('validateBeautyManifest', () => {
 					...VALID.assets,
 					detector: {
 						...detectorAsset,
-						format: 'tflite',
-						url: '/models/beauty/blaze_face_short_range.tflite'
+						format: 'json',
+						url: '/models/beauty/blaze_face_short_range.json'
 					}
 				}
 			})

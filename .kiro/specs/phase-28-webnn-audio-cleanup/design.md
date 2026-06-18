@@ -1,5 +1,9 @@
 # Design: Phase 28 — Local Audio Cleanup with WebNN RNNoise
 
+> Current runtime note: PR #123 supersedes this historical WebNN/RNNoise design
+> for the shipped path. Audio Cleanup now uses `cleanup-ort-worker.ts` with the
+> ONNX DTLN manifest under `public/models/dtln-onnx/`.
+
 > Status: **Active (foundation implemented) / Optional / Experimental.** First on-device ML feature. Local-first by construction: no cloud AI, no API keys, no accounts, no media upload. WebNN inference runs in a dedicated Audio Cleanup worker — never on the SolidJS main thread, never in the pipeline worker.
 
 ## Goal

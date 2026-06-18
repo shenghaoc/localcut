@@ -181,7 +181,7 @@ export interface CapabilityProbeResult {
 	/** Phase 42: Recorder UX probes (optional — absent when Phase 42 not compiled). */
 	captureUx?: CaptureUxProbeResult;
 	tier: CapabilityTierV2;
-	/** Phase 28 (LiteRT DTLN audio cleanup): display/feature-gate only — never
+	/** Phase 28 (ORT DTLN audio cleanup): display/feature-gate only — never
 	 *  consulted by tier derivation or any pipeline code path. */
 	cleanup?: CleanupProbeResult;
 	/** Phase 29 (ASR auto captions): display/feature-gate only — never
@@ -206,14 +206,12 @@ export interface CapabilityProbeResult {
 	programMode?: FeatureSupport;
 }
 
-// ── Phase 28: Local Audio Cleanup (LiteRT DTLN) ──
+// ── Phase 28: Local Audio Cleanup (ORT DTLN) ──
 
 export type CleanupAccelerator = 'wasm' | 'webgpu' | 'webnn';
 
-/** Which DTLN inference backend runs the cleanup: the original LiteRT/TFLite
- *  path, or the ONNX Runtime Web path. Selected in the UI; decides which worker
- *  the bridge spawns and which manifest the controller loads. */
-export type CleanupBackendKind = 'litert' | 'ort';
+/** DTLN inference backend. ORT is the only retained runtime. */
+export type CleanupBackendKind = 'ort';
 
 export interface CleanupProbeResult {
 	wasmAvailable: boolean;
@@ -246,7 +244,6 @@ export type CleanupWorkerCommand =
 	| {
 			type: 'cleanup-load-model';
 			manifestUrl: string;
-			wasmPath: string;
 			preferredAccelerator: CleanupAccelerator;
 	  }
 	| { type: 'cleanup-begin'; jobId: number; totalFrames: number }
@@ -291,33 +288,25 @@ export type CleanupWorkerState =
 	| { type: 'cleanup-cancelled'; jobId?: number }
 	| { type: 'cleanup-error'; jobId?: number; message: string };
 
-// ── Phase 29: Auto Captions (ASR) — Whisper (LiteRT.js or ONNX Runtime Web) ──
+// ── Phase 29: Auto Captions (ASR) — Whisper on ONNX Runtime Web ──
 
-/** ASR availability recommendation from the probe. Both Whisper runtimes need
- *  only WebAssembly, so the probe does not distinguish between them — the chosen
- *  engine is decided by the selected catalog model's manifest, not the probe. */
-export type AsrRecommendedEngine = 'litert-whisper' | 'none';
+/** ASR availability recommendation from the probe. */
+export type AsrRecommendedEngine = 'ort-whisper' | 'none';
 
-/** Which Whisper runtime actually produced a transcript. `litert-whisper` is a
- *  single-file TFLite graph run by LiteRT.js; `ort-whisper` is a separate
- *  encoder/decoder ONNX pair run by ONNX Runtime Web (ORT). Recorded in the
- *  generated caption track's metadata. */
-export type AsrEngine = 'litert-whisper' | 'ort-whisper';
+/** Whisper runtime that produced a transcript. Recorded in generated metadata. */
+export type AsrEngine = 'ort-whisper';
 
-/** LiteRT accelerator used to compile the Whisper graphs. `wasm` is the
- *  baseline that works without WebGPU/WebNN; `webgpu` and `webnn` are optional
- *  faster paths when the browser exposes those accelerators. */
+/** ORT execution provider label surfaced through the ASR UI. */
 export type AsrAccelerator = 'wasm' | 'webgpu' | 'webnn';
 
-/** ASR capability probe result. LiteRT.js needs only WebAssembly; WebGPU, WebNN,
- *  and cross-origin isolation are reported for information and do not gate
- *  availability. */
+/** ASR capability probe result. ORT-WASM only requires WebAssembly; WebGPU,
+ *  WebNN, and cross-origin isolation are reported for diagnostics. */
 export interface AsrProbeResult {
-	/** WebAssembly is available — the minimum LiteRT requirement. */
+	/** WebAssembly is available — the minimum ORT-WASM requirement. */
 	wasm: FeatureSupport;
-	/** WebGPU adapter available as an optional faster accelerator. */
+	/** WebGPU adapter available for future ORT EPs. */
 	webgpu: FeatureSupport;
-	/** Experimental WebNN API available as an optional NPU/system ML accelerator. */
+	/** Experimental WebNN API available for future ORT EPs. */
 	webnn: FeatureSupport;
 	/** `crossOriginIsolated === true` for SAB-capable full-performance builds. */
 	crossOriginIsolated: boolean;
@@ -347,43 +336,6 @@ export interface AsrSpecialTokens {
 	timestampBegin: number;
 	/** ISO code → language token id (e.g. `{ en: 50259, zh: 50260 }`). */
 	language: Record<string, number>;
-}
-
-/** Manifest document validated by the ASR worker before any fetch. Declares the
- *  single TFLite Whisper graph (with `encode`/`decode` signatures), the
- *  byte-level BPE tokenizer vocabulary, the fixed audio contract, the special
- *  token ids, and provenance (license/source/size/digests). */
-export interface AsrModelManifestSnapshot {
-	id: string;
-	version: string;
-	license: string;
-	source: string;
-	/** Sum of all asset sizes — the total download budget shown to the user. */
-	sizeBytes: number;
-	/** Single TFLite Whisper graph exposing `encode` and `decode` signatures. */
-	model: AsrModelAssetSnapshot;
-	/** Tokenizer vocabulary JSON (byte-level BPE token string → id). */
-	tokenizer: AsrModelAssetSnapshot;
-	audio: {
-		sampleRate: 16000;
-		channels: 1;
-		hopLength: number;
-		nMel: number;
-		/** Decoder context window in seconds (Whisper = 30). */
-		chunkLengthS: number;
-	};
-	/** Fixed decoder context length — the token buffer and causal-mask size. */
-	maxDecodeTokens: number;
-	vocabSize: number;
-	encoderFramesPerSecond: number;
-	tokens: AsrSpecialTokens;
-	languages: string[];
-	/** Language forced when the user picks "auto", or null for model detection. */
-	defaultLanguage: string | null;
-	/** Model-specific decode quality thresholds. Smaller models need more
-	 *  permissive values to avoid the silence gate and temperature fallback
-	 *  misfiring on real speech. Omitted fields use built-in defaults. */
-	decode: AsrDecodeParams | null;
 }
 
 /** Per-model decode quality parameters. All fields are optional; the decode
@@ -420,10 +372,8 @@ export type AsrWorkerCommand =
 			type: 'asr-load-model';
 			/** Same-origin URL of the model manifest JSON. */
 			manifestUrl: string;
-			/** Preferred accelerator; the worker falls back to `wasm` if needed. */
+			/** Preferred ORT execution provider label; shipped models pin WASM. */
 			accelerator: AsrAccelerator;
-			/** Directory (or .js file) the LiteRT.js WASM runtime loads from. */
-			wasmPath: string;
 	  }
 	| {
 			type: 'asr-transcribe';
@@ -645,7 +595,7 @@ export type MatteBackend = 'webgpu' | 'wasm' | 'none';
 
 export type MatteModelStatus = 'not-loaded' | 'loading' | 'loaded' | 'failed';
 
-/** Probe result for the LiteRT matte backend availability. */
+/** Probe result for the ORT matte backend availability. */
 export interface MatteProbeResult {
 	webgpu: FeatureSupport;
 	wasm: FeatureSupport;

@@ -1,11 +1,11 @@
 /**
- * Scheduling / lifecycle contracts for {@link MatteOnnxEngine} (the experimental
- * ORT backend). Like the LiteRT engine, it shares one set of GPU input/uniform
- * buffers across every clip, so inference must serialize; it also owns the
- * VideoFrame (close exactly once), defers a deleted clip's history destruction
- * until in-flight inference drains, and treats a permanently-invalid manifest as
- * terminal. These drive the promise scheduling directly — the GPU work is stubbed
- * or never reached — so the invariants hold without hardware WebGPU.
+ * Scheduling / lifecycle contracts for {@link MatteOnnxEngine}. It shares one set
+ * of GPU input/uniform buffers across every clip, so inference must serialize; it
+ * also owns the VideoFrame (close exactly once), defers a deleted clip's history
+ * destruction until in-flight inference drains, and treats a permanently-invalid
+ * manifest as terminal. These drive the promise scheduling directly — the GPU
+ * work is stubbed or never reached — so the invariants hold without hardware
+ * WebGPU.
  */
 
 import { describe, expect, it, vi } from 'vite-plus/test';

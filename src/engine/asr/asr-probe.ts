@@ -1,6 +1,6 @@
 /**
- * ASR capability probe (Phase 29, LiteRT.js Whisper). LiteRT.js needs only
- * WebAssembly, so availability is gated on `WebAssembly` support. WebGPU,
+ * ASR capability probe (Phase 29, ORT Whisper). The shipped ONNX Whisper models
+ * run on ORT-WASM, so availability is gated on `WebAssembly` support. WebGPU,
  * experimental WebNN, and cross-origin isolation are reported for information
  * only and never gate the feature.
  *
@@ -47,7 +47,7 @@ export function probeAsr(): AsrProbeResult {
 		webgpu: probeWebGpu(),
 		webnn: probeWebNN(),
 		crossOriginIsolated: globalThis.crossOriginIsolated === true,
-		recommended: wasm === 'supported' ? 'litert-whisper' : 'none'
+		recommended: wasm === 'supported' ? 'ort-whisper' : 'none'
 	};
 }
 
@@ -59,4 +59,4 @@ export const ASR_UNAVAILABLE_MESSAGE =
 	'Auto captions require WebAssembly, which is unavailable in this browser.';
 
 export const ASR_ACCURACY_NOTE =
-	'On-device Whisper — ONNX Runtime Web (WASM) for the default int8 models, or LiteRT.js (WebNN/WebGPU/WASM) for the full-precision models. The first run downloads the model once, then caches it for offline reuse.';
+	'On-device Whisper runs through ONNX Runtime Web. The shipped int8 models use ORT-WASM; the first run downloads the selected model once, then caches it for offline reuse.';

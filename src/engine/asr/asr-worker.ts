@@ -1,9 +1,9 @@
 /// <reference lib="webworker" />
 /**
- * ASR worker entry (Phase 29) — owns the LiteRT.js Whisper runtime and all
- * inference. Imports nothing from src/engine/worker.ts and is lazy-spawned via
- * dynamic import, so neither the WASM runtime nor any model asset enters the
- * app's startup module graph.
+ * ASR worker entry (Phase 29) — owns the ORT Whisper runtime and all inference.
+ * Imports nothing from src/engine/worker.ts and is lazy-spawned via dynamic
+ * import, so neither ORT nor any model asset enters the app's startup module
+ * graph.
  *
  * Transcription windows are processed through a serial promise chain so they are
  * decoded in arrival order regardless of `await` interleaving across messages.
@@ -18,7 +18,7 @@ import type {
 	CaptionSegmentSnapshot
 } from '../../protocol';
 import { probeAsr } from './asr-probe';
-import { manifestAssets, validateAsrManifest, type AsrTranscribeConfig } from './model-manifest';
+import { AsrManifestError, type AsrTranscribeConfig } from './model-manifest';
 import { createOpfsAssetStore, loadVerifiedAsset, type AssetStore } from './asset-cache';
 import { assertTrustedModelUrl } from './model-catalog';
 import { parseWhisperVocab } from './whisper-tokenizer';
@@ -33,7 +33,6 @@ import {
 	transcribeWindow,
 	type WhisperRuntime
 } from './whisper-decode';
-import { createLiteRtWhisperRuntime } from './litert-runtime';
 import {
 	isOrtWhisperManifestDocument,
 	ortWhisperManifestAssets,
@@ -42,7 +41,7 @@ import {
 import { createOrtWhisperRuntime } from './whisper-ort-runtime';
 import { appendSerialTask } from './serial-task-queue';
 
-/** A loaded Whisper runtime (LiteRT or ONNX) plus the accelerator it compiled on. */
+/** A loaded Whisper runtime plus the accelerator it compiled on. */
 type AsrRuntime = WhisperRuntime & { readonly accelerator: AsrAccelerator };
 
 interface LoadedModel {
@@ -180,47 +179,6 @@ function commitLoadedModel(params: {
 	});
 }
 
-/** Loads a LiteRT.js Whisper model (single fused TFLite graph). */
-async function loadLiteRtModel(
-	json: unknown,
-	cmd: Extract<AsrWorkerCommand, { type: 'asr-load-model' }>,
-	generation: number,
-	signal: AbortSignal,
-	store: AssetStore | null,
-	origin: string
-): Promise<void> {
-	const manifest = validateAsrManifest(json);
-	const result = await downloadVerifiedAssets(manifestAssets(manifest), {
-		generation,
-		accelerator: cmd.accelerator,
-		signal,
-		store,
-		origin,
-		totalBytes: manifest.sizeBytes
-	});
-	if (!result) return;
-
-	postCompiling(cmd.accelerator, manifest.sizeBytes);
-	const runtime = await createLiteRtWhisperRuntime({
-		wasmPath: cmd.wasmPath,
-		accelerator: cmd.accelerator,
-		modelBytes: result.bytesByKey.model!,
-		manifest
-	});
-	if (generation !== loadGeneration) {
-		runtime.dispose();
-		return;
-	}
-	const vocab = parseWhisperVocab(new TextDecoder().decode(result.bytesByKey.tokenizer!));
-	commitLoadedModel({
-		runtime,
-		vocab,
-		config: manifest,
-		engine: 'litert-whisper',
-		fromNetwork: result.fromNetwork
-	});
-}
-
 /** Loads an ONNX Whisper model (encoder + no-past decoder) on ONNX Runtime Web. */
 async function loadOrtModel(
 	json: unknown,
@@ -231,7 +189,7 @@ async function loadOrtModel(
 ): Promise<void> {
 	const manifest = validateOrtWhisperManifest(json);
 	// ORT runs on the EP pinned in the manifest (wasm for the shipped models), not
-	// the LiteRT-style accelerator the command requested.
+	// merely the UI's preferred accelerator label.
 	const accelerator: AsrAccelerator = manifest.executionProviders[0] ?? 'wasm';
 	const result = await downloadVerifiedAssets(ortWhisperManifestAssets(manifest), {
 		generation,
@@ -300,13 +258,10 @@ async function handleLoad(
 		const json: unknown = await manifestResponse.json();
 		const store = await createOpfsAssetStore();
 
-		// Route by the manifest's runtime discriminator: ONNX Whisper on ORT, else
-		// the LiteRT single-graph path.
-		if (isOrtWhisperManifestDocument(json)) {
-			await loadOrtModel(json, generation, signal, store, origin);
-		} else {
-			await loadLiteRtModel(json, cmd, generation, signal, store, origin);
+		if (!isOrtWhisperManifestDocument(json)) {
+			throw new AsrManifestError('runtime must be "ort-whisper"');
 		}
+		await loadOrtModel(json, generation, signal, store, origin);
 	} catch (error) {
 		if (generation !== loadGeneration || signal.aborted) return;
 		status = 'failed';

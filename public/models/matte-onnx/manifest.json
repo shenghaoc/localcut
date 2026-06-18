@@ -1,23 +1,22 @@
 {
-	"_comment": "TEMPLATE — NOT loadable. `template: true` makes validateMatteOnnxManifest reject this manifest so the EXPERIMENTAL ORT/ONNX matte backend stays disabled and the deployed LiteRT MediaPipe Selfie default is unaffected. Even with the __MATTE_ONNX_SPIKE__ build flag on, this template keeps the ONNX backend dark. To enable: remove `template`, set a real license-verified `model.url` on an allowlisted host (same-origin /_model/{hf,gh,gcs}/… proxy), fill `model.sizeBytes` + `model.checksum` (sha256) from the vendored ONNX file, and set the real `io` contract (input/output names, layout, inputRange, and the alpha output shape/range) for a MODNet-class ONNX model that passes the full-WebGPU operator-support gate. GPL-family weights (e.g. RVM) are rejected. See README.md and docs/ML-RUNTIME.md.",
-	"template": true,
 	"id": "modnet-onnx-matte",
-	"version": "TEMPLATE",
-	"license": "TBD",
-	"source": "https://github.com/ZHKKKe/MODNet",
+	"version": "onnx-community-modnet-webnn-6af52070",
+	"license": "Apache-2.0",
+	"source": "https://huggingface.co/onnx-community/modnet-webnn",
+	"infoUrl": "https://huggingface.co/onnx-community/modnet-webnn",
 	"format": "onnx",
 	"frameCoupled": true,
 	"executionProviders": ["webgpu"],
 	"tensorLocation": "gpu-buffer",
 	"model": {
-		"url": "/_model/REPLACE_WITH_ALLOWLISTED_HOST_PATH/model.onnx",
-		"sizeBytes": 1,
-		"checksum": "sha256-0000000000000000000000000000000000000000000000000000000000000000"
+		"url": "/_model/hf/onnx-community/modnet-webnn/resolve/main/onnx/model.onnx",
+		"sizeBytes": 25888640,
+		"checksum": "sha256-07c308cf0fc7e6e8b2065a12ed7fc07e1de8febb7dc7839d7b7f15dd66584df9"
 	},
 	"io": {
 		"layout": "nchw",
-		"inputWidth": 512,
-		"inputHeight": 512,
+		"inputWidth": 256,
+		"inputHeight": 256,
 		"inputChannels": 3,
 		"bytesPerElement": 4,
 		"inputName": "input",

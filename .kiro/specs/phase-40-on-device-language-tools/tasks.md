@@ -90,12 +90,12 @@
   browser offloads inference to its own process (no JS compute loop on main). See design
   "Why this runs on the main thread".
 - **No weights hosted.** Chrome owns the model lifecycle, so there is nothing for us to fetch,
-  cache in OPFS, or digest-pin — unlike the Phase 28/29 LiteRT.js runtime, which SHA-256-verifies
-  and OPFS-caches its TFLite weights. Surface Chrome's reported size/progress before any download.
+  cache in OPFS, or digest-pin — unlike app-owned ORT model assets, which SHA-256-verify
+  and OPFS-cache their ONNX weights. Surface Chrome's reported size/progress before any download.
 - **Prompt API may be gated.** On the public web it can be `unavailable` without an Origin-Trial
   token or user flag; the titles/hashtags/文案 tools must hide gracefully while Summarizer-based
   description may still be offered (R4.8).
 - **Cross-browser path is deferred**, not dropped — see design's cost/benefit + licence table.
-  Phase 29 already makes captions/transcripts cross-browser on the LiteRT.js (`@litertjs/core`)
-  WASM runtime, so only the translation + drafting layer is Chrome-only; porting text models onto
-  LiteRT.js would stay on-device, never cloud.
+  Phase 29 already makes captions/transcripts cross-browser on ORT-WASM, so only the translation +
+  drafting layer is Chrome-only; any future text-model path must stay on-device and follow the
+  app-owned model asset rules.

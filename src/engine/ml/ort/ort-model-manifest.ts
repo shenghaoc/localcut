@@ -1,8 +1,8 @@
 /**
  * ONNX model manifest validation for the ORT foundation.
  *
- * Same contract as the LiteRT manifests (provenance + byte-exact integrity), with
- * ORT runtime policy added: the declared format must be `onnx`, the execution
+ * ONNX manifests carry provenance + byte-exact integrity data, with ORT runtime
+ * policy added: the declared format must be `onnx`, the execution
  * providers are pinned and validated against {@link file://./ep-policy.ts}, and a
  * frame-coupled model is rejected if it would ever resolve to WASM/CPU. Validation
  * is pure and tolerant of unknown fields; it never fetches anything.

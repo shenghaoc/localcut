@@ -283,7 +283,7 @@ function cleanupRow(probe: CapabilityProbeResult): CapabilityRow {
 		support: supported ? 'supported' : 'unsupported',
 		active: false,
 		action: supported
-			? `Local Audio Cleanup (Experimental) available via LiteRT or ONNX Runtime (${cleanup?.accelerator ?? 'wasm'}).`
+			? `Local Audio Cleanup (Experimental) available via ONNX Runtime (${cleanup?.accelerator ?? 'wasm'}).`
 			: 'Audio cleanup requires WebAssembly.'
 	};
 }
@@ -291,13 +291,8 @@ function cleanupRow(probe: CapabilityProbeResult): CapabilityRow {
 /** ASR probes gate only the experimental Auto Captions feature — never the tier. */
 function asrRow(probe: CapabilityProbeResult): CapabilityRow {
 	const asr = probe.asr;
-	const accelerator =
-		asr?.webnn === 'supported' ? 'WEBNN' : asr?.webgpu === 'supported' ? 'WEBGPU' : 'WASM';
-	const engineLabel = asr
-		? asr.recommended === 'litert-whisper'
-			? `LiteRT Whisper (${accelerator})`
-			: 'unavailable'
-		: 'unknown';
+	const engineLabel =
+		asr && asr.recommended === 'ort-whisper' ? 'ONNX Whisper (WASM)' : 'unavailable';
 	const supported = asr?.recommended !== 'none';
 	return {
 		label: 'Auto Captions (ASR)',
