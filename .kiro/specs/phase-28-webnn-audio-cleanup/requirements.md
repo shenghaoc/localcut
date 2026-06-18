@@ -1,5 +1,9 @@
 # Requirements: Phase 28 — Local Audio Cleanup with WebNN RNNoise
 
+> Current runtime note: PR #123 supersedes the historical WebNN/RNNoise design
+> for the shipped Audio Cleanup path. The retained implementation is ONNX Runtime
+> DTLN on ORT-WASM, with assets under `public/models/dtln-onnx/`.
+
 > **Optional, experimental phase.** Adds local-only, on-device noise suppression for audio using WebNN and the RNNoise model. The core editor must be completely unaffected when WebNN is absent or the feature is never used.
 
 ## R0 — Hard Constraints

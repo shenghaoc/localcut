@@ -3,11 +3,6 @@
  * `model_*.onnx` graphs (STFT-domain masking + learned-transform enhancement)
  * and manages their recurrent-state tensors across frames.
  *
- * Drop-in alternative to {@link file://./dtln-runtime.ts} (LiteRT): it exposes
- * the same `runModel1` / `runModel2` / `resetState` / `destroy` surface and the
- * same `accelerator` label, so the shared worker core
- * ({@link file://./cleanup-worker-core.ts}) drives either backend unchanged.
- *
  * Unlike the frame-coupled video models, DTLN's tensors are tiny (≤ 512 floats),
  * so this runtime uses **CPU tensors** and pins the `wasm` execution provider by
  * default — there is no zero-copy GPU benefit to chase here. It still goes

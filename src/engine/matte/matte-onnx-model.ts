@@ -1,5 +1,5 @@
 /**
- * ONNX matte-model manifest (Phase 31 ORT/ONNX backend spike).
+ * ONNX matte-model manifest (Phase 31 ORT/ONNX backend).
  *
  * The base provenance + integrity + execution-provider policy is the shared
  * {@link validateOrtManifest} (`OrtModelManifest`): `format: 'onnx'`,
@@ -11,12 +11,10 @@
  *
  * Two gates beyond the shared validator:
  * - **License gate**: GPL-family weights are rejected (the deployed app is MIT;
- *   recommending copyleft weights pushes obligations onto every deployer). This
- *   mirrors the LiteRT path's runtime gate in {@link file://./matte-engine.ts},
- *   moved earlier — before any byte is fetched.
+ *   recommending copyleft weights pushes obligations onto every deployer).
  * - **Template gate**: a `template`-flagged (or otherwise unvalidatable) manifest
- *   keeps the experimental backend hidden rather than appearing loadable, exactly
- *   like the interpolation manifest (R2.4). The deployed default stays LiteRT.
+ *   reports the model as unconfigured rather than appearing loadable, matching the
+ *   interpolation manifest pattern.
  *
  * Validation is pure and tolerant of unknown fields; it never fetches anything.
  */
@@ -31,7 +29,7 @@ export type MatteOnnxLayout = 'nchw' | 'nhwc';
  * Value range of the model's alpha/mask output. `unit` is [0, 1] (a sigmoid is
  * baked into the export — the common case for MODNet/U²-Net-class matting and for
  * segmentation confidence). `signed-unit` ([-1, 1]) is declared for forward
- * compatibility but not yet runnable by the spike engine (it would need a resolve
+ * compatibility but not yet runnable by the engine (it would need a resolve
  * denormalize); {@link validateMatteOnnxManifest} rejects it with a clear message.
  */
 export type MatteOnnxOutputRange = 'unit' | 'signed-unit';
@@ -49,9 +47,9 @@ export interface MatteOnnxIoContract {
 	inputWidth: number;
 	/** Model input height in pixels. */
 	inputHeight: number;
-	/** Channels on the image input — RGB, so 3 (the only value the spike runs). */
+	/** Channels on the image input — RGB, so 3. */
 	inputChannels: number;
-	/** Bytes per element (4 = FP32; the only width the spike's f32 buffers run). */
+	/** Bytes per element (4 = FP32; the only width the f32 buffers run). */
 	bytesPerElement: number;
 	/** ONNX input name for the RGB image. */
 	inputName: string;
@@ -63,9 +61,9 @@ export interface MatteOnnxIoContract {
 	 *  way; declared so the contract is explicit and future multi-channel outputs
 	 *  are unambiguous. */
 	outputLayout: MatteOnnxLayout;
-	/** Output channels — 1 (single-channel alpha/mask) for the spike. */
+	/** Output channels — 1 (single-channel alpha/mask). */
 	outputChannels: number;
-	/** Output value range — `unit` [0,1] alpha for the spike. */
+	/** Output value range — `unit` [0,1] alpha. */
 	outputRange: MatteOnnxOutputRange;
 }
 
@@ -119,27 +117,27 @@ function validateIo(value: unknown): MatteOnnxIoContract {
 	const inputChannels = requirePositiveInt(value['inputChannels'], 'inputChannels');
 	if (inputChannels !== 3) {
 		throw new MatteOnnxManifestError(
-			`io.inputChannels must be 3 (RGB) for the ORT matte spike; got ${inputChannels}`
+			`io.inputChannels must be 3 (RGB) for the ORT matte backend; got ${inputChannels}`
 		);
 	}
 	const bytesPerElement = requirePositiveInt(value['bytesPerElement'], 'bytesPerElement');
 	if (bytesPerElement !== 4) {
 		throw new MatteOnnxManifestError(
-			`io.bytesPerElement must be 4 (FP32) for the ORT matte spike; got ${bytesPerElement}`
+			`io.bytesPerElement must be 4 (FP32) for the ORT matte backend; got ${bytesPerElement}`
 		);
 	}
 
 	const outputChannels = requirePositiveInt(value['outputChannels'], 'outputChannels');
 	if (outputChannels !== 1) {
 		throw new MatteOnnxManifestError(
-			`io.outputChannels must be 1 (single-channel alpha) for the ORT matte spike; got ${outputChannels}. ` +
+			`io.outputChannels must be 1 (single-channel alpha) for the ORT matte backend; got ${outputChannels}. ` +
 				'Multi-channel / softmax outputs need a resolve variant (future work).'
 		);
 	}
 	const outputRange = value['outputRange'];
 	if (outputRange === 'signed-unit') {
 		throw new MatteOnnxManifestError(
-			'io.outputRange "signed-unit" is not yet supported by the ORT matte spike; ' +
+			'io.outputRange "signed-unit" is not yet supported by the ORT matte backend; ' +
 				'bake a sigmoid into the export so the alpha is "unit" [0,1].'
 		);
 	}
@@ -169,8 +167,7 @@ function validateIo(value: unknown): MatteOnnxIoContract {
  * Rejects any manifest that is not frame-coupled (matte always is).
  */
 export function validateMatteOnnxManifest(value: unknown): MatteOnnxModelManifestSnapshot {
-	// Template gate (R2.4): a placeholder manifest keeps the experimental backend
-	// hidden — the deployed LiteRT default is unaffected.
+	// Template gate: a placeholder manifest reports the model as unconfigured.
 	if (isObject(value) && value['template'] === true) {
 		throw new MatteOnnxManifestError(
 			'manifest is a placeholder template — vendor a real, license-verified ONNX matte model ' +
@@ -198,14 +195,14 @@ export function validateMatteOnnxManifest(value: unknown): MatteOnnxModelManifes
 	// path exists (which needs a per-operator support proof first).
 	if (base.executionProviders.length !== 1 || base.executionProviders[0] !== 'webgpu') {
 		throw new MatteOnnxManifestError(
-			`executionProviders must be exactly ["webgpu"] for the ORT matte spike; got ` +
+			`executionProviders must be exactly ["webgpu"] for the ORT matte backend; got ` +
 				`[${base.executionProviders.join(', ')}]. ORT-WebNN needs a separate tensor path ` +
 				`(per-operator support proof) before it can be pinned.`
 		);
 	}
 
 	// License gate (hard fail): the app is MIT, so copyleft weights are rejected even
-	// when fetched at runtime — same verdict as the LiteRT path (RVM rejected).
+	// when fetched at runtime.
 	if (isCopyleftLicense(base.license)) {
 		throw new MatteOnnxManifestError(
 			`model "${base.id}" declares a copyleft license (${base.license}); refusing to load — ` +

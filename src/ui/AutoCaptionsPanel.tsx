@@ -1,6 +1,6 @@
 /**
- * "Auto Captions (Experimental)" panel — Phase 29 (on-device Whisper: ONNX
- * Runtime Web or LiteRT.js, chosen per the selected model).
+ * "Auto Captions (Experimental)" panel — Phase 29 (on-device Whisper on ONNX
+ * Runtime Web).
  *
  * Thin renderer over `AsrController` state. Everything heavy happens in the
  * lazily spawned ASR worker; this component only shows status, drives actions,
@@ -13,7 +13,6 @@ import { ASR_ACCURACY_NOTE, ASR_UNAVAILABLE_MESSAGE } from '../engine/asr/asr-pr
 import {
 	ASR_PRIVACY_STATEMENT,
 	asrActionAvailability,
-	preferredAccelerator,
 	type AsrClipTarget,
 	type AsrControllerState
 } from './asr-controller';
@@ -88,21 +87,9 @@ export const AutoCaptionsPanel: Component<AutoCaptionsPanelProps> = (props) => {
 
 	const availability = () => asrActionAvailability(props.state, props.selectedClip);
 	const engineLabel = () => {
-		if (props.state.recommendedEngine !== 'litert-whisper') return 'Unavailable';
-		// Once loaded, show the accelerator that actually compiled; before that,
-		// show the ASR accelerator the controller will request.
-		// Engine is authoritative once loaded; before that, infer it from the
-		// selected model's manifest (ONNX models live under /models/whisper-onnx/).
-		const engine =
-			props.state.engine ??
-			(props.state.model.manifestUrl.includes('whisper-onnx') ? 'ort-whisper' : 'litert-whisper');
-		// The ORT Whisper models run on the WASM EP; only LiteRT picks WebNN/WebGPU.
-		// Use the loaded accelerator once known, else each engine's default.
-		const accel =
-			props.state.accelerator ??
-			(engine === 'ort-whisper' ? 'wasm' : preferredAccelerator(props.state.probe));
-		const runtime = engine === 'ort-whisper' ? 'ONNX Whisper' : 'LiteRT Whisper';
-		return `${runtime} (${accel.toUpperCase()})`;
+		if (props.state.recommendedEngine !== 'ort-whisper') return 'Unavailable';
+		const accel = props.state.accelerator ?? 'wasm';
+		return `ONNX Whisper (${accel.toUpperCase()})`;
 	};
 	const isLoading = () => props.state.modelStatus === 'loading';
 	const isCompilingModel = () =>
@@ -383,9 +370,8 @@ export const AutoCaptionsPanel: Component<AutoCaptionsPanelProps> = (props) => {
 				</Show>
 
 				<footer class="capability-panel-note">
-					Model: Whisper (MIT, OpenAI) run on-device by ONNX Runtime Web (WASM) or LiteRT.js
-					(WebNN/WebGPU/WASM), depending on the selected model. Assets load from this app's own
-					origin only after you click "Load model".
+					Model: Whisper (MIT, OpenAI) run on-device by ONNX Runtime Web. Assets load from this
+					app's own origin only after you click "Load model".
 				</footer>
 			</aside>
 		</Show>

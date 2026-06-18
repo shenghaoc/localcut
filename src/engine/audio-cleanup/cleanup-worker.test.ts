@@ -59,17 +59,19 @@ function setupWorkerMocks(): WorkerHarness {
 		createOpfsAssetStore: vi.fn(async () => ({})),
 		loadVerifiedAsset: vi.fn(async () => new Uint8Array([1]))
 	}));
-	vi.doMock('./model-manifest', () => ({
-		validateManifest: vi.fn(() => ({
+	vi.doMock('./onnx-model-manifest', () => ({
+		validateOnnxCleanupManifest: vi.fn(() => ({
 			version: '1.0.0',
 			sizeBytes: 2,
-			model1: { url: '/m1.tflite', sizeBytes: 1, checksum: 'sha256-a' },
-			model2: { url: '/m2.tflite', sizeBytes: 1, checksum: 'sha256-b' },
-			stateShape: [1, 1, 1, 1]
+			model1: { url: '/m1.onnx', sizeBytes: 1, checksum: 'sha256-a' },
+			model2: { url: '/m2.onnx', sizeBytes: 1, checksum: 'sha256-b' },
+			stateShape: [1, 1, 1, 1],
+			io: {},
+			executionProviders: ['wasm']
 		}))
 	}));
-	vi.doMock('./dtln-runtime', () => ({
-		DtlnRuntime: {
+	vi.doMock('./dtln-ort-runtime', () => ({
+		DtlnOrtRuntime: {
 			create: vi.fn(async () => runtime)
 		}
 	}));
@@ -118,8 +120,7 @@ async function driveToFinalizePending(h: WorkerHarness): Promise<void> {
 	h.fakeSelf.onmessage?.({
 		data: {
 			type: 'cleanup-load-model',
-			manifestUrl: '/models/dtln/manifest.json',
-			wasmPath: '/litert/',
+			manifestUrl: '/models/dtln-onnx/manifest.json',
 			preferredAccelerator: 'wasm'
 		}
 	} as MessageEvent);
@@ -134,7 +135,7 @@ async function driveToFinalizePending(h: WorkerHarness): Promise<void> {
 	await vi.waitFor(() => expect(h.processor.finalize).toHaveBeenCalledTimes(1));
 }
 
-describe('cleanup-worker', () => {
+describe('cleanup-ort-worker', () => {
 	afterEach(() => {
 		vi.restoreAllMocks();
 		vi.resetModules();
@@ -143,7 +144,7 @@ describe('cleanup-worker', () => {
 
 	it('drops stale cleanup-end results once the load generation changes', async () => {
 		const h = setupWorkerMocks();
-		await import('./cleanup-worker');
+		await import('./cleanup-ort-worker');
 		await driveToFinalizePending(h);
 
 		// Cancel-all bumps the load generation while finalize is pending.
@@ -159,7 +160,7 @@ describe('cleanup-worker', () => {
 
 	it('drops a cleanup-end result when the same job is cancelled mid-finalize', async () => {
 		const h = setupWorkerMocks();
-		await import('./cleanup-worker');
+		await import('./cleanup-ort-worker');
 		await driveToFinalizePending(h);
 
 		// Cancel *this* job (no generation bump) while finalize is pending: the

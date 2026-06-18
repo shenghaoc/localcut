@@ -69,7 +69,7 @@ describe('ORT model manifest validation', () => {
 	});
 
 	it('rejects a non-onnx format', () => {
-		expect(() => validateOrtManifest({ ...validManifestInput(), format: 'tflite' })).toThrow(
+		expect(() => validateOrtManifest({ ...validManifestInput(), format: 'json' })).toThrow(
 			OrtManifestError
 		);
 	});

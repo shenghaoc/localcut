@@ -65,7 +65,7 @@
 - **R5.1** Map availability state to UI: `available` → ready (act immediately, offline); `downloadable` → a one-time "Download model" affordance stating the approximate size; `downloading` → live progress; `unavailable` → hidden (R0.5).
 - **R5.2** State the approximate download size **before** any fetch: translation language packs are on the order of tens of MB (Chrome-managed); Summarizer/Prompt share Gemini Nano — multiple GB, downloaded once by Chrome and reused across all sites.
 - **R5.3** Live progress comes from the `downloadprogress` event fired on the `monitor` callback passed to `create()`; `e.loaded` is already a fraction in `[0,1]` (there is no `e.total`, by design).
-- **R5.4** After a model is `available`, all calls work offline. Phase 40 neither fetches nor caches weights itself — Chrome owns the model lifecycle (so the OPFS/digest model-cache rules used by the Phase 28/29 LiteRT.js runtime do not apply here; see design).
+- **R5.4** After a model is `available`, all calls work offline. Phase 40 neither fetches nor caches weights itself — Chrome owns the model lifecycle (so the OPFS/digest model-cache rules used by app-owned ORT assets do not apply here; see design).
 
 ## R6 — Threading & Architecture Compliance
 

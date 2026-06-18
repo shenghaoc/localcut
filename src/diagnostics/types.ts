@@ -219,15 +219,12 @@ export interface VoiceCleanupDiagnosticSummary {
 }
 
 /**
- * ML runtime diagnostics. The foundation introduces ONNX Runtime Web (`ort`)
- * alongside the existing LiteRT path; this summary reports which runtime is in use
- * and, for ORT, the resolved execution provider, tensor location, and which
- * subsystem owns the compute device. The fields are optional so a snapshot from a
- * LiteRT-only build (today's default) simply reports `mlRuntime: 'litert'` without
- * the ORT-specific detail. See docs/ML-RUNTIME.md.
+ * ML runtime diagnostics. ORT is the single ML runtime; the optional fields
+ * describe the resolved execution provider, tensor location, and device owner
+ * when a subsystem has loaded an ORT model.
  */
 export interface MlRuntimeDiagnosticSummary {
-	readonly mlRuntime: 'litert' | 'ort';
+	readonly mlRuntime: 'ort';
 	readonly ortEp?: OrtExecutionProvider;
 	readonly tensorLocation?: OrtTensorLocation;
 	readonly deviceOwner?: OrtDeviceOwner;
@@ -260,7 +257,7 @@ export interface DiagnosticSnapshot {
 	readonly storage: StorageDiagnosticSummary;
 	readonly proxyCache: ProxyCacheDiagnosticSummary;
 	readonly voiceCleanup: VoiceCleanupDiagnosticSummary;
-	/** Which ML runtime is active (LiteRT today; ORT as features migrate). */
+	/** Active ML runtime summary. ORT is the only retained ML runtime. */
 	readonly mlRuntime?: MlRuntimeDiagnosticSummary;
 	readonly activeExportSettings: ExportSettingsSummary | null;
 	readonly performanceBudgets: readonly PerformanceBudget[];

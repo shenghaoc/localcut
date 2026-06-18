@@ -152,7 +152,6 @@ import { SCOPE_RES_X, scopeTotalBufferBytes } from '../engine/scopes';
 import { KeystrokeOverlayPanel } from './KeystrokeOverlayPanel';
 import {
 	CleanupController,
-	CLEANUP_WASM_PATH,
 	type CleanupClipTarget,
 	type CleanupControllerState
 } from './cleanup-controller';
@@ -996,7 +995,7 @@ export function App() {
 	const [previewKey, setPreviewKey] = createSignal(0);
 	let awaitingRestartReady = false;
 
-	// ── Phase 28: Local Audio Cleanup (WebNN RNNoise, experimental) ──
+	// ── Phase 28: Local Audio Cleanup (ORT DTLN, experimental) ──
 	// The controller spawns its dedicated worker lazily on first action; the
 	// pipeline worker only supplies PCM windows and applies the result.
 	const cleanupController = new CleanupController({
@@ -1019,11 +1018,7 @@ export function App() {
 				modelVersion: request.modelVersion
 			});
 		},
-		manifestUrls: {
-			litert: `${import.meta.env.BASE_URL}models/dtln/manifest.json`,
-			ort: `${import.meta.env.BASE_URL}models/dtln-onnx/manifest.json`
-		},
-		wasmPath: CLEANUP_WASM_PATH,
+		manifestUrl: `${import.meta.env.BASE_URL}models/dtln-onnx/manifest.json`,
 		onError: (message) => {
 			setRecentErrorLog((prev) =>
 				addRecentError(
@@ -5285,7 +5280,6 @@ export function App() {
 						state={cleanupState()}
 						selectedClip={selectedAudioCleanupClip()}
 						appliedCleanup={appliedCleanupInfo()}
-						onSelectBackend={(backend) => cleanupController.setBackend(backend)}
 						onLoadModel={() => void cleanupController.loadModel()}
 						onPreview={() => {
 							const clip = selectedAudioCleanupClip();

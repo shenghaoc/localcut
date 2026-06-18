@@ -1,13 +1,8 @@
 import { defineConfig } from 'vite-plus';
 import { execSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import solid from 'vite-plugin-solid';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
-
-const repoRoot = dirname(fileURLToPath(import.meta.url));
 
 function gitSha(): string {
 	try {
@@ -27,44 +22,6 @@ const BUILD_SHA = gitSha();
 // baked into the bundle via `define` but is not an input file, so without this
 // a no-source-change commit would replay a build carrying the previous SHA.
 process.env.LOCALCUT_BUILD_SHA = BUILD_SHA;
-
-function copyLiteRtRuntimeAssets(): void {
-	const sourceDir = join(repoRoot, 'node_modules', '@litertjs', 'core', 'wasm');
-	const targetDirs = [
-		join(repoRoot, 'public', 'litert'),
-		join(repoRoot, 'public', 'litert', BUILD_SHA)
-	];
-	if (!existsSync(sourceDir)) {
-		throw new Error(
-			'LiteRT WASM runtime assets are missing. Run `vp install` before building Auto Captions.'
-		);
-	}
-
-	let copied = 0;
-	for (const targetDir of targetDirs) {
-		mkdirSync(targetDir, { recursive: true });
-		for (const entry of readdirSync(sourceDir, { withFileTypes: true })) {
-			if (!entry.isFile()) continue;
-			copyFileSync(join(sourceDir, entry.name), join(targetDir, entry.name));
-			copied += 1;
-		}
-	}
-	if (copied === 0) {
-		throw new Error(`LiteRT WASM runtime asset directory is empty: ${sourceDir}`);
-	}
-}
-
-function litertRuntimeAssetsPlugin() {
-	return {
-		name: 'localcut-litert-runtime-assets',
-		configResolved(config: { command: string }): void {
-			if (config.command === 'build') copyLiteRtRuntimeAssets();
-		},
-		configureServer(): void {
-			copyLiteRtRuntimeAssets();
-		}
-	};
-}
 
 function dropBundledOrtWasmPlugin() {
 	return {
@@ -101,11 +58,11 @@ export default defineConfig({
 			'check:test': { command: 'vp test run' },
 			'check:build': {
 				command: 'vp build',
-				// BUILD_SHA and MATTE_ONNX_SPIKE are baked into the bundle via
-				// `define` but are not input files, so list them in the cache
-				// fingerprint: a new commit (SHA, mirrored to env above) or a flag
-				// flip must re-run the build instead of replaying a stale bundle.
-				env: ['LOCALCUT_BUILD_SHA', 'MATTE_ONNX_SPIKE']
+				// BUILD_SHA is baked into the bundle via `define` but is not an input
+				// file, so list it in the cache fingerprint: a new commit (SHA,
+				// mirrored to env above) must re-run the build instead of replaying a
+				// stale bundle.
+				env: ['LOCALCUT_BUILD_SHA']
 			}
 		}
 	},
@@ -278,15 +235,9 @@ export default defineConfig({
 		ignorePatterns: ['dist', 'dev-dist', 'coverage', '.kiro/', '.claude/', '.jules/']
 	},
 	define: {
-		__BUILD_SHA__: JSON.stringify(BUILD_SHA),
-		// Phase 31 experimental ORT/ONNX matte backend feature flag. Off by default
-		// (production ships LiteRT MediaPipe); build with MATTE_ONNX_SPIKE=1 to
-		// evaluate the ONNX path. When false, the MatteOnnxEngine branch in the
-		// worker is dead-code-eliminated. See docs/ML-RUNTIME.md.
-		__MATTE_ONNX_SPIKE__: JSON.stringify(process.env.MATTE_ONNX_SPIKE === '1')
+		__BUILD_SHA__: JSON.stringify(BUILD_SHA)
 	},
 	plugins: [
-		litertRuntimeAssetsPlugin(),
 		dropBundledOrtWasmPlugin(),
 		tailwindcss(),
 		solid(),
@@ -306,59 +257,26 @@ export default defineConfig({
 			},
 			workbox: {
 				globPatterns: ['**/*.{js,css,html,wasm,wgsl,woff,woff2}'],
-				// Phase 27/29: model weights and the multi-megabyte LiteRT WASM must
-				// never precache at install — startup stays model-free, and the SW
-				// precache stays small. They enter the runtime cache only after the
-				// user explicitly loads a model, so later loads work offline.
-				// The ORT foundation adds the same exclusion for its lazily-imported
-				// runtime chunks (`*onnxruntime*`), so the ORT runtime is never
-				// downloaded at service-worker install (its WASM is proxied at runtime).
+				// Model weights must never precache at install — startup stays
+				// model-free, and the SW precache stays small. ORT runtime chunks are
+				// also excluded; its WASM is served at runtime from the `/_ort/` proxy.
 				// ORT's WASM is emitted as `ort-wasm-*.wasm` (not `*onnxruntime*`), each
 				// > 2 MiB and up to ~26 MB — it must never precache (and is served at
 				// runtime from the `/_ort/` proxy, not these bundled copies).
-				globIgnores: [
-					'**/models/**',
-					'**/litert/**',
-					'**/*onnxruntime*',
-					'**/ort-wasm-*.wasm',
-					'**/ort-*.mjs'
-				],
+				globIgnores: ['**/models/**', '**/*onnxruntime*', '**/ort-wasm-*.wasm', '**/ort-*.mjs'],
 				runtimeCaching: [
 					{
-						urlPattern: /\/models\/dtln\//,
-						handler: 'NetworkFirst',
-						options: { cacheName: 'dtln-manifest' }
-					},
-					{
-						// DTLN ONNX backend manifest. NetworkFirst (offline fallback) like the
-						// other model manifests — the `/models/dtln/` rule above does NOT cover
-						// this path (no trailing slash after `dtln`), so without this rule an
-						// installed/offline PWA could not reload the ONNX engine even though its
-						// model bytes are OPFS-cached. The `.onnx` weights are fetched via the
-						// `/_model/gh/` proxy and cached in OPFS by the app, not here.
+						// DTLN ONNX backend manifest. NetworkFirst prevents an installed PWA
+						// from keeping an old model contract after app updates. The `.onnx`
+						// weights are fetched via the `/_model/gh/` proxy and cached in OPFS.
 						urlPattern: /\/models\/dtln-onnx\//,
 						handler: 'NetworkFirst',
 						options: { cacheName: 'dtln-onnx-manifest' }
 					},
 					{
-						// The Whisper model itself is fetched cross-origin (Hugging Face)
-						// and cached in OPFS by the app, so this same-origin rule only
-						// covers the small `manifest.json`. It MUST be NetworkFirst, not
-						// CacheFirst: the manifest's schema changes between app versions,
-						// and a CacheFirst copy would be served stale forever (e.g. an old
-						// `encoder`/`decoder` manifest failing today's validator). Network
-						// when online, cached copy as an offline fallback.
-						urlPattern: /\/models\/whisper\//,
-						handler: 'NetworkFirst',
-						options: { cacheName: 'whisper-manifest' }
-					},
-					{
-						// ONNX Whisper backend manifest (`/models/whisper-onnx/`). Same
-						// NetworkFirst rationale as the LiteRT whisper manifest: schema
-						// evolves between app versions, the encoder/decoder ONNX assets are
-						// fetched cross-origin and cached in OPFS, so only the small manifest
-						// is served same-origin here. (The `whisper` rule above does not
-						// match this path — it requires `whisper/`, not `whisper-onnx/`.)
+						// ONNX Whisper manifests are NetworkFirst because manifest schema,
+						// size, SHA, and provenance can change between app versions. The
+						// encoder/decoder assets are cached in OPFS, not Workbox.
 						urlPattern: /\/models\/whisper-onnx\//,
 						handler: 'NetworkFirst',
 						options: { cacheName: 'whisper-onnx-manifest' }
@@ -370,15 +288,6 @@ export default defineConfig({
 						urlPattern: /\/models\/interpolation\//,
 						handler: 'NetworkFirst',
 						options: { cacheName: 'interpolation-manifest' }
-					},
-					{
-						urlPattern: /\/litert\//,
-						handler: 'CacheFirst',
-						options: {
-							cacheName: 'litert-runtime-v2',
-							// LiteRT WASM variants are ~9 MB each; allow them in the cache.
-							matchOptions: { ignoreVary: true }
-						}
 					},
 					{
 						// ORT WASM, proxied same-origin from jsDelivr via the Worker's

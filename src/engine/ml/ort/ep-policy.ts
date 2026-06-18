@@ -1,8 +1,7 @@
 /**
  * Execution-provider policy for ORT sessions.
  *
- * The architectural hard gate is unchanged from the LiteRT path: the accelerated,
- * full-frame pipeline must not silently degrade to CPU. For ORT that means a
+ * The accelerated, full-frame pipeline must not silently degrade to CPU. For ORT that means a
  * **frame-coupled** model (matte, frame interpolation, reframe — anything that
  * runs per video frame) may never resolve to the `wasm` execution provider, and
  * must pin at least one GPU-class EP (`webgpu` or `webnn`). WASM/CPU is reserved

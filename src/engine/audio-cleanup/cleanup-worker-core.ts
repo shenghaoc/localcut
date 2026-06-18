@@ -1,17 +1,13 @@
 /**
  * Runtime-agnostic core of the Audio Cleanup worker (Phase 28).
  *
- * Owns everything that does not depend on *which* inference backend runs the
- * DTLN graphs: the message queue, model-download + OPFS caching, the chunked /
- * cancellable job lifecycle, resampling, and WAV/PCM encoding. The backend
- * (LiteRT TFLite or ONNX Runtime) is injected as a {@link CleanupBackend}, so
- * the two thin worker entry points — {@link file://./cleanup-worker.ts} (classic,
- * LiteRT) and {@link file://./cleanup-ort-worker.ts} (module, ORT) — share this
- * one orchestration verbatim.
+ * Owns the message queue, model-download + OPFS caching, the chunked /
+ * cancellable job lifecycle, resampling, and WAV/PCM encoding. The ORT backend
+ * is injected as a {@link CleanupBackend} so runtime construction remains
+ * isolated in the thin worker entry point.
  *
- * Pure of any LiteRT/ORT import: those arrive only through the backend's
- * `parseManifest`/`createRuntime`, which keeps each entry's bundle limited to its
- * own runtime.
+ * Pure of any ORT import: those arrive only through the backend's
+ * `parseManifest`/`createRuntime`, which keeps the shared core easy to unit test.
  */
 
 import type { CleanupAccelerator, CleanupWorkerCommand, CleanupWorkerState } from '../../protocol';
@@ -61,7 +57,7 @@ export interface CleanupBackend {
 	/** OPFS subdirectory for this backend's digest-keyed model cache. */
 	readonly opfsDir: string;
 	/** Validate the raw manifest JSON into a {@link CleanupModelPlan}. */
-	parseManifest(raw: unknown, cmd: LoadModelCommand): CleanupModelPlan;
+	parseManifest(raw: unknown): CleanupModelPlan;
 }
 
 interface ActiveJob {
@@ -128,7 +124,7 @@ export function startCleanupWorker(backend: CleanupBackend): void {
 			const raw = await response.json();
 			if (generation !== loadGeneration) return;
 
-			const plan = backend.parseManifest(raw, cmd);
+			const plan = backend.parseManifest(raw);
 			const store = await createOpfsAssetStore(backend.opfsDir);
 
 			const combinedTotal = plan.model1.sizeBytes + plan.model2.sizeBytes;

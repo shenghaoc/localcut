@@ -301,8 +301,7 @@ export interface UiDiagnosticInput {
 	readonly recentErrors: RecentErrorLog;
 	readonly workerSnapshot?: DiagnosticSnapshot | null;
 	readonly interpolation?: InterpolationDiagnosticSummary;
-	/** Active Auto Captions engine + accelerator, so an ORT/WASM transcription is
-	 *  not misreported as LiteRT in support bundles. `null` engine ⇒ none loaded. */
+	/** Active Auto Captions engine + accelerator. `null` engine ⇒ none loaded. */
 	readonly asr?: { readonly engine: AsrEngine | null; readonly accelerator: AsrAccelerator | null };
 	readonly voiceCleanup?: {
 		readonly denoiserEnabledTrackCount: number;
@@ -318,11 +317,9 @@ export interface UiDiagnosticInput {
 }
 
 /**
- * Resolves the ML-runtime summary. When the active Auto Captions engine is the
- * ONNX one, report `ort` + its execution provider so an exported support bundle
- * reflects the runtime that actually ran; otherwise fall back to the worker's
- * summary (LiteRT today). `AsrAccelerator` and `OrtExecutionProvider` share the
- * same member set, so the accelerator maps straight to `ortEp`.
+ * Resolves the ML-runtime summary. ORT is the only ML runtime; when Auto
+ * Captions has loaded, report its execution provider, otherwise use the worker
+ * summary or the ORT-WASM floor.
  */
 export function mlRuntimeSummary(
 	asr: UiDiagnosticInput['asr'],
@@ -331,7 +328,7 @@ export function mlRuntimeSummary(
 	if (asr?.engine === 'ort-whisper') {
 		return { mlRuntime: 'ort', ortEp: asr.accelerator ?? 'wasm', tensorLocation: 'cpu' };
 	}
-	return workerMlRuntime ?? { mlRuntime: 'litert' };
+	return workerMlRuntime ?? { mlRuntime: 'ort', ortEp: 'wasm', tensorLocation: 'cpu' };
 }
 
 export async function buildUiDiagnosticSnapshot(

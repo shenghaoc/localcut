@@ -10,7 +10,6 @@
 
 import { createEffect, createSignal, onCleanup, Show, type Component } from 'solid-js';
 import { X } from 'lucide-solid';
-import type { CleanupBackendKind } from '../protocol';
 import { Button } from './components/button';
 import {
 	CLEANUP_PREVIEW_SECONDS,
@@ -21,11 +20,7 @@ import {
 	type CleanupControllerState
 } from './cleanup-controller';
 
-/** Display name for each DTLN inference backend. */
-const BACKEND_LABEL: Record<CleanupBackendKind, string> = {
-	litert: 'LiteRT DTLN',
-	ort: 'ONNX Runtime DTLN'
-};
+const BACKEND_LABEL = 'ONNX Runtime DTLN';
 
 export interface AppliedCleanupInfo {
 	trackId: string;
@@ -39,7 +34,6 @@ export interface AudioCleanupPanelProps {
 	state: CleanupControllerState;
 	selectedClip: CleanupClipTarget | null;
 	appliedCleanup: AppliedCleanupInfo | null;
-	onSelectBackend: (backend: CleanupBackendKind) => void;
 	onLoadModel: () => void;
 	onPreview: () => void;
 	onApply: () => void;
@@ -117,8 +111,6 @@ export const AudioCleanupPanel: Component<AudioCleanupPanelProps> = (props) => {
 	});
 
 	const availability = () => cleanupActionAvailability(props.state, props.selectedClip);
-	// Switching engines tears down the worker + reloads, so block it mid-flight.
-	const engineBusy = () => props.state.job !== null || props.state.modelStatus === 'loading';
 
 	return (
 		<Show when={props.open}>
@@ -160,34 +152,7 @@ export const AudioCleanupPanel: Component<AudioCleanupPanelProps> = (props) => {
 						<dl class="diagnostics-grid">
 							<div>
 								<dt>Engine</dt>
-								<dd>
-									<div
-										role="group"
-										aria-label="Cleanup engine"
-										style={{ display: 'flex', gap: '0.25rem', 'flex-wrap': 'wrap' }}
-									>
-										<Button
-											size="sm"
-											variant={props.state.backend === 'litert' ? 'default' : 'secondary'}
-											aria-pressed={props.state.backend === 'litert'}
-											disabled={engineBusy()}
-											title="Original LiteRT / TFLite DTLN runtime"
-											onClick={() => props.onSelectBackend('litert')}
-										>
-											{BACKEND_LABEL.litert}
-										</Button>
-										<Button
-											size="sm"
-											variant={props.state.backend === 'ort' ? 'default' : 'secondary'}
-											aria-pressed={props.state.backend === 'ort'}
-											disabled={engineBusy()}
-											title="Experimental ONNX Runtime Web DTLN backend"
-											onClick={() => props.onSelectBackend('ort')}
-										>
-											{BACKEND_LABEL.ort}
-										</Button>
-									</div>
-								</dd>
+								<dd>{BACKEND_LABEL}</dd>
 							</div>
 							<div>
 								<dt>Model</dt>
@@ -347,9 +312,8 @@ export const AudioCleanupPanel: Component<AudioCleanupPanelProps> = (props) => {
 				</Show>
 
 				<footer class="capability-panel-note">
-					Model: DTLN (MIT, Interspeech 2020) via{' '}
-					{props.state.backend === 'ort' ? 'ONNX Runtime Web' : 'LiteRT'}. Weights load from this
-					app's own origin only after you click "Load model".
+					Model: DTLN (MIT, Interspeech 2020) via ONNX Runtime Web. Weights load from this app's own
+					origin only after you click "Load model".
 				</footer>
 			</aside>
 		</Show>

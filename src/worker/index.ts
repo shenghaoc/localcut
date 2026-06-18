@@ -36,8 +36,8 @@ const GCS_ORIGIN = 'https://storage.googleapis.com';
 /**
  * Same-origin path prefix that proxies ONNX Runtime Web's WASM runtime from the
  * jsDelivr npm CDN. ORT's `ort-wasm-simd-threaded.jsep.wasm` is ~26 MB — over
- * Cloudflare Workers' 25 MiB per-file static-asset limit, so it cannot be
- * vendored like the smaller LiteRT runtime. Proxying keeps the fetch same-origin
+ * Cloudflare Workers' 25 MiB per-file static-asset limit, so it is proxied
+ * instead of being vendored. Proxying keeps the fetch same-origin
  * (COEP: require-corp) and pins the version. Keep `ORT_RUNTIME_BASE` in sync with
  * the `onnxruntime-web` version in package.json.
  *

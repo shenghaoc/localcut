@@ -1,46 +1,29 @@
-/**
- * Portrait-matte backend selection (Phase 31).
- *
- * The matte feature has two interchangeable runtimes behind one interface:
- *
- * - **LiteRT** (`matte-engine.ts`) — the **deployed default**: MediaPipe Selfie
- *   Segmentation (`.tflite`) on `@litertjs/core`, verified working end to end.
- * - **ORT/ONNX** (`matte-onnx-engine.ts`) — an **experimental spike**: an ONNX
- *   matting/segmentation model on ONNX Runtime Web (WebGPU EP), enabling a
- *   MODNet-class true-matting upgrade. Off by default; selected only via the
- *   `__MATTE_ONNX_SPIKE__` build flag, and even then it stays dark until a real
- *   ONNX model is pinned (the shipped manifest is a `template`).
- *
- * This module owns the swappable surface ({@link MatteBackendEngine}) and the pure
- * selector ({@link resolveMatteBackend}). Keeping the decision in one tested place
- * guarantees the deployed default does not change unless the flag is explicitly on.
- */
-import type { MatteFrameRequest } from './matte-engine';
-
-export type { MatteFrameRequest };
+/** Portrait-matte backend surface (Phase 31). ORT/ONNX is the retained runtime. */
 
 /** Which matte runtime is active. */
-export type MatteBackendKind = 'litert' | 'ort-onnx';
+export type MatteBackendKind = 'ort-onnx';
+
+export const DEFAULT_MATTE_BACKEND: MatteBackendKind = 'ort-onnx';
+
+export interface MatteFrameRequest {
+	clipId: string;
+	/** Clip's pinned model; mismatch against the deployed model warns. */
+	modelKey: string;
+	/** Engine-owned clone; the engine closes it exactly once. */
+	frame: VideoFrame;
+	sourceTimeS: number;
+	/** Expected source frame step (1/fps) for the discontinuity policy. */
+	frameStepS: number;
+	quality: 'preview' | 'export';
+}
 
 /**
- * The deployed default. **Never** change this to `ort-onnx` without proven ORT
- * model quality/performance parity — doing so would regress the working LiteRT
- * MediaPipe path (Phase 31 acceptance).
- */
-export const DEFAULT_MATTE_BACKEND: MatteBackendKind = 'litert';
-
-/**
- * The subset of the matte engine the pipeline worker drives. Both
- * {@link file://./matte-engine.ts} `MatteEngine` and
- * {@link file://./matte-onnx-engine.ts} `MatteOnnxEngine` satisfy it, so the
- * worker holds one of either behind this type.
+ * The subset of the matte engine the pipeline worker drives.
  */
 export interface MatteBackendEngine {
 	/**
-	 * True when the engine's matte views are allocated on the renderer/compositor
-	 * `GPUDevice`, so the compositor can bind them directly. LiteRT adopts the
-	 * renderer's device. ORT cannot adopt an external device (onnxruntime#26107),
-	 * so the worker adopts the renderer to ORT's device before ORT views are used.
+	 * True when the engine's matte views are allocated on the renderer/compositor's
+	 * adopted ORT `GPUDevice`, so the compositor can bind them directly.
 	 */
 	readonly compositesOnRendererDevice: boolean;
 	/** Per-frame matte; the engine takes ownership of `request.frame`. */
@@ -53,12 +36,6 @@ export interface MatteBackendEngine {
 	dispose(): Promise<void>;
 }
 
-/**
- * Resolves the active matte backend. Returns `ort-onnx` **only** when the
- * experimental spike flag is explicitly enabled; every other case is the deployed
- * LiteRT default. Pure and synchronous so the decision is unit-testable without a
- * build define.
- */
-export function resolveMatteBackend(spikeEnabled: boolean): MatteBackendKind {
-	return spikeEnabled ? 'ort-onnx' : DEFAULT_MATTE_BACKEND;
+export function resolveMatteBackend(): MatteBackendKind {
+	return DEFAULT_MATTE_BACKEND;
 }

@@ -93,6 +93,7 @@ function harness(): Harness {
 								postState({
 									type: 'asr-model-status',
 									status: 'loaded',
+									engine: 'ort-whisper',
 									accelerator: cmd.accelerator,
 									sizeBytes: 600,
 									fraction: 1,
@@ -193,12 +194,12 @@ function harness(): Harness {
 }
 
 describe('AsrController', () => {
-	it('probes WebAssembly and recommends litert-whisper without spawning a worker', () => {
+	it('probes WebAssembly and recommends ort-whisper without spawning a worker', () => {
 		const h = harness();
 		h.controller.setProbe();
 		const state = h.controller.getState();
 		expect(state.available).toBe(true);
-		expect(state.recommendedEngine).toBe('litert-whisper');
+		expect(state.recommendedEngine).toBe('ort-whisper');
 		expect(h.spawnCount()).toBe(0);
 	});
 
@@ -237,7 +238,7 @@ describe('AsrController', () => {
 		expect(ok).toBe(true);
 		expect(h.tracks).toHaveLength(1);
 		expect(h.tracks[0]).toMatchObject({
-			engine: 'litert-whisper',
+			engine: 'ort-whisper',
 			accelerator: 'wasm',
 			language: 'en',
 			trackName: 'Auto (en) - interview.mov'
@@ -350,8 +351,8 @@ describe('AsrController', () => {
 		expect(await h.controller.loadModel()).toBe(false);
 		expect(h.controller.getState().modelStatus).toBe('failed');
 
-		h.controller.selectModel('whisper-tiny');
-		expect(h.controller.getState().model.id).toBe('whisper-tiny');
+		h.controller.selectModel('whisper-tiny-onnx-int8');
+		expect(h.controller.getState().model.id).toBe('whisper-tiny-onnx-int8');
 		expect(h.controller.getState().modelStatus).toBe('not-loaded');
 		expect(h.controller.getState().error).toBeNull();
 		h.modelLoadFailure.value = null;
@@ -359,7 +360,7 @@ describe('AsrController', () => {
 		expect(h.spawnCount()).toBe(2);
 		expect(h.workerCommands.at(-1)).toMatchObject({
 			type: 'asr-load-model',
-			manifestUrl: '/models/whisper/manifest-tiny.json'
+			manifestUrl: '/models/whisper-onnx/manifest-tiny.json'
 		});
 	});
 
@@ -409,7 +410,7 @@ describe('preferredAccelerator', () => {
 		webgpu,
 		webnn,
 		crossOriginIsolated: true,
-		recommended: 'litert-whisper'
+		recommended: 'ort-whisper'
 	});
 
 	it('prefers WebNN when the browser reports support', () => {
@@ -432,13 +433,13 @@ describe('asrActionAvailability', () => {
 		return {
 			probe: null,
 			available: true,
-			recommendedEngine: 'litert-whisper',
+			recommendedEngine: 'ort-whisper',
 			model: defaultModel(),
 			models: ASR_MODEL_CATALOG,
 			modelStatus: 'loaded',
 			modelSizeBytes: 600,
 			accelerator: 'wasm',
-			engine: 'litert-whisper',
+			engine: 'ort-whisper',
 			downloadFraction: null,
 			downloadedBytes: null,
 			cached: null,

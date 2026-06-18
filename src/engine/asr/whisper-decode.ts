@@ -1,12 +1,10 @@
 /**
- * Whisper encode/decode orchestration (Phase 29). Independent of LiteRT.js: it
- * depends only on the {@link WhisperRuntime} interface, so the greedy
- * autoregressive loop and segment assembly are unit-tested with a scripted fake
- * runtime. The concrete LiteRT-backed runtime lives in `litert-runtime.ts`.
+ * Whisper encode/decode orchestration (Phase 29). It depends only on the
+ * {@link WhisperRuntime} interface, so the greedy autoregressive loop and
+ * segment assembly are unit-tested with a scripted fake runtime.
  *
- * The recipe follows Google's `litert-samples` ASR sample for the
- * `litert-community/whisper-*` models: force only the prompt, argmax the logits
- * of the last filled position each step, stop at ` endoftext`.
+ * Decode recipe: force only the prompt, argmax the logits of the last filled
+ * position each step, stop at ` endoftext`.
  *
  * Robustness: temperature fallback with compression-ratio and log-probability
  * quality checks (matching OpenAI's `transcribe.py`) prevents degenerate output
@@ -37,9 +35,9 @@ export interface EncodedAudio {
 
 /**
  * The minimal inference surface the decoder needs. A real implementation wraps
- * the TFLite `encode`/`decode` signatures; tests supply a fake returning scripted
- * logits. `decode(tokens, encoded)` returns logits over the full vocabulary for
- * the token that follows `tokens`.
+ * an encoder/decoder model pair; tests supply a fake returning scripted logits.
+ * `decode(tokens, encoded)` returns logits over the full vocabulary for the token
+ * that follows `tokens`.
  */
 export interface WhisperRuntime {
 	encode(mel: MelInput): Promise<EncodedAudio>;

@@ -7,11 +7,9 @@
  *
  * The decoder is the **no-past** graph (`decoder_model.onnx`): it takes no
  * `past_key_values` inputs, so each greedy step re-runs it with the full token
- * sequence and reads the logits row of the last position. That keeps the loop
- * identical to the LiteRT runtime's and lets `whisper-decode.ts` drive both
- * engines unchanged — at the cost of recomputing self-attention each step (a 30 s
- * window is ≤ {@link AsrOrtModelManifestSnapshot.maxDecodeTokens} tokens, so the
- * quadratic cost is small). A future KV-cache runtime can use the optional
+ * sequence and reads the logits row of the last position. A 30 s window is
+ * ≤ {@link AsrOrtModelManifestSnapshot.maxDecodeTokens} tokens, so the quadratic
+ * cost is small. A future KV-cache runtime can use the optional
  * `decoderWithPast` asset; this one deliberately does not, to avoid complicating
  * decode and to keep the download smaller.
  *

@@ -252,9 +252,8 @@ import {
 } from './playback';
 import { probeEncodeThroughput } from './hardware-probe';
 import { FrameCache, makeFrameCacheKey } from './frame-cache';
-import { MatteEngine } from './matte/matte-engine';
 import { MatteOnnxEngine } from './matte/matte-onnx-engine';
-import { resolveMatteBackend, type MatteBackendEngine } from './matte/matte-backend';
+import type { MatteBackendEngine } from './matte/matte-backend';
 import {
 	DEFAULT_INTERPOLATION_MANIFEST_URL,
 	InterpolationEngine
@@ -376,42 +375,20 @@ let currentZebraEnabled = false;
 let titleCache: TitleTextureCache | null = null;
 /** Phase 43 callout raster cache; shares the renderer GPU device with titles. */
 let calloutCache: CalloutTextureCache | null = null;
-/** Phase 31 matte engine — per-frame zero-copy inference on the renderer's
- *  device; created lazily on the first matted frame. The deployed default is the
- *  LiteRT MediaPipe path; the experimental ORT/ONNX backend is selected only when
- *  the `__MATTE_ONNX_SPIKE__` build flag is on (see matte/matte-backend.ts). */
+/** Phase 31 matte engine — per-frame zero-copy ORT inference, created lazily on
+ *  the first matted frame. The engine notifies the worker to adopt ORT's device
+ *  before its matte views are composited. */
 let matteEngine: MatteBackendEngine | null = null;
 /** One-shot guard for unexpected matte backend/device contract failures. */
 let matteCompositingUnavailableWarned = false;
 
-/** Build-scoped LiteRT WASM runtime directory (shared with ASR/cleanup). */
-const MATTE_BUILD_SHA = typeof __BUILD_SHA__ === 'string' ? __BUILD_SHA__ : 'dev';
-const MATTE_WASM_PATH = `/litert/${MATTE_BUILD_SHA}/`;
-
-/** Experimental ORT/ONNX matte backend feature flag (default false in production;
- *  set MATTE_ONNX_SPIKE=1 at build time to evaluate it). Guarded `typeof` so the
- *  worker still type-checks where the define is absent (e.g. unit tests). */
-const MATTE_ONNX_SPIKE =
-	typeof __MATTE_ONNX_SPIKE__ !== 'undefined' && __MATTE_ONNX_SPIKE__ === true;
-
 function ensureMatteEngine(): MatteBackendEngine | null {
 	if (!renderer) return null;
 	if (!matteEngine) {
-		matteEngine =
-			resolveMatteBackend(MATTE_ONNX_SPIKE) === 'ort-onnx'
-				? // ORT owns its WebGPU device (it ignores an injected one —
-					// microsoft/onnxruntime#26107), so no device is passed; the engine runs
-					// on ORT's device and notifies the worker to adopt the renderer before use.
-					// LiteRT, below, *can* share the renderer's device and is still given it.
-					new MatteOnnxEngine({
-						onStatus: (status) => post({ type: 'matte-status', status }),
-						onDeviceReady: (device) => adoptOrtDevice(device, 'matte-onnx')
-					})
-				: new MatteEngine({
-						device: renderer.gpuDevice,
-						wasmPath: MATTE_WASM_PATH,
-						onStatus: (status) => post({ type: 'matte-status', status })
-					});
+		matteEngine = new MatteOnnxEngine({
+			onStatus: (status) => post({ type: 'matte-status', status }),
+			onDeviceReady: (device) => adoptOrtDevice(device, 'matte-onnx')
+		});
 	}
 	return matteEngine;
 }
@@ -521,13 +498,6 @@ async function disposeAllMlEngines(): Promise<void> {
 	await Promise.allSettled([matte?.dispose(), interpolation?.dispose(), beauty?.dispose()]);
 }
 
-async function disposeRendererBoundMatteForAdoption(): Promise<void> {
-	if (!(matteEngine instanceof MatteEngine)) return;
-	const matte = matteEngine;
-	matteEngine = null;
-	await matte.dispose();
-}
-
 function destroyRendererTextureCaches(): void {
 	titleCache?.destroy();
 	titleCache = null;
@@ -584,7 +554,6 @@ async function adoptOrtDevice(ortDevice: GPUDevice, source: string): Promise<voi
 		assertRendererAdoptionAllowed();
 
 		const previousSize = activeRenderer.size;
-		await disposeRendererBoundMatteForAdoption();
 		destroyRendererTextureCaches();
 		cancelRendererDeviceLossWatch();
 

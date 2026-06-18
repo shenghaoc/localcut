@@ -24,8 +24,7 @@ export type OrtModule = typeof import('onnxruntime-web');
 /**
  * Same-origin path ORT's WASM runtime is served from. ORT's
  * `ort-wasm-simd-threaded.jsep.wasm` is ~26 MB — over Cloudflare Workers' 25 MiB
- * per-file static-asset limit, so (unlike the smaller LiteRT runtime) it can't be
- * vendored. Instead the Worker reverse-proxies it from the jsDelivr npm CDN at
+ * per-file static-asset limit, so it is not vendored. Instead the Worker reverse-proxies it from the jsDelivr npm CDN at
  * `/_ort/` (version-pinned); the session wrapper points `env.wasm.wasmPaths`
  * here so ORT fetches its runtime same-origin (COEP: require-corp), never via a
  * direct cross-origin browser request. See `src/worker/index.ts`.

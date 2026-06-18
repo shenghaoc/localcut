@@ -288,14 +288,14 @@ The beat analysis uses a WASM SIMD-accelerated FFT when available for faster ana
 
 ## Portrait Matte (Experimental)
 
-Portrait Matte separates the foreground person from the background in video clips — "green screen without a green screen" — using an on-device, permissively licensed ML model. The deployed default is **MediaPipe Selfie Segmentation** (`.tflite`, Apache-2.0): a person/background _segmentation_ model (not a true alpha matte), so very fine edges like loose hair are approximate; its mask is smoothed over time for stability. The feature runs entirely in the browser on **LiteRT.js** (the same on-device ML runtime as Audio Cleanup and Auto Captions), using your GPU via WebGPU with no server-side processing. Do **not** deploy GPL-licensed model weights (e.g. RobustVideoMatting) at the model URL — this application is MIT-licensed and the project's licensing verdict on candidate models is recorded in the Phase 31 design document.
+Portrait Matte separates the foreground person from the background in video clips — "green screen without a green screen" — using an on-device, permissively licensed ONNX matting model. The shipped model is **MODNet** (`onnx-community/modnet-webnn`, Apache-2.0), run by ONNX Runtime Web on WebGPU. The alpha matte is smoothed over time for stability and stays fully local: no frame, mask, or model input is uploaded.
 
 > Runs on this device. No upload. No API key. No server inference.
 
 **How to use it**:
 
 1. Select a video clip on the timeline and find **Portrait Matte** in the Inspector.
-2. Check **Enable**. On first use the app fetches the model manifest from `/models/matte/manifest.json` (same-origin) and the checksum-verified model weights it references. Nothing is downloaded at app startup. Playback continues unmatted until the model is ready — it never stalls on a download.
+2. Check **Enable**. On first use the app fetches the model manifest from `/models/matte-onnx/manifest.json` (same-origin) and the checksum-verified model weights it references. Nothing is downloaded at app startup. Playback continues unmatted until the model is ready — it never stalls on a download.
 3. Pick a **Mode**:
    - **Remove background** — the background becomes transparent, compositing over whatever is below.
    - **Replace background** — same as remove; place any timeline source (video, still, title) on the track directly below this clip and it shows through.
@@ -307,32 +307,26 @@ The matte is computed **in real time** on the GPU as frames play or export — t
 **Requirements and limits**:
 
 - Matting requires the accelerated (WebGPU) tier. A reduced non-WebGPU fallback is planned but not yet available.
-- The `.tflite` model is **not bundled** with the app. If no model is deployed at the manifest URL, enabling the matte reports a model-unavailable status and the clip plays unchanged. There is no cloud fallback of any kind.
-- The LiteRT WASM runtime is shared with Audio Cleanup and Auto Captions (served from `/litert/<build>/`), so no extra runtime needs deploying for the matte — only the model `.tflite` and its `manifest.json`.
+- The ONNX model is fetched on demand through the same-origin model proxy, verified by SHA-256, and cached in OPFS. If the model cannot be fetched or verified, enabling the matte reports a model-unavailable status and the clip plays unchanged. There is no cloud fallback of any kind.
+- The ORT runtime is loaded lazily through the version-pinned `/_ort/` proxy; it is never part of the startup bundle.
 - Disabling the matte drops the clip's temporal state and cached frames; re-enabling recomputes them.
 
 ## Local Audio Cleanup (Experimental)
 
-LocalCut Studio can reduce background noise in audio clips entirely on your device using the DTLN model (Dual-Signal Transformation LSTM Network). Two on-device inference **engines** run the same DTLN model and are selectable in the panel:
-
-- **ONNX Runtime DTLN** (default) — the upstream ONNX models on ONNX Runtime Web (ORT). DTLN's tensors are tiny, so this runs on the WASM (CPU) execution provider; the ONNX runtime is fetched on demand and never ships in the app's startup bundle.
-- **LiteRT DTLN** — the two upstream TFLite models on LiteRT.js, kept as a selectable alternate engine.
-
-ONNX is the default after real-audio A/B parity against LiteRT was verified. This feature is **experimental** and fully local:
+LocalCut Studio can reduce background noise in audio clips entirely on your device using the DTLN model (Dual-Signal Transformation LSTM Network). The feature uses **ONNX Runtime DTLN** on the WASM execution provider; the ONNX runtime is fetched on demand and never ships in the app's startup bundle. This feature is **experimental** and fully local:
 
 > Runs on this device. No upload. No API key. No server inference.
 
-**Requirements**: a browser with WebAssembly support (all modern browsers). LiteRT prefers experimental WebNN first, then WebGPU, and falls back to the WASM accelerator when accelerated backends are unavailable or fail to compile on the current device; ONNX Runtime DTLN runs on the WASM accelerator. In browsers without WebAssembly the panel shows "WebAssembly is required for local audio cleanup." and everything else in the editor works exactly as before — there is no cloud fallback of any kind.
+**Requirements**: a browser with WebAssembly support (all modern browsers). ONNX Runtime DTLN runs on the WASM accelerator. In browsers without WebAssembly the panel shows "WebAssembly is required for local audio cleanup." and everything else in the editor works exactly as before — there is no cloud fallback of any kind.
 
 **How to use it**:
 
 1. Click **Audio Cleanup** in the toolbar to open the panel. Nothing is downloaded at app startup; the model loads only when you ask for it.
-2. (Optional) Pick the **Engine** — _LiteRT DTLN_ or _ONNX Runtime DTLN_ — at the top of the panel. Switching engines unloads the current model so the next action reloads with the chosen runtime.
-3. Click **Load model** to fetch and verify the two DTLN model files (~4 MB total, downloaded from GitHub via a same-origin proxy and SHA-256-verified). After one successful load the models are cached in OPFS for offline use (each engine caches its own files).
-4. Select an audio clip on the timeline.
-5. Click **Preview cleanup** to denoise the first 10 seconds and A/B compare **Play original** vs **Play cleaned**.
-6. Click **Apply to export / create cleaned audio asset** to process the whole clip. This creates a derived `*.cleaned.wav` asset in the Media Bin and routes the clip's audio through it for both playback and export.
-7. Use **Cancel** at any time to stop a running model load or cleanup pass.
+2. Click **Load model** to fetch and verify the two DTLN ONNX model files (~4 MB total, downloaded from GitHub via a same-origin proxy and SHA-256-verified). After one successful load the models are cached in OPFS for offline use.
+3. Select an audio clip on the timeline.
+4. Click **Preview cleanup** to denoise the first 10 seconds and A/B compare **Play original** vs **Play cleaned**.
+5. Click **Apply to export / create cleaned audio asset** to process the whole clip. This creates a derived `*.cleaned.wav` asset in the Media Bin and routes the clip's audio through it for both playback and export.
+6. Use **Cancel** at any time to stop a running model load or cleanup pass.
 
 **Notes**:
 
@@ -340,7 +334,7 @@ ONNX is the default after real-audio A/B parity against LiteRT was verified. Thi
 - Export is unchanged unless you applied cleanup; only clips you explicitly cleaned use the denoised audio.
 - If you later trim a cleaned clip beyond the range that was cleaned, the clip automatically falls back to its original audio (re-apply cleanup to cover the new range). If the cleaned asset goes missing (e.g. cleared storage), the original audio plays and a source-health warning appears.
 - One cleanup pass is limited to 12 minutes of audio.
-- The panel shows the selected **Engine**, the accelerator that actually loaded (`webnn`, `webgpu`, or `wasm`), the model status and size, and the last analysis duration; the Capabilities panel has an **Audio cleanup (DTLN)** row.
+- The panel shows the selected engine, the accelerator that actually loaded (`wasm`), the model status and size, and the last analysis duration; the Capabilities panel has an **Audio cleanup (DTLN)** row.
 
 Model: DTLN (Nils L. Westhausen, Interspeech 2020 — MIT), from [breizhn/DTLN](https://github.com/breizhn/DTLN).
 
@@ -411,9 +405,9 @@ Import, edit, and export caption tracks:
 
 ### Auto Captions (experimental)
 
-LocalCut Studio can transcribe a clip's audio into a caption track entirely on your device, using [OpenAI Whisper](https://github.com/openai/whisper) run by [ONNX Runtime Web](https://onnxruntime.ai/docs/get-started/with-javascript/web.html) or [LiteRT.js](https://www.npmjs.com/package/@litertjs/core), depending on the model you pick. Like Audio Cleanup, it is **experimental** and fully local — no microphone, no app-audio capture, and no cloud API.
+LocalCut Studio can transcribe a clip's audio into a caption track entirely on your device, using [OpenAI Whisper](https://github.com/openai/whisper) run by [ONNX Runtime Web](https://onnxruntime.ai/docs/get-started/with-javascript/web.html). Like Audio Cleanup, it is **experimental** and fully local — no microphone, no app-audio capture, and no cloud API.
 
-- **Choose a model**: The panel lists the available models with their provider, size, and a **Learn more** link to the model card. The default is **Whisper Base (ONNX, int8)** — an int8-quantized model that downloads in ~77 MB (versus ~290 MB for the full-precision build) at comparable accuracy. **Whisper Tiny (ONNX, int8)** is smaller still (~41 MB) and faster. The full-precision **Whisper Base / Tiny (LiteRT)** builds remain selectable as the highest-fidelity option.
+- **Choose a model**: The panel lists the available models with their provider, size, and a **Learn more** link to the model card. The default is **Whisper Base (ONNX, int8)** — an int8-quantized model that downloads in ~77 MB. **Whisper Tiny (ONNX, int8)** is smaller still (~41 MB) and faster.
 - **Load model**: Click **Load model**. The model downloads once from a trusted source, is checksum-verified, and is stored on your device (OPFS) so later loads are instant and work offline — the network is touched at most once. Nothing downloads until you click, and the panel tells you when a model loaded straight from the device cache.
 - **Transcribe selected clip**: Select a clip on the timeline, optionally pick a language (Auto-detect / English / Chinese), and click **Transcribe selected clip**. The result becomes a normal, editable caption track positioned on the timeline where that clip lives.
 - **Burn in when needed**: Generated ASR tracks start as editable sidecar captions. Turn on **Burn-in** in the Transcript panel when you want them overlaid in preview/export.
@@ -422,9 +416,9 @@ LocalCut Studio can transcribe a clip's audio into a caption track entirely on y
 
 Model assets are fetched only from this app's own origin or a small allowlist of reputable hosts (Hugging Face, Kaggle / Google AI Edge, GitHub), and every file is verified against a published SHA-256 digest before use.
 
-**Requirements**: a browser with WebAssembly (effectively every modern browser). The ONNX models run on ONNX Runtime Web's WASM execution provider; the LiteRT models prefer experimental WebNN (JSPI), then WebGPU, then WASM — the panel shows the detected engine (ONNX Whisper or LiteRT Whisper) and the accelerator that actually loaded. The transcription runs in a dedicated worker, so the editor stays responsive. The model itself is downloaded on demand from Hugging Face (digest-verified, then OPFS-cached); if it can't be reached, **Load model** fails gracefully and the rest of the editor works exactly as before — there is no cloud _processing_ of any kind, only the one-time model download. The panel also shows model size and download progress and the last transcription duration; the Capabilities panel has an **Auto Captions (ASR)** row.
+**Requirements**: a browser with WebAssembly (effectively every modern browser). The ONNX models run on ONNX Runtime Web's WASM execution provider; the panel shows the detected engine and accelerator. The transcription runs in a dedicated worker, so the editor stays responsive. The model itself is downloaded on demand from Hugging Face (digest-verified, then OPFS-cached); if it can't be reached, **Load model** fails gracefully and the rest of the editor works exactly as before — there is no cloud _processing_ of any kind, only the one-time model download. The panel also shows model size and download progress and the last transcription duration; the Capabilities panel has an **Auto Captions (ASR)** row.
 
-Model: Whisper (MIT, OpenAI), run on-device by ONNX Runtime Web (Apache-2.0, Microsoft) on WASM, or LiteRT.js (Apache-2.0, Google) on WebNN/WebGPU/WASM, depending on the selected model.
+Model: Whisper (MIT, OpenAI), run on-device by ONNX Runtime Web (Apache-2.0, Microsoft) on WASM.
 
 ## Caption Styles and Animation
 

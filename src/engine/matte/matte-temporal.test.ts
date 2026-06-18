@@ -3,10 +3,8 @@ import { describe, expect, it } from 'vite-plus/test';
 import { MATTE_TEMPORAL_SMOOTHING, emaBlend, shouldResetMatteHistory } from './matte-temporal';
 
 /**
- * The temporal-stability contract shared by both matte backends (LiteRT default
- * and the ORT/ONNX spike). These assertions are what make the spike's "EMA
- * smoothing and recurrent-state reset are unchanged" claim verifiable without a
- * GPU — both engines import these exact functions, and `matte-resolve.wgsl`
+ * The temporal-stability contract for ORT matte. These assertions verify EMA
+ * smoothing and recurrent-state resets without a GPU; `matte-resolve.wgsl`
  * mirrors `emaBlend`.
  */
 describe('matte temporal smoothing (EMA)', () => {

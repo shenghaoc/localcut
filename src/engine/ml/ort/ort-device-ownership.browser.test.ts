@@ -4,8 +4,7 @@
  * Acceptance: a `GPUBuffer` created from the device ORT owns
  * (`ort.env.webgpu.device`) can be used **both** by the app's own WebGPU compute
  * pass and by ORT's `Tensor.fromGpuBuffer` as a session input — proving ORT 1.26+
- * exposes a shareable WebGPU device (the gap that blocked the LiteRT-era ORT
- * evaluation; see matte-engine.ts). This runs only under `test:browser`; it
+ * exposes a shareable WebGPU device. This runs only under `test:browser`; it
  * self-skips where WebGPU is unavailable (e.g. software-rendered CI VMs).
  *
  * `getData()` here is an explicit, manual verification readback — not a hot path.

@@ -1,16 +1,14 @@
 /**
  * ONNX Whisper model manifest validation (Phase 29 — ORT/ONNX backend).
  *
- * Unlike the LiteRT manifest (one fused `.tflite` with `encode`/`decode`
- * signatures), an ONNX Whisper model is an **encoder/decoder pair** plus a
- * tokenizer — so this manifest declares separate `encoder` and `decoder` ONNX
- * assets (and, reserved for a future KV-cache runtime, an optional
- * `decoderWithPast`). The byte-exact integrity contract (size + SHA-256), the
- * audio contract, the special-token ids, and the decode-quality params are the
- * same engine-agnostic shapes the LiteRT manifest uses; the audio/token/decode
- * validators are imported from {@link file://./model-manifest.ts} rather than
- * duplicated. ORT runtime policy (`format: 'onnx'`, pinned execution providers
- * through {@link resolveExecutionProviders}) layers on top.
+ * An ONNX Whisper model is an **encoder/decoder pair** plus a tokenizer, so this
+ * manifest declares separate `encoder` and `decoder` ONNX assets (and, reserved
+ * for a future KV-cache runtime, an optional `decoderWithPast`). The byte-exact
+ * integrity contract (size + SHA-256), audio contract, special-token ids, and
+ * decode-quality params are imported from shared validators in
+ * {@link file://./model-manifest.ts}. ORT runtime policy (`format: 'onnx'`,
+ * pinned execution providers through {@link resolveExecutionProviders}) layers
+ * on top.
  *
  * Pure and unit-testable: no fetch, no ORT import.
  */
@@ -53,18 +51,17 @@ export interface AsrOrtIoContract {
 }
 
 /**
- * A validated ONNX Whisper manifest. Shares the transcribe-time fields
+ * A validated ONNX Whisper manifest. Its transcribe-time fields
  * (`audio`/`maxDecodeTokens`/`vocabSize`/`tokens`/`languages`/`defaultLanguage`/
- * `decode`/`sizeBytes`) with {@link AsrModelManifestSnapshot} so the worker's
- * transcription path is engine-agnostic, and adds the ONNX-specific assets, IO,
- * and execution-provider policy.
+ * `decode`/`sizeBytes`) satisfy the worker's shared decode config while adding
+ * the ONNX-specific assets, IO, and execution-provider policy.
  */
 export interface AsrOrtModelManifestSnapshot {
 	id: string;
 	version: string;
 	license: string;
 	source: string;
-	/** Discriminator separating this from the LiteRT manifest. */
+	/** Runtime discriminator. */
 	runtime: 'ort-whisper';
 	format: 'onnx';
 	/** Human-readable provenance for the picker (e.g. "OpenAI · onnx-community"). */

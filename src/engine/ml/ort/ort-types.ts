@@ -7,9 +7,8 @@
  * `onnxruntime-web` into a bundle, which is what keeps the WebGPU/WebNN runtimes
  * lazy (see {@link file://./ort-loader.ts}).
  *
- * ORT is the repo's model runtime. LiteRT/TFLite is the legacy path being retired
- * feature-by-feature as license-verified ONNX models land; no new feature targets
- * it. See docs/ML-RUNTIME.md.
+ * ORT is the repo's model runtime. New model features use ONNX manifests and
+ * choose an ORT execution provider per model. See docs/ML-RUNTIME.md.
  */
 
 /**
@@ -57,10 +56,10 @@ export interface OrtModelAsset {
 }
 
 /**
- * A validated ONNX model manifest. Mirrors the LiteRT manifests' provenance +
- * integrity contract (license/source/size/SHA) and adds ORT-specific runtime
- * policy: the pinned, ordered execution providers and whether the model is
- * frame-coupled (which forbids a WASM/CPU fallback — see {@link file://./ep-policy.ts}).
+ * A validated ONNX model manifest. It carries provenance + integrity data
+ * (license/source/size/SHA) plus ORT runtime policy: the pinned, ordered
+ * execution providers and whether the model is frame-coupled (which forbids a
+ * WASM/CPU fallback — see {@link file://./ep-policy.ts}).
  */
 export interface OrtModelManifest {
 	readonly id: string;

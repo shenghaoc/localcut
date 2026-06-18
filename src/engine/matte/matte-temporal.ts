@@ -1,17 +1,10 @@
 /**
- * Shared temporal-stability contract for the portrait-matte backends (Phase 31).
+ * Temporal-stability contract for portrait matte (Phase 31).
  *
- * Both matte backends — the deployed LiteRT MediaPipe path ({@link file://./matte-engine.ts})
- * and the experimental ORT/ONNX path ({@link file://./matte-onnx-engine.ts}) —
- * smooth a single-frame model's raw alpha over time with the same exponential
- * moving average (EMA) and reset that history on the same discontinuities.
- *
- * Centralising the constant and the reset predicate here is what makes the ORT
- * spike's "EMA temporal smoothing and recurrent-state reset are unchanged from the
- * deployed path" claim literally true — one source of truth, not two copies that
- * can drift — and lets the contract be unit-tested without a GPU
- * ({@link file://./matte-temporal.test.ts}). The GPU `matte-resolve.wgsl` pass is
- * the on-device mirror of {@link emaBlend}; both backends feed it the same uniforms.
+ * The ORT matte engine smooths a single-frame model's raw alpha over time with an
+ * exponential moving average (EMA) and resets that history on discontinuities.
+ * Centralising the constant and reset predicate here keeps the GPU
+ * `matte-resolve.wgsl` pass and unit tests on one source of truth.
  */
 
 /**
@@ -22,7 +15,7 @@ export const MATTE_TEMPORAL_SMOOTHING = 0.5;
 
 /**
  * Source-time step assumed by the discontinuity policy when a clip's real frame
- * step is unknown (0 or negative): 30 fps. Kept in sync with both engines.
+ * step is unknown (0 or negative): 30 fps.
  */
 const FALLBACK_FRAME_STEP_S = 1 / 30;
 
@@ -31,8 +24,7 @@ const FALLBACK_FRAME_STEP_S = 1 / 30;
  * passes through and the history restarts): always on the first frame
  * (`lastSourceTimeS === null`), and on any source-time jump larger than 1.5 frame
  * steps — which covers seeks, reverse playback, and skips. Toggle / mode-change /
- * model-swap resets are driven separately by clearing `lastSourceTimeS` (see
- * {@link file://./matte-engine.ts} `resetClip`).
+ * model-swap resets are driven separately by clearing `lastSourceTimeS`.
  */
 export function shouldResetMatteHistory(
 	lastSourceTimeS: number | null,

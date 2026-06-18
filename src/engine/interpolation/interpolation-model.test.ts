@@ -60,7 +60,7 @@ describe('validateInterpolationManifest', () => {
 	});
 
 	it('rejects format other than onnx', () => {
-		expect(() => validateInterpolationManifest({ ...VALID_MANIFEST, format: 'tflite' })).toThrow(
+		expect(() => validateInterpolationManifest({ ...VALID_MANIFEST, format: 'json' })).toThrow(
 			/"format" must be "onnx"/
 		);
 	});
