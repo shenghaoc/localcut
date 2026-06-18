@@ -610,38 +610,30 @@ export function Inspector(props: InspectorProps) {
 		};
 	}
 
-	// Local draft of the skin mask that persists across sibling-slider edits
-	// before the worker echoes back. Without this, dragging one slider then
-	// another within ~PARAM_DEBOUNCE_MS reads `currentSkinMask()` against the
-	// stale upstream value and overwrites the first slider's just-committed
-	// change. External skin-mask updates reset the draft when no edit is active.
-	//
-	// `currentSkinMask()` returns a fresh object literal so direct mutation
-	// of the result is already safe, but we shallow-clone explicitly here so
-	// that intent is obvious if `currentSkinMask`'s return shape is ever
-	// refactored to share a reference with upstream state.
-	let skinMaskDraft: ReturnType<typeof currentSkinMask> | null = null;
+	type SkinMaskDraft = ReturnType<typeof currentSkinMask>;
+	let skinMaskDraft: SkinMaskDraft | null = null;
 	let skinMaskDraftClipId: string | null = null;
-	createEffect(
-		on(
-			() => props.selectedClip?.skinMask,
-			() => {
-				if (skinMaskPending.size === 0 && skinMaskDebouncers.size === 0) {
-					skinMaskDraft = null;
-				}
-			},
-			{ defer: true }
-		)
-	);
+
+	function cloneCurrentSkinMask(): SkinMaskDraft {
+		return { ...currentSkinMask() };
+	}
+
+	function resetSkinMaskDraftIfIdle(): void {
+		if (skinMaskPending.size === 0 && skinMaskDebouncers.size === 0) {
+			skinMaskDraft = null;
+		}
+	}
+
+	createEffect(on(() => props.selectedClip?.skinMask, resetSkinMaskDraftIfIdle, { defer: true }));
+
 	function getSkinMaskDraft() {
 		const clip = props.selectedClip;
 		if (!clip) return null;
-		const current = currentSkinMask();
 		if (skinMaskDraftClipId !== clip.clipId) {
-			skinMaskDraft = { ...current };
+			skinMaskDraft = cloneCurrentSkinMask();
 			skinMaskDraftClipId = clip.clipId;
 		} else if (!skinMaskDraft) {
-			skinMaskDraft = { ...current };
+			skinMaskDraft = cloneCurrentSkinMask();
 		}
 		return skinMaskDraft;
 	}
