@@ -22,14 +22,18 @@
 - [x] **T5 — Delete the MediaPipe detector (R4.1).** Removed
       `createMediapipeFaceDetector`, Tasks Vision typings, `mediapipe-loader`
       files, and remote WASM/TFLite constants from `face-models.ts`. Kept the
-      `FaceDetector` interface and `createMockFaceDetector`.
+      `FaceDetector` interface and `createMockFaceDetector`. Cleaned
+      `reframe-analyzer.ts` so ORT load failure no longer falls through a
+      second runtime, and updated `face-detector.ts` / `face-models.ts`
+      comments to describe the ORT-only path.
 - [x] **T6 — Drop the dependency (R4.2).** Removed `@mediapipe/tasks-vision` from
       `package.json`; lockfile regenerated without the package.
 - [x] **T7 — Probe + UI + bridge cleanup (R3, R4.3).** Updated
       `capability-probe-v2.ts`, `SmartReframePanel`, `reframe-controller.ts`,
       `reframe-bridge.ts`, and protocol types so the only model path is ORT.
-      `reframe-bridge.ts` now uses a module worker; the classic-worker
-      `importScripts` constraint is gone.
+      `reframe-bridge.ts` now uses a module worker and its comments describe
+      lazy ESM ORT chunks instead of the retired classic-worker `importScripts`
+      constraint.
 - [x] **T8 — Analyzer fallback cleanup (R3).** Removed the fallback loading chain
       in `reframe-analyzer.ts`; ORT load failures report saliency-only status
       directly with simpler error handling.

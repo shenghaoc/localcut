@@ -1,13 +1,9 @@
-import { afterEach, describe, it, expect, vi } from 'vite-plus/test';
+import { describe, it, expect } from 'vite-plus/test';
 import { createMockFaceDetector, type FaceDetection } from './face-detector';
 
 function img(width: number, height: number): ImageData {
 	return { data: new Uint8ClampedArray(4), width, height, colorSpace: 'srgb' } as ImageData;
 }
-
-afterEach(() => {
-	vi.restoreAllMocks();
-});
 
 describe('createMockFaceDetector (R11.2 injection)', () => {
 	it('returns canned detections keyed by frame index', async () => {

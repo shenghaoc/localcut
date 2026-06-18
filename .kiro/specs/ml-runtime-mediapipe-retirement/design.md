@@ -21,6 +21,8 @@ SmartReframePanel
 
 No path imports a second ML runtime. `face-detector.ts` is now a pure shared
 interface/test-mock module; ORT lives behind the lazy worker import.
+`reframe-analyzer.ts` no longer has a multi-runtime fallback loader: a detector
+load failure reports saliency-only status directly.
 
 ## Model
 
@@ -54,8 +56,10 @@ NMS. This keeps the decoder generic for future raw-bbox or anchor-offset models.
 
 `reframe-bridge.ts` now creates a module worker; the previous classic-worker
 constraint only existed for a runtime that loaded WASM through `importScripts`.
-The controller and protocol send only `ortManifestUrl`. The panel copy names one
-optional ONNX face detector and reports the loaded engine as `ort-onnx`.
+Its comments now describe lazy ESM ORT chunks instead of the retired
+`importScripts` requirement. The controller and protocol send only
+`ortManifestUrl`. The panel copy names one optional ONNX face detector and
+reports the loaded engine as `ort-onnx`.
 
 When ORT loading, asset verification, session creation, or decode fails, the
 worker posts a failed face-model status and Smart Reframe remains saliency-only.
@@ -67,6 +71,7 @@ unchanged.
 - `@mediapipe/tasks-vision` dependency and lockfile entries.
 - `src/engine/reframe/mediapipe-loader.{js,d.ts}`.
 - `createMediapipeFaceDetector` and local Tasks Vision typings.
+- the fallback loading chain in `reframe-analyzer.ts`.
 - WASM/TFLite URL constants in `face-models.ts`.
 - MediaPipe-specific Workbox runtime caches.
 - UI/probe/docs copy that described a fallback engine.

@@ -602,7 +602,7 @@ export interface MatteProbeResult {
 /**
  * Pixel normalization the model expects on its NHWC input:
  * - `signed-unit`: [-1, 1] via `rgb * 2 - 1` (MODNet and most matting models).
- * - `unit`: [0, 1] raw RGB (MediaPipe Selfie Segmentation).
+ * - `unit`: [0, 1] raw RGB (legacy segmentation manifests and some ONNX exports).
  */
 export type MatteInputRange = 'signed-unit' | 'unit';
 

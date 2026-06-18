@@ -71,9 +71,14 @@ tensors for TypeScript decode. No compositor-device adoption is involved.
 ## R4 — Remove MediaPipe Runtime
 
 - **R4.1** Delete `createMediapipeFaceDetector`, local Tasks Vision typings,
-  `mediapipe-loader.{js,d.ts}`, and remote WASM/TFLite constants.
+  `mediapipe-loader.{js,d.ts}`, and remote WASM/TFLite constants. Clean up
+  `reframe-analyzer.ts` to remove the multi-runtime fallback loading chain and
+  simplify ORT-failure handling. Update JSDoc/comments in `face-detector.ts`
+  and `face-models.ts` so they no longer describe the retired runtime.
 - **R4.2** Remove `@mediapipe/tasks-vision` from `package.json` and lockfile.
 - **R4.3** Remove MediaPipe-specific Workbox runtime caches and UI/probe copy.
+  Update `reframe-bridge.ts` worker type/comments because the classic-worker
+  `importScripts` constraint no longer applies.
 - **R4.4** Preserve the shared `FaceDetector` interface and
   `createMockFaceDetector` test seam.
 
