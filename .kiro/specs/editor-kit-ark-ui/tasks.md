@@ -57,6 +57,6 @@
 
 ## T8 — Pull Request
 
-- [ ] **T8.1** Commit the scoped migration.
-- [ ] **T8.2** Push the branch.
-- [ ] **T8.3** Open a draft PR with a concise title and Markdown description.
+- [x] **T8.1** Commit the scoped migration.
+- [x] **T8.2** Push the branch.
+- [x] **T8.3** Open a draft PR with a concise title and Markdown description.
