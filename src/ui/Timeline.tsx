@@ -869,7 +869,9 @@ export function Timeline(props: TimelineProps) {
 											translate: `${box().left}px ${box().top}px`,
 											width: `${box().width}px`,
 											height: `${box().height}px`,
-											'will-change': 'translate, width, height'
+											// will-change lists only translate: width/height force layout
+											// regardless, so hinting them wastes memory without any gain.
+											'will-change': 'translate'
 										}}
 									/>
 								)}
