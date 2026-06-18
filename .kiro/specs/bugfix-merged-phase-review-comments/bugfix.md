@@ -68,11 +68,30 @@ A workflow over all 41 merged phase PRs spawned one agent per PR. Each agent:
 50 findings came back as "actionable, still applicable, non-litert." That set
 is the bug list below, deduplicated and grouped by phase.
 
-After the PR was rebased on `origin/main` at `879f9e79`, the newly merged
-editor-chrome cleanup PR #114 was checked separately. Its bot review findings
-were either already fixed in the base branch or confirmed as non-issues by the
-later reviews, so this PR only records that current-base audit and does not
-carry additional #114 code.
+PR #112 was opened on 2026-06-16 at 16:49:12 UTC. A follow-up audit checked
+every PR merged into `main` after that timestamp:
+
+- #111 Phase 21 scope dispatch
+- #74 Phase 39 vertical/platform finishing
+- #75 Phase 42 recorder UX
+- #116 BeatPanel progress optimization
+- #78 Phase 45 program mode
+- #115 Phase 41 T13 own-tab DOM event sidecar
+- #76 Phase 43 screencast post pack
+- #106 Smart Reframe ONNX face detector
+- #107 Portrait Matte ORT/ONNX spike
+- #113 Phase 21 scopes end-to-end
+- #108 Audio Cleanup DTLN ONNX backend
+- #109 Auto Captions Whisper ONNX backend
+- #114 editor chrome redesign
+
+That post-creation audit changed the interpretation of this fix-up. #116 has
+no active review threads, and #114's required fixes are already present in the
+base branch or were confirmed as non-issues by later reviews. Several other
+post-creation merges still have active, non-outdated review findings. They are
+tracked explicitly in `tasks.md`; this PR should not claim that the full
+post-creation backlog is complete until those findings are either fixed here
+or moved to separate follow-up PRs.
 
 ## Bugs
 

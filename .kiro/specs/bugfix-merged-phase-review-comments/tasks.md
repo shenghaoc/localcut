@@ -223,15 +223,25 @@
   (`879f9e79`). Conflict audit kept both active bugfix specs in
   `AGENTS.md` and preserved the precision-instrument global CSS plus this
   PR's bundle-replace modal styles.
-- [x] **T19.2** Newly merged PR #114 editor-chrome review findings were
-  re-checked against the rebased base. Required fixes are already present in
-  `origin/main` (28px collapsed rail in both workspace states, encoded SVG
-  data URI, escaped CSS content glyphs, targeted scrollbar selectors, and
-  narrow toolbar/status overrides after the redesign block), so PR #112
-  does not need extra code for that phase.
-- [x] **T19.3** Latest PR #112 Gemini review: rename reserved WGSL
+- [x] **T19.2** Post-creation merge cutoff audit: PR #112 opened at
+  2026-06-16 16:49:12 UTC, so the audit includes every PR merged after that
+  timestamp: #111, #74, #75, #116, #78, #115, #76, #106, #107, #113, #108,
+  #109, and #114.
+- [x] **T19.3** PR #116 has no active review threads. PR #114
+  editor-chrome findings were re-checked against the rebased base; required
+  fixes are already present in `origin/main` (28px collapsed rail in both
+  workspace states, encoded SVG data URI, escaped CSS content glyphs,
+  targeted scrollbar selectors, and narrow toolbar/status overrides after
+  the redesign block), so PR #112 does not need extra #114 code.
+- [ ] **T19.4** The following post-creation merged PRs still have active,
+  non-outdated review findings that this branch has not fully fixed or
+  classified into separate follow-up PRs: #74 (5), #75 (7), #76 (4), #78
+  (19), #106 (11), #107 (5), #108 (7), #109 (5), #111 (4), #113 (8), and
+  #115 (21). This fix-up is not a complete post-creation sweep until those
+  are addressed or explicitly deferred.
+- [x] **T19.5** Latest PR #112 Gemini review: rename reserved WGSL
   identifier `sample` to `texel` in both halation shaders.
-- [x] **T19.4** Latest PR #112 Gemini review: clear the skin-mask draft and
+- [x] **T19.6** Latest PR #112 Gemini review: clear the skin-mask draft and
   draft clip id when no clip is selected.
 
 ## T20 — Gate
