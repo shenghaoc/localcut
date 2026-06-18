@@ -211,23 +211,28 @@ jobs:
     steps:
       - checkout
       - run:
-          name: Install Node (.node-version)
-          # nvm is preinstalled on the ubuntu-2404 machine image; use it to
-          # honour .node-version exactly (Node 26). pnpm itself is installed
-          # by the `install_pnpm_deps` command below — that path is corepack-
-          # free, see the comment there.
+          name: Install Node (.node-version) from nodejs.org
+          # ubuntu-2404:current doesn't reliably ship nvm, and the previous
+          # `[ -s nvm.sh ] && . nvm.sh` chain silently no-ops when it's
+          # missing — making `nvm install` fail with a confusing exit 1.
+          # Pull the binary tarball straight from nodejs.org instead: it's
+          # version-precise (resolved from .node-version) and doesn't care
+          # what the machine image happens to bundle this month. /usr/local
+          # is already on PATH so no BASH_ENV plumbing required for later
+          # steps.
           command: |
-            export NVM_DIR="$HOME/.nvm"
-            # shellcheck source=/dev/null
-            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-            NODE_VERSION="$(cat .node-version)"
-            nvm install "$NODE_VERSION"
-            nvm alias default "$NODE_VERSION"
+            NODE_MAJOR="$(cat .node-version)"
+            NODE_VERSION=$(curl -fsSL https://nodejs.org/dist/index.tab \
+              | awk -v p="v${NODE_MAJOR}." 'NR>1 && $1 ~ "^"p {print $1; exit}')
+            if [ -z "$NODE_VERSION" ]; then
+              echo "No Node ${NODE_MAJOR}.x release found on nodejs.org" >&2
+              exit 1
+            fi
+            echo "Installing Node ${NODE_VERSION}"
+            curl -fsSL "https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-linux-x64.tar.xz" -o /tmp/node.tar.xz
+            sudo tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1
             node --version
-            # Persist nvm bootstrap into BASH_ENV so later steps see the
-            # correct node + npm without re-sourcing nvm.sh.
-            echo "export NVM_DIR=$NVM_DIR" >> "$BASH_ENV"
-            echo '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"' >> "$BASH_ENV"
+            npm --version
       - install_pnpm_deps
       - run:
           name: Install Playwright Chromium
