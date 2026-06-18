@@ -185,7 +185,7 @@ describe('CaptureEventRingWriter — TextEncoder.encodeInto SAB regression', () 
 		const sab = allocateCaptureEventRing(1);
 		const writer = new CaptureEventRingWriter(sab);
 
-		// eslint-disable-next-line typescript/unbound-method -- prototype spy
+		// oxlint-disable-next-line typescript/unbound-method -- prototype spy
 		const original = TextEncoder.prototype.encodeInto;
 		let seenSharedBuffer = false;
 		TextEncoder.prototype.encodeInto = function (input: string, dest: Uint8Array) {

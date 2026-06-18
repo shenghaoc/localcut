@@ -374,17 +374,14 @@ export function CaptionStyleInspector(props: CaptionStyleInspectorProps) {
 	);
 
 	// Draft override state, seeded from whichever preset is currently selected.
-	// `selectedPresetDraft` recomputes when its tracked dependency — the preset
-	// id, via `activePreset()` — changes.
-	const selectedPresetDraft = createMemo<Draft>(() => {
-		const preset = activePreset();
-		return preset ? draftFromPreset(preset) : draftFromPreset(ANIM_CAPTION_PRESETS[0]!);
-	});
+	// `createComputed` re-seeds the draft synchronously (before the DOM updates)
+	// whenever the active preset changes, so switching presets never flashes
+	// stale fields. It tracks `activePreset()` (the preset id) but not `draft`
+	// itself, so user edits via `updateDraft` don't re-trigger the reset.
 	const [draft, setDraft] = createSignal<Draft>(draftFromPreset(ANIM_CAPTION_PRESETS[0]!));
-	// Re-seed the draft synchronously (before the DOM updates) whenever the
-	// selected preset changes, so switching presets never flashes stale fields.
 	createComputed(() => {
-		setDraft(selectedPresetDraft());
+		const preset = activePreset();
+		setDraft(preset ? draftFromPreset(preset) : draftFromPreset(ANIM_CAPTION_PRESETS[0]!));
 	});
 	const d = draft;
 
