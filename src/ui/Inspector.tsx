@@ -636,11 +636,12 @@ export function Inspector(props: InspectorProps) {
 	function getSkinMaskDraft() {
 		const clip = props.selectedClip;
 		if (!clip) return null;
+		const current = currentSkinMask();
 		if (skinMaskDraftClipId !== clip.clipId) {
-			skinMaskDraft = { ...currentSkinMask() };
+			skinMaskDraft = { ...current };
 			skinMaskDraftClipId = clip.clipId;
 		} else if (!skinMaskDraft) {
-			skinMaskDraft = { ...currentSkinMask() };
+			skinMaskDraft = { ...current };
 		}
 		return skinMaskDraft;
 	}
