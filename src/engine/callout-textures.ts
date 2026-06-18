@@ -111,7 +111,7 @@ export class CalloutTextureCache {
 
 	/** Drops textures for callouts no longer on the timeline. */
 	retain(activeClipIds: ReadonlySet<string>): void {
-		for (const clipId of [...this.cache.keys()]) {
+		for (const clipId of Array.from(this.cache.keys())) {
 			if (!activeClipIds.has(clipId)) this.invalidate(clipId);
 		}
 	}

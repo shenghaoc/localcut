@@ -21,7 +21,6 @@ interface CapabilityPanelProps {
 }
 
 export function CapabilityPanel(props: CapabilityPanelProps) {
-	// eslint-disable-next-line eslint/no-unassigned-vars — SolidJS ref assigns via JSX
 	let panelRef: HTMLElement | undefined;
 
 	createEffect(() => {
@@ -31,9 +30,9 @@ export function CapabilityPanel(props: CapabilityPanelProps) {
 	});
 	return (
 		<Show when={props.open}>
-			<div class="capability-backdrop" onClick={props.onClose} aria-hidden="true" />
+			<div class="capability-backdrop" onClick={() => props.onClose()} aria-hidden="true" />
 			<aside
-				ref={panelRef}
+				ref={(el) => (panelRef = el)}
 				class="capability-panel panel"
 				role="dialog"
 				aria-modal="true"

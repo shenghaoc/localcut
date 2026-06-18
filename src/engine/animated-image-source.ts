@@ -35,7 +35,7 @@ export class AnimatedImageFrameSource implements VideoFrameProvider {
 		// with variable per-frame delays produce frame-accurate timing rather
 		// than cloning the first frame's duration across the entire track.
 		// We close each frame's image immediately — no buffering is retained.
-		const durations: number[] = new Array(this.frameCount);
+		const durations: number[] = Array.from({ length: this.frameCount }, () => 0);
 		durations[0] = toDurationSeconds(firstResult.image.duration);
 		firstResult.image.close();
 		for (let i = 1; i < this.frameCount; i++) {

@@ -33,6 +33,7 @@ export function PaddedBackgroundPanel(props: PaddedBackgroundPanelProps) {
 	const enabled = () => props.paddedBackground != null;
 
 	const [params, setParams] = createSignal<PaddedBackgroundParams>(
+		// oxlint-disable-next-line solid/reactivity -- intentional initial seed; createEffect below syncs external changes
 		props.paddedBackground ?? { ...DEFAULT_PADDED_BACKGROUND }
 	);
 

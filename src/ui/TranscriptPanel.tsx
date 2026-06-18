@@ -131,7 +131,6 @@ function trackDuration(track: CaptionTrackSnapshot): string {
 }
 
 export function TranscriptPanel(props: TranscriptPanelProps) {
-	// eslint-disable-next-line eslint/no-unassigned-vars — SolidJS ref assigns via JSX
 	let importInput: HTMLInputElement | undefined;
 	const activeTrack = createMemo(
 		() =>
@@ -272,7 +271,7 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
 						Import
 					</button>
 					<input
-						ref={importInput}
+						ref={(el) => (importInput = el)}
 						class="sr-only"
 						type="file"
 						accept=".srt,.vtt,text/vtt,application/x-subrip"

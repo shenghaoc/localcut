@@ -107,7 +107,7 @@ export const InterpolationControls: Component<InterpolationControlsProps> = (pro
 						type="button"
 						class="interpolation-controls__preview-btn"
 						disabled={!modelLoaded()}
-						onClick={props.onPreviewSegment}
+						onClick={() => props.onPreviewSegment()}
 						aria-label="Preview interpolated segment"
 					>
 						Preview interpolated segment

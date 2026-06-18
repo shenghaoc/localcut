@@ -48,7 +48,7 @@ export function StorageCleanupDialog(props: StorageCleanupDialogProps) {
 
 	return (
 		<Show when={props.open}>
-			<div class="capability-backdrop" onClick={props.onClose} aria-hidden="true" />
+			<div class="capability-backdrop" onClick={() => props.onClose()} aria-hidden="true" />
 			<aside
 				class="diagnostics-panel panel"
 				role="dialog"

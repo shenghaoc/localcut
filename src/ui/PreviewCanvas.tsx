@@ -8,7 +8,6 @@ interface PreviewCanvasProps {
 }
 
 export function PreviewCanvas(props: PreviewCanvasProps) {
-	// eslint-disable-next-line eslint/no-unassigned-vars — SolidJS ref assigns via JSX
 	let canvasEl: HTMLCanvasElement | undefined;
 
 	onMount(() => {
@@ -20,7 +19,7 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 
 	return (
 		<canvas
-			ref={canvasEl}
+			ref={(el) => (canvasEl = el)}
 			class="preview-canvas"
 			width={1280}
 			height={720}

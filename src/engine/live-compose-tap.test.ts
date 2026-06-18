@@ -7,6 +7,7 @@ function mockFrame(): VideoFrame {
 }
 
 function closeSpy(frame: VideoFrame) {
+	// oxlint-disable-next-line typescript/unbound-method -- mock `close` has no `this` dependency
 	return vi.mocked(frame.close);
 }
 

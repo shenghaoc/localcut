@@ -55,7 +55,6 @@ function formatBytes(bytes: number | null): string {
 }
 
 export const AudioCleanupPanel: Component<AudioCleanupPanelProps> = (props) => {
-	// eslint-disable-next-line eslint/no-unassigned-vars — SolidJS ref assigns via JSX
 	let panelRef: HTMLElement | undefined;
 	let audioContext: AudioContext | null = null;
 	let activeSource: AudioBufferSourceNode | null = null;
@@ -125,7 +124,7 @@ export const AudioCleanupPanel: Component<AudioCleanupPanelProps> = (props) => {
 		<Show when={props.open}>
 			<div class="capability-backdrop" onClick={() => props.onClose()} aria-hidden="true" />
 			<aside
-				ref={panelRef}
+				ref={(el) => (panelRef = el)}
 				class="diagnostics-panel panel"
 				role="dialog"
 				aria-modal="true"

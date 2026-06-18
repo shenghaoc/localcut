@@ -747,6 +747,7 @@ export function App() {
 		}
 		// Toggling unmounts the focused button; move focus to its counterpart
 		// so keyboard and screen reader users are not dropped onto <body>.
+		// oxlint-disable-next-line solid/reactivity -- one-shot deferred focus inside an event handler, reads current values intentionally
 		queueMicrotask(() => {
 			if (collapsed) {
 				document.getElementById('side-rail-expand-btn')?.focus();
@@ -965,6 +966,7 @@ export function App() {
 			setVoiceCleanupDenoiserUnavailableReason('');
 		}
 		void loadVoiceCleanupWasm().then(
+			// oxlint-disable-next-line solid/reactivity -- async load resolve; the guarded re-check of current state is intentional
 			(wasmBytes) => {
 				if (
 					voiceCleanupSettings().denoiserEnabledTracks.length > 0 &&
