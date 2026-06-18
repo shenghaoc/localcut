@@ -45,20 +45,25 @@ ORT" below), with the LiteRT fp32 build kept as a selectable fallback.
 
 ### One runtime, three execution providers
 
-ORT Web ships a single JSEP build (`ort-wasm-simd-threaded.jsep.wasm`) that backs
-the WebGPU, WebNN, **and** WASM execution providers from **one binary** — the EP is
-chosen per session, not per bundle. Two consequences drive the unify-on-ORT policy:
+ORT Web exposes the WebGPU, WebNN, **and** WASM execution providers from one
+library (`onnxruntime-web`); the EP is chosen per session. `ort-loader.ts` loads
+the **smallest build that covers a session's EPs**: `onnxruntime-web/webgpu` (the
+JSEP build, which also carries WASM CPU ops), `onnxruntime-web/all` (adds WebNN),
+or `onnxruntime-web/wasm` (a smaller WASM-only build for CPU-only sessions). Two
+consequences drive the unify-on-ORT policy:
 
 - The **WASM EP is a baseline we cannot ditch.** It is the only path that runs
   where WebGPU/WebNN are unavailable (older browsers, software-rendered or headless
-  environments, locked-down enterprise). Because it lives in the same binary we
-  already load for the WebGPU EP, that baseline costs no extra runtime download.
+  environments, locked-down enterprise). It is part of the same ORT runtime — the
+  WebGPU/JSEP build already includes the WASM CPU ops — so it adds no second ML
+  _runtime_, though a CPU-only feature that never touches WebGPU does fetch the
+  smaller WASM-only build (a separate, smaller artifact, not a second runtime).
 - Carrying LiteRT _in addition_ means shipping and maintaining a **second** ML
-  runtime for capabilities the one ORT binary already covers. So the policy is to
-  run **as much as possible on the single ORT runtime** — WebGPU where it helps,
-  WebNN where proven, WASM as the universal floor — and **retire LiteRT** rather
-  than split features across two engines. Earlier code treated WebGPU/WebNN/WASM as
-  if they implied separate runtimes; they do not.
+  runtime for capabilities ORT already covers. So the policy is to run **as much as
+  possible on the single ORT runtime** — WebGPU where it helps, WebNN where proven,
+  WASM as the universal floor — and **retire LiteRT** rather than split features
+  across two engines. Earlier code treated WebGPU/WebNN/WASM as if they implied
+  separate _runtimes_; they are EPs of one.
 
 ### GPU device ownership (ORT-owned, renderer adopts)
 
@@ -171,9 +176,12 @@ loaded under the same trust rules as the LiteRT assets:
 The diagnostics snapshot carries an optional `mlRuntime` summary
 (`MlRuntimeDiagnosticSummary`):
 
-- `mlRuntime`: `'litert' | 'ort'` — which runtime is active. The deployed default
-  Auto Captions and audio cleanup report `'ort'`; LiteRT-default features (matte)
-  report `'litert'` until they migrate.
+- `mlRuntime`: `'litert' | 'ort'` — what the diagnostic summary reports. Today only
+  Auto Captions on the ORT Whisper engine surfaces `'ort'` (via `mlRuntimeSummary`,
+  keyed on `asr.engine === 'ort-whisper'`); the worker snapshot otherwise reports
+  `'litert'`. Audio cleanup defaults to its ONNX backend at runtime but is **not**
+  yet folded into this summary, so its snapshot still reads `'litert'` — wiring
+  cleanup (and matte) into the summary is tracked separately.
 - `ortEp`: `'webgpu' | 'webnn' | 'wasm'` — the resolved EP (ORT only).
 - `tensorLocation`: `'cpu' | 'gpu-buffer' | 'ml-tensor'` — where tensors live.
 - `deviceOwner`: `'ort-webgpu' | 'webnn-context'` — which subsystem owns the

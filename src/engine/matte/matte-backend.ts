@@ -36,6 +36,16 @@ export const DEFAULT_MATTE_BACKEND: MatteBackendKind = 'litert';
  * worker holds one of either behind this type.
  */
 export interface MatteBackendEngine {
+	/**
+	 * True when the engine's matte views are allocated on the renderer/compositor
+	 * `GPUDevice`, so the compositor can bind them directly. The LiteRT engine
+	 * shares the renderer's device (it adopts an external device). The ORT engine
+	 * runs on ORT's **own** device (ORT cannot adopt the renderer's —
+	 * onnxruntime#26107), which the compositor does not yet adopt, so its views
+	 * must **not** be composited cross-device until that lands (tracked in the
+	 * `ml-runtime-compositor-device-adoption` spec).
+	 */
+	readonly compositesOnRendererDevice: boolean;
 	/** Per-frame matte; the engine takes ownership of `request.frame`. */
 	matteViewFor(request: MatteFrameRequest): Promise<GPUTextureView | null>;
 	/** Drops a clip's temporal (EMA) history without releasing the session. */

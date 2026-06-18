@@ -95,6 +95,15 @@ interface LoadedModel {
 }
 
 export class MatteOnnxEngine implements MatteBackendEngine {
+	/**
+	 * False: this engine's alpha textures live on ORT's own device, and the
+	 * compositor does not yet adopt it (onnxruntime#26107; tracked in the
+	 * `ml-runtime-compositor-device-adoption` spec). The worker therefore does not
+	 * composite this engine's views — doing so cross-device would be a WebGPU
+	 * validation error — so the experimental ORT matte degrades to unmatted until
+	 * that adoption ships.
+	 */
+	readonly compositesOnRendererDevice = false;
 	/** ORT-owned device, set once the session is created in {@link loadModel}; the
 	 *  engine's own WGSL passes run on it and the renderer adopts it. */
 	private device: GPUDevice | null = null;
