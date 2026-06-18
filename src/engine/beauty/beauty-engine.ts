@@ -2,9 +2,12 @@
  * Beauty runtime engine — Phase 32b, ORT/ONNX.
  *
  * Lives in the pipeline worker. Loads a face **detector** + dense **landmark**
- * ONNX pair on the Phase-105 ORT foundation (`src/engine/ml/ort/`), creating both
- * sessions on the **renderer's `GPUDevice`** (`createOrtSession({ device })`, so
- * `deviceOwner: 'renderer'`), and runs a cadence-gated per-frame solve:
+ * ONNX pair on the Phase-105 ORT foundation (`src/engine/ml/ort/`). ORT bootstraps
+ * and owns the `GPUDevice` (`deviceOwner: 'ort-webgpu'`; ORT ignores an injected
+ * device — microsoft/onnxruntime#26107); both sessions and the engine's own
+ * preprocess passes run on it (`handle.device`), and the renderer adopts that
+ * device for the compositor's beauty-warp pass. It runs a cadence-gated per-frame
+ * solve:
  *
  *   VideoFrame → importExternalTexture → beauty-preprocess WGSL (ROI resize/
  *   normalize → NHWC GPUBuffer) → `ort.Tensor.fromGpuBuffer` → detector
@@ -108,8 +111,6 @@ export type BeautyInferenceFn = (
 ) => Promise<BeautyRawSolve | null>;
 
 export interface BeautyEngineOptions {
-	/** The renderer/compositor `GPUDevice`; injected into ORT so inference shares it. */
-	device: GPUDevice;
 	manifestUrl?: string;
 	onStatus?: (status: BeautyEngineStatus, error?: string) => void;
 	onProgress?: (progress: BeautyLoadProgress) => void;
@@ -155,7 +156,7 @@ function ortManifestForAsset(
 		license: asset.license,
 		source: asset.source,
 		format: 'onnx',
-		// Per-frame face inference on the compositor device: WebGPU-only, no WASM/CPU
+		// Per-frame face inference on ORT's own device: WebGPU-only, no WASM/CPU
 		// full-frame fallback (R1.1/R1.2). Inputs and outputs stay on GPU buffers.
 		frameCoupled: true,
 		executionProviders: ['webgpu'],
@@ -165,7 +166,9 @@ function ortManifestForAsset(
 }
 
 export class BeautyEngine {
-	private readonly device: GPUDevice;
+	/** ORT-owned device, set once the sessions are created in {@link loadModels};
+	 *  the engine's own preprocess passes run on it and the renderer adopts it. */
+	private device: GPUDevice | null = null;
 	private readonly manifestUrl: string;
 	private readonly onStatus?: (status: BeautyEngineStatus, error?: string) => void;
 	private readonly onProgress?: (progress: BeautyLoadProgress) => void;
@@ -198,7 +201,6 @@ export class BeautyEngine {
 	private readonly rawScratch = new Float32Array(LANDMARK_FLOATS);
 
 	constructor(options: BeautyEngineOptions) {
-		this.device = options.device;
 		this.manifestUrl = options.manifestUrl ?? DEFAULT_BEAUTY_MANIFEST_URL;
 		this.onStatus = options.onStatus;
 		this.onProgress = options.onProgress;
@@ -283,7 +285,6 @@ export class BeautyEngine {
 			const handle = await createOrtSession({
 				modelBytes,
 				manifest: ortManifestForAsset(manifest, asset),
-				device: this.device,
 				tensorLocation: 'gpu-buffer'
 			});
 			return { handle, asset };
@@ -298,6 +299,14 @@ export class BeautyEngine {
 			await landmarks.handle.session.release();
 			return;
 		}
+		if (!detector.handle.device) {
+			await detector.handle.session.release();
+			await landmarks.handle.session.release();
+			throw new Error('ORT-WebGPU beauty session exposed no GPUDevice.');
+		}
+		// Both sessions ran on ORT's own device; adopt it for the engine's preprocess
+		// passes (the renderer adopts the same device for beauty-warp compositing).
+		this.device = detector.handle.device;
 		this.ort = await loadOrtWebGpu();
 		this.models = { detector, landmarks, manifest };
 		this.status = 'loaded';
@@ -456,7 +465,8 @@ export class BeautyEngine {
 
 	private ensurePreprocess(): void {
 		if (this.preprocessPipeline) return;
-		const device = this.device;
+		// Set in loadModels; gpuInfer (the only caller path) requires a loaded model.
+		const device = this.device!;
 		this.preprocessPipeline = device.createComputePipeline({
 			layout: 'auto',
 			compute: {
@@ -488,7 +498,7 @@ export class BeautyEngine {
 		size: number,
 		inputBuf: GPUBuffer
 	): Promise<Record<string, Float32Array>> {
-		const device = this.device;
+		const device = this.device!;
 		const ort = this.ort!;
 		const uni = new ArrayBuffer(32);
 		new Uint32Array(uni, 0, 2).set([size, size]);
@@ -545,7 +555,7 @@ export class BeautyEngine {
 			// a failed in-flight solve is fine; we are tearing down
 		}
 		try {
-			await this.device.queue.onSubmittedWorkDone();
+			await this.device?.queue.onSubmittedWorkDone();
 		} catch {
 			// device may be lost; tear down anyway
 		}
@@ -569,6 +579,7 @@ export class BeautyEngine {
 		this.clipStates.clear();
 		this.models = null;
 		this.ort = null;
+		this.device = null;
 		this.status = 'not-loaded';
 	}
 }

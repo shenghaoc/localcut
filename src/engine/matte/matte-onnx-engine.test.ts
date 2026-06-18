@@ -36,8 +36,11 @@ describe('MatteOnnxEngine — zero-copy hot path (source contract)', () => {
 		expect(engineSource).toContain('loadOrtWebGpu');
 	});
 
-	it('injects the renderer device (shared-device, deviceOwner: renderer)', () => {
-		expect(engineSource).toContain('device: this.device');
+	it('lets ORT own the device and adopts it (never injects a device — onnxruntime#26107)', () => {
+		// ORT ignores an injected `env.webgpu.device`, so the engine must NOT pass a
+		// device into the session; it adopts the ORT-created device for its own passes.
+		expect(engineSource).not.toContain('device: this.device');
+		expect(engineSource).toContain('this.device = handle.device');
 	});
 
 	it('shares the EMA temporal contract + resolve shader with the LiteRT engine', () => {

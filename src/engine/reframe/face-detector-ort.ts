@@ -71,10 +71,6 @@ export interface OrtFaceDetectorPorts {
 
 export interface CreateOrtFaceDetectorOptions extends OrtFaceDetectorPorts {
 	manifestUrl: string;
-	/** Renderer-owned `GPUDevice` to share with ORT, when available. The Smart
-	 *  Reframe worker does not currently own a compositor device, so this is
-	 *  typically omitted — ORT then creates its own (deviceOwner: 'ort-webgpu'). */
-	device?: GPUDevice;
 }
 
 /** Error raised when the ORT face-detector path cannot load. The reframe worker
@@ -122,8 +118,7 @@ export async function createOrtFaceDetector(
 			// default to `gpu-buffer`/`ml-tensor`, which don't expose a
 			// TypedArray `.data`. Since detection runs at a low analysis fps
 			// (default 2 fps) the readback overhead is negligible.
-			tensorLocation: 'cpu',
-			...(options.device !== undefined ? { device: options.device } : {})
+			tensorLocation: 'cpu'
 		});
 	} catch (error) {
 		throw new OrtFaceDetectorUnavailableError(

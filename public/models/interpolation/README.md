@@ -15,7 +15,7 @@ real model and replace the template (see below).
 ## How model bytes are delivered (local-first, no cloud inference)
 
 - Fetched **on explicit user action** through the same-origin Worker proxy
-  (`/_model/{hf,gh,gcs}/…`, `src/worker/index.ts`) or a Cloudflare **R2** bucket — never a
+  (`/_model/{hf,gh,gcs}/…`, `src/worker/index.ts`) — never a
   direct cross-origin browser fetch (COEP `require-corp`). The host allowlist is
   `assertTrustedOrtModelUrl` (`src/engine/ml/ort/ort-asset-loader.ts`).
 - **SHA-256 + size verified** before the session is created, and **OPFS-cached by digest**
@@ -49,10 +49,10 @@ vendored source of truth.
 ## To enable (the R9 validation gate)
 
 1. Pick a model whose **licence is verified permissive** (commercial-OK).
-2. Export/obtain the **ONNX** graph; host it on an allowlisted host (HF / GitHub / GCS / R2).
+2. Export/obtain the **ONNX** graph; host it on an allowlisted host (HF / GitHub / GCS).
 3. Confirm **every graph node runs on ORT-WebGPU** (no full-frame WASM/CPU fallback) with the
    browser-mode per-node-EP harness. If any node falls back, reject the model.
-4. Replace `manifest.json`: remove `"template"`, set the real `model.url` (proxy/R2 path),
+4. Replace `manifest.json`: remove `"template"`, set the real `model.url` (proxy path),
    `model.sizeBytes` + `model.checksum` (sha256), and the `io` contract (`layout`,
    `input0Name`/`input1Name`/`timestepName`, `outputName`, `flowOutput`/`flowOutputName`,
    sizes, `maxDisplacement`) matching the exported graph's signature.

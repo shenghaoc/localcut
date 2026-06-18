@@ -43,6 +43,7 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 /** Private surface the tests reach into to bypass loading and stub the GPU work. */
 interface InterpInternals {
 	status: string;
+	device: GPUDevice | null;
 	model: unknown;
 	ort: unknown;
 	disposed: boolean;
@@ -51,16 +52,14 @@ interface InterpInternals {
 }
 
 function makeEngine(): { engine: InterpolationEngine; internals: InterpInternals } {
-	const engine = new InterpolationEngine({
-		// Only createTexture is reached (after ensurePipelines is stubbed out); it
-		// returns a disposable stand-in for the output texture.
-		device: { createTexture: () => ({ destroy: vi.fn() }) } as unknown as GPUDevice,
-		onStatus: vi.fn()
-	});
+	const engine = new InterpolationEngine({ onStatus: vi.fn() });
 	const internals = engine as unknown as InterpInternals;
 	// Pretend a model is loaded so synthesise reaches the work path; the GPU work is
-	// replaced by the stubs below.
+	// replaced by the stubs below. loadModel would normally adopt ORT's device from
+	// handle.device — here a stub whose only reached method is createTexture (after
+	// ensurePipelines is stubbed out), returning a disposable output-texture stand-in.
 	internals.status = 'loaded';
+	internals.device = { createTexture: () => ({ destroy: vi.fn() }) } as unknown as GPUDevice;
 	internals.model = {};
 	internals.ort = {};
 	internals.ensurePipelines = () => {};

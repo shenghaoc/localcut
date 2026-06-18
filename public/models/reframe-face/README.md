@@ -28,7 +28,7 @@ There is no silent fallback to a different ONNX model and no startup download.
 ## How model bytes are delivered (local-first, no cloud inference)
 
 - Fetched **on explicit user action** through the same-origin Worker proxy
-  (`/_model/{hf,gh,gcs}/…`, `src/worker/index.ts`) or a Cloudflare **R2** bucket
+  (`/_model/{hf,gh,gcs}/…`, `src/worker/index.ts`)
   — never a direct cross-origin browser fetch (COEP `require-corp`). The host
   allowlist is `assertTrustedOrtModelUrl` (`src/engine/ml/ort/ort-asset-loader.ts`).
 - **SHA-256 + size verified** before the session is created, and **OPFS-cached
@@ -96,8 +96,8 @@ validated by `validateOrtManifest`) plus a face-detector `io` block and a
 1. Pick a face-detector ONNX whose **licence is verified permissive**
    (commercial-OK).
 2. Export/obtain the ONNX graph; host it on an allowlisted host
-   (HF / GitHub / GCS / R2).
-3. Replace `manifest.json`: remove `"template"`, set the real `model.url` (proxy/R2 path),
+   (HF / GitHub / GCS).
+3. Replace `manifest.json`: remove `"template"`, set the real `model.url` (proxy path),
    `model.sizeBytes` + `model.checksum` (sha256), and the `io`/`decode` contract
    matching the exported graph's signature.
 4. Add the model's licence + provenance under the app's third-party attributions.

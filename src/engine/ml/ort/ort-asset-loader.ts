@@ -8,11 +8,13 @@
  * the ORT manifest → asset shape mapping live in this module.
  *
  * Model bytes are fetched same-origin (or through the Worker's `/_model/*`
- * reverse proxies) from a small allowlist of reputable hosts: Hugging Face,
- * GitHub, Google Cloud Storage, and Cloudflare R2. A manifest naming any other
- * host is refused before a byte is fetched (the digest pins *what*, the allowlist
- * pins *where*). There is no direct cross-origin browser fetch and no cloud
- * inference — see docs/ML-RUNTIME.md.
+ * reverse proxies) from a small allowlist of reputable hosts: Hugging Face
+ * (where the ONNX publishers — e.g. `onnx-community` — live), GitHub, and Google
+ * Cloud Storage. Models are sourced directly from their ONNX publisher, not
+ * re-hosted on R2. A manifest naming any other host is refused before a byte is
+ * fetched (the digest pins *what*, the allowlist pins *where*). There is no
+ * direct cross-origin browser fetch and no cloud inference — see
+ * docs/ML-RUNTIME.md.
  */
 import {
 	createOpfsAssetStore,
@@ -26,10 +28,11 @@ import type { OrtModelAsset } from './ort-types';
  * Hosts (besides this app's own origin) the ORT model loader may fetch from. An
  * entry starting with `.` matches that domain and all subdomains. Most loads go
  * through the same-origin `/_model/{hf,gh,gcs}/` Worker proxies; these direct
- * hosts cover redirect hops (HF Xet/LFS CDNs) and R2 public buckets.
+ * hosts cover redirect hops (HF Xet/LFS CDNs). Models are sourced directly from
+ * their ONNX publisher (`onnx-community` on Hugging Face), not re-hosted on R2.
  */
 export const ORT_TRUSTED_MODEL_HOSTS: readonly string[] = [
-	// Hugging Face model repos + their Xet/LFS CDNs.
+	// Hugging Face model repos (onnx-community et al.) + their Xet/LFS CDNs.
 	'.huggingface.co',
 	'.hf.co',
 	// Google Cloud Storage (mediapipe / Google AI Edge assets).
@@ -37,10 +40,7 @@ export const ORT_TRUSTED_MODEL_HOSTS: readonly string[] = [
 	// GitHub repositories and raw content.
 	'github.com',
 	'raw.githubusercontent.com',
-	'objects.githubusercontent.com',
-	// Cloudflare R2 public buckets (the project's own model host).
-	'.r2.dev',
-	'.r2.cloudflarestorage.com'
+	'objects.githubusercontent.com'
 ];
 
 function hostMatches(host: string, entry: string): boolean {

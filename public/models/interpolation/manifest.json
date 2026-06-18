@@ -1,5 +1,5 @@
 {
-	"_comment": "TEMPLATE — NOT loadable. `template: true` makes validateInterpolationManifest reject this manifest so the feature stays hidden (R2.4). To enable frame interpolation: remove `template`, set a real `model.url` on an allowlisted host (same-origin `/_model/{hf,gh,gcs}/…` proxy or a Cloudflare R2 bucket), fill `model.sizeBytes` + `model.checksum` (sha256) from the vendored file, and set the real `io` contract (input/output names, layout, timestep) for a license-verified RIFE-class ONNX model that passes the R9 full-WebGPU operator-support gate. See README.md and docs/ML-RUNTIME.md.",
+	"_comment": "TEMPLATE — NOT loadable. `template: true` makes validateInterpolationManifest reject this manifest so the feature stays hidden (R2.4). To enable frame interpolation: remove `template`, set a real `model.url` on an allowlisted host (same-origin `/_model/{hf,gh,gcs}/…` proxy), fill `model.sizeBytes` + `model.checksum` (sha256) from the vendored file, and set the real `io` contract (input/output names, layout, timestep) for a license-verified RIFE-class ONNX model that passes the R9 full-WebGPU operator-support gate. See README.md and docs/ML-RUNTIME.md.",
 	"template": true,
 	"id": "rife-interpolation",
 	"version": "TEMPLATE",
