@@ -494,6 +494,19 @@ function watchRendererDeviceLoss(device: GPUDevice): void {
 		void handleRendererDeviceLost({
 			reason: info.reason,
 			message: info.message
+		}).catch((error) => {
+			recordRecentError({
+				code: 'gpu.device_lost_teardown_failed',
+				subsystem: 'gpu',
+				severity: 'error',
+				message: errorMessage(error),
+				recoveryActionIds: ['retry-gpu-device', 'reload-app']
+			});
+			post({
+				type: 'recovery-state',
+				state: 'failed',
+				actions: []
+			});
 		});
 	});
 }
@@ -545,10 +558,14 @@ function assertRendererAdoptionAllowed(): void {
 	}
 }
 
-async function adoptOrtDevice(ortDevice: GPUDevice, source: string): Promise<void> {
+async function waitForRendererAdoptionToSettle(): Promise<void> {
 	while (rendererAdoptionInFlight) {
-		await rendererAdoptionInFlight;
+		await rendererAdoptionInFlight.catch(() => {});
 	}
+}
+
+async function adoptOrtDevice(ortDevice: GPUDevice, source: string): Promise<void> {
+	await waitForRendererAdoptionToSettle();
 	if (!renderer) {
 		throw new Error(`${source} requires the accelerated WebGPU renderer.`);
 	}
@@ -624,6 +641,105 @@ async function adoptOrtDevice(ortDevice: GPUDevice, source: string): Promise<voi
 		if (rendererAdoptionInFlight === run) {
 			rendererAdoptionInFlight = null;
 		}
+	}
+}
+
+async function handleRetryGpuDevice(actionId: string): Promise<void> {
+	await waitForRendererAdoptionToSettle();
+	post({ type: 'recovery-state', state: 'recovering', actions: [] });
+	try {
+		assertRendererAdoptionAllowed();
+		if (!previewCanvas) {
+			throw new Error('GPU recovery requires an initialized preview canvas.');
+		}
+
+		playback?.pause();
+		cancelRendererDeviceLossWatch();
+		await disposeAllMlEngines();
+		destroyRendererTextureCaches();
+		renderer?.destroy();
+		renderer = null;
+		reducedRenderer?.destroy();
+		reducedRenderer = null;
+		previewBackend = 'none';
+		exportBackend = 'none';
+
+		const useCompatibilityAdapter = currentCapabilityProbe?.compatibilityAdapter === true;
+		const gpu =
+			currentCapabilityProbe?.tier === 'limited-webcodecs'
+				? {
+						renderer: null,
+						features: [],
+						limits: {},
+						unavailableReason: null
+					}
+				: currentCapabilityProbe?.tier === 'shell-only'
+					? {
+							renderer: null,
+							features: [],
+							limits: {},
+							unavailableReason: 'Preview unavailable in shell-only tier.'
+						}
+					: useCompatibilityAdapter
+						? await initCompatibilityGpu(previewCanvas)
+						: await initGpu(previewCanvas);
+
+		if (currentCapabilityProbe?.tier === 'limited-webcodecs') {
+			reducedRenderer = new CanvasCompatibilityRenderer(previewCanvas);
+			previewBackend = 'canvas2d';
+			exportBackend = 'canvas2d';
+			lastGpuUnavailableReason =
+				'Limited WebCodecs tier active; preview/export use a reduced Canvas2D worker backend.';
+		}
+
+		renderer = gpu.renderer;
+		lastWebgpuFeatures = gpu.features;
+		lastWebgpuLimits = gpu.limits;
+		if (renderer) {
+			previewBackend = useCompatibilityAdapter ? 'compat-webgpu' : 'core-webgpu';
+			exportBackend = previewBackend;
+			lastGpuUnavailableReason = null;
+			lastDeviceLost = undefined;
+			if (currentScopeSab) {
+				renderer.setScopeSab(currentScopeSab);
+			}
+			renderer.setScopesEnabled(currentScopesEnabled);
+			renderer.setZebraEnabled(currentZebraEnabled);
+			rebuildRendererTextureCaches();
+			syncTimelineLuts();
+			watchRendererDeviceLoss(renderer.gpuDevice);
+		} else if (!reducedRenderer) {
+			lastGpuUnavailableReason = gpu.unavailableReason;
+			throw new Error(gpu.unavailableReason ?? 'GPU recovery did not create a preview backend.');
+		}
+
+		post({
+			type: 'ready',
+			webgpu: renderer !== null,
+			features: lastWebgpuFeatures,
+			gpuUnavailableReason: lastGpuUnavailableReason,
+			previewBackend,
+			exportBackend,
+			previewReady: previewBackend !== 'none',
+			exportReady: exportBackend !== 'none'
+		});
+		ensurePreview();
+		post({ type: 'recovery-state', state: 'idle', actions: [] });
+	} catch (error) {
+		const message = errorMessage(error);
+		lastGpuUnavailableReason = message;
+		recordRecentError({
+			code: 'gpu.recovery_failed',
+			subsystem: 'gpu',
+			severity: 'error',
+			message,
+			recoveryActionIds: ['retry-gpu-device', 'reload-app']
+		});
+		post({
+			type: 'error',
+			message: `GPU recovery failed (${actionId}): ${message}`
+		});
+		post({ type: 'recovery-state', state: 'failed', actions: [] });
 	}
 }
 
@@ -7520,6 +7636,7 @@ async function handleBeatAutoCut(
 }
 
 async function handleDispose(): Promise<void> {
+	await waitForRendererAdoptionToSettle();
 	restoreOfferGeneration += 1;
 	replaySaveAbort?.abort();
 	// Abort all in-flight beat analyses
@@ -9420,25 +9537,29 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			});
 			break;
 		case 'run-recovery-action':
-			post({
-				type: 'recovery-state',
-				state: 'idle',
-				actions: [
-					{
-						actionId: cmd.actionId,
-						kind: cmd.actionId === 'reload-app' ? 'reload-app' : 'export-project-bundle',
-						label: cmd.actionId === 'reload-app' ? 'Reload app' : 'Export project bundle',
-						description:
-							'Recovery actions are surfaced by diagnostics; UI-owned actions run on the main thread.',
-						enabled: false,
-						destructive: false,
-						requiresUserGesture: true,
-						reasonDisabled:
-							'This recovery action is handled by the UI in this implementation slice.',
-						relatedErrorIds: []
-					}
-				]
-			});
+			if (cmd.actionId === 'retry-gpu-device' || cmd.actionId === 'device-lost-recovery') {
+				void handleRetryGpuDevice(cmd.actionId);
+			} else {
+				post({
+					type: 'recovery-state',
+					state: 'idle',
+					actions: [
+						{
+							actionId: cmd.actionId,
+							kind: cmd.actionId === 'reload-app' ? 'reload-app' : 'export-project-bundle',
+							label: cmd.actionId === 'reload-app' ? 'Reload app' : 'Export project bundle',
+							description:
+								'Recovery actions are surfaced by diagnostics; UI-owned actions run on the main thread.',
+							enabled: false,
+							destructive: false,
+							requiresUserGesture: true,
+							reasonDisabled:
+								'This recovery action is handled by the UI in this implementation slice.',
+							relatedErrorIds: []
+						}
+					]
+				});
+			}
 			break;
 		// Phase 46: Replay Buffer + Live Audio Chain
 		case 'replay-capture-stop':

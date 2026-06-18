@@ -601,10 +601,9 @@ function recoveryActions(input: WorkerDiagnosticInput, isolated: boolean): Recov
 			label: 'Retry GPU',
 			description:
 				'WebGPU is unavailable. The zero-copy preview pipeline and GPU-accelerated effects require a WebGPU adapter and device. Check that hardware acceleration is enabled, GPU drivers are up to date, and you are using a WebGPU-capable Chromium browser (Chrome/Edge 113+).',
-			enabled: false,
+			enabled: true,
 			destructive: false,
 			requiresUserGesture: false,
-			reasonDisabled: 'Full GPU retry is not wired in this slice; reload remains the safe path.',
 			relatedErrorIds: errorsForSubsystem(input, 'gpu')
 		});
 	}
@@ -615,10 +614,9 @@ function recoveryActions(input: WorkerDiagnosticInput, isolated: boolean): Recov
 			kind: 'retry-gpu-device',
 			label: 'Recover GPU device',
 			description: `GPU device was lost: ${input.lastDeviceLost.message || input.lastDeviceLost.reason}. Preview and export are paused. A device recovery attempt can reinitialize the pipeline without losing project state.`,
-			enabled: false,
+			enabled: true,
 			destructive: false,
 			requiresUserGesture: false,
-			reasonDisabled: 'Device-lost recovery is not wired in this slice; reload to reinitialize.',
 			relatedErrorIds: errorsForSubsystem(input, 'gpu')
 		});
 	}
