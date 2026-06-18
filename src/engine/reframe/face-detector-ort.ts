@@ -417,7 +417,7 @@ function createDefaultResizeImageData(): NonNullable<OrtFaceDetectorPorts['resiz
 		try {
 			if (!resizeCanvas || resizeCanvas.width !== width || resizeCanvas.height !== height) {
 				resizeCanvas = new OffscreenCanvas(width, height);
-				resizeCtx = resizeCanvas.getContext('2d');
+				resizeCtx = resizeCanvas.getContext('2d', { willReadFrequently: true });
 			}
 			const ctx = resizeCtx;
 			if (!ctx) {
