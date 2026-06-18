@@ -118,7 +118,10 @@ vp run test:e2e         # Playwright E2E (full user-flow tests)
 vp lint .          # Lint
 vp fmt .           # Format
 vp run typecheck   # tsc --noEmit
+vp cache clean     # Clear the Vite+ task cache (node_modules/.vite/task-cache)
 ```
+
+The `check` quality-gate steps (`format:check`, `lint`, `typecheck`, `test`, `build`) are declared as tasks in [`vite.config.ts`](vite.config.ts) under `run`, so invoking them via `vp run …` content-caches each one. CI persists `node_modules/.vite/task-cache` across runs, so a re-push only re-executes the steps whose inputs actually changed.
 
 ## TypeScript 6/7 transition
 

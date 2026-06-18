@@ -80,6 +80,28 @@ export default defineConfig({
 	staged: {
 		'*': 'vp check --fix'
 	},
+	run: {
+		// Tasks defined here are content-cached by default in
+		// `node_modules/.vite/task-cache` (unlike package.json scripts, which are
+		// not). The `check` script chains these via `vp run`, so each step replays
+		// from cache when its inputs are unchanged instead of re-executing. CI
+		// persists that directory across runs (see .github/workflows/ci.yml), so a
+		// branch re-push only re-runs the steps whose inputs actually changed.
+		// `vp cache clean` clears it locally.
+		tasks: {
+			'format:check': { command: 'vp fmt --check .' },
+			lint: { command: 'vp lint . --max-warnings=0' },
+			typecheck: { command: 'tsgo --noEmit' },
+			test: { command: 'vp test run' },
+			build: {
+				command: 'vp build',
+				// The build define bakes in MATTE_ONNX_SPIKE (see `define` below), so
+				// include it in the cache fingerprint — toggling the flag must re-run
+				// the build rather than replay a build made with the other value.
+				env: ['MATTE_ONNX_SPIKE']
+			}
+		}
+	},
 	lint: {
 		plugins: ['oxc', 'typescript', 'unicorn', 'react'],
 		categories: {

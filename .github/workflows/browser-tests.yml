@@ -25,9 +25,10 @@ jobs:
         uses: voidzero-dev/setup-vp@v1
         with:
           node-version-file: .node-version
+          # `cache: true` caches the dependency store and `run-install` runs
+          # `vp install`, so no separate install step is needed.
           cache: true
-      - name: Install dependencies
-        run: vp install
+          run-install: true
       - name: Get Playwright version
         id: playwright-version
         run: echo "version=$(vpx playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
