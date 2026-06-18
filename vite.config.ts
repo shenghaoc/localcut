@@ -22,6 +22,12 @@ function gitSha(): string {
 
 const BUILD_SHA = gitSha();
 
+// Mirror the build SHA into the environment so the Vite+ task runner can fold
+// it into the `check:build` cache fingerprint (see run.tasks below): the SHA is
+// baked into the bundle via `define` but is not an input file, so without this
+// a no-source-change commit would replay a build carrying the previous SHA.
+process.env.LOCALCUT_BUILD_SHA = BUILD_SHA;
+
 function copyLiteRtRuntimeAssets(): void {
 	const sourceDir = join(repoRoot, 'node_modules', '@litertjs', 'core', 'wasm');
 	const targetDirs = [
@@ -79,6 +85,29 @@ function dropBundledOrtWasmPlugin() {
 export default defineConfig({
 	staged: {
 		'*': 'vp check --fix'
+	},
+	run: {
+		// The quality-gate steps are declared as tasks (not just package.json
+		// scripts) so `vp run` content-caches each one in
+		// `node_modules/.vite/task-cache`; the `check` script chains them. A task
+		// may not share a name with a package.json script, so these use a `check:`
+		// prefix — the canonical `lint`/`test`/`build`/… scripts stay for direct
+		// `pnpm <script>` use. CI persists the cache dir across runs (see
+		// .github/workflows/ci.yml); `vp cache clean` clears it locally.
+		tasks: {
+			'check:format': { command: 'vp fmt --check .' },
+			'check:lint': { command: 'vp lint . --max-warnings=0' },
+			'check:typecheck': { command: 'tsgo --noEmit' },
+			'check:test': { command: 'vp test run' },
+			'check:build': {
+				command: 'vp build',
+				// BUILD_SHA and MATTE_ONNX_SPIKE are baked into the bundle via
+				// `define` but are not input files, so list them in the cache
+				// fingerprint: a new commit (SHA, mirrored to env above) or a flag
+				// flip must re-run the build instead of replaying a stale bundle.
+				env: ['LOCALCUT_BUILD_SHA', 'MATTE_ONNX_SPIKE']
+			}
+		}
 	},
 	lint: {
 		plugins: ['oxc', 'typescript', 'unicorn', 'react'],

@@ -25,8 +25,21 @@ jobs:
         uses: voidzero-dev/setup-vp@v1
         with:
           node-version-file: .node-version
+          # Caches the dependency store (keyed by the lockfile) and runs
+          # `vp install` for us — no separate install step needed.
           cache: true
-      - name: Install dependencies
-        run: vp install
+          run-install: true
+      # The dependency cache above does NOT cover the Vite+ task cache. Persist
+      # it here so `vp run check` (format:check/lint/typecheck/test/build, all
+      # defined as tasks in vite.config.ts) replays content-unchanged steps from
+      # cache across runs instead of re-executing them.
+      - name: Cache Vite+ task results
+        uses: actions/cache@v5
+        with:
+          path: node_modules/.vite/task-cache
+          key: ${{ runner.os }}-vp-task-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-vp-task-${{ hashFiles('pnpm-lock.yaml') }}-
+            ${{ runner.os }}-vp-task-
       - name: Run checks
         run: vp run check
