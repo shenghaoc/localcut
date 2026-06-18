@@ -6230,7 +6230,7 @@ button.status-badge:hover {
 	content: '';
 	position: absolute;
 	inset: 0;
-	background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'><g fill='none' stroke='%2322d3ee' stroke-width='1.25'><circle cx='14' cy='14' r='9'/><circle cx='14' cy='14' r='2.2' fill='%2322d3ee'/><path d='M14 1v6M14 21v6M1 14h6M21 14h6'/></g></svg>");
+	background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2028%2028'%3E%3Cg%20fill='none'%20stroke='%2322d3ee'%20stroke-width='1.25'%3E%3Ccircle%20cx='14'%20cy='14'%20r='9'/%3E%3Ccircle%20cx='14'%20cy='14'%20r='2.2'%20fill='%2322d3ee'/%3E%3Cpath%20d='M14%201v6M14%2021v6M1%2014h6M21%2014h6'/%3E%3C/g%3E%3C/svg%3E");
 	background-repeat: no-repeat;
 	background-position: center;
 	background-size: contain;
@@ -6270,7 +6270,7 @@ button.status-badge:hover {
 	max-width: min(36vw, 520px);
 }
 .file-name::before {
-	content: '◉';
+	content: '\25C9';
 	margin-right: 8px;
 	color: var(--ink-700);
 	font-size: 9px;
@@ -6409,7 +6409,7 @@ button.status-badge:hover {
 	background: rgb(239 79 79 / 8%);
 }
 .pipeline-chip.is-tool.is-live::before {
-	content: '●';
+	content: '\25CF';
 	margin-right: 4px;
 	font-size: 8px;
 	animation: pulse-live 1.6s ease-in-out infinite;
@@ -6495,7 +6495,7 @@ button.status-badge:hover {
 	text-transform: uppercase;
 }
 .status-ok::before {
-	content: '●';
+	content: '\25CF';
 	margin-right: 6px;
 	font-size: 7px;
 }
@@ -6851,18 +6851,78 @@ input[type='range']::-moz-range-thumb {
 }
 
 /* ── Scrollbar — narrow, ink ── */
-*::-webkit-scrollbar {
+body::-webkit-scrollbar,
+.panel::-webkit-scrollbar,
+.capability-panel::-webkit-scrollbar,
+.publish-panel::-webkit-scrollbar,
+.diagnostics-panel::-webkit-scrollbar,
+.render-queue-panel::-webkit-scrollbar,
+.side-rail-tab-content::-webkit-scrollbar,
+.transcript-panel::-webkit-scrollbar,
+.timeline-scroll-viewport::-webkit-scrollbar,
+.pipeline-strip::-webkit-scrollbar,
+.dock-left > .beat-panel::-webkit-scrollbar,
+.replay-buffer-panel .collapse-body::-webkit-scrollbar,
+.live-audio-chain-panel .collapse-body::-webkit-scrollbar,
+.silence-review-panel::-webkit-scrollbar,
+.keystroke-overlay-panel::-webkit-scrollbar,
+.media-bin.panel::-webkit-scrollbar {
 	width: 8px;
 	height: 8px;
 }
-*::-webkit-scrollbar-track {
+body::-webkit-scrollbar-track,
+.panel::-webkit-scrollbar-track,
+.capability-panel::-webkit-scrollbar-track,
+.publish-panel::-webkit-scrollbar-track,
+.diagnostics-panel::-webkit-scrollbar-track,
+.render-queue-panel::-webkit-scrollbar-track,
+.side-rail-tab-content::-webkit-scrollbar-track,
+.transcript-panel::-webkit-scrollbar-track,
+.timeline-scroll-viewport::-webkit-scrollbar-track,
+.pipeline-strip::-webkit-scrollbar-track,
+.dock-left > .beat-panel::-webkit-scrollbar-track,
+.replay-buffer-panel .collapse-body::-webkit-scrollbar-track,
+.live-audio-chain-panel .collapse-body::-webkit-scrollbar-track,
+.silence-review-panel::-webkit-scrollbar-track,
+.keystroke-overlay-panel::-webkit-scrollbar-track,
+.media-bin.panel::-webkit-scrollbar-track {
 	background: transparent;
 }
-*::-webkit-scrollbar-thumb {
+body::-webkit-scrollbar-thumb,
+.panel::-webkit-scrollbar-thumb,
+.capability-panel::-webkit-scrollbar-thumb,
+.publish-panel::-webkit-scrollbar-thumb,
+.diagnostics-panel::-webkit-scrollbar-thumb,
+.render-queue-panel::-webkit-scrollbar-thumb,
+.side-rail-tab-content::-webkit-scrollbar-thumb,
+.transcript-panel::-webkit-scrollbar-thumb,
+.timeline-scroll-viewport::-webkit-scrollbar-thumb,
+.pipeline-strip::-webkit-scrollbar-thumb,
+.dock-left > .beat-panel::-webkit-scrollbar-thumb,
+.replay-buffer-panel .collapse-body::-webkit-scrollbar-thumb,
+.live-audio-chain-panel .collapse-body::-webkit-scrollbar-thumb,
+.silence-review-panel::-webkit-scrollbar-thumb,
+.keystroke-overlay-panel::-webkit-scrollbar-thumb,
+.media-bin.panel::-webkit-scrollbar-thumb {
 	background: var(--edge);
 	border-radius: 4px;
 }
-*::-webkit-scrollbar-thumb:hover {
+body::-webkit-scrollbar-thumb:hover,
+.panel::-webkit-scrollbar-thumb:hover,
+.capability-panel::-webkit-scrollbar-thumb:hover,
+.publish-panel::-webkit-scrollbar-thumb:hover,
+.diagnostics-panel::-webkit-scrollbar-thumb:hover,
+.render-queue-panel::-webkit-scrollbar-thumb:hover,
+.side-rail-tab-content::-webkit-scrollbar-thumb:hover,
+.transcript-panel::-webkit-scrollbar-thumb:hover,
+.timeline-scroll-viewport::-webkit-scrollbar-thumb:hover,
+.pipeline-strip::-webkit-scrollbar-thumb:hover,
+.dock-left > .beat-panel::-webkit-scrollbar-thumb:hover,
+.replay-buffer-panel .collapse-body::-webkit-scrollbar-thumb:hover,
+.live-audio-chain-panel .collapse-body::-webkit-scrollbar-thumb:hover,
+.silence-review-panel::-webkit-scrollbar-thumb:hover,
+.keystroke-overlay-panel::-webkit-scrollbar-thumb:hover,
+.media-bin.panel::-webkit-scrollbar-thumb:hover {
 	background: var(--edge-strong);
 }
 

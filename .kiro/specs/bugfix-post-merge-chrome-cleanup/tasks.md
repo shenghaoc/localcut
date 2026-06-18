@@ -175,3 +175,14 @@ context.
   not covered by the grid.
 - [x] **T12.3** Restate the narrow status-bar overrides after the final
   redesign block so stacked status text and badges can expand vertically.
+
+## T13 — Review comment follow-up 2
+
+- [x] **T13.1** Keep the no-media-bin workspace side rail at 304px and use
+  `is-live` for the active publish tool state so rail width and status
+  semantics stay consistent.
+- [x] **T13.2** Encode the app-glyph SVG data URI with
+  `charset=utf-8` and escaped XML so Safari/Firefox-compatible parsers do not
+  reject the reticle.
+- [x] **T13.3** Escape CSS marker glyphs and scope custom WebKit scrollbar
+  styling to known scroll containers instead of the universal selector.
