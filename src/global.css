@@ -4590,6 +4590,8 @@ button.status-badge:hover {
 
 	.preview {
 		min-height: 260px;
+		max-height: calc(100vh - var(--toolbar-h) - var(--timeline-h) - var(--status-h) - 32px);
+		contain: layout;
 	}
 
 	.preview-canvas,
@@ -7830,6 +7832,8 @@ body::-webkit-scrollbar-thumb:hover,
 
 	.preview {
 		min-height: 260px;
+		max-height: calc(100vh - var(--toolbar-h) - var(--timeline-h) - var(--status-h) - 32px);
+		contain: layout;
 	}
 
 	.side-rail {
