@@ -1,5 +1,6 @@
 import { createMemo, createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
+import { Menu } from '@ark-ui/solid/menu';
 import { Popover } from '@ark-ui/solid/popover';
 import { ToggleGroup } from '@ark-ui/solid/toggle-group';
 import {
@@ -84,6 +85,23 @@ interface CommandAction {
 	detail: string;
 	disabled?: boolean;
 	onSelect: () => void | Promise<void>;
+}
+
+type MenuBarItem =
+	| { kind: 'separator' }
+	| {
+			kind: 'item';
+			id: string;
+			label: string;
+			kbd?: string;
+			detail?: string;
+			disabled?: boolean;
+	  };
+
+interface MenuBarGroup {
+	id: string;
+	label: string;
+	items: readonly MenuBarItem[];
 }
 
 function formatToolbarTimecode(seconds: number, fps: number | null): string {
@@ -214,6 +232,130 @@ export function Toolbar(props: ToolbarProps) {
 		props.onSetTimelineSnapEnabled(snapEnabled);
 		props.onSetTimelineSnapToBeats(snapEnabled && next.has('beat'));
 	};
+	const isMod = () =>
+		typeof navigator !== 'undefined' && /Mac|iP(hone|ad|od)/.test(navigator.platform)
+			? '⌘'
+			: 'Ctrl';
+	const menuBarGroups = createMemo<MenuBarGroup[]>(() => {
+		const mod = isMod();
+		return [
+			{
+				id: 'project',
+				label: 'Project',
+				items: [
+					{ kind: 'item', id: 'import', label: 'Import media…', disabled: props.importBlocked },
+					{ kind: 'separator' },
+					{ kind: 'item', id: 'palette', label: 'Search actions…', kbd: `${mod}+K` },
+					{ kind: 'item', id: 'capabilities', label: 'Browser capabilities' }
+				]
+			},
+			{
+				id: 'edit',
+				label: 'Edit',
+				items: [
+					{ kind: 'item', id: 'undo', label: 'Undo', kbd: `${mod}+Z`, disabled: !props.canUndo },
+					{
+						kind: 'item',
+						id: 'redo',
+						label: 'Redo',
+						kbd: `${mod}+⇧+Z`,
+						disabled: !props.canRedo
+					},
+					{ kind: 'separator' },
+					{ kind: 'item', id: 'palette', label: 'Search actions…', kbd: `${mod}+K` }
+				]
+			},
+			{
+				id: 'clip',
+				label: 'Clip',
+				items: [
+					{
+						kind: 'item',
+						id: 'split',
+						label: 'Split at playhead',
+						kbd: 'S',
+						detail: 'on timeline'
+					},
+					{ kind: 'item', id: 'delete', label: 'Delete selected', kbd: '⌫', detail: 'on timeline' },
+					{ kind: 'separator' },
+					{ kind: 'item', id: 'palette', label: 'Search actions…', kbd: `${mod}+K` }
+				]
+			},
+			{
+				id: 'timeline',
+				label: 'Timeline',
+				items: [
+					{
+						kind: 'item',
+						id: 'snap',
+						label: props.timelineSnapEnabled ? 'Disable snap' : 'Enable snap'
+					},
+					{
+						kind: 'item',
+						id: 'beat-snap',
+						label: props.timelineSnapToBeats ? 'Disable beat snap' : 'Enable beat snap',
+						disabled: !props.timelineSnapEnabled
+					},
+					{ kind: 'separator' },
+					{ kind: 'item', id: 'palette', label: 'Search actions…', kbd: `${mod}+K` }
+				]
+			},
+			{
+				id: 'view',
+				label: 'View',
+				items: [
+					{ kind: 'item', id: 'capabilities', label: 'Browser capabilities' },
+					{ kind: 'separator' },
+					{ kind: 'item', id: 'palette', label: 'Search actions…', kbd: `${mod}+K` }
+				]
+			},
+			{
+				id: 'help',
+				label: 'Help',
+				items: [
+					{ kind: 'item', id: 'user-guide', label: 'User guide' },
+					{ kind: 'item', id: 'capabilities', label: 'Browser capabilities' },
+					{ kind: 'separator' },
+					{ kind: 'item', id: 'palette', label: 'Search actions…', kbd: `${mod}+K` }
+				]
+			}
+		];
+	});
+	const runMenuItem = (group: MenuBarGroup, value: string) => {
+		const item = group.items.find((i) => i.kind === 'item' && i.id === value);
+		if (!item || item.kind !== 'item' || item.disabled) return;
+		switch (value) {
+			case 'import':
+				void openImport();
+				return;
+			case 'palette':
+				openCommandPalette();
+				return;
+			case 'capabilities':
+				props.onOpenCapabilities?.();
+				return;
+			case 'user-guide':
+				props.onOpenHelp?.();
+				return;
+			case 'undo':
+				props.onUndo();
+				return;
+			case 'redo':
+				props.onRedo();
+				return;
+			case 'snap':
+				props.onSetTimelineSnapEnabled(!props.timelineSnapEnabled);
+				return;
+			case 'beat-snap':
+				props.onSetTimelineSnapToBeats(!props.timelineSnapToBeats);
+				return;
+			case 'split':
+			case 'delete':
+				// keyboard-only on the timeline; surface in the menu for discoverability
+				openCommandPalette();
+				return;
+		}
+	};
 
 	return (
 		<header class="toolbar">
@@ -228,60 +370,42 @@ export function Toolbar(props: ToolbarProps) {
 					</div>
 				</div>
 				<nav class="toolbar-menu-nav" aria-label="Application menu">
-					<button
-						type="button"
-						class="toolbar-menu-item"
-						onClick={openCommandPalette}
-						aria-haspopup="dialog"
-						title="Open project actions"
-					>
-						Project
-					</button>
-					<button
-						type="button"
-						class="toolbar-menu-item"
-						onClick={openCommandPalette}
-						aria-haspopup="dialog"
-						title="Open edit actions"
-					>
-						Edit
-					</button>
-					<button
-						type="button"
-						class="toolbar-menu-item"
-						onClick={openCommandPalette}
-						aria-haspopup="dialog"
-						title="Open clip actions"
-					>
-						Clip
-					</button>
-					<button
-						type="button"
-						class="toolbar-menu-item"
-						onClick={openCommandPalette}
-						aria-haspopup="dialog"
-						title="Open timeline actions"
-					>
-						Timeline
-					</button>
-					<button
-						type="button"
-						class="toolbar-menu-item"
-						onClick={openCommandPalette}
-						aria-haspopup="dialog"
-						title="Open view actions"
-					>
-						View
-					</button>
-					<button
-						type="button"
-						class="toolbar-menu-item"
-						onClick={openCommandPalette}
-						aria-haspopup="dialog"
-						title="Open help actions"
-					>
-						Help
-					</button>
+					<For each={menuBarGroups()}>
+						{(group) => (
+							<Menu.Root
+								onSelect={(details) => runMenuItem(group, details.value)}
+								positioning={{ placement: 'bottom-start', gutter: 6 }}
+							>
+								<Menu.Trigger class="toolbar-menu-item" title={`Open ${group.label} menu`}>
+									{group.label}
+								</Menu.Trigger>
+								<Portal>
+									<Menu.Positioner>
+										<Menu.Content class="command-popover panel toolbar-menu-popover">
+											<For each={group.items}>
+												{(item) =>
+													item.kind === 'separator' ? (
+														<Menu.Separator class="toolbar-menu-separator" />
+													) : (
+														<Menu.Item
+															value={item.id}
+															disabled={item.disabled}
+															class="command-action toolbar-menu-action"
+														>
+															<span>{item.label}</span>
+															<Show when={item.kbd || item.detail}>
+																<small>{item.kbd ?? item.detail}</small>
+															</Show>
+														</Menu.Item>
+													)
+												}
+											</For>
+										</Menu.Content>
+									</Menu.Positioner>
+								</Portal>
+							</Menu.Root>
+						)}
+					</For>
 				</nav>
 				<Popover.Root
 					open={commandOpen()}

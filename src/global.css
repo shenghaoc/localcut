@@ -1891,15 +1891,15 @@ body {
 
 .phase39-controls {
 	position: absolute;
-	right: 10px;
+	left: 10px;
 	bottom: 10px;
-	z-index: 4;
+	z-index: 5;
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
-	justify-content: flex-end;
+	justify-content: flex-start;
 	gap: 8px;
-	width: min(96px, calc(100% - 20px));
+	width: min(180px, calc(100% - 20px));
 	max-width: calc(100% - 20px);
 }
 
@@ -7307,6 +7307,57 @@ body::-webkit-scrollbar-thumb:hover,
 
 .toolbar-menu-item:disabled {
 	opacity: 0.42;
+}
+
+.toolbar-menu-item[data-state='open'] {
+	background: rgb(255 255 255 / 5%);
+	color: #d8d9e8;
+}
+
+.toolbar-menu-popover {
+	min-width: 220px;
+	padding: 4px;
+}
+
+.toolbar-menu-action {
+	width: 100%;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	gap: 12px;
+	align-items: center;
+	padding: 6px 10px;
+	border: 0;
+	border-radius: 4px;
+	background: transparent;
+	color: var(--ink-300);
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+
+.toolbar-menu-action[data-highlighted],
+.toolbar-menu-action:hover:not([data-disabled]) {
+	background: rgb(255 255 255 / 5%);
+	color: var(--ink-100);
+	outline: none;
+}
+
+.toolbar-menu-action[data-disabled] {
+	opacity: 0.42;
+	cursor: not-allowed;
+}
+
+.toolbar-menu-action > small {
+	color: var(--ink-500);
+	font-family: var(--font-mono);
+	font-size: 10px;
+	letter-spacing: 0.04em;
+}
+
+.toolbar-menu-separator {
+	margin: 4px 6px;
+	border: 0;
+	border-top: 1px solid var(--edge);
 }
 
 .command-search {
