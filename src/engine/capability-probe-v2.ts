@@ -434,16 +434,32 @@ export async function probeOpfsSyncAccessHandleInWorker(): Promise<FeatureSuppor
 		try {
 			const root = await navigator.storage.getDirectory();
 			const name = '_cap_probe_' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.tmp';
-			const handle = await root.getFileHandle(name, { create: true });
-			if (typeof handle.createSyncAccessHandle !== 'function') { self.postMessage('unsupported'); return; }
-			const access = await handle.createSyncAccessHandle();
-			access.close();
-			await root.removeEntry(name);
-			self.postMessage('supported');
+			let handle;
+			try {
+				handle = await root.getFileHandle(name, { create: true });
+				if (typeof handle.createSyncAccessHandle !== 'function') {
+					self.postMessage('unsupported');
+					return;
+				}
+				const access = await handle.createSyncAccessHandle();
+				access.close();
+				self.postMessage('supported');
+			} catch {
+				self.postMessage('unknown');
+			} finally {
+				if (handle) {
+					try { await root.removeEntry(name); } catch {}
+				}
+			}
 		} catch { self.postMessage('unknown'); }
 	};`;
 	const url = URL.createObjectURL(new Blob([src], { type: 'application/javascript' }));
-	const worker = new Worker(url);
+	let worker: Worker;
+	try {
+		worker = new Worker(url);
+	} finally {
+		URL.revokeObjectURL(url);
+	}
 	try {
 		return await new Promise<FeatureSupport>((resolve) => {
 			const timer = setTimeout(() => resolve('unknown'), 3_000);
@@ -459,7 +475,6 @@ export async function probeOpfsSyncAccessHandleInWorker(): Promise<FeatureSuppor
 		});
 	} finally {
 		worker.terminate();
-		URL.revokeObjectURL(url);
 	}
 }
 
