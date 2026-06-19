@@ -1,4 +1,4 @@
-import { createMemo, createSignal, For, Show, type JSX } from 'solid-js';
+import { createMemo, createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { Popover } from '@ark-ui/solid/popover';
 import { ToggleGroup } from '@ark-ui/solid/toggle-group';
@@ -140,6 +140,24 @@ export function Toolbar(props: ToolbarProps) {
 	const openCommandPalette = () => {
 		setCommandOpen(true);
 	};
+	onMount(() => {
+		const handler = (event: KeyboardEvent) => {
+			if (event.defaultPrevented) return;
+			const mod = event.metaKey || event.ctrlKey;
+			if (!mod || event.altKey || event.shiftKey) return;
+			if (event.key.toLowerCase() !== 'k') return;
+			const target = event.target;
+			if (target instanceof HTMLElement) {
+				if (target.isContentEditable) return;
+				const tag = target.tagName.toLowerCase();
+				if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+			}
+			event.preventDefault();
+			openCommandPalette();
+		};
+		window.addEventListener('keydown', handler);
+		onCleanup(() => window.removeEventListener('keydown', handler));
+	});
 	const sourceFormatLabel = () => {
 		const video = props.metadata?.video;
 		if (!video) return 'No source';

@@ -6703,11 +6703,17 @@ button.status-badge:hover {
 	border-bottom: 1px solid var(--edge);
 	gap: 0;
 	height: 32px;
+	overflow-x: auto;
+	-webkit-overflow-scrolling: touch;
+	scrollbar-width: thin;
+}
+.side-rail-tab-bar::-webkit-scrollbar {
+	height: 0;
 }
 .side-rail-tab {
-	flex: 1 1 0;
-	min-width: 0;
-	padding: 0 2px;
+	flex: 0 0 auto;
+	min-width: max-content;
+	padding: 0 8px;
 	height: 32px;
 	border-bottom: 1px solid transparent;
 	color: var(--ink-500);
@@ -6716,8 +6722,6 @@ button.status-badge:hover {
 	font-weight: 700;
 	letter-spacing: 0.02em;
 	text-transform: uppercase;
-	overflow: hidden;
-	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 .side-rail-tab:hover {
