@@ -9,7 +9,8 @@ import {
 	h264ConstrainedBaseline,
 	probeImageDecoder,
 	probeOpfsSyncAccessHandleInWorker,
-	probeSmartReframe
+	probeSmartReframe,
+	recordingAvailable
 } from './capability-probe-v2';
 import { compatAdapterProbeResult, probeResultFor } from './compatibility/capability-fixtures';
 
@@ -216,5 +217,33 @@ describe('probeOpfsSyncAccessHandleInWorker', () => {
 		} finally {
 			globalThis.Worker = origWorker;
 		}
+	});
+});
+
+describe('recordingAvailable with main-frames fallback', () => {
+	it('returns true when transferableMediaStreamTrack is unsupported but MSTP is supported', () => {
+		const base = probeResultFor('core-webgpu');
+		const probe = {
+			...base,
+			capture: {
+				...base.capture,
+				transferableMediaStreamTrack: 'unsupported' as const,
+				mediaStreamTrackProcessor: 'supported' as const
+			}
+		};
+		expect(recordingAvailable(probe)).toBe(true);
+	});
+
+	it('returns false when both transferableMediaStreamTrack and MSTP are unsupported', () => {
+		const base = probeResultFor('core-webgpu');
+		const probe = {
+			...base,
+			capture: {
+				...base.capture,
+				transferableMediaStreamTrack: 'unsupported' as const,
+				mediaStreamTrackProcessor: 'unsupported' as const
+			}
+		};
+		expect(recordingAvailable(probe)).toBe(false);
 	});
 });

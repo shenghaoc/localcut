@@ -447,8 +447,14 @@ export async function probeOpfsSyncAccessHandleInWorker(): Promise<FeatureSuppor
 	try {
 		return await new Promise<FeatureSupport>((resolve) => {
 			const timer = setTimeout(() => resolve('unknown'), 3_000);
-			worker.onmessage = (e) => { clearTimeout(timer); resolve(e.data as FeatureSupport); };
-			worker.onerror = () => { clearTimeout(timer); resolve('unknown'); };
+			worker.onmessage = (e) => {
+				clearTimeout(timer);
+				resolve(e.data as FeatureSupport);
+			};
+			worker.onerror = () => {
+				clearTimeout(timer);
+				resolve('unknown');
+			};
 			worker.postMessage('go');
 		});
 	} finally {
@@ -572,7 +578,8 @@ export function recordingAvailable(probe: CapabilityProbeResult): boolean {
 	return (
 		probe.tier === 'core-webgpu' &&
 		cap.mediaStreamTrackProcessor === 'supported' &&
-		cap.transferableMediaStreamTrack !== 'unsupported' &&
+		(cap.transferableMediaStreamTrack !== 'unsupported' ||
+			cap.mediaStreamTrackProcessor === 'supported') &&
 		cap.displayCapture === 'supported' &&
 		cap.videoEncodeRealtime === 'supported' &&
 		cap.audioEncodeOpus === 'supported' &&

@@ -5,7 +5,10 @@ export function captureUnavailableReasons(probe: CapabilityProbeResult): string[
 	if (probe.capture.mediaStreamTrackProcessor !== 'supported') {
 		reasons.push('MediaStreamTrackProcessor is unavailable.');
 	}
-	if (probe.capture.transferableMediaStreamTrack !== 'supported') {
+	if (
+		probe.capture.transferableMediaStreamTrack !== 'supported' &&
+		probe.capture.mediaStreamTrackProcessor !== 'supported'
+	) {
 		reasons.push('Transferable MediaStreamTrack is unavailable.');
 	}
 	if (probe.capture.displayCapture !== 'supported') {

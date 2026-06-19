@@ -35,4 +35,22 @@ describe('captureUnavailableReasons', () => {
 		expect(reasons.some((r) => r.includes('WebGPU'))).toBe(false);
 		expect(reasons.some((r) => r.includes('WebCodecs'))).toBe(false);
 	});
+	it('suppresses transferable-track reason when MSTP is available', () => {
+		const reasons = captureUnavailableReasons(
+			probe({
+				transferableMediaStreamTrack: 'unsupported',
+				mediaStreamTrackProcessor: 'supported'
+			})
+		);
+		expect(reasons).not.toContain('Transferable MediaStreamTrack is unavailable.');
+	});
+	it('shows transferable-track reason when MSTP is also unavailable', () => {
+		const reasons = captureUnavailableReasons(
+			probe({
+				transferableMediaStreamTrack: 'unsupported',
+				mediaStreamTrackProcessor: 'unsupported'
+			})
+		);
+		expect(reasons).toContain('Transferable MediaStreamTrack is unavailable.');
+	});
 });
