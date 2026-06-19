@@ -426,20 +426,34 @@ async function probeAudioEncode(codec: 'opus' | 'aac'): Promise<FeatureSupport> 
 	}
 }
 
-async function probeOpfsSyncAccessHandle(): Promise<FeatureSupport> {
+export async function probeOpfsSyncAccessHandleInWorker(): Promise<FeatureSupport> {
+	if (typeof Worker === 'undefined' || typeof navigator?.storage?.getDirectory !== 'function') {
+		return 'unsupported';
+	}
+	const src = `self.onmessage = async () => {
+		try {
+			const root = await navigator.storage.getDirectory();
+			const name = '_cap_probe_' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.tmp';
+			const handle = await root.getFileHandle(name, { create: true });
+			if (typeof handle.createSyncAccessHandle !== 'function') { self.postMessage('unsupported'); return; }
+			const access = await handle.createSyncAccessHandle();
+			access.close();
+			await root.removeEntry(name);
+			self.postMessage('supported');
+		} catch { self.postMessage('unknown'); }
+	};`;
+	const url = URL.createObjectURL(new Blob([src], { type: 'application/javascript' }));
+	const worker = new Worker(url);
 	try {
-		if (typeof navigator === 'undefined' || typeof navigator.storage?.getDirectory !== 'function') {
-			return 'unsupported';
-		}
-		const root = await navigator.storage.getDirectory();
-		const fileName = `_cap_probe_${Date.now()}_${Math.random().toString(36).slice(2)}.tmp`;
-		const handle = await root.getFileHandle(fileName, { create: true });
-		const access = await (handle as FileSystemFileHandle).createSyncAccessHandle();
-		access.close();
-		await root.removeEntry(fileName);
-		return 'supported';
-	} catch {
-		return 'unknown';
+		return await new Promise<FeatureSupport>((resolve) => {
+			const timer = setTimeout(() => resolve('unknown'), 3_000);
+			worker.onmessage = (e) => { clearTimeout(timer); resolve(e.data as FeatureSupport); };
+			worker.onerror = () => { clearTimeout(timer); resolve('unknown'); };
+			worker.postMessage('go');
+		});
+	} finally {
+		worker.terminate();
+		URL.revokeObjectURL(url);
 	}
 }
 
@@ -457,7 +471,7 @@ async function probeCaptureCapabilities(
 		probeVideoEncodeRealtime(),
 		probeAudioEncode('opus'),
 		probeAudioEncode('aac'),
-		probeOpfsSyncAccessHandle()
+		probeOpfsSyncAccessHandleInWorker()
 	]);
 
 	return {

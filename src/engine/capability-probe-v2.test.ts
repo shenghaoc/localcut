@@ -8,6 +8,7 @@ import {
 	exportConstraintsForProbe,
 	h264ConstrainedBaseline,
 	probeImageDecoder,
+	probeOpfsSyncAccessHandleInWorker,
 	probeSmartReframe
 } from './capability-probe-v2';
 import { compatAdapterProbeResult, probeResultFor } from './compatibility/capability-fixtures';
@@ -201,5 +202,19 @@ describe('h264ConstrainedBaseline', () => {
 		expect(result.supported).toBe(true);
 		expect(codec).toBe('avc1.42E01F');
 		expect(callCount).toBe(1);
+	});
+});
+
+describe('probeOpfsSyncAccessHandleInWorker', () => {
+	it('returns unsupported when Worker is unavailable', async () => {
+		const origWorker = globalThis.Worker;
+		// @ts-expect-error -- testing absence
+		delete globalThis.Worker;
+		try {
+			const result = await probeOpfsSyncAccessHandleInWorker();
+			expect(result).toBe('unsupported');
+		} finally {
+			globalThis.Worker = origWorker;
+		}
 	});
 });
