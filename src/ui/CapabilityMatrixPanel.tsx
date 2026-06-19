@@ -296,9 +296,7 @@ function webnnRow(probe: CapabilityProbeResult): CapabilityRow {
 		label: 'WebNN (ML acceleration)',
 		support: hasMl ? 'supported' : 'unsupported',
 		active: ortEp === 'webnn',
-		action: hasMl
-			? `ORT EP: ${ortEp ?? 'wasm'}`
-			: 'Enable the WebNN flag in chrome://flags'
+		action: hasMl ? `ORT EP: ${ortEp ?? 'wasm'}` : 'Enable the WebNN flag in chrome://flags'
 	};
 }
 

@@ -7630,8 +7630,6 @@ body::-webkit-scrollbar-thumb:hover,
 	min-height: 30px;
 }
 
-
-
 .dock-left {
 	display: grid;
 	grid-template-columns: 66px minmax(0, 1fr);
