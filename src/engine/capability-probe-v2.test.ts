@@ -6,6 +6,7 @@ import {
 	anyVideoEncodeSupported,
 	deriveCapabilityTierV2,
 	exportConstraintsForProbe,
+	h264ConstrainedBaseline,
 	probeImageDecoder,
 	probeSmartReframe
 } from './capability-probe-v2';
@@ -166,5 +167,39 @@ describe('probeImageDecoder', () => {
 		} finally {
 			restore();
 		}
+	});
+});
+
+describe('h264ConstrainedBaseline', () => {
+	it('returns L3.0 for ≤720×576', () => {
+		expect(h264ConstrainedBaseline(720, 576)).toBe('avc1.42E01E');
+	});
+
+	it('returns L3.1 for 720p (1280×720)', () => {
+		expect(h264ConstrainedBaseline(1280, 720)).toBe('avc1.42E01F');
+	});
+
+	it('returns L4.0 for 1080p (1920×1080)', () => {
+		expect(h264ConstrainedBaseline(1920, 1080)).toBe('avc1.42E028');
+	});
+
+	it('returns ≥L5.1 for 2160p (3840×2160)', () => {
+		expect(h264ConstrainedBaseline(3840, 2160)).toMatch(/^avc1\.42E03[23]$/);
+	});
+
+	it('picks L3.1 when L3.0 is rejected at 720p probe resolution', async () => {
+		let callCount = 0;
+		const fakeEncoder = {
+			isConfigSupported(config: { codec: string }) {
+				callCount++;
+				const supported = config.codec !== 'avc1.42E01E';
+				return Promise.resolve({ supported });
+			}
+		};
+		const codec = h264ConstrainedBaseline(1280, 720);
+		const result = await fakeEncoder.isConfigSupported({ codec });
+		expect(result.supported).toBe(true);
+		expect(codec).toBe('avc1.42E01F');
+		expect(callCount).toBe(1);
 	});
 });

@@ -55,6 +55,28 @@ const videoCodecStrings: Record<VideoCodecProbeName, string> = {
 	av1: 'av01.0.05M.08'
 };
 
+/**
+ * Returns an H.264 Constrained-Baseline codec string whose level covers
+ * the given frame size. MaxFS per H.264 Table A-1: L3.0=1620, L3.1=3600,
+ * L3.2=5120, L4.0/4.1=8192, L4.2=8704, L5.0=22080, L5.1=36864.
+ */
+export function h264ConstrainedBaseline(width: number, height: number): string {
+	const mbs = Math.ceil(width / 16) * Math.ceil(height / 16);
+	const level =
+		mbs <= 1620
+			? 0x1e
+			: mbs <= 3600
+				? 0x1f
+				: mbs <= 5120
+					? 0x20
+					: mbs <= 8192
+						? 0x28
+						: mbs <= 22080
+							? 0x32
+							: 0x33;
+	return `avc1.42E0${level.toString(16).toUpperCase().padStart(2, '0')}`;
+}
+
 const audioCodecStrings: Record<AudioCodecProbeName, string> = {
 	aac: 'mp4a.40.2',
 	opus: 'opus'
@@ -131,6 +153,7 @@ async function probeCodecs(): Promise<CodecProbeResult> {
 
 	const videoBase = { width: 1280, height: 720, bitrate: 5_000_000 };
 	const audioBase = { sampleRate: 48_000, numberOfChannels: 2, bitrate: 128_000 };
+	const h264Codec = h264ConstrainedBaseline(1280, 720);
 
 	// The ten probes are independent; running them in parallel keeps startup from
 	// serializing across isConfigSupported round-trips (each can hit a hardware
@@ -148,10 +171,10 @@ async function probeCodecs(): Promise<CodecProbeResult> {
 		aacEncode,
 		opusEncode
 	] = await Promise.all([
-		probeCodec(videoDecoder, { ...videoBase, codec: videoCodecStrings.h264 }),
+		probeCodec(videoDecoder, { ...videoBase, codec: h264Codec }),
 		probeCodec(videoDecoder, { ...videoBase, codec: videoCodecStrings.vp9 }),
 		probeCodec(videoDecoder, { ...videoBase, codec: videoCodecStrings.av1 }),
-		probeCodec(videoEncoder, { ...videoBase, codec: videoCodecStrings.h264 }),
+		probeCodec(videoEncoder, { ...videoBase, codec: h264Codec }),
 		probeCodec(videoEncoder, { ...videoBase, codec: videoCodecStrings.vp9 }),
 		probeCodec(videoEncoder, { ...videoBase, codec: videoCodecStrings.av1 }),
 		probeCodec(audioDecoder, { ...audioBase, codec: audioCodecStrings.aac }),
@@ -373,7 +396,7 @@ async function probeVideoEncodeRealtime(): Promise<FeatureSupport> {
 	if (typeof VideoEncoder !== 'function') return 'unsupported';
 	try {
 		const config: VideoEncoderConfig = {
-			codec: 'avc1.42001E',
+			codec: h264ConstrainedBaseline(1920, 1080),
 			width: 1920,
 			height: 1080,
 			bitrate: 5_000_000,
