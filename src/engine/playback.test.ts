@@ -226,6 +226,103 @@ describe('PlaybackController', () => {
 		expect(videoFrame.close).toHaveBeenCalledOnce();
 	});
 
+	it('halts at the end when loop is off (default)', async () => {
+		const writeClock = vi.fn();
+		const onLoopRestart = vi.fn();
+		let now = 0;
+		const scheduled: Array<() => void> = [];
+
+		const controller = new PlaybackController({
+			duration: 1,
+			frameRate: 30,
+			getFrames: () => Promise.resolve([{ decoded: mockFrame(), meta: undefined }]),
+			renderFrames: vi.fn(),
+			writeClock,
+			onLoopRestart,
+			now: () => now,
+			scheduler: (cb) => {
+				scheduled.push(cb);
+				return scheduled.length as unknown as ReturnType<typeof setTimeout>;
+			},
+			clearScheduler: vi.fn()
+		});
+
+		expect(controller.isLooping()).toBe(false);
+		controller.play();
+		now = 2000; // 2s elapsed > 1s duration -> end crossing
+		scheduled.shift()!(); // the halt branch awaits renderAt, so poll for the result
+
+		await vi.waitFor(() => expect(controller.isPlaying()).toBe(false));
+		expect(onLoopRestart).not.toHaveBeenCalled();
+		expect(controller.getCurrentTime()).toBe(1);
+		expect(writeClock).toHaveBeenLastCalledWith(1, false);
+	});
+
+	it('wraps to the start and keeps playing when loop is on', () => {
+		const writeClock = vi.fn();
+		const onLoopRestart = vi.fn();
+		let now = 0;
+		const scheduled: Array<() => void> = [];
+
+		const controller = new PlaybackController({
+			duration: 1,
+			frameRate: 30,
+			getFrames: () => Promise.resolve([{ decoded: mockFrame(), meta: undefined }]),
+			renderFrames: vi.fn(),
+			writeClock,
+			onLoopRestart,
+			loop: true,
+			now: () => now,
+			scheduler: (cb) => {
+				scheduled.push(cb);
+				return scheduled.length as unknown as ReturnType<typeof setTimeout>;
+			},
+			clearScheduler: vi.fn()
+		});
+
+		expect(controller.isLooping()).toBe(true);
+		controller.play();
+		now = 2000; // past the end
+		scheduled.shift()!(); // loop branch wraps synchronously before the first await
+
+		expect(onLoopRestart).toHaveBeenCalledWith(0);
+		expect(controller.getCurrentTime()).toBe(0);
+		expect(controller.isPlaying()).toBe(true);
+		expect(writeClock).toHaveBeenLastCalledWith(0, true);
+		// A fresh tick is scheduled so playback continues from the wrapped position.
+		expect(scheduled.length).toBeGreaterThan(0);
+	});
+
+	it('setLoop toggles wrap behaviour live without interrupting playback', () => {
+		const onLoopRestart = vi.fn();
+		let now = 0;
+		const scheduled: Array<() => void> = [];
+
+		const controller = new PlaybackController({
+			duration: 1,
+			frameRate: 30,
+			getFrames: () => Promise.resolve([{ decoded: mockFrame(), meta: undefined }]),
+			renderFrames: vi.fn(),
+			writeClock: vi.fn(),
+			onLoopRestart,
+			now: () => now,
+			scheduler: (cb) => {
+				scheduled.push(cb);
+				return scheduled.length as unknown as ReturnType<typeof setTimeout>;
+			},
+			clearScheduler: vi.fn()
+		});
+
+		controller.play();
+		controller.setLoop(true);
+		expect(controller.isLooping()).toBe(true);
+		now = 2000;
+		scheduled.shift()!(); // loop branch wraps synchronously before the first await
+
+		expect(onLoopRestart).toHaveBeenCalledWith(0);
+		expect(controller.isPlaying()).toBe(true);
+	});
+
 	it('refresh() is a no-op when transport is playing', async () => {
 		const frame = mockFrame();
 		const renderFrames = vi.fn();

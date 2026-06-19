@@ -2350,6 +2350,7 @@ export type WorkerCommand =
 	| { type: 'pause' }
 	| { type: 'seek'; time: number }
 	| { type: 'step'; direction: 1 | -1 }
+	| { type: 'set-loop'; enabled: boolean }
 	| { type: 'export-probe' }
 	| { type: 'export-start'; settings: ExportSettings; output?: FileSystemFileHandle | null }
 	| { type: 'export-cancel' }
