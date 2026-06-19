@@ -1577,15 +1577,15 @@ export function App() {
 	const pipelineLabel = createMemo(() => {
 		switch (previewBackend()) {
 			case 'core-webgpu':
-				return 'Full speed';
+				return 'Accelerated';
 			case 'compat-webgpu':
-				return 'GPU (reduced)';
+				return 'GPU compat';
 			case 'canvas2d':
 				return 'Limited WebCodecs';
 			case 'none':
-				if (pipelineMode() === 'starting') return 'Warming up…';
-				if (pipelineMode() === 'blocked') return 'Unavailable';
-				return capabilityProbeV2()?.tier === 'shell-only' ? 'Basic mode' : 'Limited';
+				if (pipelineMode() === 'starting') return 'Starting pipeline';
+				if (pipelineMode() === 'blocked') return 'Blocked';
+				return capabilityProbeV2()?.tier === 'shell-only' ? 'Shell only' : 'Limited shell';
 		}
 	});
 	const compatibilityImportEnabled = () =>

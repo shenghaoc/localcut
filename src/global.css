@@ -7821,13 +7821,15 @@ body::-webkit-scrollbar-thumb:hover,
 	}
 
 	.dock-left {
-		grid-template-columns: 48px minmax(0, 1fr);
+		grid-template-columns: 60px minmax(0, 1fr);
 		gap: 6px;
 		min-height: 260px;
 	}
 
 	.dock-rail button {
 		min-height: 44px;
+		padding: 4px 2px;
+		letter-spacing: 0.04em;
 	}
 
 	.preview {

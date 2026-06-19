@@ -639,7 +639,7 @@ export function Toolbar(props: ToolbarProps) {
 				</span>
 				<span class={cn('pipeline-chip', props.crossOriginIsolated ? 'is-ok' : 'is-warn')}>
 					<ShieldCheck size={11} aria-hidden="true" />
-					{props.crossOriginIsolated ? 'Isolated' : 'No isolation'}
+					{props.crossOriginIsolated ? 'COOP/COEP' : 'No isolation'}
 				</span>
 				<Show when={props.previewLabel !== null}>
 					<span class="pipeline-chip">
