@@ -40,6 +40,12 @@ jobs:
     #                PR #126 review.
     container:
       image: mcr.microsoft.com/playwright:v1.61.0-resolute-arm64
+      # --ipc=host shares the runner's IPC namespace so Chromium's heavy
+      # /dev/shm usage isn't capped by Docker's default 64 MB segment
+      # (recommended by https://playwright.dev/docs/docker#recommended-docker-configuration;
+      # without it the browser-mode suite can crash intermittently inside
+      # the container).
+      options: --ipc=host
     steps:
       - name: Checkout
         uses: actions/checkout@v6
