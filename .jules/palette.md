@@ -9,3 +9,9 @@
 **Learning:** The application uses buttons to collapse and expand structural side panels (like the inspector). Without `aria-expanded` and `aria-controls` attributes, screen reader users cannot tell if the panel is currently open or what content the button controls.
 
 **Action:** Applied `aria-expanded` with accurate boolean state and `aria-controls` pointing to the outer `side-rail` container (which remains in the DOM regardless of collapsed state) to the collapse and expand toggle buttons in the side rail.
+
+## 2026-06-19 - Adding ARIA labels to SolidJS Index-keyed lists
+
+**Learning:** In SolidJS, the `<For>` component keys by item reference — replacing an object (e.g. `{ ...p, status: 'applied' }`) destroys and recreates the DOM node, causing focus to reset to `<body>` for keyboard and screen reader users. The `<Index>` component keys by position instead, preserving DOM nodes across reference changes. Inside `<Index>`, each item is an `Accessor<T>` (call it as `proposal()`) and the index is a static `number` (use `index + 1`, not `index() + 1`).
+
+**Action:** Switched the proposal list in `AutoZoomPanel.tsx` from `<For>` to `<Index>` so button DOM nodes are preserved when status changes. Added `aria-label` attributes that reflect the current button state (e.g. `"Applied proposal 1"` vs `"Apply proposal 1"`) so screen readers announce the correct action.
