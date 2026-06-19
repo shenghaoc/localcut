@@ -39,6 +39,19 @@ jobs:
       # preinstalled at /usr/bin/google-chrome; the WHIP_CHROME env in
       # playwright.config.ts swaps Playwright's bundled Chromium for it,
       # which sidesteps the install --with-deps hang that motivated PR #126.
+      #
+      # Verify the exact path WHIP_CHROME points at before spinning up
+      # MediaMTX so a future runner-image change (Chrome moved or
+      # uninstalled) fails fast with a clear, actionable message instead
+      # of a low-signal "executable not found" from Playwright deep in
+      # the test run.
+      - name: Verify preinstalled Chrome at WHIP_CHROME path
+        run: |
+          if [ ! -x /usr/bin/google-chrome ]; then
+            echo "::error::/usr/bin/google-chrome not found or not executable on this runner. Update WHIP_CHROME in this workflow or install Chrome." >&2
+            exit 1
+          fi
+          /usr/bin/google-chrome --version
 
       # Host networking so WebRTC ICE host candidates (UDP) are reachable from
       # the browser without per-port docker mappings; MTX_API exposes the
