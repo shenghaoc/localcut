@@ -52,7 +52,7 @@ jobs:
         run: |
           docker run -d --name whip-mediamtx --network host \
             -e MTX_API=yes \
-            bluenviron/mediamtx:v1.19.1
+            bluenviron/mediamtx:1.19.1
           for i in $(seq 1 30); do
             curl -fsS http://127.0.0.1:9997/v3/paths/list > /dev/null && exit 0
             sleep 1
