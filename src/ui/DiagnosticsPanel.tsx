@@ -127,7 +127,7 @@ export function DiagnosticsPanel(props: DiagnosticsPanelProps) {
 							Diagnostics
 						</p>
 						<p class="capability-panel-tier">
-							<Show when={props.snapshot} fallback="Snapshot unavailable">
+							<Show when={props.snapshot} fallback="Couldn't capture a snapshot">
 								{(snapshot) => <>Active tier: {snapshot().capability.tier}</>}
 							</Show>
 						</p>
@@ -348,7 +348,7 @@ export function DiagnosticsPanel(props: DiagnosticsPanelProps) {
 								<h2>Export</h2>
 								<Show
 									when={snapshot().activeExportSettings}
-									fallback={<p>No active export settings.</p>}
+									fallback={<p>Start an export to see settings here.</p>}
 								>
 									{(settings) => (
 										<dl class="diagnostics-grid">
@@ -406,7 +406,7 @@ export function DiagnosticsPanel(props: DiagnosticsPanelProps) {
 								<h2>Recent Errors</h2>
 								<Show
 									when={snapshot().recentErrors.entries.length > 0}
-									fallback={<p>No recent structured errors.</p>}
+									fallback={<p>All clear — no errors to report.</p>}
 								>
 									<ul class="diagnostics-list">
 										<For each={snapshot().recentErrors.entries}>
@@ -493,7 +493,7 @@ export function DiagnosticsPanel(props: DiagnosticsPanelProps) {
 								<h2>Recovery Actions</h2>
 								<Show
 									when={snapshot().recoveryActions.length > 0}
-									fallback={<p>No recovery actions are available.</p>}
+									fallback={<p>Nothing to fix right now.</p>}
 								>
 									<ul class="diagnostics-list">
 										<For each={snapshot().recoveryActions}>

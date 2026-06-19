@@ -8,6 +8,7 @@ import {
 	onMount,
 	onCleanup
 } from 'solid-js';
+import { Tabs } from '@ark-ui/solid/tabs';
 import { useRegisterSW } from 'virtual:pwa-register/solid';
 import { Link2, RotateCcw, Plus } from 'lucide-solid';
 import {
@@ -362,6 +363,10 @@ const SIDE_RAIL_TABS = [
 type SideRailTab = (typeof SIDE_RAIL_TABS)[number]['id'];
 
 const SIDE_RAIL_COLLAPSED_KEY = 'side-rail-collapsed';
+
+function isSideRailTab(value: string | null): value is SideRailTab {
+	return SIDE_RAIL_TABS.some((tab) => tab.id === value);
+}
 
 function readSideRailCollapsed(): boolean {
 	try {
@@ -727,6 +732,8 @@ export function App() {
 		enabledSourceIds: [],
 		globalOffsetMs: 0
 	});
+	const [timelineSnapEnabled, setTimelineSnapEnabled] = createSignal(true);
+	const [timelineSnapToBeats, setTimelineSnapToBeats] = createSignal(false);
 	const [assets, setAssets] = createSignal<MediaAssetSnapshot[]>([]);
 	const [latestHealthReport, setLatestHealthReport] =
 		createSignal<SourceHealthReportSnapshot | null>(null);
@@ -754,23 +761,9 @@ export function App() {
 			}
 		});
 	};
-	const handleSideRailTabKeyDown = (event: KeyboardEvent) => {
-		// WAI-ARIA APG tabs pattern: Arrow keys wrap, Home/End jump to ends.
-		let next: (typeof SIDE_RAIL_TABS)[number] | undefined;
-		if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
-			const index = SIDE_RAIL_TABS.findIndex((tab) => tab.id === activeSideRailTab());
-			const direction = event.key === 'ArrowRight' ? 1 : -1;
-			next = SIDE_RAIL_TABS[(index + direction + SIDE_RAIL_TABS.length) % SIDE_RAIL_TABS.length];
-		} else if (event.key === 'Home') {
-			next = SIDE_RAIL_TABS[0];
-		} else if (event.key === 'End') {
-			next = SIDE_RAIL_TABS[SIDE_RAIL_TABS.length - 1];
-		} else {
-			return;
-		}
-		setActiveSideRailTab(next.id);
-		queueMicrotask(() => document.getElementById(`tab-${next.id}`)?.focus());
-		event.preventDefault();
+	const openSideRailTab = (tab: SideRailTab) => {
+		setActiveSideRailTab(tab);
+		if (sideRailCollapsed()) toggleSideRail(false);
 	};
 	const [bundleMessage, setBundleMessage] = createSignal<string | null>(null);
 	// Phase 23: replace-on-import confirm. Replaces window.confirm() which is
@@ -810,6 +803,7 @@ export function App() {
 	let initSent = false;
 	let pendingInitCanvas: OffscreenCanvas | null = null;
 	let compatibilityImportGeneration = 0;
+	let dockImportInput: HTMLInputElement | undefined;
 	let relinkInput: HTMLInputElement | undefined;
 	let pendingRelinkSourceId: string | null = null;
 	const audioEngine = new AudioEngine({
@@ -3240,6 +3234,12 @@ export function App() {
 		}
 	}
 
+	async function openDockImport() {
+		if (importBlocked()) return;
+		const handled = await pickImportMedia();
+		if (!handled) dockImportInput?.click();
+	}
+
 	async function pickRelinkFile(sourceId: string) {
 		if (typeof window.showOpenFilePicker === 'function') {
 			try {
@@ -3953,6 +3953,8 @@ export function App() {
 				<Toolbar
 					metadata={metadata()}
 					playing={clock.playing}
+					currentTime={clock.currentTime}
+					duration={clock.duration}
 					importAccept={VIDEO_ACCEPT}
 					onImportFile={importMedia}
 					onPickImport={pickImportMedia}
@@ -4004,6 +4006,13 @@ export function App() {
 					}
 					onOpenPublish={() => setPublishPanelOpen(true)}
 					publishLive={publishBusy()}
+					timelineSnapEnabled={timelineSnapEnabled()}
+					timelineSnapToBeats={timelineSnapToBeats()}
+					onSetTimelineSnapEnabled={(enabled) => {
+						setTimelineSnapEnabled(enabled);
+						if (!enabled) setTimelineSnapToBeats(false);
+					}}
+					onSetTimelineSnapToBeats={setTimelineSnapToBeats}
 					calloutTool={
 						<CalloutTool
 							active={calloutToolActive()}
@@ -4084,51 +4093,94 @@ export function App() {
 					}
 				/>
 				<Show keyed when={bundleReplacePrompt()}>
-					{(prompt) => (
-						<div
-							class="modal-backdrop bundle-replace-modal-backdrop"
-							role="dialog"
-							aria-modal="true"
-							aria-labelledby="bundle-replace-title"
-							aria-describedby="bundle-replace-message"
-						>
-							<div class="bundle-replace-modal" role="document">
-								<p id="bundle-replace-title" class="bundle-replace-modal-title">
-									Replace current project?
-								</p>
-								<p id="bundle-replace-message" class="bundle-replace-modal-message">
-									{prompt.message}
-								</p>
-								<div class="bundle-replace-modal-actions">
-									<Button
-										variant="outline"
-										onClick={() => {
-											bridge?.send({
-												type: 'bundle-replace-decision',
-												jobId: prompt.jobId,
-												action: 'cancel'
-											});
-											setBundleReplacePrompt(null);
-										}}
-									>
-										Cancel
-									</Button>
-									<Button
-										onClick={() => {
-											bridge?.send({
-												type: 'bundle-replace-decision',
-												jobId: prompt.jobId,
-												action: 'replace'
-											});
-											setBundleReplacePrompt(null);
-										}}
-									>
-										Replace
-									</Button>
+					{(prompt) => {
+						let modalRef: HTMLDivElement | undefined;
+						const previouslyFocused = document.activeElement as HTMLElement | null;
+						const cancel = () => {
+							bridge?.send({
+								type: 'bundle-replace-decision',
+								jobId: prompt.jobId,
+								action: 'cancel'
+							});
+							setBundleReplacePrompt(null);
+						};
+						const replace = () => {
+							bridge?.send({
+								type: 'bundle-replace-decision',
+								jobId: prompt.jobId,
+								action: 'replace'
+							});
+							setBundleReplacePrompt(null);
+						};
+						const handleKeyDown = (e: KeyboardEvent) => {
+							if (e.key === 'Escape') {
+								e.preventDefault();
+								cancel();
+								return;
+							}
+							if (e.key !== 'Tab' || !modalRef) return;
+							const focusables = modalRef.querySelectorAll<HTMLElement>(
+								'button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+							);
+							if (focusables.length === 0) return;
+							const first = focusables[0];
+							const last = focusables[focusables.length - 1];
+							const active = document.activeElement as HTMLElement | null;
+							// If focus has escaped outside the modal (e.g. via a popover that
+							// returned focus elsewhere), bring it back instead of letting Tab
+							// walk the document — WCAG 2.1 SC 2.1.2.
+							if (!active || !modalRef.contains(active)) {
+								e.preventDefault();
+								first.focus();
+								return;
+							}
+							if (e.shiftKey && active === first) {
+								e.preventDefault();
+								last.focus();
+							} else if (!e.shiftKey && active === last) {
+								e.preventDefault();
+								first.focus();
+							}
+						};
+						onMount(() => {
+							modalRef
+								?.querySelector<HTMLButtonElement>(
+									'.bundle-replace-modal-actions button:last-of-type'
+								)
+								?.focus();
+						});
+						onCleanup(() => {
+							previouslyFocused?.focus?.();
+						});
+						return (
+							<div
+								ref={(el) => {
+									modalRef = el;
+								}}
+								class="modal-backdrop bundle-replace-modal-backdrop"
+								role="dialog"
+								aria-modal="true"
+								aria-labelledby="bundle-replace-title"
+								aria-describedby="bundle-replace-message"
+								onKeyDown={handleKeyDown}
+							>
+								<div class="bundle-replace-modal">
+									<p id="bundle-replace-title" class="bundle-replace-modal-title">
+										Replace current project?
+									</p>
+									<p id="bundle-replace-message" class="bundle-replace-modal-message">
+										{prompt.message}
+									</p>
+									<div class="bundle-replace-modal-actions">
+										<Button variant="outline" onClick={cancel}>
+											Cancel
+										</Button>
+										<Button onClick={replace}>Replace</Button>
+									</div>
 								</div>
 							</div>
-						</div>
-					)}
+						);
+					}}
 				</Show>
 				<Show when={restoreOffer() || unresolvedSources().length > 0}>
 					<section
@@ -4241,68 +4293,118 @@ export function App() {
 					>
 						<Show when={previewSurfaceAvailable()}>
 							<aside class="dock-left" aria-label="Library">
-								<MediaBin
-									assets={assets}
-									unresolvedIds={unresolvedIds}
-									getThumbnail={(sourceId, timestamp) => thumbnailStore.get(sourceId, timestamp)}
-									thumbnailVersion={thumbnailVersion}
-									requestThumbnails={(sourceId, timestamps) =>
-										bridge?.send({ type: 'request-thumbnails', sourceId, timestamps })
-									}
-									onPlace={(sourceId) => bridge?.send({ type: 'place-clip', sourceId })}
-									onRemove={(sourceId) => bridge?.send({ type: 'remove-asset', sourceId })}
+								<nav class="dock-rail" aria-label="Workspace sections">
+									<button
+										type="button"
+										onClick={() => void openDockImport()}
+										disabled={importBlocked()}
+										title={importHint() ?? 'Import media'}
+									>
+										Project
+									</button>
+									<button type="button">Media</button>
+									<button type="button" onClick={() => openSideRailTab('record')}>
+										Record
+									</button>
+									<button type="button" onClick={() => setScopePanelCollapsed((open) => !open)}>
+										Scopes
+									</button>
+									<button type="button" onClick={() => setAsrPanelOpen(true)}>
+										AI
+									</button>
+									<button type="button" onClick={() => openSideRailTab('captions')}>
+										Captions
+									</button>
+									<button type="button" onClick={() => setSmartReframeOpen(true)}>
+										Reframe
+									</button>
+									<button
+										type="button"
+										onClick={() =>
+											document
+												.querySelector<HTMLElement>('.render-queue-panel')
+												?.scrollIntoView({ block: 'nearest' })
+										}
+									>
+										Output
+									</button>
+								</nav>
+								<input
+									ref={(el) => {
+										dockImportInput = el;
+									}}
+									type="file"
+									accept={VIDEO_ACCEPT}
+									multiple
+									onChange={handleImportInput}
+									disabled={importBlocked()}
+									aria-label="Import media from workspace dock"
+									hidden
 								/>
-								<BeatPanel
-									assets={assets}
-									beatResults={beatResults}
-									beatSettings={beatSettings}
-									analysisProgress={beatProgress}
-									onAnalyse={(sourceId) => bridge?.send({ type: 'analyze-beats', sourceId })}
-									onCancel={(sourceId) => {
-										bridge?.send({ type: 'cancel-beat-analysis', sourceId });
-										// The worker intentionally sends no terminal message for an
-										// explicit cancel (cancellation isn't an error). Clear the
-										// progress entry optimistically so the BeatPanel row exits
-										// the analysing state immediately.
-										setBeatProgress((prev) => {
-											if (!prev.has(sourceId)) return prev;
-											const next = new Map(prev);
-											next.delete(sourceId);
-											return next;
-										});
-									}}
-									onToggleSource={(sourceId, enabled) => {
-										const current = beatSettings();
-										const ids = enabled
-											? [...current.enabledSourceIds, sourceId]
-											: current.enabledSourceIds.filter((id) => id !== sourceId);
-										bridge?.send({
-											type: 'set-beat-settings',
-											enabledSourceIds: ids,
-											globalOffsetMs: current.globalOffsetMs
-										});
-										setBeatSettings({ ...current, enabledSourceIds: ids });
-									}}
-									onOffsetChange={(offsetMs) => {
-										const current = beatSettings();
-										bridge?.send({
-											type: 'set-beat-settings',
-											enabledSourceIds: current.enabledSourceIds,
-											globalOffsetMs: offsetMs
-										});
-										setBeatSettings({ ...current, globalOffsetMs: offsetMs });
-									}}
-									onAutoCut={(mode) => {
-										const selected = selectedClipRefs();
-										if (selected.length === 0) return;
-										bridge?.send({
-											type: 'beat-auto-cut',
-											mode,
-											clipRefs: selected.map((r) => ({ trackId: r.trackId, clipId: r.clipId }))
-										});
-									}}
-									selectedClipCount={() => selectedClipRefs().length}
-								/>
+								<div class="dock-library">
+									<MediaBin
+										assets={assets}
+										unresolvedIds={unresolvedIds}
+										getThumbnail={(sourceId, timestamp) => thumbnailStore.get(sourceId, timestamp)}
+										thumbnailVersion={thumbnailVersion}
+										requestThumbnails={(sourceId, timestamps) =>
+											bridge?.send({ type: 'request-thumbnails', sourceId, timestamps })
+										}
+										onPlace={(sourceId) => bridge?.send({ type: 'place-clip', sourceId })}
+										onRemove={(sourceId) => bridge?.send({ type: 'remove-asset', sourceId })}
+									/>
+									<BeatPanel
+										assets={assets}
+										beatResults={beatResults}
+										beatSettings={beatSettings}
+										analysisProgress={beatProgress}
+										onAnalyse={(sourceId) => bridge?.send({ type: 'analyze-beats', sourceId })}
+										onCancel={(sourceId) => {
+											bridge?.send({ type: 'cancel-beat-analysis', sourceId });
+											// The worker intentionally sends no terminal message for an
+											// explicit cancel (cancellation isn't an error). Clear the
+											// progress entry optimistically so the BeatPanel row exits
+											// the analysing state immediately.
+											setBeatProgress((prev) => {
+												if (!prev.has(sourceId)) return prev;
+												const next = new Map(prev);
+												next.delete(sourceId);
+												return next;
+											});
+										}}
+										onToggleSource={(sourceId, enabled) => {
+											const current = beatSettings();
+											const ids = enabled
+												? [...current.enabledSourceIds, sourceId]
+												: current.enabledSourceIds.filter((id) => id !== sourceId);
+											bridge?.send({
+												type: 'set-beat-settings',
+												enabledSourceIds: ids,
+												globalOffsetMs: current.globalOffsetMs
+											});
+											setBeatSettings({ ...current, enabledSourceIds: ids });
+										}}
+										onOffsetChange={(offsetMs) => {
+											const current = beatSettings();
+											bridge?.send({
+												type: 'set-beat-settings',
+												enabledSourceIds: current.enabledSourceIds,
+												globalOffsetMs: offsetMs
+											});
+											setBeatSettings({ ...current, globalOffsetMs: offsetMs });
+										}}
+										onAutoCut={(mode) => {
+											const selected = selectedClipRefs();
+											if (selected.length === 0) return;
+											bridge?.send({
+												type: 'beat-auto-cut',
+												mode,
+												clipRefs: selected.map((r) => ({ trackId: r.trackId, clipId: r.clipId }))
+											});
+										}}
+										selectedClipCount={() => selectedClipRefs().length}
+									/>
+								</div>
 							</aside>
 						</Show>
 						<section
@@ -4544,20 +4646,20 @@ export function App() {
 										</p>
 										<p class="preview-empty-title">
 											{previewSurfaceAvailable()
-												? 'No source loaded'
+												? 'Drop or import a file to get started'
 												: pipelineMode() === 'limited' || pipelineMode() === 'blocked'
 													? 'Preview unavailable'
-													: 'No source loaded'}
+													: 'Drop or import a file to get started'}
 										</p>
 										<p class="preview-empty-copy">
 											{previewSurfaceAvailable()
-												? 'Drop an MP4, MOV, or WebM here.'
+												? 'Drag a file here, or click Import'
 												: pipelineMode() === 'limited' || pipelineMode() === 'blocked'
 													? (limitedIssue() ??
 														(compatibilityImportEnabled()
-															? 'Import still loads a reduced compatibility thumbnail so you can inspect a local clip.'
-															: 'This browser cannot run the accelerated pipeline yet.'))
-													: 'Drop an MP4, MOV, or WebM here.'}
+															? 'You can still import files — the preview will use a reduced mode.'
+															: 'This browser is missing some capabilities. Editing still works, just with fewer effects.'))
+													: 'Drag a file here, or click Import'}
 										</p>
 									</div>
 									<label
@@ -4633,25 +4735,21 @@ export function App() {
 									</button>
 								}
 							>
-								<div class="side-rail-tabs">
-									<div class="side-rail-tab-bar" role="tablist" aria-label="Side panel tabs">
+								<Tabs.Root
+									class="side-rail-tabs"
+									value={activeSideRailTab()}
+									lazyMount
+									unmountOnExit
+									onValueChange={(details) => {
+										if (isSideRailTab(details.value)) setActiveSideRailTab(details.value);
+									}}
+								>
+									<Tabs.List class="side-rail-tab-bar" aria-label="Side panel tabs">
 										<For each={SIDE_RAIL_TABS}>
 											{(tab) => (
-												<button
-													id={`tab-${tab.id}`}
-													classList={{
-														'side-rail-tab': true,
-														active: activeSideRailTab() === tab.id
-													}}
-													role="tab"
-													tabIndex={activeSideRailTab() === tab.id ? 0 : -1}
-													aria-selected={activeSideRailTab() === tab.id}
-													aria-controls={`panel-${tab.id}`}
-													onClick={() => setActiveSideRailTab(tab.id)}
-													onKeyDown={handleSideRailTabKeyDown}
-												>
+												<Tabs.Trigger id={`tab-${tab.id}`} value={tab.id} class="side-rail-tab">
 													{tab.label}
-												</button>
+												</Tabs.Trigger>
 											)}
 										</For>
 										<button
@@ -4664,477 +4762,463 @@ export function App() {
 										>
 											›
 										</button>
-									</div>
+									</Tabs.List>
 									<div class="side-rail-tab-content">
-										<Show when={activeSideRailTab() === 'inspector'}>
-											<div
-												id="panel-inspector"
-												class="side-rail-tab-panel"
-												role="tabpanel"
-												aria-labelledby="tab-inspector"
-											>
-												<Inspector
-													metadata={metadata()}
-													selectedClip={selectedClip()}
-													selectedTrackMix={selectedTrackMix()}
-													selectedClipFades={selectedClipFades()}
-													selectedClipTransform={selectedClipTransform()}
-													selectedTitle={selectedTitle()}
-													selectedTransition={selectedTransition()}
-													capabilityTier={capabilityProbeV2()?.tier}
-													sessionEventLogs={sessionEventLogs()}
-													mediaAssets={assets()}
-													onPickPreviewRegion={requestPreviewRegionPick}
-													onSetTitle={(trackId, clipId, patch) =>
-														bridge?.send({ type: 'set-title', trackId, clipId, ...patch })
-													}
-													onEffectParam={(trackId, clipId, key, value) =>
-														bridge?.send({ type: 'set-effect-param', trackId, clipId, key, value })
-													}
-													onTransform={(trackId, clipId, transform) =>
-														bridge?.send({ type: 'set-transform', trackId, clipId, transform })
-													}
-													playheadTime={clock.currentTime()}
-													onSeek={(time) => bridge?.send({ type: 'seek', time })}
-													onSetKeyframe={(trackId, clipId, key, t, value, easing) =>
-														bridge?.send({
-															type: 'set-keyframe',
-															trackId,
-															clipId,
-															key,
-															t,
-															value,
-															easing
-														})
-													}
-													onDeleteKeyframe={(trackId, clipId, key, t) =>
-														bridge?.send({ type: 'delete-keyframe', trackId, clipId, key, t })
-													}
-													onReplaceKeyframeTracks={(trackId, clipId, tracks) =>
-														bridge?.send({
-															type: 'replace-keyframe-tracks',
-															trackId,
-															clipId,
-															tracks
-														})
-													}
-													onSetCallout={(trackId, clipId, payload) =>
-														bridge?.send({ type: 'set-callout', trackId, clipId, payload })
-													}
-													onSetPaddedBackground={(trackId, clipId, params) =>
-														bridge?.send({
-															type: 'set-padded-background',
-															trackId,
-															clipId,
-															params
-														})
-													}
-													onImportLut={(trackId, clipId, file) =>
-														bridge?.send({ type: 'import-lut', trackId, clipId, file })
-													}
-													onLutStrength={(trackId, clipId, strength) =>
-														bridge?.send({ type: 'set-lut-strength', trackId, clipId, strength })
-													}
-													onTrackGain={(trackId, gain) => {
-														bridge?.send({ type: 'set-track-gain', trackId, gain });
-													}}
-													onTrackMute={(trackId, muted) => {
-														bridge?.send({ type: 'set-track-mute', trackId, muted });
-													}}
-													onTrackSolo={(trackId, solo) => {
-														bridge?.send({ type: 'set-track-solo', trackId, solo });
-													}}
-													onTrackPan={(trackId, pan) => {
-														bridge?.send({ type: 'set-track-pan', trackId, pan });
-													}}
-													onClipFade={(trackId, clipId, edge, durationS) => {
-														bridge?.send({
-															type: 'set-clip-fade',
-															trackId,
-															clipId,
-															edge,
-															durationS
-														});
-													}}
-													onTransitionKind={(transitionId, kind) => {
-														bridge?.send({ type: 'set-transition', transitionId, kind });
-													}}
-													onTransitionDuration={(transitionId, durationS) => {
-														bridge?.send({ type: 'set-transition', transitionId, durationS });
-													}}
-													onRemoveTransition={(transitionId) => {
-														bridge?.send({ type: 'remove-transition', transitionId });
-														transitionMeta.delete(transitionId);
-														setSelectedTransitionId(null);
-													}}
-													onSkinMask={(trackId, clipId, mask) => {
-														bridge?.send({ type: 'set-skin-mask', trackId, clipId, mask });
-													}}
-													onSkinSmoothBypass={(trackId, clipId, bypass) => {
-														bridge?.send({
-															type: 'set-skin-smooth-bypass',
-															trackId,
-															clipId,
-															bypass
-														});
-													}}
-													onSetMatteEnabled={(enabled) =>
-														bridge?.send({
-															type: 'set-matte-enabled',
-															trackId: selectedClip()!.trackId,
-															clipId: selectedClip()!.clipId,
-															enabled
-														})
-													}
-													onSetMatteStrength={(strength) =>
-														bridge?.send({
-															type: 'set-matte-strength',
-															trackId: selectedClip()!.trackId,
-															clipId: selectedClip()!.clipId,
-															strength
-														})
-													}
-													onSetMatteMode={(mode) =>
-														bridge?.send({
-															type: 'set-matte-mode',
-															trackId: selectedClip()!.trackId,
-															clipId: selectedClip()!.clipId,
-															mode
-														})
-													}
-													onSetMatteBlurRadius={(blurRadius) =>
-														bridge?.send({
-															type: 'set-matte-blur-radius',
-															trackId: selectedClip()!.trackId,
-															clipId: selectedClip()!.clipId,
-															blurRadius
-														})
-													}
-													matteStatus={matteStatus()}
-													onSetTimeRemap={(trackId, clipId, remap) =>
-														bridge?.send({ type: 'set-time-remap', trackId, clipId, remap })
-													}
-													onClearTimeRemap={(trackId, clipId) =>
-														bridge?.send({ type: 'clear-time-remap', trackId, clipId })
-													}
-													onImportLookPreset={(trackId, clipId, presetFile, lutFile) =>
-														bridge?.send({
-															type: 'import-look-preset',
-															trackId,
-															clipId,
-															presetFile,
-															lutFile
-														})
-													}
-													onExportLookPreset={(trackId, clipId) =>
-														bridge?.send({ type: 'export-look-preset', trackId, clipId })
-													}
-													onBeautyEffect={(trackId, clipId, beauty) => {
-														bridge?.send({ type: 'set-beauty-effect', trackId, clipId, beauty });
-													}}
-													beautyAvailable={beautyAvailable()}
-													recorderSessionState={recorderStatus()?.state ?? 'idle'}
-													onRetakeRequested={(clipId) => {
-														setRetakeClipId(clipId);
-														setActiveSideRailTab('record');
-													}}
-													beautyModelStatus={beautyModelStatus()}
-													beautyModelSizeBytes={beautyModelSizeBytes() ?? undefined}
-													beautyModelDownloadedBytes={beautyModelDownloadedBytes() ?? undefined}
-													beautyModelError={beautyModelError() ?? undefined}
-													onLoadBeautyModel={() =>
-														bridge?.send({
-															type: 'load-beauty-model',
-															manifestUrl: '/models/beauty/manifest.json',
-															preferredExecutionProvider: 'webgpu'
-														})
-													}
-												/>
-											</div>
-										</Show>
-										<Show when={activeSideRailTab() === 'captions'}>
-											<div
-												id="panel-captions"
-												class="side-rail-tab-panel"
-												role="tabpanel"
-												aria-labelledby="tab-captions"
-											>
-												<TranscriptPanel
-													captionTracks={captionTracks()}
-													diagnostics={captionDiagnostics()}
-													playheadTime={clock.currentTime()}
-													selectedTrackId={selectedCaptionTrackId()}
-													selectedSegmentIds={selectedCaptionSegmentIds()}
-													onSelectTrack={setSelectedCaptionTrackId}
-													onSelectSegmentIds={setSelectedCaptionSegmentIds}
-													onImport={(file, trackId) =>
-														captionBridge().send(
-															trackId
-																? { type: 'import-captions', file, trackId }
-																: { type: 'import-captions', file }
-														)
-													}
-													onExport={(settings: CaptionExportSettingsSnapshot) =>
-														captionBridge().send({ type: 'export-captions', settings })
-													}
-													onSetTrack={(trackId, patch) =>
-														captionBridge().send({ type: 'set-caption-track', trackId, ...patch })
-													}
-													onDeleteTrack={(trackId) =>
-														captionBridge().send({ type: 'delete-caption-track', trackId })
-													}
-													onDeleteTracks={(trackIds) => {
-														captionBridge().send({ type: 'delete-caption-tracks', trackIds });
-													}}
-													onSetSegmentText={(trackId, segmentId, text) =>
-														captionBridge().send({
-															type: 'set-caption-segment-text',
-															trackId,
-															segmentId,
-															text
-														})
-													}
-													onSetSegmentTiming={(trackId, segmentId, start, end) =>
-														captionBridge().send({
-															type: 'set-caption-segment-timing',
-															trackId,
-															segmentId,
-															start,
-															end
-														})
-													}
-													onSetSegmentStyle={(trackId, segmentId, style) =>
-														captionBridge().send({
-															type: 'set-caption-segment-style',
-															trackId,
-															segmentId,
-															style
-														})
-													}
-													onSplit={(trackId, segmentId, time) =>
-														captionBridge().send({
-															type: 'split-caption-segment',
-															trackId,
-															segmentId,
-															time
-														})
-													}
-													onMerge={(trackId, segmentIds) =>
-														captionBridge().send({
-															type: 'merge-caption-segments',
-															trackId,
-															segmentIds
-														})
-													}
-													onDelete={(trackId, segmentIds) =>
-														captionBridge().send({
-															type: 'delete-caption-segments',
-															trackId,
-															segmentIds
-														})
-													}
-													onSnap={(trackId, segmentId, edge) =>
-														captionBridge().send({
-															type: 'snap-caption-segment',
-															trackId,
-															segmentId,
-															edge
-														})
-													}
-													customAnimCaptionPresets={customAnimCaptionPresets()}
-													onSetAnimPreset={(trackId, segmentId, presetId) =>
-														captionBridge().send({
-															type: 'caption-set-anim-style',
-															trackId,
-															segmentId,
-															presetId
-														})
-													}
-													onImportCustomPreset={(preset) =>
-														captionBridge().send({
-															type: 'caption-import-custom-preset',
-															preset
-														})
-													}
-													onDeleteCustomPreset={(presetId) =>
-														captionBridge().send({
-															type: 'caption-delete-custom-preset',
-															presetId
-														})
-													}
-												/>
-											</div>
-										</Show>
-										<Show when={activeSideRailTab() === 'record'}>
-											<div
-												id="panel-record"
-												class="side-rail-tab-panel"
-												role="tabpanel"
-												aria-labelledby="tab-record"
-											>
-												<RecordPanel
-													probe={capabilityProbeV2()}
-													status={recorderStatus()}
-													retakeClipId={retakeClipId()}
-													retakeSourceKinds={retakeSourceKinds()}
-													landedSessionId={recorderLandedSessionId()}
-													onAddSource={(source, track, transfer) =>
-														bridge?.send({ type: 'capture-add-source', source, track }, transfer)
-													}
-													onStart={(settings, writerPort, activeRetakeClipId, transfer) => {
-														setRecorderLandedSessionId(null);
-														bridge?.send(
-															{
-																type: 'capture-start',
-																settings,
-																writerPort,
-																retakeClipId: activeRetakeClipId ?? undefined
-															},
-															transfer
-														);
-													}}
-													onPause={() => bridge?.send({ type: 'capture-pause' })}
-													onResume={() => bridge?.send({ type: 'capture-resume' })}
-													onStop={() => bridge?.send({ type: 'capture-stop' })}
-													onApplyRegion={(sourceId, mode) =>
-														bridge?.send({ type: 'capture-apply-region', sourceId, mode })
-													}
-													onRetakeCleared={() => setRetakeClipId(null)}
-												/>
-											</div>
-										</Show>
-										<Show when={activeSideRailTab() === 'program'}>
-											<div
-												id="panel-program"
-												class="side-rail-tab-panel"
-												role="tabpanel"
-												aria-labelledby="tab-program"
-											>
-												<ProgramPanel
-													programMode={programModeSupport}
-													scenes={programScenes}
-													sessionState={programSessionState}
-													activeSceneId={programActiveSceneId}
-													sourceStatus={programSourceStatus}
-													budgetUsage={programBudgetUsage}
-													acquiredSources={programSources}
-													error={programError}
-													transitionMs={programTransitionMs}
-													onAddScreen={() => void addProgramScreen()}
-													onAddCamera={(deviceId) => void addProgramCamera(deviceId)}
-													onAddMic={(deviceId) => void addProgramMic(deviceId)}
-													onRemoveSource={removeProgramSource}
-													onAddScene={addProgramScene}
-													onRemoveScene={removeProgramScene}
-													onRenameScene={renameProgramScene}
-													onSetHotkey={setProgramSceneHotkey}
-													onUpdateLayers={updateProgramSceneLayers}
-													onSetTransitionMs={setProgramTransitionMs}
-													onStart={startProgramSession}
-													onStop={stopProgramSession}
-													onSwitchScene={switchProgramScene}
-												/>
-											</div>
-										</Show>
-										<Show when={activeSideRailTab() === 'replay'}>
-											<div
-												id="panel-replay"
-												class="side-rail-tab-panel"
-												role="tabpanel"
-												aria-labelledby="tab-replay"
-											>
-												<ReplayBufferPanel
-													captureState={captureSession()}
-													ringBufferState={replayBufferState()}
-													onStartCapture={() => void startReplayCapture()}
-													onStopCapture={stopReplayCapture}
-													onSaveLastN={(nSeconds) => {
-														if (!bridge) return;
-														setReplaySaveInProgress(true);
-														bridge.send({ type: 'replay-save-last-n', nSeconds });
-													}}
-													saveInProgress={replaySaveInProgress()}
-													isSupported={replayCaptureSupported()}
-													supportedReason={replayCaptureUnsupportedReason()}
-													crossOriginIsolated={capabilities().crossOriginIsolated}
-													initiallyExpanded={true}
-												/>
-											</div>
-										</Show>
-										<Show when={activeSideRailTab() === 'live-audio'}>
-											<div
-												id="panel-live-audio"
-												class="side-rail-tab-panel"
-												role="tabpanel"
-												aria-labelledby="tab-live-audio"
-											>
-												<LiveAudioChainPanel
-													config={liveChainConfig()}
-													onConfigChange={(partial) =>
-														bridge?.send({ type: 'update-live-chain-config', config: partial })
-													}
-													latencyMs={liveChainLatencyMs()}
-													crossOriginIsolated={capabilities().crossOriginIsolated}
-													isCapturing={captureSession()?.active ?? false}
-													initiallyExpanded={true}
-												/>
-											</div>
-										</Show>
-										<Show when={activeSideRailTab() === 'voice-cleanup'}>
-											<div
-												id="panel-voice-cleanup"
-												class="side-rail-tab-panel"
-												role="tabpanel"
-												aria-labelledby="tab-voice-cleanup"
-											>
-												<VoiceCleanupPanel
-													settings={voiceCleanupSettings()}
-													trackNames={
-														new Map(
-															timeline()
-																.filter((t) => t.type === 'audio')
-																.map((t) => [t.id, `Audio ${t.id.slice(0, 8)}`])
-														)
-													}
-													onSettingsChange={(settings) => {
-														setVoiceCleanupSettings(settings);
-														bridge?.send({ type: 'voice-cleanup-update-settings', settings });
-													}}
-													onAnalyseLoudness={(targetLufs) => {
-														setVoiceCleanupAnalysisState('running');
-														setVoiceCleanupAnalysisProgress(0);
-														setVoiceCleanupMeasuredLufs(0);
-														setVoiceCleanupProposedGainDb(0);
-														setVoiceCleanupNormalisedLufs(0);
-														bridge?.send({ type: 'voice-cleanup-analyse-loudness', targetLufs });
-													}}
-													onCancelAnalysis={() => {
-														bridge?.send({ type: 'voice-cleanup-cancel-analysis' });
-													}}
-													onApplyNormalisation={(gainDb) => {
-														setVoiceCleanupSettings((s) => ({ ...s, normaliseGainDb: gainDb }));
-														bridge?.send({
-															type: 'voice-cleanup-apply-normalisation',
-															normalisationGainDb: gainDb
-														});
-													}}
-													analysisState={voiceCleanupAnalysisState()}
-													analysisProgress={voiceCleanupAnalysisProgress()}
-													measuredLufs={voiceCleanupMeasuredLufs()}
-													proposedGainDb={voiceCleanupProposedGainDb()}
-													normalisedLufs={voiceCleanupNormalisedLufs()}
-													analysisError={voiceCleanupAnalysisError()}
-													latencyMs={voiceCleanupMonitorLatencyMs()}
-													sampleRate={voiceCleanupMonitorSampleRate()}
-													timelineEmpty={timeline().length === 0}
-													denoiserStatus={voiceCleanupDenoiserStatus()}
-													denoiserUnavailableReason={voiceCleanupDenoiserUnavailableReason()}
-													initiallyExpanded={true}
-												/>
-											</div>
-										</Show>
+										<Tabs.Content
+											value="inspector"
+											id="panel-inspector"
+											class="side-rail-tab-panel"
+											aria-labelledby="tab-inspector"
+										>
+											<Inspector
+												metadata={metadata()}
+												selectedClip={selectedClip()}
+												selectedTrackMix={selectedTrackMix()}
+												selectedClipFades={selectedClipFades()}
+												selectedClipTransform={selectedClipTransform()}
+												selectedTitle={selectedTitle()}
+												selectedTransition={selectedTransition()}
+												capabilityTier={capabilityProbeV2()?.tier}
+												sessionEventLogs={sessionEventLogs()}
+												mediaAssets={assets()}
+												onPickPreviewRegion={requestPreviewRegionPick}
+												onSetTitle={(trackId, clipId, patch) =>
+													bridge?.send({ type: 'set-title', trackId, clipId, ...patch })
+												}
+												onEffectParam={(trackId, clipId, key, value) =>
+													bridge?.send({ type: 'set-effect-param', trackId, clipId, key, value })
+												}
+												onTransform={(trackId, clipId, transform) =>
+													bridge?.send({ type: 'set-transform', trackId, clipId, transform })
+												}
+												playheadTime={clock.currentTime()}
+												onSeek={(time) => bridge?.send({ type: 'seek', time })}
+												onSetKeyframe={(trackId, clipId, key, t, value, easing) =>
+													bridge?.send({
+														type: 'set-keyframe',
+														trackId,
+														clipId,
+														key,
+														t,
+														value,
+														easing
+													})
+												}
+												onDeleteKeyframe={(trackId, clipId, key, t) =>
+													bridge?.send({ type: 'delete-keyframe', trackId, clipId, key, t })
+												}
+												onReplaceKeyframeTracks={(trackId, clipId, tracks) =>
+													bridge?.send({
+														type: 'replace-keyframe-tracks',
+														trackId,
+														clipId,
+														tracks
+													})
+												}
+												onSetCallout={(trackId, clipId, payload) =>
+													bridge?.send({ type: 'set-callout', trackId, clipId, payload })
+												}
+												onSetPaddedBackground={(trackId, clipId, params) =>
+													bridge?.send({
+														type: 'set-padded-background',
+														trackId,
+														clipId,
+														params
+													})
+												}
+												onImportLut={(trackId, clipId, file) =>
+													bridge?.send({ type: 'import-lut', trackId, clipId, file })
+												}
+												onLutStrength={(trackId, clipId, strength) =>
+													bridge?.send({ type: 'set-lut-strength', trackId, clipId, strength })
+												}
+												onTrackGain={(trackId, gain) => {
+													bridge?.send({ type: 'set-track-gain', trackId, gain });
+												}}
+												onTrackMute={(trackId, muted) => {
+													bridge?.send({ type: 'set-track-mute', trackId, muted });
+												}}
+												onTrackSolo={(trackId, solo) => {
+													bridge?.send({ type: 'set-track-solo', trackId, solo });
+												}}
+												onTrackPan={(trackId, pan) => {
+													bridge?.send({ type: 'set-track-pan', trackId, pan });
+												}}
+												onClipFade={(trackId, clipId, edge, durationS) => {
+													bridge?.send({
+														type: 'set-clip-fade',
+														trackId,
+														clipId,
+														edge,
+														durationS
+													});
+												}}
+												onTransitionKind={(transitionId, kind) => {
+													bridge?.send({ type: 'set-transition', transitionId, kind });
+												}}
+												onTransitionDuration={(transitionId, durationS) => {
+													bridge?.send({ type: 'set-transition', transitionId, durationS });
+												}}
+												onRemoveTransition={(transitionId) => {
+													bridge?.send({ type: 'remove-transition', transitionId });
+													transitionMeta.delete(transitionId);
+													setSelectedTransitionId(null);
+												}}
+												onSkinMask={(trackId, clipId, mask) => {
+													bridge?.send({ type: 'set-skin-mask', trackId, clipId, mask });
+												}}
+												onSkinSmoothBypass={(trackId, clipId, bypass) => {
+													bridge?.send({
+														type: 'set-skin-smooth-bypass',
+														trackId,
+														clipId,
+														bypass
+													});
+												}}
+												onSetMatteEnabled={(enabled) =>
+													bridge?.send({
+														type: 'set-matte-enabled',
+														trackId: selectedClip()!.trackId,
+														clipId: selectedClip()!.clipId,
+														enabled
+													})
+												}
+												onSetMatteStrength={(strength) =>
+													bridge?.send({
+														type: 'set-matte-strength',
+														trackId: selectedClip()!.trackId,
+														clipId: selectedClip()!.clipId,
+														strength
+													})
+												}
+												onSetMatteMode={(mode) =>
+													bridge?.send({
+														type: 'set-matte-mode',
+														trackId: selectedClip()!.trackId,
+														clipId: selectedClip()!.clipId,
+														mode
+													})
+												}
+												onSetMatteBlurRadius={(blurRadius) =>
+													bridge?.send({
+														type: 'set-matte-blur-radius',
+														trackId: selectedClip()!.trackId,
+														clipId: selectedClip()!.clipId,
+														blurRadius
+													})
+												}
+												matteStatus={matteStatus()}
+												onSetTimeRemap={(trackId, clipId, remap) =>
+													bridge?.send({ type: 'set-time-remap', trackId, clipId, remap })
+												}
+												onClearTimeRemap={(trackId, clipId) =>
+													bridge?.send({ type: 'clear-time-remap', trackId, clipId })
+												}
+												onImportLookPreset={(trackId, clipId, presetFile, lutFile) =>
+													bridge?.send({
+														type: 'import-look-preset',
+														trackId,
+														clipId,
+														presetFile,
+														lutFile
+													})
+												}
+												onExportLookPreset={(trackId, clipId) =>
+													bridge?.send({ type: 'export-look-preset', trackId, clipId })
+												}
+												onBeautyEffect={(trackId, clipId, beauty) => {
+													bridge?.send({ type: 'set-beauty-effect', trackId, clipId, beauty });
+												}}
+												beautyAvailable={beautyAvailable()}
+												recorderSessionState={recorderStatus()?.state ?? 'idle'}
+												onRetakeRequested={(clipId) => {
+													setRetakeClipId(clipId);
+													setActiveSideRailTab('record');
+												}}
+												beautyModelStatus={beautyModelStatus()}
+												beautyModelSizeBytes={beautyModelSizeBytes() ?? undefined}
+												beautyModelDownloadedBytes={beautyModelDownloadedBytes() ?? undefined}
+												beautyModelError={beautyModelError() ?? undefined}
+												onLoadBeautyModel={() =>
+													bridge?.send({
+														type: 'load-beauty-model',
+														manifestUrl: '/models/beauty/manifest.json',
+														preferredExecutionProvider: 'webgpu'
+													})
+												}
+											/>
+										</Tabs.Content>
+										<Tabs.Content
+											value="captions"
+											id="panel-captions"
+											class="side-rail-tab-panel"
+											aria-labelledby="tab-captions"
+										>
+											<TranscriptPanel
+												captionTracks={captionTracks()}
+												diagnostics={captionDiagnostics()}
+												playheadTime={clock.currentTime()}
+												selectedTrackId={selectedCaptionTrackId()}
+												selectedSegmentIds={selectedCaptionSegmentIds()}
+												onSelectTrack={setSelectedCaptionTrackId}
+												onSelectSegmentIds={setSelectedCaptionSegmentIds}
+												onImport={(file, trackId) =>
+													captionBridge().send(
+														trackId
+															? { type: 'import-captions', file, trackId }
+															: { type: 'import-captions', file }
+													)
+												}
+												onExport={(settings: CaptionExportSettingsSnapshot) =>
+													captionBridge().send({ type: 'export-captions', settings })
+												}
+												onSetTrack={(trackId, patch) =>
+													captionBridge().send({ type: 'set-caption-track', trackId, ...patch })
+												}
+												onDeleteTrack={(trackId) =>
+													captionBridge().send({ type: 'delete-caption-track', trackId })
+												}
+												onDeleteTracks={(trackIds) => {
+													captionBridge().send({ type: 'delete-caption-tracks', trackIds });
+												}}
+												onSetSegmentText={(trackId, segmentId, text) =>
+													captionBridge().send({
+														type: 'set-caption-segment-text',
+														trackId,
+														segmentId,
+														text
+													})
+												}
+												onSetSegmentTiming={(trackId, segmentId, start, end) =>
+													captionBridge().send({
+														type: 'set-caption-segment-timing',
+														trackId,
+														segmentId,
+														start,
+														end
+													})
+												}
+												onSetSegmentStyle={(trackId, segmentId, style) =>
+													captionBridge().send({
+														type: 'set-caption-segment-style',
+														trackId,
+														segmentId,
+														style
+													})
+												}
+												onSplit={(trackId, segmentId, time) =>
+													captionBridge().send({
+														type: 'split-caption-segment',
+														trackId,
+														segmentId,
+														time
+													})
+												}
+												onMerge={(trackId, segmentIds) =>
+													captionBridge().send({
+														type: 'merge-caption-segments',
+														trackId,
+														segmentIds
+													})
+												}
+												onDelete={(trackId, segmentIds) =>
+													captionBridge().send({
+														type: 'delete-caption-segments',
+														trackId,
+														segmentIds
+													})
+												}
+												onSnap={(trackId, segmentId, edge) =>
+													captionBridge().send({
+														type: 'snap-caption-segment',
+														trackId,
+														segmentId,
+														edge
+													})
+												}
+												customAnimCaptionPresets={customAnimCaptionPresets()}
+												onSetAnimPreset={(trackId, segmentId, presetId) =>
+													captionBridge().send({
+														type: 'caption-set-anim-style',
+														trackId,
+														segmentId,
+														presetId
+													})
+												}
+												onImportCustomPreset={(preset) =>
+													captionBridge().send({
+														type: 'caption-import-custom-preset',
+														preset
+													})
+												}
+												onDeleteCustomPreset={(presetId) =>
+													captionBridge().send({
+														type: 'caption-delete-custom-preset',
+														presetId
+													})
+												}
+											/>
+										</Tabs.Content>
+										<Tabs.Content
+											value="record"
+											id="panel-record"
+											class="side-rail-tab-panel"
+											aria-labelledby="tab-record"
+										>
+											<RecordPanel
+												probe={capabilityProbeV2()}
+												status={recorderStatus()}
+												retakeClipId={retakeClipId()}
+												retakeSourceKinds={retakeSourceKinds()}
+												landedSessionId={recorderLandedSessionId()}
+												onAddSource={(source, track, transfer) =>
+													bridge?.send({ type: 'capture-add-source', source, track }, transfer)
+												}
+												onStart={(settings, writerPort, activeRetakeClipId, transfer) => {
+													setRecorderLandedSessionId(null);
+													bridge?.send(
+														{
+															type: 'capture-start',
+															settings,
+															writerPort,
+															retakeClipId: activeRetakeClipId ?? undefined
+														},
+														transfer
+													);
+												}}
+												onPause={() => bridge?.send({ type: 'capture-pause' })}
+												onResume={() => bridge?.send({ type: 'capture-resume' })}
+												onStop={() => bridge?.send({ type: 'capture-stop' })}
+												onApplyRegion={(sourceId, mode) =>
+													bridge?.send({ type: 'capture-apply-region', sourceId, mode })
+												}
+												onRetakeCleared={() => setRetakeClipId(null)}
+											/>
+										</Tabs.Content>
+										<Tabs.Content
+											value="program"
+											id="panel-program"
+											class="side-rail-tab-panel"
+											aria-labelledby="tab-program"
+										>
+											<ProgramPanel
+												programMode={programModeSupport}
+												scenes={programScenes}
+												sessionState={programSessionState}
+												activeSceneId={programActiveSceneId}
+												sourceStatus={programSourceStatus}
+												budgetUsage={programBudgetUsage}
+												acquiredSources={programSources}
+												error={programError}
+												transitionMs={programTransitionMs}
+												onAddScreen={() => void addProgramScreen()}
+												onAddCamera={(deviceId) => void addProgramCamera(deviceId)}
+												onAddMic={(deviceId) => void addProgramMic(deviceId)}
+												onRemoveSource={removeProgramSource}
+												onAddScene={addProgramScene}
+												onRemoveScene={removeProgramScene}
+												onRenameScene={renameProgramScene}
+												onSetHotkey={setProgramSceneHotkey}
+												onUpdateLayers={updateProgramSceneLayers}
+												onSetTransitionMs={setProgramTransitionMs}
+												onStart={startProgramSession}
+												onStop={stopProgramSession}
+												onSwitchScene={switchProgramScene}
+											/>
+										</Tabs.Content>
+										<Tabs.Content
+											value="replay"
+											id="panel-replay"
+											class="side-rail-tab-panel"
+											aria-labelledby="tab-replay"
+										>
+											<ReplayBufferPanel
+												captureState={captureSession()}
+												ringBufferState={replayBufferState()}
+												onStartCapture={() => void startReplayCapture()}
+												onStopCapture={stopReplayCapture}
+												onSaveLastN={(nSeconds) => {
+													if (!bridge) return;
+													setReplaySaveInProgress(true);
+													bridge.send({ type: 'replay-save-last-n', nSeconds });
+												}}
+												saveInProgress={replaySaveInProgress()}
+												isSupported={replayCaptureSupported()}
+												supportedReason={replayCaptureUnsupportedReason()}
+												crossOriginIsolated={capabilities().crossOriginIsolated}
+												initiallyExpanded={true}
+											/>
+										</Tabs.Content>
+										<Tabs.Content
+											value="live-audio"
+											id="panel-live-audio"
+											class="side-rail-tab-panel"
+											aria-labelledby="tab-live-audio"
+										>
+											<LiveAudioChainPanel
+												config={liveChainConfig()}
+												onConfigChange={(partial) =>
+													bridge?.send({ type: 'update-live-chain-config', config: partial })
+												}
+												latencyMs={liveChainLatencyMs()}
+												crossOriginIsolated={capabilities().crossOriginIsolated}
+												isCapturing={captureSession()?.active ?? false}
+												initiallyExpanded={true}
+											/>
+										</Tabs.Content>
+										<Tabs.Content
+											value="voice-cleanup"
+											id="panel-voice-cleanup"
+											class="side-rail-tab-panel"
+											aria-labelledby="tab-voice-cleanup"
+										>
+											<VoiceCleanupPanel
+												settings={voiceCleanupSettings()}
+												trackNames={
+													new Map(
+														timeline()
+															.filter((t) => t.type === 'audio')
+															.map((t) => [t.id, `Audio ${t.id.slice(0, 8)}`])
+													)
+												}
+												onSettingsChange={(settings) => {
+													setVoiceCleanupSettings(settings);
+													bridge?.send({ type: 'voice-cleanup-update-settings', settings });
+												}}
+												onAnalyseLoudness={(targetLufs) => {
+													setVoiceCleanupAnalysisState('running');
+													setVoiceCleanupAnalysisProgress(0);
+													setVoiceCleanupMeasuredLufs(0);
+													setVoiceCleanupProposedGainDb(0);
+													setVoiceCleanupNormalisedLufs(0);
+													bridge?.send({ type: 'voice-cleanup-analyse-loudness', targetLufs });
+												}}
+												onCancelAnalysis={() => {
+													bridge?.send({ type: 'voice-cleanup-cancel-analysis' });
+												}}
+												onApplyNormalisation={(gainDb) => {
+													setVoiceCleanupSettings((s) => ({ ...s, normaliseGainDb: gainDb }));
+													bridge?.send({
+														type: 'voice-cleanup-apply-normalisation',
+														normalisationGainDb: gainDb
+													});
+												}}
+												analysisState={voiceCleanupAnalysisState()}
+												analysisProgress={voiceCleanupAnalysisProgress()}
+												measuredLufs={voiceCleanupMeasuredLufs()}
+												proposedGainDb={voiceCleanupProposedGainDb()}
+												normalisedLufs={voiceCleanupNormalisedLufs()}
+												analysisError={voiceCleanupAnalysisError()}
+												latencyMs={voiceCleanupMonitorLatencyMs()}
+												sampleRate={voiceCleanupMonitorSampleRate()}
+												timelineEmpty={timeline().length === 0}
+												denoiserStatus={voiceCleanupDenoiserStatus()}
+												denoiserUnavailableReason={voiceCleanupDenoiserUnavailableReason()}
+												initiallyExpanded={true}
+											/>
+										</Tabs.Content>
 									</div>
-								</div>
+								</Tabs.Root>
 							</Show>
 						</div>
 					</main>
@@ -5158,6 +5242,13 @@ export function App() {
 						selectedTransition={selectedTransition}
 						beatResults={beatResults}
 						beatSettings={beatSettings}
+						snapEnabled={timelineSnapEnabled()}
+						snapToBeats={timelineSnapToBeats()}
+						onSetSnapEnabled={(enabled) => {
+							setTimelineSnapEnabled(enabled);
+							if (!enabled) setTimelineSnapToBeats(false);
+						}}
+						onSetSnapToBeats={setTimelineSnapToBeats}
 						onSelectTransition={(transitionId, fromClipId, toClipId, trackId) => {
 							const transition = transitions().find((t) => t.id === transitionId);
 							if (transition) {

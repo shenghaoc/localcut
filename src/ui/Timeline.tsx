@@ -1,4 +1,5 @@
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
+import { ToggleGroup } from '@ark-ui/solid/toggle-group';
 import {
 	Film,
 	Flag,
@@ -85,6 +86,10 @@ interface TimelineProps {
 	beatResults?: () => ReadonlyMap<string, { tempoBpm: number; beatTimesMs: number[] }>;
 	/** Phase 34: beat display settings. */
 	beatSettings?: () => { enabledSourceIds: string[]; globalOffsetMs: number };
+	snapEnabled: boolean;
+	snapToBeats: boolean;
+	onSetSnapEnabled: (enabled: boolean) => void;
+	onSetSnapToBeats: (enabled: boolean) => void;
 }
 
 interface MarqueeBox {
@@ -143,7 +148,6 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
 export function Timeline(props: TimelineProps) {
 	const fps = () => props.frameRate?.() ?? DEFAULT_FPS;
 	const [pxPerSecond, setPxPerSecond] = createSignal(DEFAULT_PX_PER_SECOND);
-	const [snapEnabled, setSnapEnabled] = createSignal(true);
 	const [isScrubbing, setIsScrubbing] = createSignal(false);
 	const [marquee, setMarquee] = createSignal<MarqueeBox | null>(null);
 	const [dropTrackId, setDropTrackId] = createSignal<string | null>(null);
@@ -175,7 +179,12 @@ export function Timeline(props: TimelineProps) {
 	);
 
 	const selectedKeys = createMemo(() => new Set(props.selectedClipRefs().map(selectionKey)));
-	const [snapToBeats, setSnapToBeats] = createSignal(false);
+	const timelineModeValues = createMemo(() => {
+		const values: string[] = [];
+		if (props.snapEnabled) values.push('snap');
+		if (props.snapEnabled && props.snapToBeats) values.push('beat');
+		return values;
+	});
 
 	// Phase 34: derive beat times from enabled sources, adjusted by global offset
 	const activeBeatTimesS = createMemo(() => {
@@ -201,7 +210,7 @@ export function Timeline(props: TimelineProps) {
 		buildSnapTargets(
 			props.timeline(),
 			props.markers(),
-			snapToBeats() ? activeBeatTimesS() : undefined
+			props.snapToBeats ? activeBeatTimesS() : undefined
 		)
 	);
 
@@ -246,6 +255,13 @@ export function Timeline(props: TimelineProps) {
 		const duration = props.duration();
 		if (duration <= 0) return;
 		props.onSeek(Math.max(0, Math.min(duration, time)));
+	}
+
+	function setTimelineModeValues(details: { value: string[] }): void {
+		const next = new Set(details.value);
+		const snapEnabled = next.has('snap');
+		props.onSetSnapEnabled(snapEnabled);
+		props.onSetSnapToBeats(snapEnabled && next.has('beat'));
 	}
 
 	function recenterOnPlayhead() {
@@ -601,27 +617,34 @@ export function Timeline(props: TimelineProps) {
 					>
 						<SkipForward size={13} aria-hidden="true" />
 					</button>
-					<button
-						type="button"
-						class={`timeline-tool-button${snapEnabled() ? ' is-active' : ''}`}
-						onClick={() => setSnapEnabled((value) => !value)}
-						aria-pressed={snapEnabled()}
-						aria-label="Toggle snapping"
-						title="Toggle snapping"
+					<ToggleGroup.Root
+						class="timeline-toggle-group"
+						value={timelineModeValues()}
+						multiple
+						aria-label="Timeline snapping modes"
+						onValueChange={setTimelineModeValues}
 					>
-						<Magnet size={13} aria-hidden="true" />
-						Snap
-					</button>
-					<button
-						type="button"
-						class={`timeline-tool-button${snapToBeats() ? ' is-active' : ''}`}
-						onClick={() => setSnapToBeats((value) => !value)}
-						aria-pressed={snapToBeats()}
-						aria-label="Toggle snap to beats"
-						title="Toggle snap to beats (B)"
-					>
-						Beat
-					</button>
+						<ToggleGroup.Item
+							value="snap"
+							class="timeline-tool-button timeline-toggle-item"
+							aria-label="Toggle snapping"
+							title="Toggle snapping"
+						>
+							<Magnet size={13} aria-hidden="true" />
+							Snap
+						</ToggleGroup.Item>
+						<ToggleGroup.Item
+							value="beat"
+							class="timeline-tool-button timeline-toggle-item"
+							disabled={!props.snapEnabled}
+							aria-label="Toggle snap to beats"
+							title={
+								props.snapEnabled ? 'Toggle snap to beats' : 'Enable snapping before beat snapping'
+							}
+						>
+							Beat
+						</ToggleGroup.Item>
+					</ToggleGroup.Root>
 					<button
 						type="button"
 						class="timeline-tool-button"
@@ -653,7 +676,10 @@ export function Timeline(props: TimelineProps) {
 					</button>
 				</div>
 			</div>
-			<Show when={props.hasMedia} fallback={<p class="placeholder-text">Import media to edit</p>}>
+			<Show
+				when={props.hasMedia}
+				fallback={<p class="placeholder-text">Drag a file here, or click Import</p>}
+			>
 				<div class="timeline-track-wrapper">
 					<div class="timeline-label-column">
 						<For each={props.timeline()}>
@@ -705,7 +731,7 @@ export function Timeline(props: TimelineProps) {
 													trackId={track.id}
 													clip={clip}
 													pxPerSecond={pxPerSecond()}
-													snapEnabled={snapEnabled()}
+													snapEnabled={props.snapEnabled}
 													snapTargets={snapTargets()}
 													playheadTime={boundedCurrentTime()}
 													selected={selectedKeys().has(

@@ -1,7 +1,8 @@
 import { createSignal, For, Show } from 'solid-js';
-import { Popover } from '@kobalte/core/popover';
+import { Portal } from 'solid-js/web';
+import { Popover } from '@ark-ui/solid/popover';
 import { FileOutput } from 'lucide-solid';
-import { Button } from './components/button';
+import { Button, buttonVariants } from './components/button';
 import type { InterchangeFormat } from '../protocol';
 
 export interface InterchangeVideoTrack {
@@ -35,10 +36,13 @@ export function InterchangeMenu(props: InterchangeMenuProps) {
 	};
 
 	return (
-		<Popover open={open()} onOpenChange={setOpen}>
+		<Popover.Root
+			open={open()}
+			onOpenChange={(details) => setOpen(details.open)}
+			positioning={{ placement: 'bottom-end', gutter: 8 }}
+		>
 			<Popover.Trigger
-				as={Button}
-				variant="outline"
+				class={buttonVariants({ variant: 'outline' })}
 				disabled={!props.hasTimeline}
 				title={
 					props.hasTimeline
@@ -49,58 +53,63 @@ export function InterchangeMenu(props: InterchangeMenuProps) {
 				<FileOutput size={14} aria-hidden="true" />
 				Interchange
 			</Popover.Trigger>
-			<Popover.Portal>
-				<Popover.Content class="export-popover bundle-popover">
-					<div class="export-popover-header">
-						<h2 class="export-popover-title">Timeline interchange</h2>
-						<p class="export-popover-subtitle">
-							Cuts, markers, and transitions for other editors. Effects and looks stay LocalCut-only
-							metadata.
-						</p>
-					</div>
-					<div class="bundle-actions">
-						<Button variant="default" onClick={() => props.onExport('otio')}>
-							Export Timeline (.otio)
-						</Button>
-						<Show when={props.videoTracks.length > 1}>
-							<label class="bundle-collect-row">
-								EDL track
-								<select
-									value={selectedEdlTrack()?.id ?? ''}
-									onChange={(event) => setEdlTrackId(event.currentTarget.value)}
-								>
-									<For each={props.videoTracks}>
-										{(track) => (
-											<option value={track.id}>
-												{track.name} ({track.clipCount} clip{track.clipCount === 1 ? '' : 's'})
-											</option>
-										)}
-									</For>
-								</select>
-							</label>
-						</Show>
-						<Button
-							variant="outline"
-							disabled={!selectedEdlTrack()}
-							onClick={() => props.onExport('edl', selectedEdlTrack()?.id)}
-						>
-							Export EDL (.edl)
-						</Button>
-					</div>
-					<Show when={props.lastMessage || props.warnings.length > 0}>
-						<div class="bundle-status" aria-live="polite">
-							<Show when={props.lastMessage}>
-								<p>{props.lastMessage}</p>
-							</Show>
-							<Show when={props.warnings.length > 0}>
-								<ul>
-									<For each={props.warnings.slice(0, 8)}>{(warning) => <li>{warning}</li>}</For>
-								</ul>
-							</Show>
+			<Portal>
+				<Popover.Positioner>
+					<Popover.Content
+						class="export-popover bundle-popover panel"
+						aria-label="Timeline interchange"
+					>
+						<div class="export-popover-header">
+							<h2 class="export-popover-title">Timeline interchange</h2>
+							<p class="export-popover-subtitle">
+								Cuts, markers, and transitions for other editors. Effects and looks stay
+								LocalCut-only metadata.
+							</p>
 						</div>
-					</Show>
-				</Popover.Content>
-			</Popover.Portal>
-		</Popover>
+						<div class="bundle-actions">
+							<Button variant="default" onClick={() => props.onExport('otio')}>
+								Export Timeline (.otio)
+							</Button>
+							<Show when={props.videoTracks.length > 1}>
+								<label class="bundle-collect-row">
+									EDL track
+									<select
+										value={selectedEdlTrack()?.id ?? ''}
+										onChange={(event) => setEdlTrackId(event.currentTarget.value)}
+									>
+										<For each={props.videoTracks}>
+											{(track) => (
+												<option value={track.id}>
+													{track.name} ({track.clipCount} clip{track.clipCount === 1 ? '' : 's'})
+												</option>
+											)}
+										</For>
+									</select>
+								</label>
+							</Show>
+							<Button
+								variant="outline"
+								disabled={!selectedEdlTrack()}
+								onClick={() => props.onExport('edl', selectedEdlTrack()?.id)}
+							>
+								Export EDL (.edl)
+							</Button>
+						</div>
+						<Show when={props.lastMessage || props.warnings.length > 0}>
+							<div class="bundle-status" aria-live="polite">
+								<Show when={props.lastMessage}>
+									<p>{props.lastMessage}</p>
+								</Show>
+								<Show when={props.warnings.length > 0}>
+									<ul>
+										<For each={props.warnings.slice(0, 8)}>{(warning) => <li>{warning}</li>}</For>
+									</ul>
+								</Show>
+							</div>
+						</Show>
+					</Popover.Content>
+				</Popover.Positioner>
+			</Portal>
+		</Popover.Root>
 	);
 }

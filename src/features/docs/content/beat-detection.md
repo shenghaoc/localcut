@@ -13,7 +13,7 @@ LocalCut can analyse any imported audio source to detect its tempo and beat posi
 ## Beat grid controls
 
 - **Offset nudge** (–500 ms to +500 ms): shifts all displayed beat times forward or backward in time. Use this to align the beat grid with the actual musical beats if the detected grid is slightly off.
-- **Snap to beats**: toggle the **Beat** button in the timeline toolbar (keyboard shortcut **B**) to include beat positions in the snap target set. When enabled, dragging clip edges or the playhead snaps to the nearest beat.
+- **Snap to beats**: enable **Snap**, then toggle the **Beat** button in the top chrome or timeline toolbar to include beat positions in the snap target set. When enabled, dragging clip edges or the playhead snaps to the nearest beat.
 - **Auto-cut**: select one or more clips on the timeline, then click **Split** or **Align** in the Beat Detection panel:
   - **Split mode**: splits each selected clip at every beat time that falls inside its span. Segments shorter than 0.2 seconds are skipped to avoid creating uneditable slivers.
   - **Align mode**: moves each selected clip's start to the nearest beat time. Selected clips are sorted chronologically before alignment so overlap-skip decisions are deterministic. Locked tracks are skipped with a diagnostics finding, and linked audio and video clips move together.

@@ -302,7 +302,11 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
 
 			<Show
 				when={props.captionTracks.length > 0}
-				fallback={<p class="placeholder-text">Import SRT or WebVTT to start a caption track.</p>}
+				fallback={
+					<p class="placeholder-text">
+						Import an SRT or WebVTT file, or generate captions from audio.
+					</p>
+				}
 			>
 				<Show when={activeTrack()}>
 					{(track) => {

@@ -1,7 +1,7 @@
 /** Shared numeric helpers.
  *
  *  Dependency-free on purpose: engine and worker modules import these, so they
- *  must not pull in UI-only libraries (clsx/tailwind-merge live in `utils.ts`).
+ *  must not pull in UI-only libraries.
  *  Consolidated from copies that had drifted across transform/title/audio-mix/
  *  source-timing/canvas-compositor and the timeline UI.
  */

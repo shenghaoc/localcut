@@ -12,12 +12,12 @@ function Fallback(props: { error: unknown; reset: () => void }) {
 			? props.error.message
 			: typeof props.error === 'string'
 				? props.error
-				: 'An unexpected error occurred.'
+				: 'The editor hit an unexpected error. Try reloading — your project is auto-saved.'
 	);
 	return (
 		<div class="error-boundary-fallback" role="alert">
 			<div class="error-boundary-content">
-				<h2 class="error-boundary-title">Something went wrong</h2>
+				<h2 class="error-boundary-title">Well, that didn't work</h2>
 				<p class="error-boundary-message">{message()}</p>
 				<Button variant="default" onClick={() => window.location.reload()}>
 					<RotateCcw size={14} aria-hidden="true" />

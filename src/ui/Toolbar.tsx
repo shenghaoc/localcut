@@ -1,8 +1,14 @@
-import { Show, type JSX } from 'solid-js';
+import { createMemo, createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
+import { Portal } from 'solid-js/web';
+import { Menu } from '@ark-ui/solid/menu';
+import { Popover } from '@ark-ui/solid/popover';
+import { ToggleGroup } from '@ark-ui/solid/toggle-group';
 import {
 	Activity,
 	AudioWaveform,
+	Command,
 	Cpu,
+	Crosshair,
 	Crop,
 	FolderOpen,
 	Globe,
@@ -16,6 +22,7 @@ import {
 	Radio,
 	Redo2,
 	Repeat,
+	Search,
 	ShieldCheck,
 	SkipBack,
 	SkipForward,
@@ -31,6 +38,8 @@ import { MeterStrip } from './MeterStrip';
 interface ToolbarProps {
 	metadata: MediaMetadata | null;
 	playing: () => boolean;
+	currentTime: () => number;
+	duration: () => number;
 	importAccept: string;
 	onImportFile: (file: File) => void;
 	onPickImport?: () => Promise<boolean>;
@@ -64,15 +73,77 @@ interface ToolbarProps {
 	calloutTool?: JSX.Element;
 	/** True while a publish session is connecting/live/reconnecting. */
 	publishLive?: boolean;
+	timelineSnapEnabled: boolean;
+	timelineSnapToBeats: boolean;
+	onSetTimelineSnapEnabled: (enabled: boolean) => void;
+	onSetTimelineSnapToBeats: (enabled: boolean) => void;
 	masterGain: number;
 	meterSab: SharedArrayBuffer | null;
 	onMasterGain: (gain: number) => void;
 	exportControl?: JSX.Element;
 }
 
+interface CommandAction {
+	label: string;
+	detail: string;
+	disabled?: boolean;
+	onSelect: () => void | Promise<void>;
+}
+
+type MenuBarItem =
+	| { kind: 'separator' }
+	| {
+			kind: 'item';
+			id: string;
+			label: string;
+			kbd?: string;
+			detail?: string;
+			disabled?: boolean;
+	  };
+
+interface MenuBarGroup {
+	id: string;
+	label: string;
+	items: readonly MenuBarItem[];
+}
+
+function formatToolbarTimecode(seconds: number, fps: number | null): string {
+	if (!Number.isFinite(seconds) || seconds <= 0) return '00:00:00:00';
+	const rate = Math.max(1, fps && Number.isFinite(fps) && fps > 0 ? Math.round(fps) : 30);
+	const totalFrames = Math.max(0, Math.round(seconds * rate));
+	const frames = totalFrames % rate;
+	const totalSeconds = Math.floor(totalFrames / rate);
+	const secs = totalSeconds % 60;
+	const totalMinutes = Math.floor(totalSeconds / 60);
+	const mins = totalMinutes % 60;
+	const hours = Math.floor(totalMinutes / 60);
+	return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs
+		.toString()
+		.padStart(2, '0')}:${frames.toString().padStart(2, '0')}`;
+}
+
+function formatToolbarDuration(seconds: number): string {
+	if (!Number.isFinite(seconds) || seconds <= 0) return '00:00:00';
+	const rounded = Math.round(seconds);
+	const secs = rounded % 60;
+	const totalMinutes = Math.floor(rounded / 60);
+	const mins = totalMinutes % 60;
+	const hours = Math.floor(totalMinutes / 60);
+	return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs
+		.toString()
+		.padStart(2, '0')}`;
+}
+
 export function Toolbar(props: ToolbarProps) {
 	const hasVideo = () => props.metadata?.video != null;
 	const transportDisabled = () => props.transportDisabled || !hasVideo();
+	const [commandOpen, setCommandOpen] = createSignal(false);
+	const timelineModeValues = createMemo(() => {
+		const values: string[] = [];
+		if (props.timelineSnapEnabled) values.push('snap');
+		if (props.timelineSnapEnabled && props.timelineSnapToBeats) values.push('beat');
+		return values;
+	});
 	let importInput: HTMLInputElement | undefined;
 	const handleImportInput = (event: Event) => {
 		const input = event.currentTarget as HTMLInputElement;
@@ -87,18 +158,300 @@ export function Toolbar(props: ToolbarProps) {
 		const handled = (await props.onPickImport?.()) ?? false;
 		if (!handled) importInput?.click();
 	};
+	const openCommandPalette = () => {
+		setCommandOpen(true);
+	};
+	onMount(() => {
+		const handler = (event: KeyboardEvent) => {
+			if (event.defaultPrevented) return;
+			const mod = event.metaKey || event.ctrlKey;
+			if (!mod || event.altKey || event.shiftKey) return;
+			if (event.key.toLowerCase() !== 'k') return;
+			const target = event.target;
+			if (target instanceof HTMLElement) {
+				if (target.isContentEditable) return;
+				const tag = target.tagName.toLowerCase();
+				if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+			}
+			event.preventDefault();
+			openCommandPalette();
+		};
+		window.addEventListener('keydown', handler);
+		onCleanup(() => window.removeEventListener('keydown', handler));
+	});
+	const sourceFormatLabel = () => {
+		const video = props.metadata?.video;
+		if (!video) return 'Nothing loaded';
+		const fps = video.frameRate ? `${Math.round(video.frameRate)} FPS` : 'FPS ?';
+		return `${video.width}×${video.height} · ${fps}`;
+	};
+	const commandActions = (): CommandAction[] => [
+		{
+			label: 'Import media',
+			detail: props.importHint ?? 'Add clips, images, or audio',
+			disabled: props.importBlocked,
+			onSelect: openImport
+		},
+		{
+			label: props.playing() ? 'Pause transport' : 'Play transport',
+			detail: 'Preview playback',
+			disabled: transportDisabled(),
+			onSelect: props.playing() ? props.onPause : props.onPlay
+		},
+		{
+			label: 'Go live',
+			detail: 'Open WHIP publish controls',
+			onSelect: () => props.onOpenPublish?.()
+		},
+		{
+			label: 'Auto captions',
+			detail: 'On-device speech recognition',
+			onSelect: () => props.onOpenAutoCaptions?.()
+		},
+		{
+			label: 'Smart reframe',
+			detail: 'Generate crop-path keyframes',
+			onSelect: () => props.onOpenSmartReframe?.()
+		},
+		{
+			label: 'Capabilities',
+			detail: 'Inspect browser pipeline support',
+			onSelect: () => props.onOpenCapabilities?.()
+		},
+		{
+			label: 'User guide',
+			detail: 'Open in-app documentation',
+			onSelect: () => props.onOpenHelp?.()
+		}
+	];
+	const runCommand = (action: CommandAction) => {
+		if (action.disabled) return;
+		void action.onSelect();
+		setCommandOpen(false);
+	};
+	const setTimelineModeValues = (details: { value: string[] }) => {
+		const next = new Set(details.value);
+		const snapEnabled = next.has('snap');
+		props.onSetTimelineSnapEnabled(snapEnabled);
+		props.onSetTimelineSnapToBeats(snapEnabled && next.has('beat'));
+	};
+	const isMod = () =>
+		typeof navigator !== 'undefined' && /Mac|iP(hone|ad|od)/.test(navigator.platform)
+			? '⌘'
+			: 'Ctrl';
+	const menuBarGroups = createMemo<MenuBarGroup[]>(() => {
+		const mod = isMod();
+		return [
+			{
+				id: 'project',
+				label: 'Project',
+				items: [
+					{ kind: 'item', id: 'import', label: 'Import media…', disabled: props.importBlocked },
+					{ kind: 'separator' },
+					{ kind: 'item', id: 'palette', label: 'Search actions…', kbd: `${mod}+K` },
+					{ kind: 'item', id: 'capabilities', label: 'Browser capabilities' }
+				]
+			},
+			{
+				id: 'edit',
+				label: 'Edit',
+				items: [
+					{ kind: 'item', id: 'undo', label: 'Undo', kbd: `${mod}+Z`, disabled: !props.canUndo },
+					{
+						kind: 'item',
+						id: 'redo',
+						label: 'Redo',
+						kbd: `${mod}+⇧+Z`,
+						disabled: !props.canRedo
+					},
+					{ kind: 'separator' },
+					{ kind: 'item', id: 'palette', label: 'Search actions…', kbd: `${mod}+K` }
+				]
+			},
+			{
+				id: 'clip',
+				label: 'Clip',
+				items: [
+					{
+						kind: 'item',
+						id: 'split',
+						label: 'Split at playhead',
+						kbd: 'S',
+						detail: 'on timeline'
+					},
+					{ kind: 'item', id: 'delete', label: 'Delete selected', kbd: '⌫', detail: 'on timeline' },
+					{ kind: 'separator' },
+					{ kind: 'item', id: 'palette', label: 'Search actions…', kbd: `${mod}+K` }
+				]
+			},
+			{
+				id: 'timeline',
+				label: 'Timeline',
+				items: [
+					{
+						kind: 'item',
+						id: 'snap',
+						label: props.timelineSnapEnabled ? 'Disable snap' : 'Enable snap'
+					},
+					{
+						kind: 'item',
+						id: 'beat-snap',
+						label: props.timelineSnapToBeats ? 'Disable beat snap' : 'Enable beat snap',
+						disabled: !props.timelineSnapEnabled
+					},
+					{ kind: 'separator' },
+					{ kind: 'item', id: 'palette', label: 'Search actions…', kbd: `${mod}+K` }
+				]
+			},
+			{
+				id: 'view',
+				label: 'View',
+				items: [
+					{ kind: 'item', id: 'capabilities', label: 'Browser capabilities' },
+					{ kind: 'separator' },
+					{ kind: 'item', id: 'palette', label: 'Search actions…', kbd: `${mod}+K` }
+				]
+			},
+			{
+				id: 'help',
+				label: 'Help',
+				items: [
+					{ kind: 'item', id: 'user-guide', label: 'User guide' },
+					{ kind: 'item', id: 'capabilities', label: 'Browser capabilities' },
+					{ kind: 'separator' },
+					{ kind: 'item', id: 'palette', label: 'Search actions…', kbd: `${mod}+K` }
+				]
+			}
+		];
+	});
+	const runMenuItem = (group: MenuBarGroup, value: string) => {
+		const item = group.items.find((i) => i.kind === 'item' && i.id === value);
+		if (!item || item.kind !== 'item' || item.disabled) return;
+		switch (value) {
+			case 'import':
+				void openImport();
+				return;
+			case 'palette':
+				openCommandPalette();
+				return;
+			case 'capabilities':
+				props.onOpenCapabilities?.();
+				return;
+			case 'user-guide':
+				props.onOpenHelp?.();
+				return;
+			case 'undo':
+				props.onUndo();
+				return;
+			case 'redo':
+				props.onRedo();
+				return;
+			case 'snap':
+				props.onSetTimelineSnapEnabled(!props.timelineSnapEnabled);
+				return;
+			case 'beat-snap':
+				props.onSetTimelineSnapToBeats(!props.timelineSnapToBeats);
+				return;
+			case 'split':
+			case 'delete':
+				// keyboard-only on the timeline; surface in the menu for discoverability
+				openCommandPalette();
+				return;
+		}
+	};
 
 	return (
 		<header class="toolbar">
+			<div class="toolbar-menu">
+				<div class="app-brand">
+					<span class="app-glyph" aria-hidden="true">
+						<Crosshair size={20} strokeWidth={1.6} />
+					</span>
+					<div class="app-brand-copy">
+						<h1 class="app-title">LocalCut Studio</h1>
+						<span class="app-kicker">Client NLE</span>
+					</div>
+				</div>
+				<nav class="toolbar-menu-nav" aria-label="Application menu">
+					<For each={menuBarGroups()}>
+						{(group) => (
+							<Menu.Root
+								onSelect={(details) => runMenuItem(group, details.value)}
+								positioning={{ placement: 'bottom-start', gutter: 6 }}
+							>
+								<Menu.Trigger class="toolbar-menu-item" title={`Open ${group.label} menu`}>
+									{group.label}
+								</Menu.Trigger>
+								<Portal>
+									<Menu.Positioner>
+										<Menu.Content class="command-popover panel toolbar-menu-popover">
+											<For each={group.items}>
+												{(item) =>
+													item.kind === 'separator' ? (
+														<Menu.Separator class="toolbar-menu-separator" />
+													) : (
+														<Menu.Item
+															value={item.id}
+															disabled={item.disabled}
+															class="command-action toolbar-menu-action"
+														>
+															<span>{item.label}</span>
+															<Show when={item.kbd || item.detail}>
+																<small>{item.kbd ?? item.detail}</small>
+															</Show>
+														</Menu.Item>
+													)
+												}
+											</For>
+										</Menu.Content>
+									</Menu.Positioner>
+								</Portal>
+							</Menu.Root>
+						)}
+					</For>
+				</nav>
+				<Popover.Root
+					open={commandOpen()}
+					onOpenChange={(details) => setCommandOpen(details.open)}
+					positioning={{ placement: 'bottom-end', gutter: 8 }}
+				>
+					<Popover.Trigger class="command-search" aria-label="Search actions">
+						<Search size={13} aria-hidden="true" />
+						<span>Search actions, panels, clips…</span>
+						<kbd>⌘</kbd>
+						<kbd>K</kbd>
+					</Popover.Trigger>
+					<Portal>
+						<Popover.Positioner>
+							<Popover.Content class="command-popover" aria-label="Command palette">
+								<header class="command-popover-header">
+									<Command size={14} aria-hidden="true" />
+									<span>Command palette</span>
+								</header>
+								<ul class="command-list">
+									<For each={commandActions()}>
+										{(action) => (
+											<li>
+												<button
+													type="button"
+													class="command-action"
+													disabled={action.disabled}
+													onClick={() => runCommand(action)}
+												>
+													<span>{action.label}</span>
+													<small>{action.detail}</small>
+												</button>
+											</li>
+										)}
+									</For>
+								</ul>
+							</Popover.Content>
+						</Popover.Positioner>
+					</Portal>
+				</Popover.Root>
+			</div>
 			<div class="toolbar-main">
 				<div class="toolbar-left">
-					<div class="app-brand">
-						<span class="app-glyph" aria-hidden="true" />
-						<div class="app-brand-copy">
-							<h1 class="app-title">LocalCut</h1>
-							<span class="app-kicker">0.1 · Browser NLE</span>
-						</div>
-					</div>
 					<Button
 						variant="default"
 						class="import-picker"
@@ -124,11 +477,15 @@ export function Toolbar(props: ToolbarProps) {
 					/>
 				</div>
 				<div class="toolbar-center">
-					<span class="file-name" title={props.metadata?.fileName ?? 'No source loaded'}>
-						<Show when={props.metadata} fallback="No source">
+					<span
+						class="file-name"
+						title={props.metadata?.fileName ?? 'Drop or import a file to get started'}
+					>
+						<Show when={props.metadata} fallback="Nothing loaded">
 							{(meta) => meta().fileName}
 						</Show>
 					</span>
+					<span class="source-format">{sourceFormatLabel()}</span>
 				</div>
 				<div class="toolbar-right">
 					<div class="edit-controls" role="group" aria-label="Edit history">
@@ -201,6 +558,42 @@ export function Toolbar(props: ToolbarProps) {
 							<Repeat size={14} aria-hidden="true" />
 						</Button>
 					</div>
+					<div class="toolbar-timecode" aria-label="Playback timecode">
+						<span>
+							{formatToolbarTimecode(props.currentTime(), props.metadata?.video?.frameRate ?? null)}
+						</span>
+						<small>/</small>
+						<span>{formatToolbarDuration(props.duration())}</span>
+					</div>
+					<ToggleGroup.Root
+						class="timeline-toggles"
+						value={timelineModeValues()}
+						multiple
+						aria-label="Timeline snapping modes"
+						onValueChange={setTimelineModeValues}
+					>
+						<ToggleGroup.Item
+							value="snap"
+							class="timeline-toggle-status"
+							aria-label="Toggle timeline snapping"
+							title="Toggle timeline snapping"
+						>
+							Snap
+						</ToggleGroup.Item>
+						<ToggleGroup.Item
+							value="beat"
+							class="timeline-toggle-status"
+							disabled={!props.timelineSnapEnabled}
+							aria-label="Toggle beat-grid snapping"
+							title={
+								props.timelineSnapEnabled
+									? 'Toggle beat-grid snapping'
+									: 'Enable snapping before beat-grid snapping'
+							}
+						>
+							Beat
+						</ToggleGroup.Item>
+					</ToggleGroup.Root>
 					<div class="master-mix" role="group" aria-label="Master mix">
 						<MeterStrip meterSab={props.meterSab} />
 						<label class="master-fader">
@@ -246,7 +639,7 @@ export function Toolbar(props: ToolbarProps) {
 				</span>
 				<span class={cn('pipeline-chip', props.crossOriginIsolated ? 'is-ok' : 'is-warn')}>
 					<ShieldCheck size={11} aria-hidden="true" />
-					{props.crossOriginIsolated ? 'COOP/COEP' : 'NO ISOLATE'}
+					{props.crossOriginIsolated ? 'COOP/COEP' : 'No isolation'}
 				</span>
 				<Show when={props.previewLabel !== null}>
 					<span class="pipeline-chip">
@@ -265,7 +658,7 @@ export function Toolbar(props: ToolbarProps) {
 					type="button"
 					class={cn('pipeline-chip pipeline-chip-button is-tool', props.publishLive && 'is-live')}
 					onClick={() => props.onOpenPublish?.()}
-					title="Stream the program output to a WHIP endpoint"
+					title="Go live — stream to a WHIP endpoint"
 				>
 					<Radio size={11} aria-hidden="true" />
 					{props.publishLive ? 'Live' : 'Go Live'}
@@ -274,7 +667,7 @@ export function Toolbar(props: ToolbarProps) {
 					type="button"
 					class="pipeline-chip pipeline-chip-button is-tool"
 					onClick={() => props.onOpenAudioCleanup?.()}
-					title="Local Audio Cleanup (Experimental) — on-device noise suppression"
+					title="Clean up audio noise — runs on your device"
 				>
 					<AudioWaveform size={11} aria-hidden="true" />
 					Cleanup
@@ -283,7 +676,7 @@ export function Toolbar(props: ToolbarProps) {
 					type="button"
 					class="pipeline-chip pipeline-chip-button is-tool"
 					onClick={() => props.onOpenAutoCaptions?.()}
-					title="Auto Captions (Experimental) — on-device speech recognition"
+					title="Generate captions from speech — on-device"
 				>
 					<Languages size={11} aria-hidden="true" />
 					Captions
@@ -293,7 +686,7 @@ export function Toolbar(props: ToolbarProps) {
 						type="button"
 						class="pipeline-chip pipeline-chip-button is-tool"
 						onClick={() => props.onOpenLanguageTools?.()}
-						title="Language Tools — translate captions and draft copy on-device"
+						title="Language Tools — translate and draft copy on-device"
 					>
 						<Globe size={11} aria-hidden="true" />
 						Translate
@@ -303,7 +696,7 @@ export function Toolbar(props: ToolbarProps) {
 					type="button"
 					class="pipeline-chip pipeline-chip-button is-tool"
 					onClick={() => props.onOpenSmartReframe?.()}
-					title="Smart Reframe (Experimental) — auto crop-path between aspect ratios"
+					title="Auto-reframe for different aspect ratios"
 				>
 					<Crop size={11} aria-hidden="true" />
 					Reframe
@@ -312,7 +705,7 @@ export function Toolbar(props: ToolbarProps) {
 					type="button"
 					class="pipeline-chip pipeline-chip-button is-tool"
 					onClick={() => props.onOpenSilenceReview?.()}
-					title="Silence Review — propose ripple-delete cuts at detected dead air"
+					title="Find and remove silent gaps"
 				>
 					<VolumeX size={11} aria-hidden="true" />
 					Silence
@@ -323,7 +716,7 @@ export function Toolbar(props: ToolbarProps) {
 						type="button"
 						class="pipeline-chip pipeline-chip-button is-tool"
 						onClick={() => props.onImportKeystrokeOverlay?.()}
-						title="Import recorded shortcuts from the active capture session as a keystroke overlay track"
+						title="Show keyboard shortcuts on the preview"
 					>
 						<Keyboard size={11} aria-hidden="true" />
 						Keys
@@ -333,7 +726,7 @@ export function Toolbar(props: ToolbarProps) {
 					type="button"
 					class="pipeline-chip pipeline-chip-button is-tool"
 					onClick={() => props.onOpenCapabilities?.()}
-					title="View browser capabilities and recovery steps"
+					title="What this browser supports"
 				>
 					<Info size={11} aria-hidden="true" />
 					Capabilities
