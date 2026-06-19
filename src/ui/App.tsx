@@ -2533,6 +2533,9 @@ export function App() {
 				break;
 			case 'restore-result':
 				setRestoreOffer(null);
+				// Restoring replaces the project; the worker resets loopEnabled in its
+				// teardown, so mirror that here to keep the toggle in sync.
+				setLoopPlayback(false);
 				setLatestHealthReport(null);
 				setUnresolvedSources(msg.unresolvedSources);
 				setStatusLine(msg.message);
@@ -2723,6 +2726,9 @@ export function App() {
 				setBundleMessage(msg.reason ?? (msg.ok ? 'Bundle job complete.' : 'Bundle job failed.'));
 				if (msg.ok && msg.projectId) {
 					setRestoreOffer(null);
+					// A loaded bundle is a fresh project; the worker resets loopEnabled in
+					// applyImportedDoc, so mirror that here.
+					setLoopPlayback(false);
 					setStatusLine(msg.reason ?? 'Bundle job complete.');
 				}
 				break;
@@ -3153,6 +3159,9 @@ export function App() {
 
 	function resetProjectUiState() {
 		setRestoreOffer(null);
+		// Loop is a per-session transport toggle; a fresh project starts off-by-default
+		// to match the worker, which resets loopEnabled in teardownMedia.
+		setLoopPlayback(false);
 		setUnresolvedSources([]);
 		setMetadata(null);
 		setTimeline([]);

@@ -24,6 +24,9 @@ manual, repetitive chore. A loop toggle makes the transport wrap automatically.
 - **R1.5** The loop state survives `PlaybackController` rebuilds (the controller
   is recreated on edits, format changes, and source additions) the same way the
   play/pause state already does.
+- **R1.6** The loop state resets to off-by-default when the project is replaced —
+  new project, autosave restore, or project-bundle load — on **both** the worker
+  (`loopEnabled`) and the UI mirror (`loopPlayback`), so the two never desync.
 
 ## R2 — Audio/video sync on wrap
 

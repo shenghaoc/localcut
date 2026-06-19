@@ -3036,6 +3036,10 @@ function teardownMedia() {
 	playback?.dispose();
 	playback = null;
 	adaptive = null;
+	// Loop survives the per-edit setupPlayback rebuilds, but a project teardown
+	// (new project / restore) returns to the off-by-default state so it can't
+	// desync from the UI mirror, which resets in resetProjectUiState.
+	loopEnabled = false;
 	frameCache?.clear();
 	frameCache = null;
 	secondaryFrameSources.disposeAll();
@@ -5908,6 +5912,10 @@ async function applyImportedDoc(doc: ProjectDoc): Promise<void> {
 	playback?.dispose();
 	playback = null;
 	adaptive = null;
+	// Loading a project bundle is a fresh project: drop loop back to the default so
+	// it matches the UI mirror (reset in resetProjectUiState) rather than inheriting
+	// the prior session's toggle.
+	loopEnabled = false;
 	frameCache?.clear();
 	frameCache = null;
 	primaryHandle = null;

@@ -25,6 +25,10 @@
   `playback?.setLoop(enabled)`.
 - [x] **T2.4** Add `case 'set-loop': handleSetLoop(cmd.enabled)` to the message
   dispatch.
+- [x] **T2.5** Reset `loopEnabled = false` on project-replacement paths
+  (`teardownMedia`, `applyImportedDoc`) so loop never outlives its project; mirror
+  it in the UI (`resetProjectUiState`, `restore-result`, `bundle-import-result`).
+  (R1.6, review feedback)
 
 ## T3 — Protocol (R4)
 
