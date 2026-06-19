@@ -386,6 +386,9 @@ export function App() {
 		typeof globalThis.crossOriginIsolated === 'boolean' ? globalThis.crossOriginIsolated : false
 	);
 	const [workerReady, setWorkerReady] = createSignal(false);
+	// Loop-playback toggle. The worker owns the wrap behaviour; this mirrors the state
+	// for the transport button. Off by default (playback halts at the end as before).
+	const [loopPlayback, setLoopPlayback] = createSignal(false);
 	const [webgpuAvailable, setWebgpuAvailable] = createSignal(false);
 	const [previewBackend, setPreviewBackend] = createSignal<PreviewBackend>('none');
 	const [exportBackend, setExportBackend] = createSignal<ExportBackend>('none');
@@ -2524,6 +2527,10 @@ export function App() {
 				break;
 			case 'restore-result':
 				setRestoreOffer(null);
+				// Only a successful restore replaces the project (and runs the worker's
+				// teardownMedia, which resets loopEnabled); a `restored: false` result
+				// early-exits without teardown, so mirror it only when actually restored.
+				if (msg.restored) setLoopPlayback(false);
 				setLatestHealthReport(null);
 				setUnresolvedSources(msg.unresolvedSources);
 				setStatusLine(msg.message);
@@ -2714,6 +2721,9 @@ export function App() {
 				setBundleMessage(msg.reason ?? (msg.ok ? 'Bundle job complete.' : 'Bundle job failed.'));
 				if (msg.ok && msg.projectId) {
 					setRestoreOffer(null);
+					// A loaded bundle is a fresh project; the worker resets loopEnabled in
+					// applyImportedDoc, so mirror that here.
+					setLoopPlayback(false);
 					setStatusLine(msg.reason ?? 'Bundle job complete.');
 				}
 				break;
@@ -3144,6 +3154,9 @@ export function App() {
 
 	function resetProjectUiState() {
 		setRestoreOffer(null);
+		// Loop is a per-session transport toggle; a fresh project starts off-by-default
+		// to match the worker, which resets loopEnabled in teardownMedia.
+		setLoopPlayback(false);
 		setUnresolvedSources([]);
 		setMetadata(null);
 		setTimeline([]);
@@ -3955,6 +3968,12 @@ export function App() {
 						audioEngine.pause();
 					}}
 					onStep={(direction) => bridge?.send({ type: 'step', direction })}
+					loop={loopPlayback}
+					onToggleLoop={() => {
+						const enabled = !loopPlayback();
+						setLoopPlayback(enabled);
+						bridge?.send({ type: 'set-loop', enabled });
+					}}
 					canUndo={historyState().canUndo}
 					canRedo={historyState().canRedo}
 					onUndo={() => bridge?.send({ type: 'undo' })}

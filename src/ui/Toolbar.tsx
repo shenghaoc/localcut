@@ -21,6 +21,7 @@ import {
 	Play,
 	Radio,
 	Redo2,
+	Repeat,
 	Search,
 	ShieldCheck,
 	SkipBack,
@@ -45,6 +46,8 @@ interface ToolbarProps {
 	onPlay: () => void;
 	onPause: () => void;
 	onStep: (direction: 1 | -1) => void;
+	loop: () => boolean;
+	onToggleLoop: () => void;
 	canUndo: boolean;
 	canRedo: boolean;
 	onUndo: () => void;
@@ -540,6 +543,19 @@ export function Toolbar(props: ToolbarProps) {
 							title="Step forward one frame"
 						>
 							<SkipForward size={14} aria-hidden="true" />
+						</Button>
+						<Button
+							size="icon"
+							variant={props.loop() ? 'default' : 'secondary'}
+							onClick={() => props.onToggleLoop()}
+							disabled={transportDisabled()}
+							aria-label="Loop playback"
+							aria-pressed={props.loop()}
+							title={
+								props.loop() ? 'Loop: on (replays at the end)' : 'Loop: off (stops at the end)'
+							}
+						>
+							<Repeat size={14} aria-hidden="true" />
 						</Button>
 					</div>
 					<div class="toolbar-timecode" aria-label="Playback timecode">

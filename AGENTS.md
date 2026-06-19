@@ -32,6 +32,8 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 
 **Active:**
 
+- [**Loop playback**](.kiro/specs/feature-loop-playback/tasks.md) — transport loop toggle so preview playback wraps to the start at the end of the timeline instead of halting. `PlaybackController` gains a live-toggleable `loop` flag + `onLoopRestart` dep; the worker holds `loopEnabled` across rebuilds and re-anchors audio through the existing playing-seek ring-reset path (the worklet re-syncs on the generation bump). New `set-loop` command; Toolbar `Repeat` toggle; off by default, whole-timeline only, not persisted.
+
 - [**ML runtime: MediaPipe Tasks-Vision retirement**](.kiro/specs/ml-runtime-mediapipe-retirement/tasks.md) — final unify-on-ORT implementation: Smart Reframe face detection moves off the old MediaPipe Tasks Vision package to the ORT face-detector path (`face-detector-ort.ts` + `reframe-face` ONNX manifest), then deletes the MediaPipe dependency/assets/loader/copy. Non-frame-coupled analysis remains worker-side on ORT-WASM/CPU tensors; saliency remains the default fallback until the model is explicitly loaded. Leaves ORT as the sole ML runtime with PR123's LiteRT/TFLite retirement.
 
 - [**Editor Kit Ark UI Refresh**](.kiro/specs/editor-kit-ark-ui/tasks.md) — implement the `editor-kit-demo.pptx` editor chrome with Ark UI primitives (`@ark-ui/solid` popovers/tabs), retire Solid UI/Kobalte/CVA/class-merge dependencies, keep the main-thread UI boundary intact, and document verification gates.

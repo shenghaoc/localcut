@@ -19,6 +19,10 @@ export default defineConfig({
 			'dev-dist/**',
 			'playwright-report/**',
 			'test-results/**'
-		]
+		],
+		// JUnit XML for any GitHub Actions test reporter (see vitest.config.ts
+		// comment).
+		reporters: process.env.CI ? ['default', 'junit'] : 'default',
+		outputFile: { junit: 'test-results/junit-browser.xml' }
 	}
 });
