@@ -4559,14 +4559,6 @@ button.status-badge:hover {
 		flex: 0 1 auto;
 	}
 
-	.workspace,
-	.workspace.has-bin {
-		display: flex;
-		flex-direction: column;
-		min-height: auto;
-		overflow: visible;
-	}
-
 	.app {
 		height: auto;
 		min-height: 100%;

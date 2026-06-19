@@ -4107,6 +4107,14 @@ export function App() {
 							const first = focusables[0];
 							const last = focusables[focusables.length - 1];
 							const active = document.activeElement as HTMLElement | null;
+							// If focus has escaped outside the modal (e.g. via a popover that
+							// returned focus elsewhere), bring it back instead of letting Tab
+							// walk the document — WCAG 2.1 SC 2.1.2.
+							if (!active || !modalRef.contains(active)) {
+								e.preventDefault();
+								first.focus();
+								return;
+							}
 							if (e.shiftKey && active === first) {
 								e.preventDefault();
 								last.focus();
