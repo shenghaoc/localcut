@@ -1697,7 +1697,11 @@ body {
 	align-items: center;
 	justify-content: center;
 	min-height: 0;
+	max-height: calc(100vh - var(--toolbar-h) - var(--timeline-h) - var(--status-h) - 32px);
 	overflow: hidden;
+	/* Hold the grid cell stable so an aspect-ratio flip stretches the canvas
+	   inside the frame instead of pushing the timeline and side rail down. */
+	contain: layout;
 	--preview-aspect: 16 / 9;
 	--preview-aspect-num: 1.778;
 	background:
@@ -1713,6 +1717,10 @@ body {
 }
 
 .preview-canvas {
+	transition:
+		width 180ms ease,
+		height 180ms ease,
+		aspect-ratio 180ms ease;
 	width: min(
 		100%,
 		calc(
@@ -1753,6 +1761,12 @@ body {
 /* Title/action safe-area guides: a pure DOM overlay matching the canvas box. */
 .safe-area-overlay {
 	position: absolute;
+	transition:
+		width 180ms ease,
+		height 180ms ease,
+		top 180ms ease,
+		left 180ms ease,
+		transform 180ms ease;
 	top: var(--preview-canvas-top, 50%);
 	left: var(--preview-canvas-left, 50%);
 	transform: var(--preview-canvas-transform, translate(-50%, -50%));
@@ -1799,6 +1813,12 @@ body {
 /* Phase 39: Platform safe-zone overlays */
 .safe-zone-overlay {
 	position: absolute;
+	transition:
+		width 180ms ease,
+		height 180ms ease,
+		top 180ms ease,
+		left 180ms ease,
+		transform 180ms ease;
 	top: var(--preview-canvas-top, 50%);
 	left: var(--preview-canvas-left, 50%);
 	transform: var(--preview-canvas-transform, translate(-50%, -50%));
