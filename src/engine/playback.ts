@@ -400,7 +400,8 @@ export class PlaybackController<M = unknown> {
 					// master clock re-anchors at the loop point (otherwise getMasterTime
 					// keeps reporting the end and the wrap re-triggers immediately). The
 					// fresh runLoop() re-anchors the wall clock at the restart position.
-					if (gen !== this.generation) return;
+					// No generation re-check here: nothing has awaited since the tick's
+					// entry guard, so `gen` cannot have gone stale (single-threaded).
 					this.deps.onLoopRestart?.(0);
 					this.currentTime = 0;
 					this.deps.writeClock(0, true);

@@ -104,8 +104,10 @@ survive past the project it belongs to: `teardownMedia()` (new project / restore
 shutdown) and `applyImportedDoc()` (bundle load). It deliberately does **not**
 reset in the per-edit `setupPlayback` rebuilds. The UI mirror resets in lockstep
 on the matching handlers — `resetProjectUiState` (new project), the
-`restore-result` handler, and the `bundle-import-result` ok branch — so the
-worker and UI never disagree about whether loop is on. (R1.6)
+`restore-result` handler (only when `msg.restored`, since a `restored: false`
+result early-exits the worker before `teardownMedia` and leaves `loopEnabled`
+untouched), and the `bundle-import-result` ok branch — so the worker and UI
+never disagree about whether loop is on. (R1.6)
 
 ## D4 — Protocol (R4)
 

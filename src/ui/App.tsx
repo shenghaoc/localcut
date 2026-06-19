@@ -2533,9 +2533,10 @@ export function App() {
 				break;
 			case 'restore-result':
 				setRestoreOffer(null);
-				// Restoring replaces the project; the worker resets loopEnabled in its
-				// teardown, so mirror that here to keep the toggle in sync.
-				setLoopPlayback(false);
+				// Only a successful restore replaces the project (and runs the worker's
+				// teardownMedia, which resets loopEnabled); a `restored: false` result
+				// early-exits without teardown, so mirror it only when actually restored.
+				if (msg.restored) setLoopPlayback(false);
 				setLatestHealthReport(null);
 				setUnresolvedSources(msg.unresolvedSources);
 				setStatusLine(msg.message);
