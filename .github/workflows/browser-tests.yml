@@ -16,16 +16,30 @@ concurrency:
 jobs:
   browser-tests:
     name: Vitest Browser Mode
-    runs-on: ubuntu-latest
+    # ARM64 hosted runner (GA on free tier for public repos, Aug 2025).
+    # Required because the container image below is `-arm64`-suffixed,
+    # which forces the linux/arm64 manifest — pulling it on x64 would
+    # fail with "no matching manifest".
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 15
-    # Run the job inside Playwright's official prebuilt image — browsers AND
-    # all browser system dependencies are baked in at /ms-playwright. This
-    # is what bypasses the `playwright install --with-deps chromium` step
-    # that was hanging on the GitHub-hosted (Azure) runners' apt mirror.
-    # The tag pins to @playwright/test 1.60.0 from package.json so the
-    # bundled binaries match the JS package on disk.
+    # Run the job inside Playwright's official prebuilt image — browsers
+    # AND all browser system dependencies are baked in at /ms-playwright.
+    # This is what bypasses the `playwright install --with-deps chromium`
+    # step that was hanging on the GitHub-hosted (Azure) runners' apt
+    # mirror.
+    #
+    # Tag breakdown:
+    #   v1.61.0    — must match @playwright/test in package.json; Playwright's
+    #                JS API looks for binaries at a version-specific path.
+    #   -resolute  — Ubuntu 26.04 LTS (Resolute Raccoon) base; newer glibc /
+    #                fonts than `-noble` (24.04). Container OS does not need
+    #                to match the runner host OS.
+    #   -arm64     — explicit arch tag (pairs with the ARM64 runner above).
+    #                Could use the multi-arch `v1.61.0-resolute` tag instead,
+    #                but the explicit suffix matches the preference set in
+    #                PR #126 review.
     container:
-      image: mcr.microsoft.com/playwright:v1.60.0-noble
+      image: mcr.microsoft.com/playwright:v1.61.0-resolute-arm64
     steps:
       - name: Checkout
         uses: actions/checkout@v6
