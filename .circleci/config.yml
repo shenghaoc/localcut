@@ -123,7 +123,7 @@ executors:
 
 commands:
   install_pnpm_deps:
-    description: "Install pnpm at the locked packageManager version + pnpm install --frozen-lockfile"
+    description: 'Install pnpm at the locked packageManager version + pnpm install --frozen-lockfile'
     steps:
       - run:
           name: Install pnpm (version from package.json packageManager)
@@ -260,8 +260,11 @@ jobs:
           # /usr/local/bin is already on PATH so no BASH_ENV plumbing.
           command: |
             NODE_MAJOR="$(cat .node-version)"
-            NODE_VERSION=$(curl -fsSL https://nodejs.org/dist/index.tab \
-              | awk -v p="v${NODE_MAJOR}." 'NR>1 && $1 ~ "^"p {print $1; exit}')
+            # Save to a temp file rather than piping curl → awk: awk's
+            # early `exit` would close the pipe and trigger curl exit 23
+            # (write error) under `set -o pipefail`.
+            curl -fsSL https://nodejs.org/dist/index.tab -o /tmp/node-index.tab
+            NODE_VERSION=$(awk -v p="v${NODE_MAJOR}." 'NR>1 && $1 ~ "^"p {print $1; exit}' /tmp/node-index.tab)
             if [ -z "$NODE_VERSION" ]; then
               echo "No Node ${NODE_MAJOR}.x release found on nodejs.org" >&2
               exit 1
