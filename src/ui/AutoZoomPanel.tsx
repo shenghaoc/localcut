@@ -255,7 +255,7 @@ export function AutoZoomPanel(props: AutoZoomPanelProps) {
 
 					<div class="proposal-list">
 						<For each={proposals()}>
-							{(proposal) => (
+							{(proposal, index) => (
 								<div class={`proposal-item proposal-item--${proposal.status}`}>
 									<span class="proposal-time">{formatTime(proposal.cluster.startUs)}</span>
 									<span class="proposal-centroid">
@@ -267,10 +267,23 @@ export function AutoZoomPanel(props: AutoZoomPanelProps) {
 										type="button"
 										onClick={() => handleApply(proposal)}
 										disabled={proposal.status === 'applied'}
+										aria-label={
+											proposal.status === 'applied'
+												? `Applied proposal ${index() + 1}`
+												: `Apply proposal ${index() + 1}`
+										}
 									>
 										{proposal.status === 'applied' ? 'Applied' : 'Apply'}
 									</button>
-									<button type="button" onClick={() => handleSkip(proposal)}>
+									<button
+										type="button"
+										onClick={() => handleSkip(proposal)}
+										aria-label={
+											proposal.status === 'skipped'
+												? `Unskip proposal ${index() + 1}`
+												: `Skip proposal ${index() + 1}`
+										}
+									>
 										{proposal.status === 'skipped' ? 'Unskip' : 'Skip'}
 									</button>
 								</div>
