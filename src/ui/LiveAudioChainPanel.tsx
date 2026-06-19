@@ -193,7 +193,7 @@ export function LiveAudioChainPanel(props: LiveAudioChainPanelProps) {
 									<PowerOff size={14} />
 								</Button>
 								<span class="insert-name">Noise Suppression</span>
-								<span class="insert-status bypassed">Available in a future update</span>
+								<span class="insert-status bypassed">Use Voice Cleanup / Local Audio Cleanup</span>
 							</div>
 						</div>
 

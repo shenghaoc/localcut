@@ -173,6 +173,7 @@ function rowsForProbe(probe: CapabilityProbeResult): CapabilityRow[] {
 			action: null
 		},
 		cleanupRow(probe),
+		webnnRow(probe),
 		asrRow(probe),
 		smartReframeRow(probe),
 		...(probe.languageTools && languageToolsSurfaceVisible(probe.languageTools)
@@ -285,6 +286,19 @@ function cleanupRow(probe: CapabilityProbeResult): CapabilityRow {
 		action: supported
 			? `Local Audio Cleanup (Experimental) available via ONNX Runtime (${cleanup?.accelerator ?? 'wasm'}).`
 			: 'Audio cleanup requires WebAssembly.'
+	};
+}
+
+function webnnRow(probe: CapabilityProbeResult): CapabilityRow {
+	const hasMl = typeof navigator !== 'undefined' && 'ml' in navigator;
+	const ortEp = probe.cleanup?.accelerator;
+	return {
+		label: 'WebNN (ML acceleration)',
+		support: hasMl ? 'supported' : 'unsupported',
+		active: ortEp === 'webnn',
+		action: hasMl
+			? `ORT EP: ${ortEp ?? 'wasm'}`
+			: 'Enable the WebNN flag in chrome://flags'
 	};
 }
 
