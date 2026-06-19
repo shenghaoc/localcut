@@ -5103,6 +5103,7 @@ export function App() {
 										>
 											<ProgramPanel
 												programMode={programModeSupport}
+												probe={capabilityProbeV2()}
 												scenes={programScenes}
 												sessionState={programSessionState}
 												activeSceneId={programActiveSceneId}

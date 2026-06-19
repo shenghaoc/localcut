@@ -13,8 +13,10 @@ import type {
 	SceneLayer,
 	ProgramSourceDescriptor,
 	ProgramSourceStatusSnapshot,
-	FeatureSupport
+	FeatureSupport,
+	CapabilityProbeResult
 } from '../protocol';
+import { captureUnavailableReasons } from '../engine/capture-reasons';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -23,6 +25,8 @@ import type {
 export interface ProgramPanelProps {
 	/** Program mode capability from the probe. */
 	programMode: () => FeatureSupport;
+	/** Full capability probe result for dynamic unavailable reasons. */
+	probe: CapabilityProbeResult | null;
 	/** Current scenes from the project. */
 	scenes: () => readonly SceneDefinition[];
 	/** Session state: idle, armed, running, stopping. */
@@ -101,9 +105,22 @@ export function ProgramPanel(props: ProgramPanelProps) {
 			fallback={
 				<div class="program-panel program-panel--disabled" role="region" aria-label="Program Mode">
 					<h3>Program Mode</h3>
-					<p class="program-panel-disabled-reason">
-						Program Mode requires a Chromium browser with WebGPU and WebCodecs.
-					</p>
+					<Show
+						when={props.probe}
+						fallback={<p class="program-panel-disabled-reason">Capability probe is still running.</p>}
+					>
+						<div class="program-panel-disabled-reason">
+							<p>Program Mode is unavailable:</p>
+							<ul>
+								<For each={captureUnavailableReasons(props.probe!)}>
+									{(reason) => <li>{reason}</li>}
+								</For>
+							</ul>
+							<Show when={props.probe!.webGPUCore !== 'supported'}>
+								<p>WebGPU is also required for Program Mode.</p>
+							</Show>
+						</div>
+					</Show>
 				</div>
 			}
 		>

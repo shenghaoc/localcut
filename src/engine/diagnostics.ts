@@ -2,7 +2,9 @@ import type {
 	ExportSettings,
 	FeatureSupport,
 	LivePublishProbeResult,
-	VoiceCleanupSettings
+	VoiceCleanupSettings,
+	CaptureProbeResult,
+	CapabilityProbeResult
 } from '../protocol';
 import { DEFAULT_VOICE_CLEANUP_SETTINGS } from '../protocol';
 import type {
@@ -24,6 +26,7 @@ import type {
 import { DIAGNOSTIC_SNAPSHOT_SCHEMA_VERSION } from '../diagnostics/types';
 import { buildDefaultPerformanceBudgets } from '../diagnostics/performance-budgets';
 import { probeAllCodecs } from './codec-support';
+import { captureUnavailableReasons } from './capture-reasons';
 
 interface DiagnosticSourceLike {
 	readonly proxy?: {
@@ -49,6 +52,8 @@ export interface WorkerDiagnosticInput {
 	readonly livePublish?: LivePublishProbeResult | null;
 	/** Phase 45: program mode capability (derived from capture + WebGPU probes). */
 	readonly programMode?: FeatureSupport;
+	/** Capture probe results for dynamic unavailable-reason strings. */
+	readonly capture?: CaptureProbeResult;
 }
 
 function makeSnapshotId(): string {
@@ -400,16 +405,19 @@ async function buildCapabilityReport(input: WorkerDiagnosticInput): Promise<Capa
 		findings.push(...publishFindings(input.livePublish));
 	}
 	if (input.programMode) {
+		const probe = input.capture ? ({ capture: input.capture } as CapabilityProbeResult) : null;
+		const captureReasons = probe ? captureUnavailableReasons(probe) : [];
+		const reasonStr = captureReasons.length > 0 ? captureReasons.join(' ') : 'Missing required capabilities.';
 		findings.push(
 			finding(
 				'program.mode',
 				input.programMode === 'supported',
 				input.programMode === 'supported'
 					? 'Program Mode is available (WebGPU + capture probes OK).'
-					: 'Program Mode requires a Chromium browser with WebGPU and WebCodecs capture support.',
+					: `Program Mode unavailable: ${reasonStr}`,
 				input.programMode === 'supported'
 					? undefined
-					: 'Program Mode requires a Chromium browser with WebGPU and WebCodecs.'
+					: `Program Mode unavailable: ${reasonStr}`
 			)
 		);
 	}
