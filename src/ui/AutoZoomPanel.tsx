@@ -278,6 +278,7 @@ export function AutoZoomPanel(props: AutoZoomPanelProps) {
 									<button
 										type="button"
 										onClick={() => handleSkip(proposal())}
+										aria-pressed={proposal().status === 'skipped'}
 										aria-label={
 											proposal().status === 'skipped'
 												? `Unskip proposal ${index + 1}`
