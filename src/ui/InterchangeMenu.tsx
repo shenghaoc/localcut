@@ -55,7 +55,10 @@ export function InterchangeMenu(props: InterchangeMenuProps) {
 			</Popover.Trigger>
 			<Portal>
 				<Popover.Positioner>
-					<Popover.Content class="export-popover bundle-popover" aria-label="Timeline interchange">
+					<Popover.Content
+						class="export-popover bundle-popover panel"
+						aria-label="Timeline interchange"
+					>
 						<div class="export-popover-header">
 							<h2 class="export-popover-title">Timeline interchange</h2>
 							<p class="export-popover-subtitle">

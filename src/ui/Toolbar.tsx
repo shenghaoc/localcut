@@ -205,7 +205,7 @@ export function Toolbar(props: ToolbarProps) {
 						<Crosshair size={20} strokeWidth={1.6} />
 					</span>
 					<div class="app-brand-copy">
-						<h1 class="app-title">Browser Editor</h1>
+						<h1 class="app-title">LocalCut Studio</h1>
 						<span class="app-kicker">Client NLE</span>
 					</div>
 				</div>

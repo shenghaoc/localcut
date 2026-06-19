@@ -91,7 +91,7 @@ export function BundleDialog(props: BundleDialogProps) {
 			</Popover.Trigger>
 			<Portal>
 				<Popover.Positioner>
-					<Popover.Content class="export-popover bundle-popover" aria-label="Project bundle">
+					<Popover.Content class="export-popover bundle-popover panel" aria-label="Project bundle">
 						<div class="export-popover-header">
 							<h2 class="export-popover-title">
 								Project bundle{' '}

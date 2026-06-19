@@ -1983,9 +1983,12 @@ body {
 	pointer-events: none;
 }
 
-/* Re-enable clicks on the import label (the empty-state container is
-   pointer-events:none) — but not while disabled, so the guard above wins. */
-.preview-empty .import-picker:not(.is-disabled) {
+/* Re-enable clicks on the import label and the docs/help link buttons
+   inside the empty state (the container is pointer-events:none so file
+   drops still fall through to the preview). Disabled import label is
+   excluded so the guard above wins. */
+.preview-empty .import-picker:not(.is-disabled),
+.preview-empty .export-why-link {
 	pointer-events: auto;
 }
 
@@ -6277,6 +6280,28 @@ button.status-badge:hover {
 	background-color: var(--primary);
 	transform-origin: left;
 	will-change: transform;
+}
+
+.beat-panel-source-row {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	min-width: 0;
+}
+
+.beat-panel-source-name {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.beat-panel-source-controls {
+	display: flex;
+	flex: 0 0 auto;
+	align-items: center;
+	gap: 0.35rem;
 }
 /* =============================================================
    Precision-instrument redesign
