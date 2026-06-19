@@ -9,6 +9,9 @@
 **Learning:** The application uses buttons to collapse and expand structural side panels (like the inspector). Without `aria-expanded` and `aria-controls` attributes, screen reader users cannot tell if the panel is currently open or what content the button controls.
 
 **Action:** Applied `aria-expanded` with accurate boolean state and `aria-controls` pointing to the outer `side-rail` container (which remains in the DOM regardless of collapsed state) to the collapse and expand toggle buttons in the side rail.
-## 2024-06-19 - Adding ARIA labels to SolidJS For-loops
-**Learning:** In SolidJS, the `<For>` component callback provides the index as a second argument which is a signal/accessor function (e.g., `index()`), not a static number. Dynamic text in buttons should match the `aria-label` text state (e.g., "Applied proposal X" vs "Apply proposal X").
-**Action:** When adding ARIA labels inside `<For>` loops, use the index signal correctly (`index()`). Ensure that if a button's visual text changes state, its `aria-label` state mirrors that change.
+
+## 2026-06-19 - Adding ARIA labels to SolidJS Index-keyed lists
+
+**Learning:** In SolidJS, the `<For>` component keys by item reference — replacing an object (e.g. `{ ...p, status: 'applied' }`) destroys and recreates the DOM node, causing focus to reset to `<body>` for keyboard and screen reader users. The `<Index>` component keys by position instead, preserving DOM nodes across reference changes. Inside `<Index>`, each item is an `Accessor<T>` (call it as `proposal()`) and the index is a static `number` (use `index + 1`, not `index() + 1`).
+
+**Action:** Switched the proposal list in `AutoZoomPanel.tsx` from `<For>` to `<Index>` so button DOM nodes are preserved when status changes. Added `aria-label` attributes that reflect the current button state (e.g. `"Applied proposal 1"` vs `"Apply proposal 1"`) so screen readers announce the correct action.
