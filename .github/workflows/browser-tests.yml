@@ -62,9 +62,13 @@ jobs:
         uses: actions/cache@v5
         with:
           path: /github/home/.pnpm-store
-          key: ${{ runner.os }}-playwright-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          # Include runner.arch so the linux/arm64 store (this job) and any
+          # future linux/x64 caller can't cross-contaminate — pnpm pulls
+          # arch-specific native binaries (esbuild, sharp, workerd) into
+          # the store and restoring the wrong arch silently breaks builds.
+          key: ${{ runner.os }}-${{ runner.arch }}-playwright-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: |
-            ${{ runner.os }}-playwright-pnpm-
+            ${{ runner.os }}-${{ runner.arch }}-playwright-pnpm-
       - name: pnpm install
         run: pnpm install --frozen-lockfile
       - name: Run browser tests
