@@ -407,7 +407,8 @@ async function buildCapabilityReport(input: WorkerDiagnosticInput): Promise<Capa
 	if (input.programMode) {
 		const probe = input.capture ? ({ capture: input.capture } as CapabilityProbeResult) : null;
 		const captureReasons = probe ? captureUnavailableReasons(probe) : [];
-		const reasonStr = captureReasons.length > 0 ? captureReasons.join(' ') : 'Missing required capabilities.';
+		const reasonStr =
+			captureReasons.length > 0 ? captureReasons.join(' ') : 'Missing required capabilities.';
 		findings.push(
 			finding(
 				'program.mode',
@@ -415,9 +416,7 @@ async function buildCapabilityReport(input: WorkerDiagnosticInput): Promise<Capa
 				input.programMode === 'supported'
 					? 'Program Mode is available (WebGPU + capture probes OK).'
 					: `Program Mode unavailable: ${reasonStr}`,
-				input.programMode === 'supported'
-					? undefined
-					: `Program Mode unavailable: ${reasonStr}`
+				input.programMode === 'supported' ? undefined : `Program Mode unavailable: ${reasonStr}`
 			)
 		);
 	}

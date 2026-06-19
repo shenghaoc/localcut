@@ -107,7 +107,9 @@ export function ProgramPanel(props: ProgramPanelProps) {
 					<h3>Program Mode</h3>
 					<Show
 						when={props.probe}
-						fallback={<p class="program-panel-disabled-reason">Capability probe is still running.</p>}
+						fallback={
+							<p class="program-panel-disabled-reason">Capability probe is still running.</p>
+						}
 					>
 						<div class="program-panel-disabled-reason">
 							<p>Program Mode is unavailable:</p>
