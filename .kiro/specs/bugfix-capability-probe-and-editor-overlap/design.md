@@ -1,6 +1,6 @@
 # Design — Capability-probe false negatives + editor chrome overlap
 
-> Status: **Proposed**. Each design entry Dn maps to bug Bn in [`bugfix.md`](./bugfix.md). The recurring theme for B1–B4 is one defect: H.264 codec strings encode a fixed **level** that is too low for the probe resolution, so `VideoEncoder.isConfigSupported` rejects the config on a fully capable encoder.
+> Status: **Implemented — in review**. Each design entry Dn maps to bug Bn in [`bugfix.md`](./bugfix.md). The recurring theme for B1–B4 is one defect: H.264 codec strings encode a fixed **level** that is too low for the probe resolution, so `VideoEncoder.isConfigSupported` rejects the config on a fully capable encoder. D5 was revised during implementation (honest gate + deferred fallback); D6 gained a consolidation gotcha (`display: grid` must survive).
 
 ## D1 / D2 — Pick an H.264 level that matches the probe resolution
 
@@ -85,14 +85,19 @@ Two changes, no new gates:
 1. With D2 + D3 landed, `recordingAvailable()` (and therefore `deriveProgramModeSupport()`) passes on the reference profile via the corrected sub-probes — no logic change needed there.
 2. Replace the static string at [`ProgramPanel.tsx:105`](../../../src/ui/ProgramPanel.tsx) (and the equivalents in [`diagnostics.ts:409,412`](../../../src/engine/diagnostics.ts)) with a derived reason. Reuse `captureUnavailableReasons(probe)` ([`RecordPanel.tsx:151-170`](../../../src/ui/RecordPanel.tsx)) — promote it to a shared helper (e.g. `src/engine/capability-probe-v2.ts` or a small `capture-reasons.ts`) and render the concrete list ("Realtime video encode is unavailable.", etc.) plus the WebGPU-core check, instead of asserting WebGPU/WebCodecs are missing when they are not.
 
-## D5 — Align recording's track-transfer gate with publish
+## D5 — Recording track-transfer gate: honest message now, off-main fallback deferred
 
-Preferred fix: give recording the same bounded **main-frames** fallback publish uses. Publish's `selectTapMode` ([`publish-controller.ts:40-44`](../../../src/ui/publish-controller.ts)) chooses worker-transfer when `transferableMediaStreamTrack === 'supported'` and otherwise a main-thread generator with one-frame-per-transfer ([`publish-controller.ts:264-273`](../../../src/ui/publish-controller.ts), worker side [`worker.ts:1358-1370`](../../../src/engine/worker.ts)). The capture path has `MediaStreamTrackProcessor` available, so it can read frames and hand them to the writer worker through the same labeled, bounded compatibility route.
+**Shipped decision (revised during implementation):** keep the worker-track gate and make the message **actionable**; **defer** the off-main-thread main-frames capture path to its own task.
 
-- Relax `recordingAvailable()` so `transferableMediaStreamTrack` is **not** a hard requirement when `mediaStreamTrackProcessor === 'supported'`; instead select a capture tap mode mirroring `selectTapMode`.
-- Surface the degraded mode in the Record panel (a labeled "compatibility capture" note), consistent with the architecture's "slower paths must be explicit and visibly labeled" rule.
+Why the fallback is not a small change: unlike publish (whose `selectTapMode` already has a wired worker-side main-frames mode — [`publish-controller.ts:40-44`](../../../src/ui/publish-controller.ts), [`worker.ts:1358-1370`](../../../src/engine/worker.ts)), **recording's encode path is track-based end to end**: `capture-add-source` transfers the `MediaStreamTrack` into the pipeline worker, where `CaptureSession.addSource(... track ...)` builds a per-source `TrackPipeline` that owns the in-worker `MediaStreamTrackProcessor` + realtime encoder ([`capture-session.ts:143-208`](../../../src/engine/capture/capture-session.ts)). There is **no trackless "push-frame" seam**. A correct main-frames path therefore needs a new `TrackPipeline` input mode (accept externally-pushed `VideoFrame`s), a new pipeline-worker message to forward them, and exact `VideoFrame.close()` lifecycle on the hot path — a real feature that must be verified against a live capture session, not landed blind in a bugfix.
 
-Fallback fix (if the bounded capture path is out of scope for this cycle): keep the gate but make the message precise — state that recording needs transferable MediaStreamTrack and that it can be enabled via `chrome://flags/#enable-experimental-web-platform-features` — so the user is not left thinking the browser is simply unsupported. Decide between these in T5.1; the preferred path is the main-frames fallback.
+> An initial implementation attempt posted main-thread frames as `{type:'video-frame'}` to the **writer** worker, which has no such handler ([`writer-worker.ts:189-249`](../../../src/engine/capture/writer-worker.ts) handles only `write-*`/`scan`/`discard`); frames were silently dropped and leaked (never `.close()`d), and the `MessagePort` was passed with an empty transfer list (`DataCloneError`). That path was removed.
+
+Shipped instead:
+
+- `recordingAvailable()` keeps `transferableMediaStreamTrack !== 'unsupported'` (the worker-track path genuinely needs it), with a comment explaining why and pointing at the deferred task.
+- `captureUnavailableReasons` surfaces the **actionable** reason when transfer is unsupported: *"Transferable MediaStreamTrack is unavailable. Enable `chrome://flags/#enable-experimental-web-platform-features` to record on this browser."* — so the user has a concrete path to a working recording (worker-track) today, instead of a dead end or a silently-broken "compatibility" mode.
+- The real off-main-thread main-frames capture path is tracked as an out-of-scope follow-up (T-Out-of-scope).
 
 ## D6 — Consolidate the workspace layout rules; fix the responsive collapse
 
@@ -107,6 +112,8 @@ The Ark editor-kit block at [`global.css:7641-7780`](../../../src/global.css) is
 3. **Re-attach the collapse to the surviving block.** After consolidation, verify the `@media` collapse selector set (`.workspace, .workspace.has-bin, .workspace.rail-collapsed, .workspace.has-bin.rail-collapsed`) targets the same block and is ordered to win.
 
 Recommended combination: (a) `minmax(0,1fr)` middle column **and** keep a single-column collapse at a breakpoint ≥ the true minimum, eliminating both the overflow and the dead zone.
+
+**Consolidation gotcha (must verify):** the deleted original block was the *only* declaration of `display: grid` (plus `flex: 1; min-height: 0`) on `.workspace`; the Ark duplicate only overrode `grid-template-columns`/`gap`/`padding`/`background` and inherited the rest. The surviving consolidated block **must re-declare `display: grid; flex: 1; min-height: 0`** — otherwise `grid-template-columns` is inert above the collapse breakpoint and the three panels stack full-width (a worse regression than the original overlap). Shipped: `.workspace { display: grid; flex: 1; min-height: 0; gap: 6px; padding: 6px; grid-template-columns: minmax(0,1fr) 304px }`, `has-bin` = `236px minmax(0,1fr) 304px`, collapse to `display: flex; flex-direction: column` at `@media (max-width: 1240px)`.
 
 ## D7 — Surface WebNN as a capability/diagnostics row
 

@@ -35,22 +35,25 @@ describe('captureUnavailableReasons', () => {
 		expect(reasons.some((r) => r.includes('WebGPU'))).toBe(false);
 		expect(reasons.some((r) => r.includes('WebCodecs'))).toBe(false);
 	});
-	it('suppresses transferable-track reason when MSTP is available', () => {
+	it('shows an actionable transferable-track reason (with flag hint) when it is unsupported', () => {
 		const reasons = captureUnavailableReasons(
-			probe({
-				transferableMediaStreamTrack: 'unsupported',
-				mediaStreamTrackProcessor: 'supported'
-			})
+			probe({ transferableMediaStreamTrack: 'unsupported' })
 		);
-		expect(reasons).not.toContain('Transferable MediaStreamTrack is unavailable.');
+		expect(reasons.some((r) => r.startsWith('Transferable MediaStreamTrack is unavailable.'))).toBe(
+			true
+		);
+		expect(reasons.some((r) => r.includes('chrome://flags'))).toBe(true);
 	});
-	it('shows transferable-track reason when MSTP is also unavailable', () => {
-		const reasons = captureUnavailableReasons(
-			probe({
-				transferableMediaStreamTrack: 'unsupported',
-				mediaStreamTrackProcessor: 'unsupported'
-			})
-		);
-		expect(reasons).toContain('Transferable MediaStreamTrack is unavailable.');
+	it("omits the transferable-track reason when it is supported or 'unknown' (not a hard block)", () => {
+		expect(
+			captureUnavailableReasons(probe({ transferableMediaStreamTrack: 'unknown' })).some((r) =>
+				r.includes('Transferable MediaStreamTrack')
+			)
+		).toBe(false);
+		expect(
+			captureUnavailableReasons(probe({ transferableMediaStreamTrack: 'supported' })).some((r) =>
+				r.includes('Transferable MediaStreamTrack')
+			)
+		).toBe(false);
 	});
 });

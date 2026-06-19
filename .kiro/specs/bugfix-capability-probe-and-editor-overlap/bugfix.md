@@ -1,6 +1,6 @@
 # Bugfix — Capability-probe false negatives + editor chrome overlap
 
-> Status: **Proposed** — features that should work on a fully capable Chromium profile (WebGPU + WebNN + COOP/COEP isolation) are reported unavailable, the editor side docks overlap on narrower windows, and two UI strings misrepresent what the app can do.
+> Status: **Implemented — in review** — features that should work on a fully capable Chromium profile (WebGPU + WebNN + COOP/COEP isolation) were reported unavailable, the editor side docks overlapped on narrower windows, and two UI strings misrepresented what the app can do. B1–B4, B6–B8 fixed; B5 ships an honest, actionable gate with the off-main-thread fallback deferred (see D5). `pnpm run check` green.
 
 ## Summary
 

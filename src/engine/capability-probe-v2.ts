@@ -593,8 +593,11 @@ export function recordingAvailable(probe: CapabilityProbeResult): boolean {
 	return (
 		probe.tier === 'core-webgpu' &&
 		cap.mediaStreamTrackProcessor === 'supported' &&
-		(cap.transferableMediaStreamTrack !== 'unsupported' ||
-			cap.mediaStreamTrackProcessor === 'supported') &&
+		// The recording path transfers each source track into the pipeline worker,
+		// which requires Transferable MediaStreamTrack. A no-flag off-main-thread
+		// fallback is a separate engine task (see bugfix spec B5); until then this
+		// stays a hard requirement so we never offer a recording that can't capture.
+		cap.transferableMediaStreamTrack !== 'unsupported' &&
 		cap.displayCapture === 'supported' &&
 		cap.videoEncodeRealtime === 'supported' &&
 		cap.audioEncodeOpus === 'supported' &&

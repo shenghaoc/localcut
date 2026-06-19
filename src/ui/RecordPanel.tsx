@@ -42,14 +42,6 @@ import CaptureWriterWorker from '../engine/capture/writer-worker.ts?worker';
 
 type CaptureStatusState = 'idle' | 'armed' | 'recording' | 'paused' | 'stopping';
 
-type CaptureTapMode = 'worker-track' | 'main-frames';
-
-function selectCaptureTapMode(probe: CapabilityProbeResult): CaptureTapMode {
-	return probe.capture.transferableMediaStreamTrack === 'supported'
-		? 'worker-track'
-		: 'main-frames';
-}
-
 export interface RecorderStatusSnapshot {
 	state: CaptureStatusState;
 	elapsedUs: number;
@@ -208,7 +200,6 @@ export function RecordPanel(props: RecordPanelProps) {
 	let previousStatusState: CaptureStatusState | null = null;
 	let currentRetakeClipId: string | null = null;
 	let autoRetakeStartedFor: string | null = null;
-	let mstpControllers: AbortController[] = [];
 
 	const status = createMemo(() => props.status);
 	const sessionState = createMemo<CaptureStatusState | 'countdown'>(() =>
@@ -476,16 +467,16 @@ export function RecordPanel(props: RecordPanelProps) {
 	}
 
 	function beginRecording(): void {
-		const tapMode = props.probe ? selectCaptureTapMode(props.probe) : 'worker-track';
+		// Recording transfers each source track into the pipeline worker, which
+		// owns the per-source MediaStreamTrackProcessor + realtime encoder. That
+		// transfer requires Transferable MediaStreamTrack, which `recordingAvailable`
+		// gates on. A no-flag, off-main-thread fallback (pushing main-thread frames
+		// into the worker encoder) is a separate engine task — see the bugfix spec.
+		for (const source of sources()) transferSource(source);
 		writerWorker?.terminate();
 		writerWorker = new CaptureWriterWorker();
 		const channel = new MessageChannel();
 		writerWorker.postMessage({ type: 'init', port: channel.port1 }, [channel.port1]);
-
-		if (tapMode === 'worker-track') {
-			for (const source of sources()) transferSource(source);
-		}
-
 		props.onStart(
 			{
 				chunkDurationS: 2,
@@ -498,55 +489,17 @@ export function RecordPanel(props: RecordPanelProps) {
 			},
 			channel.port2,
 			props.retakeClipId,
-			tapMode === 'worker-track' ? [channel.port2] : []
+			[channel.port2]
 		);
 		props.onRetakeCleared();
-
-		if (tapMode === 'main-frames') {
-			startMstpReaders();
-		}
-	}
-
-	function startMstpReaders(): void {
-		for (const source of sources()) {
-			const controller = new AbortController();
-			mstpControllers.push(controller);
-			const processor = new MediaStreamTrackProcessor({
-				track: source.track as MediaStreamVideoTrack
-			});
-			const reader = processor.readable.getReader();
-			const readLoop = async () => {
-				try {
-					while (!controller.signal.aborted) {
-						const { done, value } = await reader.read();
-						if (done) break;
-						const frame = value as VideoFrame;
-						writerWorker?.postMessage(
-							{ type: 'video-frame', sourceId: source.descriptor.sourceId, frame },
-							[frame]
-						);
-					}
-				} catch {
-					// Track ended or aborted
-				}
-			};
-			void readLoop();
-		}
-	}
-
-	function stopMstpReaders(): void {
-		for (const controller of mstpControllers) controller.abort();
-		mstpControllers = [];
 	}
 
 	function stopRecording(): void {
-		stopMstpReaders();
 		props.onStop();
 		closeDocumentPip();
 	}
 
 	function cleanupSessionUi(): void {
-		stopMstpReaders();
 		closeDocumentPip();
 		writerWorker?.terminate();
 		writerWorker = null;
@@ -689,17 +642,6 @@ export function RecordPanel(props: RecordPanelProps) {
 						</For>
 					</ul>
 				</div>
-			</Show>
-
-			<Show
-				when={props.probe && selectCaptureTapMode(props.probe) === 'main-frames' && canRecord()}
-			>
-				<span
-					class="capture-compat-badge"
-					title="Using compatibility capture — frames are read on the main thread"
-				>
-					Compatibility capture
-				</span>
 			</Show>
 
 			<div class="record-section">

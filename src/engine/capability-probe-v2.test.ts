@@ -12,6 +12,7 @@ import {
 	probeSmartReframe,
 	recordingAvailable
 } from './capability-probe-v2';
+import type { CapabilityProbeResult } from '../protocol';
 import { compatAdapterProbeResult, probeResultFor } from './compatibility/capability-fixtures';
 
 describe('probeSmartReframe', () => {
@@ -220,30 +221,53 @@ describe('probeOpfsSyncAccessHandleInWorker', () => {
 	});
 });
 
-describe('recordingAvailable with main-frames fallback', () => {
-	it('returns true when transferableMediaStreamTrack is unsupported but MSTP is supported', () => {
+describe('recordingAvailable transferable-track gate', () => {
+	const withCapture = (overrides: Partial<CapabilityProbeResult['capture']>) => {
 		const base = probeResultFor('core-webgpu');
-		const probe = {
-			...base,
-			capture: {
-				...base.capture,
-				transferableMediaStreamTrack: 'unsupported' as const,
-				mediaStreamTrackProcessor: 'supported' as const
-			}
-		};
-		expect(recordingAvailable(probe)).toBe(true);
+		return { ...base, capture: { ...base.capture, ...overrides } };
+	};
+
+	it('returns true on a fully capable core-webgpu profile', () => {
+		expect(
+			recordingAvailable(
+				withCapture({
+					transferableMediaStreamTrack: 'supported',
+					mediaStreamTrackProcessor: 'supported'
+				})
+			)
+		).toBe(true);
 	});
 
-	it('returns false when both transferableMediaStreamTrack and MSTP are unsupported', () => {
-		const base = probeResultFor('core-webgpu');
-		const probe = {
-			...base,
-			capture: {
-				...base.capture,
-				transferableMediaStreamTrack: 'unsupported' as const,
-				mediaStreamTrackProcessor: 'unsupported' as const
-			}
-		};
-		expect(recordingAvailable(probe)).toBe(false);
+	it('returns false when transferableMediaStreamTrack is unsupported (worker-track transfer needs it)', () => {
+		expect(
+			recordingAvailable(
+				withCapture({
+					transferableMediaStreamTrack: 'unsupported',
+					mediaStreamTrackProcessor: 'supported'
+				})
+			)
+		).toBe(false);
+	});
+
+	it("tolerates transferableMediaStreamTrack 'unknown' (probe inconclusive, not a hard block)", () => {
+		expect(
+			recordingAvailable(
+				withCapture({
+					transferableMediaStreamTrack: 'unknown',
+					mediaStreamTrackProcessor: 'supported'
+				})
+			)
+		).toBe(true);
+	});
+
+	it('returns false when MSTP is unsupported', () => {
+		expect(
+			recordingAvailable(
+				withCapture({
+					transferableMediaStreamTrack: 'supported',
+					mediaStreamTrackProcessor: 'unsupported'
+				})
+			)
+		).toBe(false);
 	});
 });
