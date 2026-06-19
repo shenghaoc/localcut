@@ -109,7 +109,7 @@ interface MenuBarGroup {
 
 function formatToolbarTimecode(seconds: number, fps: number | null): string {
 	if (!Number.isFinite(seconds) || seconds <= 0) return '00:00:00:00';
-	const rate = fps && Number.isFinite(fps) && fps > 0 ? Math.round(fps) : 30;
+	const rate = Math.max(1, fps && Number.isFinite(fps) && fps > 0 ? Math.round(fps) : 30);
 	const totalFrames = Math.max(0, Math.round(seconds * rate));
 	const frames = totalFrames % rate;
 	const totalSeconds = Math.floor(totalFrames / rate);

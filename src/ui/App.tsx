@@ -4302,9 +4302,7 @@ export function App() {
 									>
 										Project
 									</button>
-									<button type="button" aria-current="page">
-										Media
-									</button>
+									<button type="button">Media</button>
 									<button type="button" onClick={() => openSideRailTab('record')}>
 										Record
 									</button>
