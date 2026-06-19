@@ -778,6 +778,9 @@ const retainedOverlayTextureIds = new Set<string>();
 let primaryHandle: MediaInputHandle | null = null;
 let playback: PlaybackController<LayerMeta> | null = null;
 let adaptive: AdaptiveResolution | null = null;
+// Loop-playback toggle. Held outside the PlaybackController so it survives the
+// controller rebuilds in setupPlayback (edits/format changes) like the play state.
+let loopEnabled = false;
 let probeDone = false;
 let timeline: Timeline = createEmptyTimeline();
 let captionTracks: CaptionTrack[] = [];
@@ -6208,7 +6211,12 @@ function setupPlayback() {
 			});
 			post({ type: 'error', message: `Playback error: ${message}` });
 		},
-		getMasterTime
+		getMasterTime,
+		loop: loopEnabled,
+		// Wrapping to the start re-uses the playing-seek path: reset the audio ring
+		// (generation bump + pointer reset) so the worklet re-anchors the audio master
+		// clock at the loop point and the worker's pump refills from there.
+		onLoopRestart: (time) => resetAudioRingForSeek(time)
 	});
 
 	const clamped = Math.min(priorTime, getTimelineDuration(timeline));
@@ -6266,6 +6274,11 @@ function handlePause() {
 function handleSeek(time: number) {
 	resetAudioRingForSeek(time);
 	playback?.seek(time);
+}
+
+function handleSetLoop(enabled: boolean) {
+	loopEnabled = enabled;
+	playback?.setLoop(enabled);
 }
 
 function cloneTimelineForExport(): Timeline {
@@ -9032,6 +9045,9 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			break;
 		case 'step':
 			playback?.step(cmd.direction);
+			break;
+		case 'set-loop':
+			handleSetLoop(cmd.enabled);
 			break;
 		case 'export-probe':
 			void handleExportProbe();

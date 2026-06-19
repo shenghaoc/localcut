@@ -10,7 +10,10 @@ The timeline is where you arrange clips. Each track holds one kind of media — 
 | Pause                  | **K**                    |
 | Step back one frame    | **J**                    |
 | Step forward one frame | toolbar button           |
+| Loop                   | toolbar **loop** button  |
 | Seek                   | click the timeline ruler |
+
+Playback stops when it reaches the end of the timeline. Toggle the **loop** button (the ⟳ repeat icon, next to step-forward) to make it wrap back to the start and keep playing instead — handy for reviewing a cut on repeat. Loop is off by default and the button highlights when it's on.
 
 ## Editing operations
 

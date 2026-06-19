@@ -160,6 +160,17 @@ export interface PlaybackDeps<M = unknown> {
 	onPlaybackError?: (error: unknown) => void;
 	/** When set, drives video frame selection (audio master clock in Phase 5). */
 	getMasterTime?: () => number | null;
+	/** Initial loop state. When true, reaching the end wraps to the start instead of
+	 *  halting. Toggle live via {@link PlaybackController.setLoop}. */
+	loop?: boolean;
+	/**
+	 * Called when looped playback wraps past the end, just before the loop re-anchors
+	 * at `time` (timeline seconds; currently always the start, 0). Lets the host reset
+	 * the audio ring/clock so the audio master clock re-anchors at the loop point —
+	 * without it, {@link getMasterTime} would keep reporting the end and the wrapped
+	 * loop would immediately re-trigger.
+	 */
+	onLoopRestart?: (time: number) => void;
 	/** Injectable for tests. */
 	now?: () => number;
 	scheduler?: (cb: () => void, ms: number) => ReturnType<typeof setTimeout>;
@@ -180,6 +191,7 @@ export class PlaybackController<M = unknown> {
 	private readonly leaks: FrameLeakTracker;
 
 	private playing = false;
+	private loop = false;
 	private currentTime = 0;
 	/** Bumped to cancel any in-flight loop / scheduled tick. */
 	private generation = 0;
@@ -194,6 +206,7 @@ export class PlaybackController<M = unknown> {
 		this.scheduler = deps.scheduler ?? ((cb, ms) => setTimeout(cb, ms));
 		this.clearScheduler = deps.clearScheduler ?? ((h) => clearTimeout(h));
 		this.leaks = new FrameLeakTracker(deps.frameRate);
+		this.loop = deps.loop ?? false;
 		if (import.meta.env?.DEV) {
 			this.sweepTimer = setInterval(() => this.leaks.sweep(), 250);
 		}
@@ -205,6 +218,19 @@ export class PlaybackController<M = unknown> {
 
 	isPlaying(): boolean {
 		return this.playing;
+	}
+
+	isLooping(): boolean {
+		return this.loop;
+	}
+
+	/**
+	 * Toggle loop playback. When enabled, the real-time loop wraps to the start on
+	 * reaching the end instead of halting; the change takes effect on the next end-of-
+	 * timeline crossing without interrupting in-progress playback.
+	 */
+	setLoop(enabled: boolean): void {
+		this.loop = enabled;
 	}
 
 	/**
@@ -368,6 +394,19 @@ export class PlaybackController<M = unknown> {
 					: anchorMedia + (start - anchorWall) / 1000;
 
 			if (this.deps.duration > 0 && target >= this.deps.duration) {
+				if (this.loop) {
+					// Loop enabled: wrap to the start and keep playing instead of halting.
+					// onLoopRestart lets the host reset the audio ring/clock so the audio
+					// master clock re-anchors at the loop point (otherwise getMasterTime
+					// keeps reporting the end and the wrap re-triggers immediately). The
+					// fresh runLoop() re-anchors the wall clock at the restart position.
+					if (gen !== this.generation) return;
+					this.deps.onLoopRestart?.(0);
+					this.currentTime = 0;
+					this.deps.writeClock(0, true);
+					this.runLoop();
+					return;
+				}
 				target = this.deps.duration;
 				try {
 					await this.renderAt(target);

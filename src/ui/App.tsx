@@ -381,6 +381,9 @@ export function App() {
 		typeof globalThis.crossOriginIsolated === 'boolean' ? globalThis.crossOriginIsolated : false
 	);
 	const [workerReady, setWorkerReady] = createSignal(false);
+	// Loop-playback toggle. The worker owns the wrap behaviour; this mirrors the state
+	// for the transport button. Off by default (playback halts at the end as before).
+	const [loopPlayback, setLoopPlayback] = createSignal(false);
 	const [webgpuAvailable, setWebgpuAvailable] = createSignal(false);
 	const [previewBackend, setPreviewBackend] = createSignal<PreviewBackend>('none');
 	const [exportBackend, setExportBackend] = createSignal<ExportBackend>('none');
@@ -3953,6 +3956,12 @@ export function App() {
 						audioEngine.pause();
 					}}
 					onStep={(direction) => bridge?.send({ type: 'step', direction })}
+					loop={loopPlayback}
+					onToggleLoop={() => {
+						const enabled = !loopPlayback();
+						setLoopPlayback(enabled);
+						bridge?.send({ type: 'set-loop', enabled });
+					}}
 					canUndo={historyState().canUndo}
 					canRedo={historyState().canRedo}
 					onUndo={() => bridge?.send({ type: 'undo' })}
