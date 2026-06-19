@@ -8,6 +8,10 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Manual dispatch so the WHIP test can be re-run on demand without
+  # pushing a no-op commit (handy for flake debugging or after the
+  # MediaMTX upstream releases a new pinned version).
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -31,18 +35,37 @@ jobs:
           cache: true
           run-install: true
 
-      - name: Install Playwright Chromium
-        run: vpx playwright install --with-deps chromium
+      # No `playwright install` step. ubuntu-latest ships with Google Chrome
+      # preinstalled at /usr/bin/google-chrome; the WHIP_CHROME env in
+      # playwright.config.ts swaps Playwright's bundled Chromium for it,
+      # which sidesteps the install --with-deps hang that motivated PR #126.
+      #
+      # Verify the exact path WHIP_CHROME points at before spinning up
+      # MediaMTX so a future runner-image change (Chrome moved or
+      # uninstalled) fails fast with a clear, actionable message instead
+      # of a low-signal "executable not found" from Playwright deep in
+      # the test run.
+      - name: Verify preinstalled Chrome at WHIP_CHROME path
+        run: |
+          if [ ! -x /usr/bin/google-chrome ]; then
+            echo "::error::/usr/bin/google-chrome not found or not executable on this runner. Update WHIP_CHROME in this workflow or install Chrome." >&2
+            exit 1
+          fi
+          /usr/bin/google-chrome --version
 
       # Host networking so WebRTC ICE host candidates (UDP) are reachable from
       # the browser without per-port docker mappings; MTX_API exposes the
       # read-only API the assertions poll. The reconnect test restarts this
       # container by name.
+      #
+      # MediaMTX version is pinned (not :latest) so a moving upstream tag
+      # can't break this integration test out from under us. Bump
+      # deliberately when re-validating against a new MediaMTX release.
       - name: Start MediaMTX
         run: |
           docker run -d --name whip-mediamtx --network host \
             -e MTX_API=yes \
-            bluenviron/mediamtx:latest
+            bluenviron/mediamtx:1.19.1
           for i in $(seq 1 30); do
             curl -fsS http://127.0.0.1:9997/v3/paths/list > /dev/null && exit 0
             sleep 1
@@ -55,6 +78,8 @@ jobs:
         run: vp run test:e2e tests/e2e/whip-publish.spec.ts
         env:
           MEDIAMTX_CONTAINER: whip-mediamtx
+          # Use the runner's preinstalled Chrome — see comment above.
+          WHIP_CHROME: /usr/bin/google-chrome
 
       - name: MediaMTX logs
         if: failure()

@@ -55,6 +55,14 @@ export default defineConfig({
 			'check:format': { command: 'vp fmt --check .' },
 			'check:lint': { command: 'vp lint . --max-warnings=0' },
 			'check:typecheck': { command: 'tsgo --noEmit' },
+			// Under CI=true, vitest writes test-results/junit-node.xml (see
+			// vitest.config.ts) — Vite+ detects the read+write on that path
+			// and forces check:test to re-run each time, so any GHA test-
+			// reporter consumer always sees a fresh JUnit XML. Locally
+			// (CI unset) the reporter is off, no file is touched, and the
+			// task caches normally. Declaring `output:` here would be
+			// misleading: it can't restore the file because vp considers the
+			// task uncacheable anyway.
 			'check:test': { command: 'vp test run' },
 			'check:build': {
 				command: 'vp build',
