@@ -4,7 +4,7 @@
  *  lets the user apply or skip each proposal.
  */
 
-import { createSignal, createEffect, Show, For } from 'solid-js';
+import { createSignal, createEffect, Show, Index } from 'solid-js';
 import {
 	clusterEvents,
 	applyProposal,
@@ -254,28 +254,42 @@ export function AutoZoomPanel(props: AutoZoomPanelProps) {
 					</button>
 
 					<div class="proposal-list">
-						<For each={proposals()}>
-							{(proposal) => (
-								<div class={`proposal-item proposal-item--${proposal.status}`}>
-									<span class="proposal-time">{formatTime(proposal.cluster.startUs)}</span>
+						<Index each={proposals()}>
+							{(proposal, index) => (
+								<div class={`proposal-item proposal-item--${proposal().status}`}>
+									<span class="proposal-time">{formatTime(proposal().cluster.startUs)}</span>
 									<span class="proposal-centroid">
-										{(proposal.centroidX * 100).toFixed(0)}% ×{' '}
-										{(proposal.centroidY * 100).toFixed(0)}%
+										{(proposal().centroidX * 100).toFixed(0)}% ×{' '}
+										{(proposal().centroidY * 100).toFixed(0)}%
 									</span>
-									<span class="proposal-count">{proposal.cluster.eventCount} events</span>
+									<span class="proposal-count">{proposal().cluster.eventCount} events</span>
 									<button
 										type="button"
-										onClick={() => handleApply(proposal)}
-										disabled={proposal.status === 'applied'}
+										onClick={() => handleApply(proposal())}
+										disabled={proposal().status === 'applied'}
+										aria-label={
+											proposal().status === 'applied'
+												? `Applied proposal ${index + 1}`
+												: `Apply proposal ${index + 1}`
+										}
 									>
-										{proposal.status === 'applied' ? 'Applied' : 'Apply'}
+										{proposal().status === 'applied' ? 'Applied' : 'Apply'}
 									</button>
-									<button type="button" onClick={() => handleSkip(proposal)}>
-										{proposal.status === 'skipped' ? 'Unskip' : 'Skip'}
+									<button
+										type="button"
+										onClick={() => handleSkip(proposal())}
+										aria-pressed={proposal().status === 'skipped'}
+										aria-label={
+											proposal().status === 'skipped'
+												? `Unskip proposal ${index + 1}`
+												: `Skip proposal ${index + 1}`
+										}
+									>
+										{proposal().status === 'skipped' ? 'Unskip' : 'Skip'}
 									</button>
 								</div>
 							)}
-						</For>
+						</Index>
 					</div>
 				</Show>
 
