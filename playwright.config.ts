@@ -2,8 +2,8 @@ import { defineConfig, devices } from '@playwright/test';
 
 /**
  * Phase 47: WHIP integration tests only (R8.5) — everything else is Vitest.
- * Requires a MediaMTX instance on localhost (see the `whip_integration` job
- * in .circleci/config.yml); run locally with:
+ * Requires a MediaMTX instance on localhost (see
+ * .github/workflows/whip-integration.yml); run locally with:
  *   docker run --rm -d --name whip-mediamtx --network host -e MTX_API=yes bluenviron/mediamtx
  *   vp run test:e2e
  */
@@ -15,11 +15,11 @@ export default defineConfig({
 	fullyParallel: false,
 	workers: 1,
 	retries: process.env.CI ? 1 : 0,
-	// JUnit XML so .circleci/config.yml's `store_test_results` can feed
-	// CircleCI Insights. The `github` annotations reporter was removed when
-	// the WHIP test moved off GitHub Actions in PR #126.
+	// In CI, emit `list` for log readability plus `github` for PR-inline
+	// annotations and `junit` so failures show up in any test-report
+	// uploader (e.g. dorny/test-reporter).
 	reporter: process.env.CI
-		? [['list'], ['junit', { outputFile: 'test-results/junit-e2e.xml' }]]
+		? [['list'], ['github'], ['junit', { outputFile: 'test-results/junit-e2e.xml' }]]
 		: 'list',
 	use: {
 		baseURL: 'http://127.0.0.1:5173',

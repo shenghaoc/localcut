@@ -49,9 +49,8 @@ export default defineConfig({
 		// `node_modules/.vite/task-cache`; the `check` script chains them. A task
 		// may not share a name with a package.json script, so these use a `check:`
 		// prefix — the canonical `lint`/`test`/`build`/… scripts stay for direct
-		// `pnpm <script>` use. CI persists the cache dir across runs (see the
-		// `quality_gate` job in .circleci/config.yml); `vp cache clean` clears
-		// it locally.
+		// `pnpm <script>` use. CI persists the cache dir across runs (see
+		// .github/workflows/ci.yml); `vp cache clean` clears it locally.
 		tasks: {
 			'check:format': { command: 'vp fmt --check .' },
 			'check:lint': { command: 'vp lint . --max-warnings=0' },

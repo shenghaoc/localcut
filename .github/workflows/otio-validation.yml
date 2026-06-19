@@ -1,0 +1,36 @@
+# Phase 48: parse the golden .otio fixtures with the reference Python
+# implementation (CI-only — the app never ships or requires Python). Kept
+# separate from ci.yml so the base CI contract stays framework-agnostic.
+name: OTIO validation
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-otio:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          # Cache pip's download/wheel cache, keyed on the pinned requirements
+          # file. This is the slow step (fetching/building opentimelineio): a
+          # cache hit reuses the resolved wheel instead of re-downloading it.
+          cache: 'pip'
+          cache-dependency-path: scripts/requirements-otio.txt
+      # Version pinned in scripts/requirements-otio.txt (bump deliberately
+      # alongside a fixture re-check).
+      - run: pip install -r scripts/requirements-otio.txt
+      - run: python scripts/validate-otio-fixtures.py

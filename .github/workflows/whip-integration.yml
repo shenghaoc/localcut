@@ -1,0 +1,73 @@
+# Phase 47 (T10/R8.3–R8.5): WHIP publish integration test against a real
+# MediaMTX ingest. Kept separate from ci.yml so unit CI stays fast and
+# container-free.
+name: WHIP integration
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  whip-mediamtx:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: .node-version
+          # `cache: true` caches the dependency store and `run-install` runs
+          # `vp install`, so no separate install step is needed.
+          cache: true
+          run-install: true
+
+      # No `playwright install` step. ubuntu-latest ships with Google Chrome
+      # preinstalled at /usr/bin/google-chrome; the WHIP_CHROME env in
+      # playwright.config.ts swaps Playwright's bundled Chromium for it,
+      # which sidesteps the install --with-deps hang that motivated PR #126.
+
+      # Host networking so WebRTC ICE host candidates (UDP) are reachable from
+      # the browser without per-port docker mappings; MTX_API exposes the
+      # read-only API the assertions poll. The reconnect test restarts this
+      # container by name.
+      - name: Start MediaMTX
+        run: |
+          docker run -d --name whip-mediamtx --network host \
+            -e MTX_API=yes \
+            bluenviron/mediamtx:latest
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:9997/v3/paths/list > /dev/null && exit 0
+            sleep 1
+          done
+          echo 'MediaMTX API never became ready' >&2
+          docker logs whip-mediamtx >&2
+          exit 1
+
+      - name: Run WHIP integration tests
+        run: vp run test:e2e tests/e2e/whip-publish.spec.ts
+        env:
+          MEDIAMTX_CONTAINER: whip-mediamtx
+          # Use the runner's preinstalled Chrome — see comment above.
+          WHIP_CHROME: /usr/bin/google-chrome
+
+      - name: MediaMTX logs
+        if: failure()
+        run: docker logs whip-mediamtx
+
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: playwright-traces
+          path: test-results/
+          retention-days: 7
