@@ -1678,19 +1678,6 @@ body {
 	white-space: nowrap;
 }
 
-.workspace {
-	display: grid;
-	grid-template-columns: minmax(0, 1fr) 320px;
-	gap: 0.75rem;
-	flex: 1;
-	min-height: 0;
-	padding: 0.75rem;
-}
-
-.workspace.has-bin {
-	grid-template-columns: 232px minmax(0, 1fr) 320px;
-}
-
 .preview {
 	position: relative;
 	display: flex;
@@ -2196,14 +2183,6 @@ body {
 	flex-direction: column;
 	min-width: 0;
 	min-height: 0;
-}
-
-.workspace.rail-collapsed {
-	grid-template-columns: minmax(0, 1fr) 34px;
-}
-
-.workspace.has-bin.rail-collapsed {
-	grid-template-columns: 232px minmax(0, 1fr) 34px;
 }
 
 .side-rail-expand {
@@ -4535,7 +4514,7 @@ button.status-badge:hover {
 	}
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1240px) {
 	:root {
 		--toolbar-h: 118px;
 		--timeline-h: 186px;
@@ -4707,13 +4686,14 @@ button.status-badge:hover {
 		min-height: 44px;
 	}
 
-	/* Workspace: override the PPTX 3-column grid */
 	.workspace,
 	.workspace.has-bin,
 	.workspace.rail-collapsed,
 	.workspace.has-bin.rail-collapsed {
-		grid-template-columns: 1fr;
-		background: var(--well);
+		display: flex;
+		flex-direction: column;
+		min-height: auto;
+		overflow: visible;
 	}
 
 	/* Side-rail tab bar: scroll horizontally on narrow screens */
@@ -7650,24 +7630,7 @@ body::-webkit-scrollbar-thumb:hover,
 	min-height: 30px;
 }
 
-.workspace {
-	grid-template-columns: minmax(480px, 1fr) 360px;
-	gap: 8px;
-	padding: 8px;
-	background: var(--well);
-}
 
-.workspace.has-bin {
-	grid-template-columns: 364px minmax(480px, 1fr) 360px;
-}
-
-.workspace.rail-collapsed {
-	grid-template-columns: minmax(480px, 1fr) 28px;
-}
-
-.workspace.has-bin.rail-collapsed {
-	grid-template-columns: 364px minmax(480px, 1fr) 28px;
-}
 
 .dock-left {
 	display: grid;
@@ -7791,7 +7754,7 @@ body::-webkit-scrollbar-thumb:hover,
 	z-index: 55;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1240px) {
 	.toolbar {
 		grid-template-rows: auto auto 30px;
 		height: auto;
@@ -7840,16 +7803,6 @@ body::-webkit-scrollbar-thumb:hover,
 
 	.pipeline-chip {
 		flex: 0 0 auto;
-	}
-
-	.workspace,
-	.workspace.has-bin,
-	.workspace.rail-collapsed,
-	.workspace.has-bin.rail-collapsed {
-		display: flex;
-		flex-direction: column;
-		min-height: auto;
-		overflow: visible;
 	}
 
 	.dock-left {
