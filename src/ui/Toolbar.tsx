@@ -178,7 +178,7 @@ export function Toolbar(props: ToolbarProps) {
 	});
 	const sourceFormatLabel = () => {
 		const video = props.metadata?.video;
-		if (!video) return 'No source';
+		if (!video) return 'Nothing loaded';
 		const fps = video.frameRate ? `${Math.round(video.frameRate)} FPS` : 'FPS ?';
 		return `${video.width}×${video.height} · ${fps}`;
 	};
@@ -474,8 +474,11 @@ export function Toolbar(props: ToolbarProps) {
 					/>
 				</div>
 				<div class="toolbar-center">
-					<span class="file-name" title={props.metadata?.fileName ?? 'No source loaded'}>
-						<Show when={props.metadata} fallback="No source">
+					<span
+						class="file-name"
+						title={props.metadata?.fileName ?? 'Drop or import a file to get started'}
+					>
+						<Show when={props.metadata} fallback="Nothing loaded">
 							{(meta) => meta().fileName}
 						</Show>
 					</span>
@@ -620,7 +623,7 @@ export function Toolbar(props: ToolbarProps) {
 				</span>
 				<span class={cn('pipeline-chip', props.crossOriginIsolated ? 'is-ok' : 'is-warn')}>
 					<ShieldCheck size={11} aria-hidden="true" />
-					{props.crossOriginIsolated ? 'COOP/COEP' : 'NO ISOLATE'}
+					{props.crossOriginIsolated ? 'Isolated' : 'No isolation'}
 				</span>
 				<Show when={props.previewLabel !== null}>
 					<span class="pipeline-chip">
@@ -639,7 +642,7 @@ export function Toolbar(props: ToolbarProps) {
 					type="button"
 					class={cn('pipeline-chip pipeline-chip-button is-tool', props.publishLive && 'is-live')}
 					onClick={() => props.onOpenPublish?.()}
-					title="Stream the program output to a WHIP endpoint"
+					title="Go live — stream to a WHIP endpoint"
 				>
 					<Radio size={11} aria-hidden="true" />
 					{props.publishLive ? 'Live' : 'Go Live'}
@@ -648,7 +651,7 @@ export function Toolbar(props: ToolbarProps) {
 					type="button"
 					class="pipeline-chip pipeline-chip-button is-tool"
 					onClick={() => props.onOpenAudioCleanup?.()}
-					title="Local Audio Cleanup (Experimental) — on-device noise suppression"
+					title="Clean up audio noise — runs on your device"
 				>
 					<AudioWaveform size={11} aria-hidden="true" />
 					Cleanup
@@ -657,7 +660,7 @@ export function Toolbar(props: ToolbarProps) {
 					type="button"
 					class="pipeline-chip pipeline-chip-button is-tool"
 					onClick={() => props.onOpenAutoCaptions?.()}
-					title="Auto Captions (Experimental) — on-device speech recognition"
+					title="Generate captions from speech — on-device"
 				>
 					<Languages size={11} aria-hidden="true" />
 					Captions
@@ -667,7 +670,7 @@ export function Toolbar(props: ToolbarProps) {
 						type="button"
 						class="pipeline-chip pipeline-chip-button is-tool"
 						onClick={() => props.onOpenLanguageTools?.()}
-						title="Language Tools — translate captions and draft copy on-device"
+						title="Language Tools — translate and draft copy on-device"
 					>
 						<Globe size={11} aria-hidden="true" />
 						Translate
@@ -677,7 +680,7 @@ export function Toolbar(props: ToolbarProps) {
 					type="button"
 					class="pipeline-chip pipeline-chip-button is-tool"
 					onClick={() => props.onOpenSmartReframe?.()}
-					title="Smart Reframe (Experimental) — auto crop-path between aspect ratios"
+					title="Auto-reframe for different aspect ratios"
 				>
 					<Crop size={11} aria-hidden="true" />
 					Reframe
@@ -686,7 +689,7 @@ export function Toolbar(props: ToolbarProps) {
 					type="button"
 					class="pipeline-chip pipeline-chip-button is-tool"
 					onClick={() => props.onOpenSilenceReview?.()}
-					title="Silence Review — propose ripple-delete cuts at detected dead air"
+					title="Find and remove silent gaps"
 				>
 					<VolumeX size={11} aria-hidden="true" />
 					Silence
@@ -697,7 +700,7 @@ export function Toolbar(props: ToolbarProps) {
 						type="button"
 						class="pipeline-chip pipeline-chip-button is-tool"
 						onClick={() => props.onImportKeystrokeOverlay?.()}
-						title="Import recorded shortcuts from the active capture session as a keystroke overlay track"
+						title="Show keyboard shortcuts on the preview"
 					>
 						<Keyboard size={11} aria-hidden="true" />
 						Keys
@@ -707,7 +710,7 @@ export function Toolbar(props: ToolbarProps) {
 					type="button"
 					class="pipeline-chip pipeline-chip-button is-tool"
 					onClick={() => props.onOpenCapabilities?.()}
-					title="View browser capabilities and recovery steps"
+					title="What this browser supports"
 				>
 					<Info size={11} aria-hidden="true" />
 					Capabilities

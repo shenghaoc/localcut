@@ -225,7 +225,11 @@ export function MediaBin(props: MediaBinProps) {
 			</header>
 			<Show
 				when={props.assets().length > 0}
-				fallback={<p class="media-bin-empty">Import clips, images, or audio to build your bin.</p>}
+				fallback={
+					<p class="media-bin-empty">
+						Your imported files will live here. Drag one in or click Import.
+					</p>
+				}
 			>
 				<ul class="media-bin-list">
 					<For each={props.assets()}>

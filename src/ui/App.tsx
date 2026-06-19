@@ -1574,15 +1574,15 @@ export function App() {
 	const pipelineLabel = createMemo(() => {
 		switch (previewBackend()) {
 			case 'core-webgpu':
-				return 'Accelerated';
+				return 'Full speed';
 			case 'compat-webgpu':
-				return 'GPU compat';
+				return 'GPU (reduced)';
 			case 'canvas2d':
 				return 'Limited WebCodecs';
 			case 'none':
-				if (pipelineMode() === 'starting') return 'Starting pipeline';
-				if (pipelineMode() === 'blocked') return 'Blocked';
-				return capabilityProbeV2()?.tier === 'shell-only' ? 'Shell only' : 'Limited shell';
+				if (pipelineMode() === 'starting') return 'Warming up…';
+				if (pipelineMode() === 'blocked') return 'Unavailable';
+				return capabilityProbeV2()?.tier === 'shell-only' ? 'Basic mode' : 'Limited';
 		}
 	});
 	const compatibilityImportEnabled = () =>
@@ -4629,20 +4629,20 @@ export function App() {
 										</p>
 										<p class="preview-empty-title">
 											{previewSurfaceAvailable()
-												? 'No source loaded'
+												? 'Drop or import a file to get started'
 												: pipelineMode() === 'limited' || pipelineMode() === 'blocked'
 													? 'Preview unavailable'
-													: 'No source loaded'}
+													: 'Drop or import a file to get started'}
 										</p>
 										<p class="preview-empty-copy">
 											{previewSurfaceAvailable()
-												? 'Drop an MP4, MOV, or WebM here.'
+												? 'Drag a file here, or click Import'
 												: pipelineMode() === 'limited' || pipelineMode() === 'blocked'
 													? (limitedIssue() ??
 														(compatibilityImportEnabled()
-															? 'Import still loads a reduced compatibility thumbnail so you can inspect a local clip.'
-															: 'This browser cannot run the accelerated pipeline yet.'))
-													: 'Drop an MP4, MOV, or WebM here.'}
+															? 'You can still import files — the preview will use a reduced mode.'
+															: 'This browser is missing some capabilities. Editing still works, just with fewer effects.'))
+													: 'Drag a file here, or click Import'}
 										</p>
 									</div>
 									<label

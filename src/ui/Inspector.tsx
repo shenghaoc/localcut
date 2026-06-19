@@ -1234,8 +1234,10 @@ export function Inspector(props: InspectorProps) {
 				when={props.selectedClip}
 				fallback={
 					<div class="inspector-empty">
-						<p class="inspector-empty-title">No clip selected</p>
-						<p class="placeholder-text">Select a timeline clip to adjust colour and track mix.</p>
+						<p class="inspector-empty-title">Select a clip to inspect it</p>
+						<p class="placeholder-text">
+							Pick a clip on the timeline — its properties will show up here.
+						</p>
 					</div>
 				}
 			>
@@ -2024,7 +2026,7 @@ export function Inspector(props: InspectorProps) {
 										</div>
 										<Show
 											when={props.selectedClip?.lut}
-											fallback={<p class="lut-empty">No LUT loaded</p>}
+											fallback={<p class="lut-empty">Import a .cube file to apply a look</p>}
 										>
 											{(lut) => (
 												<p class="lut-name">

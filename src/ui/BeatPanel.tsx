@@ -131,7 +131,7 @@ export function BeatPanel(props: BeatPanelProps) {
 					}}
 				</For>
 				<Show when={audioSources().length === 0}>
-					<p class="beat-panel-empty">No audio sources imported.</p>
+					<p class="beat-panel-empty">Import some audio to detect beats.</p>
 				</Show>
 			</div>
 

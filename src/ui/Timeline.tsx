@@ -676,7 +676,10 @@ export function Timeline(props: TimelineProps) {
 					</button>
 				</div>
 			</div>
-			<Show when={props.hasMedia} fallback={<p class="placeholder-text">Import media to edit</p>}>
+			<Show
+				when={props.hasMedia}
+				fallback={<p class="placeholder-text">Drag a file here, or click Import</p>}
+			>
 				<div class="timeline-track-wrapper">
 					<div class="timeline-label-column">
 						<For each={props.timeline()}>
