@@ -16,28 +16,50 @@ concurrency:
 jobs:
   browser-tests:
     name: Vitest Browser Mode
-    runs-on: ubuntu-latest
+    # ARM64 hosted runner (GA on free tier for public repos, Aug 2025).
+    # Required because the container image below is `-arm64`-suffixed,
+    # which forces the linux/arm64 manifest — pulling it on x64 would
+    # fail with "no matching manifest".
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 15
+    # Run the job inside Playwright's official prebuilt image — browsers
+    # AND all browser system dependencies are baked in at /ms-playwright.
+    # This is what bypasses the `playwright install --with-deps chromium`
+    # step that was hanging on the GitHub-hosted (Azure) runners' apt
+    # mirror.
+    #
+    # Tag breakdown:
+    #   v1.61.0    — must match @playwright/test in package.json; Playwright's
+    #                JS API looks for binaries at a version-specific path.
+    #   -resolute  — Ubuntu 26.04 LTS (Resolute Raccoon) base; newer glibc /
+    #                fonts than `-noble` (24.04). Container OS does not need
+    #                to match the runner host OS.
+    #   -arm64     — explicit arch tag (pairs with the ARM64 runner above).
+    #                Could use the multi-arch `v1.61.0-resolute` tag instead,
+    #                but the explicit suffix matches the preference set in
+    #                PR #126 review.
+    container:
+      image: mcr.microsoft.com/playwright:v1.61.0-resolute-arm64
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version-file: .node-version
-          # `cache: true` caches the dependency store and `run-install` runs
-          # `vp install`, so no separate install step is needed.
-          cache: true
-          run-install: true
-      - name: Get Playwright version
-        id: playwright-version
-        run: echo "version=$(vpx playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
-      - name: Cache Playwright browsers
+      # setup-vp is skipped because the container already has Node + npm
+      # baked in; running setup-node inside `container:` can fight with the
+      # image's own Node. Install pnpm at the locked version directly.
+      - name: Install pnpm
+        run: |
+          PNPM_VERSION=$(node -p "require('./package.json').packageManager.split('@')[1].split('+')[0]")
+          echo "Installing pnpm@${PNPM_VERSION}"
+          npm install -g "pnpm@${PNPM_VERSION}"
+          pnpm config set store-dir /github/home/.pnpm-store
+      - name: Cache pnpm store
         uses: actions/cache@v5
         with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}
-      - name: Install Playwright Chromium
-        run: vpx playwright install --with-deps chromium
+          path: /github/home/.pnpm-store
+          key: ${{ runner.os }}-playwright-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-pnpm-
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile
       - name: Run browser tests
-        run: vp run test:browser
+        run: pnpm exec vp run test:browser

@@ -15,7 +15,12 @@ export default defineConfig({
 	fullyParallel: false,
 	workers: 1,
 	retries: process.env.CI ? 1 : 0,
-	reporter: process.env.CI ? [['list'], ['github']] : 'list',
+	// In CI, emit `list` for log readability plus `github` for PR-inline
+	// annotations and `junit` so failures show up in any test-report
+	// uploader (e.g. dorny/test-reporter).
+	reporter: process.env.CI
+		? [['list'], ['github'], ['junit', { outputFile: 'test-results/junit-e2e.xml' }]]
+		: 'list',
 	use: {
 		baseURL: 'http://127.0.0.1:5173',
 		...devices['Desktop Chrome'],
