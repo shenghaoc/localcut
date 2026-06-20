@@ -16,7 +16,12 @@ import {
 import { Button } from '../../ui/components/button';
 import { formatBytes, formatClock } from '../../lib/format';
 import { spawnConvertWorker, type ConvertWorkerPort } from '../../ui/convert-bridge';
-import type { ConvertFormatId, ConvertInputInfo, ConvertQuality } from '../../protocol';
+import type {
+	ConvertFormatId,
+	ConvertInputInfo,
+	ConvertQuality,
+	ConvertWorkerState
+} from '../../protocol';
 import { CONVERT_FORMATS, convertFormatById, defaultFormatForInput } from './convert-formats';
 
 interface ConvertPageProps {
@@ -107,7 +112,7 @@ export function ConvertPage(props: ConvertPageProps) {
 		});
 	};
 
-	const handleState = (msg: Parameters<Parameters<typeof spawnConvertWorker>[0]>[0]) => {
+	const handleState = (msg: ConvertWorkerState) => {
 		switch (msg.type) {
 			case 'convert-probed': {
 				updateJob(msg.jobId, {
@@ -261,14 +266,34 @@ export function ConvertPage(props: ConvertPageProps) {
 		const anchor = document.createElement('a');
 		anchor.href = url;
 		anchor.download = suggestedName;
+		anchor.rel = 'noopener';
 		document.body.appendChild(anchor);
 		anchor.click();
 		anchor.remove();
-		URL.revokeObjectURL(url);
+		// Revoking synchronously can truncate the download in some browsers before
+		// they've started fetching the blob URL; defer it (matches App.tsx).
+		setTimeout(() => URL.revokeObjectURL(url), 10_000);
+	};
+
+	// Wired so a worker crash both unsticks in-flight jobs and replaces the dead
+	// worker, leaving the view usable (retry, add more files) instead of inert.
+	const spawn = () => {
+		port = spawnConvertWorker(handleState, (message) => {
+			setWorkerError(message);
+			setJobs(
+				(j) => j.status === 'converting' || j.status === 'queued' || j.status === 'probing',
+				produce((j) => {
+					j.status = 'failed';
+					j.error = 'Media converter worker crashed.';
+				})
+			);
+			port?.terminate();
+			spawn();
+		});
 	};
 
 	onMount(() => {
-		port = spawnConvertWorker(handleState, (message) => setWorkerError(message));
+		spawn();
 		pageRef?.focus();
 		document.title = 'Convert media · LocalCut Studio';
 	});

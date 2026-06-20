@@ -63,8 +63,18 @@ async function handleStart(command: {
 	target: ConvertTargetSpec;
 }): Promise<void> {
 	const { jobId, file, target } = command;
+
+	// Conversions are strictly sequential (one encoder pipeline at a time). The
+	// UI already serializes, but guard here too so a stray concurrent start can't
+	// clobber `activeConversion`/`activeJobId` and break cancellation.
+	if (activeJobId !== null) {
+		post({ type: 'convert-failed', jobId, message: 'Another conversion is already in progress.' });
+		return;
+	}
+
 	const descriptor = convertFormatById(target.formatId);
 	const startedAt = performance.now();
+	activeJobId = jobId;
 
 	try {
 		const input = openInput(file);
@@ -110,10 +120,7 @@ async function handleStart(command: {
 		};
 
 		activeConversion = conversion;
-		activeJobId = jobId;
 		await conversion.execute();
-		activeConversion = null;
-		activeJobId = null;
 
 		const buffer = (output.target as BufferTarget).buffer;
 		if (!buffer) {
@@ -133,13 +140,14 @@ async function handleStart(command: {
 			[buffer]
 		);
 	} catch (error) {
-		activeConversion = null;
-		activeJobId = null;
 		if (error instanceof ConversionCanceledError) {
 			post({ type: 'convert-canceled', jobId });
-			return;
+		} else {
+			post({ type: 'convert-failed', jobId, message: errorMessage(error) });
 		}
-		post({ type: 'convert-failed', jobId, message: errorMessage(error) });
+	} finally {
+		activeConversion = null;
+		activeJobId = null;
 	}
 }
 
