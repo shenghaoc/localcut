@@ -53,6 +53,13 @@ Decision: **honest gate now, off-main-thread main-frames path deferred** (D5). T
 - [x] T8.1 Relabel the disabled insert at [`LiveAudioChainPanel.tsx:189-198`](../../../src/ui/LiveAudioChainPanel.tsx) to point at Voice Cleanup / Local Audio Cleanup (preferred), or wire it to the shipped RNNoise denoiser if explicitly in scope.
 - [x] T8.2 Verify no remaining UI copy implies the app lacks noise suppression.
 
+## T11 — Media Bin delete button in frame (B9, D9)
+
+- [x] T11.1 Shrink `.media-bin-thumb` (64×36 → 48×27) and `.media-bin-button` (24 → 22px) + tighten `.media-bin-actions` gap; mark actions/buttons `flex: 0 0 auto`.
+- [x] T11.2 Add `overflow-x: hidden` to `.media-bin-list` so no horizontal scrollbar can appear.
+- [x] T11.3 Validated live (DOM-injected item): delete button stays in frame at the 236px-dock bin (~162px) and all wider widths; no horizontal scroll.
+- [ ] T11.4 Manual check with real imported media at a narrow window + after the service worker updates.
+
 ## T9 — Quality gate
 
 - [x] T9.1 `pnpm run check` green (format:check + lint + typecheck + Vitest + production build).

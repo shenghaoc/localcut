@@ -4514,7 +4514,7 @@ button.status-badge:hover {
 	}
 }
 
-@media (max-width: 1240px) {
+@media (max-width: 900px) {
 	:root {
 		--toolbar-h: 118px;
 		--timeline-h: 186px;
@@ -4830,6 +4830,10 @@ button.status-badge:hover {
 	flex-direction: column;
 	gap: 0.35rem;
 	overflow-y: auto;
+	/* Never let an item push a horizontal scrollbar — the meta text ellipsises and
+	   the thumbnail/actions are sized so the row fits the narrow dock column, so
+	   the delete/add buttons stay in frame without scrolling right. */
+	overflow-x: hidden;
 	min-height: 0;
 }
 
@@ -4863,8 +4867,8 @@ button.status-badge:hover {
 }
 
 .media-bin-thumb {
-	width: 64px;
-	height: 36px;
+	width: 48px;
+	height: 27px;
 	border-radius: var(--radius-xs);
 	background: #000;
 	border: 1px solid var(--glass-border);
@@ -4965,7 +4969,8 @@ button.status-badge:hover {
 
 .media-bin-actions {
 	display: flex;
-	gap: 0.2rem;
+	gap: 0.15rem;
+	flex: 0 0 auto;
 }
 
 /* ── Media info popover ───────────────────────────────────────────────── */
@@ -5089,8 +5094,9 @@ button.status-badge:hover {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 24px;
-	height: 24px;
+	width: 22px;
+	height: 22px;
+	flex: 0 0 auto;
 	padding: 0;
 	border: 1px solid var(--glass-border);
 	border-radius: var(--radius-sm);
@@ -6330,11 +6336,12 @@ button.status-badge:hover {
 .workspace.has-bin.rail-collapsed {
 	grid-template-columns: 236px minmax(0, 1fr) 28px;
 }
-/* Single-column collapse. Declared right after the base `.workspace` grid rules
-   above so it wins the cascade at ≤1240px (equal specificity → later source
-   order). The breakpoint is ≥ the 3-column minimum (236 + 304 + gaps), so there
-   is no width band where the grid neither fits nor collapses. */
-@media (max-width: 1240px) {
+/* Single-column collapse for mobile/narrow. Declared right after the base
+   `.workspace` grid rules above so it wins the cascade (equal specificity →
+   later source order). The middle column is `minmax(0, 1fr)`, so above this
+   breakpoint the 3-column grid shrinks gracefully instead of overflowing —
+   the breakpoint only needs to handle genuinely mobile widths. */
+@media (max-width: 900px) {
 	.workspace,
 	.workspace.has-bin,
 	.workspace.rail-collapsed,
@@ -7752,7 +7759,7 @@ body::-webkit-scrollbar-thumb:hover,
 	z-index: 55;
 }
 
-@media (max-width: 1240px) {
+@media (max-width: 900px) {
 	.toolbar {
 		grid-template-rows: auto auto 30px;
 		height: auto;

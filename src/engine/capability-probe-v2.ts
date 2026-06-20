@@ -397,7 +397,9 @@ async function probeDisplayAudioCapture(): Promise<FeatureSupport> {
 }
 
 async function probeVideoEncodeRealtime(): Promise<FeatureSupport> {
-	if (typeof VideoEncoder !== 'function') return 'unsupported';
+	if (typeof VideoEncoder !== 'function' || typeof VideoEncoder.isConfigSupported !== 'function') {
+		return 'unsupported';
+	}
 	// Probe the exact codecs the capture session chooses between (the worker
 	// builds its candidate list from CAPTURE_VIDEO_CODEC_FALLBACKS), so a
 	// 'supported' here means the recording encoder can actually configure — not
@@ -468,9 +470,12 @@ export async function probeOpfsSyncAccessHandleInWorker(): Promise<FeatureSuppor
 		}
 		self.postMessage(result);
 	};`;
-	const url = URL.createObjectURL(new Blob([src], { type: 'application/javascript' }));
+	let url: string | undefined;
 	let worker: Worker | undefined;
 	try {
+		// Inside the try so a throwing createObjectURL/Blob/Worker (strict CSP, SSR,
+		// or headless test env) degrades to 'unknown' instead of rejecting the probe.
+		url = URL.createObjectURL(new Blob([src], { type: 'application/javascript' }));
 		worker = new Worker(url);
 		const w = worker;
 		return await new Promise<FeatureSupport>((resolve) => {
@@ -493,7 +498,7 @@ export async function probeOpfsSyncAccessHandleInWorker(): Promise<FeatureSuppor
 		// browsers fetch the worker script asynchronously, so revoking immediately
 		// after `new Worker` can abort the load. The finally still runs if `new
 		// Worker` throws, so the URL is never leaked.
-		URL.revokeObjectURL(url);
+		if (url) URL.revokeObjectURL(url);
 	}
 }
 

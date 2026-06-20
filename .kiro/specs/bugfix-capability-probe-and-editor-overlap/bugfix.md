@@ -97,6 +97,14 @@ Live computed `.workspace.has-bin` columns were `364px 756px 360px` — matching
 - **Expected:** The insert either wires to the existing RNNoise/DTLN denoiser, or is relabeled to point users to Voice Cleanup / Audio Cleanup so it does not imply the feature is absent.
 - **Root cause:** A placeholder insert label was never reconciled with the noise-suppression features shipped in later phases.
 
+### B9 — Media Bin delete button pushed out of frame (horizontal scroll to delete)
+
+- **Where:** [`MediaBin.tsx`](../../../src/ui/MediaBin.tsx) item = `.media-bin-item` grid (`auto minmax(0,1fr) auto` = thumbnail · meta · actions) in [`global.css`](../../../src/global.css); the actions hold the Add (`Plus`) and Remove (`Trash2`) buttons.
+- **Observed:** In the narrow left dock the row's irreducible width (`.media-bin-thumb` 64px + the three 24px `.media-bin-button`s ≈ **165px**) exceeds the bin's content width. `.media-bin-list` has `overflow-y: auto`, which makes `overflow-x` compute to `auto`, so the row overflows and a **horizontal scrollbar** appears — the Remove button sits off the right edge and the user must scroll right to delete media. Measured live: the delete button leaves the frame once the bin is narrower than ~178px.
+- **Aggravated by B6:** the consolidated `.workspace.has-bin` left column is 236px and the dock holds a 66px icon rail, leaving the media bin only ~162px — below the ~178px threshold — so the fix would otherwise *introduce* this overflow.
+- **Expected:** The Add/Remove buttons are always in frame at every dock width; no horizontal scrolling to reach delete.
+- **Root cause:** The item's fixed thumbnail + action footprint was sized for a wider bin than the consolidated dock provides, and the list permitted horizontal overflow.
+
 ## Non-goals
 
 - Implementing transferable MediaStreamTrack support in the browser, or shipping a new main-thread frame-reading capture path beyond reusing publish's existing bounded main-frames fallback (B5 may land as "accurate gate + workaround surfaced" if the fallback proves out of scope).
