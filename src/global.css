@@ -7832,19 +7832,14 @@ body::-webkit-scrollbar-thumb:hover,
 
 .dock-left .side-rail-secondary-tabs {
 	flex: 0 0 auto;
-	border: 1px solid var(--edge);
-	border-radius: var(--radius-md);
-	background: var(--plate);
-	overflow: hidden;
-}
-
-.dock-left .side-rail-secondary-tabs {
 	display: flex;
 	flex-direction: row;
 	gap: 0;
 	padding: 0;
-	border: 0;
 	border-bottom: 1px solid var(--edge);
+	border-radius: var(--radius-md);
+	background: var(--plate);
+	overflow: hidden;
 }
 
 .dock-left .side-rail-secondary-tab {

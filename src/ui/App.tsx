@@ -1760,19 +1760,18 @@ export function App() {
 			webgpuReady: webgpuAvailable(),
 			exportSettings: exportSettings(),
 			assets: assets(),
-			recentErrors: workerSnapshot?.recentErrors
-				? (() => {
-						const workerLog = workerSnapshot.recentErrors!; // narrowed by the ternary guard; TS doesn't propagate into closures
-						const workerCodes = new Set(workerLog.entries.map((w) => `${w.subsystem}:${w.code}`));
-						const uiOnly = recentErrorLog().entries.filter(
-							(e) => !workerCodes.has(`${e.subsystem}:${e.code}`)
-						);
-						return {
-							...workerLog,
-							entries: [...workerLog.entries, ...uiOnly].slice(0, workerLog.capacity)
-						};
-					})()
-				: recentErrorLog(),
+			recentErrors: (() => {
+				const workerLog = workerSnapshot?.recentErrors;
+				if (!workerLog) return recentErrorLog();
+				const workerCodes = new Set(workerLog.entries.map((w) => `${w.subsystem}:${w.code}`));
+				const uiOnly = recentErrorLog().entries.filter(
+					(e) => !workerCodes.has(`${e.subsystem}:${e.code}`)
+				);
+				return {
+					...workerLog,
+					entries: [...workerLog.entries, ...uiOnly].slice(0, workerLog.capacity)
+				};
+			})(),
 			workerSnapshot,
 			asr: { engine: asrState().engine, accelerator: asrState().accelerator },
 			voiceCleanup: {
