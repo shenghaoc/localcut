@@ -970,6 +970,14 @@ export function App() {
 	})();
 	const [scopePanelCollapsed, setScopePanelCollapsed] = createSignal(true);
 	const [activeDockTab, setActiveDockTab] = createSignal<'media' | 'beats'>('media');
+
+	createEffect(() => {
+		const snapAvailable = beatResults().size > 0 && beatSettings().enabledSourceIds.length > 0;
+		if (!snapAvailable && timelineSnapToBeats()) {
+			setTimelineSnapToBeats(false);
+		}
+	});
+
 	const scopePanelAvailable = createMemo(
 		() =>
 			scopeSab !== null &&
