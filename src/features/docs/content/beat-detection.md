@@ -5,10 +5,11 @@ LocalCut can analyse any imported audio source to detect its tempo and beat posi
 ## How to use it
 
 1. Import an audio source (MP3, AAC, WAV, etc.) into the Media Bin.
-2. Open the **Beat Detection** panel below the Media Bin.
-3. Click **Analyse** next to the audio source. A progress bar shows the analysis status. Click **Cancel** to abort.
+2. Switch to the **Beats** tab in the left library panel.
+3. Click **Analyse beats** next to the audio source. A progress bar shows the analysis status. Click **Cancel** to abort.
 4. Once complete, the detected tempo (BPM) and beat count are displayed.
-5. Click **On** to enable the beat grid display on the timeline ruler. Beat ticks appear in purple; the first beat of each bar is taller.
+5. Click **Show grid** to enable the beat grid display on the timeline ruler. Beat ticks appear in purple; the first beat of each bar is taller.
+6. Use the **Snap to these beats** checkbox to enable beat-snapping directly from the Beats panel. This also enables timeline snap if it was off. The checkbox is disabled until at least one source has its grid enabled.
 
 ## Beat grid controls
 

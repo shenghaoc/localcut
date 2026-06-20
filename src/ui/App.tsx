@@ -875,7 +875,6 @@ export function App() {
 	let initSent = false;
 	let pendingInitCanvas: OffscreenCanvas | null = null;
 	let compatibilityImportGeneration = 0;
-	let dockImportInput: HTMLInputElement | undefined;
 	let relinkInput: HTMLInputElement | undefined;
 	let pendingRelinkSourceId: string | null = null;
 	const audioEngine = new AudioEngine({
@@ -970,6 +969,15 @@ export function App() {
 		}
 	})();
 	const [scopePanelCollapsed, setScopePanelCollapsed] = createSignal(true);
+	const [activeDockTab, setActiveDockTab] = createSignal<'media' | 'beats'>('media');
+
+	createEffect(() => {
+		const snapAvailable = beatResults().size > 0 && beatSettings().enabledSourceIds.length > 0;
+		if (!snapAvailable && timelineSnapToBeats()) {
+			setTimelineSnapToBeats(false);
+		}
+	});
+
 	const scopePanelAvailable = createMemo(
 		() =>
 			scopeSab !== null &&
@@ -1760,7 +1768,18 @@ export function App() {
 			webgpuReady: webgpuAvailable(),
 			exportSettings: exportSettings(),
 			assets: assets(),
-			recentErrors: workerSnapshot?.recentErrors ?? recentErrorLog(),
+			recentErrors: (() => {
+				const workerLog = workerSnapshot?.recentErrors;
+				if (!workerLog) return recentErrorLog();
+				const workerCodes = new Set(workerLog.entries.map((w) => `${w.subsystem}:${w.code}`));
+				const uiOnly = recentErrorLog().entries.filter(
+					(e) => !workerCodes.has(`${e.subsystem}:${e.code}`)
+				);
+				return {
+					...workerLog,
+					entries: [...workerLog.entries, ...uiOnly].slice(0, workerLog.capacity)
+				};
+			})(),
 			workerSnapshot,
 			asr: { engine: asrState().engine, accelerator: asrState().accelerator },
 			voiceCleanup: {
@@ -3335,17 +3354,19 @@ export function App() {
 			return true;
 		} catch (error) {
 			if (isAbortError(error)) return true;
-			setStatusLine(
-				`Import picker failed: ${error instanceof Error ? error.message : String(error)}`
+			setRecentErrorLog((prev) =>
+				addRecentError(
+					prev,
+					createRecentError({
+						code: 'import.picker_failed',
+						subsystem: 'import',
+						severity: 'warning',
+						message: `Import picker failed: ${error instanceof Error ? error.message : String(error)}`
+					})
+				)
 			);
 			return false;
 		}
-	}
-
-	async function openDockImport() {
-		if (importBlocked()) return;
-		const handled = await pickImportMedia();
-		if (!handled) dockImportInput?.click();
 	}
 
 	async function pickRelinkFile(sourceId: string) {
@@ -3361,8 +3382,16 @@ export function App() {
 				return;
 			} catch (error) {
 				if (isAbortError(error)) return;
-				setStatusLine(
-					`Re-link picker failed: ${error instanceof Error ? error.message : String(error)}`
+				setRecentErrorLog((prev) =>
+					addRecentError(
+						prev,
+						createRecentError({
+							code: 'import.relink_failed',
+							subsystem: 'import',
+							severity: 'warning',
+							message: `Re-link picker failed: ${error instanceof Error ? error.message : String(error)}`
+						})
+					)
 				);
 			}
 		}
@@ -4117,6 +4146,16 @@ export function App() {
 						languageToolsVisible() ? () => openTextSideRailTab('language-tools') : undefined
 					}
 					onOpenPublish={() => openCaptureSideRailTab('publish')}
+					onOpenRecord={() => openCaptureSideRailTab('record')}
+					onOpenCaptions={() => openTextSideRailTab('captions')}
+					onToggleScopes={() => setScopePanelCollapsed((prev) => !prev)}
+					scopesPanelVisible={scopePanelAvailable() && !scopePanelCollapsed()}
+					scopesPanelAvailable={scopePanelAvailable()}
+					onScrollToRenderQueue={() =>
+						document
+							.querySelector<HTMLElement>('.render-queue-panel')
+							?.scrollIntoView({ block: 'nearest' })
+					}
 					publishLive={publishBusy()}
 					timelineSnapEnabled={timelineSnapEnabled()}
 					timelineSnapToBeats={timelineSnapToBeats()}
@@ -4405,117 +4444,114 @@ export function App() {
 					>
 						<Show when={previewSurfaceAvailable()}>
 							<aside class="dock-left" aria-label="Library">
-								<nav class="dock-rail" aria-label="Workspace sections">
-									<button
-										type="button"
-										onClick={() => void openDockImport()}
-										disabled={importBlocked()}
-										title={importHint() ?? 'Import media'}
-									>
-										Project
-									</button>
-									<button type="button">Media</button>
-									<button type="button" onClick={() => openCaptureSideRailTab('record')}>
-										Record
-									</button>
-									<button type="button" onClick={() => setScopePanelCollapsed((open) => !open)}>
-										Scopes
-									</button>
-									<button type="button" onClick={() => setAsrPanelOpen(true)}>
-										AI
-									</button>
-									<button type="button" onClick={() => openTextSideRailTab('captions')}>
-										Captions
-									</button>
-									<button type="button" onClick={() => setSmartReframeOpen(true)}>
-										Reframe
-									</button>
-									<button
-										type="button"
-										onClick={() =>
-											document
-												.querySelector<HTMLElement>('.render-queue-panel')
-												?.scrollIntoView({ block: 'nearest' })
-										}
-									>
-										Output
-									</button>
-								</nav>
-								<input
-									ref={(el) => {
-										dockImportInput = el;
-									}}
-									type="file"
-									accept={VIDEO_ACCEPT}
-									multiple
-									onChange={handleImportInput}
-									disabled={importBlocked()}
-									aria-label="Import media from workspace dock"
-									hidden
+								<SecondaryRailTabs
+									idPrefix="dock"
+									label="Library sections"
+									tabs={[
+										{ id: 'media' as const, label: 'Media' },
+										{ id: 'beats' as const, label: 'Beats' }
+									]}
+									value={activeDockTab()}
+									onSelect={setActiveDockTab}
 								/>
 								<div class="dock-library">
-									<MediaBin
-										assets={assets}
-										unresolvedIds={unresolvedIds}
-										getThumbnail={(sourceId, timestamp) => thumbnailStore.get(sourceId, timestamp)}
-										thumbnailVersion={thumbnailVersion}
-										requestThumbnails={(sourceId, timestamps) =>
-											bridge?.send({ type: 'request-thumbnails', sourceId, timestamps })
-										}
-										onPlace={(sourceId) => bridge?.send({ type: 'place-clip', sourceId })}
-										onRemove={(sourceId) => bridge?.send({ type: 'remove-asset', sourceId })}
-									/>
-									<BeatPanel
-										assets={assets}
-										beatResults={beatResults}
-										beatSettings={beatSettings}
-										analysisProgress={beatProgress}
-										onAnalyse={(sourceId) => bridge?.send({ type: 'analyze-beats', sourceId })}
-										onCancel={(sourceId) => {
-											bridge?.send({ type: 'cancel-beat-analysis', sourceId });
-											// The worker intentionally sends no terminal message for an
-											// explicit cancel (cancellation isn't an error). Clear the
-											// progress entry optimistically so the BeatPanel row exits
-											// the analysing state immediately.
-											setBeatProgress((prev) => {
-												if (!prev.has(sourceId)) return prev;
-												const next = new Map(prev);
-												next.delete(sourceId);
-												return next;
-											});
-										}}
-										onToggleSource={(sourceId, enabled) => {
-											const current = beatSettings();
-											const ids = enabled
-												? [...current.enabledSourceIds, sourceId]
-												: current.enabledSourceIds.filter((id) => id !== sourceId);
-											bridge?.send({
-												type: 'set-beat-settings',
-												enabledSourceIds: ids,
-												globalOffsetMs: current.globalOffsetMs
-											});
-											setBeatSettings({ ...current, enabledSourceIds: ids });
-										}}
-										onOffsetChange={(offsetMs) => {
-											const current = beatSettings();
-											bridge?.send({
-												type: 'set-beat-settings',
-												enabledSourceIds: current.enabledSourceIds,
-												globalOffsetMs: offsetMs
-											});
-											setBeatSettings({ ...current, globalOffsetMs: offsetMs });
-										}}
-										onAutoCut={(mode) => {
-											const selected = selectedClipRefs();
-											if (selected.length === 0) return;
-											bridge?.send({
-												type: 'beat-auto-cut',
-												mode,
-												clipRefs: selected.map((r) => ({ trackId: r.trackId, clipId: r.clipId }))
-											});
-										}}
-										selectedClipCount={() => selectedClipRefs().length}
-									/>
+									<SecondaryRailPanel
+										idPrefix="dock"
+										tab="media"
+										value={activeDockTab()}
+										keepMounted
+									>
+										<MediaBin
+											assets={assets}
+											unresolvedIds={unresolvedIds}
+											getThumbnail={(sourceId, timestamp) =>
+												thumbnailStore.get(sourceId, timestamp)
+											}
+											thumbnailVersion={thumbnailVersion}
+											requestThumbnails={(sourceId, timestamps) =>
+												bridge?.send({
+													type: 'request-thumbnails',
+													sourceId,
+													timestamps
+												})
+											}
+											onPlace={(sourceId) => bridge?.send({ type: 'place-clip', sourceId })}
+											onRemove={(sourceId) => bridge?.send({ type: 'remove-asset', sourceId })}
+										/>
+									</SecondaryRailPanel>
+									<SecondaryRailPanel
+										idPrefix="dock"
+										tab="beats"
+										value={activeDockTab()}
+										keepMounted
+									>
+										<BeatPanel
+											assets={assets}
+											beatResults={beatResults}
+											beatSettings={beatSettings}
+											analysisProgress={beatProgress}
+											snapToBeats={timelineSnapToBeats()}
+											onToggleSnapToBeats={(enabled) => {
+												setTimelineSnapToBeats(enabled);
+												if (enabled && !timelineSnapEnabled()) {
+													setTimelineSnapEnabled(true);
+												}
+											}}
+											onAnalyse={(sourceId) => bridge?.send({ type: 'analyze-beats', sourceId })}
+											onCancel={(sourceId) => {
+												bridge?.send({
+													type: 'cancel-beat-analysis',
+													sourceId
+												});
+												setBeatProgress((prev) => {
+													if (!prev.has(sourceId)) return prev;
+													const next = new Map(prev);
+													next.delete(sourceId);
+													return next;
+												});
+											}}
+											onToggleSource={(sourceId, enabled) => {
+												const current = beatSettings();
+												const ids = enabled
+													? [...current.enabledSourceIds, sourceId]
+													: current.enabledSourceIds.filter((id) => id !== sourceId);
+												bridge?.send({
+													type: 'set-beat-settings',
+													enabledSourceIds: ids,
+													globalOffsetMs: current.globalOffsetMs
+												});
+												setBeatSettings({
+													...current,
+													enabledSourceIds: ids
+												});
+											}}
+											onOffsetChange={(offsetMs) => {
+												const current = beatSettings();
+												bridge?.send({
+													type: 'set-beat-settings',
+													enabledSourceIds: current.enabledSourceIds,
+													globalOffsetMs: offsetMs
+												});
+												setBeatSettings({
+													...current,
+													globalOffsetMs: offsetMs
+												});
+											}}
+											onAutoCut={(mode) => {
+												const selected = selectedClipRefs();
+												if (selected.length === 0) return;
+												bridge?.send({
+													type: 'beat-auto-cut',
+													mode,
+													clipRefs: selected.map((r) => ({
+														trackId: r.trackId,
+														clipId: r.clipId
+													}))
+												});
+											}}
+											selectedClipCount={() => selectedClipRefs().length}
+										/>
+									</SecondaryRailPanel>
 								</div>
 							</aside>
 						</Show>

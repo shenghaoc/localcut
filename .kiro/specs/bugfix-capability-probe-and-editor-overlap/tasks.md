@@ -1,6 +1,6 @@
 # Tasks — Capability-probe false negatives + editor chrome overlap & IA
 
-> Status: **Part 1 (T1–T11): Implemented — merged (#130 + #131)** (`pnpm run check` green; the off-main-thread main-frames recording fallback **T5.5 landed + was verified in real Chromium** in #131; remaining items are **manual/on-device verification** — T6.4, T10, T11.4 — that need the deployed build + real interaction). **Part 2 Phase 1 (IA-T1–IA-T3): Implemented on this branch** (copy/labelling/density; no nav restructure). **Part 2 Phase 2 (IA-T4–IA-T5): Implemented on this branch** (right rail collapsed to four job destinations with in-panel secondary controls). **Part 2 Phase 3 (IA-T6–IA-T7): Proposed.** Tasks map to bugs (Bn) in [`bugfix.md`](./bugfix.md) and design entries (Dn) in [`design.md`](./design.md).
+> Status: **Part 1 (T1–T11): Implemented — merged (#130 + #131)** (`pnpm run check` green; the off-main-thread main-frames recording fallback **T5.5 landed + was verified in real Chromium** in #131; remaining items are **manual/on-device verification** — T6.4, T10, T11.4 — that need the deployed build + real interaction). **Part 2 Phase 1 (IA-T1–IA-T3): Implemented on this branch** (copy/labelling/density; no nav restructure). **Part 2 Phase 2 (IA-T4–IA-T5): Implemented on this branch** (right rail collapsed to four job destinations with in-panel secondary controls). **Part 2 Phase 3 (IA-T6–IA-T7): Implemented on this branch** (left rail → 2-tab library switcher; workflow launchers moved to palette/menus/right-rail; beats snap affordance; import errors routed to recent-error log). Tasks map to bugs (Bn) in [`bugfix.md`](./bugfix.md) and design entries (Dn) in [`design.md`](./design.md).
 
 ## T1 — H.264 level helper + general codec probe (B1, D1)
 
@@ -127,14 +127,14 @@ Ordered by the design's incremental rollout — Phase 1 is copy/labelling/densit
 
 ### IA-T6 — Left rail → library switcher (Option B)
 
-- [ ] IA-T6.1 Reduce `.dock-rail` ([`App.tsx:4299`](../../../src/ui/App.tsx)) to `Media`/`Beats`; make each switch `.dock-library` content (or a header toggle if only two).
-- [ ] IA-T6.2 Remove the dead `Media` button; move workflow launchers to palette/menus and/or right-rail destinations; `Scopes` → `View`; `Project`/`Output` → `Project` menu + toolbar.
-- [ ] IA-T6.3 Route import/picker failures through the recent-error log, not the status line.
+- [x] IA-T6.1 Reduce `.dock-rail` ([`App.tsx:4299`](../../../src/ui/App.tsx)) to `Media`/`Beats`; make each switch `.dock-library` content (or a header toggle if only two).
+- [x] IA-T6.2 Remove the dead `Media` button; move workflow launchers to palette/menus and/or right-rail destinations; `Scopes` → `View`; `Project`/`Output` → `Project` menu + toolbar.
+- [x] IA-T6.3 Route import/picker failures through the recent-error log, not the status line.
 
 ### IA-T7 — Beat Detection home (B15, D15)
 
-- [ ] IA-T7.1 Present `BeatPanel` as a Media-Analysis sub-section shown when an audio source is selected (or the left-rail `Beats` destination from IA-T6).
-- [ ] IA-T7.2 Link Beats state to the transport `Beat`-snap toggle (shared signal) with a one-line affordance.
+- [x] IA-T7.1 Present `BeatPanel` as a Media-Analysis sub-section shown when an audio source is selected (or the left-rail `Beats` destination from IA-T6).
+- [x] IA-T7.2 Link Beats state to the transport `Beat`-snap toggle (shared signal) with a one-line affordance.
 
 ## Part 2 quality gate (each phase)
 

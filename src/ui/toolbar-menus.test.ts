@@ -15,6 +15,8 @@ function options(overrides: Partial<MenuBarBuildOptions> = {}): MenuBarBuildOpti
 		timelineSnapEnabled: true,
 		timelineSnapToBeats: false,
 		hasSelection: true,
+		scopesPanelVisible: false,
+		scopesPanelAvailable: true,
 		...overrides
 	};
 }
@@ -36,13 +38,15 @@ describe('buildMenuBarGroups (IA-T1 / D13 dedupe)', () => {
 		expect(items.some((item) => item.label === 'Search actions…')).toBe(false);
 	});
 
-	it('homes Browser capabilities under Help only — never View', () => {
-		const groups = buildMenuBarGroups(options());
-		expect(groups.some((group) => group.id === 'view')).toBe(false);
+	it('homes Browser capabilities under Help only — not View', () => {
 		const capabilityItems = allItems().filter((item) => item.id === 'capabilities');
 		expect(capabilityItems).toHaveLength(1);
 		expect(capabilityItems[0]!.group).toBe('help');
 		expect(capabilityItems[0]!.label).toBe('Browser capabilities');
+		const viewItems = allItems().filter(
+			(item) => item.group === 'view' && item.id === 'capabilities'
+		);
+		expect(viewItems).toHaveLength(0);
 	});
 
 	it('keeps Help as the home for the user guide and capabilities', () => {
@@ -59,6 +63,7 @@ describe('buildMenuBarGroups (IA-T1 / D13 dedupe)', () => {
 		expect(groups.map((group) => group.id)).toEqual([
 			'project',
 			'edit',
+			'view',
 			'clip',
 			'timeline',
 			'help'
@@ -109,6 +114,34 @@ describe('buildMenuBarGroups (IA-T1 / D13 dedupe)', () => {
 		expect(items.find((item) => item.id === 'split')!.kbd).toBe('S');
 		expect(items.find((item) => item.id === 'delete')!.kbd).toBe('⌫');
 	});
+
+	it('homes Scopes under the View menu (IA-T6)', () => {
+		const groups = buildMenuBarGroups(options());
+		const view = groups.find((group) => group.id === 'view');
+		expect(view).toBeDefined();
+		const items = view!.items.filter(
+			(item): item is Extract<typeof item, { kind: 'item' }> => item.kind === 'item'
+		);
+		expect(items.some((item) => item.id === 'scopes')).toBe(true);
+	});
+
+	it('reflects scopes panel visibility in the View menu label', () => {
+		const hidden = allItems(options({ scopesPanelVisible: false }));
+		expect(hidden.find((item) => item.id === 'scopes')!.label).toBe('Show scopes');
+
+		const visible = allItems(options({ scopesPanelVisible: true }));
+		expect(visible.find((item) => item.id === 'scopes')!.label).toBe('Hide scopes');
+	});
+
+	it('homes Render queue under the Project menu (IA-T6)', () => {
+		const groups = buildMenuBarGroups(options());
+		const project = groups.find((group) => group.id === 'project');
+		expect(project).toBeDefined();
+		const items = project!.items.filter(
+			(item): item is Extract<typeof item, { kind: 'item' }> => item.kind === 'item'
+		);
+		expect(items.some((item) => item.id === 'render-queue')).toBe(true);
+	});
 });
 
 function commandOptions(
@@ -132,6 +165,11 @@ function commandOptions(
 		onPublish: noop,
 		onCapabilities: noop,
 		onHelp: noop,
+		onOpenRecord: noop,
+		onOpenCaptions: noop,
+		onToggleScopes: noop,
+		onOpenRenderQueue: noop,
+		scopesPanelAvailable: true,
 		...overrides
 	};
 }
@@ -192,5 +230,12 @@ describe('buildCommandActions (IA-T1 / D13 launcher routing, D12 audio gating)',
 			(action) => action.label === 'Import media'
 		)!;
 		expect(importAction.disabled).toBe(true);
+	});
+
+	it('routes dock-rail workflow launchers into the command palette (IA-T6)', () => {
+		const labels = buildCommandActions(commandOptions()).map((action) => action.label);
+		for (const expected of ['Record', 'Captions', 'View scopes', 'Render queue']) {
+			expect(labels).toContain(expected);
+		}
 	});
 });
