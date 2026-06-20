@@ -102,10 +102,15 @@ export function ProgramPanel(props: ProgramPanelProps) {
 
 	// Exhaustive reasons (tier + capture gates) so the disabled panel always has at
 	// least one actionable line — including reduced-tier profiles where the capture
-	// probes pass but isolation/SAB/OffscreenCanvas/WebGPU do not.
-	const disabledReasons = createMemo(() =>
-		props.probe ? captureUnavailableReasons(props.probe) : []
-	);
+	// probes pass but isolation/SAB/OffscreenCanvas/WebGPU do not. The trailing
+	// fallback is defensive: captureUnavailableReasons is exhaustive for the
+	// core-webgpu gates that gate programMode, so an empty list shouldn't occur,
+	// but the panel must never render a header with no reason.
+	const disabledReasons = createMemo(() => {
+		if (!props.probe) return [];
+		const reasons = captureUnavailableReasons(props.probe);
+		return reasons.length > 0 ? reasons : ['Required capabilities are missing.'];
+	});
 
 	return (
 		<Show
@@ -117,14 +122,7 @@ export function ProgramPanel(props: ProgramPanelProps) {
 						when={props.probe}
 						fallback={<p class="program-panel-disabled-reason">Checking browser capabilities…</p>}
 					>
-						<CaptureUnavailableNotice
-							subject="Program Mode"
-							reasons={
-								disabledReasons().length > 0
-									? disabledReasons()
-									: ['Required capabilities are missing.']
-							}
-						/>
+						<CaptureUnavailableNotice subject="Program Mode" reasons={disabledReasons()} />
 					</Show>
 				</div>
 			}

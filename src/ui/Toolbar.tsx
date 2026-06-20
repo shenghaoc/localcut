@@ -162,7 +162,7 @@ export function Toolbar(props: ToolbarProps) {
 		const fps = video.frameRate ? `${Math.round(video.frameRate)} FPS` : 'FPS ?';
 		return `${video.width}×${video.height} · ${fps}`;
 	};
-	const commandActions = (): CommandAction[] =>
+	const commandActions = createMemo<CommandAction[]>(() =>
 		buildCommandActions({
 			importHint: props.importHint,
 			importBlocked: props.importBlocked ?? false,
@@ -180,7 +180,8 @@ export function Toolbar(props: ToolbarProps) {
 			onPublish: () => props.onOpenPublish?.(),
 			onCapabilities: () => props.onOpenCapabilities?.(),
 			onHelp: () => props.onOpenHelp?.()
-		});
+		})
+	);
 	const runCommand = (action: CommandAction) => {
 		if (action.disabled) return;
 		void action.onSelect();
