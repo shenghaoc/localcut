@@ -73,5 +73,5 @@ Decision: **honest gate in this PR; the off-main-thread main-frames path is a se
 
 ## Out-of-scope follow-ups (flag if encountered)
 
-- [ ] Browser-support matrix entry / docs note that H.264 export + recording now probe at resolution-correct levels.
+- [x] Browser-support matrix / docs note — **not needed**: `docs/exporting.md` ("only codecs your browser can actually encode are offered") and `docs/browser-limitations.md` already describe the intended behavior accurately; B1 makes the app match the docs rather than the other way around.
 
