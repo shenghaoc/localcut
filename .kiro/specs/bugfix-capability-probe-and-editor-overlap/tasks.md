@@ -1,6 +1,6 @@
 # Tasks — Capability-probe false negatives + editor chrome overlap & IA
 
-> Status: **Part 1 (T1–T11): Implemented — merged (#130 + #131)** (`pnpm run check` green; the off-main-thread main-frames recording fallback **T5.5 landed + was verified in real Chromium** in #131; remaining items are **manual/on-device verification** — T6.4, T10, T11.4 — that need the deployed build + real interaction). **Part 2 Phase 1 (IA-T1–IA-T3): Implemented on this branch** (copy/labelling/density; no nav restructure). **Part 2 Phases 2–3 (IA-T4–IA-T7): Proposed.** Tasks map to bugs (Bn) in [`bugfix.md`](./bugfix.md) and design entries (Dn) in [`design.md`](./design.md).
+> Status: **Part 1 (T1–T11): Implemented — merged (#130 + #131)** (`pnpm run check` green; the off-main-thread main-frames recording fallback **T5.5 landed + was verified in real Chromium** in #131; remaining items are **manual/on-device verification** — T6.4, T10, T11.4 — that need the deployed build + real interaction). **Part 2 Phase 1 (IA-T1–IA-T3): Implemented on this branch** (copy/labelling/density; no nav restructure). **Part 2 Phase 2 (IA-T4–IA-T5): Implemented on this branch** (right rail collapsed to four job destinations with in-panel secondary controls). **Part 2 Phase 3 (IA-T6–IA-T7): Proposed.** Tasks map to bugs (Bn) in [`bugfix.md`](./bugfix.md) and design entries (Dn) in [`design.md`](./design.md).
 
 ## T1 — H.264 level helper + general codec probe (B1, D1)
 
@@ -111,16 +111,16 @@ Ordered by the design's incremental rollout — Phase 1 is copy/labelling/densit
 
 ### IA-T4 — Collapse seven tabs to four job destinations
 
-- [ ] IA-T4.1 Replace `SIDE_RAIL_TABS` ([`App.tsx:354`](../../../src/ui/App.tsx)) with `Inspector`/`Text`/`Audio`/`Capture`; update `SideRailTab`, `isSideRailTab`, `openSideRailTab`, `SIDE_RAIL_COLLAPSED_KEY`, and keyboard-map tab ids together.
-- [ ] IA-T4.2 `Text` = Captions + language tools; `Capture` = Record · Program · Replay · go-live (secondary segmented control); `Audio` = live chain + Voice FX.
-- [ ] IA-T4.3 Add the in-panel secondary segmented control; ensure it fits/wraps within ~302px.
-- [ ] IA-T4.4 **Remove `overflow-x: auto` + hidden scrollbar from `.side-rail-tab-bar`** and delete the duplicate blocks in [`global.css`](../../../src/global.css) (~2240, ~6834, ~7854) so one definition governs.
-- [ ] IA-T4.5 Fallback only if overflow remains: add a **visible** "⋯ More" overflow menu (never a hidden scroll region).
-- [ ] IA-T4.6 Update App/right-rail browser + keyboard tests; migrate the persisted collapsed-key value (old ids → new).
+- [x] IA-T4.1 Replace `SIDE_RAIL_TABS` ([`App.tsx:354`](../../../src/ui/App.tsx)) with `Inspector`/`Text`/`Audio`/`Capture`; update `SideRailTab`, `isSideRailTab`, `openSideRailTab`, `SIDE_RAIL_COLLAPSED_KEY`, and keyboard-map tab ids together.
+- [x] IA-T4.2 `Text` = Captions + language tools; `Capture` = Record · Program · Replay · go-live (secondary segmented control); `Audio` = live chain + Voice FX.
+- [x] IA-T4.3 Add the in-panel secondary segmented control; ensure it fits/wraps within ~302px.
+- [x] IA-T4.4 **Remove `overflow-x: auto` + hidden scrollbar from `.side-rail-tab-bar`** and delete the duplicate blocks in [`global.css`](../../../src/global.css) (~2240, ~6834, ~7854) so one definition governs.
+- [x] IA-T4.5 Fallback only if overflow remains: add a **visible** "⋯ More" overflow menu (never a hidden scroll region).
+- [x] IA-T4.6 Update App/right-rail browser + keyboard tests; migrate the persisted collapsed-key value (old ids → new).
 
 ### IA-T5 — Verify right-rail fit
 
-- [ ] IA-T5.1 At 1280×720: all four destinations fully visible/clickable; activating one does not clip another; no `overflow-x` scroll on the tab bar.
+- [x] IA-T5.1 At 1280×720: all four destinations fully visible/clickable; activating one does not clip another; no `overflow-x` scroll on the tab bar.
 
 ## Phase 3 — Left rail + Beats (B11, B15, D11, D15)
 

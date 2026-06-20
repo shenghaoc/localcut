@@ -21,6 +21,7 @@ import type { PublishTapStats } from './publish-controller';
 
 interface PublishPanelProps {
 	open: boolean;
+	mode?: 'dialog' | 'embedded';
 	probe: CapabilityProbeResult | null;
 	state: PublishState;
 	tapStats: PublishTapStats | null;
@@ -86,6 +87,7 @@ export function PublishPanel(props: PublishPanelProps) {
 	const [settingsLoaded, setSettingsLoaded] = createSignal(false);
 	const [retryRemainingS, setRetryRemainingS] = createSignal<number | null>(null);
 	let panelRef: HTMLElement | undefined;
+	const embedded = () => props.mode === 'embedded';
 
 	onMount(() => {
 		void loadPublishSettings().then(
@@ -98,7 +100,7 @@ export function PublishPanel(props: PublishPanelProps) {
 	});
 
 	createEffect(() => {
-		if (props.open) {
+		if (props.open && !embedded()) {
 			requestAnimationFrame(() => panelRef?.focus());
 		}
 	});
@@ -178,15 +180,18 @@ export function PublishPanel(props: PublishPanelProps) {
 
 	return (
 		<Show when={props.open}>
-			<div class="capability-backdrop" onClick={() => props.onClose()} aria-hidden="true" />
+			<Show when={!embedded()}>
+				<div class="capability-backdrop" onClick={() => props.onClose()} aria-hidden="true" />
+			</Show>
 			<aside
 				ref={(el) => (panelRef = el)}
-				class="publish-panel panel"
-				role="dialog"
-				aria-modal="true"
+				class={embedded() ? 'publish-rail-panel panel' : 'publish-panel panel'}
+				role={embedded() ? 'region' : 'dialog'}
+				aria-modal={embedded() ? undefined : 'true'}
 				aria-labelledby="publish-panel-title"
 				tabIndex={-1}
 				onKeyDown={(e) => {
+					if (embedded()) return;
 					if (e.key === 'Escape') {
 						props.onClose();
 						return;
@@ -223,14 +228,16 @@ export function PublishPanel(props: PublishPanelProps) {
 						</p>
 						<p class="publish-panel-sub">Stream the program output to a WHIP ingest endpoint.</p>
 					</div>
-					<Button
-						size="icon"
-						variant="ghost"
-						onClick={props.onClose}
-						aria-label="Close publish panel"
-					>
-						<X size={16} aria-hidden="true" />
-					</Button>
+					<Show when={!embedded()}>
+						<Button
+							size="icon"
+							variant="ghost"
+							onClick={props.onClose}
+							aria-label="Close publish panel"
+						>
+							<X size={16} aria-hidden="true" />
+						</Button>
+					</Show>
 				</header>
 
 				{/* Connection state — announced via an ARIA live region (R6.4). */}

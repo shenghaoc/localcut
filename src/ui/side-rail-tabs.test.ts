@@ -1,17 +1,43 @@
 import { describe, it, expect } from 'vite-plus/test';
-import { SIDE_RAIL_TABS, isSideRailTab } from './side-rail-tabs';
+import {
+	AUDIO_SIDE_RAIL_TABS,
+	CAPTURE_SIDE_RAIL_TABS,
+	SIDE_RAIL_TABS,
+	TEXT_SIDE_RAIL_TABS,
+	isSideRailTab,
+	migrateLegacySideRailTab,
+	sideRailTabPanelId,
+	sideRailTabTriggerId
+} from './side-rail-tabs';
 
-describe('SIDE_RAIL_TABS (IA-T2 / D12 audio-label disambiguation)', () => {
-	it('labels the voice-cleanup tab "Voice FX", never a bare "Cleanup"', () => {
-		expect(SIDE_RAIL_TABS.find((tab) => tab.id === 'voice-cleanup')?.label).toBe('Voice FX');
-		// Widen to string[] — the `as const` literal union already excludes
-		// "Cleanup", so a direct comparison would be a no-overlap type error.
-		const labels: readonly string[] = SIDE_RAIL_TABS.map((tab) => tab.label);
-		expect(labels).not.toContain('Cleanup');
+describe('SIDE_RAIL_TABS (IA-T4 / D10-D14 right-rail destinations)', () => {
+	it('collapses the primary rail to four job destinations', () => {
+		expect(SIDE_RAIL_TABS.map((tab) => tab.id)).toEqual(['inspector', 'text', 'audio', 'capture']);
+		expect(SIDE_RAIL_TABS.map((tab) => tab.label)).toEqual([
+			'Inspector',
+			'Text',
+			'Audio',
+			'Capture'
+		]);
 	});
 
-	it('keeps the live-audio chain labelled "Audio"', () => {
-		expect(SIDE_RAIL_TABS.find((tab) => tab.id === 'live-audio')?.label).toBe('Audio');
+	it('keeps secondary destinations grouped by job', () => {
+		expect(TEXT_SIDE_RAIL_TABS.map((tab) => tab.id)).toEqual(['captions', 'language-tools']);
+		expect(AUDIO_SIDE_RAIL_TABS.map((tab) => tab.id)).toEqual(['live-chain', 'voice-fx']);
+		expect(CAPTURE_SIDE_RAIL_TABS.map((tab) => tab.id)).toEqual([
+			'record',
+			'program',
+			'replay',
+			'publish'
+		]);
+	});
+
+	it('keeps the audio labels disambiguated', () => {
+		const labels: readonly string[] = SIDE_RAIL_TABS.map((tab) => tab.label);
+		const audioLabels: readonly string[] = AUDIO_SIDE_RAIL_TABS.map((tab) => tab.label);
+		expect(labels).not.toContain('Cleanup');
+		expect(audioLabels).toContain('Voice FX');
+		expect(audioLabels).toContain('Live Chain');
 	});
 
 	it('uses a unique id and label per tab (one home per concept)', () => {
@@ -22,9 +48,28 @@ describe('SIDE_RAIL_TABS (IA-T2 / D12 audio-label disambiguation)', () => {
 	});
 
 	it('isSideRailTab recognises known ids and rejects everything else', () => {
-		expect(isSideRailTab('voice-cleanup')).toBe(true);
+		expect(isSideRailTab('capture')).toBe(true);
+		expect(isSideRailTab('text')).toBe(true);
 		expect(isSideRailTab('inspector')).toBe(true);
+		expect(isSideRailTab('captions')).toBe(false);
+		expect(isSideRailTab('record')).toBe(false);
 		expect(isSideRailTab('cleanup')).toBe(false);
 		expect(isSideRailTab(null)).toBe(false);
+	});
+
+	it('maps old persisted or routed tab ids to the new job destinations', () => {
+		expect(migrateLegacySideRailTab('captions')).toBe('text');
+		expect(migrateLegacySideRailTab('live-audio')).toBe('audio');
+		expect(migrateLegacySideRailTab('voice-cleanup')).toBe('audio');
+		expect(migrateLegacySideRailTab('record')).toBe('capture');
+		expect(migrateLegacySideRailTab('program')).toBe('capture');
+		expect(migrateLegacySideRailTab('replay')).toBe('capture');
+		expect(migrateLegacySideRailTab('text')).toBe('text');
+		expect(migrateLegacySideRailTab('cleanup')).toBeNull();
+	});
+
+	it('keeps keyboard/focus ids aligned with the new tab ids', () => {
+		expect(sideRailTabTriggerId('capture')).toBe('tab-capture');
+		expect(sideRailTabPanelId('capture')).toBe('panel-capture');
 	});
 });
