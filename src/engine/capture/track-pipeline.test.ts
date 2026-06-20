@@ -590,6 +590,43 @@ describe('TrackPipeline push mode (main-frames, B5/T5.5)', () => {
 		expect(errors).toEqual(['Missing video encode configuration.']);
 	});
 
+	it('reports an encoder configure failure via onEncodeError instead of throwing', () => {
+		stubGlobals();
+		class ThrowingVideoEncoder {
+			constructor(_init: VideoEncoderInit) {}
+			get encodeQueueSize(): number {
+				return 0;
+			}
+			configure(_config: VideoEncoderConfig): void {
+				throw new DOMException('Unsupported config', 'NotSupportedError');
+			}
+			encode(): void {}
+			async flush(): Promise<void> {}
+			close(): void {}
+		}
+		vi.stubGlobal('VideoEncoder', ThrowingVideoEncoder);
+
+		const errors: string[] = [];
+		const pipeline = new TrackPipeline({
+			sourceId: 'src-1',
+			kind: 'screen',
+			videoEncodeConfig: { codec: 'avc1.42001E', width: 1920, height: 1080, bitrate: 5_000_000 },
+			callbacks: {
+				onEncodedChunk: () => {},
+				onChunkAck: () => {},
+				onEncodeError: (_id, error) => errors.push(error),
+				onAudioOverrun: () => {},
+				onPipelineEnded: () => {}
+			},
+			abort: new AbortController()
+		});
+
+		// Must not let the synchronous configure throw escape start().
+		expect(() => pipeline.start()).not.toThrow();
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain('Encoder configure failed');
+	});
+
 	it('closes pushed AudioData even when the overrun callback throws', () => {
 		stubGlobals();
 		const datas = audioDatas(4);

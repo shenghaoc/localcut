@@ -111,4 +111,46 @@ describe('CaptureSession push pipeline (main-frames, B5/T5.5)', () => {
 		session.reset();
 		vi.unstubAllGlobals();
 	});
+
+	it('ends a push source (writes source-ended) when its track ends, leaving others active', async () => {
+		class StubVideoEncoder {
+			constructor(_init: VideoEncoderInit) {}
+			get encodeQueueSize(): number {
+				return 0;
+			}
+			configure(_config: VideoEncoderConfig): void {}
+			encode(): void {}
+			async flush(): Promise<void> {}
+			close(): void {}
+		}
+		vi.stubGlobal('VideoEncoder', StubVideoEncoder);
+
+		const writerPort = fakeWriterPort();
+		const session = new CaptureSession('capture-test', callbacks(), writerPort);
+		const videoConfig: VideoEncoderConfig = {
+			codec: 'avc1.42001E',
+			width: 1920,
+			height: 1080,
+			bitrate: 5_000_000
+		};
+		session.addSource('s1', 'screen', 'Screen', null, videoConfig);
+		session.addSource('s2', 'webcam', 'Cam', null, videoConfig);
+		await session.start(2);
+
+		session.endSource('s1');
+		// pipeline.stop() flushes + closes + emits ended asynchronously.
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		expect(writerPort.postMessage).toHaveBeenCalledWith(
+			expect.objectContaining({ type: 'write-source-ended', sourceId: 's1' })
+		);
+		// The remaining source keeps the session recording (no finalize yet).
+		expect(writerPort.postMessage).not.toHaveBeenCalledWith(
+			expect.objectContaining({ type: 'write-finalize' })
+		);
+		expect(session.stateValue).toBe('recording');
+
+		session.reset();
+		vi.unstubAllGlobals();
+	});
 });

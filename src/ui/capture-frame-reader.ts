@@ -30,12 +30,15 @@ export interface CaptureFrameReader {
  * Starts reading frames from `track` on the main thread and forwarding them via
  * `pushFrame`. `pushFrame` must transfer the frame to the worker (transferring
  * moves ownership, so the caller must not also close it). `onError` fires once if
- * the read loop throws before being stopped.
+ * the read loop throws before being stopped. `onEnded` fires once when the track
+ * ends on its own (e.g. the user stops sharing) — distinct from an explicit
+ * {@link CaptureFrameReader.stop} — so the caller can end the worker-side source.
  */
 export function startCaptureFrameReader(
 	track: MediaStreamTrack,
 	pushFrame: (frame: VideoFrame | AudioData) => void,
-	onError?: (error: unknown) => void
+	onError?: (error: unknown) => void,
+	onEnded?: () => void
 ): CaptureFrameReader {
 	// `MediaStreamTrackProcessor` construction + getReader() can throw synchronously
 	// (e.g. an unsupported track). Build them INSIDE the async runner so such a throw
@@ -52,7 +55,12 @@ export function startCaptureFrameReader(
 			).getReader();
 			while (!stopped) {
 				const result = await reader.read();
-				if (result.done) break;
+				if (result.done) {
+					// The track ended on its own (not via stop()) — tell the caller so the
+					// worker-side source can end and the all-sources-ended auto-stop runs.
+					if (!stopped) onEnded?.();
+					break;
+				}
 				const frame = result.value;
 				if (stopped) {
 					// Stopped between the read resolving and forwarding: close here so

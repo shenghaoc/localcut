@@ -4,7 +4,9 @@ LocalCut's Record panel turns screen, camera, microphone, and tab audio captures
 
 ## Requirements
 
-Recording needs a recent Chromium browser with display capture, `MediaStreamTrackProcessor`, transferable `MediaStreamTrack`, realtime WebCodecs encode, and OPFS `SyncAccessHandle`. When a probe is missing, the Record panel stays visible and lists the missing capability instead of hiding the workflow.
+Recording needs a recent Chromium browser with display capture, `MediaStreamTrackProcessor`, realtime WebCodecs encode, and OPFS `SyncAccessHandle`. When a probe is missing, the Record panel stays visible and lists the missing capability instead of hiding the workflow.
+
+Transferable `MediaStreamTrack` is **not** required: when it is available the source track is transferred into the pipeline worker (the accelerated _worker-track_ path); when it is not, the Record panel shows a "compatibility recording mode" note and reads frames on the main thread, forwarding them to the worker encoder (the _main-frames_ fallback). Enable `chrome://flags/#enable-experimental-web-platform-features` for the faster worker-track path. Program Mode has no main-frames fallback yet, so it still requires transferable tracks.
 
 Safari and Firefox do not currently expose the full capture stack needed by this implementation. They show the disabled panel with per-probe reasons.
 

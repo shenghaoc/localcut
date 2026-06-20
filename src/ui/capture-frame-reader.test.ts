@@ -98,6 +98,51 @@ describe('startCaptureFrameReader (B5/T5.5)', () => {
 		expect(frames[1]!.closeCount).toBe(0);
 	});
 
+	it('fires onEnded once when the track ends on its own (not via stop)', async () => {
+		const frames = [mockFrame()];
+		stubMSTP();
+		nextReader = scriptedReader(frames); // yields one frame, then done
+
+		let ended = 0;
+		startCaptureFrameReader(
+			fakeTrack(),
+			() => {},
+			undefined,
+			() => ended++
+		);
+		await flush();
+
+		expect(ended).toBe(1);
+	});
+
+	it('does not fire onEnded when stopped explicitly', async () => {
+		let resolveRead: ((value: { done: boolean; value?: unknown }) => void) | null = null;
+		stubMSTP();
+		nextReader = {
+			read: () =>
+				new Promise<{ done: boolean; value?: unknown }>((resolve) => {
+					resolveRead = resolve;
+				}),
+			cancel: async () => {
+				resolveRead?.({ done: true }); // cancel ends the read as done
+			},
+			releaseLock: () => {}
+		};
+
+		let ended = 0;
+		const reader = startCaptureFrameReader(
+			fakeTrack(),
+			() => {},
+			undefined,
+			() => ended++
+		);
+		await flush(); // let the runner reach the pending read
+		reader.stop(); // sets stopped, cancels → read resolves done while stopped
+		await flush();
+
+		expect(ended).toBe(0);
+	});
+
 	it('routes a synchronous MediaStreamTrackProcessor init failure to onError, not the caller', async () => {
 		class ThrowingProcessor {
 			constructor() {

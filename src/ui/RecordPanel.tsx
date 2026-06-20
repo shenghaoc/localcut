@@ -76,6 +76,8 @@ interface RecordPanelProps {
 	) => void;
 	/** Forwards one main-thread-read frame to the worker (main-frames fallback). */
 	onPushFrame: (sourceId: string, frame: VideoFrame | AudioData) => void;
+	/** Notifies the worker a main-frames source's track ended on its own. */
+	onSourceEnded: (sourceId: string) => void;
 	onStart: (
 		settings: CaptureSettingsSnapshot,
 		writerPort: MessagePort,
@@ -466,9 +468,10 @@ export function RecordPanel(props: RecordPanelProps) {
 	function startReaderFor(source: LocalCaptureSource): void {
 		const sourceId = source.descriptor.sourceId;
 		if (frameReaders.has(sourceId)) return;
-		// Read the stable callback prop into a local so the forwarding closure carries
+		// Read the stable callback props into locals so the forwarding closures carry
 		// no reactivity into the (untracked) reader loop.
 		const pushFrame = props.onPushFrame;
+		const sourceEnded = props.onSourceEnded;
 		frameReaders.set(
 			sourceId,
 			startCaptureFrameReader(
@@ -477,7 +480,13 @@ export function RecordPanel(props: RecordPanelProps) {
 				(error) =>
 					setMessage(
 						`Capture frame reader stopped: ${error instanceof Error ? error.message : String(error)}`
-					)
+					),
+				() => {
+					// Track ended on its own (the user stopped sharing). Drop our reader
+					// handle and tell the worker to end the source so auto-stop can run.
+					frameReaders.delete(sourceId);
+					sourceEnded(sourceId);
+				}
 			)
 		);
 	}

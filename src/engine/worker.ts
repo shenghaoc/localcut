@@ -9649,6 +9649,13 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 			} else {
 				cmd.frame.close();
 			}
+			// Ack after the frame is consumed (encoded/dropped + closed) so main can
+			// bound how many frames it transfers ahead of the worker (T5.5 backpressure).
+			post({ type: 'capture-push-ack', sourceId: cmd.sourceId });
+			break;
+		case 'capture-source-ended':
+			// The main-frames track ended on its own — end the worker-side push source.
+			captureSession?.endSource(cmd.sourceId);
 			break;
 		case 'capture-remove-source':
 			pendingCaptureSources.delete(cmd.sourceId);

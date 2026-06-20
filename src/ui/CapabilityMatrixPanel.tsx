@@ -190,7 +190,7 @@ function rowsForProbe(probe: CapabilityProbeResult): CapabilityRow[] {
 			action:
 				probe.capture.transferableMediaStreamTrack === 'supported'
 					? null
-					: 'Recording requires transferable MediaStreamTrack (Chromium).'
+					: 'Enables the accelerated worker-track recording path. Without it, recording falls back to the main-thread main-frames path; Program Mode still requires it.'
 		},
 		{
 			label: 'Capture: Display Capture',

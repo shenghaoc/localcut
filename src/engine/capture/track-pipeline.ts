@@ -447,21 +447,33 @@ export class TrackPipeline {
 		this.lastKeyframeTs = null; // the first frame after (re)start is a key frame
 		this.running = true;
 		if (this.encoder) return; // resume path: reuse the already-configured encoder
-		if (this.kind === 'screen' || this.kind === 'webcam') {
-			if (!this.options.videoEncodeConfig) {
-				this.running = false;
-				// Surface the misconfiguration instead of silently not recording.
-				this.callbacks.onEncodeError(this.sourceId, 'Missing video encode configuration.');
-				return;
-			}
-			this.encoder = this.buildVideoEncoder(this.options.videoEncodeConfig);
-		} else {
-			if (!this.options.audioEncodeConfig) {
-				this.running = false;
-				this.callbacks.onEncodeError(this.sourceId, 'Missing audio encode configuration.');
-				return;
-			}
-			this.encoder = this.buildAudioEncoder(this.options.audioEncodeConfig);
+		const isVideo = this.kind === 'screen' || this.kind === 'webcam';
+		const config = isVideo ? this.options.videoEncodeConfig : this.options.audioEncodeConfig;
+		if (!config) {
+			this.running = false;
+			// Surface the misconfiguration instead of silently not recording.
+			this.callbacks.onEncodeError(
+				this.sourceId,
+				`Missing ${isVideo ? 'video' : 'audio'} encode configuration.`
+			);
+			return;
+		}
+		try {
+			// `VideoEncoder`/`AudioEncoder` construction + configure() can throw
+			// synchronously for an unsupported codec/resolution. In reader mode the
+			// run promise's catch routes that to onEncodeError; push mode is
+			// synchronous, so catch it here and mark the source failed instead of
+			// letting it escape start() (which would leave a running source with no
+			// encoder, silently dropping every pushed frame).
+			this.encoder = isVideo
+				? this.buildVideoEncoder(config as VideoEncoderConfig)
+				: this.buildAudioEncoder(config as AudioEncoderConfig);
+		} catch (err) {
+			this.running = false;
+			this.callbacks.onEncodeError(
+				this.sourceId,
+				`Encoder configure failed: ${err instanceof Error ? err.message : String(err)}`
+			);
 		}
 	}
 

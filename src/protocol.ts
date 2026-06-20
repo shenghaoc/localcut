@@ -2520,6 +2520,9 @@ export type WorkerCommand =
 	// Forwards one main-thread-read frame to a trackless push pipeline. The frame is
 	// transferred (ownership moves to the worker) and closed there exactly once.
 	| { type: 'capture-push-frame'; sourceId: string; frame: VideoFrame | AudioData }
+	// The main-frames track ended on its own (e.g. the user stopped sharing); end the
+	// worker-side push source so all-sources-ended auto-stop runs.
+	| { type: 'capture-source-ended'; sourceId: string }
 	| {
 			type: 'capture-start';
 			settings: CaptureSettingsSnapshot;
@@ -2858,6 +2861,9 @@ export type WorkerStateMessage =
 			code: CaptureErrorCode;
 			detail: string;
 	  }
+	// Acks one `capture-push-frame` after the worker has consumed (encoded/dropped +
+	// closed) it, so the main thread can bound how many frames it transfers ahead.
+	| { type: 'capture-push-ack'; sourceId: string }
 	| { type: 'capture-recovery-list'; sessions: CaptureRecoverySessionSnapshot[] }
 	| {
 			type: 'capture-landed';

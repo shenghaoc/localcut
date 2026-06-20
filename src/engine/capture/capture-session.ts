@@ -228,6 +228,21 @@ export class CaptureSession {
 		entry.pipeline.pushFrame(frame);
 	}
 
+	/**
+	 * Ends a main-frames push source whose main-thread track ended on its own
+	 * (bugfix B5/T5.5). Stopping the pipeline flushes + closes the encoder and emits
+	 * the pipeline-ended signal, which writes `source-ended` and triggers the
+	 * all-sources-ended auto-stop — the same lifecycle an in-worker reader gets when
+	 * its `MediaStreamTrackProcessor` reaches `done`.
+	 */
+	endSource(sourceId: string): void {
+		const entry = this.sources.get(sourceId);
+		if (!entry || entry.state === 'ended' || entry.state === 'error') return;
+		void entry.pipeline.stop().catch(() => {
+			// best-effort — handlePipelineEnded still fires via emitEnded
+		});
+	}
+
 	async start(chunkDurationS: number): Promise<void> {
 		const sourceHeaders = [...this.sources.values()].map((entry) => ({
 			sourceId: entry.sourceId,
