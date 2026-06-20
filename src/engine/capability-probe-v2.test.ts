@@ -186,6 +186,12 @@ describe('h264ConstrainedBaseline', () => {
 		expect(h264ConstrainedBaseline(1920, 1080)).toBe('avc1.42E028');
 	});
 
+	it('returns L4.2 for the 8193–8704 MB band (2048×1088 = 8704 MBs)', () => {
+		// Without the L4.2 threshold this would jump straight to L5.0 and could
+		// false-negative on an encoder that accepts L4.2 but rejects L5.0.
+		expect(h264ConstrainedBaseline(2048, 1088)).toBe('avc1.42E02A');
+	});
+
 	it('returns ≥L5.1 for 2160p (3840×2160)', () => {
 		expect(h264ConstrainedBaseline(3840, 2160)).toMatch(/^avc1\.42E03[23]$/);
 	});

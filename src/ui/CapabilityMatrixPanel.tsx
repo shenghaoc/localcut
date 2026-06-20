@@ -290,7 +290,10 @@ function cleanupRow(probe: CapabilityProbeResult): CapabilityRow {
 }
 
 function webnnRow(probe: CapabilityProbeResult): CapabilityRow {
-	const hasMl = typeof navigator !== 'undefined' && 'ml' in navigator;
+	// Read WebNN from the stored probe snapshot (populated by probeBeauty) like
+	// every other row — not a live `navigator.ml` query, so it stays consistent
+	// with the snapshot and respects the DEV `__localcutCapabilityOverrides` hook.
+	const hasMl = probe.beauty?.webnn === 'supported';
 	const ortEp = probe.cleanup?.accelerator;
 	return {
 		label: 'WebNN (ML acceleration)',

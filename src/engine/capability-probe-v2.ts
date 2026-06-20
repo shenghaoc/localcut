@@ -14,7 +14,9 @@ import type { CleanupProbeResult } from '../protocol';
 import { probeAsr } from './asr/asr-probe';
 import { CAPTURE_VIDEO_CODEC_FALLBACKS } from './replay-buffer/capture';
 
-type VideoCodecProbeName = 'h264' | 'vp9' | 'av1';
+// H.264 is probed via the resolution-derived `h264ConstrainedBaseline()` helper,
+// so it does not live in `videoCodecStrings` (which only holds fixed strings).
+type VideoCodecProbeName = 'vp9' | 'av1';
 type AudioCodecProbeName = 'aac' | 'opus';
 
 interface CodecProbeConfig {
@@ -51,7 +53,6 @@ const unknownCodecs: CodecProbeResult = {
 };
 
 const videoCodecStrings: Record<VideoCodecProbeName, string> = {
-	h264: 'avc1.42E01E',
 	vp9: 'vp09.00.10.08',
 	av1: 'av01.0.05M.08'
 };
@@ -71,10 +72,12 @@ export function h264ConstrainedBaseline(width: number, height: number): string {
 				: mbs <= 5120
 					? 0x20
 					: mbs <= 8192
-						? 0x28
-						: mbs <= 22080
-							? 0x32
-							: 0x33;
+						? 0x28 // L4.0 (L4.1 shares MaxFS = 8192)
+						: mbs <= 8704
+							? 0x2a // L4.2 — covers 8193–8704 MBs (e.g. ~2048×1088)
+							: mbs <= 22080
+								? 0x32 // L5.0
+								: 0x33; // L5.1
 	return `avc1.42E0${level.toString(16).toUpperCase().padStart(2, '0')}`;
 }
 
