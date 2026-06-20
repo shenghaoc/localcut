@@ -201,7 +201,9 @@ ctx.addEventListener('message', (event: MessageEvent<ConvertWorkerCommand>) => {
 			if (activeJobId === command.jobId) {
 				// If the conversion object exists, cancel it; otherwise it's still
 				// initializing — record the intent so handleStart honors it.
-				if (activeConversion) void activeConversion.cancel();
+				// cancel() returns a Promise; swallow any rejection so it can't
+				// surface as an unhandled rejection in the worker.
+				if (activeConversion) void activeConversion.cancel().catch(() => {});
 				else pendingCancelJobId = command.jobId;
 			}
 			return;

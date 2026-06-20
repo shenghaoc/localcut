@@ -83,6 +83,10 @@ export function ConvertPage(props: ConvertPageProps) {
 	const [jobs, setJobs] = createStore<ConvertJob[]>([]);
 	const [dragging, setDragging] = createSignal(false);
 	const [workerError, setWorkerError] = createSignal<string | null>(null);
+	// Guards against an infinite crash→respawn loop when the worker fails on
+	// startup (e.g. an environment incompatibility); reset whenever the worker
+	// proves healthy by sending a message.
+	let consecutiveCrashes = 0;
 
 	const originalTitle = typeof document !== 'undefined' ? document.title : '';
 
@@ -114,6 +118,8 @@ export function ConvertPage(props: ConvertPageProps) {
 	};
 
 	const handleState = (msg: ConvertWorkerState) => {
+		// Any message means the current worker is alive and talking.
+		consecutiveCrashes = 0;
 		switch (msg.type) {
 			case 'convert-probed': {
 				updateJob(msg.jobId, {
@@ -291,7 +297,12 @@ export function ConvertPage(props: ConvertPageProps) {
 				})
 			);
 			port?.terminate();
-			spawn();
+			consecutiveCrashes += 1;
+			if (consecutiveCrashes < 3) {
+				spawn();
+			} else {
+				setWorkerError('Media converter keeps crashing. Please refresh the page to try again.');
+			}
 		});
 	};
 
