@@ -287,23 +287,26 @@ export function ConvertPage(props: ConvertPageProps) {
 	const spawn = () => {
 		// Clear any stale crash banner from a previous worker; the fresh one is healthy.
 		setWorkerError(null);
-		port = spawnConvertWorker(handleState, (message) => {
+		let currentPort: ConvertWorkerPort | null = null;
+		currentPort = spawnConvertWorker(handleState, (message) => {
+			if (port !== currentPort || currentPort === null) return;
 			setWorkerError(message);
 			setJobs((j) => j.status === 'converting' || j.status === 'queued' || j.status === 'probing', {
 				status: 'failed',
 				error: 'Media converter worker crashed.'
 			});
-			port?.terminate();
+			currentPort.terminate();
+			port = null;
 			consecutiveCrashes += 1;
 			if (consecutiveCrashes < 3) {
 				spawn();
 			} else {
 				// Give up: drop the dead reference so addFiles/pump bail via their
 				// `if (!port)` guards instead of pushing jobs that never get probed.
-				port = null;
 				setWorkerError('Media converter keeps crashing. Please refresh the page to try again.');
 			}
 		});
+		port = currentPort;
 	};
 
 	onMount(() => {
@@ -336,7 +339,10 @@ export function ConvertPage(props: ConvertPageProps) {
 					props.onClose();
 				}
 			}}
-			onDragOver={(event) => event.preventDefault()}
+			onDragOver={(event) => {
+				event.preventDefault();
+				event.stopPropagation();
+			}}
 			onDrop={(event) => {
 				// Swallow any drop on the converter overlay so it never bubbles to the
 				// editor's window-level importer (which would mutate the timeline behind
@@ -517,7 +523,7 @@ function JobRow(props: { job: ConvertJob } & JobRowDeps) {
 	};
 
 	return (
-		<li class="convert-job" classList={{ [`is-${job().status}`]: true }}>
+		<li class={`convert-job is-${job().status}`}>
 			<div class="convert-job-head">
 				<Show
 					when={audioOnly()}
@@ -698,9 +704,5 @@ function JobStatusChip(props: { status: JobStatus }) {
 				return 'Canceled';
 		}
 	};
-	return (
-		<span class="convert-chip" classList={{ [`convert-chip-${props.status}`]: true }}>
-			{label()}
-		</span>
-	);
+	return <span class={`convert-chip convert-chip-${props.status}`}>{label()}</span>;
 }
