@@ -330,7 +330,7 @@ Aggregate chain latency (sum of active inserts) is displayed in ms at the curren
 
 ### Denoiser Slot
 
-A reserved insert position between the gate and compressor in the chain topology. In this phase, the slot is an internal permanent bypass (identity pass-through, zero latency) and the SAB layout reserves space for future denoiser parameters. The UI does not show a disabled placeholder; users should only see inserts that can actually be controlled.
+A reserved insert slot between the gate and compressor in the chain topology. In this phase, the slot is a permanent bypass (identity pass-through, zero latency). The SAB layout reserves space for denoiser parameters. The UI shows the slot as disabled with a text label: "Noise suppression — available in a future update".
 
 ### Chain Bypass Behaviour
 
@@ -391,4 +391,4 @@ If chain processing fails (e.g. `AudioData.copyTo` format conversion unsupported
 - **Phase 18 (media conformance)**: Saved replay clips carry source metadata; source health checks apply (e.g., variable GOP structure reported if encoder produces irregular keyframe intervals).
 - **Phase 23 (project packaging)**: Saved replay assets are fingerprint-registered; they participate in project bundles and integrity validation.
 - **Phase 25 (diagnostics)**: Replay buffer and live chain diagnostics appear as dedicated rows in the existing diagnostics panel.
-- **Phase 36 (future denoiser)**: The reserved SAB slot and chain position are designed to accept a denoiser insert without re-architecting; no UI row appears until that insert is implemented.
+- **Phase 36 (future denoiser)**: The reserved SAB slot and chain position are designed to accept a denoiser insert without re-architecting.

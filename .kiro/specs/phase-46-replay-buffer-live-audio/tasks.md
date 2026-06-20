@@ -74,8 +74,8 @@
 ## T8 — UI
 
 - [x] **T8.1** Create `src/ui/ReplayBufferPanel.tsx`: collapsible panel following existing dark professional aesthetic. Shows: capture state indicator (red dot + "Recording"), elapsed time in `HH:MM:SS` (tabular-nums), ring buffer fill bar (% of configured max), "Save Last N Seconds" button (label tracks the configured duration), "Start Capture" / "Stop Capture" buttons. Controls disabled with reasons when prerequisites are missing.
-- [x] **T8.2** Create `src/ui/LiveAudioChainPanel.tsx`: collapsible panel with three implemented insert rows (Gate, Compressor, Limiter). Each row: bypass toggle, insert name, expandable parameter sliders with numeric readouts; aggregate latency display. (Per-insert pre/post meters arrive with the monitor worklet — T6.2.)
-- [x] **T8.3** Keep the reserved denoiser slot internal only; the UI does not render a disabled placeholder or redirect row.
+- [x] **T8.2** Create `src/ui/LiveAudioChainPanel.tsx`: collapsible panel with three insert rows (Gate, Compressor, Limiter) plus the reserved Denoiser slot. Each row: bypass toggle, insert name, expandable parameter sliders with numeric readouts; aggregate latency display. (Per-insert pre/post meters arrive with the monitor worklet — T6.2.)
+- [x] **T8.3** The Denoiser slot renders as disabled (greyed out, all controls inactive) with text "Noise suppression — available in a future update".
 - [x] **T8.4** Add the "Print chain to recording" toggle to the live chain panel, visible only during an active capture session, with a hint that v1 processes the recording (monitor output stays raw).
 - [ ] **T8.5** Keyboard shortcuts: default binding for "Save Last N Seconds" (suggest `Ctrl+Shift+R` or `Cmd+Shift+R`), integrated with the existing keyboard map (Phase 10). Shortcut is active only when a capture session is running.
 - [x] **T8.6** Capability-unavailable state: when `MediaStreamTrackProcessor` is unsupported, the ReplayBufferPanel shows only the unavailability message with all controls disabled. When `crossOriginIsolated` is false, the ReplayBufferPanel works normally and the LiveAudioChainPanel shows the unavailability message with all controls disabled.
@@ -106,7 +106,7 @@
 ## T12 — Docs and Manual Verification
 
 - [x] **T12.1** `docs/USER-GUIDE.md`: "Replay Buffer" section — capture setup, save-last-N workflow, buffer behaviour, fallback when unsupported.
-- [x] **T12.2** `docs/USER-GUIDE.md`: "Live Audio Chain" section — insert descriptions, bypass behaviour, latency explanation, print-to-recording toggle.
+- [x] **T12.2** `docs/USER-GUIDE.md`: "Live Audio Chain" section — insert descriptions, bypass behaviour, latency explanation, print-to-recording toggle, denoiser slot note.
 - [ ] **T12.3** Manual: Chromium with `crossOriginIsolated` — start capture, wait 40s, save-last-30s, verify clip appears on timeline and plays correctly; save-last-30s again after 15s, verify overlapping clip; stop capture, verify all clips are valid assets.
 - [ ] **T12.4** Manual: enable live chain inserts during capture with print-to-recording on, save-last-N, verify baked-in chain audio; toggle bypass, verify clean raw recording.
 - [ ] **T12.5** Manual: non-Chromium or non-isolated browser — verify replay buffer still works without isolation (R0.8), live chain disabled message, and the full import/play/edit/export smoke test unchanged.

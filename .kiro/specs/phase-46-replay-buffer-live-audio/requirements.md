@@ -1,6 +1,6 @@
 # Requirements: Phase 46 — Replay Buffer and Live Audio Chain
 
-> **Live capture, GOP-aligned ring buffer with OPFS spill, instant clip drop, and live audio processing chain in the monitor path.** Always-on replay buffer lets users save the last N seconds as a timeline clip while recording continues. Live audio inserts — gate, compressor, and limiter — process the monitor output with measured, surfaced latency.
+> **Live capture, GOP-aligned ring buffer with OPFS spill, instant clip drop, and live audio processing chain in the monitor path.** Always-on replay buffer lets users save the last N seconds as a timeline clip while recording continues. Live audio inserts — gate, compressor, limiter, and the Phase 36 denoiser — process the monitor output with measured, surfaced latency.
 
 ## R0 — Hard Constraints
 
@@ -53,7 +53,7 @@
   - **Limiter** — brickwall peak limiter with configurable ceiling (dBFS), attack (µs), and release (ms). Precedes the final output; cannot be placed before gate/compressor.
 - **R4.3** The chain processes the mixed monitor signal (capture audio + timeline audio) before output to speakers. Each insert's input and output levels are sampled and reported over the existing Phase 16 SAB meter layout (extended with insert-level slots).
 - **R4.4** Each insert's parameters are adjustable via the UI and persisted with the project. Parameter changes are applied at the next processing block boundary (no audible zipper noise).
-- **R4.5** The Phase 36 denoiser is reserved internally as a future insert position between the gate and compressor. The SAB/topology may reserve capacity for it, but the UI must not render a disabled placeholder or redirect row; show a denoiser only once it is wired as a real live-chain insert.
+- **R4.5** The Phase 36 denoiser is reserved as a future insert slot in the chain. The chain design must accommodate an additional insert between the gate and compressor without re-architecting. The denoiser slot is visible but disabled with an "Available in a future update" label in this phase.
 - **R4.6** The complete chain latency (sum of all active inserts) is measured in samples and mapped to milliseconds at the current sample rate. This latency is surfaced in the diagnostics panel (Phase 25) and shown in the live audio chain UI.
 - **R4.7** The live chain defaults to fully bypassed. The user must explicitly enable each insert. State is visible: each bypass toggle, each parameter value, and the aggregate latency.
 - **R4.8** Live audio chain failure (e.g. an AudioWorklet processor crash) must not break capture or the ring buffer. The chain falls back to a clean bypass; the UI shows the failure reason and an "Attempt restart" affordance.
@@ -70,7 +70,7 @@
 
 - **R6.1** A "Replay Buffer" panel or toolbar section shows: capture state (stopped/active/paused), elapsed recording time, ring buffer fill as a circular/battery indicator, configured and effective save duration, and the "Save Last N Seconds" action button.
 - **R6.2** Capture start/stop buttons are keyboard-accessible with clear ARIA labels. The start button is disabled when the browser lacks `getDisplayMedia` or `MediaStreamTrackProcessor`.
-- **R6.3** A "Live Audio Chain" panel shows the three implemented inserts (gate, compressor, limiter). Each insert has: a bypass toggle, a set of parameter controls (sliders/numeric inputs with labels and units), and a mini level meter (pre- and post-insert).
+- **R6.3** A "Live Audio Chain" panel shows the three inserts (gate, compressor, limiter) plus the reserved denoiser slot. Each insert has: a bypass toggle, a set of parameter controls (sliders/numeric inputs with labels and units), and a mini level meter (pre- and post-insert).
 - **R6.4** The live audio chain panel displays aggregate chain latency in milliseconds, updating in real-time from the SAB meter.
 - **R6.5** Both panels follow the existing dark professional aesthetic, Kobalte primitives, ARIA + keyboard standards, and `onCleanup` for every listener.
 - **R6.6** When capture prerequisites are unmet (no `getDisplayMedia`, no `MediaStreamTrackProcessor`, no `crossOriginIsolated`), the panels show a clear capability-unavailable message with all action buttons disabled; the rest of the app is unaffected.
