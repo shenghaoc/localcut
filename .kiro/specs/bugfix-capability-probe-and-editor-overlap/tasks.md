@@ -112,7 +112,7 @@ Ordered by the design's incremental rollout — Phase 1 is copy/labelling/densit
 ### IA-T4 — Collapse seven tabs to four job destinations
 
 - [x] IA-T4.1 Replace `SIDE_RAIL_TABS` ([`App.tsx:354`](../../../src/ui/App.tsx)) with `Inspector`/`Text`/`Audio`/`Capture`; update `SideRailTab`, `isSideRailTab`, `openSideRailTab`, `SIDE_RAIL_COLLAPSED_KEY`, and keyboard-map tab ids together.
-- [x] IA-T4.2 `Text` = Captions + language tools; `Capture` = Record · Program · Replay · go-live (secondary segmented control); `Audio` = live chain + Voice FX.
+- [x] IA-T4.2 `Text` = Captions + capability-gated language tools; `Capture` = Record · Program · Replay · go-live (secondary segmented control); `Audio` = live chain + Voice FX.
 - [x] IA-T4.3 Add the in-panel secondary segmented control; ensure it fits/wraps within ~302px.
 - [x] IA-T4.4 **Remove `overflow-x: auto` + hidden scrollbar from `.side-rail-tab-bar`** and delete the duplicate blocks in [`global.css`](../../../src/global.css) (~2240, ~6834, ~7854) so one definition governs.
 - [x] IA-T4.5 Fallback only if overflow remains: add a **visible** "⋯ More" overflow menu (never a hidden scroll region).

@@ -9,18 +9,26 @@ export type SideRailTab = (typeof SIDE_RAIL_TABS)[number]['id'];
 
 export const TEXT_SIDE_RAIL_TABS = [
 	{ id: 'captions', label: 'Captions' },
-	{ id: 'language-tools', label: 'Language Tools' }
+	{ id: 'language-tools', label: 'Language Tools', availability: 'language-tools-surface' }
 ] as const;
 
 export type TextSideRailTabDefinition = (typeof TEXT_SIDE_RAIL_TABS)[number];
 export type TextSideRailTab = (typeof TEXT_SIDE_RAIL_TABS)[number]['id'];
 
+function textSideRailTabVisible(
+	tab: TextSideRailTabDefinition,
+	languageToolsVisible: boolean
+): boolean {
+	if ('availability' in tab && tab.availability === 'language-tools-surface') {
+		return languageToolsVisible;
+	}
+	return true;
+}
+
 export function visibleTextSideRailTabs(
 	languageToolsVisible: boolean
 ): readonly TextSideRailTabDefinition[] {
-	return languageToolsVisible
-		? TEXT_SIDE_RAIL_TABS
-		: TEXT_SIDE_RAIL_TABS.filter((tab) => tab.id !== 'language-tools');
+	return TEXT_SIDE_RAIL_TABS.filter((tab) => textSideRailTabVisible(tab, languageToolsVisible));
 }
 
 export const AUDIO_SIDE_RAIL_TABS = [
