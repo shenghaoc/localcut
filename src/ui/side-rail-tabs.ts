@@ -12,7 +12,16 @@ export const TEXT_SIDE_RAIL_TABS = [
 	{ id: 'language-tools', label: 'Language Tools' }
 ] as const;
 
+export type TextSideRailTabDefinition = (typeof TEXT_SIDE_RAIL_TABS)[number];
 export type TextSideRailTab = (typeof TEXT_SIDE_RAIL_TABS)[number]['id'];
+
+export function visibleTextSideRailTabs(
+	languageToolsVisible: boolean
+): readonly TextSideRailTabDefinition[] {
+	return languageToolsVisible
+		? TEXT_SIDE_RAIL_TABS
+		: TEXT_SIDE_RAIL_TABS.filter((tab) => tab.id !== 'language-tools');
+}
 
 export const AUDIO_SIDE_RAIL_TABS = [
 	{ id: 'live-chain', label: 'Live Chain' },

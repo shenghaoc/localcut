@@ -7,7 +7,8 @@ import {
 	isSideRailTab,
 	migrateLegacySideRailTab,
 	sideRailTabPanelId,
-	sideRailTabTriggerId
+	sideRailTabTriggerId,
+	visibleTextSideRailTabs
 } from './side-rail-tabs';
 
 describe('SIDE_RAIL_TABS (IA-T4 / D10-D14 right-rail destinations)', () => {
@@ -30,6 +31,14 @@ describe('SIDE_RAIL_TABS (IA-T4 / D10-D14 right-rail destinations)', () => {
 			'replay',
 			'publish'
 		]);
+	});
+
+	it('only exposes Language Tools when the capability surface is visible', () => {
+		expect(visibleTextSideRailTabs(true).map((tab) => tab.id)).toEqual([
+			'captions',
+			'language-tools'
+		]);
+		expect(visibleTextSideRailTabs(false).map((tab) => tab.id)).toEqual(['captions']);
 	});
 
 	it('keeps the audio labels disambiguated', () => {

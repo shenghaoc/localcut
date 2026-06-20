@@ -1,6 +1,6 @@
 # Recording
 
-LocalCut's Record panel turns screen, camera, microphone, and tab audio captures into editable timeline material. Recording runs in the browser and writes chunks to private browser storage while the session is active.
+LocalCut's **Capture > Record** panel turns screen, camera, microphone, and tab audio captures into editable timeline material. Recording runs in the browser and writes chunks to private browser storage while the session is active.
 
 ## Requirements
 

@@ -11,11 +11,10 @@ import type {
 import {
 	ENDPOINT_GUIDANCE,
 	clampPublishSettings,
-	defaultPublishSettings,
 	effectiveCodec,
 	isValidWhipEndpointUrl
 } from '../engine/publish-settings';
-import { loadPublishSettings, savePublishSettings } from '../engine/persistence';
+import { savePublishSettings } from '../engine/persistence';
 import { livePublishAvailable } from '../engine/capability-probe-v2';
 import type { PublishTapStats } from './publish-controller';
 
@@ -24,10 +23,13 @@ interface PublishPanelProps {
 	mode?: 'dialog' | 'embedded';
 	probe: CapabilityProbeResult | null;
 	state: PublishState;
+	settings: PublishSettingsDoc;
+	settingsLoaded: boolean;
 	tapStats: PublishTapStats | null;
 	/** Tap/local error detail surfaced by the controller (never the token). */
 	errorDetail: string | null;
 	recordWhileStreamingAvailable: boolean;
+	onSettingsChange: (settings: PublishSettingsDoc) => void;
 	onGoLive: (settings: PublishSettingsDoc) => void;
 	onStop: () => void;
 	onClose: () => void;
@@ -83,24 +85,11 @@ function stateLabel(state: PublishState): string {
 }
 
 export function PublishPanel(props: PublishPanelProps) {
-	const [settings, setSettings] = createSignal<PublishSettingsDoc>(defaultPublishSettings());
-	const [settingsLoaded, setSettingsLoaded] = createSignal(false);
 	const [retryRemainingS, setRetryRemainingS] = createSignal<number | null>(null);
 	let panelRef: HTMLElement | undefined;
-	let settingsLoadStarted = false;
 	const embedded = () => props.mode === 'embedded';
-
-	createEffect(() => {
-		if (!props.open || settingsLoadStarted) return;
-		settingsLoadStarted = true;
-		void loadPublishSettings().then(
-			(stored) => {
-				if (stored) setSettings(stored);
-				setSettingsLoaded(true);
-			},
-			() => setSettingsLoaded(true)
-		);
-	});
+	const settings = () => props.settings;
+	const settingsLoaded = () => props.settingsLoaded;
 
 	createEffect(() => {
 		if (props.open && !embedded()) {
@@ -147,7 +136,7 @@ export function PublishPanel(props: PublishPanelProps) {
 
 	function update(patch: Partial<PublishSettingsDoc>) {
 		const next = { ...settings(), ...patch };
-		setSettings(next);
+		props.onSettingsChange(next);
 		persist(next);
 	}
 
@@ -163,7 +152,7 @@ export function PublishPanel(props: PublishPanelProps) {
 
 	function goLive() {
 		const clamped = clampPublishSettings(settings());
-		setSettings(clamped);
+		props.onSettingsChange(clamped);
 		persist(clamped);
 		props.onGoLive(clamped);
 	}

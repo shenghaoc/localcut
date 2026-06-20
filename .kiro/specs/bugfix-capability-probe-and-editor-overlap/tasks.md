@@ -117,6 +117,7 @@ Ordered by the design's incremental rollout — Phase 1 is copy/labelling/densit
 - [x] IA-T4.4 **Remove `overflow-x: auto` + hidden scrollbar from `.side-rail-tab-bar`** and delete the duplicate blocks in [`global.css`](../../../src/global.css) (~2240, ~6834, ~7854) so one definition governs.
 - [x] IA-T4.5 Fallback only if overflow remains: add a **visible** "⋯ More" overflow menu (never a hidden scroll region).
 - [x] IA-T4.6 Update App/right-rail browser + keyboard tests; migrate the persisted collapsed-key value (old ids → new).
+- [x] IA-T4.7 Update the user-facing guide and bundled `/docs` content to describe `Inspector` / `Text` / `Audio` / `Capture` and the secondary controls.
 
 ### IA-T5 — Verify right-rail fit
 

@@ -156,6 +156,8 @@ describe('right-rail primary destinations (IA-T4 / IA-T5)', () => {
 		expect(program.tabIndex).toBe(-1);
 		expect(document.getElementById('capture-panel-record')?.hidden).toBe(false);
 		expect(document.getElementById('capture-panel-program')?.hidden).toBe(true);
+		expect(document.getElementById('capture-panel-record')?.querySelector('button')).not.toBeNull();
+		expect(document.getElementById('capture-panel-program')?.querySelector('button')).toBeNull();
 
 		record.focus();
 		record.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
@@ -164,6 +166,10 @@ describe('right-rail primary destinations (IA-T4 / IA-T5)', () => {
 		expect(program.getAttribute('aria-selected')).toBe('true');
 		expect(document.activeElement).toBe(program);
 		expect(document.getElementById('capture-panel-program')?.hidden).toBe(false);
+		expect(document.getElementById('capture-panel-record')?.querySelector('button')).toBeNull();
+		expect(
+			document.getElementById('capture-panel-program')?.querySelector('button')
+		).not.toBeNull();
 
 		program.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
 		await nextFrame();

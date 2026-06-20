@@ -128,7 +128,7 @@ Scopes are unavailable in Limited WebCodecs and Shell Only tiers because those m
 
 ## Side Panel
 
-The right sidebar hosts four tabs — **Inspector**, **Captions**, **Replay**, and **Audio** (Live Audio Chain) — with one panel visible at a time so each gets the full sidebar height, even on smaller laptop screens. The panel switches to Inspector automatically when you select a clip or transition, and to Captions after a caption import. Use the **›** button at the right end of the tab bar to collapse the whole sidebar (handy on small screens — the preview and timeline get the extra width) and the **‹** strip to bring it back; the choice is remembered between sessions.
+The right sidebar hosts four job tabs — **Inspector**, **Text**, **Audio**, and **Capture** — with one destination visible at a time so each gets the full sidebar height, even on smaller laptop screens. **Text** contains Captions and, when Chrome's built-in AI APIs are available, Language Tools. **Audio** contains Live Chain and Voice FX. **Capture** contains Record, Program, Replay, and Go Live. The panel switches to Inspector automatically when you select a clip or transition, and to **Text > Captions** after a caption import. Use the **›** button at the right end of the tab bar to collapse the whole sidebar (handy on small screens — the preview and timeline get the extra width) and the **‹** strip to bring it back; the choice is remembered between sessions.
 
 ## Inspector Panel
 
@@ -396,7 +396,7 @@ When all inserts are bypassed, latency is 0 ms (pass-through).
 
 Import, edit, and export caption tracks:
 
-- **Import Captions**: Click **Import** in the Transcript panel to load SRT or VTT files.
+- **Import Captions**: Open **Text > Captions** and click **Import** in the Transcript panel to load SRT or VTT files.
 - **Edit Text**: Click any caption segment to edit its text inline.
 - **Adjust Timing**: Edit start/end times in the caption panel. Use **Snap start**, **Snap end**, or **Snap both** to align a segment edge to the playhead.
 - **Split/Merge**: Split a segment at the playhead, or merge adjacent segments.
@@ -470,7 +470,7 @@ Generate title clips that display keyboard shortcuts as rounded-rect keycap pill
 
 ### Loading events from a capture session
 
-1. Use the **Record** panel to capture a screen/webcam session.
+1. Use **Capture > Record** to capture a screen/webcam session.
 2. After the session lands, open **Keystroke Overlay**.
 3. The panel shows a prompt: _"A capture session landed. Load events from last recording."_ The button stays disabled until the writer worker has flushed and closed the sidecar (typically <1 second).
 4. Press **Load events from last recording**. The entries list populates from the sidecar.
@@ -557,8 +557,8 @@ Full details are in the [Smart Reframe guide](SMART-REFRAME.md).
 
 An optional bonus built on Chrome's built-in AI. It runs **entirely on-device** — nothing is
 uploaded, and there is **no cloud fallback**. On browsers that don't expose these APIs (Firefox,
-Safari, most Chromium derivatives, or hardware below Chrome's floor), the **Language Tools** command
-(in the ⌘K palette) does not appear and nothing else changes. See [Language tools](../src/features/docs/content/language-tools.md)
+Safari, most Chromium derivatives, or hardware below Chrome's floor), the **Text > Language Tools** tab and the **Language Tools** command
+(in the ⌘K palette) do not appear and nothing else changes. See [Language tools](../src/features/docs/content/language-tools.md)
 for the in-app guide.
 
 - **Requirements**: recent desktop Chrome with the built-in AI models. Each tool needs a one-time,
@@ -577,7 +577,7 @@ for the in-app guide.
 
 ## Recording
 
-Use the **Record** panel to capture screen, camera, microphone, and tab/system audio as editable timeline sources. Recording stays local to the browser and writes active-session chunks to private browser storage.
+Open **Capture > Record** to capture screen, camera, microphone, and tab/system audio as editable timeline sources. Recording stays local to the browser and writes active-session chunks to private browser storage.
 
 - **Countdown**: choose **0 s**, **3 s**, or **5 s** before starting. Press **Cancel** or **Escape** during the countdown to return to idle.
 - **Pause / Resume**: pausing drains the active encoders. When the session lands, paused gaps are collapsed and timeline markers named **Resume 1**, **Resume 2**, and so on show where the removed gaps were.
@@ -599,7 +599,7 @@ See the full [Recording guide](RECORDING.md) for details.
 
 Continuously record a screen capture into a rolling buffer and save the last moments as a timeline clip — without interrupting the recording.
 
-- **Start Capture**: Open the **Replay Buffer** panel in the right sidebar and click **Start Capture**. Your browser shows its screen-share picker; choose a tab, window, or screen. Capture begins immediately and the panel shows a red **Recording** indicator with the elapsed time.
+- **Start Capture**: Open **Capture > Replay** and click **Start Capture**. Your browser shows its screen-share picker; choose a tab, window, or screen. Capture begins immediately and the panel shows a red **Recording** indicator with the elapsed time.
 - **Rolling buffer**: The newest 30 seconds (by default) are kept encoded in memory, oldest-first eviction. The fill bar shows how much of the buffer window is populated. Excess data beyond the memory budget spills to private browser storage (OPFS) automatically.
 - **Save Last N Seconds**: Click **Save Last 30s** at any time. The buffered range is finalized into an MP4, added to the Media Bin, and appended to the timeline as a regular clip — capture keeps running while this happens. Saving is undoable like any other timeline edit.
 - **Stop Capture**: Click **Stop Capture** (or use the browser's own "Stop sharing" control). The buffered media stays available for one final save until the next capture starts.
@@ -611,7 +611,7 @@ Saved replay files are written to the app's private browser storage and register
 
 Process capture audio with a gate → compressor → limiter insert chain.
 
-- **Inserts**: The **Live Audio Chain** panel (right sidebar) shows three insert rows — **Gate**, **Compressor**, and **Limiter** — each with a power toggle and expandable parameter sliders (threshold, ratio, attack/release, and so on).
+- **Inserts**: Open **Audio > Live Chain** to see three insert rows — **Gate**, **Compressor**, and **Limiter** — each with a power toggle and expandable parameter sliders (threshold, ratio, attack/release, and so on).
 - **Bypass**: Every insert defaults to bypassed. Bypassed inserts are a clean pass-through — they add no latency and do not alter the signal.
 - **Print chain to recording**: During an active capture, enable this toggle to bake the chain into the recorded audio. Processing runs in the pipeline worker as frames are encoded, so recordings are processed reliably even when the tab is backgrounded or monitor audio is muted. In this version the chain applies to the **recording only** — monitor output (what you hear live) stays unprocessed.
 - **Latency**: The panel header reports the chain's processing latency. The limiter's 5 ms lookahead is the only contributor; gate and compressor are zero-latency.
@@ -841,7 +841,7 @@ For full details, see [PROGRAM-MODE.md](PROGRAM-MODE.md).
 
 ### Quick start
 
-1. Open the Program Mode panel
+1. Open **Capture > Program**
 2. Add sources: **+ Screen**, **+ Camera**, **+ Mic**
 3. Define scenes with layer transforms and hotkeys
 4. Click **Start**

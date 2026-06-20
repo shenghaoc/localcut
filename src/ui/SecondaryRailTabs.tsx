@@ -90,18 +90,21 @@ export function SecondaryRailPanel<T extends string>(props: {
 	idPrefix: string;
 	tab: T;
 	value: T;
+	keepMounted?: boolean;
 	children: JSX.Element;
 }): JSX.Element {
+	const active = (): boolean => props.value === props.tab;
+
 	return (
 		<div
 			id={secondaryPanelId(props.idPrefix, props.tab)}
 			class="side-rail-secondary-panel"
 			role="tabpanel"
 			tabIndex={0}
-			hidden={props.value !== props.tab}
+			hidden={!active()}
 			aria-labelledby={secondaryTabId(props.idPrefix, props.tab)}
 		>
-			{props.children}
+			{active() || props.keepMounted ? props.children : null}
 		</div>
 	);
 }

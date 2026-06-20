@@ -9,8 +9,8 @@ infrastructure, has no accounts, and sends no telemetry.**
 
 ## What you need
 
-- A Chromium-based browser with WebRTC and insertable streams (the Publish
-  panel tells you if something is missing — see
+- A Chromium-based browser with WebRTC and insertable streams (**Capture > Go
+  Live** tells you if something is missing — see
   [Capability tiers](USER-GUIDE.md)).
 - A WHIP ingest endpoint URL and, usually, a bearer token (stream key) from
   your platform.
@@ -52,7 +52,7 @@ for current configuration details.
 
 ## Going live
 
-1. Open the **Publish** panel.
+1. Open **Capture > Go Live**.
 2. Pick the endpoint type, paste the endpoint URL and bearer token.
 3. Check the encode settings. Defaults are H.264 (constrained baseline, up to
    Level 4.1), 4500 kbps, a 2-second keyframe interval, and a 1080p30 cap —

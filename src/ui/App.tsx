@@ -45,6 +45,7 @@ import {
 	type TimelineTrackSnapshot,
 	type TimelineTransitionSnapshot,
 	type PublishState,
+	type PublishSettingsDoc,
 	type WorkerStateMessage,
 	type WaveformPeaks,
 	type MatteEngineStatusSnapshot,
@@ -85,11 +86,11 @@ import {
 	CAPTURE_SIDE_RAIL_TABS,
 	SIDE_RAIL_TABS,
 	SIDE_RAIL_COLLAPSED_KEY,
-	TEXT_SIDE_RAIL_TABS,
 	isSideRailTab,
 	migrateLegacySideRailTab,
 	sideRailTabPanelId,
 	sideRailTabTriggerId,
+	visibleTextSideRailTabs,
 	type AudioSideRailTab,
 	type CaptureSideRailTab,
 	type SideRailTab,
@@ -148,6 +149,8 @@ import {
 	probeCapabilities as probeCapabilitiesV2
 } from '../engine/capability-probe-v2';
 import { budgetSessionsForProbe } from '../engine/encoder-budget';
+import { defaultPublishSettings } from '../engine/publish-settings';
+import { loadPublishSettings } from '../engine/persistence';
 import { compatibilityReadiness } from '../engine/compatibility/compat-status';
 import { extractCompatibilityPreview } from '../compatibility/thumbnail';
 import {
@@ -417,6 +420,21 @@ export function App() {
 	const [publishState, setPublishState] = createSignal<PublishState>({ phase: 'idle' });
 	const [publishTapStats, setPublishTapStats] = createSignal<PublishTapStats | null>(null);
 	const [publishErrorDetail, setPublishErrorDetail] = createSignal<string | null>(null);
+	const [publishSettings, setPublishSettings] =
+		createSignal<PublishSettingsDoc>(defaultPublishSettings());
+	const [publishSettingsLoaded, setPublishSettingsLoaded] = createSignal(false);
+	let publishSettingsLoadStarted = false;
+	const ensurePublishSettingsLoaded = (): void => {
+		if (publishSettingsLoadStarted) return;
+		publishSettingsLoadStarted = true;
+		void loadPublishSettings().then(
+			(stored) => {
+				if (stored) setPublishSettings(stored);
+				setPublishSettingsLoaded(true);
+			},
+			() => setPublishSettingsLoaded(true)
+		);
+	};
 	const [diagnosticsPanelOpen, setDiagnosticsPanelOpen] = createSignal(false);
 	const [audioCleanupOpen, setAudioCleanupOpen] = createSignal(false);
 	const [asrPanelOpen, setAsrPanelOpen] = createSignal(false);
@@ -804,6 +822,21 @@ export function App() {
 		setActiveCaptureSideRailTab(tab);
 		openSideRailTab('capture');
 	};
+	const languageToolsVisible = createMemo(() => {
+		const probe = capabilityProbeV2()?.languageTools;
+		return probe ? languageToolsSurfaceVisible(probe) : false;
+	});
+	const textSideRailTabs = createMemo(() => visibleTextSideRailTabs(languageToolsVisible()));
+	createEffect(() => {
+		if (activeTextSideRailTab() === 'language-tools' && !languageToolsVisible()) {
+			setActiveTextSideRailTab('captions');
+		}
+	});
+	createEffect(() => {
+		if (activeSideRailTab() === 'capture' && activeCaptureSideRailTab() === 'publish') {
+			ensurePublishSettingsLoaded();
+		}
+	});
 	const [bundleMessage, setBundleMessage] = createSignal<string | null>(null);
 	// Phase 23: replace-on-import confirm. Replaces window.confirm() which is
 	// silently suppressed in cross-origin / gesture-lapsed contexts and would
@@ -4071,10 +4104,7 @@ export function App() {
 					onImportKeystrokeOverlay={() => setKeystrokeOverlayOpen(true)}
 					keystrokeOverlayAvailable={true}
 					onOpenLanguageTools={
-						capabilityProbeV2()?.languageTools &&
-						languageToolsSurfaceVisible(capabilityProbeV2()!.languageTools!)
-							? () => openTextSideRailTab('language-tools')
-							: undefined
+						languageToolsVisible() ? () => openTextSideRailTab('language-tools') : undefined
 					}
 					onOpenPublish={() => openCaptureSideRailTab('publish')}
 					publishLive={publishBusy()}
@@ -5033,7 +5063,7 @@ export function App() {
 											<SecondaryRailTabs
 												idPrefix="text"
 												label="Text tools"
-												tabs={TEXT_SIDE_RAIL_TABS}
+												tabs={textSideRailTabs()}
 												value={activeTextSideRailTab()}
 												onSelect={openTextSideRailTab}
 											/>
@@ -5151,46 +5181,48 @@ export function App() {
 													}
 												/>
 											</SecondaryRailPanel>
-											<SecondaryRailPanel
-												idPrefix="text"
-												tab="language-tools"
-												value={activeTextSideRailTab()}
-											>
-												<LanguageToolsPanel
-													mode="embedded"
-													open={activeTextSideRailTab() === 'language-tools'}
-													translationState={translationState()}
-													draftState={draftState()}
-													captionTracks={captionTracks()}
-													onTranslate={(trackId, targetLang) => {
-														const track = captionTracks().find((t) => t.id === trackId);
-														if (!track) return;
-														pauseFromKeyboard();
-														void translationController.translateTrack(
-															{
-																id: track.id,
-																name: track.name,
-																language: track.language ?? undefined,
-																segments: track.segments
-															},
-															targetLang
-														);
-													}}
-													onCancelTranslate={() => translationController.cancel()}
-													onGenerateDraft={(trackId) => {
-														const track = captionTracks().find((t) => t.id === trackId);
-														if (!track) return;
-														pauseFromKeyboard();
-														void draftController.generateDraft(track.segments);
-													}}
-													onCancelDraft={() => draftController.cancel()}
-													onExportBilingual={(sourceTrackId, translatedTrackId) => {
-														exportBilingualCaptions(sourceTrackId, translatedTrackId);
-													}}
-													onOpenGuide={() => openDocs('language-tools')}
-													onClose={() => openTextSideRailTab('captions')}
-												/>
-											</SecondaryRailPanel>
+											<Show when={languageToolsVisible()}>
+												<SecondaryRailPanel
+													idPrefix="text"
+													tab="language-tools"
+													value={activeTextSideRailTab()}
+												>
+													<LanguageToolsPanel
+														mode="embedded"
+														open={activeTextSideRailTab() === 'language-tools'}
+														translationState={translationState()}
+														draftState={draftState()}
+														captionTracks={captionTracks()}
+														onTranslate={(trackId, targetLang) => {
+															const track = captionTracks().find((t) => t.id === trackId);
+															if (!track) return;
+															pauseFromKeyboard();
+															void translationController.translateTrack(
+																{
+																	id: track.id,
+																	name: track.name,
+																	language: track.language ?? undefined,
+																	segments: track.segments
+																},
+																targetLang
+															);
+														}}
+														onCancelTranslate={() => translationController.cancel()}
+														onGenerateDraft={(trackId) => {
+															const track = captionTracks().find((t) => t.id === trackId);
+															if (!track) return;
+															pauseFromKeyboard();
+															void draftController.generateDraft(track.segments);
+														}}
+														onCancelDraft={() => draftController.cancel()}
+														onExportBilingual={(sourceTrackId, translatedTrackId) => {
+															exportBilingualCaptions(sourceTrackId, translatedTrackId);
+														}}
+														onOpenGuide={() => openDocs('language-tools')}
+														onClose={() => openTextSideRailTab('captions')}
+													/>
+												</SecondaryRailPanel>
+											</Show>
 										</Tabs.Content>
 										<Tabs.Content
 											value="capture"
@@ -5339,9 +5371,12 @@ export function App() {
 													open={activeCaptureSideRailTab() === 'publish'}
 													probe={capabilityProbeV2()}
 													state={publishState()}
+													settings={publishSettings()}
+													settingsLoaded={publishSettingsLoaded()}
 													tapStats={publishTapStats()}
 													errorDetail={publishErrorDetail()}
 													recordWhileStreamingAvailable={recordWhileStreaming()}
+													onSettingsChange={setPublishSettings}
 													onGoLive={(settings) => void publishController.goLive(settings)}
 													onStop={() => void publishController.stop()}
 													onClose={() => openCaptureSideRailTab('record')}
