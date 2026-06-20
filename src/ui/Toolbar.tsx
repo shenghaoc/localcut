@@ -27,6 +27,7 @@ import { Button } from './components/button';
 import type { CapabilityTier } from './capabilities';
 import type { MediaMetadata } from '../protocol';
 import { MeterStrip } from './MeterStrip';
+import { modifierGlyphs } from './platform';
 import {
 	buildCommandActions,
 	buildMenuBarGroups,
@@ -210,13 +211,11 @@ export function Toolbar(props: ToolbarProps) {
 		props.onSetTimelineSnapEnabled(snapEnabled);
 		props.onSetTimelineSnapToBeats(snapEnabled && next.has('beat'));
 	};
-	const isMod = () =>
-		typeof navigator !== 'undefined' && /Mac|iP(hone|ad|od)/.test(navigator.platform)
-			? '⌘'
-			: 'Ctrl';
+	// Platform is fixed for the document's lifetime; resolve the label glyphs once.
+	const glyphs = modifierGlyphs();
 	const menuBarGroups = createMemo<MenuBarGroup[]>(() =>
 		buildMenuBarGroups({
-			mod: isMod(),
+			glyphs,
 			importBlocked: props.importBlocked ?? false,
 			canUndo: props.canUndo,
 			canRedo: props.canRedo,
@@ -325,7 +324,7 @@ export function Toolbar(props: ToolbarProps) {
 					<Popover.Trigger class="command-search" aria-label="Search actions">
 						<Search size={13} aria-hidden="true" />
 						<span>Search actions, panels, clips…</span>
-						<kbd>⌘</kbd>
+						<kbd>{glyphs.mod}</kbd>
 						<kbd>K</kbd>
 					</Popover.Trigger>
 					<Portal>

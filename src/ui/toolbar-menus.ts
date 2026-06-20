@@ -11,6 +11,8 @@
  *     shown blank.
  */
 
+import type { ModifierGlyphs } from './platform';
+
 export type MenuBarItem =
 	| { kind: 'separator' }
 	| {
@@ -29,8 +31,8 @@ export interface MenuBarGroup {
 }
 
 export interface MenuBarBuildOptions {
-	/** Platform-correct modifier glyph (⌘ on macOS, Ctrl elsewhere). */
-	mod: string;
+	/** Platform-correct modifier glyphs (⌘/⇧/⌫ on macOS, Ctrl/Shift/Del elsewhere). */
+	glyphs: ModifierGlyphs;
 	importBlocked: boolean;
 	canUndo: boolean;
 	canRedo: boolean;
@@ -52,7 +54,7 @@ export interface MenuBarBuildOptions {
  * dead-ending in the command palette.
  */
 export function buildMenuBarGroups(options: MenuBarBuildOptions): MenuBarGroup[] {
-	const { mod } = options;
+	const { glyphs } = options;
 	return [
 		{
 			id: 'project',
@@ -66,12 +68,18 @@ export function buildMenuBarGroups(options: MenuBarBuildOptions): MenuBarGroup[]
 			id: 'edit',
 			label: 'Edit',
 			items: [
-				{ kind: 'item', id: 'undo', label: 'Undo', kbd: `${mod}+Z`, disabled: !options.canUndo },
+				{
+					kind: 'item',
+					id: 'undo',
+					label: 'Undo',
+					kbd: `${glyphs.mod}+Z`,
+					disabled: !options.canUndo
+				},
 				{
 					kind: 'item',
 					id: 'redo',
 					label: 'Redo',
-					kbd: `${mod}+⇧+Z`,
+					kbd: `${glyphs.mod}+${glyphs.shift}+Z`,
 					disabled: !options.canRedo
 				}
 			]
@@ -107,7 +115,7 @@ export function buildMenuBarGroups(options: MenuBarBuildOptions): MenuBarGroup[]
 					kind: 'item',
 					id: 'delete',
 					label: 'Delete selected',
-					kbd: '⌫',
+					kbd: glyphs.del,
 					disabled: !options.hasSelection
 				}
 			]
