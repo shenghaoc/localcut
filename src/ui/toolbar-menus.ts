@@ -168,6 +168,7 @@ export interface CommandActionsBuildOptions {
 	onOpenRecord: () => void;
 	onOpenCaptions: () => void;
 	onToggleScopes: () => void;
+	onOpenRenderQueue: () => void;
 }
 
 /**
@@ -241,6 +242,11 @@ export function buildCommandActions(options: CommandActionsBuildOptions): Comman
 			label: 'View scopes',
 			detail: 'Toggle waveform and vectorscope overlays',
 			onSelect: options.onToggleScopes
+		},
+		{
+			label: 'Render queue',
+			detail: 'Open the export render queue',
+			onSelect: options.onOpenRenderQueue
 		},
 		{
 			label: 'Go live',

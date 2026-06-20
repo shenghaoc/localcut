@@ -167,6 +167,7 @@ function commandOptions(
 		onOpenRecord: noop,
 		onOpenCaptions: noop,
 		onToggleScopes: noop,
+		onOpenRenderQueue: noop,
 		...overrides
 	};
 }
@@ -231,7 +232,7 @@ describe('buildCommandActions (IA-T1 / D13 launcher routing, D12 audio gating)',
 
 	it('routes dock-rail workflow launchers into the command palette (IA-T6)', () => {
 		const labels = buildCommandActions(commandOptions()).map((action) => action.label);
-		for (const expected of ['Record', 'Captions', 'View scopes']) {
+		for (const expected of ['Record', 'Captions', 'View scopes', 'Render queue']) {
 			expect(labels).toContain(expected);
 		}
 	});

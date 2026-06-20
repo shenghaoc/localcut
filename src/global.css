@@ -4616,7 +4616,6 @@ button.status-badge:hover {
 	/* WCAG 2.5.5: minimum 44×44 CSS px touch target */
 	.toolbar-menu-item,
 	.side-rail-tab,
-	.dock-tabs button,
 	.pipeline-chip-button,
 	.timeline-toggle,
 	.timeline-toggle-status,
@@ -7866,6 +7865,12 @@ body::-webkit-scrollbar-thumb:hover,
 	background: var(--amber-soft);
 }
 
+@media (pointer: coarse) {
+	.dock-tabs button {
+		min-height: 44px;
+	}
+}
+
 .dock-tabs button[aria-selected='true'] {
 	color: var(--amber);
 	background: var(--amber-soft);
@@ -7886,6 +7891,9 @@ body::-webkit-scrollbar-thumb:hover,
 	flex: 1 1 auto;
 	min-height: 0;
 	overflow: hidden;
+}
+.dock-library > [role='tabpanel'][hidden] {
+	display: none;
 }
 
 .dock-library > [role='tabpanel'] > .media-bin {

@@ -35,6 +35,8 @@ export function BeatPanel(props: BeatPanelProps) {
 	const audioSources = createMemo(() => props.assets().filter((a) => a.audio != null));
 
 	const hasBeatData = createMemo(() => props.beatResults().size > 0);
+	const hasEnabledSource = createMemo(() => props.beatSettings().enabledSourceIds.length > 0);
+	const snapAvailable = createMemo(() => hasBeatData() && hasEnabledSource());
 	const hasSelection = createMemo(() => props.selectedClipCount() > 0);
 	const autoCutDisabled = createMemo(() => !hasBeatData() || !hasSelection());
 
@@ -44,6 +46,12 @@ export function BeatPanel(props: BeatPanelProps) {
 		return '';
 	});
 
+	const snapLabel = createMemo(() => {
+		if (!hasBeatData()) return 'Analyse audio to enable beat-snap';
+		if (!hasEnabledSource()) return 'Enable a beat grid first';
+		return 'Snap to these beats';
+	});
+
 	return (
 		<div class="beat-panel" role="region" aria-label="Beat analysis">
 			<h3 class="beat-panel-title">Beat Detection</h3>
@@ -51,11 +59,11 @@ export function BeatPanel(props: BeatPanelProps) {
 			<label class="beat-panel-snap-link">
 				<input
 					type="checkbox"
-					checked={props.snapToBeats && hasBeatData()}
+					checked={props.snapToBeats && snapAvailable()}
 					onChange={(e) => props.onToggleSnapToBeats(e.currentTarget.checked)}
-					disabled={!hasBeatData()}
+					disabled={!snapAvailable()}
 				/>
-				<span>{hasBeatData() ? 'Snap to these beats' : 'Analyse audio to enable beat-snap'}</span>
+				<span>{snapLabel()}</span>
 			</label>
 
 			{/* Per-source rows */}

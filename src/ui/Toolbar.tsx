@@ -193,7 +193,8 @@ export function Toolbar(props: ToolbarProps) {
 			onHelp: () => props.onOpenHelp?.(),
 			onOpenRecord: () => props.onOpenRecord?.(),
 			onOpenCaptions: () => props.onOpenCaptions?.(),
-			onToggleScopes: () => props.onToggleScopes?.()
+			onToggleScopes: () => props.onToggleScopes?.(),
+			onOpenRenderQueue: () => props.onScrollToRenderQueue?.()
 		})
 	);
 	const runCommand = (action: CommandAction) => {

@@ -1760,7 +1760,20 @@ export function App() {
 			webgpuReady: webgpuAvailable(),
 			exportSettings: exportSettings(),
 			assets: assets(),
-			recentErrors: workerSnapshot?.recentErrors ?? recentErrorLog(),
+			recentErrors: workerSnapshot?.recentErrors
+				? {
+						...workerSnapshot.recentErrors,
+						entries: [
+							...workerSnapshot.recentErrors.entries,
+							...recentErrorLog().entries.filter(
+								(e) =>
+									!workerSnapshot.recentErrors!.entries.some(
+										(w) => w.subsystem === e.subsystem && w.code === e.code
+									)
+							)
+						].slice(0, recentErrorLog().capacity)
+					}
+				: recentErrorLog(),
 			workerSnapshot,
 			asr: { engine: asrState().engine, accelerator: asrState().accelerator },
 			voiceCleanup: {
@@ -4429,9 +4442,16 @@ export function App() {
 										type="button"
 										id="dock-tab-media"
 										role="tab"
+										tabIndex={activeDockTab() === 'media' ? 0 : -1}
 										aria-selected={activeDockTab() === 'media'}
 										aria-controls="dock-panel-media"
 										onClick={() => setActiveDockTab('media')}
+										onKeyDown={(e) => {
+											if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+												setActiveDockTab('beats');
+												(e.currentTarget.nextElementSibling as HTMLElement)?.focus();
+											}
+										}}
 									>
 										Media
 									</button>
@@ -4439,9 +4459,16 @@ export function App() {
 										type="button"
 										id="dock-tab-beats"
 										role="tab"
+										tabIndex={activeDockTab() === 'beats' ? 0 : -1}
 										aria-selected={activeDockTab() === 'beats'}
 										aria-controls="dock-panel-beats"
 										onClick={() => setActiveDockTab('beats')}
+										onKeyDown={(e) => {
+											if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+												setActiveDockTab('media');
+												(e.currentTarget.previousElementSibling as HTMLElement)?.focus();
+											}
+										}}
 									>
 										Beats
 									</button>
