@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from 'solid-js';
+import { For, Show, createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
 import { Radio, Square, X } from 'lucide-solid';
 import { Button } from './components/button';
 import type {
@@ -87,9 +87,12 @@ export function PublishPanel(props: PublishPanelProps) {
 	const [settingsLoaded, setSettingsLoaded] = createSignal(false);
 	const [retryRemainingS, setRetryRemainingS] = createSignal<number | null>(null);
 	let panelRef: HTMLElement | undefined;
+	let settingsLoadStarted = false;
 	const embedded = () => props.mode === 'embedded';
 
-	onMount(() => {
+	createEffect(() => {
+		if (!props.open || settingsLoadStarted) return;
+		settingsLoadStarted = true;
 		void loadPublishSettings().then(
 			(stored) => {
 				if (stored) setSettings(stored);

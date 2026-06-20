@@ -5158,7 +5158,7 @@ export function App() {
 											>
 												<LanguageToolsPanel
 													mode="embedded"
-													open={true}
+													open={activeTextSideRailTab() === 'language-tools'}
 													translationState={translationState()}
 													draftState={draftState()}
 													captionTracks={captionTracks()}
@@ -5336,7 +5336,7 @@ export function App() {
 											>
 												<PublishPanel
 													mode="embedded"
-													open={true}
+													open={activeCaptureSideRailTab() === 'publish'}
 													probe={capabilityProbeV2()}
 													state={publishState()}
 													tapStats={publishTapStats()}
