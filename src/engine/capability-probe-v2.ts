@@ -654,11 +654,13 @@ export function recordingAvailable(probe: CapabilityProbeResult): boolean {
  * Program Mode still transfers every source track into the worker (no main-frames
  * fallback yet), so it additionally requires Transferable MediaStreamTrack even
  * though plain recording now degrades without it (bugfix B5/T5.5).
+ *
+ * No separate WebGPU gate is needed: `recordingAvailable` already requires
+ * `tier === 'core-webgpu'`, which `deriveCapabilityTierV2` only returns when
+ * `webGPUCore === 'supported'`.
  */
 export function deriveProgramModeSupport(probe: CapabilityProbeResult): FeatureSupport {
-	return recordingAvailable(probe) &&
-		probe.webGPUCore !== 'unsupported' &&
-		probe.capture.transferableMediaStreamTrack !== 'unsupported'
+	return recordingAvailable(probe) && probe.capture.transferableMediaStreamTrack !== 'unsupported'
 		? 'supported'
 		: 'unsupported';
 }

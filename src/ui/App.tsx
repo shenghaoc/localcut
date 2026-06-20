@@ -5082,20 +5082,19 @@ export function App() {
 													)
 												}
 												onPushFrame={(sourceId, frame) => {
-													// The frame must be closed exactly once: the worker closes it when
-													// transferred; if there is no worker, or the transfer throws (frame
-													// stays owned here), close it so it never leaks.
+													// The frame must be closed exactly once. With no worker (teardown
+													// race), close it here and return quietly. Otherwise forward it; a
+													// transfer failure (e.g. DataCloneError — the frame is still owned
+													// here) propagates so the frame reader closes the un-transferred
+													// frame, surfaces the error, and stops forwarding — instead of
+													// silently dropping every subsequent frame.
 													if (!bridge) {
 														frame.close();
 														return;
 													}
-													try {
-														bridge.send({ type: 'capture-push-frame', sourceId, frame }, [
-															frame as unknown as Transferable
-														]);
-													} catch {
-														frame.close();
-													}
+													bridge.send({ type: 'capture-push-frame', sourceId, frame }, [
+														frame as unknown as Transferable
+													]);
 												}}
 												onStart={(settings, writerPort, activeRetakeClipId, transfer) => {
 													setRecorderLandedSessionId(null);

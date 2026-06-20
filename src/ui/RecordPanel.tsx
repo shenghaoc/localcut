@@ -337,6 +337,13 @@ export function RecordPanel(props: RecordPanelProps) {
 		if (sessionState() === 'recording' && !documentPipActive()) {
 			void openDocumentPip();
 		}
+		// Stop the main-thread readers the moment the session begins stopping — including
+		// a worker-initiated auto-stop (overrun / source failure), which never routes
+		// through stopRecording(). During 'stopping' the worker drops pushed frames, so
+		// this only avoids wasted main→worker traffic; cleanup still finalizes on 'idle'.
+		if (sessionState() === 'stopping') {
+			stopAllReaders();
+		}
 		if (sessionState() === 'idle') {
 			cleanupSessionUi();
 		}

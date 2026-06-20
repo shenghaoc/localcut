@@ -76,5 +76,5 @@ Decision: PR #130 shipped an **honest gate** (T5.1–T5.4); the deferred **off-m
 
 - [x] Browser-support matrix / docs note — **not needed**: `docs/exporting.md` ("only codecs your browser can actually encode are offered") and `docs/browser-limitations.md` already describe the intended behavior accurately; B1 makes the app match the docs rather than the other way around.
 - [x] ~~If T5 lands the fallback-message path only, file a follow-up for the bounded main-frames capture route.~~ Done — T5.5 implemented the off-main-thread main-frames capture route on this branch.
-- [ ] Optional polish: pause the per-source main-thread reader while a main-frames session is paused (frames are currently read + forwarded and safely dropped/closed worker-side — correct but slightly wasteful).
+- [ ] Optional polish: pause the per-source main-thread reader while a main-frames session is **paused** (frames are read + forwarded and safely dropped/closed worker-side — correct but slightly wasteful). The **stop/auto-stop** case is already handled — readers stop when the session enters `'stopping'`.
 
