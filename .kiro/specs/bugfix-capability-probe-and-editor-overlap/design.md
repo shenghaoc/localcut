@@ -150,10 +150,10 @@ No change to tier derivation — `deriveCapabilityTierV2` remains WebGPU-only by
 
 Two acceptable options at [`LiveAudioChainPanel.tsx:189-198`](../../../src/ui/LiveAudioChainPanel.tsx):
 
-- **Preferred (relabel + link):** change the status from "Available in a future update" to a pointer such as "Use Voice Cleanup / Local Audio Cleanup" and link/scroll to those panels. Lowest risk; removes the false impression while keeping the live-monitor chain scope honest (its denoiser insert genuinely is not implemented).
+- **Preferred (remove placeholder):** delete the disabled "Noise Suppression" row from the Live Audio Chain. The live-monitor chain should show owned inserts only; Voice Cleanup and Local Audio Cleanup remain available in their own panels.
 - **Optional (wire it):** drive the insert from the shipped RNNoise denoiser already loaded for Voice Cleanup ([`App.tsx` `loadVoiceCleanupWasm`](../../../src/ui/App.tsx)) via the live-chain SAB path (`writeDenoiserBypassToSab`). Larger change; only if the live-monitor denoiser is genuinely in scope this cycle.
 
-Pick the relabel in T8.1 unless wiring is explicitly requested.
+Pick removal in T8.1 unless wiring is explicitly requested.
 
 ## D9 — Keep the Media Bin Add/Remove buttons in frame at narrow dock widths
 

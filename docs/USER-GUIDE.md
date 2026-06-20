@@ -35,23 +35,24 @@ Imported media appears in the **Media Bin** on the left side of the workspace. W
 
 Each bin entry has three action buttons:
 
-| Button | Action                                                                                                                                                                                                                                                                                   |
-| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **ⓘ**  | Open the **Media Details** popover — full filename, resolution, frame rate (with a _variable_ badge for VFR sources), rotation metadata, video/audio codecs, channel layout, sample rate, duration, file size, the proxy recommendation, and every source-health warning at full length. |
-| **+**  | Place the clip on the timeline.                                                                                                                                                                                                                                                          |
-| **🗑** | Remove the entry from the bin.                                                                                                                                                                                                                                                           |
+| Button | Action                                                                                                                                                                                                                                                   |
+| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **ⓘ**  | Open the **Media Details** popover — full filename, resolution, frame rate (with a _variable_ badge for VFR sources), rotation metadata, video/audio codecs, channel layout, sample rate, duration, file size, and any actionable source-health warning. |
+| **+**  | Place the clip on the timeline.                                                                                                                                                                                                                          |
+| **🗑** | Remove the entry from the bin.                                                                                                                                                                                                                           |
 
-The Media Details popover is the place to look when a clip shows a warning in the bin list — it has the full message text untruncated and identifies the exact codec, track, or timing issue.
+The Media Details popover is the place to look when a clip shows a warning in the bin list — it has the full message text untruncated and identifies the exact codec or missing asset at fault.
 
 ### Source Health Warnings
 
-When a file has unusual characteristics, the bin item shows them inline (truncated only by available width) and the Media Details popover shows them in full. Common warnings:
+Supported media characteristics like variable frame rate, rotation metadata, audio/video start offsets, and mixed audio sample rates are handled by the engine and shown as metadata when useful. They do not appear as source-health warnings.
 
-- **Variable frame rate** — phone recordings often vary frame timing. Preview and export honour each frame's actual duration so playback stays synced; the warning is informational.
-- **Rotation metadata** — a portrait-mode phone clip carries a 90° or 270° rotation flag. The clip is placed on the timeline with that rotation already applied so it appears upright; you can override it from the Inspector if needed.
-- **Audio/video offset** — when the audio track starts a few milliseconds before or after the video. The engine compensates automatically (inserting silence ahead of the audio when needed).
-- **Mixed audio sample rates** — when audio tracks in the timeline use different sample rates (e.g. 44.1 kHz and 48 kHz). The engine resamples every source to a common output rate automatically — the playback engine rate during preview, and the export's chosen rate when rendering — so mixed-rate timelines stay in tune. No action is required.
+Visible source-health warnings are reserved for actionable problems:
+
 - **Unsupported audio/video codec** — the message names the codec (e.g. `(ac-3)` or `(unknown codec)` when the container does not advertise one). If the **primary** track uses an unsupported codec the clip cannot decode; secondary tracks are silently skipped.
+- **Corrupt or missing-duration media** — the file could not be inspected well enough to build a reliable timeline item.
+- **Unsupported container variants** — for example, `.lottie` zip containers are rejected; export plain `.json` from your Lottie tool.
+- **Missing generated assets** — for example, if a cleaned-audio asset was cleared from storage, the original audio plays and the warning explains what needs to be regenerated.
 
 ### Compatibility Imports
 
@@ -610,7 +611,7 @@ Saved replay files are written to the app's private browser storage and register
 
 Process capture audio with a gate → compressor → limiter insert chain.
 
-- **Inserts**: The **Live Audio Chain** panel (right sidebar) shows three insert rows — **Gate**, **Compressor**, and **Limiter** — each with a power toggle and expandable parameter sliders (threshold, ratio, attack/release, and so on). A **Noise Suppression** slot is visible but reserved for a future update.
+- **Inserts**: The **Live Audio Chain** panel (right sidebar) shows three insert rows — **Gate**, **Compressor**, and **Limiter** — each with a power toggle and expandable parameter sliders (threshold, ratio, attack/release, and so on).
 - **Bypass**: Every insert defaults to bypassed. Bypassed inserts are a clean pass-through — they add no latency and do not alter the signal.
 - **Print chain to recording**: During an active capture, enable this toggle to bake the chain into the recorded audio. Processing runs in the pipeline worker as frames are encoded, so recordings are processed reliably even when the tab is backgrounded or monitor audio is muted. In this version the chain applies to the **recording only** — monitor output (what you hear live) stays unprocessed.
 - **Latency**: The panel header reports the chain's processing latency. The limiter's 5 ms lookahead is the only contributor; gate and compressor are zero-latency.

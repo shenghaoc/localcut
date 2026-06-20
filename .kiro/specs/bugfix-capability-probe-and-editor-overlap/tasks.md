@@ -50,7 +50,7 @@ Decision: **honest gate now, off-main-thread main-frames path deferred** (D5). T
 
 ## T8 — Reconcile Live Audio Chain noise-suppression label (B8, D8)
 
-- [x] T8.1 Relabel the disabled insert at [`LiveAudioChainPanel.tsx:189-198`](../../../src/ui/LiveAudioChainPanel.tsx) to point at Voice Cleanup / Local Audio Cleanup (preferred), or wire it to the shipped RNNoise denoiser if explicitly in scope.
+- [x] T8.1 Remove the disabled insert at [`LiveAudioChainPanel.tsx:189-198`](../../../src/ui/LiveAudioChainPanel.tsx), or wire it to the shipped RNNoise denoiser if explicitly in scope.
 - [x] T8.2 Verify no remaining UI copy implies the app lacks noise suppression.
 
 ## T11 — Media Bin delete button in frame (B9, D9)

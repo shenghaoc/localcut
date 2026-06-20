@@ -126,7 +126,9 @@ export function describeFeature(
 ): CapabilityFeatureInfo {
 	const available =
 		feature === 'matte'
-			? matteProbe?.backend === 'webgpu' || matteProbe?.backend === 'wasm'
+			? matteProbe
+				? matteProbe.backend === 'webgpu' || matteProbe.backend === 'wasm'
+				: snapshot.webgpu
 			: snapshot[feature];
 	switch (feature) {
 		case 'fileApi':
@@ -221,10 +223,10 @@ export function describeFeature(
 						? 'WebGPU backend'
 						: matteProbe?.backend === 'wasm'
 							? 'WASM fallback'
-							: 'Not available',
-				action: available
-					? null
-					: 'On-device ML portrait segmentation is not available in this browser.'
+							: snapshot.webgpu
+								? 'Available on demand'
+								: 'Requires WebGPU',
+				action: available ? null : 'Use Chromium with hardware acceleration enabled.'
 			};
 	}
 }

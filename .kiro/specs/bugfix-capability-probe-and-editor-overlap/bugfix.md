@@ -6,7 +6,7 @@
 
 A user running Chrome 149 on macOS (WebGPU on, `navigator.ml`/WebNN flag enabled, `crossOriginIsolated === true`, tier reported as **Core WebGPU**) hit a cluster of features that say they are unavailable even though the platform supports them. Direct probing on that profile (see **Environment / evidence** below) shows that several capability probes in [`capability-probe-v2.ts`](../../../src/engine/capability-probe-v2.ts) produce **false negatives** because they request H.264 at a codec **level** too low for the probe resolution, or probe a Worker-only API from the main thread. These false negatives silently drop **H.264/MP4 export** and block **Recording** and **Program Mode**.
 
-Separately, the Ark editor-kit UI (PR #125) appended a **second copy** of the workspace layout rules to [`global.css`](../../../src/global.css); because the duplicate is later in source order with equal specificity, it overrides both the original rules and the `@media` collapse, causing the left dock and right side-rail to overlap the preview on narrower viewports. Two UI strings (`publish.*` diagnostics and the Live Audio Chain "Noise Suppression" insert) also read as hard failures or missing features when they are actually optional/handled elsewhere.
+Separately, the Ark editor-kit UI (PR #125) appended a **second copy** of the workspace layout rules to [`global.css`](../../../src/global.css); because the duplicate is later in source order with equal specificity, it overrides both the original rules and the `@media` collapse, causing the left dock and right side-rail to overlap the preview on narrower viewports. The publish diagnostics also read as hard failures for an optional capability, and the Live Audio Chain carried an unimplemented "Noise Suppression" placeholder even though cleanup tools live elsewhere.
 
 This spec bundles eight bugs (B1–B8) found from one capable Chrome profile. B1–B4 are the high-impact "feature falsely unavailable" defects; B5 is a too-strict gate with a missing fallback; B6 is the layout regression; B7–B8 are message/clarity fixes.
 
@@ -90,11 +90,11 @@ Live computed `.workspace.has-bin` columns were `364px 756px 360px` — matching
 - **Expected:** A diagnostics/capability row reflects WebNN (`navigator.ml`) availability and the active ORT execution provider, so an enabled flag is visibly confirmed.
 - **Root cause:** WebNN was wired into runtime selection but never given a user-visible capability indicator.
 
-### B8 — "Noise Suppression — Available in a future update" misrepresents a shipped capability
+### B8 — Disabled "Noise Suppression" placeholder misrepresents live-chain scope
 
 - **Where:** [`LiveAudioChainPanel.tsx:189-198`](../../../src/ui/LiveAudioChainPanel.tsx) hardcodes a disabled "Available in a future update" denoiser insert.
-- **Observed:** The app already ships working noise suppression — Phase 36 **Voice Cleanup** (RNNoise WASM, the "Cleanup" tab) and Phase 27/28 **Local Audio Cleanup** (ORT DTLN, the Audio Cleanup panel). The Live Audio Chain insert reads as if the app has no denoiser at all.
-- **Expected:** The insert either wires to the existing RNNoise/DTLN denoiser, or is relabeled to point users to Voice Cleanup / Audio Cleanup so it does not imply the feature is absent.
+- **Observed:** The app already ships working noise suppression — Phase 36 **Voice Cleanup** (RNNoise WASM, the "Cleanup" tab) and Phase 27/28 **Local Audio Cleanup** (ORT DTLN, the Audio Cleanup panel). A disabled live-chain row that tells users to use another panel reads like a broken button rather than a useful control.
+- **Expected:** The Live Audio Chain only shows inserts it owns. If live monitoring gets a denoiser later, wire it as a real insert; until then, do not show a disabled redirect row.
 - **Root cause:** A placeholder insert label was never reconciled with the noise-suppression features shipped in later phases.
 
 ### B9 — Media Bin delete button pushed out of frame (horizontal scroll to delete)
@@ -111,7 +111,7 @@ Live computed `.workspace.has-bin` columns were `364px 756px 360px` — matching
 - Adding `generateKeyFrame` support or changing WHIP GOP behavior — it is already correctly optional (publish degrades to platform-default GOP).
 - The "GPU (compat)" / `limited-webcodecs` / `shell-only` tiers and their derivation (B-bugs here are encode/OPFS/layout/UX only; tier derivation is correct).
 - Redesigning the editor chrome; B6 is a CSS consolidation, not a visual redesign.
-- Rebuilding the Live Audio Chain DSP; B8 is wiring/relabeling only.
+- Rebuilding the Live Audio Chain DSP; B8 removes the placeholder unless a real live-chain denoiser is implemented.
 
 ## Acceptance criteria
 
@@ -122,5 +122,5 @@ Live computed `.workspace.has-bin` columns were `364px 756px 360px` — matching
 5. Recording either degrades via the same bounded main-frames fallback publish uses, or its gate/message accurately states the requirement and surfaces the experimental-flag workaround (B5).
 6. There is exactly **one** authoritative `.workspace`/`.dock-left`/`.side-rail` rule set; the editor shows **no overlap** between the left dock, preview, and right side-rail across viewport widths from the collapse breakpoint up to ultra-wide, including the previously broken ~900–1236px range (B6).
 7. A capability/diagnostics row reflects **WebNN** availability and the active ORT execution provider (B7).
-8. The Live Audio Chain no longer states noise suppression is "available in a future update" while the app ships Voice Cleanup / Local Audio Cleanup — it is wired or relabeled to point at them (B8).
+8. The Live Audio Chain no longer shows a disabled "Noise Suppression" placeholder while the app ships Voice Cleanup / Local Audio Cleanup elsewhere (B8).
 9. `pnpm run check` is green and the unit-test count does not decrease; new probe unit tests cover B1–B3 (and B5 if the fallback lands).

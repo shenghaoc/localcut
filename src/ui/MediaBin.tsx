@@ -14,6 +14,7 @@ import {
 } from 'lucide-solid';
 import { formatClock } from '../lib/format';
 import type { MediaAssetSnapshot } from '../protocol';
+import { userVisibleHealthWarnings } from './media-health';
 import type { ThumbnailEntry } from './thumbnail-store';
 
 /** dataTransfer MIME used when dragging a bin asset onto a timeline track. */
@@ -49,21 +50,15 @@ function summarize(asset: MediaAssetSnapshot): string {
 	if (asset.video) {
 		const fps = asset.video.frameRate ? ` · ${Math.round(asset.video.frameRate)}fps` : '';
 		const rotation = asset.video.rotationDeg ? ` · ${asset.video.rotationDeg}°` : '';
-		const rateMode = asset.video.frameRateMode === 'variable' ? ' · VFR' : '';
-		return `${asset.video.width}×${asset.video.height}${fps}${rotation}${rateMode}`;
+		return `${asset.video.width}×${asset.video.height}${fps}${rotation}`;
 	}
 	return asset.mimeType ?? 'media';
-}
-
-function healthMessages(asset: MediaAssetSnapshot): string[] {
-	return asset.health?.warnings.map((warning) => warning.message) ?? [];
 }
 
 function proxyLabel(asset: MediaAssetSnapshot): string | null {
 	const proxy = asset.proxy;
 	if (!proxy || proxy.status === 'not-generated' || proxy.status === 'disabled') return null;
-	if (proxy.status === 'recommended')
-		return proxy.reason ?? 'Proxy recommended for smoother preview.';
+	if (proxy.status === 'recommended') return null;
 	if (proxy.status === 'ready' && proxy.width && proxy.height)
 		return `Proxy ready · ${proxy.width}×${proxy.height}`;
 	if (proxy.status === 'generating') {
@@ -102,6 +97,7 @@ function metaRows(asset: MediaAssetSnapshot): { label: string; value: string }[]
 
 function MetaInfoPopover(props: { asset: MediaAssetSnapshot }) {
 	const proxy = () => proxyLabel(props.asset);
+	const health = () => userVisibleHealthWarnings(props.asset.health?.warnings ?? []);
 	return (
 		<Popover.Root positioning={{ placement: 'right-start', gutter: 8 }}>
 			<Popover.Trigger
@@ -132,9 +128,9 @@ function MetaInfoPopover(props: { asset: MediaAssetSnapshot }) {
 								)}
 							</For>
 						</dl>
-						<Show when={(props.asset.health?.warnings.length ?? 0) > 0}>
+						<Show when={health().length > 0}>
 							<ul class="media-info-health">
-								<For each={props.asset.health?.warnings}>
+								<For each={health()}>
 									{(w) => (
 										<li class={`media-info-health-item is-${w.severity}`}>
 											<AlertTriangle size={11} aria-hidden="true" />
@@ -236,7 +232,8 @@ export function MediaBin(props: MediaBinProps) {
 						{(asset) => {
 							const offline = () => props.unresolvedIds().has(asset.sourceId);
 							const blocked = () => asset.health?.status === 'blocked';
-							const health = () => healthMessages(asset);
+							const health = () => userVisibleHealthWarnings(asset.health?.warnings ?? []);
+							const healthMessageText = () => health().map((warning) => warning.message);
 							const proxy = () => proxyLabel(asset);
 							return (
 								<li
@@ -250,7 +247,7 @@ export function MediaBin(props: MediaBinProps) {
 										event.dataTransfer.setData(ASSET_DRAG_MIME, asset.sourceId);
 										event.dataTransfer.effectAllowed = 'copy';
 									}}
-									title={`${asset.fileName} · ${summarize(asset)}${health().length > 0 ? ` · ${health().join(' · ')}` : ''}`}
+									title={`${asset.fileName} · ${summarize(asset)}${healthMessageText().length > 0 ? ` · ${healthMessageText().join(' · ')}` : ''}`}
 								>
 									<BinThumbnail
 										asset={asset}
@@ -277,7 +274,7 @@ export function MediaBin(props: MediaBinProps) {
 										</span>
 										<Show when={health().length > 0}>
 											<ul class="media-bin-health">
-												<For each={asset.health?.warnings ?? []}>
+												<For each={health()}>
 													{(warning) => (
 														<li class={`media-bin-health-item is-${warning.severity}`}>
 															<AlertTriangle size={11} aria-hidden="true" />
