@@ -1,0 +1,3971 @@
+[
+  {
+    "name": "02-left-project",
+    "path": "/private/tmp/browser-editor-panel-audit-2026-06-20/02-left-project.png",
+    "x": 39,
+    "y": 147,
+    "state": {
+      "dockText": "ProjectMediaRecordScopesAICaptionsReframeOutputMedia0Your imported files will live here. Drag one in or click Import.Beat DetectionImport some audio to detect beats.",
+      "leftButtons": [
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 119
+          },
+          "text": "Project",
+          "title": "Import media"
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 175
+          },
+          "text": "Media",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 231
+          },
+          "text": "Record",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 287
+          },
+          "text": "Scopes",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 343
+          },
+          "text": "AI",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 399
+          },
+          "text": "Captions",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 455
+          },
+          "text": "Reframe",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 511
+          },
+          "text": "Output",
+          "title": null
+        }
+      ],
+      "menuText": [
+        "LocalCut StudioClient NLEProjectEditClipTimelineViewHelpSearch actions, panels, clips…⌘K",
+        "InspectorSelect a clip to inspect itPick a clip on the timeline — its properties will show up here.",
+        "Command paletteImport mediaAdd clips, images, or audioPlay transportPreview playbackGo liveOpen WHIP publish controlsAuto captionsOn-device speech recognitionSmart reframeGenerate crop-path keyframesCapabilitiesInspect browser pipeline supportUser guideOpen in-app documentation",
+        "Timeline interchangeCuts, markers, and transitions for other editors. Effects and looks stay LocalCut-only metadata.Export Timeline (.otio)Export EDL (.edl)",
+        "Project bundle (Experimental)Move projects between browsers with a portable folder bundle.Export project…Export references onlyImport project…Relocate in-editor paths after collectCollect media…",
+        "Saved preset (Experimental)Custom1080p H.264 Quality1080p H.264 Fast720p VP9 FastDouyin 1080p 30fpsYouTube Shorts 1080p 30fpsYouTube Shorts 1080p 60fpsInstagram Reels 1080p 30fpsXiaohongshu 1080p 30fpsXiaohongshu Square 30fpsExport presetQualityFastCodecH.264 · MP4VP9 · WEBMAV1 · WEBMWidthHeightFPSBitrate (Mbps)RangeFullRangeYouTube ChaptersYouTube requires at least 3 chapters. Add more markers.StartAdd to Queue (Experimental)Save Preset (Experimental)CloseExport guide: codecs, presets, and the render queue",
+        "Import media…Search actions…⌘+K",
+        "Undo⌘+ZRedo⌘+⇧+ZSearch actions…⌘+K"
+      ],
+      "rightTabs": [
+        {
+          "rect": {
+            "h": 38,
+            "right": 1033,
+            "w": 62,
+            "x": 971,
+            "y": 119
+          },
+          "selected": "true",
+          "text": "Inspector"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1091,
+            "w": 59,
+            "x": 1033,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Captions"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1141,
+            "w": 50,
+            "x": 1091,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Record"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1197,
+            "w": 56,
+            "x": 1141,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Program"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1245,
+            "w": 48,
+            "x": 1197,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Replay"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1288,
+            "w": 44,
+            "x": 1245,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Audio"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1344,
+            "w": 55,
+            "x": 1288,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Cleanup"
+        }
+      ],
+      "sideText": "InspectorCaptionsRecordProgramReplayAudioCleanup›InspectorSelect a clip to inspect itPick a clip on the timeline — its properties will show up here."
+    }
+  },
+  {
+    "name": "03-left-media",
+    "path": "/private/tmp/browser-editor-panel-audit-2026-06-20/03-left-media.png",
+    "x": 39,
+    "y": 203,
+    "state": {
+      "dockText": "ProjectMediaRecordScopesAICaptionsReframeOutputMedia0Your imported files will live here. Drag one in or click Import.Beat DetectionImport some audio to detect beats.",
+      "leftButtons": [
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 119
+          },
+          "text": "Project",
+          "title": "Import media"
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 175
+          },
+          "text": "Media",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 231
+          },
+          "text": "Record",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 287
+          },
+          "text": "Scopes",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 343
+          },
+          "text": "AI",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 399
+          },
+          "text": "Captions",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 455
+          },
+          "text": "Reframe",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 511
+          },
+          "text": "Output",
+          "title": null
+        }
+      ],
+      "menuText": [
+        "LocalCut StudioClient NLEProjectEditClipTimelineViewHelpSearch actions, panels, clips…⌘K",
+        "InspectorSelect a clip to inspect itPick a clip on the timeline — its properties will show up here.",
+        "Command paletteImport mediaAdd clips, images, or audioPlay transportPreview playbackGo liveOpen WHIP publish controlsAuto captionsOn-device speech recognitionSmart reframeGenerate crop-path keyframesCapabilitiesInspect browser pipeline supportUser guideOpen in-app documentation",
+        "Timeline interchangeCuts, markers, and transitions for other editors. Effects and looks stay LocalCut-only metadata.Export Timeline (.otio)Export EDL (.edl)",
+        "Project bundle (Experimental)Move projects between browsers with a portable folder bundle.Export project…Export references onlyImport project…Relocate in-editor paths after collectCollect media…",
+        "Saved preset (Experimental)Custom1080p H.264 Quality1080p H.264 Fast720p VP9 FastDouyin 1080p 30fpsYouTube Shorts 1080p 30fpsYouTube Shorts 1080p 60fpsInstagram Reels 1080p 30fpsXiaohongshu 1080p 30fpsXiaohongshu Square 30fpsExport presetQualityFastCodecH.264 · MP4VP9 · WEBMAV1 · WEBMWidthHeightFPSBitrate (Mbps)RangeFullRangeYouTube ChaptersYouTube requires at least 3 chapters. Add more markers.StartAdd to Queue (Experimental)Save Preset (Experimental)CloseExport guide: codecs, presets, and the render queue",
+        "Import media…Search actions…⌘+K",
+        "Undo⌘+ZRedo⌘+⇧+ZSearch actions…⌘+K"
+      ],
+      "rightTabs": [
+        {
+          "rect": {
+            "h": 38,
+            "right": 1033,
+            "w": 62,
+            "x": 971,
+            "y": 119
+          },
+          "selected": "true",
+          "text": "Inspector"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1091,
+            "w": 59,
+            "x": 1033,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Captions"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1141,
+            "w": 50,
+            "x": 1091,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Record"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1197,
+            "w": 56,
+            "x": 1141,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Program"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1245,
+            "w": 48,
+            "x": 1197,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Replay"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1288,
+            "w": 44,
+            "x": 1245,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Audio"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1344,
+            "w": 55,
+            "x": 1288,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Cleanup"
+        }
+      ],
+      "sideText": "InspectorCaptionsRecordProgramReplayAudioCleanup›InspectorSelect a clip to inspect itPick a clip on the timeline — its properties will show up here."
+    }
+  },
+  {
+    "name": "04-left-record",
+    "path": "/private/tmp/browser-editor-panel-audit-2026-06-20/04-left-record.png",
+    "x": 39,
+    "y": 259,
+    "state": {
+      "dockText": "ProjectMediaRecordScopesAICaptionsReframeOutputMedia0Your imported files will live here. Drag one in or click Import.Beat DetectionImport some audio to detect beats.",
+      "leftButtons": [
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 119
+          },
+          "text": "Project",
+          "title": "Import media"
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 175
+          },
+          "text": "Media",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 231
+          },
+          "text": "Record",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 287
+          },
+          "text": "Scopes",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 343
+          },
+          "text": "AI",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 399
+          },
+          "text": "Captions",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 455
+          },
+          "text": "Reframe",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 511
+          },
+          "text": "Output",
+          "title": null
+        }
+      ],
+      "menuText": [
+        "LocalCut StudioClient NLEProjectEditClipTimelineViewHelpSearch actions, panels, clips…⌘K",
+        "RecordRecorder idleRecording is unavailable on this browser profile.Transferable MediaStreamTrack is unavailable. Enable chrome://flags/#enable-experimental-web-platform-features to record on this browser.SourcesAdd screenCameraMicTab/system audio with screenCountdown0s3s5sExperimentalOwn tab (Region)Own tab (Element)Start00:00Paused 00:00",
+        "Command paletteImport mediaAdd clips, images, or audioPlay transportPreview playbackGo liveOpen WHIP publish controlsAuto captionsOn-device speech recognitionSmart reframeGenerate crop-path keyframesCapabilitiesInspect browser pipeline supportUser guideOpen in-app documentation",
+        "Timeline interchangeCuts, markers, and transitions for other editors. Effects and looks stay LocalCut-only metadata.Export Timeline (.otio)Export EDL (.edl)",
+        "Project bundle (Experimental)Move projects between browsers with a portable folder bundle.Export project…Export references onlyImport project…Relocate in-editor paths after collectCollect media…",
+        "Saved preset (Experimental)Custom1080p H.264 Quality1080p H.264 Fast720p VP9 FastDouyin 1080p 30fpsYouTube Shorts 1080p 30fpsYouTube Shorts 1080p 60fpsInstagram Reels 1080p 30fpsXiaohongshu 1080p 30fpsXiaohongshu Square 30fpsExport presetQualityFastCodecH.264 · MP4VP9 · WEBMAV1 · WEBMWidthHeightFPSBitrate (Mbps)RangeFullRangeYouTube ChaptersYouTube requires at least 3 chapters. Add more markers.StartAdd to Queue (Experimental)Save Preset (Experimental)CloseExport guide: codecs, presets, and the render queue",
+        "Import media…Search actions…⌘+K",
+        "Undo⌘+ZRedo⌘+⇧+ZSearch actions…⌘+K"
+      ],
+      "rightTabs": [
+        {
+          "rect": {
+            "h": 38,
+            "right": 1033,
+            "w": 62,
+            "x": 971,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Inspector"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1091,
+            "w": 59,
+            "x": 1033,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Captions"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1141,
+            "w": 50,
+            "x": 1091,
+            "y": 119
+          },
+          "selected": "true",
+          "text": "Record"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1197,
+            "w": 56,
+            "x": 1141,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Program"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1245,
+            "w": 48,
+            "x": 1197,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Replay"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1288,
+            "w": 44,
+            "x": 1245,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Audio"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1344,
+            "w": 55,
+            "x": 1288,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Cleanup"
+        }
+      ],
+      "sideText": "InspectorCaptionsRecordProgramReplayAudioCleanup›RecordRecorder idleRecording is unavailable on this browser profile.Transferable MediaStreamTrack is unavailable. Enable chrome://flags/#enable-experimental-web-platform-features to record on this browser.SourcesAdd screenCameraMicTab/system audio with screenCountdown0s3s5sExperimentalOwn tab (Region)Own tab (Element)Start00:00Paused 00:00"
+    }
+  },
+  {
+    "name": "05-left-scopes",
+    "path": "/private/tmp/browser-editor-panel-audit-2026-06-20/05-left-scopes.png",
+    "x": 39,
+    "y": 315,
+    "state": {
+      "dockText": "ProjectMediaRecordScopesAICaptionsReframeOutputMedia0Your imported files will live here. Drag one in or click Import.Beat DetectionImport some audio to detect beats.",
+      "leftButtons": [
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 119
+          },
+          "text": "Project",
+          "title": "Import media"
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 175
+          },
+          "text": "Media",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 231
+          },
+          "text": "Record",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 287
+          },
+          "text": "Scopes",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 343
+          },
+          "text": "AI",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 399
+          },
+          "text": "Captions",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 455
+          },
+          "text": "Reframe",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 511
+          },
+          "text": "Output",
+          "title": null
+        }
+      ],
+      "menuText": [
+        "LocalCut StudioClient NLEProjectEditClipTimelineViewHelpSearch actions, panels, clips…⌘K",
+        "RecordRecorder idleRecording is unavailable on this browser profile.Transferable MediaStreamTrack is unavailable. Enable chrome://flags/#enable-experimental-web-platform-features to record on this browser.SourcesAdd screenCameraMicTab/system audio with screenCountdown0s3s5sExperimentalOwn tab (Region)Own tab (Element)Start00:00Paused 00:00",
+        "Command paletteImport mediaAdd clips, images, or audioPlay transportPreview playbackGo liveOpen WHIP publish controlsAuto captionsOn-device speech recognitionSmart reframeGenerate crop-path keyframesCapabilitiesInspect browser pipeline supportUser guideOpen in-app documentation",
+        "Timeline interchangeCuts, markers, and transitions for other editors. Effects and looks stay LocalCut-only metadata.Export Timeline (.otio)Export EDL (.edl)",
+        "Project bundle (Experimental)Move projects between browsers with a portable folder bundle.Export project…Export references onlyImport project…Relocate in-editor paths after collectCollect media…",
+        "Saved preset (Experimental)Custom1080p H.264 Quality1080p H.264 Fast720p VP9 FastDouyin 1080p 30fpsYouTube Shorts 1080p 30fpsYouTube Shorts 1080p 60fpsInstagram Reels 1080p 30fpsXiaohongshu 1080p 30fpsXiaohongshu Square 30fpsExport presetQualityFastCodecH.264 · MP4VP9 · WEBMAV1 · WEBMWidthHeightFPSBitrate (Mbps)RangeFullRangeYouTube ChaptersYouTube requires at least 3 chapters. Add more markers.StartAdd to Queue (Experimental)Save Preset (Experimental)CloseExport guide: codecs, presets, and the render queue",
+        "Import media…Search actions…⌘+K",
+        "Undo⌘+ZRedo⌘+⇧+ZSearch actions…⌘+K"
+      ],
+      "rightTabs": [
+        {
+          "rect": {
+            "h": 38,
+            "right": 1033,
+            "w": 62,
+            "x": 971,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Inspector"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1091,
+            "w": 59,
+            "x": 1033,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Captions"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1141,
+            "w": 50,
+            "x": 1091,
+            "y": 119
+          },
+          "selected": "true",
+          "text": "Record"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1197,
+            "w": 56,
+            "x": 1141,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Program"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1245,
+            "w": 48,
+            "x": 1197,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Replay"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1288,
+            "w": 44,
+            "x": 1245,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Audio"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1344,
+            "w": 55,
+            "x": 1288,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Cleanup"
+        }
+      ],
+      "sideText": "InspectorCaptionsRecordProgramReplayAudioCleanup›RecordRecorder idleRecording is unavailable on this browser profile.Transferable MediaStreamTrack is unavailable. Enable chrome://flags/#enable-experimental-web-platform-features to record on this browser.SourcesAdd screenCameraMicTab/system audio with screenCountdown0s3s5sExperimentalOwn tab (Region)Own tab (Element)Start00:00Paused 00:00"
+    }
+  },
+  {
+    "name": "06-left-ai",
+    "path": "/private/tmp/browser-editor-panel-audit-2026-06-20/06-left-ai.png",
+    "x": 39,
+    "y": 371,
+    "state": {
+      "dockText": "ProjectMediaRecordScopesAICaptionsReframeOutputMedia0Your imported files will live here. Drag one in or click Import.Beat DetectionImport some audio to detect beats.",
+      "leftButtons": [
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 119
+          },
+          "text": "Project",
+          "title": "Import media"
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 175
+          },
+          "text": "Media",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 231
+          },
+          "text": "Record",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 287
+          },
+          "text": "Scopes",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 343
+          },
+          "text": "AI",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 399
+          },
+          "text": "Captions",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 455
+          },
+          "text": "Reframe",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 511
+          },
+          "text": "Output",
+          "title": null
+        }
+      ],
+      "menuText": [
+        "LocalCut StudioClient NLEProjectEditClipTimelineViewHelpSearch actions, panels, clips…⌘K",
+        "RecordRecorder idleRecording is unavailable on this browser profile.Transferable MediaStreamTrack is unavailable. Enable chrome://flags/#enable-experimental-web-platform-features to record on this browser.SourcesAdd screenCameraMicTab/system audio with screenCountdown0s3s5sExperimentalOwn tab (Region)Own tab (Element)Start00:00Paused 00:00",
+        "Command paletteImport mediaAdd clips, images, or audioPlay transportPreview playbackGo liveOpen WHIP publish controlsAuto captionsOn-device speech recognitionSmart reframeGenerate crop-path keyframesCapabilitiesInspect browser pipeline supportUser guideOpen in-app documentation",
+        "Timeline interchangeCuts, markers, and transitions for other editors. Effects and looks stay LocalCut-only metadata.Export Timeline (.otio)Export EDL (.edl)",
+        "Project bundle (Experimental)Move projects between browsers with a portable folder bundle.Export project…Export references onlyImport project…Relocate in-editor paths after collectCollect media…",
+        "Saved preset (Experimental)Custom1080p H.264 Quality1080p H.264 Fast720p VP9 FastDouyin 1080p 30fpsYouTube Shorts 1080p 30fpsYouTube Shorts 1080p 60fpsInstagram Reels 1080p 30fpsXiaohongshu 1080p 30fpsXiaohongshu Square 30fpsExport presetQualityFastCodecH.264 · MP4VP9 · WEBMAV1 · WEBMWidthHeightFPSBitrate (Mbps)RangeFullRangeYouTube ChaptersYouTube requires at least 3 chapters. Add more markers.StartAdd to Queue (Experimental)Save Preset (Experimental)CloseExport guide: codecs, presets, and the render queue",
+        "Import media…Search actions…⌘+K",
+        "Undo⌘+ZRedo⌘+⇧+ZSearch actions…⌘+K"
+      ],
+      "rightTabs": [
+        {
+          "rect": {
+            "h": 38,
+            "right": 1033,
+            "w": 62,
+            "x": 971,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Inspector"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1091,
+            "w": 59,
+            "x": 1033,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Captions"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1141,
+            "w": 50,
+            "x": 1091,
+            "y": 119
+          },
+          "selected": "true",
+          "text": "Record"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1197,
+            "w": 56,
+            "x": 1141,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Program"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1245,
+            "w": 48,
+            "x": 1197,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Replay"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1288,
+            "w": 44,
+            "x": 1245,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Audio"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1344,
+            "w": 55,
+            "x": 1288,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Cleanup"
+        }
+      ],
+      "sideText": "InspectorCaptionsRecordProgramReplayAudioCleanup›RecordRecorder idleRecording is unavailable on this browser profile.Transferable MediaStreamTrack is unavailable. Enable chrome://flags/#enable-experimental-web-platform-features to record on this browser.SourcesAdd screenCameraMicTab/system audio with screenCountdown0s3s5sExperimentalOwn tab (Region)Own tab (Element)Start00:00Paused 00:00"
+    }
+  },
+  {
+    "name": "07-left-captions",
+    "path": "/private/tmp/browser-editor-panel-audit-2026-06-20/07-left-captions.png",
+    "x": 39,
+    "y": 427,
+    "state": {
+      "dockText": "ProjectMediaRecordScopesAICaptionsReframeOutputMedia0Your imported files will live here. Drag one in or click Import.Beat DetectionImport some audio to detect beats.",
+      "leftButtons": [
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 119
+          },
+          "text": "Project",
+          "title": "Import media"
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 175
+          },
+          "text": "Media",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 231
+          },
+          "text": "Record",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 287
+          },
+          "text": "Scopes",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 343
+          },
+          "text": "AI",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 399
+          },
+          "text": "Captions",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 455
+          },
+          "text": "Reframe",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 511
+          },
+          "text": "Output",
+          "title": null
+        }
+      ],
+      "menuText": [
+        "LocalCut StudioClient NLEProjectEditClipTimelineViewHelpSearch actions, panels, clips…⌘K",
+        "RecordRecorder idleRecording is unavailable on this browser profile.Transferable MediaStreamTrack is unavailable. Enable chrome://flags/#enable-experimental-web-platform-features to record on this browser.SourcesAdd screenCameraMicTab/system audio with screenCountdown0s3s5sExperimentalOwn tab (Region)Own tab (Element)Start00:00Paused 00:00",
+        "Command paletteImport mediaAdd clips, images, or audioPlay transportPreview playbackGo liveOpen WHIP publish controlsAuto captionsOn-device speech recognitionSmart reframeGenerate crop-path keyframesCapabilitiesInspect browser pipeline supportUser guideOpen in-app documentation",
+        "Timeline interchangeCuts, markers, and transitions for other editors. Effects and looks stay LocalCut-only metadata.Export Timeline (.otio)Export EDL (.edl)",
+        "Project bundle (Experimental)Move projects between browsers with a portable folder bundle.Export project…Export references onlyImport project…Relocate in-editor paths after collectCollect media…",
+        "Saved preset (Experimental)Custom1080p H.264 Quality1080p H.264 Fast720p VP9 FastDouyin 1080p 30fpsYouTube Shorts 1080p 30fpsYouTube Shorts 1080p 60fpsInstagram Reels 1080p 30fpsXiaohongshu 1080p 30fpsXiaohongshu Square 30fpsExport presetQualityFastCodecH.264 · MP4VP9 · WEBMAV1 · WEBMWidthHeightFPSBitrate (Mbps)RangeFullRangeYouTube ChaptersYouTube requires at least 3 chapters. Add more markers.StartAdd to Queue (Experimental)Save Preset (Experimental)CloseExport guide: codecs, presets, and the render queue",
+        "Import media…Search actions…⌘+K",
+        "Undo⌘+ZRedo⌘+⇧+ZSearch actions…⌘+K"
+      ],
+      "rightTabs": [
+        {
+          "rect": {
+            "h": 38,
+            "right": 1033,
+            "w": 62,
+            "x": 971,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Inspector"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1091,
+            "w": 59,
+            "x": 1033,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Captions"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1141,
+            "w": 50,
+            "x": 1091,
+            "y": 119
+          },
+          "selected": "true",
+          "text": "Record"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1197,
+            "w": 56,
+            "x": 1141,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Program"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1245,
+            "w": 48,
+            "x": 1197,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Replay"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1288,
+            "w": 44,
+            "x": 1245,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Audio"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1344,
+            "w": 55,
+            "x": 1288,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Cleanup"
+        }
+      ],
+      "sideText": "InspectorCaptionsRecordProgramReplayAudioCleanup›RecordRecorder idleRecording is unavailable on this browser profile.Transferable MediaStreamTrack is unavailable. Enable chrome://flags/#enable-experimental-web-platform-features to record on this browser.SourcesAdd screenCameraMicTab/system audio with screenCountdown0s3s5sExperimentalOwn tab (Region)Own tab (Element)Start00:00Paused 00:00"
+    }
+  },
+  {
+    "name": "08-left-reframe",
+    "path": "/private/tmp/browser-editor-panel-audit-2026-06-20/08-left-reframe.png",
+    "x": 39,
+    "y": 483,
+    "state": {
+      "dockText": "ProjectMediaRecordScopesAICaptionsReframeOutputMedia0Your imported files will live here. Drag one in or click Import.Beat DetectionImport some audio to detect beats.",
+      "leftButtons": [
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 119
+          },
+          "text": "Project",
+          "title": "Import media"
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 175
+          },
+          "text": "Media",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 231
+          },
+          "text": "Record",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 287
+          },
+          "text": "Scopes",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 343
+          },
+          "text": "AI",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 399
+          },
+          "text": "Captions",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 455
+          },
+          "text": "Reframe",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 511
+          },
+          "text": "Output",
+          "title": null
+        }
+      ],
+      "menuText": [
+        "LocalCut StudioClient NLEProjectEditClipTimelineViewHelpSearch actions, panels, clips…⌘K",
+        "RecordRecorder idleRecording is unavailable on this browser profile.Transferable MediaStreamTrack is unavailable. Enable chrome://flags/#enable-experimental-web-platform-features to record on this browser.SourcesAdd screenCameraMicTab/system audio with screenCountdown0s3s5sExperimentalOwn tab (Region)Own tab (Element)Start00:00Paused 00:00",
+        "Command paletteImport mediaAdd clips, images, or audioPlay transportPreview playbackGo liveOpen WHIP publish controlsAuto captionsOn-device speech recognitionSmart reframeGenerate crop-path keyframesCapabilitiesInspect browser pipeline supportUser guideOpen in-app documentation",
+        "Timeline interchangeCuts, markers, and transitions for other editors. Effects and looks stay LocalCut-only metadata.Export Timeline (.otio)Export EDL (.edl)",
+        "Project bundle (Experimental)Move projects between browsers with a portable folder bundle.Export project…Export references onlyImport project…Relocate in-editor paths after collectCollect media…",
+        "Saved preset (Experimental)Custom1080p H.264 Quality1080p H.264 Fast720p VP9 FastDouyin 1080p 30fpsYouTube Shorts 1080p 30fpsYouTube Shorts 1080p 60fpsInstagram Reels 1080p 30fpsXiaohongshu 1080p 30fpsXiaohongshu Square 30fpsExport presetQualityFastCodecH.264 · MP4VP9 · WEBMAV1 · WEBMWidthHeightFPSBitrate (Mbps)RangeFullRangeYouTube ChaptersYouTube requires at least 3 chapters. Add more markers.StartAdd to Queue (Experimental)Save Preset (Experimental)CloseExport guide: codecs, presets, and the render queue",
+        "Import media…Search actions…⌘+K",
+        "Undo⌘+ZRedo⌘+⇧+ZSearch actions…⌘+K"
+      ],
+      "rightTabs": [
+        {
+          "rect": {
+            "h": 38,
+            "right": 1033,
+            "w": 62,
+            "x": 971,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Inspector"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1091,
+            "w": 59,
+            "x": 1033,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Captions"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1141,
+            "w": 50,
+            "x": 1091,
+            "y": 119
+          },
+          "selected": "true",
+          "text": "Record"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1197,
+            "w": 56,
+            "x": 1141,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Program"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1245,
+            "w": 48,
+            "x": 1197,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Replay"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1288,
+            "w": 44,
+            "x": 1245,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Audio"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1344,
+            "w": 55,
+            "x": 1288,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Cleanup"
+        }
+      ],
+      "sideText": "InspectorCaptionsRecordProgramReplayAudioCleanup›RecordRecorder idleRecording is unavailable on this browser profile.Transferable MediaStreamTrack is unavailable. Enable chrome://flags/#enable-experimental-web-platform-features to record on this browser.SourcesAdd screenCameraMicTab/system audio with screenCountdown0s3s5sExperimentalOwn tab (Region)Own tab (Element)Start00:00Paused 00:00"
+    }
+  },
+  {
+    "name": "09-left-output",
+    "path": "/private/tmp/browser-editor-panel-audit-2026-06-20/09-left-output.png",
+    "x": 39,
+    "y": 539,
+    "state": {
+      "dockText": "ProjectMediaRecordScopesAICaptionsReframeOutputMedia0Your imported files will live here. Drag one in or click Import.Beat DetectionImport some audio to detect beats.",
+      "leftButtons": [
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 119
+          },
+          "text": "Project",
+          "title": "Import media"
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 175
+          },
+          "text": "Media",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 231
+          },
+          "text": "Record",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 287
+          },
+          "text": "Scopes",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 343
+          },
+          "text": "AI",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 399
+          },
+          "text": "Captions",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 455
+          },
+          "text": "Reframe",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 511
+          },
+          "text": "Output",
+          "title": null
+        }
+      ],
+      "menuText": [
+        "LocalCut StudioClient NLEProjectEditClipTimelineViewHelpSearch actions, panels, clips…⌘K",
+        "RecordRecorder idleRecording is unavailable on this browser profile.Transferable MediaStreamTrack is unavailable. Enable chrome://flags/#enable-experimental-web-platform-features to record on this browser.SourcesAdd screenCameraMicTab/system audio with screenCountdown0s3s5sExperimentalOwn tab (Region)Own tab (Element)Start00:00Paused 00:00",
+        "Command paletteImport mediaAdd clips, images, or audioPlay transportPreview playbackGo liveOpen WHIP publish controlsAuto captionsOn-device speech recognitionSmart reframeGenerate crop-path keyframesCapabilitiesInspect browser pipeline supportUser guideOpen in-app documentation",
+        "Timeline interchangeCuts, markers, and transitions for other editors. Effects and looks stay LocalCut-only metadata.Export Timeline (.otio)Export EDL (.edl)",
+        "Project bundle (Experimental)Move projects between browsers with a portable folder bundle.Export project…Export references onlyImport project…Relocate in-editor paths after collectCollect media…",
+        "Saved preset (Experimental)Custom1080p H.264 Quality1080p H.264 Fast720p VP9 FastDouyin 1080p 30fpsYouTube Shorts 1080p 30fpsYouTube Shorts 1080p 60fpsInstagram Reels 1080p 30fpsXiaohongshu 1080p 30fpsXiaohongshu Square 30fpsExport presetQualityFastCodecH.264 · MP4VP9 · WEBMAV1 · WEBMWidthHeightFPSBitrate (Mbps)RangeFullRangeYouTube ChaptersYouTube requires at least 3 chapters. Add more markers.StartAdd to Queue (Experimental)Save Preset (Experimental)CloseExport guide: codecs, presets, and the render queue",
+        "Import media…Search actions…⌘+K",
+        "Undo⌘+ZRedo⌘+⇧+ZSearch actions…⌘+K"
+      ],
+      "rightTabs": [
+        {
+          "rect": {
+            "h": 38,
+            "right": 1033,
+            "w": 62,
+            "x": 971,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Inspector"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1091,
+            "w": 59,
+            "x": 1033,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Captions"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1141,
+            "w": 50,
+            "x": 1091,
+            "y": 119
+          },
+          "selected": "true",
+          "text": "Record"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1197,
+            "w": 56,
+            "x": 1141,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Program"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1245,
+            "w": 48,
+            "x": 1197,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Replay"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1288,
+            "w": 44,
+            "x": 1245,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Audio"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1344,
+            "w": 55,
+            "x": 1288,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Cleanup"
+        }
+      ],
+      "sideText": "InspectorCaptionsRecordProgramReplayAudioCleanup›RecordRecorder idleRecording is unavailable on this browser profile.Transferable MediaStreamTrack is unavailable. Enable chrome://flags/#enable-experimental-web-platform-features to record on this browser.SourcesAdd screenCameraMicTab/system audio with screenCountdown0s3s5sExperimentalOwn tab (Region)Own tab (Element)Start00:00Paused 00:00"
+    }
+  },
+  {
+    "name": "10-menu-project",
+    "path": "/private/tmp/browser-editor-panel-audit-2026-06-20/10-menu-project.png",
+    "x": 199,
+    "y": 17,
+    "state": {
+      "dockText": "ProjectMediaRecordScopesAICaptionsReframeOutputMedia0Your imported files will live here. Drag one in or click Import.Beat DetectionImport some audio to detect beats.",
+      "leftButtons": [
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 119
+          },
+          "text": "Project",
+          "title": "Import media"
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 175
+          },
+          "text": "Media",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 231
+          },
+          "text": "Record",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 287
+          },
+          "text": "Scopes",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 343
+          },
+          "text": "AI",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 399
+          },
+          "text": "Captions",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 455
+          },
+          "text": "Reframe",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 511
+          },
+          "text": "Output",
+          "title": null
+        }
+      ],
+      "menuText": [
+        "LocalCut StudioClient NLEProjectEditClipTimelineViewHelpSearch actions, panels, clips…⌘K",
+        "RecordRecorder idleRecording is unavailable on this browser profile.Transferable MediaStreamTrack is unavailable. Enable chrome://flags/#enable-experimental-web-platform-features to record on this browser.SourcesAdd screenCameraMicTab/system audio with screenCountdown0s3s5sExperimentalOwn tab (Region)Own tab (Element)Start00:00Paused 00:00",
+        "Command paletteImport mediaAdd clips, images, or audioPlay transportPreview playbackGo liveOpen WHIP publish controlsAuto captionsOn-device speech recognitionSmart reframeGenerate crop-path keyframesCapabilitiesInspect browser pipeline supportUser guideOpen in-app documentation",
+        "Timeline interchangeCuts, markers, and transitions for other editors. Effects and looks stay LocalCut-only metadata.Export Timeline (.otio)Export EDL (.edl)",
+        "Project bundle (Experimental)Move projects between browsers with a portable folder bundle.Export project…Export references onlyImport project…Relocate in-editor paths after collectCollect media…",
+        "Saved preset (Experimental)Custom1080p H.264 Quality1080p H.264 Fast720p VP9 FastDouyin 1080p 30fpsYouTube Shorts 1080p 30fpsYouTube Shorts 1080p 60fpsInstagram Reels 1080p 30fpsXiaohongshu 1080p 30fpsXiaohongshu Square 30fpsExport presetQualityFastCodecH.264 · MP4VP9 · WEBMAV1 · WEBMWidthHeightFPSBitrate (Mbps)RangeFullRangeYouTube ChaptersYouTube requires at least 3 chapters. Add more markers.StartAdd to Queue (Experimental)Save Preset (Experimental)CloseExport guide: codecs, presets, and the render queue",
+        "Import media…Search actions…⌘+K",
+        "Undo⌘+ZRedo⌘+⇧+ZSearch actions…⌘+K"
+      ],
+      "rightTabs": [
+        {
+          "rect": {
+            "h": 38,
+            "right": 1033,
+            "w": 62,
+            "x": 971,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Inspector"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1091,
+            "w": 59,
+            "x": 1033,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Captions"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1141,
+            "w": 50,
+            "x": 1091,
+            "y": 119
+          },
+          "selected": "true",
+          "text": "Record"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1197,
+            "w": 56,
+            "x": 1141,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Program"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1245,
+            "w": 48,
+            "x": 1197,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Replay"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1288,
+            "w": 44,
+            "x": 1245,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Audio"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1344,
+            "w": 55,
+            "x": 1288,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Cleanup"
+        }
+      ],
+      "sideText": "InspectorCaptionsRecordProgramReplayAudioCleanup›RecordRecorder idleRecording is unavailable on this browser profile.Transferable MediaStreamTrack is unavailable. Enable chrome://flags/#enable-experimental-web-platform-features to record on this browser.SourcesAdd screenCameraMicTab/system audio with screenCountdown0s3s5sExperimentalOwn tab (Region)Own tab (Element)Start00:00Paused 00:00"
+    }
+  },
+  {
+    "name": "11-menu-edit",
+    "path": "/private/tmp/browser-editor-panel-audit-2026-06-20/11-menu-edit.png",
+    "x": 259,
+    "y": 17,
+    "state": {
+      "dockText": "ProjectMediaRecordScopesAICaptionsReframeOutputMedia0Your imported files will live here. Drag one in or click Import.Beat DetectionImport some audio to detect beats.",
+      "leftButtons": [
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 119
+          },
+          "text": "Project",
+          "title": "Import media"
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 175
+          },
+          "text": "Media",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 231
+          },
+          "text": "Record",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 287
+          },
+          "text": "Scopes",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 343
+          },
+          "text": "AI",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 399
+          },
+          "text": "Captions",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 455
+          },
+          "text": "Reframe",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 511
+          },
+          "text": "Output",
+          "title": null
+        }
+      ],
+      "menuText": [
+        "LocalCut StudioClient NLEProjectEditClipTimelineViewHelpSearch actions, panels, clips…⌘K",
+        "RecordRecorder idleRecording is unavailable on this browser profile.Transferable MediaStreamTrack is unavailable. Enable chrome://flags/#enable-experimental-web-platform-features to record on this browser.SourcesAdd screenCameraMicTab/system audio with screenCountdown0s3s5sExperimentalOwn tab (Region)Own tab (Element)Start00:00Paused 00:00",
+        "Command paletteImport mediaAdd clips, images, or audioPlay transportPreview playbackGo liveOpen WHIP publish controlsAuto captionsOn-device speech recognitionSmart reframeGenerate crop-path keyframesCapabilitiesInspect browser pipeline supportUser guideOpen in-app documentation",
+        "Timeline interchangeCuts, markers, and transitions for other editors. Effects and looks stay LocalCut-only metadata.Export Timeline (.otio)Export EDL (.edl)",
+        "Project bundle (Experimental)Move projects between browsers with a portable folder bundle.Export project…Export references onlyImport project…Relocate in-editor paths after collectCollect media…",
+        "Saved preset (Experimental)Custom1080p H.264 Quality1080p H.264 Fast720p VP9 FastDouyin 1080p 30fpsYouTube Shorts 1080p 30fpsYouTube Shorts 1080p 60fpsInstagram Reels 1080p 30fpsXiaohongshu 1080p 30fpsXiaohongshu Square 30fpsExport presetQualityFastCodecH.264 · MP4VP9 · WEBMAV1 · WEBMWidthHeightFPSBitrate (Mbps)RangeFullRangeYouTube ChaptersYouTube requires at least 3 chapters. Add more markers.StartAdd to Queue (Experimental)Save Preset (Experimental)CloseExport guide: codecs, presets, and the render queue",
+        "Import media…Search actions…⌘+K",
+        "Undo⌘+ZRedo⌘+⇧+ZSearch actions…⌘+K"
+      ],
+      "rightTabs": [
+        {
+          "rect": {
+            "h": 38,
+            "right": 1033,
+            "w": 62,
+            "x": 971,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Inspector"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1091,
+            "w": 59,
+            "x": 1033,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Captions"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1141,
+            "w": 50,
+            "x": 1091,
+            "y": 119
+          },
+          "selected": "true",
+          "text": "Record"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1197,
+            "w": 56,
+            "x": 1141,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Program"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1245,
+            "w": 48,
+            "x": 1197,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Replay"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1288,
+            "w": 44,
+            "x": 1245,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Audio"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1344,
+            "w": 55,
+            "x": 1288,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Cleanup"
+        }
+      ],
+      "sideText": "InspectorCaptionsRecordProgramReplayAudioCleanup›RecordRecorder idleRecording is unavailable on this browser profile.Transferable MediaStreamTrack is unavailable. Enable chrome://flags/#enable-experimental-web-platform-features to record on this browser.SourcesAdd screenCameraMicTab/system audio with screenCountdown0s3s5sExperimentalOwn tab (Region)Own tab (Element)Start00:00Paused 00:00"
+    }
+  },
+  {
+    "name": "12-menu-clip",
+    "path": "/private/tmp/browser-editor-panel-audit-2026-06-20/12-menu-clip.png",
+    "x": 310,
+    "y": 17,
+    "state": {
+      "dockText": "ProjectMediaRecordScopesAICaptionsReframeOutputMedia0Your imported files will live here. Drag one in or click Import.Beat DetectionImport some audio to detect beats.",
+      "leftButtons": [
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 119
+          },
+          "text": "Project",
+          "title": "Import media"
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 175
+          },
+          "text": "Media",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 231
+          },
+          "text": "Record",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 287
+          },
+          "text": "Scopes",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 343
+          },
+          "text": "AI",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 399
+          },
+          "text": "Captions",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 455
+          },
+          "text": "Reframe",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 511
+          },
+          "text": "Output",
+          "title": null
+        }
+      ],
+      "menuText": [
+        "LocalCut StudioClient NLEProjectEditClipTimelineViewHelpSearch actions, panels, clips…⌘K",
+        "RecordRecorder idleRecording is unavailable on this browser profile.Transferable MediaStreamTrack is unavailable. Enable chrome://flags/#enable-experimental-web-platform-features to record on this browser.SourcesAdd screenCameraMicTab/system audio with screenCountdown0s3s5sExperimentalOwn tab (Region)Own tab (Element)Start00:00Paused 00:00",
+        "Command paletteImport mediaAdd clips, images, or audioPlay transportPreview playbackGo liveOpen WHIP publish controlsAuto captionsOn-device speech recognitionSmart reframeGenerate crop-path keyframesCapabilitiesInspect browser pipeline supportUser guideOpen in-app documentation",
+        "Timeline interchangeCuts, markers, and transitions for other editors. Effects and looks stay LocalCut-only metadata.Export Timeline (.otio)Export EDL (.edl)",
+        "Project bundle (Experimental)Move projects between browsers with a portable folder bundle.Export project…Export references onlyImport project…Relocate in-editor paths after collectCollect media…",
+        "Saved preset (Experimental)Custom1080p H.264 Quality1080p H.264 Fast720p VP9 FastDouyin 1080p 30fpsYouTube Shorts 1080p 30fpsYouTube Shorts 1080p 60fpsInstagram Reels 1080p 30fpsXiaohongshu 1080p 30fpsXiaohongshu Square 30fpsExport presetQualityFastCodecH.264 · MP4VP9 · WEBMAV1 · WEBMWidthHeightFPSBitrate (Mbps)RangeFullRangeYouTube ChaptersYouTube requires at least 3 chapters. Add more markers.StartAdd to Queue (Experimental)Save Preset (Experimental)CloseExport guide: codecs, presets, and the render queue",
+        "Import media…Search actions…⌘+K",
+        "Undo⌘+ZRedo⌘+⇧+ZSearch actions…⌘+K"
+      ],
+      "rightTabs": [
+        {
+          "rect": {
+            "h": 38,
+            "right": 1033,
+            "w": 62,
+            "x": 971,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Inspector"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1091,
+            "w": 59,
+            "x": 1033,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Captions"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1141,
+            "w": 50,
+            "x": 1091,
+            "y": 119
+          },
+          "selected": "true",
+          "text": "Record"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1197,
+            "w": 56,
+            "x": 1141,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Program"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1245,
+            "w": 48,
+            "x": 1197,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Replay"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1288,
+            "w": 44,
+            "x": 1245,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Audio"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1344,
+            "w": 55,
+            "x": 1288,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Cleanup"
+        }
+      ],
+      "sideText": "InspectorCaptionsRecordProgramReplayAudioCleanup›RecordRecorder idleRecording is unavailable on this browser profile.Transferable MediaStreamTrack is unavailable. Enable chrome://flags/#enable-experimental-web-platform-features to record on this browser.SourcesAdd screenCameraMicTab/system audio with screenCountdown0s3s5sExperimentalOwn tab (Region)Own tab (Element)Start00:00Paused 00:00"
+    }
+  },
+  {
+    "name": "13-menu-timeline",
+    "path": "/private/tmp/browser-editor-panel-audit-2026-06-20/13-menu-timeline.png",
+    "x": 374,
+    "y": 17,
+    "state": {
+      "dockText": "ProjectMediaRecordScopesAICaptionsReframeOutputMedia0Your imported files will live here. Drag one in or click Import.Beat DetectionImport some audio to detect beats.",
+      "leftButtons": [
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 119
+          },
+          "text": "Project",
+          "title": "Import media"
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 175
+          },
+          "text": "Media",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 231
+          },
+          "text": "Record",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 287
+          },
+          "text": "Scopes",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 343
+          },
+          "text": "AI",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 399
+          },
+          "text": "Captions",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 455
+          },
+          "text": "Reframe",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 511
+          },
+          "text": "Output",
+          "title": null
+        }
+      ],
+      "menuText": [
+        "LocalCut StudioClient NLEProjectEditClipTimelineViewHelpSearch actions, panels, clips…⌘K",
+        "RecordRecorder idleRecording is unavailable on this browser profile.Transferable MediaStreamTrack is unavailable. Enable chrome://flags/#enable-experimental-web-platform-features to record on this browser.SourcesAdd screenCameraMicTab/system audio with screenCountdown0s3s5sExperimentalOwn tab (Region)Own tab (Element)Start00:00Paused 00:00",
+        "Command paletteImport mediaAdd clips, images, or audioPlay transportPreview playbackGo liveOpen WHIP publish controlsAuto captionsOn-device speech recognitionSmart reframeGenerate crop-path keyframesCapabilitiesInspect browser pipeline supportUser guideOpen in-app documentation",
+        "Timeline interchangeCuts, markers, and transitions for other editors. Effects and looks stay LocalCut-only metadata.Export Timeline (.otio)Export EDL (.edl)",
+        "Project bundle (Experimental)Move projects between browsers with a portable folder bundle.Export project…Export references onlyImport project…Relocate in-editor paths after collectCollect media…",
+        "Saved preset (Experimental)Custom1080p H.264 Quality1080p H.264 Fast720p VP9 FastDouyin 1080p 30fpsYouTube Shorts 1080p 30fpsYouTube Shorts 1080p 60fpsInstagram Reels 1080p 30fpsXiaohongshu 1080p 30fpsXiaohongshu Square 30fpsExport presetQualityFastCodecH.264 · MP4VP9 · WEBMAV1 · WEBMWidthHeightFPSBitrate (Mbps)RangeFullRangeYouTube ChaptersYouTube requires at least 3 chapters. Add more markers.StartAdd to Queue (Experimental)Save Preset (Experimental)CloseExport guide: codecs, presets, and the render queue",
+        "Import media…Search actions…⌘+K",
+        "Undo⌘+ZRedo⌘+⇧+ZSearch actions…⌘+K"
+      ],
+      "rightTabs": [
+        {
+          "rect": {
+            "h": 38,
+            "right": 1033,
+            "w": 62,
+            "x": 971,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Inspector"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1091,
+            "w": 59,
+            "x": 1033,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Captions"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1141,
+            "w": 50,
+            "x": 1091,
+            "y": 119
+          },
+          "selected": "true",
+          "text": "Record"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1197,
+            "w": 56,
+            "x": 1141,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Program"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1245,
+            "w": 48,
+            "x": 1197,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Replay"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1288,
+            "w": 44,
+            "x": 1245,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Audio"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1344,
+            "w": 55,
+            "x": 1288,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Cleanup"
+        }
+      ],
+      "sideText": "InspectorCaptionsRecordProgramReplayAudioCleanup›RecordRecorder idleRecording is unavailable on this browser profile.Transferable MediaStreamTrack is unavailable. Enable chrome://flags/#enable-experimental-web-platform-features to record on this browser.SourcesAdd screenCameraMicTab/system audio with screenCountdown0s3s5sExperimentalOwn tab (Region)Own tab (Element)Start00:00Paused 00:00"
+    }
+  },
+  {
+    "name": "14-menu-view",
+    "path": "/private/tmp/browser-editor-panel-audit-2026-06-20/14-menu-view.png",
+    "x": 441,
+    "y": 17,
+    "state": {
+      "dockText": "ProjectMediaRecordScopesAICaptionsReframeOutputMedia0Your imported files will live here. Drag one in or click Import.Beat DetectionImport some audio to detect beats.",
+      "leftButtons": [
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 119
+          },
+          "text": "Project",
+          "title": "Import media"
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 175
+          },
+          "text": "Media",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 231
+          },
+          "text": "Record",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 287
+          },
+          "text": "Scopes",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 343
+          },
+          "text": "AI",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 399
+          },
+          "text": "Captions",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 455
+          },
+          "text": "Reframe",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 511
+          },
+          "text": "Output",
+          "title": null
+        }
+      ],
+      "menuText": [
+        "LocalCut StudioClient NLEProjectEditClipTimelineViewHelpSearch actions, panels, clips…⌘K",
+        "RecordRecorder idleRecording is unavailable on this browser profile.Transferable MediaStreamTrack is unavailable. Enable chrome://flags/#enable-experimental-web-platform-features to record on this browser.SourcesAdd screenCameraMicTab/system audio with screenCountdown0s3s5sExperimentalOwn tab (Region)Own tab (Element)Start00:00Paused 00:00",
+        "Command paletteImport mediaAdd clips, images, or audioPlay transportPreview playbackGo liveOpen WHIP publish controlsAuto captionsOn-device speech recognitionSmart reframeGenerate crop-path keyframesCapabilitiesInspect browser pipeline supportUser guideOpen in-app documentation",
+        "Timeline interchangeCuts, markers, and transitions for other editors. Effects and looks stay LocalCut-only metadata.Export Timeline (.otio)Export EDL (.edl)",
+        "Project bundle (Experimental)Move projects between browsers with a portable folder bundle.Export project…Export references onlyImport project…Relocate in-editor paths after collectCollect media…",
+        "Saved preset (Experimental)Custom1080p H.264 Quality1080p H.264 Fast720p VP9 FastDouyin 1080p 30fpsYouTube Shorts 1080p 30fpsYouTube Shorts 1080p 60fpsInstagram Reels 1080p 30fpsXiaohongshu 1080p 30fpsXiaohongshu Square 30fpsExport presetQualityFastCodecH.264 · MP4VP9 · WEBMAV1 · WEBMWidthHeightFPSBitrate (Mbps)RangeFullRangeYouTube ChaptersYouTube requires at least 3 chapters. Add more markers.StartAdd to Queue (Experimental)Save Preset (Experimental)CloseExport guide: codecs, presets, and the render queue",
+        "Import media…Search actions…⌘+K",
+        "Undo⌘+ZRedo⌘+⇧+ZSearch actions…⌘+K"
+      ],
+      "rightTabs": [
+        {
+          "rect": {
+            "h": 38,
+            "right": 1033,
+            "w": 62,
+            "x": 971,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Inspector"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1091,
+            "w": 59,
+            "x": 1033,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Captions"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1141,
+            "w": 50,
+            "x": 1091,
+            "y": 119
+          },
+          "selected": "true",
+          "text": "Record"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1197,
+            "w": 56,
+            "x": 1141,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Program"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1245,
+            "w": 48,
+            "x": 1197,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Replay"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1288,
+            "w": 44,
+            "x": 1245,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Audio"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1344,
+            "w": 55,
+            "x": 1288,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Cleanup"
+        }
+      ],
+      "sideText": "InspectorCaptionsRecordProgramReplayAudioCleanup›RecordRecorder idleRecording is unavailable on this browser profile.Transferable MediaStreamTrack is unavailable. Enable chrome://flags/#enable-experimental-web-platform-features to record on this browser.SourcesAdd screenCameraMicTab/system audio with screenCountdown0s3s5sExperimentalOwn tab (Region)Own tab (Element)Start00:00Paused 00:00"
+    }
+  },
+  {
+    "name": "15-menu-help",
+    "path": "/private/tmp/browser-editor-panel-audit-2026-06-20/15-menu-help.png",
+    "x": 497,
+    "y": 17,
+    "state": {
+      "dockText": "ProjectMediaRecordScopesAICaptionsReframeOutputMedia0Your imported files will live here. Drag one in or click Import.Beat DetectionImport some audio to detect beats.",
+      "leftButtons": [
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 119
+          },
+          "text": "Project",
+          "title": "Import media"
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 175
+          },
+          "text": "Media",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 231
+          },
+          "text": "Record",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 287
+          },
+          "text": "Scopes",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 343
+          },
+          "text": "AI",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 399
+          },
+          "text": "Captions",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 455
+          },
+          "text": "Reframe",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 511
+          },
+          "text": "Output",
+          "title": null
+        }
+      ],
+      "menuText": [
+        "LocalCut StudioClient NLEProjectEditClipTimelineViewHelpSearch actions, panels, clips…⌘K",
+        "RecordRecorder idleRecording is unavailable on this browser profile.Transferable MediaStreamTrack is unavailable. Enable chrome://flags/#enable-experimental-web-platform-features to record on this browser.SourcesAdd screenCameraMicTab/system audio with screenCountdown0s3s5sExperimentalOwn tab (Region)Own tab (Element)Start00:00Paused 00:00",
+        "Command paletteImport mediaAdd clips, images, or audioPlay transportPreview playbackGo liveOpen WHIP publish controlsAuto captionsOn-device speech recognitionSmart reframeGenerate crop-path keyframesCapabilitiesInspect browser pipeline supportUser guideOpen in-app documentation",
+        "Timeline interchangeCuts, markers, and transitions for other editors. Effects and looks stay LocalCut-only metadata.Export Timeline (.otio)Export EDL (.edl)",
+        "Project bundle (Experimental)Move projects between browsers with a portable folder bundle.Export project…Export references onlyImport project…Relocate in-editor paths after collectCollect media…",
+        "Saved preset (Experimental)Custom1080p H.264 Quality1080p H.264 Fast720p VP9 FastDouyin 1080p 30fpsYouTube Shorts 1080p 30fpsYouTube Shorts 1080p 60fpsInstagram Reels 1080p 30fpsXiaohongshu 1080p 30fpsXiaohongshu Square 30fpsExport presetQualityFastCodecH.264 · MP4VP9 · WEBMAV1 · WEBMWidthHeightFPSBitrate (Mbps)RangeFullRangeYouTube ChaptersYouTube requires at least 3 chapters. Add more markers.StartAdd to Queue (Experimental)Save Preset (Experimental)CloseExport guide: codecs, presets, and the render queue",
+        "Import media…Search actions…⌘+K",
+        "Undo⌘+ZRedo⌘+⇧+ZSearch actions…⌘+K"
+      ],
+      "rightTabs": [
+        {
+          "rect": {
+            "h": 38,
+            "right": 1033,
+            "w": 62,
+            "x": 971,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Inspector"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1091,
+            "w": 59,
+            "x": 1033,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Captions"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1141,
+            "w": 50,
+            "x": 1091,
+            "y": 119
+          },
+          "selected": "true",
+          "text": "Record"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1197,
+            "w": 56,
+            "x": 1141,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Program"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1245,
+            "w": 48,
+            "x": 1197,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Replay"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1288,
+            "w": 44,
+            "x": 1245,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Audio"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1344,
+            "w": 55,
+            "x": 1288,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Cleanup"
+        }
+      ],
+      "sideText": "InspectorCaptionsRecordProgramReplayAudioCleanup›RecordRecorder idleRecording is unavailable on this browser profile.Transferable MediaStreamTrack is unavailable. Enable chrome://flags/#enable-experimental-web-platform-features to record on this browser.SourcesAdd screenCameraMicTab/system audio with screenCountdown0s3s5sExperimentalOwn tab (Region)Own tab (Element)Start00:00Paused 00:00"
+    }
+  },
+  {
+    "name": "16-right-inspector",
+    "path": "/private/tmp/browser-editor-panel-audit-2026-06-20/16-right-inspector.png",
+    "x": 1002,
+    "y": 138,
+    "state": {
+      "dockText": "ProjectMediaRecordScopesAICaptionsReframeOutputMedia0Your imported files will live here. Drag one in or click Import.Beat DetectionImport some audio to detect beats.",
+      "leftButtons": [
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 119
+          },
+          "text": "Project",
+          "title": "Import media"
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 175
+          },
+          "text": "Media",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 231
+          },
+          "text": "Record",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 287
+          },
+          "text": "Scopes",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 343
+          },
+          "text": "AI",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 399
+          },
+          "text": "Captions",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 455
+          },
+          "text": "Reframe",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 511
+          },
+          "text": "Output",
+          "title": null
+        }
+      ],
+      "menuText": [
+        "LocalCut StudioClient NLEProjectEditClipTimelineViewHelpSearch actions, panels, clips…⌘K",
+        "InspectorSelect a clip to inspect itPick a clip on the timeline — its properties will show up here.",
+        "Command paletteImport mediaAdd clips, images, or audioPlay transportPreview playbackGo liveOpen WHIP publish controlsAuto captionsOn-device speech recognitionSmart reframeGenerate crop-path keyframesCapabilitiesInspect browser pipeline supportUser guideOpen in-app documentation",
+        "Timeline interchangeCuts, markers, and transitions for other editors. Effects and looks stay LocalCut-only metadata.Export Timeline (.otio)Export EDL (.edl)",
+        "Project bundle (Experimental)Move projects between browsers with a portable folder bundle.Export project…Export references onlyImport project…Relocate in-editor paths after collectCollect media…",
+        "Saved preset (Experimental)Custom1080p H.264 Quality1080p H.264 Fast720p VP9 FastDouyin 1080p 30fpsYouTube Shorts 1080p 30fpsYouTube Shorts 1080p 60fpsInstagram Reels 1080p 30fpsXiaohongshu 1080p 30fpsXiaohongshu Square 30fpsExport presetQualityFastCodecH.264 · MP4VP9 · WEBMAV1 · WEBMWidthHeightFPSBitrate (Mbps)RangeFullRangeYouTube ChaptersYouTube requires at least 3 chapters. Add more markers.StartAdd to Queue (Experimental)Save Preset (Experimental)CloseExport guide: codecs, presets, and the render queue",
+        "Import media…Search actions…⌘+K",
+        "Undo⌘+ZRedo⌘+⇧+ZSearch actions…⌘+K"
+      ],
+      "rightTabs": [
+        {
+          "rect": {
+            "h": 38,
+            "right": 1033,
+            "w": 62,
+            "x": 971,
+            "y": 119
+          },
+          "selected": "true",
+          "text": "Inspector"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1091,
+            "w": 59,
+            "x": 1033,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Captions"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1141,
+            "w": 50,
+            "x": 1091,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Record"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1197,
+            "w": 56,
+            "x": 1141,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Program"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1245,
+            "w": 48,
+            "x": 1197,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Replay"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1288,
+            "w": 44,
+            "x": 1245,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Audio"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1344,
+            "w": 55,
+            "x": 1288,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Cleanup"
+        }
+      ],
+      "sideText": "InspectorCaptionsRecordProgramReplayAudioCleanup›InspectorSelect a clip to inspect itPick a clip on the timeline — its properties will show up here."
+    }
+  },
+  {
+    "name": "17-right-captions",
+    "path": "/private/tmp/browser-editor-panel-audit-2026-06-20/17-right-captions.png",
+    "x": 1062,
+    "y": 138,
+    "state": {
+      "dockText": "ProjectMediaRecordScopesAICaptionsReframeOutputMedia0Your imported files will live here. Drag one in or click Import.Beat DetectionImport some audio to detect beats.",
+      "leftButtons": [
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 119
+          },
+          "text": "Project",
+          "title": "Import media"
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 175
+          },
+          "text": "Media",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 231
+          },
+          "text": "Record",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 287
+          },
+          "text": "Scopes",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 343
+          },
+          "text": "AI",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 399
+          },
+          "text": "Captions",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 455
+          },
+          "text": "Reframe",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 511
+          },
+          "text": "Output",
+          "title": null
+        }
+      ],
+      "menuText": [
+        "LocalCut StudioClient NLEProjectEditClipTimelineViewHelpSearch actions, panels, clips…⌘K",
+        "TranscriptCaption tracks and timingImportExportImport an SRT or WebVTT file, or generate captions from audio.",
+        "Command paletteImport mediaAdd clips, images, or audioPlay transportPreview playbackGo liveOpen WHIP publish controlsAuto captionsOn-device speech recognitionSmart reframeGenerate crop-path keyframesCapabilitiesInspect browser pipeline supportUser guideOpen in-app documentation",
+        "Timeline interchangeCuts, markers, and transitions for other editors. Effects and looks stay LocalCut-only metadata.Export Timeline (.otio)Export EDL (.edl)",
+        "Project bundle (Experimental)Move projects between browsers with a portable folder bundle.Export project…Export references onlyImport project…Relocate in-editor paths after collectCollect media…",
+        "Saved preset (Experimental)Custom1080p H.264 Quality1080p H.264 Fast720p VP9 FastDouyin 1080p 30fpsYouTube Shorts 1080p 30fpsYouTube Shorts 1080p 60fpsInstagram Reels 1080p 30fpsXiaohongshu 1080p 30fpsXiaohongshu Square 30fpsExport presetQualityFastCodecH.264 · MP4VP9 · WEBMAV1 · WEBMWidthHeightFPSBitrate (Mbps)RangeFullRangeYouTube ChaptersYouTube requires at least 3 chapters. Add more markers.StartAdd to Queue (Experimental)Save Preset (Experimental)CloseExport guide: codecs, presets, and the render queue",
+        "Import media…Search actions…⌘+K",
+        "Undo⌘+ZRedo⌘+⇧+ZSearch actions…⌘+K"
+      ],
+      "rightTabs": [
+        {
+          "rect": {
+            "h": 38,
+            "right": 1033,
+            "w": 62,
+            "x": 971,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Inspector"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1091,
+            "w": 59,
+            "x": 1033,
+            "y": 119
+          },
+          "selected": "true",
+          "text": "Captions"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1141,
+            "w": 50,
+            "x": 1091,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Record"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1197,
+            "w": 56,
+            "x": 1141,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Program"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1245,
+            "w": 48,
+            "x": 1197,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Replay"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1288,
+            "w": 44,
+            "x": 1245,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Audio"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1344,
+            "w": 55,
+            "x": 1288,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Cleanup"
+        }
+      ],
+      "sideText": "InspectorCaptionsRecordProgramReplayAudioCleanup›TranscriptCaption tracks and timingImportExportImport an SRT or WebVTT file, or generate captions from audio."
+    }
+  },
+  {
+    "name": "18-right-record",
+    "path": "/private/tmp/browser-editor-panel-audit-2026-06-20/18-right-record.png",
+    "x": 1117,
+    "y": 138,
+    "state": {
+      "dockText": "ProjectMediaRecordScopesAICaptionsReframeOutputMedia0Your imported files will live here. Drag one in or click Import.Beat DetectionImport some audio to detect beats.",
+      "leftButtons": [
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 119
+          },
+          "text": "Project",
+          "title": "Import media"
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 175
+          },
+          "text": "Media",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 231
+          },
+          "text": "Record",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 287
+          },
+          "text": "Scopes",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 343
+          },
+          "text": "AI",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 399
+          },
+          "text": "Captions",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 455
+          },
+          "text": "Reframe",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 511
+          },
+          "text": "Output",
+          "title": null
+        }
+      ],
+      "menuText": [
+        "LocalCut StudioClient NLEProjectEditClipTimelineViewHelpSearch actions, panels, clips…⌘K",
+        "RecordRecorder idleRecording is unavailable on this browser profile.Transferable MediaStreamTrack is unavailable. Enable chrome://flags/#enable-experimental-web-platform-features to record on this browser.SourcesAdd screenCameraMicTab/system audio with screenCountdown0s3s5sExperimentalOwn tab (Region)Own tab (Element)Start00:00Paused 00:00",
+        "Command paletteImport mediaAdd clips, images, or audioPlay transportPreview playbackGo liveOpen WHIP publish controlsAuto captionsOn-device speech recognitionSmart reframeGenerate crop-path keyframesCapabilitiesInspect browser pipeline supportUser guideOpen in-app documentation",
+        "Timeline interchangeCuts, markers, and transitions for other editors. Effects and looks stay LocalCut-only metadata.Export Timeline (.otio)Export EDL (.edl)",
+        "Project bundle (Experimental)Move projects between browsers with a portable folder bundle.Export project…Export references onlyImport project…Relocate in-editor paths after collectCollect media…",
+        "Saved preset (Experimental)Custom1080p H.264 Quality1080p H.264 Fast720p VP9 FastDouyin 1080p 30fpsYouTube Shorts 1080p 30fpsYouTube Shorts 1080p 60fpsInstagram Reels 1080p 30fpsXiaohongshu 1080p 30fpsXiaohongshu Square 30fpsExport presetQualityFastCodecH.264 · MP4VP9 · WEBMAV1 · WEBMWidthHeightFPSBitrate (Mbps)RangeFullRangeYouTube ChaptersYouTube requires at least 3 chapters. Add more markers.StartAdd to Queue (Experimental)Save Preset (Experimental)CloseExport guide: codecs, presets, and the render queue",
+        "Import media…Search actions…⌘+K",
+        "Undo⌘+ZRedo⌘+⇧+ZSearch actions…⌘+K"
+      ],
+      "rightTabs": [
+        {
+          "rect": {
+            "h": 38,
+            "right": 1033,
+            "w": 62,
+            "x": 971,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Inspector"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1091,
+            "w": 59,
+            "x": 1033,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Captions"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1141,
+            "w": 50,
+            "x": 1091,
+            "y": 119
+          },
+          "selected": "true",
+          "text": "Record"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1197,
+            "w": 56,
+            "x": 1141,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Program"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1245,
+            "w": 48,
+            "x": 1197,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Replay"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1288,
+            "w": 44,
+            "x": 1245,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Audio"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1344,
+            "w": 55,
+            "x": 1288,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Cleanup"
+        }
+      ],
+      "sideText": "InspectorCaptionsRecordProgramReplayAudioCleanup›RecordRecorder idleRecording is unavailable on this browser profile.Transferable MediaStreamTrack is unavailable. Enable chrome://flags/#enable-experimental-web-platform-features to record on this browser.SourcesAdd screenCameraMicTab/system audio with screenCountdown0s3s5sExperimentalOwn tab (Region)Own tab (Element)Start00:00Paused 00:00"
+    }
+  },
+  {
+    "name": "19-right-program",
+    "path": "/private/tmp/browser-editor-panel-audit-2026-06-20/19-right-program.png",
+    "x": 1169,
+    "y": 138,
+    "state": {
+      "dockText": "ProjectMediaRecordScopesAICaptionsReframeOutputMedia0Your imported files will live here. Drag one in or click Import.Beat DetectionImport some audio to detect beats.",
+      "leftButtons": [
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 119
+          },
+          "text": "Project",
+          "title": "Import media"
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 175
+          },
+          "text": "Media",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 231
+          },
+          "text": "Record",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 287
+          },
+          "text": "Scopes",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 343
+          },
+          "text": "AI",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 399
+          },
+          "text": "Captions",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 455
+          },
+          "text": "Reframe",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 511
+          },
+          "text": "Output",
+          "title": null
+        }
+      ],
+      "menuText": [
+        "LocalCut StudioClient NLEProjectEditClipTimelineViewHelpSearch actions, panels, clips…⌘K",
+        "Program ModeProgram Mode is unavailable:Transferable MediaStreamTrack is unavailable. Enable chrome://flags/#enable-experimental-web-platform-features to record on this browser.",
+        "Command paletteImport mediaAdd clips, images, or audioPlay transportPreview playbackGo liveOpen WHIP publish controlsAuto captionsOn-device speech recognitionSmart reframeGenerate crop-path keyframesCapabilitiesInspect browser pipeline supportUser guideOpen in-app documentation",
+        "Timeline interchangeCuts, markers, and transitions for other editors. Effects and looks stay LocalCut-only metadata.Export Timeline (.otio)Export EDL (.edl)",
+        "Project bundle (Experimental)Move projects between browsers with a portable folder bundle.Export project…Export references onlyImport project…Relocate in-editor paths after collectCollect media…",
+        "Saved preset (Experimental)Custom1080p H.264 Quality1080p H.264 Fast720p VP9 FastDouyin 1080p 30fpsYouTube Shorts 1080p 30fpsYouTube Shorts 1080p 60fpsInstagram Reels 1080p 30fpsXiaohongshu 1080p 30fpsXiaohongshu Square 30fpsExport presetQualityFastCodecH.264 · MP4VP9 · WEBMAV1 · WEBMWidthHeightFPSBitrate (Mbps)RangeFullRangeYouTube ChaptersYouTube requires at least 3 chapters. Add more markers.StartAdd to Queue (Experimental)Save Preset (Experimental)CloseExport guide: codecs, presets, and the render queue",
+        "Import media…Search actions…⌘+K",
+        "Undo⌘+ZRedo⌘+⇧+ZSearch actions…⌘+K"
+      ],
+      "rightTabs": [
+        {
+          "rect": {
+            "h": 38,
+            "right": 1033,
+            "w": 62,
+            "x": 971,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Inspector"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1091,
+            "w": 59,
+            "x": 1033,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Captions"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1141,
+            "w": 50,
+            "x": 1091,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Record"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1197,
+            "w": 56,
+            "x": 1141,
+            "y": 119
+          },
+          "selected": "true",
+          "text": "Program"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1245,
+            "w": 48,
+            "x": 1197,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Replay"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1288,
+            "w": 44,
+            "x": 1245,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Audio"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1344,
+            "w": 55,
+            "x": 1288,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Cleanup"
+        }
+      ],
+      "sideText": "InspectorCaptionsRecordProgramReplayAudioCleanup›Program ModeProgram Mode is unavailable:Transferable MediaStreamTrack is unavailable. Enable chrome://flags/#enable-experimental-web-platform-features to record on this browser."
+    }
+  },
+  {
+    "name": "20-right-replay",
+    "path": "/private/tmp/browser-editor-panel-audit-2026-06-20/20-right-replay.png",
+    "x": 1221,
+    "y": 138,
+    "state": {
+      "dockText": "ProjectMediaRecordScopesAICaptionsReframeOutputMedia0Your imported files will live here. Drag one in or click Import.Beat DetectionImport some audio to detect beats.",
+      "leftButtons": [
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 119
+          },
+          "text": "Project",
+          "title": "Import media"
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 175
+          },
+          "text": "Media",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 231
+          },
+          "text": "Record",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 287
+          },
+          "text": "Scopes",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 343
+          },
+          "text": "AI",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 399
+          },
+          "text": "Captions",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 455
+          },
+          "text": "Reframe",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 511
+          },
+          "text": "Output",
+          "title": null
+        }
+      ],
+      "menuText": [
+        "LocalCut StudioClient NLEProjectEditClipTimelineViewHelpSearch actions, panels, clips…⌘K",
+        "Replay Buffer Start Capture",
+        "Command paletteImport mediaAdd clips, images, or audioPlay transportPreview playbackGo liveOpen WHIP publish controlsAuto captionsOn-device speech recognitionSmart reframeGenerate crop-path keyframesCapabilitiesInspect browser pipeline supportUser guideOpen in-app documentation",
+        "Timeline interchangeCuts, markers, and transitions for other editors. Effects and looks stay LocalCut-only metadata.Export Timeline (.otio)Export EDL (.edl)",
+        "Project bundle (Experimental)Move projects between browsers with a portable folder bundle.Export project…Export references onlyImport project…Relocate in-editor paths after collectCollect media…",
+        "Saved preset (Experimental)Custom1080p H.264 Quality1080p H.264 Fast720p VP9 FastDouyin 1080p 30fpsYouTube Shorts 1080p 30fpsYouTube Shorts 1080p 60fpsInstagram Reels 1080p 30fpsXiaohongshu 1080p 30fpsXiaohongshu Square 30fpsExport presetQualityFastCodecH.264 · MP4VP9 · WEBMAV1 · WEBMWidthHeightFPSBitrate (Mbps)RangeFullRangeYouTube ChaptersYouTube requires at least 3 chapters. Add more markers.StartAdd to Queue (Experimental)Save Preset (Experimental)CloseExport guide: codecs, presets, and the render queue",
+        "Import media…Search actions…⌘+K",
+        "Undo⌘+ZRedo⌘+⇧+ZSearch actions…⌘+K"
+      ],
+      "rightTabs": [
+        {
+          "rect": {
+            "h": 38,
+            "right": 1033,
+            "w": 62,
+            "x": 971,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Inspector"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1091,
+            "w": 59,
+            "x": 1033,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Captions"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1141,
+            "w": 50,
+            "x": 1091,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Record"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1197,
+            "w": 56,
+            "x": 1141,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Program"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1245,
+            "w": 48,
+            "x": 1197,
+            "y": 119
+          },
+          "selected": "true",
+          "text": "Replay"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1288,
+            "w": 44,
+            "x": 1245,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Audio"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1344,
+            "w": 55,
+            "x": 1288,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Cleanup"
+        }
+      ],
+      "sideText": "InspectorCaptionsRecordProgramReplayAudioCleanup›Replay Buffer Start Capture"
+    }
+  },
+  {
+    "name": "21-right-audio-visible-edge",
+    "path": "/private/tmp/browser-editor-panel-audit-2026-06-20/21-right-audio-visible-edge.png",
+    "x": 1266,
+    "y": 138,
+    "state": {
+      "dockText": "ProjectMediaRecordScopesAICaptionsReframeOutputMedia0Your imported files will live here. Drag one in or click Import.Beat DetectionImport some audio to detect beats.",
+      "leftButtons": [
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 119
+          },
+          "text": "Project",
+          "title": "Import media"
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 175
+          },
+          "text": "Media",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 231
+          },
+          "text": "Record",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 287
+          },
+          "text": "Scopes",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 343
+          },
+          "text": "AI",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 399
+          },
+          "text": "Captions",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 455
+          },
+          "text": "Reframe",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 511
+          },
+          "text": "Output",
+          "title": null
+        }
+      ],
+      "menuText": [
+        "LocalCut StudioClient NLEProjectEditClipTimelineViewHelpSearch actions, panels, clips…⌘K",
+        "Live Audio ChainLatency: 0.0 msGateBypassedCompressorBypassedLimiterBypassed",
+        "Command paletteImport mediaAdd clips, images, or audioPlay transportPreview playbackGo liveOpen WHIP publish controlsAuto captionsOn-device speech recognitionSmart reframeGenerate crop-path keyframesCapabilitiesInspect browser pipeline supportUser guideOpen in-app documentation",
+        "Timeline interchangeCuts, markers, and transitions for other editors. Effects and looks stay LocalCut-only metadata.Export Timeline (.otio)Export EDL (.edl)",
+        "Project bundle (Experimental)Move projects between browsers with a portable folder bundle.Export project…Export references onlyImport project…Relocate in-editor paths after collectCollect media…",
+        "Saved preset (Experimental)Custom1080p H.264 Quality1080p H.264 Fast720p VP9 FastDouyin 1080p 30fpsYouTube Shorts 1080p 30fpsYouTube Shorts 1080p 60fpsInstagram Reels 1080p 30fpsXiaohongshu 1080p 30fpsXiaohongshu Square 30fpsExport presetQualityFastCodecH.264 · MP4VP9 · WEBMAV1 · WEBMWidthHeightFPSBitrate (Mbps)RangeFullRangeYouTube ChaptersYouTube requires at least 3 chapters. Add more markers.StartAdd to Queue (Experimental)Save Preset (Experimental)CloseExport guide: codecs, presets, and the render queue",
+        "Import media…Search actions…⌘+K",
+        "Undo⌘+ZRedo⌘+⇧+ZSearch actions…⌘+K"
+      ],
+      "rightTabs": [
+        {
+          "rect": {
+            "h": 38,
+            "right": 1033,
+            "w": 62,
+            "x": 971,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Inspector"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1091,
+            "w": 59,
+            "x": 1033,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Captions"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1141,
+            "w": 50,
+            "x": 1091,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Record"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1197,
+            "w": 56,
+            "x": 1141,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Program"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1245,
+            "w": 48,
+            "x": 1197,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Replay"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1288,
+            "w": 44,
+            "x": 1245,
+            "y": 119
+          },
+          "selected": "true",
+          "text": "Audio"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1344,
+            "w": 55,
+            "x": 1288,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Cleanup"
+        }
+      ],
+      "sideText": "InspectorCaptionsRecordProgramReplayAudioCleanup›Live Audio ChainLatency: 0.0 msGateBypassedCompressorBypassedLimiterBypassed"
+    }
+  },
+  {
+    "name": "22-right-cleanup-via-toolbar",
+    "path": "/private/tmp/browser-editor-panel-audit-2026-06-20/22-right-cleanup-via-toolbar.png",
+    "x": 587,
+    "y": 98,
+    "state": {
+      "dockText": "ProjectMediaRecordScopesAICaptionsReframeOutputMedia0Your imported files will live here. Drag one in or click Import.Beat DetectionImport some audio to detect beats.",
+      "leftButtons": [
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 119
+          },
+          "text": "Project",
+          "title": "Import media"
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 175
+          },
+          "text": "Media",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 231
+          },
+          "text": "Record",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 287
+          },
+          "text": "Scopes",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 343
+          },
+          "text": "AI",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 399
+          },
+          "text": "Captions",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 455
+          },
+          "text": "Reframe",
+          "title": null
+        },
+        {
+          "ariaSelected": null,
+          "rect": {
+            "h": 56,
+            "w": 64,
+            "x": 7,
+            "y": 511
+          },
+          "text": "Output",
+          "title": null
+        }
+      ],
+      "menuText": [
+        "LocalCut StudioClient NLEProjectEditClipTimelineViewHelpSearch actions, panels, clips…⌘K",
+        "Live Audio ChainLatency: 0.0 msGateBypassedCompressorBypassedLimiterBypassed",
+        "Command paletteImport mediaAdd clips, images, or audioPlay transportPreview playbackGo liveOpen WHIP publish controlsAuto captionsOn-device speech recognitionSmart reframeGenerate crop-path keyframesCapabilitiesInspect browser pipeline supportUser guideOpen in-app documentation",
+        "Timeline interchangeCuts, markers, and transitions for other editors. Effects and looks stay LocalCut-only metadata.Export Timeline (.otio)Export EDL (.edl)",
+        "Project bundle (Experimental)Move projects between browsers with a portable folder bundle.Export project…Export references onlyImport project…Relocate in-editor paths after collectCollect media…",
+        "Saved preset (Experimental)Custom1080p H.264 Quality1080p H.264 Fast720p VP9 FastDouyin 1080p 30fpsYouTube Shorts 1080p 30fpsYouTube Shorts 1080p 60fpsInstagram Reels 1080p 30fpsXiaohongshu 1080p 30fpsXiaohongshu Square 30fpsExport presetQualityFastCodecH.264 · MP4VP9 · WEBMAV1 · WEBMWidthHeightFPSBitrate (Mbps)RangeFullRangeYouTube ChaptersYouTube requires at least 3 chapters. Add more markers.StartAdd to Queue (Experimental)Save Preset (Experimental)CloseExport guide: codecs, presets, and the render queue",
+        "Import media…Search actions…⌘+K",
+        "Undo⌘+ZRedo⌘+⇧+ZSearch actions…⌘+K"
+      ],
+      "rightTabs": [
+        {
+          "rect": {
+            "h": 38,
+            "right": 1033,
+            "w": 62,
+            "x": 971,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Inspector"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1091,
+            "w": 59,
+            "x": 1033,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Captions"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1141,
+            "w": 50,
+            "x": 1091,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Record"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1197,
+            "w": 56,
+            "x": 1141,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Program"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1245,
+            "w": 48,
+            "x": 1197,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Replay"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1288,
+            "w": 44,
+            "x": 1245,
+            "y": 119
+          },
+          "selected": "true",
+          "text": "Audio"
+        },
+        {
+          "rect": {
+            "h": 38,
+            "right": 1344,
+            "w": 55,
+            "x": 1288,
+            "y": 119
+          },
+          "selected": "false",
+          "text": "Cleanup"
+        }
+      ],
+      "sideText": "InspectorCaptionsRecordProgramReplayAudioCleanup›Live Audio ChainLatency: 0.0 msGateBypassedCompressorBypassedLimiterBypassed"
+    }
+  }
+]

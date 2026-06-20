@@ -1,6 +1,6 @@
-# Tasks — Capability-probe false negatives + editor chrome overlap & IA
+# Tasks — Capability-probe false negatives + editor chrome overlap
 
-> Status: **Part 1 (T1–T11): Implemented — in review** (`pnpm run check` green; remaining unchecked are manual/on-device verification T6.4/T10 and the deferred off-main capture path T5.5). **Part 2 (IA-T1–IA-T7, below): Proposed — not started.** Tasks map to bugs (Bn) in [`bugfix.md`](./bugfix.md) and design entries (Dn) in [`design.md`](./design.md).
+> Status: **Implemented — in review** (T1–T11; `pnpm run check` green). Remaining unchecked are manual/on-device verification (T6.4, T10) and the WebNN-row unit test (T7.2). The off-main-thread recording fallback and the editor-chrome IA reorganization are **out of this PR** — each in its own branch. Tasks map to bugs (Bn) in [`bugfix.md`](./bugfix.md) and design entries (Dn) in [`design.md`](./design.md).
 
 ## T1 — H.264 level helper + general codec probe (B1, D1)
 
@@ -28,13 +28,12 @@
 
 ## T5 — Recording track-transfer gate (B5, D5)
 
-Decision: **honest gate now, off-main-thread main-frames path deferred** (D5). The capture encode path is track-based with no trackless push-frame seam, so a correct fallback is a verifiable engine feature, not a bugfix-sized change.
+Decision: **honest gate in this PR; the off-main-thread main-frames path is a separate branch** (D5). The capture encode path is track-based with no trackless push-frame seam, so a correct fallback is a verifiable engine feature, not a bugfix-sized change.
 
-- [x] T5.1 Keep `recordingAvailable()` requiring `transferableMediaStreamTrack !== 'unsupported'` (worker-track transfer needs it), with a comment pointing at the deferred task.
+- [x] T5.1 Keep `recordingAvailable()` requiring `transferableMediaStreamTrack !== 'unsupported'` (worker-track transfer needs it), with a comment pointing at the separate fallback work.
 - [x] T5.2 Make `captureUnavailableReasons` surface the actionable reason when transfer is unsupported (names the `chrome://flags/#enable-experimental-web-platform-features` workaround), independent of MSTP.
 - [x] T5.3 Remove the non-functional main-frames runtime (`startMstpReaders` posting `{type:'video-frame'}` to the writer worker — unhandled, dropped + leaked frames, empty-transfer `DataCloneError`) and its compat badge / dead CSS.
 - [x] T5.4 Tests updated: `recordingAvailable` false when transfer `unsupported`, true on a fully capable profile and when transfer is `unknown`; `captureUnavailableReasons` shows the flag-hint reason only when transfer is `unsupported`.
-- [ ] T5.5 (deferred → Out-of-scope) Real off-main-thread main-frames capture: new `TrackPipeline` push-frame input mode + pipeline-worker message + `VideoFrame` lifecycle, verified against a live capture session.
 
 ## T6 — Consolidate workspace layout + fix responsive collapse (B6, D6)
 
@@ -75,67 +74,4 @@ Decision: **honest gate now, off-main-thread main-frames path deferred** (D5). T
 ## Out-of-scope follow-ups (flag if encountered)
 
 - [ ] Browser-support matrix entry / docs note that H.264 export + recording now probe at resolution-correct levels.
-- [ ] If T5 lands the fallback-message path only, file a follow-up for the bounded main-frames capture route.
 
----
-
-# Part 2 — Editor chrome IA (B10–B16, D10–D16) — Proposed, not started
-
-Ordered by the design's incremental rollout — Phase 1 is copy/labelling/density (low risk), Phase 2 restructures the right rail, Phase 3 the left rail. Resolve the three **Open decisions** (design Part 2) before Phase 2/3.
-
-## Phase 1 — Labels, dedupe, density (no nav restructure)
-
-### IA-T1 — Menu/toolbar dedupe (B13, D13)
-
-- [ ] IA-T1.1 Remove the per-menu `Search actions…` items from each `MENU_GROUPS` entry in [`Toolbar.tsx`](../../../src/ui/Toolbar.tsx) (~251/267/283/302/311/320); keep the single `command-search` trigger (~416).
-- [ ] IA-T1.2 Move `Browser capabilities` to one home under `Help` (with Diagnostics); remove from `View` (~309) and the top-strip `Capabilities` chip (~726).
-- [ ] IA-T1.3 Remove the top-strip `Help` chip (~735); keep the `Help` menu.
-- [ ] IA-T1.4 Collapse the launcher strip (~664–740) to frequent actions; route Cleanup/Captions/Translate/Reframe/Silence to the palette + right-rail destinations.
-- [ ] IA-T1.5 Update Toolbar component tests/snapshots.
-
-### IA-T2 — Audio cleanup disambiguation (B12, D12)
-
-- [ ] IA-T2.1 Rename the top-toolbar `Cleanup` action to **`Audio Cleanup`** and gate on a selected clip ([`Toolbar.tsx:667`](../../../src/ui/Toolbar.tsx)).
-- [ ] IA-T2.2 Rename the right-rail `voice-cleanup` tab `Cleanup` → `Voice FX` (or fold under `Audio`, IA-T4); no bare `Cleanup` left anywhere.
-- [ ] IA-T2.3 Assert label uniqueness across the three audio surfaces.
-
-### IA-T3 — Compact unavailable states (B16, D16)
-
-- [ ] IA-T3.1 Collapse the `captureUnavailableReasons(probe)` body list in [`RecordPanel.tsx`](../../../src/ui/RecordPanel.tsx)/[`ProgramPanel.tsx`](../../../src/ui/ProgramPanel.tsx) to a one-line status chip + `<details>`; keep a primary call-to-action.
-- [ ] IA-T3.2 Reuse diagnostics/disclosure styling; no change to reason data/copy.
-- [ ] IA-T3.3 Update the affected `__browser__` panel tests.
-
-## Phase 2 — Right rail by job (B10, B14, D10, D14)
-
-### IA-T4 — Collapse seven tabs to four job destinations
-
-- [ ] IA-T4.1 Replace `SIDE_RAIL_TABS` ([`App.tsx:354`](../../../src/ui/App.tsx)) with `Inspector`/`Text`/`Audio`/`Capture`; update `SideRailTab`, `isSideRailTab`, `openSideRailTab`, `SIDE_RAIL_COLLAPSED_KEY`, and keyboard-map tab ids together.
-- [ ] IA-T4.2 `Text` = Captions + language tools; `Capture` = Record · Program · Replay · go-live (secondary segmented control); `Audio` = live chain + Voice FX.
-- [ ] IA-T4.3 Add the in-panel secondary segmented control; ensure it fits/wraps within ~302px.
-- [ ] IA-T4.4 **Remove `overflow-x: auto` + hidden scrollbar from `.side-rail-tab-bar`** and delete the duplicate blocks in [`global.css`](../../../src/global.css) (~2240, ~6834, ~7854) so one definition governs.
-- [ ] IA-T4.5 Fallback only if overflow remains: add a **visible** "⋯ More" overflow menu (never a hidden scroll region).
-- [ ] IA-T4.6 Update App/right-rail browser + keyboard tests; migrate the persisted collapsed-key value (old ids → new).
-
-### IA-T5 — Verify right-rail fit
-
-- [ ] IA-T5.1 At 1280×720: all four destinations fully visible/clickable; activating one does not clip another; no `overflow-x` scroll on the tab bar.
-
-## Phase 3 — Left rail + Beats (B11, B15, D11, D15)
-
-### IA-T6 — Left rail → library switcher (Option B)
-
-- [ ] IA-T6.1 Reduce `.dock-rail` ([`App.tsx:4299`](../../../src/ui/App.tsx)) to `Media`/`Beats`; make each switch `.dock-library` content (or a header toggle if only two).
-- [ ] IA-T6.2 Remove the dead `Media` button; move workflow launchers to palette/menus and/or right-rail destinations; `Scopes` → `View`; `Project`/`Output` → `Project` menu + toolbar.
-- [ ] IA-T6.3 Route import/picker failures through the recent-error log, not the status line.
-
-### IA-T7 — Beat Detection home (B15, D15)
-
-- [ ] IA-T7.1 Present `BeatPanel` as a Media-Analysis sub-section shown when an audio source is selected (or the left-rail `Beats` destination from IA-T6).
-- [ ] IA-T7.2 Link Beats state to the transport `Beat`-snap toggle (shared signal) with a one-line affordance.
-
-## Part 2 quality gate (each phase)
-
-- [ ] IA-G1 `pnpm run check` green (format + lint + typecheck + Vitest + build).
-- [ ] IA-G2 Test count does not decrease; updated component/keyboard tests reflect the new IA.
-- [ ] IA-G3 Existing ARIA roles (`tab`/`tabpanel`/`region`) remain correct after restructure.
-- [ ] IA-G4 Re-run the audit captures (or a focused subset) at 1280×720 to confirm each finding is resolved.

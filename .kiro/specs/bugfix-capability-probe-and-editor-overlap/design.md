@@ -1,6 +1,6 @@
-# Design — Capability-probe false negatives + editor chrome overlap & IA
+# Design — Capability-probe false negatives + editor chrome overlap
 
-> Status: **Part 1 (D1–D9): Implemented — in review**; **Part 2 (D10–D16, editor chrome IA): Proposed**. Each design entry Dn maps to bug Bn in [`bugfix.md`](./bugfix.md). The recurring theme for B1–B4 is one defect: H.264 codec strings encode a fixed **level** that is too low for the probe resolution, so `VideoEncoder.isConfigSupported` rejects the config on a fully capable encoder. D5 was revised during implementation (honest gate + deferred fallback); D6 gained a consolidation gotcha (`display: grid` must survive). Part 2 (D10–D16) is the navigation/IA reorganization — see the section below.
+> Status: **Implemented — in review** (D1–D9). Each design entry Dn maps to bug Bn in [`bugfix.md`](./bugfix.md). The recurring theme for B1–B4 is one defect: H.264 codec strings encode a fixed **level** that is too low for the probe resolution, so `VideoEncoder.isConfigSupported` rejects the config on a fully capable encoder. D5 was revised during implementation (honest gate; the off-main-thread fallback is a **separate branch**, not this PR); D6 gained a consolidation gotcha (`display: grid` must survive). The editor-chrome IA reorganization is also out of this PR.
 
 ## D1 / D2 — Pick an H.264 level that matches the probe resolution
 
@@ -117,7 +117,7 @@ Shipped instead:
 
 - `recordingAvailable()` keeps `transferableMediaStreamTrack !== 'unsupported'` (the worker-track path genuinely needs it), with a comment explaining why and pointing at the deferred task.
 - `captureUnavailableReasons` surfaces the **actionable** reason when transfer is unsupported: *"Transferable MediaStreamTrack is unavailable. Enable `chrome://flags/#enable-experimental-web-platform-features` to record on this browser."* — so the user has a concrete path to a working recording (worker-track) today, instead of a dead end or a silently-broken "compatibility" mode.
-- The real off-main-thread main-frames capture path is tracked as an out-of-scope follow-up (T-Out-of-scope).
+- The real off-main-thread main-frames capture path is **out of this PR** — implemented in its own branch.
 
 ## D6 — Consolidate the workspace layout rules; fix the responsive collapse
 
@@ -164,101 +164,3 @@ The item's irreducible width must be **below** the narrowest media-bin width so 
 
 This composes with B6/D6: the 236px dock leaves the bin ~162px, which the reduced footprint fits. Marking the actions `flex: 0 0 auto` keeps them from being compressed before the meta text.
 
----
-
-# Part 2 — Editor chrome IA design (D10–D16)
-
-> Maps to B10–B16. Guiding move: **consolidate by user job, give every nav control one honest behavior, and never hide primary navigation behind a scrollbar.** Code anchors current as of branch `claude/laughing-colden-c29248`. Status: Proposed (not implemented).
-
-## Target information architecture
-
-The audit's proposed reorganization, adopted as the design target:
-
-**Top menu bar** (`Toolbar.tsx` `MENU_GROUPS`) — the command taxonomy:
-
-| Menu | Commands (implemented only) |
-| --- | --- |
-| Project | New, Import, Project bundle, Collect media, Export |
-| Edit | Undo, Redo, Delete, split/ripple/roll editing |
-| Clip | clip-specific operations only |
-| Timeline | snapping, beat grid, tracks, markers, safe areas |
-| View | layout, panels, scopes, overlays (NOT Browser capabilities) |
-| Help | User guide, Browser capabilities, Diagnostics |
-
-**Top toolbar** — frequent actions + status only: Import, Undo/Redo, Transport, Timecode, Snap/Beat toggles, master level, Export. The long launcher strip ([`Toolbar.tsx:664-740`](../../../src/ui/Toolbar.tsx): Cleanup, Captions, Translate, Reframe, Silence, Capabilities, Help) is removed/collapsed; infrequent tools move to the palette (⌘K) and menus.
-
-**Left rail** — Option B (library/source): `Media`, `Beats`, optionally `Project` (D11).
-
-**Right rail** — ≤4 contextual destinations: `Inspector`, `Text`, `Audio`, `Capture`; the current seven become secondary segmented controls *inside* these (D14).
-
-## D10 — Right-rail navigation that fits (B10)
-
-`SIDE_RAIL_TABS` ([`App.tsx:354-362`](../../../src/ui/App.tsx)) has seven entries; the tab bar is `display:flex; overflow-x:auto` with a hidden/thin scrollbar ([`global.css:6834-6845`](../../../src/global.css), plus duplicates at ~2240, ~7854). 374px of tabs in a ~302px rail ⇒ scroll/clip/strip-shift.
-
-- **Preferred:** fold to the four job destinations (D14). Four short labels (`Inspector`/`Text`/`Audio`/`Capture` ≈ 204px) fit 302px ⇒ **remove `overflow-x:auto` from `.side-rail-tab-bar`** entirely. Within a destination, a secondary segmented control (e.g. `Capture` → `Record | Program | Replay`) fits or wraps.
-- **Fallback (if the four-tab regroup is deferred):** replace the hidden scrollbar with a **visible** "⋯ More" overflow menu so no destination is silently hidden. Never keep `overflow-x:auto` + hidden scrollbar for primary nav (same rule as media-bin B9).
-- Either way: delete the redundant `.side-rail-tab-bar` rule blocks so one definition governs (the duplicate-rule trap from B6 exists here too).
-
-## D11 — Left rail: one honest behavior (B11)
-
-`.dock-rail` ([`App.tsx:4299-4334`](../../../src/ui/App.tsx)) mixes import picker / dead label / right-rail switches / overlays / modals / scroll.
-
-**Option B (recommended):** demote the left rail to a **library/source switcher**:
-
-- Keep `Media` and `Beats` as left-dock sections (they already render in `.dock-library`); make each actually switch the dock content (or replace the rail with a header toggle if only two).
-- Move workflow launchers off the rail: `Record`/`Captions`/`Program`/`Replay`/`AI`/`Reframe`/`Silence` → command palette + relevant menus, and/or open their right-rail destination (D14). `Scopes` → `View`. `Project`/`Output` (import/export) → `Project` menu + toolbar.
-- Remove the dead no-handler `Media` button; route import/picker failures through the recent-error log, not the status line.
-
-**Why not Option A (full dock switcher):** the left dock today only has Media + Beats content; a six-destination dock switcher implies building five new left-dock panels — much larger. Option B fixes the dishonest-nav problem now; a dock switcher is a follow-up if those panels materialise.
-
-## D12 — Audio cleanup disambiguation (B12)
-
-- Right-rail live chain stays **`Audio`**.
-- Fold Voice Cleanup under **`Audio`** as a secondary control (D14), or rename the tab to **`Voice FX`** / **`Voice Chain`** — never a bare `Cleanup`.
-- The top-toolbar selected-clip action is renamed **`Audio Cleanup`** (it already opens the per-clip workflow) and clip-gated; no collision with the right-rail `Audio`. (B8 already removed the misleading "Noise Suppression" insert.)
-
-## D13 — Menu taxonomy, no duplicate access (B13)
-
-In [`Toolbar.tsx`](../../../src/ui/Toolbar.tsx):
-
-- Remove the per-menu `{ id: 'palette', label: 'Search actions…' }` (lines ~251/267/283/302/311/320); keep the single `command-search` Popover trigger (~416).
-- Keep `Browser capabilities` in **one** place — under `Help` (with Diagnostics); drop it from `View` (~309) and the top-strip `Capabilities` chip (~726).
-- Drop the top-strip `Help` chip (~735); keep the `Help` menu.
-- Collapse the launcher strip (~664–740) to frequent actions; route Cleanup/Captions/Translate/Reframe/Silence via the palette + their right-rail destinations.
-
-## D14 — Right rail by job (B14)
-
-Replace `SIDE_RAIL_TABS` (7) with four job destinations, each holding the former tabs as secondary segmented controls:
-
-| Destination | Holds |
-| --- | --- |
-| `Inspector` | contextual clip properties (unchanged) |
-| `Text` | Captions + translation/copy tools |
-| `Audio` | live chain + Voice FX (+ selected-clip cleanup entry) |
-| `Capture` | Record · Program · Replay · go-live/WHIP setup |
-
-`isSideRailTab`, `openSideRailTab`, the persisted `SIDE_RAIL_COLLAPSED_KEY`, and any keyboard-map entry referencing tab ids must change together; migrate the persisted collapsed-key value safely. The secondary control is a small in-panel `Tabs`/segmented group. Subsumes D10 (four labels fit, so the scroll pattern is removed).
-
-## D15 — Beat Detection home (B15)
-
-Present Beats as a **Media Analysis** sub-section that appears when an audio source is selected, and link its state to the transport `Beat`-snap toggle (shared signal) with a one-line "snapping uses these beats" affordance. If the left rail becomes a `Media`/`Beats` switcher (D11), `Beats` is that destination.
-
-## D16 — Compact unavailable states (B16)
-
-Collapse the `captureUnavailableReasons(probe)` body list in `RecordPanel`/`ProgramPanel` into a **one-line status chip** ("Recording unavailable — 2 requirements") with the full list behind a `<details>`/disclosure (reuse diagnostics styling), keeping a primary call-to-action (e.g. "Open Diagnostics" or the transferable-track flag hint). Reason data/copy unchanged (from B4/D4) — only the density.
-
-## Part 2 rollout
-
-Incremental, smallest blast radius first — each independently shippable and keeping `pnpm run check` green:
-
-1. **D13** (menu/toolbar dedupe) + **D12** (audio labels) + **D16** (compact unavailable) — copy/labelling/density, no nav restructure.
-2. **D10** (remove hidden-scroll right-rail nav) via **D14** (four job destinations + secondary controls).
-3. **D11** (left rail → library switcher) + **D15** (Beats home).
-
-Update the affected `__browser__` component tests and any keyboard-map tests that reference tab ids at each step.
-
-## Open decisions (Part 2 — resolve at design review)
-
-1. **Left rail direction (D11):** Option A (full dock switcher) vs **B** (library/source only, recommended).
-2. **Right-rail destination set (D14):** confirm `Captions`→`Text` and `Record`/`Program`/`Replay`→`Capture` grouping.
-3. Ship Part 2 incrementally (recommended) vs one redesign PR.

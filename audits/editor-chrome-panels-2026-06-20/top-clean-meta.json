@@ -1,0 +1,920 @@
+[
+  {
+    "name": "10a-menu-project-clean",
+    "path": "/private/tmp/browser-editor-panel-audit-2026-06-20/10a-menu-project-clean.png",
+    "state": {
+      "dockText": "ProjectMediaRecordScopesAICaptionsReframeOutputMedia0Your imported files will live here. Drag one in or click Import.Beat DetectionImport some audio to detect beats.",
+      "maxButtonRight": 1497.5,
+      "menuCandidates": [
+        {
+          "className": "toolbar-menu",
+          "rect": {
+            "h": 34,
+            "right": 1280,
+            "w": 1280,
+            "x": 0,
+            "y": 0
+          },
+          "role": null,
+          "selected": null,
+          "text": "LocalCut StudioClient NLEProjectEditClipTimelineViewHelpSearch actions, panels, clips…⌘K",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab-panel",
+          "rect": {
+            "h": 288,
+            "right": 1273,
+            "w": 302,
+            "x": 971,
+            "y": 157
+          },
+          "role": "tabpanel",
+          "selected": null,
+          "text": "InspectorSelect a clip to inspect itPick a clip on the timeline — its properties will show up here.",
+          "visible": true
+        },
+        {
+          "className": "command-popover panel toolbar-menu-popover",
+          "rect": {
+            "h": 90,
+            "right": 584,
+            "w": 420,
+            "x": 164,
+            "y": 40
+          },
+          "role": "menu",
+          "selected": null,
+          "text": "Import media…Search actions…⌘+K",
+          "visible": true
+        }
+      ],
+      "rightTabs": [
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1033,
+            "w": 62,
+            "x": 971,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "true",
+          "text": "Inspector",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1091,
+            "w": 59,
+            "x": 1033,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Captions",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1141,
+            "w": 50,
+            "x": 1091,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Record",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1197,
+            "w": 56,
+            "x": 1141,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Program",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1245,
+            "w": 48,
+            "x": 1197,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Replay",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1288,
+            "w": 44,
+            "x": 1245,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Audio",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1344,
+            "w": 55,
+            "x": 1288,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Cleanup",
+          "visible": true
+        }
+      ],
+      "sideText": "InspectorCaptionsRecordProgramReplayAudioCleanup›InspectorSelect a clip to inspect itPick a clip on the timeline — its properties will show up here."
+    }
+  },
+  {
+    "name": "11a-menu-edit-clean",
+    "path": "/private/tmp/browser-editor-panel-audit-2026-06-20/11a-menu-edit-clean.png",
+    "state": {
+      "dockText": "ProjectMediaRecordScopesAICaptionsReframeOutputMedia0Your imported files will live here. Drag one in or click Import.Beat DetectionImport some audio to detect beats.",
+      "maxButtonRight": 1497.5,
+      "menuCandidates": [
+        {
+          "className": "toolbar-menu",
+          "rect": {
+            "h": 34,
+            "right": 1280,
+            "w": 1280,
+            "x": 0,
+            "y": 0
+          },
+          "role": null,
+          "selected": null,
+          "text": "LocalCut StudioClient NLEProjectEditClipTimelineViewHelpSearch actions, panels, clips…⌘K",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab-panel",
+          "rect": {
+            "h": 288,
+            "right": 1273,
+            "w": 302,
+            "x": 971,
+            "y": 157
+          },
+          "role": "tabpanel",
+          "selected": null,
+          "text": "InspectorSelect a clip to inspect itPick a clip on the timeline — its properties will show up here.",
+          "visible": true
+        },
+        {
+          "className": "command-popover panel toolbar-menu-popover",
+          "rect": {
+            "h": 122,
+            "right": 654,
+            "w": 420,
+            "x": 234,
+            "y": 40
+          },
+          "role": "menu",
+          "selected": null,
+          "text": "Undo⌘+ZRedo⌘+⇧+ZSearch actions…⌘+K",
+          "visible": true
+        }
+      ],
+      "rightTabs": [
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1033,
+            "w": 62,
+            "x": 971,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "true",
+          "text": "Inspector",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1091,
+            "w": 59,
+            "x": 1033,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Captions",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1141,
+            "w": 50,
+            "x": 1091,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Record",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1197,
+            "w": 56,
+            "x": 1141,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Program",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1245,
+            "w": 48,
+            "x": 1197,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Replay",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1288,
+            "w": 44,
+            "x": 1245,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Audio",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1344,
+            "w": 55,
+            "x": 1288,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Cleanup",
+          "visible": true
+        }
+      ],
+      "sideText": "InspectorCaptionsRecordProgramReplayAudioCleanup›InspectorSelect a clip to inspect itPick a clip on the timeline — its properties will show up here."
+    }
+  },
+  {
+    "name": "12a-menu-clip-clean",
+    "path": "/private/tmp/browser-editor-panel-audit-2026-06-20/12a-menu-clip-clean.png",
+    "state": {
+      "dockText": "ProjectMediaRecordScopesAICaptionsReframeOutputMedia0Your imported files will live here. Drag one in or click Import.Beat DetectionImport some audio to detect beats.",
+      "maxButtonRight": 1497.5,
+      "menuCandidates": [
+        {
+          "className": "toolbar-menu",
+          "rect": {
+            "h": 34,
+            "right": 1280,
+            "w": 1280,
+            "x": 0,
+            "y": 0
+          },
+          "role": null,
+          "selected": null,
+          "text": "LocalCut StudioClient NLEProjectEditClipTimelineViewHelpSearch actions, panels, clips…⌘K",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab-panel",
+          "rect": {
+            "h": 288,
+            "right": 1273,
+            "w": 302,
+            "x": 971,
+            "y": 157
+          },
+          "role": "tabpanel",
+          "selected": null,
+          "text": "InspectorSelect a clip to inspect itPick a clip on the timeline — its properties will show up here.",
+          "visible": true
+        },
+        {
+          "className": "command-popover panel toolbar-menu-popover",
+          "rect": {
+            "h": 122,
+            "right": 705,
+            "w": 420,
+            "x": 285,
+            "y": 40
+          },
+          "role": "menu",
+          "selected": null,
+          "text": "Split at playheadSDelete selected⌫Search actions…⌘+K",
+          "visible": true
+        }
+      ],
+      "rightTabs": [
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1033,
+            "w": 62,
+            "x": 971,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "true",
+          "text": "Inspector",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1091,
+            "w": 59,
+            "x": 1033,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Captions",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1141,
+            "w": 50,
+            "x": 1091,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Record",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1197,
+            "w": 56,
+            "x": 1141,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Program",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1245,
+            "w": 48,
+            "x": 1197,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Replay",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1288,
+            "w": 44,
+            "x": 1245,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Audio",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1344,
+            "w": 55,
+            "x": 1288,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Cleanup",
+          "visible": true
+        }
+      ],
+      "sideText": "InspectorCaptionsRecordProgramReplayAudioCleanup›InspectorSelect a clip to inspect itPick a clip on the timeline — its properties will show up here."
+    }
+  },
+  {
+    "name": "13a-menu-timeline-clean",
+    "path": "/private/tmp/browser-editor-panel-audit-2026-06-20/13a-menu-timeline-clean.png",
+    "state": {
+      "dockText": "ProjectMediaRecordScopesAICaptionsReframeOutputMedia0Your imported files will live here. Drag one in or click Import.Beat DetectionImport some audio to detect beats.",
+      "maxButtonRight": 1497.5,
+      "menuCandidates": [
+        {
+          "className": "toolbar-menu",
+          "rect": {
+            "h": 34,
+            "right": 1280,
+            "w": 1280,
+            "x": 0,
+            "y": 0
+          },
+          "role": null,
+          "selected": null,
+          "text": "LocalCut StudioClient NLEProjectEditClipTimelineViewHelpSearch actions, panels, clips…⌘K",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab-panel",
+          "rect": {
+            "h": 288,
+            "right": 1273,
+            "w": 302,
+            "x": 971,
+            "y": 157
+          },
+          "role": "tabpanel",
+          "selected": null,
+          "text": "InspectorSelect a clip to inspect itPick a clip on the timeline — its properties will show up here.",
+          "visible": true
+        },
+        {
+          "className": "command-popover panel toolbar-menu-popover",
+          "rect": {
+            "h": 122,
+            "right": 756,
+            "w": 420,
+            "x": 336,
+            "y": 40
+          },
+          "role": "menu",
+          "selected": null,
+          "text": "Disable snapEnable beat snapSearch actions…⌘+K",
+          "visible": true
+        }
+      ],
+      "rightTabs": [
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1033,
+            "w": 62,
+            "x": 971,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "true",
+          "text": "Inspector",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1091,
+            "w": 59,
+            "x": 1033,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Captions",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1141,
+            "w": 50,
+            "x": 1091,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Record",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1197,
+            "w": 56,
+            "x": 1141,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Program",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1245,
+            "w": 48,
+            "x": 1197,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Replay",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1288,
+            "w": 44,
+            "x": 1245,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Audio",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1344,
+            "w": 55,
+            "x": 1288,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Cleanup",
+          "visible": true
+        }
+      ],
+      "sideText": "InspectorCaptionsRecordProgramReplayAudioCleanup›InspectorSelect a clip to inspect itPick a clip on the timeline — its properties will show up here."
+    }
+  },
+  {
+    "name": "14a-menu-view-clean",
+    "path": "/private/tmp/browser-editor-panel-audit-2026-06-20/14a-menu-view-clean.png",
+    "state": {
+      "dockText": "ProjectMediaRecordScopesAICaptionsReframeOutputMedia0Your imported files will live here. Drag one in or click Import.Beat DetectionImport some audio to detect beats.",
+      "maxButtonRight": 1497.5,
+      "menuCandidates": [
+        {
+          "className": "toolbar-menu",
+          "rect": {
+            "h": 34,
+            "right": 1280,
+            "w": 1280,
+            "x": 0,
+            "y": 0
+          },
+          "role": null,
+          "selected": null,
+          "text": "LocalCut StudioClient NLEProjectEditClipTimelineViewHelpSearch actions, panels, clips…⌘K",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab-panel",
+          "rect": {
+            "h": 288,
+            "right": 1273,
+            "w": 302,
+            "x": 971,
+            "y": 157
+          },
+          "role": "tabpanel",
+          "selected": null,
+          "text": "InspectorSelect a clip to inspect itPick a clip on the timeline — its properties will show up here.",
+          "visible": true
+        },
+        {
+          "className": "command-popover panel toolbar-menu-popover",
+          "rect": {
+            "h": 90,
+            "right": 833,
+            "w": 420,
+            "x": 413,
+            "y": 40
+          },
+          "role": "menu",
+          "selected": null,
+          "text": "Browser capabilitiesSearch actions…⌘+K",
+          "visible": true
+        }
+      ],
+      "rightTabs": [
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1033,
+            "w": 62,
+            "x": 971,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "true",
+          "text": "Inspector",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1091,
+            "w": 59,
+            "x": 1033,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Captions",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1141,
+            "w": 50,
+            "x": 1091,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Record",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1197,
+            "w": 56,
+            "x": 1141,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Program",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1245,
+            "w": 48,
+            "x": 1197,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Replay",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1288,
+            "w": 44,
+            "x": 1245,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Audio",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1344,
+            "w": 55,
+            "x": 1288,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Cleanup",
+          "visible": true
+        }
+      ],
+      "sideText": "InspectorCaptionsRecordProgramReplayAudioCleanup›InspectorSelect a clip to inspect itPick a clip on the timeline — its properties will show up here."
+    }
+  },
+  {
+    "name": "15a-menu-help-clean",
+    "path": "/private/tmp/browser-editor-panel-audit-2026-06-20/15a-menu-help-clean.png",
+    "state": {
+      "dockText": "ProjectMediaRecordScopesAICaptionsReframeOutputMedia0Your imported files will live here. Drag one in or click Import.Beat DetectionImport some audio to detect beats.",
+      "maxButtonRight": 1497.5,
+      "menuCandidates": [
+        {
+          "className": "toolbar-menu",
+          "rect": {
+            "h": 34,
+            "right": 1280,
+            "w": 1280,
+            "x": 0,
+            "y": 0
+          },
+          "role": null,
+          "selected": null,
+          "text": "LocalCut StudioClient NLEProjectEditClipTimelineViewHelpSearch actions, panels, clips…⌘K",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab-panel",
+          "rect": {
+            "h": 288,
+            "right": 1273,
+            "w": 302,
+            "x": 971,
+            "y": 157
+          },
+          "role": "tabpanel",
+          "selected": null,
+          "text": "InspectorSelect a clip to inspect itPick a clip on the timeline — its properties will show up here.",
+          "visible": true
+        },
+        {
+          "className": "command-popover panel toolbar-menu-popover",
+          "rect": {
+            "h": 90,
+            "right": 889,
+            "w": 420,
+            "x": 469,
+            "y": 40
+          },
+          "role": "menu",
+          "selected": null,
+          "text": "User guideSearch actions…⌘+K",
+          "visible": true
+        }
+      ],
+      "rightTabs": [
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1033,
+            "w": 62,
+            "x": 971,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "true",
+          "text": "Inspector",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1091,
+            "w": 59,
+            "x": 1033,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Captions",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1141,
+            "w": 50,
+            "x": 1091,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Record",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1197,
+            "w": 56,
+            "x": 1141,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Program",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1245,
+            "w": 48,
+            "x": 1197,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Replay",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1288,
+            "w": 44,
+            "x": 1245,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Audio",
+          "visible": true
+        },
+        {
+          "className": "side-rail-tab",
+          "rect": {
+            "h": 38,
+            "right": 1344,
+            "w": 55,
+            "x": 1288,
+            "y": 119
+          },
+          "role": "tab",
+          "selected": "false",
+          "text": "Cleanup",
+          "visible": true
+        }
+      ],
+      "sideText": "InspectorCaptionsRecordProgramReplayAudioCleanup›InspectorSelect a clip to inspect itPick a clip on the timeline — its properties will show up here."
+    }
+  }
+]

@@ -1,0 +1,73 @@
+{
+  "count": 1,
+  "clicked": true,
+  "path": "/private/tmp/browser-editor-panel-audit-2026-06-20/22b-right-cleanup-tab-locator-result.png",
+  "state": {
+    "sideText": "InspectorCaptionsRecordProgramReplayAudioCleanup›Voice CleanupLatency: 17.7 msDenoiserBypassedLoudness NormalisationBypassedGateBypassedLimiterBypassed",
+    "tabs": [
+      {
+        "rect": {
+          "right": 962,
+          "w": 62,
+          "x": 901
+        },
+        "selected": "false",
+        "text": "Inspector"
+      },
+      {
+        "rect": {
+          "right": 1021,
+          "w": 59,
+          "x": 962
+        },
+        "selected": "false",
+        "text": "Captions"
+      },
+      {
+        "rect": {
+          "right": 1071,
+          "w": 50,
+          "x": 1021
+        },
+        "selected": "false",
+        "text": "Record"
+      },
+      {
+        "rect": {
+          "right": 1126,
+          "w": 56,
+          "x": 1071
+        },
+        "selected": "false",
+        "text": "Program"
+      },
+      {
+        "rect": {
+          "right": 1174,
+          "w": 48,
+          "x": 1126
+        },
+        "selected": "false",
+        "text": "Replay"
+      },
+      {
+        "rect": {
+          "right": 1218,
+          "w": 44,
+          "x": 1174
+        },
+        "selected": "false",
+        "text": "Audio"
+      },
+      {
+        "rect": {
+          "right": 1273,
+          "w": 55,
+          "x": 1218
+        },
+        "selected": "true",
+        "text": "Cleanup"
+      }
+    ]
+  }
+}
