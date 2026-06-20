@@ -97,4 +97,22 @@ describe('captureUnavailableReasons', () => {
 			)
 		).toBe(false);
 	});
+	it('omits the transferable-track reason when requireTransferableTrack is false (recording main-frames path, B5/T5.5)', () => {
+		// Recording no longer hard-requires transfer — the main-frames fallback covers
+		// it — so RecordPanel suppresses the reason even when transfer is unsupported.
+		const reasons = captureUnavailableReasons(
+			probe({ transferableMediaStreamTrack: 'unsupported' }),
+			{
+				requireTransferableTrack: false
+			}
+		);
+		expect(reasons.some((r) => r.includes('Transferable MediaStreamTrack'))).toBe(false);
+		// Other genuine blockers still surface under the option.
+		expect(
+			captureUnavailableReasons(
+				probe({ transferableMediaStreamTrack: 'unsupported', videoEncodeRealtime: 'unsupported' }),
+				{ requireTransferableTrack: false }
+			)
+		).toContain('Realtime video encode is unavailable.');
+	});
 });

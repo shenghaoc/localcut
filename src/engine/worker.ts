@@ -855,7 +855,8 @@ interface PendingCaptureSource {
 	sourceId: string;
 	kind: import('../protocol').CaptureSourceKind;
 	label: string;
-	track: MediaStreamTrack;
+	/** Null for a main-frames push source — main keeps the track (bugfix B5/T5.5). */
+	track: MediaStreamTrack | null;
 	width?: number;
 	height?: number;
 	frameRate?: number | null;
@@ -9617,7 +9618,8 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 					cmd.source.sourceId,
 					cmd.source.kind,
 					cmd.source.label,
-					cmd.track,
+					// Omitted track ⇒ trackless push pipeline (main forwards frames).
+					cmd.track ?? null,
 					videoConfig,
 					audioConfig,
 					{
@@ -9631,11 +9633,21 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 					sourceId: cmd.source.sourceId,
 					kind: cmd.source.kind,
 					label: cmd.source.label,
-					track: cmd.track,
+					track: cmd.track ?? null,
 					width: cmd.source.width,
 					height: cmd.source.height,
 					frameRate: cmd.source.frameRate
 				});
+			}
+			break;
+		case 'capture-push-frame':
+			// Main-frames fallback (bugfix B5/T5.5): route the forwarded frame to its
+			// push pipeline, or close it here if there is no active session so the
+			// transferred frame never leaks.
+			if (captureSession) {
+				captureSession.pushFrame(cmd.sourceId, cmd.frame);
+			} else {
+				cmd.frame.close();
 			}
 			break;
 		case 'capture-remove-source':
@@ -9802,7 +9814,8 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 				})();
 			}
 			for (const [, src] of pendingCaptureSources) {
-				src.track.stop();
+				// Push sources have no worker-side track — main owns and stops it.
+				src.track?.stop();
 			}
 			pendingCaptureSources.clear();
 			break;

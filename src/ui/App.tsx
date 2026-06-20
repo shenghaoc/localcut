@@ -5075,8 +5075,28 @@ export function App() {
 												retakeSourceKinds={retakeSourceKinds()}
 												landedSessionId={recorderLandedSessionId()}
 												onAddSource={(source, track, transfer) =>
-													bridge?.send({ type: 'capture-add-source', source, track }, transfer)
+													bridge?.send(
+														// track === null ⇒ main-frames push pipeline (no transfer).
+														{ type: 'capture-add-source', source, track: track ?? undefined },
+														transfer
+													)
 												}
+												onPushFrame={(sourceId, frame) => {
+													// The frame must be closed exactly once: the worker closes it when
+													// transferred; if there is no worker, or the transfer throws (frame
+													// stays owned here), close it so it never leaks.
+													if (!bridge) {
+														frame.close();
+														return;
+													}
+													try {
+														bridge.send({ type: 'capture-push-frame', sourceId, frame }, [
+															frame as unknown as Transferable
+														]);
+													} catch {
+														frame.close();
+													}
+												}}
 												onStart={(settings, writerPort, activeRetakeClipId, transfer) => {
 													setRecorderLandedSessionId(null);
 													bridge?.send(

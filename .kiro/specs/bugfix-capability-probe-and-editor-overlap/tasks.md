@@ -1,6 +1,6 @@
 # Tasks — Capability-probe false negatives + editor chrome overlap
 
-> Status: **Implemented — in review** (T1–T11; `pnpm run check` green, 2377 tests). All code/tests done; the only remaining items are **manual/on-device verification** (T6.4, T10, T11.4) that need the deployed build + real interaction. The off-main-thread recording fallback and the editor-chrome IA reorganization are **out of this PR** — each in its own branch. Tasks map to bugs (Bn) in [`bugfix.md`](./bugfix.md) and design entries (Dn) in [`design.md`](./design.md).
+> Status: **Implemented — in review** (T1–T11; `pnpm run check` green). The off-main-thread main-frames recording fallback **T5.5 is now implemented + verified in real Chromium** (it was deferred out of the original PR #130 to its own branch — this is that branch). The editor-chrome IA reorganization remains a **separate branch**. Remaining items are **manual/on-device verification** (T6.4, T10, T11.4) that need the deployed build + real interaction. Tasks map to bugs (Bn) in [`bugfix.md`](./bugfix.md) and design entries (Dn) in [`design.md`](./design.md).
 
 ## T1 — H.264 level helper + general codec probe (B1, D1)
 
@@ -28,12 +28,13 @@
 
 ## T5 — Recording track-transfer gate (B5, D5)
 
-Decision: **honest gate in this PR; the off-main-thread main-frames path is a separate branch** (D5). The capture encode path is track-based with no trackless push-frame seam, so a correct fallback is a verifiable engine feature, not a bugfix-sized change.
+Decision: PR #130 shipped an **honest gate** (T5.1–T5.4); the deferred **off-main-thread main-frames path is now implemented (T5.5)** on this branch, so recording no longer hard-requires Transferable MediaStreamTrack.
 
-- [x] T5.1 Keep `recordingAvailable()` requiring `transferableMediaStreamTrack !== 'unsupported'` (worker-track transfer needs it), with a comment pointing at the separate fallback work.
-- [x] T5.2 Make `captureUnavailableReasons` surface the actionable reason when transfer is unsupported (names the `chrome://flags/#enable-experimental-web-platform-features` workaround), independent of MSTP.
+- [x] T5.1 ~~Keep `recordingAvailable()` requiring `transferableMediaStreamTrack !== 'unsupported'`~~ **Superseded by T5.5:** `recordingAvailable()` now gates on `MediaStreamTrackProcessor` only (the universal requirement of both data-plane paths); transfer just selects the path via `selectCaptureMode`.
+- [x] T5.2 Make `captureUnavailableReasons` surface the actionable reason when transfer is unsupported (names the `chrome://flags/#enable-experimental-web-platform-features` workaround), independent of MSTP. **T5.5 update:** gated behind a `requireTransferableTrack` option — Program/diagnostics keep it (default `true`); RecordPanel passes `false` (recording degrades instead of blocking) and shows a non-blocking compatibility-mode note + flag hint.
 - [x] T5.3 Remove the non-functional main-frames runtime (`startMstpReaders` posting `{type:'video-frame'}` to the writer worker — unhandled, dropped + leaked frames, empty-transfer `DataCloneError`) and its compat badge / dead CSS.
-- [x] T5.4 Tests updated: `recordingAvailable` false when transfer `unsupported`, true on a fully capable profile and when transfer is `unknown`; `captureUnavailableReasons` shows the flag-hint reason only when transfer is `unsupported`.
+- [x] T5.4 Tests updated for the relaxed gate: `recordingAvailable` true on a fully capable profile, when transfer is `unknown`, **and now when transfer is `unsupported` but MSTP is supported** (main-frames fallback); false only when MSTP is unsupported. `selectCaptureMode` + `deriveProgramModeSupport` (Program Mode still gated on transfer) covered; `captureUnavailableReasons` shows the flag-hint only when `requireTransferableTrack` is set.
+- [x] T5.5 Real off-main-thread main-frames capture — **implemented + verified** (D5). Trackless `TrackPipeline.pushFrame` input mode + `CaptureSession.pushFrame` router (shared encode/close-once step with the reader loop); `capture-add-source.track` optional + new `capture-push-frame` pipeline-worker message (routes to the **pipeline** encoder, frame transferred, closed exactly once); main-thread `startCaptureFrameReader` + App/RecordPanel wiring; `recordingAvailable`/`selectCaptureMode` relaxed. Verified against a live capture in headless Chromium (`main-frames-capture.browser.test.ts`: canvas `captureStream` → MSTP → push pipeline → real `VideoEncoder` → non-empty encoded chunks with a key frame).
 
 ## T6 — Consolidate workspace layout + fix responsive collapse (B6, D6)
 
@@ -74,4 +75,6 @@ Decision: **honest gate in this PR; the off-main-thread main-frames path is a se
 ## Out-of-scope follow-ups (flag if encountered)
 
 - [x] Browser-support matrix / docs note — **not needed**: `docs/exporting.md` ("only codecs your browser can actually encode are offered") and `docs/browser-limitations.md` already describe the intended behavior accurately; B1 makes the app match the docs rather than the other way around.
+- [x] ~~If T5 lands the fallback-message path only, file a follow-up for the bounded main-frames capture route.~~ Done — T5.5 implemented the off-main-thread main-frames capture route on this branch.
+- [ ] Optional polish: pause the per-source main-thread reader while a main-frames session is paused (frames are currently read + forwarded and safely dropped/closed worker-side — correct but slightly wasteful).
 

@@ -1,0 +1,87 @@
+/**
+ * Off-main-thread "main-frames" recording fallback — main-thread half (bugfix
+ * B5/T5.5). On profiles without Transferable MediaStreamTrack the source track
+ * cannot be transferred into the pipeline worker, so the main thread keeps the
+ * track, reads it with its own `MediaStreamTrackProcessor`, and forwards each
+ * `VideoFrame`/`AudioData` to the worker's trackless push pipeline.
+ *
+ * This is the mirror of publish's main-frames tap (`publish-controller.ts`), with
+ * the data flowing main → worker (recording) instead of worker → main (publish).
+ *
+ * Frame ownership: every frame this reader produces is handed to `pushFrame`,
+ * which transfers it across the worker boundary; the worker then closes it exactly
+ * once (encoded or dropped). The reader only closes a frame itself when it is read
+ * after {@link CaptureFrameReader.stop} — i.e. when it will never be forwarded —
+ * so the close-exactly-once invariant (hard architectural gate) holds end to end.
+ *
+ * Hard gate note: this reader runs a per-source MSTP read loop on the main thread.
+ * It is the explicit, capability-tiered compatibility path the gate allows — it
+ * does no pixel processing (no decode/encode/GPU/readback); it only shuttles frame
+ * handles to the worker encoder. The accelerated worker-track path is preferred
+ * whenever Transferable MediaStreamTrack is available (see `selectCaptureMode`).
+ */
+
+export interface CaptureFrameReader {
+	/** Stops the read loop and cancels the underlying reader. Idempotent. */
+	stop(): void;
+}
+
+/**
+ * Starts reading frames from `track` on the main thread and forwarding them via
+ * `pushFrame`. `pushFrame` must transfer the frame to the worker (transferring
+ * moves ownership, so the caller must not also close it). `onError` fires once if
+ * the read loop throws before being stopped.
+ */
+export function startCaptureFrameReader(
+	track: MediaStreamTrack,
+	pushFrame: (frame: VideoFrame | AudioData) => void,
+	onError?: (error: unknown) => void
+): CaptureFrameReader {
+	const processor = new MediaStreamTrackProcessor({ track });
+	const reader = (
+		processor.readable as unknown as ReadableStream<VideoFrame | AudioData>
+	).getReader();
+	let stopped = false;
+
+	void (async () => {
+		try {
+			while (!stopped) {
+				const result = await reader.read();
+				if (result.done) break;
+				const frame = result.value;
+				if (stopped) {
+					// Stopped between the read resolving and forwarding: close here so
+					// this frame — which will never reach the worker — does not leak.
+					frame.close();
+					break;
+				}
+				pushFrame(frame); // transfers ownership to the worker
+			}
+		} catch (error) {
+			if (!stopped) onError?.(error);
+		} finally {
+			try {
+				await reader.cancel();
+			} catch {
+				// best-effort teardown — the track may already be ended
+			}
+			try {
+				reader.releaseLock();
+			} catch {
+				// best-effort teardown
+			}
+		}
+	})();
+
+	return {
+		stop(): void {
+			if (stopped) return;
+			stopped = true;
+			try {
+				void reader.cancel();
+			} catch {
+				// best-effort — the loop's finally also cancels
+			}
+		}
+	};
+}

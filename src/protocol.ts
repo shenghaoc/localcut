@@ -202,7 +202,8 @@ export interface CapabilityProbeResult {
 	/** Phase 32b (Beauty): display/feature-gate only — never
 	 *  consulted by tier derivation or any pipeline code path. */
 	beauty?: BeautyProbeResult;
-	/** Phase 45 (Program Mode): derived from recordingAvailable + WebGPU core. */
+	/** Phase 45 (Program Mode): derived from recordingAvailable + WebGPU core +
+	 *  Transferable MediaStreamTrack (Program Mode has no main-frames fallback). */
 	programMode?: FeatureSupport;
 }
 
@@ -2511,8 +2512,14 @@ export type WorkerCommand =
 	// transfers one VideoFrame at a time (bounded to a single frame in flight).
 	| { type: 'publish-tap-start'; mode: 'worker-track' | 'main-frames' }
 	| { type: 'publish-tap-stop' }
-	| { type: 'capture-add-source'; source: CaptureSourceDescriptor; track: MediaStreamTrack }
+	// `track` present ⇒ the in-worker reader path (track transferred into the worker).
+	// `track` omitted ⇒ the off-main-thread "main-frames" fallback (bugfix B5/T5.5):
+	// main keeps the track and forwards frames via `capture-push-frame`.
+	| { type: 'capture-add-source'; source: CaptureSourceDescriptor; track?: MediaStreamTrack }
 	| { type: 'capture-remove-source'; sourceId: string }
+	// Forwards one main-thread-read frame to a trackless push pipeline. The frame is
+	// transferred (ownership moves to the worker) and closed there exactly once.
+	| { type: 'capture-push-frame'; sourceId: string; frame: VideoFrame | AudioData }
 	| {
 			type: 'capture-start';
 			settings: CaptureSettingsSnapshot;
