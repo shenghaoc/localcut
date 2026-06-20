@@ -1,16 +1,10 @@
 import { createMemo, For, Show } from 'solid-js';
 import type { AiAvailability, CapabilityProbeResult, FeatureSupport } from '../protocol';
 import { languageToolsSurfaceVisible } from '../protocol';
+import { type CapabilityRow, webnnRow } from './capability-rows';
 
 interface CapabilityMatrixPanelProps {
 	probe: CapabilityProbeResult | null;
-}
-
-interface CapabilityRow {
-	label: string;
-	support: FeatureSupport;
-	active: boolean;
-	action: string | null;
 }
 
 function supportChip(support: FeatureSupport): string {
@@ -286,20 +280,6 @@ function cleanupRow(probe: CapabilityProbeResult): CapabilityRow {
 		action: supported
 			? `Local Audio Cleanup (Experimental) available via ONNX Runtime (${cleanup?.accelerator ?? 'wasm'}).`
 			: 'Audio cleanup requires WebAssembly.'
-	};
-}
-
-function webnnRow(probe: CapabilityProbeResult): CapabilityRow {
-	// Read WebNN from the stored probe snapshot (populated by probeBeauty) like
-	// every other row — not a live `navigator.ml` query, so it stays consistent
-	// with the snapshot and respects the DEV `__localcutCapabilityOverrides` hook.
-	const hasMl = probe.beauty?.webnn === 'supported';
-	const ortEp = probe.cleanup?.accelerator;
-	return {
-		label: 'WebNN (ML acceleration)',
-		support: hasMl ? 'supported' : 'unsupported',
-		active: ortEp === 'webnn',
-		action: hasMl ? `ORT EP: ${ortEp ?? 'wasm'}` : 'Enable the WebNN flag in chrome://flags'
 	};
 }
 

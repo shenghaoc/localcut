@@ -175,3 +175,6 @@ public/models/whisper/*.bin
 public/models/whisper/vocab.json
 .claude/launch.json
 .DS_Store
+
+# Local audit artifacts (evidence travels with the relevant feature branch)
+audits/

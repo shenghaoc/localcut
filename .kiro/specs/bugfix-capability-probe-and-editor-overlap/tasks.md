@@ -1,6 +1,6 @@
 # Tasks — Capability-probe false negatives + editor chrome overlap
 
-> Status: **Implemented — in review** (T1–T11; `pnpm run check` green). Remaining unchecked are manual/on-device verification (T6.4, T10) and the WebNN-row unit test (T7.2). The off-main-thread recording fallback and the editor-chrome IA reorganization are **out of this PR** — each in its own branch. Tasks map to bugs (Bn) in [`bugfix.md`](./bugfix.md) and design entries (Dn) in [`design.md`](./design.md).
+> Status: **Implemented — in review** (T1–T11; `pnpm run check` green, 2377 tests). All code/tests done; the only remaining items are **manual/on-device verification** (T6.4, T10, T11.4) that need the deployed build + real interaction. The off-main-thread recording fallback and the editor-chrome IA reorganization are **out of this PR** — each in its own branch. Tasks map to bugs (Bn) in [`bugfix.md`](./bugfix.md) and design entries (Dn) in [`design.md`](./design.md).
 
 ## T1 — H.264 level helper + general codec probe (B1, D1)
 
@@ -45,7 +45,7 @@ Decision: **honest gate in this PR; the off-main-thread main-frames path is a se
 ## T7 — Surface WebNN capability (B7, D7)
 
 - [x] T7.1 Add a read-only WebNN row (presence of `navigator.ml` + resolved ORT EP) to [`CapabilityMatrixPanel.tsx`](../../../src/ui/CapabilityMatrixPanel.tsx) and/or the ML-runtime section of [`diagnostic-snapshot.ts`](../../../src/ui/diagnostic-snapshot.ts), labeled as an accelerator (not a tier).
-- [ ] T7.2 Test the row (`webnnRow`) reads "available" when `navigator.ml` is present and the EP is `webnn`. Not yet covered — `webnnRow` is internal to `CapabilityMatrixPanel.tsx`; it's a trivial derivation currently verified manually (T10.3). Add a component test or export the helper for a unit test.
+- [x] T7.2 Unit test for `webnnRow`: extracted the pure row builders to [`src/ui/capability-rows.ts`](../../../src/ui/capability-rows.ts) (JSX-free, node-testable) and added [`capability-rows.test.ts`](../../../src/ui/capability-rows.test.ts) — supported + active when `beauty.webnn==='supported'` and the ORT EP is `webnn`; supported-not-active for a different EP; flag hint when absent; and `'unknown'` from the probe never reads as supported (no live `navigator.ml`).
 
 ## T8 — Reconcile Live Audio Chain noise-suppression label (B8, D8)
 
@@ -62,7 +62,7 @@ Decision: **honest gate in this PR; the off-main-thread main-frames path is a se
 ## T9 — Quality gate
 
 - [x] T9.1 `pnpm run check` green (format:check + lint + typecheck + Vitest + production build).
-- [x] T9.2 Test count does not decrease (212 files / 2359 tests); new tests for H.264 level (T1.4/T2.2), worker OPFS probe (T3.3), capture reasons incl. "never mentions WebGPU/WebCodecs" (T4.3), and the recording gate (T5.4) included. WebNN row (T7.2) still pending.
+- [x] T9.2 Test count does not decrease (212 files / 2377 tests); new tests for H.264 level (T1.4/T2.2), worker OPFS probe (T3.3), capture reasons incl. "never mentions WebGPU/WebCodecs" (T4.3), the recording gate (T5.4), and the WebNN row (T7.2) all included.
 - [x] T9.3 Every `VideoFrame` in any touched capture/publish path closed exactly once (no regressions from T5).
 
 ## T10 — Manual verification (reference profile)
