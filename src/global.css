@@ -4915,58 +4915,6 @@ button.status-badge:hover {
 	white-space: nowrap;
 }
 
-.media-bin-health {
-	display: grid;
-	gap: 0.12rem;
-	min-width: 0;
-	margin: 0.08rem 0 0;
-	padding: 0;
-	list-style: none;
-}
-
-.media-bin-health-item {
-	display: flex;
-	align-items: flex-start;
-	gap: 0.25rem;
-	min-width: 0;
-	color: var(--text-muted);
-	font-size: var(--text-2xs);
-	line-height: 1.4;
-}
-
-.media-bin-health-item svg {
-	flex-shrink: 0;
-	margin-top: 2px;
-}
-
-.media-bin-health-item.is-warning {
-	color: var(--warn);
-}
-
-.media-bin-health-item.is-error {
-	color: var(--danger);
-}
-
-.media-bin-health-item span {
-	min-width: 0;
-}
-
-.media-bin-proxy {
-	display: flex;
-	align-items: center;
-	gap: 0.25rem;
-	min-width: 0;
-	color: var(--accent);
-	font-size: var(--text-2xs);
-}
-
-.media-bin-proxy span {
-	min-width: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
 .media-bin-actions {
 	display: flex;
 	gap: 0.15rem;
@@ -5037,7 +4985,8 @@ button.status-badge:hover {
 	margin: 0;
 }
 
-.media-info-health {
+.media-info-health,
+.media-info-notes {
 	list-style: none;
 	margin: 0.5rem 0 0;
 	padding: 0.4rem 0 0;
@@ -5047,7 +4996,8 @@ button.status-badge:hover {
 	gap: 0.25rem;
 }
 
-.media-info-health-item {
+.media-info-health-item,
+.media-info-note-item {
 	display: flex;
 	align-items: flex-start;
 	gap: 0.3rem;
@@ -5056,9 +5006,14 @@ button.status-badge:hover {
 	line-height: 1.4;
 }
 
-.media-info-health-item svg {
+.media-info-health-item svg,
+.media-info-note-item svg {
 	flex-shrink: 0;
 	margin-top: 1px;
+}
+
+.media-info-note-item {
+	color: var(--text-muted);
 }
 
 .media-info-health-item.is-info {

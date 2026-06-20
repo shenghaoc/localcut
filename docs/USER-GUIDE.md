@@ -35,13 +35,13 @@ Imported media appears in the **Media Bin** on the left side of the workspace. W
 
 Each bin entry has three action buttons:
 
-| Button | Action                                                                                                                                                                                                                                                   |
-| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **ⓘ**  | Open the **Media Details** popover — full filename, resolution, frame rate (with a _variable_ badge for VFR sources), rotation metadata, video/audio codecs, channel layout, sample rate, duration, file size, and any actionable source-health warning. |
-| **+**  | Place the clip on the timeline.                                                                                                                                                                                                                          |
-| **🗑** | Remove the entry from the bin.                                                                                                                                                                                                                           |
+| Button | Action                                                                                                                                                                                                                                                                        |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **ⓘ**  | Open the **Media Details** popover — full filename, resolution, frame rate (with a _variable_ badge for VFR sources), rotation metadata, video/audio codecs, channel layout, sample rate, duration, file size, handled media notes, and any actionable source-health warning. |
+| **+**  | Place the clip on the timeline.                                                                                                                                                                                                                                               |
+| **🗑** | Remove the entry from the bin.                                                                                                                                                                                                                                                |
 
-The Media Details popover is the place to look when a clip shows a warning in the bin list — it has the full message text untruncated and identifies the exact codec or missing asset at fault.
+The bin row stays compact so the left dock remains usable at narrow widths. Hover the row for a native tooltip with handled media notes and proxy recommendations; open Media Details for the same information without row truncation.
 
 ### Source Health Warnings
 

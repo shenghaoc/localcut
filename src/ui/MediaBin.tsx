@@ -14,7 +14,11 @@ import {
 } from 'lucide-solid';
 import { formatClock } from '../lib/format';
 import type { MediaAssetSnapshot } from '../protocol';
-import { userVisibleHealthWarnings } from './media-health';
+import {
+	mediaTooltipMessages,
+	passiveMediaInfoMessages,
+	userVisibleHealthWarnings
+} from './media-health';
 import type { ThumbnailEntry } from './thumbnail-store';
 
 /** dataTransfer MIME used when dragging a bin asset onto a timeline track. */
@@ -68,6 +72,14 @@ function proxyLabel(asset: MediaAssetSnapshot): string | null {
 	return `Proxy ${proxy.status}`;
 }
 
+function mediaBinTitle(asset: MediaAssetSnapshot): string {
+	return [
+		asset.fileName,
+		`${summarize(asset)} · ${formatClock(asset.durationS)} · ${formatSize(asset.byteSize)}`,
+		...mediaTooltipMessages(asset)
+	].join('\n');
+}
+
 function metaRows(asset: MediaAssetSnapshot): { label: string; value: string }[] {
 	const rows: { label: string; value: string }[] = [];
 	const v = asset.video;
@@ -97,6 +109,7 @@ function metaRows(asset: MediaAssetSnapshot): { label: string; value: string }[]
 
 function MetaInfoPopover(props: { asset: MediaAssetSnapshot }) {
 	const proxy = () => proxyLabel(props.asset);
+	const notes = () => passiveMediaInfoMessages(props.asset);
 	const health = () => userVisibleHealthWarnings(props.asset.health?.warnings ?? []);
 	return (
 		<Popover.Root positioning={{ placement: 'right-start', gutter: 8 }}>
@@ -128,6 +141,18 @@ function MetaInfoPopover(props: { asset: MediaAssetSnapshot }) {
 								)}
 							</For>
 						</dl>
+						<Show when={notes().length > 0}>
+							<ul class="media-info-notes">
+								<For each={notes()}>
+									{(note) => (
+										<li class="media-info-note-item">
+											<Info size={11} aria-hidden="true" />
+											<span>{note}</span>
+										</li>
+									)}
+								</For>
+							</ul>
+						</Show>
 						<Show when={health().length > 0}>
 							<ul class="media-info-health">
 								<For each={health()}>
@@ -232,9 +257,6 @@ export function MediaBin(props: MediaBinProps) {
 						{(asset) => {
 							const offline = () => props.unresolvedIds().has(asset.sourceId);
 							const blocked = () => asset.health?.status === 'blocked';
-							const health = () => userVisibleHealthWarnings(asset.health?.warnings ?? []);
-							const healthMessageText = () => health().map((warning) => warning.message);
-							const proxy = () => proxyLabel(asset);
 							return (
 								<li
 									class={`media-bin-item${offline() ? ' is-offline' : ''}${blocked() ? ' is-blocked' : ''}`}
@@ -247,7 +269,7 @@ export function MediaBin(props: MediaBinProps) {
 										event.dataTransfer.setData(ASSET_DRAG_MIME, asset.sourceId);
 										event.dataTransfer.effectAllowed = 'copy';
 									}}
-									title={`${asset.fileName} · ${summarize(asset)}${healthMessageText().length > 0 ? ` · ${healthMessageText().join(' · ')}` : ''}`}
+									title={mediaBinTitle(asset)}
 								>
 									<BinThumbnail
 										asset={asset}
@@ -272,26 +294,6 @@ export function MediaBin(props: MediaBinProps) {
 											{formatSize(asset.byteSize)}
 											<Show when={offline()}> · offline</Show>
 										</span>
-										<Show when={health().length > 0}>
-											<ul class="media-bin-health">
-												<For each={health()}>
-													{(warning) => (
-														<li class={`media-bin-health-item is-${warning.severity}`}>
-															<AlertTriangle size={11} aria-hidden="true" />
-															<span>{warning.message}</span>
-														</li>
-													)}
-												</For>
-											</ul>
-										</Show>
-										<Show when={proxy()} keyed>
-											{(label) => (
-												<span class="media-bin-proxy">
-													<Gauge size={11} aria-hidden="true" />
-													<span>{label}</span>
-												</span>
-											)}
-										</Show>
 									</div>
 									<div class="media-bin-actions">
 										<MetaInfoPopover asset={asset} />

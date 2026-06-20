@@ -20,7 +20,9 @@ LocalCut Studio reads media files directly from your disk. Nothing is uploaded �
 
 ## Media details and import health
 
-Click **ⓘ** on a bin entry to open **Media Details**: resolution, frame rate, rotation, codecs, channel layout, sample rate, duration, and file size, plus the full text of any actionable warning.
+Click **ⓘ** on a bin entry to open **Media Details**: resolution, frame rate, rotation, codecs, channel layout, sample rate, duration, and file size, plus handled media notes and the full text of any actionable warning.
+
+The bin row intentionally stays compact in the narrow left dock. Hover the row to see handled media notes and proxy recommendations in the native tooltip; click **ⓘ** when you want the same information in a stable popover.
 
 Files with unusual but supported characteristics are handled as metadata, not warnings:
 
