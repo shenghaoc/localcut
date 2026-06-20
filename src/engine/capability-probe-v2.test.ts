@@ -216,8 +216,11 @@ describe('h264ConstrainedBaseline', () => {
 describe('probeOpfsSyncAccessHandleInWorker', () => {
 	it('returns unsupported when Worker is unavailable', async () => {
 		const origWorker = globalThis.Worker;
+		// Assign `undefined` rather than `delete` — `delete` throws on a
+		// non-configurable global (e.g. `globalThis.Worker` in a browser-mode run),
+		// whereas assignment is portable. (Claude review.)
 		// @ts-expect-error -- testing absence
-		delete globalThis.Worker;
+		globalThis.Worker = undefined;
 		try {
 			const result = await probeOpfsSyncAccessHandleInWorker();
 			expect(result).toBe('unsupported');

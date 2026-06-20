@@ -400,11 +400,14 @@ async function probeVideoEncodeRealtime(): Promise<FeatureSupport> {
 	if (typeof VideoEncoder !== 'function' || typeof VideoEncoder.isConfigSupported !== 'function') {
 		return 'unsupported';
 	}
-	// Probe the exact codecs the capture session chooses between (the worker
-	// builds its candidate list from CAPTURE_VIDEO_CODEC_FALLBACKS), so a
-	// 'supported' here means the recording encoder can actually configure — not
-	// just that some unrelated H.264 profile/level works. Run them in parallel
-	// like probeCodecs so startup doesn't serialize the isConfigSupported calls.
+	// Probe the exact codecs the capture session chooses between, so a 'supported'
+	// here means the recording encoder can actually configure — not just that some
+	// unrelated H.264 profile/level works. This list is the single source of truth:
+	// the worker's runtime encoder setup builds its candidate set from the same
+	// CAPTURE_VIDEO_CODEC_FALLBACKS and `VideoEncoder.isConfigSupported`-selects one
+	// of them (see ensureCaptureVideoEncoder in worker.ts), so the UI gate and the encoder
+	// cannot drift. Run them in parallel like probeCodecs so startup doesn't
+	// serialize the isConfigSupported calls.
 	const results = await Promise.all(
 		CAPTURE_VIDEO_CODEC_FALLBACKS.map((codec) =>
 			VideoEncoder.isConfigSupported({
