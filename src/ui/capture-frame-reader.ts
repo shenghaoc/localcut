@@ -37,14 +37,19 @@ export function startCaptureFrameReader(
 	pushFrame: (frame: VideoFrame | AudioData) => void,
 	onError?: (error: unknown) => void
 ): CaptureFrameReader {
-	const processor = new MediaStreamTrackProcessor({ track });
-	const reader = (
-		processor.readable as unknown as ReadableStream<VideoFrame | AudioData>
-	).getReader();
+	// `MediaStreamTrackProcessor` construction + getReader() can throw synchronously
+	// (e.g. an unsupported track). Build them INSIDE the async runner so such a throw
+	// is caught and routed to onError instead of propagating to the (synchronous)
+	// caller — e.g. the Record panel's start handler.
+	let reader: ReadableStreamDefaultReader<VideoFrame | AudioData> | null = null;
 	let stopped = false;
 
 	void (async () => {
 		try {
+			const processor = new MediaStreamTrackProcessor({ track });
+			reader = (
+				processor.readable as unknown as ReadableStream<VideoFrame | AudioData>
+			).getReader();
 			while (!stopped) {
 				const result = await reader.read();
 				if (result.done) break;
@@ -67,15 +72,17 @@ export function startCaptureFrameReader(
 		} catch (error) {
 			if (!stopped) onError?.(error);
 		} finally {
-			try {
-				await reader.cancel();
-			} catch {
-				// best-effort teardown — the track may already be ended
-			}
-			try {
-				reader.releaseLock();
-			} catch {
-				// best-effort teardown
+			if (reader) {
+				try {
+					await reader.cancel();
+				} catch {
+					// best-effort teardown — the track may already be ended
+				}
+				try {
+					reader.releaseLock();
+				} catch {
+					// best-effort teardown
+				}
 			}
 		}
 	})();
@@ -84,10 +91,14 @@ export function startCaptureFrameReader(
 		stop(): void {
 			if (stopped) return;
 			stopped = true;
-			try {
-				void reader.cancel();
-			} catch {
-				// best-effort — the loop's finally also cancels
+			// `reader` may still be null if stop() races the async initialization; the
+			// runner's `while (!stopped)` guard then exits before the first read.
+			if (reader) {
+				try {
+					void reader.cancel();
+				} catch {
+					// best-effort — the loop's finally also cancels
+				}
 			}
 		}
 	};

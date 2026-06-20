@@ -98,6 +98,29 @@ describe('startCaptureFrameReader (B5/T5.5)', () => {
 		expect(frames[1]!.closeCount).toBe(0);
 	});
 
+	it('routes a synchronous MediaStreamTrackProcessor init failure to onError, not the caller', async () => {
+		class ThrowingProcessor {
+			constructor() {
+				throw new Error('unsupported track');
+			}
+		}
+		vi.stubGlobal('MediaStreamTrackProcessor', ThrowingProcessor);
+
+		const errors: unknown[] = [];
+		// Must not throw synchronously — the Record panel's start handler calls this.
+		expect(() =>
+			startCaptureFrameReader(
+				fakeTrack(),
+				() => {},
+				(error) => errors.push(error)
+			)
+		).not.toThrow();
+		await flush();
+
+		expect(errors).toHaveLength(1);
+		expect((errors[0] as Error).message).toBe('unsupported track');
+	});
+
 	it('closes a frame that resolves after stop() instead of forwarding it', async () => {
 		const frame = mockFrame();
 		let resolveRead: ((value: { done: boolean; value?: unknown }) => void) | null = null;
