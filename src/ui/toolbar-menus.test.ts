@@ -16,6 +16,7 @@ function options(overrides: Partial<MenuBarBuildOptions> = {}): MenuBarBuildOpti
 		timelineSnapToBeats: false,
 		hasSelection: true,
 		scopesPanelVisible: false,
+		scopesPanelAvailable: true,
 		...overrides
 	};
 }
@@ -168,6 +169,7 @@ function commandOptions(
 		onOpenCaptions: noop,
 		onToggleScopes: noop,
 		onOpenRenderQueue: noop,
+		scopesPanelAvailable: true,
 		...overrides
 	};
 }

@@ -81,6 +81,7 @@ interface ToolbarProps {
 	onOpenCaptions?: () => void;
 	onToggleScopes?: () => void;
 	scopesPanelVisible?: boolean;
+	scopesPanelAvailable?: boolean;
 	onScrollToRenderQueue?: () => void;
 	calloutTool?: JSX.Element;
 	/** True while a publish session is connecting/live/reconnecting. */
@@ -194,7 +195,8 @@ export function Toolbar(props: ToolbarProps) {
 			onOpenRecord: () => props.onOpenRecord?.(),
 			onOpenCaptions: () => props.onOpenCaptions?.(),
 			onToggleScopes: () => props.onToggleScopes?.(),
-			onOpenRenderQueue: () => props.onScrollToRenderQueue?.()
+			onOpenRenderQueue: () => props.onScrollToRenderQueue?.(),
+			scopesPanelAvailable: props.scopesPanelAvailable ?? false
 		})
 	);
 	const runCommand = (action: CommandAction) => {
@@ -221,7 +223,8 @@ export function Toolbar(props: ToolbarProps) {
 			timelineSnapEnabled: props.timelineSnapEnabled,
 			timelineSnapToBeats: props.timelineSnapToBeats,
 			hasSelection: props.hasSelection,
-			scopesPanelVisible: props.scopesPanelVisible ?? false
+			scopesPanelVisible: props.scopesPanelVisible ?? false,
+			scopesPanelAvailable: props.scopesPanelAvailable ?? false
 		})
 	);
 	const runMenuItem = (group: MenuBarGroup, value: string) => {

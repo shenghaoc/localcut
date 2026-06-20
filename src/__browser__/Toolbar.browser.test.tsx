@@ -44,6 +44,7 @@ function renderToolbar(overrides: Partial<Parameters<typeof Toolbar>[0]> = {}) {
 		onOpenCaptions: vi.fn(),
 		onToggleScopes: vi.fn(),
 		scopesPanelVisible: false,
+		scopesPanelAvailable: true,
 		onScrollToRenderQueue: vi.fn(),
 		keystrokeOverlayAvailable: false,
 		timelineSnapEnabled: true,

@@ -1761,18 +1761,17 @@ export function App() {
 			exportSettings: exportSettings(),
 			assets: assets(),
 			recentErrors: workerSnapshot?.recentErrors
-				? {
-						...workerSnapshot.recentErrors,
-						entries: [
-							...workerSnapshot.recentErrors.entries,
-							...recentErrorLog().entries.filter(
-								(e) =>
-									!workerSnapshot.recentErrors!.entries.some(
-										(w) => w.subsystem === e.subsystem && w.code === e.code
-									)
-							)
-						].slice(0, recentErrorLog().capacity)
-					}
+				? (() => {
+						const workerLog = workerSnapshot.recentErrors!; // narrowed by the ternary guard; TS doesn't propagate into closures
+						const workerCodes = new Set(workerLog.entries.map((w) => `${w.subsystem}:${w.code}`));
+						const uiOnly = recentErrorLog().entries.filter(
+							(e) => !workerCodes.has(`${e.subsystem}:${e.code}`)
+						);
+						return {
+							...workerLog,
+							entries: [...workerLog.entries, ...uiOnly].slice(0, workerLog.capacity)
+						};
+					})()
 				: recentErrorLog(),
 			workerSnapshot,
 			asr: { engine: asrState().engine, accelerator: asrState().accelerator },
@@ -4144,6 +4143,7 @@ export function App() {
 					onOpenCaptions={() => openTextSideRailTab('captions')}
 					onToggleScopes={() => setScopePanelCollapsed((prev) => !prev)}
 					scopesPanelVisible={scopePanelAvailable() && !scopePanelCollapsed()}
+					scopesPanelAvailable={scopePanelAvailable()}
 					onScrollToRenderQueue={() =>
 						document
 							.querySelector<HTMLElement>('.render-queue-panel')
@@ -4437,48 +4437,22 @@ export function App() {
 					>
 						<Show when={previewSurfaceAvailable()}>
 							<aside class="dock-left" aria-label="Library">
-								<div class="dock-tabs" role="tablist" aria-label="Library sections">
-									<button
-										type="button"
-										id="dock-tab-media"
-										role="tab"
-										tabIndex={activeDockTab() === 'media' ? 0 : -1}
-										aria-selected={activeDockTab() === 'media'}
-										aria-controls="dock-panel-media"
-										onClick={() => setActiveDockTab('media')}
-										onKeyDown={(e) => {
-											if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-												setActiveDockTab('beats');
-												(e.currentTarget.nextElementSibling as HTMLElement)?.focus();
-											}
-										}}
-									>
-										Media
-									</button>
-									<button
-										type="button"
-										id="dock-tab-beats"
-										role="tab"
-										tabIndex={activeDockTab() === 'beats' ? 0 : -1}
-										aria-selected={activeDockTab() === 'beats'}
-										aria-controls="dock-panel-beats"
-										onClick={() => setActiveDockTab('beats')}
-										onKeyDown={(e) => {
-											if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-												setActiveDockTab('media');
-												(e.currentTarget.previousElementSibling as HTMLElement)?.focus();
-											}
-										}}
-									>
-										Beats
-									</button>
-								</div>
+								<SecondaryRailTabs
+									idPrefix="dock"
+									label="Library sections"
+									tabs={[
+										{ id: 'media' as const, label: 'Media' },
+										{ id: 'beats' as const, label: 'Beats' }
+									]}
+									value={activeDockTab()}
+									onSelect={setActiveDockTab}
+								/>
 								<div class="dock-library">
-									<div
-										id="dock-panel-media"
-										role="tabpanel"
-										aria-labelledby="dock-tab-media"
-										hidden={activeDockTab() !== 'media'}
+									<SecondaryRailPanel
+										idPrefix="dock"
+										tab="media"
+										value={activeDockTab()}
+										keepMounted
 									>
 										<MediaBin
 											assets={assets}
@@ -4497,12 +4471,12 @@ export function App() {
 											onPlace={(sourceId) => bridge?.send({ type: 'place-clip', sourceId })}
 											onRemove={(sourceId) => bridge?.send({ type: 'remove-asset', sourceId })}
 										/>
-									</div>
-									<div
-										id="dock-panel-beats"
-										role="tabpanel"
-										aria-labelledby="dock-tab-beats"
-										hidden={activeDockTab() !== 'beats'}
+									</SecondaryRailPanel>
+									<SecondaryRailPanel
+										idPrefix="dock"
+										tab="beats"
+										value={activeDockTab()}
+										keepMounted
 									>
 										<BeatPanel
 											assets={assets}
@@ -4570,7 +4544,7 @@ export function App() {
 											}}
 											selectedClipCount={() => selectedClipRefs().length}
 										/>
-									</div>
+									</SecondaryRailPanel>
 								</div>
 							</aside>
 						</Show>

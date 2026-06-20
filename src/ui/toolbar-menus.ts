@@ -39,6 +39,7 @@ export interface MenuBarBuildOptions {
 	/** True when at least one timeline clip is selected — gates `Clip › Split/Delete`. */
 	hasSelection: boolean;
 	scopesPanelVisible: boolean;
+	scopesPanelAvailable: boolean;
 }
 
 /**
@@ -82,7 +83,8 @@ export function buildMenuBarGroups(options: MenuBarBuildOptions): MenuBarGroup[]
 				{
 					kind: 'item',
 					id: 'scopes',
-					label: options.scopesPanelVisible ? 'Hide scopes' : 'Show scopes'
+					label: options.scopesPanelVisible ? 'Hide scopes' : 'Show scopes',
+					disabled: !options.scopesPanelAvailable
 				}
 			]
 		},
@@ -169,6 +171,7 @@ export interface CommandActionsBuildOptions {
 	onOpenCaptions: () => void;
 	onToggleScopes: () => void;
 	onOpenRenderQueue: () => void;
+	scopesPanelAvailable: boolean;
 }
 
 /**
@@ -240,7 +243,10 @@ export function buildCommandActions(options: CommandActionsBuildOptions): Comman
 		},
 		{
 			label: 'View scopes',
-			detail: 'Toggle waveform and vectorscope overlays',
+			detail: options.scopesPanelAvailable
+				? 'Toggle waveform and vectorscope overlays'
+				: 'Scopes require WebGPU support',
+			disabled: !options.scopesPanelAvailable,
 			onSelect: options.onToggleScopes
 		},
 		{
