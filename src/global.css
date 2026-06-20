@@ -6847,7 +6847,7 @@ button.status-badge:hover {
 	min-width: 0;
 	min-height: 0;
 	max-height: calc(100vh - var(--toolbar-h) - var(--timeline-h) - var(--status-h) - 26px);
-	overflow: auto;
+	overflow: hidden;
 }
 .side-rail-tab-panel {
 	display: flex;

@@ -415,7 +415,7 @@ function SecondaryRailTabs<T extends string>(props: {
 						id={secondaryTabId(props.idPrefix, tab.id)}
 						class="side-rail-secondary-tab"
 						role="tab"
-						aria-selected={props.value === tab.id}
+						aria-selected={props.value === tab.id ? 'true' : 'false'}
 						aria-controls={secondaryPanelId(props.idPrefix, tab.id)}
 						onClick={() => props.onSelect(tab.id)}
 					>
