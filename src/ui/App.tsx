@@ -109,6 +109,7 @@ import { PublishPanel } from './PublishPanel';
 import { createPublishController, type PublishTapStats } from './publish-controller';
 import { LimitedPreview } from './LimitedPreview';
 import { registerKeyboardShortcuts } from './keyboard';
+import { userVisibleHealthReport } from './media-health';
 import {
 	clipLocalTime,
 	hasKeyframeTrack,
@@ -2693,8 +2694,10 @@ export function App() {
 				}
 				break;
 			case 'source-health': {
-				setLatestHealthReport(msg.report.status === 'ok' ? null : msg.report);
-				const first = msg.report.warnings[0];
+				const visibleReport =
+					msg.report.status === 'ok' ? null : userVisibleHealthReport(msg.report);
+				setLatestHealthReport(visibleReport);
+				const first = visibleReport?.warnings[0];
 				if (first) setStatusLine(first.message);
 				break;
 			}
@@ -5103,6 +5106,7 @@ export function App() {
 										>
 											<ProgramPanel
 												programMode={programModeSupport}
+												probe={capabilityProbeV2()}
 												scenes={programScenes}
 												sessionState={programSessionState}
 												activeSceneId={programActiveSceneId}

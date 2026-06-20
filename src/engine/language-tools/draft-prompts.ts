@@ -93,9 +93,11 @@ export function parseDraftResponse(response: string): ParsedDraft {
 export function buildSummarizerOptions(): {
 	type: 'key-points';
 	format: 'plain-text';
+	outputLanguage: 'en';
 } {
 	return {
 		type: 'key-points',
-		format: 'plain-text'
+		format: 'plain-text',
+		outputLanguage: 'en'
 	};
 }

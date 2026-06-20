@@ -1678,19 +1678,6 @@ body {
 	white-space: nowrap;
 }
 
-.workspace {
-	display: grid;
-	grid-template-columns: minmax(0, 1fr) 320px;
-	gap: 0.75rem;
-	flex: 1;
-	min-height: 0;
-	padding: 0.75rem;
-}
-
-.workspace.has-bin {
-	grid-template-columns: 232px minmax(0, 1fr) 320px;
-}
-
 .preview {
 	position: relative;
 	display: flex;
@@ -2196,14 +2183,6 @@ body {
 	flex-direction: column;
 	min-width: 0;
 	min-height: 0;
-}
-
-.workspace.rail-collapsed {
-	grid-template-columns: minmax(0, 1fr) 34px;
-}
-
-.workspace.has-bin.rail-collapsed {
-	grid-template-columns: 232px minmax(0, 1fr) 34px;
 }
 
 .side-rail-expand {
@@ -4707,14 +4686,9 @@ button.status-badge:hover {
 		min-height: 44px;
 	}
 
-	/* Workspace: override the PPTX 3-column grid */
-	.workspace,
-	.workspace.has-bin,
-	.workspace.rail-collapsed,
-	.workspace.has-bin.rail-collapsed {
-		grid-template-columns: 1fr;
-		background: var(--well);
-	}
+	/* The workspace single-column collapse lives *after* the base `.workspace`
+	   grid block (which is later in the file) so it wins the cascade at this
+	   width — see the `@media` immediately following that block. */
 
 	/* Side-rail tab bar: scroll horizontally on narrow screens */
 	.side-rail-tab-bar {
@@ -4856,6 +4830,10 @@ button.status-badge:hover {
 	flex-direction: column;
 	gap: 0.35rem;
 	overflow-y: auto;
+	/* Never let an item push a horizontal scrollbar — the meta text ellipsises and
+	   the thumbnail/actions are sized so the row fits the narrow dock column, so
+	   the delete/add buttons stay in frame without scrolling right. */
+	overflow-x: hidden;
 	min-height: 0;
 }
 
@@ -4889,8 +4867,8 @@ button.status-badge:hover {
 }
 
 .media-bin-thumb {
-	width: 64px;
-	height: 36px;
+	width: 48px;
+	height: 27px;
 	border-radius: var(--radius-xs);
 	background: #000;
 	border: 1px solid var(--glass-border);
@@ -4937,61 +4915,10 @@ button.status-badge:hover {
 	white-space: nowrap;
 }
 
-.media-bin-health {
-	display: grid;
-	gap: 0.12rem;
-	min-width: 0;
-	margin: 0.08rem 0 0;
-	padding: 0;
-	list-style: none;
-}
-
-.media-bin-health-item {
-	display: flex;
-	align-items: flex-start;
-	gap: 0.25rem;
-	min-width: 0;
-	color: var(--text-muted);
-	font-size: var(--text-2xs);
-	line-height: 1.4;
-}
-
-.media-bin-health-item svg {
-	flex-shrink: 0;
-	margin-top: 2px;
-}
-
-.media-bin-health-item.is-warning {
-	color: var(--warn);
-}
-
-.media-bin-health-item.is-error {
-	color: var(--danger);
-}
-
-.media-bin-health-item span {
-	min-width: 0;
-}
-
-.media-bin-proxy {
-	display: flex;
-	align-items: center;
-	gap: 0.25rem;
-	min-width: 0;
-	color: var(--accent);
-	font-size: var(--text-2xs);
-}
-
-.media-bin-proxy span {
-	min-width: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
 .media-bin-actions {
 	display: flex;
-	gap: 0.2rem;
+	gap: 0.15rem;
+	flex: 0 0 auto;
 }
 
 /* ── Media info popover ───────────────────────────────────────────────── */
@@ -5058,7 +4985,8 @@ button.status-badge:hover {
 	margin: 0;
 }
 
-.media-info-health {
+.media-info-health,
+.media-info-notes {
 	list-style: none;
 	margin: 0.5rem 0 0;
 	padding: 0.4rem 0 0;
@@ -5068,7 +4996,8 @@ button.status-badge:hover {
 	gap: 0.25rem;
 }
 
-.media-info-health-item {
+.media-info-health-item,
+.media-info-note-item {
 	display: flex;
 	align-items: flex-start;
 	gap: 0.3rem;
@@ -5077,9 +5006,14 @@ button.status-badge:hover {
 	line-height: 1.4;
 }
 
-.media-info-health-item svg {
+.media-info-health-item svg,
+.media-info-note-item svg {
 	flex-shrink: 0;
 	margin-top: 1px;
+}
+
+.media-info-note-item {
+	color: var(--text-muted);
 }
 
 .media-info-health-item.is-info {
@@ -5115,8 +5049,9 @@ button.status-badge:hover {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 24px;
-	height: 24px;
+	width: 22px;
+	height: 22px;
+	flex: 0 0 auto;
 	padding: 0;
 	border: 1px solid var(--glass-border);
 	border-radius: var(--radius-sm);
@@ -6294,22 +6229,28 @@ button.status-badge:hover {
 	font-size: var(--text-xs);
 }
 
-.beat-panel-progress-wrap {
-	overflow: hidden;
-}
-
-.beat-panel-progress-bar {
-	width: 100%;
-	height: 6px;
-	background-color: var(--primary);
-	transform-origin: left;
-	will-change: transform;
+.beat-panel-sources {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
 }
 
 .beat-panel-source-row {
 	display: flex;
-	align-items: center;
-	gap: 0.5rem;
+	flex-direction: column;
+	gap: 7px;
+	min-width: 0;
+	padding: 8px;
+	border: 1px solid var(--edge, var(--border));
+	border-radius: var(--radius-sm);
+	background: color-mix(in srgb, var(--well, var(--bg-elevated)) 76%, transparent);
+}
+
+.beat-panel-source-head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 8px;
 	min-width: 0;
 }
 
@@ -6319,13 +6260,168 @@ button.status-badge:hover {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+	color: var(--ink-100, var(--text));
+	font-size: 11px;
+	font-weight: 650;
+	line-height: 1.25;
+}
+
+.beat-panel-state {
+	flex: 0 0 auto;
+	color: var(--ink-600, var(--muted-foreground));
+	font-family: var(--font-mono);
+	font-size: 9.5px;
+	line-height: 1.2;
+	text-transform: uppercase;
+	white-space: nowrap;
+}
+
+.beat-panel-state.is-ready {
+	color: var(--accent, var(--primary));
+}
+
+.beat-panel-state.is-busy {
+	color: var(--primary);
+}
+
+.beat-panel-result {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 6px;
+	min-width: 0;
+}
+
+.beat-panel-metric {
+	display: flex;
+	align-items: baseline;
+	gap: 4px;
+	min-width: 0;
+	color: var(--ink-600, var(--muted-foreground));
+	font-size: 10px;
+	line-height: 1.1;
+}
+
+.beat-panel-metric strong {
+	color: var(--ink-100, var(--text));
+	font-family: var(--font-mono);
+	font-size: 13px;
+	font-weight: 700;
 }
 
 .beat-panel-source-controls {
-	display: flex;
-	flex: 0 0 auto;
+	display: grid;
+	grid-template-columns: 1fr;
+	gap: 6px;
+	min-width: 0;
+}
+
+.beat-panel-progress-wrap {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
 	align-items: center;
-	gap: 0.35rem;
+	gap: 6px;
+	min-width: 0;
+}
+
+.beat-panel-progress-track {
+	overflow: hidden;
+	height: 7px;
+	border: 1px solid var(--edge, var(--border));
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--well, var(--bg-elevated)) 84%, black);
+}
+
+.beat-panel-progress-bar {
+	width: 100%;
+	height: 100%;
+	background-color: var(--primary);
+	transform-origin: left;
+	will-change: transform;
+}
+
+.beat-panel-analyse-btn,
+.beat-panel-toggle,
+.beat-panel-autocut-btn,
+.beat-panel-cancel-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 0;
+	min-height: 27px;
+	padding: 0 8px;
+	border: 1px solid var(--edge, var(--border));
+	border-radius: var(--radius-sm);
+	background: var(--bg-control, var(--secondary));
+	color: var(--ink-100, var(--text));
+	font-family: var(--font-ui);
+	font-size: 10.5px;
+	font-weight: 650;
+	line-height: 1;
+	white-space: nowrap;
+}
+
+.beat-panel-analyse-btn,
+.beat-panel-toggle {
+	width: 100%;
+}
+
+.beat-panel-toggle.is-active {
+	border-color: color-mix(in srgb, var(--accent) 42%, var(--edge, var(--border)));
+	background: color-mix(in srgb, var(--accent-soft, var(--primary-soft)) 60%, transparent);
+	color: var(--accent, var(--primary));
+}
+
+.beat-panel-toggle:disabled,
+.beat-panel-autocut-btn:disabled {
+	cursor: not-allowed;
+	opacity: 0.45;
+}
+
+.beat-panel-global {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin-top: 10px;
+	padding-top: 8px;
+	border-top: 1px solid var(--edge, var(--border));
+}
+
+.beat-panel-offset-label {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	color: var(--ink-600, var(--muted-foreground));
+	font-size: 10.5px;
+}
+
+.beat-panel-field-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.beat-panel-field-head output {
+	color: var(--ink-100, var(--text));
+	font-family: var(--font-mono);
+}
+
+.beat-panel-offset-label input {
+	width: 100%;
+	accent-color: var(--primary);
+}
+
+.beat-panel-autocut {
+	display: grid;
+	grid-template-columns: 1fr;
+	gap: 6px;
+}
+
+.beat-panel-empty {
+	margin: 0;
+	color: var(--ink-500, var(--muted-foreground));
+	font-size: 11px;
+	line-height: 1.4;
 }
 /* =============================================================
    Precision-instrument redesign
@@ -6337,6 +6433,9 @@ button.status-badge:hover {
 
 /* ── Workspace grid: explicit left dock holds the library + beat panel ── */
 .workspace {
+	display: grid;
+	flex: 1;
+	min-height: 0;
 	gap: 6px;
 	padding: 6px;
 	grid-template-columns: minmax(0, 1fr) 304px;
@@ -6352,6 +6451,22 @@ button.status-badge:hover {
 }
 .workspace.has-bin.rail-collapsed {
 	grid-template-columns: 236px minmax(0, 1fr) 28px;
+}
+/* Single-column collapse for mobile/narrow. Declared right after the base
+   `.workspace` grid rules above so it wins the cascade (equal specificity →
+   later source order). The middle column is `minmax(0, 1fr)`, so above this
+   breakpoint the 3-column grid shrinks gracefully instead of overflowing —
+   the breakpoint only needs to handle genuinely mobile widths. */
+@media (max-width: 900px) {
+	.workspace,
+	.workspace.has-bin,
+	.workspace.rail-collapsed,
+	.workspace.has-bin.rail-collapsed {
+		display: flex;
+		flex-direction: column;
+		min-height: auto;
+		overflow: visible;
+	}
 }
 .dock-left {
 	display: flex;
@@ -7638,25 +7753,6 @@ body::-webkit-scrollbar-thumb:hover,
 	min-height: 30px;
 }
 
-.workspace {
-	grid-template-columns: minmax(480px, 1fr) 360px;
-	gap: 8px;
-	padding: 8px;
-	background: var(--well);
-}
-
-.workspace.has-bin {
-	grid-template-columns: 364px minmax(480px, 1fr) 360px;
-}
-
-.workspace.rail-collapsed {
-	grid-template-columns: minmax(480px, 1fr) 28px;
-}
-
-.workspace.has-bin.rail-collapsed {
-	grid-template-columns: 364px minmax(480px, 1fr) 28px;
-}
-
 .dock-left {
 	display: grid;
 	grid-template-columns: 66px minmax(0, 1fr);
@@ -7828,16 +7924,6 @@ body::-webkit-scrollbar-thumb:hover,
 
 	.pipeline-chip {
 		flex: 0 0 auto;
-	}
-
-	.workspace,
-	.workspace.has-bin,
-	.workspace.rail-collapsed,
-	.workspace.has-bin.rail-collapsed {
-		display: flex;
-		flex-direction: column;
-		min-height: auto;
-		overflow: visible;
 	}
 
 	.dock-left {

@@ -248,8 +248,7 @@ export function Toolbar(props: ToolbarProps) {
 				items: [
 					{ kind: 'item', id: 'import', label: 'Import media…', disabled: props.importBlocked },
 					{ kind: 'separator' },
-					{ kind: 'item', id: 'palette', label: 'Search actions…', kbd: `${mod}+K` },
-					{ kind: 'item', id: 'capabilities', label: 'Browser capabilities' }
+					{ kind: 'item', id: 'palette', label: 'Search actions…', kbd: `${mod}+K` }
 				]
 			},
 			{
@@ -317,7 +316,6 @@ export function Toolbar(props: ToolbarProps) {
 				label: 'Help',
 				items: [
 					{ kind: 'item', id: 'user-guide', label: 'User guide' },
-					{ kind: 'item', id: 'capabilities', label: 'Browser capabilities' },
 					{ kind: 'separator' },
 					{ kind: 'item', id: 'palette', label: 'Search actions…', kbd: `${mod}+K` }
 				]

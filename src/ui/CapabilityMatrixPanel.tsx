@@ -1,16 +1,10 @@
 import { createMemo, For, Show } from 'solid-js';
 import type { AiAvailability, CapabilityProbeResult, FeatureSupport } from '../protocol';
 import { languageToolsSurfaceVisible } from '../protocol';
+import { type CapabilityRow, webnnRow } from './capability-rows';
 
 interface CapabilityMatrixPanelProps {
 	probe: CapabilityProbeResult | null;
-}
-
-interface CapabilityRow {
-	label: string;
-	support: FeatureSupport;
-	active: boolean;
-	action: string | null;
 }
 
 function supportChip(support: FeatureSupport): string {
@@ -173,6 +167,7 @@ function rowsForProbe(probe: CapabilityProbeResult): CapabilityRow[] {
 			action: null
 		},
 		cleanupRow(probe),
+		webnnRow(probe),
 		asrRow(probe),
 		smartReframeRow(probe),
 		...(probe.languageTools && languageToolsSurfaceVisible(probe.languageTools)

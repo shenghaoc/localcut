@@ -12,8 +12,11 @@ import type {
 } from '../protocol';
 import type { CleanupProbeResult } from '../protocol';
 import { probeAsr } from './asr/asr-probe';
+import { CAPTURE_VIDEO_CODEC_FALLBACKS } from './replay-buffer/capture';
 
-type VideoCodecProbeName = 'h264' | 'vp9' | 'av1';
+// H.264 is probed via the resolution-derived `h264ConstrainedBaseline()` helper,
+// so it does not live in `videoCodecStrings` (which only holds fixed strings).
+type VideoCodecProbeName = 'vp9' | 'av1';
 type AudioCodecProbeName = 'aac' | 'opus';
 
 interface CodecProbeConfig {
@@ -50,10 +53,33 @@ const unknownCodecs: CodecProbeResult = {
 };
 
 const videoCodecStrings: Record<VideoCodecProbeName, string> = {
-	h264: 'avc1.42E01E',
 	vp9: 'vp09.00.10.08',
 	av1: 'av01.0.05M.08'
 };
+
+/**
+ * Returns an H.264 Constrained-Baseline codec string whose level covers
+ * the given frame size. MaxFS per H.264 Table A-1: L3.0=1620, L3.1=3600,
+ * L3.2=5120, L4.0/4.1=8192, L4.2=8704, L5.0=22080, L5.1=36864.
+ */
+export function h264ConstrainedBaseline(width: number, height: number): string {
+	const mbs = Math.ceil(width / 16) * Math.ceil(height / 16);
+	const level =
+		mbs <= 1620
+			? 0x1e
+			: mbs <= 3600
+				? 0x1f
+				: mbs <= 5120
+					? 0x20
+					: mbs <= 8192
+						? 0x28 // L4.0 (L4.1 shares MaxFS = 8192)
+						: mbs <= 8704
+							? 0x2a // L4.2 — covers 8193–8704 MBs (e.g. ~2048×1088)
+							: mbs <= 22080
+								? 0x32 // L5.0
+								: 0x33; // L5.1
+	return `avc1.42E0${level.toString(16).toUpperCase().padStart(2, '0')}`;
+}
 
 const audioCodecStrings: Record<AudioCodecProbeName, string> = {
 	aac: 'mp4a.40.2',
@@ -131,6 +157,7 @@ async function probeCodecs(): Promise<CodecProbeResult> {
 
 	const videoBase = { width: 1280, height: 720, bitrate: 5_000_000 };
 	const audioBase = { sampleRate: 48_000, numberOfChannels: 2, bitrate: 128_000 };
+	const h264Codec = h264ConstrainedBaseline(1280, 720);
 
 	// The ten probes are independent; running them in parallel keeps startup from
 	// serializing across isConfigSupported round-trips (each can hit a hardware
@@ -148,10 +175,10 @@ async function probeCodecs(): Promise<CodecProbeResult> {
 		aacEncode,
 		opusEncode
 	] = await Promise.all([
-		probeCodec(videoDecoder, { ...videoBase, codec: videoCodecStrings.h264 }),
+		probeCodec(videoDecoder, { ...videoBase, codec: h264Codec }),
 		probeCodec(videoDecoder, { ...videoBase, codec: videoCodecStrings.vp9 }),
 		probeCodec(videoDecoder, { ...videoBase, codec: videoCodecStrings.av1 }),
-		probeCodec(videoEncoder, { ...videoBase, codec: videoCodecStrings.h264 }),
+		probeCodec(videoEncoder, { ...videoBase, codec: h264Codec }),
 		probeCodec(videoEncoder, { ...videoBase, codec: videoCodecStrings.vp9 }),
 		probeCodec(videoEncoder, { ...videoBase, codec: videoCodecStrings.av1 }),
 		probeCodec(audioDecoder, { ...audioBase, codec: audioCodecStrings.aac }),
@@ -370,21 +397,34 @@ async function probeDisplayAudioCapture(): Promise<FeatureSupport> {
 }
 
 async function probeVideoEncodeRealtime(): Promise<FeatureSupport> {
-	if (typeof VideoEncoder !== 'function') return 'unsupported';
-	try {
-		const config: VideoEncoderConfig = {
-			codec: 'avc1.42001E',
-			width: 1920,
-			height: 1080,
-			bitrate: 5_000_000,
-			latencyMode: 'realtime',
-			hardwareAcceleration: 'prefer-hardware'
-		};
-		const result = await VideoEncoder.isConfigSupported(config);
-		return result.supported === true ? 'supported' : 'unsupported';
-	} catch {
-		return 'unknown';
+	if (typeof VideoEncoder !== 'function' || typeof VideoEncoder.isConfigSupported !== 'function') {
+		return 'unsupported';
 	}
+	// Probe the exact codecs the capture session chooses between, so a 'supported'
+	// here means the recording encoder can actually configure — not just that some
+	// unrelated H.264 profile/level works. This list is the single source of truth:
+	// the worker's runtime encoder setup builds its candidate set from the same
+	// CAPTURE_VIDEO_CODEC_FALLBACKS and `VideoEncoder.isConfigSupported`-selects one
+	// of them (see ensureCaptureVideoEncoder in worker.ts), so the UI gate and the encoder
+	// cannot drift. Run them in parallel like probeCodecs so startup doesn't
+	// serialize the isConfigSupported calls.
+	const results = await Promise.all(
+		CAPTURE_VIDEO_CODEC_FALLBACKS.map((codec) =>
+			VideoEncoder.isConfigSupported({
+				codec,
+				width: 1920,
+				height: 1080,
+				bitrate: 5_000_000,
+				latencyMode: 'realtime',
+				hardwareAcceleration: 'prefer-hardware'
+			})
+				.then((r): FeatureSupport => (r.supported === true ? 'supported' : 'unsupported'))
+				.catch((): FeatureSupport => 'unknown')
+		)
+	);
+	if (results.includes('supported')) return 'supported';
+	if (results.includes('unknown')) return 'unknown';
+	return 'unsupported';
 }
 
 async function probeAudioEncode(codec: 'opus' | 'aac'): Promise<FeatureSupport> {
@@ -403,20 +443,65 @@ async function probeAudioEncode(codec: 'opus' | 'aac'): Promise<FeatureSupport> 
 	}
 }
 
-async function probeOpfsSyncAccessHandle(): Promise<FeatureSupport> {
-	try {
-		if (typeof navigator === 'undefined' || typeof navigator.storage?.getDirectory !== 'function') {
-			return 'unsupported';
+export async function probeOpfsSyncAccessHandleInWorker(): Promise<FeatureSupport> {
+	if (typeof Worker === 'undefined' || typeof navigator?.storage?.getDirectory !== 'function') {
+		return 'unsupported';
+	}
+	// The result is posted only AFTER the temp file is removed, so the parent's
+	// worker.terminate() (which runs as soon as it receives the message) cannot
+	// race the cleanup and leave a _cap_probe_*.tmp behind on every startup.
+	const src = `self.onmessage = async () => {
+		let result = 'unknown';
+		let root, name, created = false;
+		try {
+			root = await navigator.storage.getDirectory();
+			name = '_cap_probe_' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.tmp';
+			const handle = await root.getFileHandle(name, { create: true });
+			created = true;
+			if (typeof handle.createSyncAccessHandle !== 'function') {
+				result = 'unsupported';
+			} else {
+				const access = await handle.createSyncAccessHandle();
+				access.close();
+				result = 'supported';
+			}
+		} catch {
+			result = 'unknown';
 		}
-		const root = await navigator.storage.getDirectory();
-		const fileName = `_cap_probe_${Date.now()}_${Math.random().toString(36).slice(2)}.tmp`;
-		const handle = await root.getFileHandle(fileName, { create: true });
-		const access = await (handle as FileSystemFileHandle).createSyncAccessHandle();
-		access.close();
-		await root.removeEntry(fileName);
-		return 'supported';
+		if (created && root && name) {
+			try { await root.removeEntry(name); } catch {}
+		}
+		self.postMessage(result);
+	};`;
+	let url: string | undefined;
+	let worker: Worker | undefined;
+	try {
+		// Inside the try so a throwing createObjectURL/Blob/Worker (strict CSP, SSR,
+		// or headless test env) degrades to 'unknown' instead of rejecting the probe.
+		url = URL.createObjectURL(new Blob([src], { type: 'application/javascript' }));
+		worker = new Worker(url);
+		const w = worker;
+		return await new Promise<FeatureSupport>((resolve) => {
+			const timer = setTimeout(() => resolve('unknown'), 3_000);
+			w.onmessage = (e) => {
+				clearTimeout(timer);
+				resolve(e.data as FeatureSupport);
+			};
+			w.onerror = () => {
+				clearTimeout(timer);
+				resolve('unknown');
+			};
+			w.postMessage('go');
+		});
 	} catch {
 		return 'unknown';
+	} finally {
+		worker?.terminate();
+		// Revoke only after the worker has loaded and finished (or timed out): some
+		// browsers fetch the worker script asynchronously, so revoking immediately
+		// after `new Worker` can abort the load. The finally still runs if `new
+		// Worker` throws, so the URL is never leaked.
+		if (url) URL.revokeObjectURL(url);
 	}
 }
 
@@ -434,7 +519,7 @@ async function probeCaptureCapabilities(
 		probeVideoEncodeRealtime(),
 		probeAudioEncode('opus'),
 		probeAudioEncode('aac'),
-		probeOpfsSyncAccessHandle()
+		probeOpfsSyncAccessHandleInWorker()
 	]);
 
 	return {
@@ -535,6 +620,10 @@ export function recordingAvailable(probe: CapabilityProbeResult): boolean {
 	return (
 		probe.tier === 'core-webgpu' &&
 		cap.mediaStreamTrackProcessor === 'supported' &&
+		// The recording path transfers each source track into the pipeline worker,
+		// which requires Transferable MediaStreamTrack. A no-flag off-main-thread
+		// fallback is a separate engine task (see bugfix spec B5); until then this
+		// stays a hard requirement so we never offer a recording that can't capture.
 		cap.transferableMediaStreamTrack !== 'unsupported' &&
 		cap.displayCapture === 'supported' &&
 		cap.videoEncodeRealtime === 'supported' &&

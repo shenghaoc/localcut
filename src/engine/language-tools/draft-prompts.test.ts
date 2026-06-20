@@ -4,7 +4,7 @@
  * Tests prompt building and defensive parsing for titles/hashtags/文案.
  */
 import { describe, expect, it } from 'vite-plus/test';
-import { buildDraftPrompt, parseDraftResponse } from './draft-prompts';
+import { buildDraftPrompt, buildSummarizerOptions, parseDraftResponse } from './draft-prompts';
 
 describe('buildDraftPrompt', () => {
 	it('includes the transcript in the prompt', () => {
@@ -17,6 +17,12 @@ describe('buildDraftPrompt', () => {
 		expect(prompt).toContain('TITLES:');
 		expect(prompt).toContain('HASHTAGS:');
 		expect(prompt).toContain('CAPTION:');
+	});
+});
+
+describe('buildSummarizerOptions', () => {
+	it('specifies a supported output language for Chrome Summarizer', () => {
+		expect(buildSummarizerOptions()).toMatchObject({ outputLanguage: 'en' });
 	});
 });
 

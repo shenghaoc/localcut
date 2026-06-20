@@ -186,17 +186,6 @@ export function LiveAudioChainPanel(props: LiveAudioChainPanelProps) {
 							/>
 						</InsertRow>
 
-						{/* Denoiser (reserved) */}
-						<div class="insert-row disabled">
-							<div class="insert-header">
-								<Button variant="ghost" size="icon" disabled aria-label="Denoiser unavailable">
-									<PowerOff size={14} />
-								</Button>
-								<span class="insert-name">Noise Suppression</span>
-								<span class="insert-status bypassed">Available in a future update</span>
-							</div>
-						</div>
-
 						{/* Compressor */}
 						<InsertRow
 							label="Compressor"

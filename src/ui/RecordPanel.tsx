@@ -29,6 +29,7 @@ import type {
 	CaptureWebcamPipPresetSnapshot
 } from '../protocol';
 import { recordingAvailable } from '../engine/capability-probe-v2';
+import { captureUnavailableReasons } from '../engine/capture-reasons';
 import {
 	DEFAULT_CAPTURE_SETTINGS,
 	loadCaptureSettings,
@@ -146,27 +147,6 @@ function descriptorForTrack(
 		height: settings.height,
 		frameRate: settings.frameRate ?? null
 	};
-}
-
-function captureUnavailableReasons(probe: CapabilityProbeResult | null): string[] {
-	if (!probe) return ['Capability probe is still running.'];
-	const reasons: string[] = [];
-	if (probe.capture.mediaStreamTrackProcessor !== 'supported') {
-		reasons.push('MediaStreamTrackProcessor is unavailable.');
-	}
-	if (probe.capture.transferableMediaStreamTrack !== 'supported') {
-		reasons.push('Transferable MediaStreamTrack is unavailable.');
-	}
-	if (probe.capture.displayCapture !== 'supported') {
-		reasons.push('Display capture is unavailable.');
-	}
-	if (probe.capture.videoEncodeRealtime !== 'supported') {
-		reasons.push('Realtime video encode is unavailable.');
-	}
-	if (probe.capture.opfsSyncAccessHandle !== 'supported') {
-		reasons.push('OPFS SyncAccessHandle is unavailable.');
-	}
-	return reasons;
 }
 
 function displaySession(state: CaptureStatusState | 'countdown'): RecorderStripSession {
@@ -487,6 +467,11 @@ export function RecordPanel(props: RecordPanelProps) {
 	}
 
 	function beginRecording(): void {
+		// Recording transfers each source track into the pipeline worker, which
+		// owns the per-source MediaStreamTrackProcessor + realtime encoder. That
+		// transfer requires Transferable MediaStreamTrack, which `recordingAvailable`
+		// gates on. A no-flag, off-main-thread fallback (pushing main-thread frames
+		// into the worker encoder) is a separate engine task — see the bugfix spec.
 		for (const source of sources()) transferSource(source);
 		writerWorker?.terminate();
 		writerWorker = new CaptureWriterWorker();
@@ -646,7 +631,15 @@ export function RecordPanel(props: RecordPanelProps) {
 				<div class="record-disabled-note">
 					<p>Recording is unavailable on this browser profile.</p>
 					<ul>
-						<For each={captureUnavailableReasons(props.probe)}>{(reason) => <li>{reason}</li>}</For>
+						<For
+							each={
+								props.probe
+									? captureUnavailableReasons(props.probe)
+									: ['Checking browser capabilities…']
+							}
+						>
+							{(reason) => <li>{reason}</li>}
+						</For>
 					</ul>
 				</div>
 			</Show>

@@ -6,9 +6,13 @@ import {
 	anyVideoEncodeSupported,
 	deriveCapabilityTierV2,
 	exportConstraintsForProbe,
+	h264ConstrainedBaseline,
 	probeImageDecoder,
-	probeSmartReframe
+	probeOpfsSyncAccessHandleInWorker,
+	probeSmartReframe,
+	recordingAvailable
 } from './capability-probe-v2';
+import type { CapabilityProbeResult } from '../protocol';
 import { compatAdapterProbeResult, probeResultFor } from './compatibility/capability-fixtures';
 
 describe('probeSmartReframe', () => {
@@ -166,5 +170,113 @@ describe('probeImageDecoder', () => {
 		} finally {
 			restore();
 		}
+	});
+});
+
+describe('h264ConstrainedBaseline', () => {
+	it('returns L3.0 for ≤720×576', () => {
+		expect(h264ConstrainedBaseline(720, 576)).toBe('avc1.42E01E');
+	});
+
+	it('returns L3.1 for 720p (1280×720)', () => {
+		expect(h264ConstrainedBaseline(1280, 720)).toBe('avc1.42E01F');
+	});
+
+	it('returns L4.0 for 1080p (1920×1080)', () => {
+		expect(h264ConstrainedBaseline(1920, 1080)).toBe('avc1.42E028');
+	});
+
+	it('returns L4.2 for the 8193–8704 MB band (2048×1088 = 8704 MBs)', () => {
+		// Without the L4.2 threshold this would jump straight to L5.0 and could
+		// false-negative on an encoder that accepts L4.2 but rejects L5.0.
+		expect(h264ConstrainedBaseline(2048, 1088)).toBe('avc1.42E02A');
+	});
+
+	it('returns ≥L5.1 for 2160p (3840×2160)', () => {
+		expect(h264ConstrainedBaseline(3840, 2160)).toMatch(/^avc1\.42E03[23]$/);
+	});
+
+	it('picks L3.1 when L3.0 is rejected at 720p probe resolution', async () => {
+		let callCount = 0;
+		const fakeEncoder = {
+			isConfigSupported(config: { codec: string }) {
+				callCount++;
+				const supported = config.codec !== 'avc1.42E01E';
+				return Promise.resolve({ supported });
+			}
+		};
+		const codec = h264ConstrainedBaseline(1280, 720);
+		const result = await fakeEncoder.isConfigSupported({ codec });
+		expect(result.supported).toBe(true);
+		expect(codec).toBe('avc1.42E01F');
+		expect(callCount).toBe(1);
+	});
+});
+
+describe('probeOpfsSyncAccessHandleInWorker', () => {
+	it('returns unsupported when Worker is unavailable', async () => {
+		const origWorker = globalThis.Worker;
+		// Assign `undefined` rather than `delete` — `delete` throws on a
+		// non-configurable global (e.g. `globalThis.Worker` in a browser-mode run),
+		// whereas assignment is portable. (Claude review.)
+		// @ts-expect-error -- testing absence
+		globalThis.Worker = undefined;
+		try {
+			const result = await probeOpfsSyncAccessHandleInWorker();
+			expect(result).toBe('unsupported');
+		} finally {
+			globalThis.Worker = origWorker;
+		}
+	});
+});
+
+describe('recordingAvailable transferable-track gate', () => {
+	const withCapture = (overrides: Partial<CapabilityProbeResult['capture']>) => {
+		const base = probeResultFor('core-webgpu');
+		return { ...base, capture: { ...base.capture, ...overrides } };
+	};
+
+	it('returns true on a fully capable core-webgpu profile', () => {
+		expect(
+			recordingAvailable(
+				withCapture({
+					transferableMediaStreamTrack: 'supported',
+					mediaStreamTrackProcessor: 'supported'
+				})
+			)
+		).toBe(true);
+	});
+
+	it('returns false when transferableMediaStreamTrack is unsupported (worker-track transfer needs it)', () => {
+		expect(
+			recordingAvailable(
+				withCapture({
+					transferableMediaStreamTrack: 'unsupported',
+					mediaStreamTrackProcessor: 'supported'
+				})
+			)
+		).toBe(false);
+	});
+
+	it("tolerates transferableMediaStreamTrack 'unknown' (probe inconclusive, not a hard block)", () => {
+		expect(
+			recordingAvailable(
+				withCapture({
+					transferableMediaStreamTrack: 'unknown',
+					mediaStreamTrackProcessor: 'supported'
+				})
+			)
+		).toBe(true);
+	});
+
+	it('returns false when MSTP is unsupported', () => {
+		expect(
+			recordingAvailable(
+				withCapture({
+					transferableMediaStreamTrack: 'supported',
+					mediaStreamTrackProcessor: 'unsupported'
+				})
+			)
+		).toBe(false);
 	});
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 import {
+	describeFeature,
 	deriveCapabilityTier,
 	importUnavailableReason,
 	missingAcceleratedFeatures,
@@ -145,6 +146,35 @@ describe('missingAcceleratedFeatures', () => {
 			audioWorklet: true
 		});
 		expect(missingAcceleratedFeatures(snapshot)).toEqual(['webgpu']);
+	});
+});
+
+describe('describeFeature', () => {
+	const accelerated = probeCapabilities({
+		fileApi: true,
+		crossOriginIsolated: true,
+		sharedArrayBuffer: true,
+		webgpu: true,
+		webCodecs: true,
+		offscreenCanvas: true,
+		fileSystemAccess: true,
+		audioWorklet: true
+	});
+
+	it('shows Portrait Matte as available on demand before the lazy model probes', () => {
+		expect(describeFeature('matte', accelerated, null)).toMatchObject({
+			available: true,
+			detail: 'Available on demand',
+			action: null
+		});
+	});
+
+	it('only marks Portrait Matte missing when WebGPU is absent', () => {
+		expect(describeFeature('matte', { ...accelerated, webgpu: false }, null)).toMatchObject({
+			available: false,
+			detail: 'Requires WebGPU',
+			action: 'Use Chromium with hardware acceleration enabled.'
+		});
 	});
 });
 

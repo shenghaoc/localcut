@@ -18,21 +18,24 @@ LocalCut Studio reads media files directly from your disk. Nothing is uploaded �
 
 "Depending on your browser" matters: decoding is done by your browser's built-in media engine (WebCodecs), so the exact codec list varies by browser and operating system. A file that plays in one browser may not decode in another — see [Browser limitations](/docs/browser-limitations). Codecs that browsers don't license, such as AC-3 audio or some professional camera formats, won't decode anywhere on the web.
 
-## Media details and health warnings
+## Media details and import health
 
-Click **ⓘ** on a bin entry to open **Media Details**: resolution, frame rate, rotation, codecs, channel layout, sample rate, duration, and file size, plus the full text of any warnings.
+Click **ⓘ** on a bin entry to open **Media Details**: resolution, frame rate, rotation, codecs, channel layout, sample rate, duration, and file size, plus handled media notes and the full text of any actionable warning.
 
-Files with unusual characteristics get a **source health warning**. Common ones:
+The bin row intentionally stays compact in the narrow left dock. Hover the row to see handled media notes and proxy recommendations in the native tooltip; click **ⓘ** when you want the same information in a stable popover.
+
+Files with unusual but supported characteristics are handled as metadata, not warnings:
 
 - **Variable frame rate (VFR)** — typical for phone recordings. Playback and export honour each frame's real duration, so audio stays in sync. Informational only.
 - **Rotation metadata** — portrait phone clips carry a rotation flag; the clip is placed already rotated upright. You can override it in the Inspector.
 - **Audio/video offset** — the engine compensates automatically.
 - **Mixed audio sample rates** — sources at 44.1 kHz and 48 kHz can share a timeline; everything is resampled to a common rate automatically.
-- **Unsupported codec** — the warning names the codec. If the _primary_ track can't decode, the clip is unusable in this browser; secondary tracks (for example a second audio language) are skipped silently.
+
+Visible health warnings are reserved for actionable problems such as unsupported codecs, rejected Lottie zip containers, unavailable cleaned-audio assets, or missing duration/corrupt files. If the _primary_ track can't decode, the clip is unusable in this browser; secondary tracks (for example a second audio language) are skipped silently.
 
 ## If an import fails
 
-1. Check the warning text in the Media Bin or the Media Details popover — it names the codec or track at fault.
+1. Check the warning text in the Media Bin or the Media Details popover — it names the codec, missing asset, or file problem at fault.
 2. Try a Chromium browser; codec support is widest there.
 3. Re-encode the file to H.264 MP4 with a tool like HandBrake or ffmpeg; that format imports virtually everywhere.
 4. See [Troubleshooting](/docs/troubleshooting) for more recovery steps.

@@ -14,6 +14,11 @@ import {
 } from 'lucide-solid';
 import { formatClock } from '../lib/format';
 import type { MediaAssetSnapshot } from '../protocol';
+import {
+	mediaTooltipMessages,
+	passiveMediaInfoMessages,
+	userVisibleHealthWarnings
+} from './media-health';
 import type { ThumbnailEntry } from './thumbnail-store';
 
 /** dataTransfer MIME used when dragging a bin asset onto a timeline track. */
@@ -49,21 +54,15 @@ function summarize(asset: MediaAssetSnapshot): string {
 	if (asset.video) {
 		const fps = asset.video.frameRate ? ` · ${Math.round(asset.video.frameRate)}fps` : '';
 		const rotation = asset.video.rotationDeg ? ` · ${asset.video.rotationDeg}°` : '';
-		const rateMode = asset.video.frameRateMode === 'variable' ? ' · VFR' : '';
-		return `${asset.video.width}×${asset.video.height}${fps}${rotation}${rateMode}`;
+		return `${asset.video.width}×${asset.video.height}${fps}${rotation}`;
 	}
 	return asset.mimeType ?? 'media';
-}
-
-function healthMessages(asset: MediaAssetSnapshot): string[] {
-	return asset.health?.warnings.map((warning) => warning.message) ?? [];
 }
 
 function proxyLabel(asset: MediaAssetSnapshot): string | null {
 	const proxy = asset.proxy;
 	if (!proxy || proxy.status === 'not-generated' || proxy.status === 'disabled') return null;
-	if (proxy.status === 'recommended')
-		return proxy.reason ?? 'Proxy recommended for smoother preview.';
+	if (proxy.status === 'recommended') return null;
 	if (proxy.status === 'ready' && proxy.width && proxy.height)
 		return `Proxy ready · ${proxy.width}×${proxy.height}`;
 	if (proxy.status === 'generating') {
@@ -71,6 +70,14 @@ function proxyLabel(asset: MediaAssetSnapshot): string | null {
 		return `Generating proxy${progress}`;
 	}
 	return `Proxy ${proxy.status}`;
+}
+
+function mediaBinTitle(asset: MediaAssetSnapshot): string {
+	return [
+		asset.fileName,
+		`${summarize(asset)} · ${formatClock(asset.durationS)} · ${formatSize(asset.byteSize)}`,
+		...mediaTooltipMessages(asset)
+	].join('\n');
 }
 
 function metaRows(asset: MediaAssetSnapshot): { label: string; value: string }[] {
@@ -102,6 +109,8 @@ function metaRows(asset: MediaAssetSnapshot): { label: string; value: string }[]
 
 function MetaInfoPopover(props: { asset: MediaAssetSnapshot }) {
 	const proxy = () => proxyLabel(props.asset);
+	const notes = () => passiveMediaInfoMessages(props.asset);
+	const health = () => userVisibleHealthWarnings(props.asset.health?.warnings ?? []);
 	return (
 		<Popover.Root positioning={{ placement: 'right-start', gutter: 8 }}>
 			<Popover.Trigger
@@ -132,9 +141,21 @@ function MetaInfoPopover(props: { asset: MediaAssetSnapshot }) {
 								)}
 							</For>
 						</dl>
-						<Show when={(props.asset.health?.warnings.length ?? 0) > 0}>
+						<Show when={notes().length > 0}>
+							<ul class="media-info-notes">
+								<For each={notes()}>
+									{(note) => (
+										<li class="media-info-note-item">
+											<Info size={11} aria-hidden="true" />
+											<span>{note}</span>
+										</li>
+									)}
+								</For>
+							</ul>
+						</Show>
+						<Show when={health().length > 0}>
 							<ul class="media-info-health">
-								<For each={props.asset.health?.warnings}>
+								<For each={health()}>
 									{(w) => (
 										<li class={`media-info-health-item is-${w.severity}`}>
 											<AlertTriangle size={11} aria-hidden="true" />
@@ -236,8 +257,6 @@ export function MediaBin(props: MediaBinProps) {
 						{(asset) => {
 							const offline = () => props.unresolvedIds().has(asset.sourceId);
 							const blocked = () => asset.health?.status === 'blocked';
-							const health = () => healthMessages(asset);
-							const proxy = () => proxyLabel(asset);
 							return (
 								<li
 									class={`media-bin-item${offline() ? ' is-offline' : ''}${blocked() ? ' is-blocked' : ''}`}
@@ -250,7 +269,7 @@ export function MediaBin(props: MediaBinProps) {
 										event.dataTransfer.setData(ASSET_DRAG_MIME, asset.sourceId);
 										event.dataTransfer.effectAllowed = 'copy';
 									}}
-									title={`${asset.fileName} · ${summarize(asset)}${health().length > 0 ? ` · ${health().join(' · ')}` : ''}`}
+									title={mediaBinTitle(asset)}
 								>
 									<BinThumbnail
 										asset={asset}
@@ -275,26 +294,6 @@ export function MediaBin(props: MediaBinProps) {
 											{formatSize(asset.byteSize)}
 											<Show when={offline()}> · offline</Show>
 										</span>
-										<Show when={health().length > 0}>
-											<ul class="media-bin-health">
-												<For each={asset.health?.warnings ?? []}>
-													{(warning) => (
-														<li class={`media-bin-health-item is-${warning.severity}`}>
-															<AlertTriangle size={11} aria-hidden="true" />
-															<span>{warning.message}</span>
-														</li>
-													)}
-												</For>
-											</ul>
-										</Show>
-										<Show when={proxy()} keyed>
-											{(label) => (
-												<span class="media-bin-proxy">
-													<Gauge size={11} aria-hidden="true" />
-													<span>{label}</span>
-												</span>
-											)}
-										</Show>
 									</div>
 									<div class="media-bin-actions">
 										<MetaInfoPopover asset={asset} />

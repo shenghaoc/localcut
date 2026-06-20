@@ -26,7 +26,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 	let d = dx * dx + dy * dy;
 
 	let factor = select(f16(1.0) - f16(u.darkenStrength), f16(1.0), d <= f16(1.0));
-	let darkened = f16(colour.rgb) * factor;
+	let darkened = vec3<f16>(colour.rgb) * factor;
 
 	textureStore(dst, gid.xy, vec4f(vec3f(darkened), colour.a));
 }

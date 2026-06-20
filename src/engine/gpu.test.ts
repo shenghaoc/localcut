@@ -31,6 +31,7 @@ function fakeDevice(options: { features?: GPUFeatureName[] } = {}) {
 	const clearBuffer = vi.fn();
 	const copyBufferToBuffer = vi.fn();
 	const destroy = vi.fn();
+	const createBindGroup = vi.fn((_descriptor: GPUBindGroupDescriptor) => ({}));
 	const pass = {
 		setPipeline: vi.fn(),
 		setBindGroup: vi.fn(),
@@ -52,7 +53,7 @@ function fakeDevice(options: { features?: GPUFeatureName[] } = {}) {
 		createComputePipeline: () => pipeline,
 		createRenderPipeline: () => pipeline,
 		createSampler: () => ({}),
-		createBindGroup: () => ({}),
+		createBindGroup,
 		createTexture: (descriptor: { size?: { width?: number; height?: number } } = {}) => ({
 			width: descriptor.size?.width ?? 0,
 			height: descriptor.size?.height ?? 0,
@@ -83,6 +84,7 @@ function fakeDevice(options: { features?: GPUFeatureName[] } = {}) {
 		copyTextureToTexture,
 		clearBuffer,
 		copyBufferToBuffer,
+		createBindGroup,
 		destroy
 	};
 }
@@ -214,6 +216,31 @@ describe('PreviewRenderer device adoption', () => {
 		adopted.destroy();
 		expect(context.unconfigureMock).toHaveBeenCalledTimes(2);
 		expect(external.destroy).not.toHaveBeenCalled();
+	});
+});
+
+describe('PreviewRenderer callout passes', () => {
+	it('binds blur-region horizontal and vertical passes with the compact 0/1/2 layout', () => {
+		const { device, createBindGroup } = fakeDevice();
+		const renderer = new PreviewRenderer(device, fakeContext(), 'rgba8unorm', fakeCanvas(), false);
+		renderer.setPreviewSize(64, 64);
+		createBindGroup.mockClear();
+
+		renderer.present([
+			{
+				kind: 'blur-region',
+				transform: { ...DEFAULT_TRANSFORM },
+				blurRadius: 12
+			}
+		]);
+
+		const bindingSets = createBindGroup.mock.calls.map(([descriptor]) =>
+			(descriptor as GPUBindGroupDescriptor).entries.map((entry) => entry.binding).join(',')
+		);
+		expect(bindingSets.filter((bindings) => bindings === '0,1,2').length).toBeGreaterThanOrEqual(2);
+		expect(bindingSets.some((bindings) => bindings.includes('3') || bindings.includes('4'))).toBe(
+			false
+		);
 	});
 });
 

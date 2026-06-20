@@ -1673,9 +1673,8 @@ export class PreviewRenderer {
 				layout: this.blurRegionVerticalGroupLayout,
 				entries: [
 					{ binding: 0, resource: { buffer } },
-					{ binding: 1, resource: srcView },
-					{ binding: 3, resource: tmpView },
-					{ binding: 4, resource: dstView }
+					{ binding: 1, resource: tmpView },
+					{ binding: 2, resource: dstView }
 				]
 			});
 			const pass = encoder.beginComputePass();
