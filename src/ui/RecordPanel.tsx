@@ -635,7 +635,7 @@ export function RecordPanel(props: RecordPanelProps) {
 							each={
 								props.probe
 									? captureUnavailableReasons(props.probe)
-									: ['Capability probe is still running.']
+									: ['Checking browser capabilities…']
 							}
 						>
 							{(reason) => <li>{reason}</li>}
