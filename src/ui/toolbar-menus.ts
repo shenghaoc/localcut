@@ -61,6 +61,12 @@ export function buildMenuBarGroups(options: MenuBarBuildOptions): MenuBarGroup[]
 			label: 'Project',
 			items: [
 				{ kind: 'item', id: 'import', label: 'Import media…', disabled: options.importBlocked },
+				{
+					kind: 'item',
+					id: 'convert',
+					label: 'Convert media…',
+					detail: 'Change a file’s format without editing'
+				},
 				{ kind: 'item', id: 'render-queue', label: 'Render queue' }
 			]
 		},
@@ -165,6 +171,7 @@ export interface CommandActionsBuildOptions {
 	/** True only when the on-device language tools are supported/visible. */
 	languageToolsAvailable: boolean;
 	onImport: () => void | Promise<void>;
+	onConvert: () => void;
 	/** Resolved to play or pause by the caller per the current `playing` state. */
 	onPlayPause: () => void;
 	onAudioCleanup: () => void;
@@ -200,10 +207,16 @@ export function buildCommandActions(options: CommandActionsBuildOptions): Comman
 			onSelect: options.onImport
 		},
 		{
+			// Index 1 stays the play/pause entry (asserted by tests); keep this after it.
 			label: options.playing ? 'Pause transport' : 'Play transport',
 			detail: 'Preview playback',
 			disabled: options.transportDisabled,
 			onSelect: options.onPlayPause
+		},
+		{
+			label: 'Convert media',
+			detail: 'Change a file’s format (no editing)',
+			onSelect: options.onConvert
 		},
 		{
 			label: 'Audio Cleanup',

@@ -68,6 +68,7 @@ interface ToolbarProps {
 	encodeFps: number | null;
 	onOpenCapabilities?: () => void;
 	onOpenHelp?: () => void;
+	onOpenConvert?: () => void;
 	onOpenAudioCleanup?: () => void;
 	/** True when an audio clip is selected — gates the palette's Audio Cleanup action. */
 	audioCleanupAvailable?: boolean;
@@ -184,6 +185,7 @@ export function Toolbar(props: ToolbarProps) {
 			audioCleanupAvailable: props.audioCleanupAvailable ?? false,
 			languageToolsAvailable: props.onOpenLanguageTools != null,
 			onImport: openImport,
+			onConvert: () => props.onOpenConvert?.(),
 			onPlayPause: props.playing() ? props.onPause : props.onPlay,
 			onAudioCleanup: () => props.onOpenAudioCleanup?.(),
 			onAutoCaptions: () => props.onOpenAutoCaptions?.(),
@@ -232,6 +234,9 @@ export function Toolbar(props: ToolbarProps) {
 		switch (value) {
 			case 'import':
 				void openImport();
+				return;
+			case 'convert':
+				props.onOpenConvert?.();
 				return;
 			case 'capabilities':
 				props.onOpenCapabilities?.();

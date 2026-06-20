@@ -15,6 +15,7 @@ import silenceDetectionContent from './content/silence-detection.md?raw';
 import keystrokeOverlayContent from './content/keystroke-overlay.md?raw';
 import youtubeChaptersContent from './content/youtube-chapters.md?raw';
 import exportingContent from './content/exporting.md?raw';
+import mediaConversionContent from './content/media-conversion.md?raw';
 import captionsContent from './content/captions.md?raw';
 import languageToolsContent from './content/language-tools.md?raw';
 import browserLimitationsContent from './content/browser-limitations.md?raw';
@@ -67,6 +68,7 @@ export const DOC_SECTIONS: readonly DocSection[] = [
 		content: youtubeChaptersContent
 	},
 	{ slug: 'exporting', title: 'Exporting', content: exportingContent },
+	{ slug: 'media-conversion', title: 'Converting media', content: mediaConversionContent },
 	{ slug: 'captions', title: 'Captions', content: captionsContent },
 	{ slug: 'frame-interpolation', title: 'Frame interpolation', content: frameInterpolationContent },
 	{ slug: 'look-packs', title: 'Look packs', content: lookPacksContent },
