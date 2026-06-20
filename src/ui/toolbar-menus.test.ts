@@ -5,10 +5,11 @@ import {
 	type CommandActionsBuildOptions,
 	type MenuBarBuildOptions
 } from './toolbar-menus';
+import { modifierGlyphs } from './platform';
 
 function options(overrides: Partial<MenuBarBuildOptions> = {}): MenuBarBuildOptions {
 	return {
-		mod: '⌘',
+		glyphs: modifierGlyphs(true),
 		importBlocked: false,
 		canUndo: true,
 		canRedo: true,
@@ -109,10 +110,27 @@ describe('buildMenuBarGroups (IA-T1 / D13 dedupe)', () => {
 		expect(selected.find((item) => item.id === 'delete')!.disabled).toBe(false);
 	});
 
-	it('keeps the shortcut hints on the Clip actions', () => {
+	it('keeps shortcut hints on the Clip actions (platform glyphs covered separately)', () => {
+		// Structural check only: both Clip actions carry a kbd hint. The actual
+		// glyph values are asserted platform-by-platform in the glyph tests below,
+		// so this stays decoupled from the `options()` default platform.
 		const items = allItems();
 		expect(items.find((item) => item.id === 'split')!.kbd).toBe('S');
+		expect(items.find((item) => item.id === 'delete')!.kbd).toBeDefined();
+	});
+
+	it('renders Apple glyphs in shortcut hints on macOS', () => {
+		const items = allItems(options({ glyphs: modifierGlyphs(true) }));
+		expect(items.find((item) => item.id === 'undo')!.kbd).toBe('⌘+Z');
+		expect(items.find((item) => item.id === 'redo')!.kbd).toBe('⌘+⇧+Z');
 		expect(items.find((item) => item.id === 'delete')!.kbd).toBe('⌫');
+	});
+
+	it('renders PC glyphs in shortcut hints off macOS', () => {
+		const items = allItems(options({ glyphs: modifierGlyphs(false) }));
+		expect(items.find((item) => item.id === 'undo')!.kbd).toBe('Ctrl+Z');
+		expect(items.find((item) => item.id === 'redo')!.kbd).toBe('Ctrl+Shift+Z');
+		expect(items.find((item) => item.id === 'delete')!.kbd).toBe('Del');
 	});
 
 	it('homes Scopes under the View menu (IA-T6)', () => {
