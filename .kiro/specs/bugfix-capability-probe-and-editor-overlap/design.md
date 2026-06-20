@@ -70,24 +70,26 @@ async function probeOpfsSyncAccessHandleInWorker(): Promise<FeatureSupport> {
 		if (created && root && name) { try { await root.removeEntry(name); } catch {} }
 		self.postMessage(result);
 	};`;
-	// Revoke immediately after construction (the worker script fetch starts
-	// synchronously) and inside a finally so a throwing `new Worker` can't leak the URL.
 	const url = URL.createObjectURL(new Blob([src], { type: 'application/javascript' }));
-	let worker: Worker;
+	let worker: Worker | undefined;
 	try {
 		worker = new Worker(url);
-	} finally {
-		URL.revokeObjectURL(url);
-	}
-	try {
+		const w = worker;
 		return await new Promise<FeatureSupport>((resolve) => {
 			const timer = setTimeout(() => resolve('unknown'), 3_000);
-			worker.onmessage = (e) => { clearTimeout(timer); resolve(e.data as FeatureSupport); };
-			worker.onerror = () => { clearTimeout(timer); resolve('unknown'); };
-			worker.postMessage('go');
+			w.onmessage = (e) => { clearTimeout(timer); resolve(e.data as FeatureSupport); };
+			w.onerror = () => { clearTimeout(timer); resolve('unknown'); };
+			w.postMessage('go');
 		});
+	} catch {
+		return 'unknown';
 	} finally {
-		worker.terminate();
+		worker?.terminate();
+		// Revoke only after the worker has loaded + finished (or timed out): some
+		// browsers fetch the worker script asynchronously, so an immediate revoke
+		// after `new Worker` can abort the load. The finally still runs if `new
+		// Worker` throws, so the URL is never leaked either.
+		URL.revokeObjectURL(url);
 	}
 }
 ```

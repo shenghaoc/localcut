@@ -401,24 +401,25 @@ async function probeVideoEncodeRealtime(): Promise<FeatureSupport> {
 	// Probe the exact codecs the capture session chooses between (the worker
 	// builds its candidate list from CAPTURE_VIDEO_CODEC_FALLBACKS), so a
 	// 'supported' here means the recording encoder can actually configure — not
-	// just that some unrelated H.264 profile/level works.
-	let threw = false;
-	for (const codec of CAPTURE_VIDEO_CODEC_FALLBACKS) {
-		try {
-			const result = await VideoEncoder.isConfigSupported({
+	// just that some unrelated H.264 profile/level works. Run them in parallel
+	// like probeCodecs so startup doesn't serialize the isConfigSupported calls.
+	const results = await Promise.all(
+		CAPTURE_VIDEO_CODEC_FALLBACKS.map((codec) =>
+			VideoEncoder.isConfigSupported({
 				codec,
 				width: 1920,
 				height: 1080,
 				bitrate: 5_000_000,
 				latencyMode: 'realtime',
 				hardwareAcceleration: 'prefer-hardware'
-			});
-			if (result.supported === true) return 'supported';
-		} catch {
-			threw = true;
-		}
-	}
-	return threw ? 'unknown' : 'unsupported';
+			})
+				.then((r): FeatureSupport => (r.supported === true ? 'supported' : 'unsupported'))
+				.catch((): FeatureSupport => 'unknown')
+		)
+	);
+	if (results.includes('supported')) return 'supported';
+	if (results.includes('unknown')) return 'unknown';
+	return 'unsupported';
 }
 
 async function probeAudioEncode(codec: 'opus' | 'aac'): Promise<FeatureSupport> {
@@ -468,27 +469,31 @@ export async function probeOpfsSyncAccessHandleInWorker(): Promise<FeatureSuppor
 		self.postMessage(result);
 	};`;
 	const url = URL.createObjectURL(new Blob([src], { type: 'application/javascript' }));
-	let worker: Worker;
+	let worker: Worker | undefined;
 	try {
 		worker = new Worker(url);
-	} finally {
-		URL.revokeObjectURL(url);
-	}
-	try {
+		const w = worker;
 		return await new Promise<FeatureSupport>((resolve) => {
 			const timer = setTimeout(() => resolve('unknown'), 3_000);
-			worker.onmessage = (e) => {
+			w.onmessage = (e) => {
 				clearTimeout(timer);
 				resolve(e.data as FeatureSupport);
 			};
-			worker.onerror = () => {
+			w.onerror = () => {
 				clearTimeout(timer);
 				resolve('unknown');
 			};
-			worker.postMessage('go');
+			w.postMessage('go');
 		});
+	} catch {
+		return 'unknown';
 	} finally {
-		worker.terminate();
+		worker?.terminate();
+		// Revoke only after the worker has loaded and finished (or timed out): some
+		// browsers fetch the worker script asynchronously, so revoking immediately
+		// after `new Worker` can abort the load. The finally still runs if `new
+		// Worker` throws, so the URL is never leaked.
+		URL.revokeObjectURL(url);
 	}
 }
 
