@@ -52,11 +52,11 @@ interface ToolbarProps {
 	onUndo: () => void;
 	onRedo: () => void;
 	/** Split the selected clip at the playhead (the `S` shortcut handler). */
-	onSplit?: () => void;
+	onSplit: () => void;
 	/** Delete the current timeline selection (the `⌫` shortcut handler). */
-	onDelete?: () => void;
+	onDelete: () => void;
 	/** True when at least one timeline clip is selected — gates `Clip › Split/Delete`. */
-	hasSelection?: boolean;
+	hasSelection: boolean;
 	transportDisabled?: boolean;
 	importBlocked?: boolean;
 	importHint?: string | null;
@@ -211,7 +211,7 @@ export function Toolbar(props: ToolbarProps) {
 			canRedo: props.canRedo,
 			timelineSnapEnabled: props.timelineSnapEnabled,
 			timelineSnapToBeats: props.timelineSnapToBeats,
-			hasSelection: props.hasSelection ?? false
+			hasSelection: props.hasSelection
 		})
 	);
 	const runMenuItem = (group: MenuBarGroup, value: string) => {
@@ -242,10 +242,10 @@ export function Toolbar(props: ToolbarProps) {
 			case 'split':
 				// Disabled unless a clip is selected (see buildMenuBarGroups); the
 				// guard above already blocks the no-selection case.
-				props.onSplit?.();
+				props.onSplit();
 				return;
 			case 'delete':
-				props.onDelete?.();
+				props.onDelete();
 				return;
 		}
 	};
