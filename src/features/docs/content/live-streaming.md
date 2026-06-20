@@ -4,7 +4,7 @@ LocalCut Studio can broadcast the program output — exactly what the preview sh
 
 ## What you need
 
-- A Chromium-based browser with WebRTC (the **Go Live** panel tells you if something is missing).
+- A Chromium-based browser with WebRTC (**Capture > Go Live** tells you if something is missing).
 - A WHIP ingest endpoint URL and, usually, a bearer token (stream key) from your platform.
 
 ## Supported endpoints
@@ -22,7 +22,7 @@ Browsers cannot speak RTMP — raw network sockets don't exist on the web platfo
 
 ## Going live
 
-1. Click **Go Live** in the pipeline strip.
+1. Open **Capture > Go Live**.
 2. Pick the endpoint type, paste the URL and bearer token.
 3. Check the encode settings — defaults are H.264, 4500 kbps, 2-second keyframes, capped at 1080p30, which is safe for every listed endpoint. AV1 is offered only when your hardware can encode it _and_ the endpoint accepts it.
 4. Click **Go Live**. The panel shows connection state, bitrate, and frame statistics while streaming; **Stop** tears the session down cleanly.

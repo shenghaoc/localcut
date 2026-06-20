@@ -6,7 +6,7 @@ that don't expose these APIs (Firefox, Safari, most Chromium derivatives, or har
 Chrome's requirements), the feature is simply hidden — everything else in the app works exactly
 the same.
 
-There are two tools, both reachable from the command palette (**⌘K** / **Ctrl+K** → **Language Tools**):
+When available, Language Tools appear under **Text > Language Tools** and are also reachable from the command palette (**⌘K** / **Ctrl+K** → **Language Tools**):
 
 - **Translate captions** — turn a caption track into a second, timing-identical track in the other
   language (zh ⇄ en), ready for bilingual subtitle export.
@@ -30,7 +30,7 @@ We never host, fetch, or cache these models ourselves — Chrome owns them.
 ## Translate captions
 
 1. Import or auto-generate a caption track first (see **Importing media** / auto captions).
-2. Open **Language Tools**, pick the **source track**, and choose a **target** — leave it on
+2. Open **Text > Language Tools**, pick the **source track**, and choose a **target** — leave it on
    **Auto-detect** to let the on-device detector pick the direction, or force English/Chinese.
 3. Click **Translate**. Each caption is translated individually, so the new track has the **exact
    same timing** as the source — only the text changes.

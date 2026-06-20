@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from 'solid-js';
+import { For, Show, createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
 import { Radio, Square, X } from 'lucide-solid';
 import { Button } from './components/button';
 import type {
@@ -11,22 +11,25 @@ import type {
 import {
 	ENDPOINT_GUIDANCE,
 	clampPublishSettings,
-	defaultPublishSettings,
 	effectiveCodec,
 	isValidWhipEndpointUrl
 } from '../engine/publish-settings';
-import { loadPublishSettings, savePublishSettings } from '../engine/persistence';
+import { savePublishSettings } from '../engine/persistence';
 import { livePublishAvailable } from '../engine/capability-probe-v2';
 import type { PublishTapStats } from './publish-controller';
 
 interface PublishPanelProps {
 	open: boolean;
+	mode?: 'dialog' | 'embedded';
 	probe: CapabilityProbeResult | null;
 	state: PublishState;
+	settings: PublishSettingsDoc;
+	settingsLoaded: boolean;
 	tapStats: PublishTapStats | null;
 	/** Tap/local error detail surfaced by the controller (never the token). */
 	errorDetail: string | null;
 	recordWhileStreamingAvailable: boolean;
+	onSettingsChange: (settings: PublishSettingsDoc) => void;
 	onGoLive: (settings: PublishSettingsDoc) => void;
 	onStop: () => void;
 	onClose: () => void;
@@ -82,23 +85,14 @@ function stateLabel(state: PublishState): string {
 }
 
 export function PublishPanel(props: PublishPanelProps) {
-	const [settings, setSettings] = createSignal<PublishSettingsDoc>(defaultPublishSettings());
-	const [settingsLoaded, setSettingsLoaded] = createSignal(false);
 	const [retryRemainingS, setRetryRemainingS] = createSignal<number | null>(null);
 	let panelRef: HTMLElement | undefined;
-
-	onMount(() => {
-		void loadPublishSettings().then(
-			(stored) => {
-				if (stored) setSettings(stored);
-				setSettingsLoaded(true);
-			},
-			() => setSettingsLoaded(true)
-		);
-	});
+	const embedded = () => props.mode === 'embedded';
+	const settings = () => props.settings;
+	const settingsLoaded = () => props.settingsLoaded;
 
 	createEffect(() => {
-		if (props.open) {
+		if (props.open && !embedded()) {
 			requestAnimationFrame(() => panelRef?.focus());
 		}
 	});
@@ -142,7 +136,7 @@ export function PublishPanel(props: PublishPanelProps) {
 
 	function update(patch: Partial<PublishSettingsDoc>) {
 		const next = { ...settings(), ...patch };
-		setSettings(next);
+		props.onSettingsChange(next);
 		persist(next);
 	}
 
@@ -158,7 +152,7 @@ export function PublishPanel(props: PublishPanelProps) {
 
 	function goLive() {
 		const clamped = clampPublishSettings(settings());
-		setSettings(clamped);
+		props.onSettingsChange(clamped);
 		persist(clamped);
 		props.onGoLive(clamped);
 	}
@@ -178,15 +172,18 @@ export function PublishPanel(props: PublishPanelProps) {
 
 	return (
 		<Show when={props.open}>
-			<div class="capability-backdrop" onClick={() => props.onClose()} aria-hidden="true" />
+			<Show when={!embedded()}>
+				<div class="capability-backdrop" onClick={() => props.onClose()} aria-hidden="true" />
+			</Show>
 			<aside
 				ref={(el) => (panelRef = el)}
-				class="publish-panel panel"
-				role="dialog"
-				aria-modal="true"
+				class={embedded() ? 'publish-rail-panel panel' : 'publish-panel panel'}
+				role={embedded() ? 'region' : 'dialog'}
+				aria-modal={embedded() ? undefined : 'true'}
 				aria-labelledby="publish-panel-title"
 				tabIndex={-1}
 				onKeyDown={(e) => {
+					if (embedded()) return;
 					if (e.key === 'Escape') {
 						props.onClose();
 						return;
@@ -223,14 +220,16 @@ export function PublishPanel(props: PublishPanelProps) {
 						</p>
 						<p class="publish-panel-sub">Stream the program output to a WHIP ingest endpoint.</p>
 					</div>
-					<Button
-						size="icon"
-						variant="ghost"
-						onClick={props.onClose}
-						aria-label="Close publish panel"
-					>
-						<X size={16} aria-hidden="true" />
-					</Button>
+					<Show when={!embedded()}>
+						<Button
+							size="icon"
+							variant="ghost"
+							onClick={props.onClose}
+							aria-label="Close publish panel"
+						>
+							<X size={16} aria-hidden="true" />
+						</Button>
+					</Show>
 				</header>
 
 				{/* Connection state — announced via an ARIA live region (R6.4). */}

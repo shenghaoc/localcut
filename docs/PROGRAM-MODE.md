@@ -26,9 +26,10 @@ Up to 9 scenes per project. Hotkeys are optional — two scenes can't share the 
 
 ## Starting a session
 
-1. Add your sources
-2. Define your scenes (layer order, transforms, hotkeys)
-3. Click **Start**
+1. Open **Capture > Program**
+2. Add your sources
+3. Define your scenes (layer order, transforms, hotkeys)
+4. Click **Start**
 
 The encoder budget is checked before starting. If the hardware limit is reached (e.g., budget allows 2 concurrent sessions), you'll see an error message. Reduce the number of video sources or stop any active export.
 

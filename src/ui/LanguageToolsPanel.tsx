@@ -15,6 +15,7 @@ import type { CaptionTrackSnapshot } from '../protocol';
 
 export interface LanguageToolsPanelProps {
 	open: boolean;
+	mode?: 'dialog' | 'embedded';
 	translationState: TranslationControllerState;
 	draftState: DraftControllerState;
 	captionTracks: readonly CaptionTrackSnapshot[];
@@ -46,6 +47,7 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 	const [selectedTrackId, setSelectedTrackId] = createSignal<string>('');
 	const [targetLang, setTargetLang] = createSignal<'auto' | 'zh' | 'en'>('auto');
 	const [copiedField, setCopiedField] = createSignal<string | null>(null);
+	const embedded = () => props.mode === 'embedded';
 
 	const detectorUsable = () => {
 		const a = props.translationState.languageDetectorAvailability;
@@ -54,7 +56,7 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 
 	createEffect(() => {
 		if (props.open) {
-			requestAnimationFrame(() => panelRef?.focus());
+			if (!embedded()) requestAnimationFrame(() => panelRef?.focus());
 			// Default to first track if none selected
 			if (!selectedTrackId() && props.captionTracks.length > 0) {
 				setSelectedTrackId(props.captionTracks[0].id);
@@ -107,17 +109,20 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 
 	return (
 		<Show when={props.open}>
-			<div class="capability-backdrop" onClick={() => props.onClose()} aria-hidden="true" />
+			<Show when={!embedded()}>
+				<div class="capability-backdrop" onClick={() => props.onClose()} aria-hidden="true" />
+			</Show>
 			<aside
 				ref={(element) => {
 					panelRef = element;
 				}}
-				class="diagnostics-panel panel"
-				role="dialog"
-				aria-modal="true"
+				class={embedded() ? 'language-tools-rail-panel panel' : 'diagnostics-panel panel'}
+				role={embedded() ? 'region' : 'dialog'}
+				aria-modal={embedded() ? undefined : 'true'}
 				aria-labelledby="language-tools-panel-title"
 				tabIndex={-1}
 				onKeyDown={(e) => {
+					if (embedded()) return;
 					if (e.key === 'Escape') props.onClose();
 				}}
 			>
@@ -128,14 +133,16 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 						</p>
 						<p class="capability-panel-tier">{PRIVACY_STATEMENT}</p>
 					</div>
-					<Button
-						size="icon"
-						variant="ghost"
-						onClick={props.onClose}
-						aria-label="Close language tools panel"
-					>
-						<X size={16} aria-hidden="true" />
-					</Button>
+					<Show when={!embedded()}>
+						<Button
+							size="icon"
+							variant="ghost"
+							onClick={props.onClose}
+							aria-label="Close language tools panel"
+						>
+							<X size={16} aria-hidden="true" />
+						</Button>
+					</Show>
 				</header>
 
 				{/* Track picker — shared between sections */}

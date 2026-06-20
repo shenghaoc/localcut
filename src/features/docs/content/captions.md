@@ -7,7 +7,7 @@ sidecar file alongside the video.
 
 ## Import and edit
 
-- **Import** — open the **Captions** side panel and drop an `.srt` or `.vtt`
+- **Import** — open **Text > Captions** and drop an `.srt` or `.vtt`
   file onto the import zone. The parser is permissive: invalid timecodes or
   empty cues are flagged in the panel rather than failing the whole import.
 - **Edit text** — click a segment in the panel to open the inline editor.
@@ -132,7 +132,7 @@ working because the preset ids round-trip exactly.
 
 ## Where things live
 
-- The caption inspector and override form: the **Captions** side panel,
+- The caption inspector and override form: **Text > Captions**,
   under the active track's controls.
 - Custom preset JSON files (when you export them): wherever you chose to
   save them on disk.
