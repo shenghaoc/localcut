@@ -4427,6 +4427,7 @@ export function App() {
 								<div class="dock-tabs" role="tablist" aria-label="Library sections">
 									<button
 										type="button"
+										id="dock-tab-media"
 										role="tab"
 										aria-selected={activeDockTab() === 'media'}
 										aria-controls="dock-panel-media"
@@ -4436,6 +4437,7 @@ export function App() {
 									</button>
 									<button
 										type="button"
+										id="dock-tab-beats"
 										role="tab"
 										aria-selected={activeDockTab() === 'beats'}
 										aria-controls="dock-panel-beats"
@@ -4445,97 +4447,103 @@ export function App() {
 									</button>
 								</div>
 								<div class="dock-library">
-									<Show when={activeDockTab() === 'media'}>
-										<div id="dock-panel-media" role="tabpanel">
-											<MediaBin
-												assets={assets}
-												unresolvedIds={unresolvedIds}
-												getThumbnail={(sourceId, timestamp) =>
-													thumbnailStore.get(sourceId, timestamp)
+									<div
+										id="dock-panel-media"
+										role="tabpanel"
+										aria-labelledby="dock-tab-media"
+										hidden={activeDockTab() !== 'media'}
+									>
+										<MediaBin
+											assets={assets}
+											unresolvedIds={unresolvedIds}
+											getThumbnail={(sourceId, timestamp) =>
+												thumbnailStore.get(sourceId, timestamp)
+											}
+											thumbnailVersion={thumbnailVersion}
+											requestThumbnails={(sourceId, timestamps) =>
+												bridge?.send({
+													type: 'request-thumbnails',
+													sourceId,
+													timestamps
+												})
+											}
+											onPlace={(sourceId) => bridge?.send({ type: 'place-clip', sourceId })}
+											onRemove={(sourceId) => bridge?.send({ type: 'remove-asset', sourceId })}
+										/>
+									</div>
+									<div
+										id="dock-panel-beats"
+										role="tabpanel"
+										aria-labelledby="dock-tab-beats"
+										hidden={activeDockTab() !== 'beats'}
+									>
+										<BeatPanel
+											assets={assets}
+											beatResults={beatResults}
+											beatSettings={beatSettings}
+											analysisProgress={beatProgress}
+											snapToBeats={timelineSnapToBeats()}
+											onToggleSnapToBeats={(enabled) => {
+												setTimelineSnapToBeats(enabled);
+												if (enabled && !timelineSnapEnabled()) {
+													setTimelineSnapEnabled(true);
 												}
-												thumbnailVersion={thumbnailVersion}
-												requestThumbnails={(sourceId, timestamps) =>
-													bridge?.send({
-														type: 'request-thumbnails',
-														sourceId,
-														timestamps
-													})
-												}
-												onPlace={(sourceId) => bridge?.send({ type: 'place-clip', sourceId })}
-												onRemove={(sourceId) => bridge?.send({ type: 'remove-asset', sourceId })}
-											/>
-										</div>
-									</Show>
-									<Show when={activeDockTab() === 'beats'}>
-										<div id="dock-panel-beats" role="tabpanel">
-											<BeatPanel
-												assets={assets}
-												beatResults={beatResults}
-												beatSettings={beatSettings}
-												analysisProgress={beatProgress}
-												snapToBeats={timelineSnapToBeats()}
-												onToggleSnapToBeats={(enabled) => {
-													setTimelineSnapToBeats(enabled);
-													if (enabled && !timelineSnapEnabled()) {
-														setTimelineSnapEnabled(true);
-													}
-												}}
-												onAnalyse={(sourceId) => bridge?.send({ type: 'analyze-beats', sourceId })}
-												onCancel={(sourceId) => {
-													bridge?.send({
-														type: 'cancel-beat-analysis',
-														sourceId
-													});
-													setBeatProgress((prev) => {
-														if (!prev.has(sourceId)) return prev;
-														const next = new Map(prev);
-														next.delete(sourceId);
-														return next;
-													});
-												}}
-												onToggleSource={(sourceId, enabled) => {
-													const current = beatSettings();
-													const ids = enabled
-														? [...current.enabledSourceIds, sourceId]
-														: current.enabledSourceIds.filter((id) => id !== sourceId);
-													bridge?.send({
-														type: 'set-beat-settings',
-														enabledSourceIds: ids,
-														globalOffsetMs: current.globalOffsetMs
-													});
-													setBeatSettings({
-														...current,
-														enabledSourceIds: ids
-													});
-												}}
-												onOffsetChange={(offsetMs) => {
-													const current = beatSettings();
-													bridge?.send({
-														type: 'set-beat-settings',
-														enabledSourceIds: current.enabledSourceIds,
-														globalOffsetMs: offsetMs
-													});
-													setBeatSettings({
-														...current,
-														globalOffsetMs: offsetMs
-													});
-												}}
-												onAutoCut={(mode) => {
-													const selected = selectedClipRefs();
-													if (selected.length === 0) return;
-													bridge?.send({
-														type: 'beat-auto-cut',
-														mode,
-														clipRefs: selected.map((r) => ({
-															trackId: r.trackId,
-															clipId: r.clipId
-														}))
-													});
-												}}
-												selectedClipCount={() => selectedClipRefs().length}
-											/>
-										</div>
-									</Show>
+											}}
+											onAnalyse={(sourceId) => bridge?.send({ type: 'analyze-beats', sourceId })}
+											onCancel={(sourceId) => {
+												bridge?.send({
+													type: 'cancel-beat-analysis',
+													sourceId
+												});
+												setBeatProgress((prev) => {
+													if (!prev.has(sourceId)) return prev;
+													const next = new Map(prev);
+													next.delete(sourceId);
+													return next;
+												});
+											}}
+											onToggleSource={(sourceId, enabled) => {
+												const current = beatSettings();
+												const ids = enabled
+													? [...current.enabledSourceIds, sourceId]
+													: current.enabledSourceIds.filter((id) => id !== sourceId);
+												bridge?.send({
+													type: 'set-beat-settings',
+													enabledSourceIds: ids,
+													globalOffsetMs: current.globalOffsetMs
+												});
+												setBeatSettings({
+													...current,
+													enabledSourceIds: ids
+												});
+											}}
+											onOffsetChange={(offsetMs) => {
+												const current = beatSettings();
+												bridge?.send({
+													type: 'set-beat-settings',
+													enabledSourceIds: current.enabledSourceIds,
+													globalOffsetMs: offsetMs
+												});
+												setBeatSettings({
+													...current,
+													globalOffsetMs: offsetMs
+												});
+											}}
+											onAutoCut={(mode) => {
+												const selected = selectedClipRefs();
+												if (selected.length === 0) return;
+												bridge?.send({
+													type: 'beat-auto-cut',
+													mode,
+													clipRefs: selected.map((r) => ({
+														trackId: r.trackId,
+														clipId: r.clipId
+													}))
+												});
+											}}
+											selectedClipCount={() => selectedClipRefs().length}
+										/>
+									</div>
 								</div>
 							</aside>
 						</Show>
