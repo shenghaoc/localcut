@@ -5241,6 +5241,7 @@ export function App() {
 												idPrefix="capture"
 												tab="record"
 												value={activeCaptureSideRailTab()}
+												keepMounted
 											>
 												<RecordPanel
 													probe={capabilityProbeV2()}
@@ -5312,6 +5313,7 @@ export function App() {
 												idPrefix="capture"
 												tab="program"
 												value={activeCaptureSideRailTab()}
+												keepMounted
 											>
 												<ProgramPanel
 													programMode={programModeSupport}
@@ -5343,6 +5345,7 @@ export function App() {
 												idPrefix="capture"
 												tab="replay"
 												value={activeCaptureSideRailTab()}
+												keepMounted
 											>
 												<ReplayBufferPanel
 													captureState={captureSession()}

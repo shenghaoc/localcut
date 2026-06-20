@@ -69,7 +69,12 @@ function renderSecondaryCaptureTabs(): HTMLElement {
 				/>
 				<For each={CAPTURE_SIDE_RAIL_TABS}>
 					{(tab) => (
-						<SecondaryRailPanel idPrefix="capture" tab={tab.id} value={value()}>
+						<SecondaryRailPanel
+							idPrefix="capture"
+							tab={tab.id}
+							value={value()}
+							keepMounted={tab.id !== 'publish'}
+						>
 							<button type="button">Panel {tab.label}</button>
 						</SecondaryRailPanel>
 					)}
@@ -157,7 +162,11 @@ describe('right-rail primary destinations (IA-T4 / IA-T5)', () => {
 		expect(document.getElementById('capture-panel-record')?.hidden).toBe(false);
 		expect(document.getElementById('capture-panel-program')?.hidden).toBe(true);
 		expect(document.getElementById('capture-panel-record')?.querySelector('button')).not.toBeNull();
-		expect(document.getElementById('capture-panel-program')?.querySelector('button')).toBeNull();
+		expect(
+			document.getElementById('capture-panel-program')?.querySelector('button')
+		).not.toBeNull();
+		expect(document.getElementById('capture-panel-replay')?.querySelector('button')).not.toBeNull();
+		expect(document.getElementById('capture-panel-publish')?.querySelector('button')).toBeNull();
 
 		record.focus();
 		record.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
@@ -166,7 +175,7 @@ describe('right-rail primary destinations (IA-T4 / IA-T5)', () => {
 		expect(program.getAttribute('aria-selected')).toBe('true');
 		expect(document.activeElement).toBe(program);
 		expect(document.getElementById('capture-panel-program')?.hidden).toBe(false);
-		expect(document.getElementById('capture-panel-record')?.querySelector('button')).toBeNull();
+		expect(document.getElementById('capture-panel-record')?.querySelector('button')).not.toBeNull();
 		expect(
 			document.getElementById('capture-panel-program')?.querySelector('button')
 		).not.toBeNull();
@@ -175,11 +184,15 @@ describe('right-rail primary destinations (IA-T4 / IA-T5)', () => {
 		await nextFrame();
 		expect(publish.tabIndex).toBe(0);
 		expect(document.activeElement).toBe(publish);
+		expect(
+			document.getElementById('capture-panel-publish')?.querySelector('button')
+		).not.toBeNull();
 
 		publish.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
 		await nextFrame();
 		expect(record.tabIndex).toBe(0);
 		expect(replay.tabIndex).toBe(-1);
 		expect(document.activeElement).toBe(record);
+		expect(document.getElementById('capture-panel-publish')?.querySelector('button')).toBeNull();
 	});
 });
