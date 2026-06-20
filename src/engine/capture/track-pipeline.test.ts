@@ -567,4 +567,57 @@ describe('TrackPipeline push mode (main-frames, B5/T5.5)', () => {
 		expect(encoderState.videoEncodes).toHaveLength(0);
 		await harness.pipeline.stop();
 	});
+
+	it('reports a missing encode config via onEncodeError instead of stopping silently', () => {
+		stubGlobals();
+		const errors: string[] = [];
+		const pipeline = new TrackPipeline({
+			sourceId: 'src-1',
+			kind: 'screen',
+			// No track ⇒ push pipeline; no videoEncodeConfig ⇒ a misconfiguration.
+			callbacks: {
+				onEncodedChunk: () => {},
+				onChunkAck: () => {},
+				onEncodeError: (_id, error) => errors.push(error),
+				onAudioOverrun: () => {},
+				onPipelineEnded: () => {}
+			},
+			abort: new AbortController()
+		});
+
+		pipeline.start();
+
+		expect(errors).toEqual(['Missing video encode configuration.']);
+	});
+
+	it('closes pushed AudioData even when the overrun callback throws', () => {
+		stubGlobals();
+		const datas = audioDatas(4);
+		const pipeline = new TrackPipeline({
+			sourceId: 'src-1',
+			kind: 'mic',
+			audioEncodeConfig: { codec: 'opus', sampleRate: 48_000, numberOfChannels: 2 },
+			callbacks: {
+				onEncodedChunk: () => {},
+				onChunkAck: () => {},
+				onEncodeError: () => {},
+				onAudioOverrun: () => {
+					throw new Error('overrun handler blew up');
+				},
+				onPipelineEnded: () => {}
+			},
+			abort: new AbortController()
+		});
+
+		pipeline.start();
+		encoderState.queueSize = 17; // above AUDIO_QUEUE_BOUND
+		// The 4th over-bound frame trips the overrun callback, which throws; the data
+		// must still be closed (single outer finally), and pushFrame must not throw.
+		expect(() => {
+			for (const data of datas) pipeline.pushFrame(data);
+		}).not.toThrow();
+		for (const data of datas) {
+			expect(getCloseCount(data)).toBe(1);
+		}
+	});
 });

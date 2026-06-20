@@ -357,8 +357,7 @@ export class TrackPipeline {
 				if (this.audioOverrunCount >= AUDIO_OVERRUN_CONSECUTIVE) {
 					this.callbacks.onAudioOverrun(this.sourceId);
 					this.running = false;
-					data.close();
-					return;
+					return; // data closed in the finally below
 				}
 			} else {
 				this.audioOverrunCount = 0;
@@ -366,11 +365,15 @@ export class TrackPipeline {
 
 			try {
 				encoder.encode(data);
-			} finally {
-				data.close();
+			} catch {
+				// encode after close throws; real errors surface via the encoder error callback
 			}
 		} catch {
-			// encode after close throws; real errors surface via the encoder error callback
+			// A pre-encode failure (encodeQueueSize / onAudioOverrun throwing) must still
+			// release the AudioData — guaranteed by the single finally below.
+		} finally {
+			// Exactly one close on every path: encoded, overrun-dropped, or error.
+			data.close();
 		}
 	}
 
@@ -447,12 +450,15 @@ export class TrackPipeline {
 		if (this.kind === 'screen' || this.kind === 'webcam') {
 			if (!this.options.videoEncodeConfig) {
 				this.running = false;
+				// Surface the misconfiguration instead of silently not recording.
+				this.callbacks.onEncodeError(this.sourceId, 'Missing video encode configuration.');
 				return;
 			}
 			this.encoder = this.buildVideoEncoder(this.options.videoEncodeConfig);
 		} else {
 			if (!this.options.audioEncodeConfig) {
 				this.running = false;
+				this.callbacks.onEncodeError(this.sourceId, 'Missing audio encode configuration.');
 				return;
 			}
 			this.encoder = this.buildAudioEncoder(this.options.audioEncodeConfig);

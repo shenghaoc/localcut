@@ -55,7 +55,14 @@ export function startCaptureFrameReader(
 					frame.close();
 					break;
 				}
-				pushFrame(frame); // transfers ownership to the worker
+				try {
+					pushFrame(frame); // transfers ownership to the worker
+				} catch (err) {
+					// pushFrame threw before transferring (the frame is still owned here),
+					// so close it to avoid a leak, then surface the failure via onError.
+					frame.close();
+					throw err;
+				}
 			}
 		} catch (error) {
 			if (!stopped) onError?.(error);
