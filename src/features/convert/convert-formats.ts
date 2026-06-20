@@ -131,7 +131,8 @@ export function convertFormatById(id: ConvertFormatId): ConvertFormatDescriptor 
 
 /**
  * Default target for a freshly added file: video inputs go to the most
- * compatible video container (MP4); audio-only inputs go to MP3.
+ * compatible video container (MP4); every non-video input (audio-only, and the
+ * degenerate no-track case) falls back to MP3.
  */
 export function defaultFormatForInput(info: ConvertInputInfo): ConvertFormatId {
 	return info.hasVideo ? 'mp4' : 'mp3';

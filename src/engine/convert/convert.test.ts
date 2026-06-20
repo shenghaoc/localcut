@@ -69,6 +69,10 @@ describe('defaultFormatForInput', () => {
 	it('defaults audio-only inputs to MP3', () => {
 		expect(defaultFormatForInput(info({ hasVideo: false, hasAudio: true }))).toBe('mp3');
 	});
+
+	it('falls back to MP3 for the degenerate no-track input', () => {
+		expect(defaultFormatForInput(info({ hasVideo: false, hasAudio: false }))).toBe('mp3');
+	});
 });
 
 describe('outputFileName', () => {

@@ -72,11 +72,13 @@ async function handleStart(command: {
 		return;
 	}
 
-	const descriptor = convertFormatById(target.formatId);
-	const startedAt = performance.now();
-	activeJobId = jobId;
-
+	// Everything that can throw (including `convertFormatById` for a malformed
+	// command) lives inside the try so a failure always posts `convert-failed`
+	// and the finally resets state — the UI job never sticks in `converting`.
 	try {
+		activeJobId = jobId;
+		const descriptor = convertFormatById(target.formatId);
+		const startedAt = performance.now();
 		const input = openInput(file);
 		const format = createOutputFormat(target.formatId);
 		const output = new Output({ format, target: new BufferTarget() });

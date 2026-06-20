@@ -105,23 +105,29 @@ function containerLabel(formatName: string): string {
 
 /** Reads container/track metadata for the Convert UI. */
 export async function probeInput(fileName: string, input: Input): Promise<ConvertInputInfo> {
-	const format = await input.getFormat();
-	const [videoTracks, audioTracks, duration] = await Promise.all([
-		input.getVideoTracks(),
-		input.getAudioTracks(),
-		input.computeDuration()
-	]);
-	const video = videoTracks[0] ?? null;
-	const audio = audioTracks[0] ?? null;
-	return {
-		fileName,
-		containerLabel: containerLabel(format.constructor.name),
-		durationSeconds: duration,
-		hasVideo: video !== null,
-		hasAudio: audio !== null,
-		width: video ? video.displayWidth : null,
-		height: video ? video.displayHeight : null,
-		videoCodec: video ? video.codec : null,
-		audioCodec: audio ? audio.codec : null
-	};
+	try {
+		const format = await input.getFormat();
+		const [videoTracks, audioTracks, duration] = await Promise.all([
+			input.getVideoTracks(),
+			input.getAudioTracks(),
+			input.computeDuration()
+		]);
+		const video = videoTracks[0] ?? null;
+		const audio = audioTracks[0] ?? null;
+		return {
+			fileName,
+			containerLabel: containerLabel(format.constructor.name),
+			durationSeconds: duration,
+			hasVideo: video !== null,
+			hasAudio: audio !== null,
+			width: video ? video.displayWidth : null,
+			height: video ? video.displayHeight : null,
+			videoCodec: video ? video.codec : null,
+			audioCodec: audio ? audio.codec : null
+		};
+	} finally {
+		// The probe owns this Input outright; free its reads/decoders whether or
+		// not metadata extraction succeeded.
+		input.dispose();
+	}
 }

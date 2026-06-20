@@ -3,6 +3,7 @@ import { createStore, produce } from 'solid-js/store';
 import {
 	ArrowLeft,
 	Download,
+	FileAudio,
 	FileVideo,
 	Loader2,
 	RotateCcw,
@@ -278,6 +279,8 @@ export function ConvertPage(props: ConvertPageProps) {
 	// Wired so a worker crash both unsticks in-flight jobs and replaces the dead
 	// worker, leaving the view usable (retry, add more files) instead of inert.
 	const spawn = () => {
+		// Clear any stale crash banner from a previous worker; the fresh one is healthy.
+		setWorkerError(null);
 		port = spawnConvertWorker(handleState, (message) => {
 			setWorkerError(message);
 			setJobs(
@@ -464,10 +467,18 @@ function JobRow(props: { job: ConvertJob } & JobRowDeps) {
 	// this is the most likely source of confusion.
 	const dropsVideo = createMemo(() => job().info?.hasVideo === true && format().kind === 'audio');
 
+	// Match the icon to the source: audio-only files get the audio glyph.
+	const audioOnly = () => job().info?.hasVideo === false && job().info?.hasAudio === true;
+
 	return (
 		<li class="convert-job" classList={{ [`is-${job().status}`]: true }}>
 			<div class="convert-job-head">
-				<FileVideo size={16} aria-hidden="true" class="convert-job-icon" />
+				<Show
+					when={audioOnly()}
+					fallback={<FileVideo size={16} aria-hidden="true" class="convert-job-icon" />}
+				>
+					<FileAudio size={16} aria-hidden="true" class="convert-job-icon" />
+				</Show>
 				<div class="convert-job-id">
 					<span class="convert-job-name" title={job().fileName}>
 						{job().fileName}
@@ -533,6 +544,7 @@ function JobRow(props: { job: ConvertJob } & JobRowDeps) {
 					<div
 						class="convert-progress-track"
 						role="progressbar"
+						aria-label={`Converting ${job().fileName} to ${format().shortLabel}`}
 						aria-valuemin={0}
 						aria-valuemax={100}
 						aria-valuenow={Math.round(job().fraction * 100)}
