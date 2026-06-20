@@ -101,13 +101,18 @@ describe('RnnoiseRing', () => {
 		expect(out.length).toBe(1024);
 	});
 
-	it('processFrame budget < 2 ms for 128 samples', () => {
-		const instance = mockInstance();
-		const ring = new RnnoiseRing(instance);
-		const block = new Float32Array(128);
+	it('processFrame stays well within the real-time budget for 128 samples', () => {
+		const ring = new RnnoiseRing(mockInstance());
+		// Warm the JIT so the measurement isn't dominated by first-call compilation,
+		// then average over many iterations. A single cold `performance.now()` sample
+		// is machine-dependent and flakes on a loaded CI runner; the averaged figure
+		// is microseconds and only trips on a gross regression. A 128-sample frame at
+		// 48 kHz is ~2.67 ms of audio, so an average push well under 1 ms is real-time.
+		for (let i = 0; i < 50; i++) ring.push(new Float32Array(128));
+		const iterations = 200;
 		const start = performance.now();
-		ring.push(block);
-		const elapsed = performance.now() - start;
-		expect(elapsed).toBeLessThan(2);
+		for (let i = 0; i < iterations; i++) ring.push(new Float32Array(128));
+		const perPushMs = (performance.now() - start) / iterations;
+		expect(perPushMs).toBeLessThan(1);
 	});
 });
