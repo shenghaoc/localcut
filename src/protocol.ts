@@ -289,6 +289,63 @@ export type CleanupWorkerState =
 	| { type: 'cleanup-cancelled'; jobId?: number }
 	| { type: 'cleanup-error'; jobId?: number; message: string };
 
+// ── Media Converter — standalone file→file conversion (Mediabunny Conversion) ──
+
+/** Output container the converter can target. Video containers carry audio too;
+ *  audio-only containers extract/transcode just the audio track. */
+export type ConvertFormatId = 'mp4' | 'webm' | 'mkv' | 'mov' | 'mp3' | 'wav' | 'ogg';
+
+/** Quality preset mapped to a Mediabunny `Quality` for the chosen codecs. */
+export type ConvertQuality = 'high' | 'medium' | 'low';
+
+/** A single conversion's output configuration. Whole-file at source geometry in
+ *  the MVP — trim/resize/fps seams live in the design, not the type, yet. */
+export interface ConvertTargetSpec {
+	formatId: ConvertFormatId;
+	quality: ConvertQuality;
+}
+
+/** Probed description of an input file, surfaced in the Convert UI. */
+export interface ConvertInputInfo {
+	fileName: string;
+	/** Human-readable input container, e.g. `MP4`, `QuickTime`, `Matroska`. */
+	containerLabel: string;
+	durationSeconds: number;
+	hasVideo: boolean;
+	hasAudio: boolean;
+	width: number | null;
+	height: number | null;
+	/** Mediabunny codec id of the primary video track, e.g. `avc`. */
+	videoCodec: string | null;
+	/** Mediabunny codec id of the primary audio track, e.g. `aac`. */
+	audioCodec: string | null;
+}
+
+/** Commands posted from the UI bridge to the Convert worker. `jobId` is a
+ *  UI-minted id used to correlate replies to batch rows. */
+export type ConvertWorkerCommand =
+	| { type: 'convert-probe'; jobId: string; file: File }
+	| { type: 'convert-start'; jobId: string; file: File; target: ConvertTargetSpec }
+	| { type: 'convert-cancel'; jobId: string };
+
+/** State messages posted from the Convert worker back to the UI. */
+export type ConvertWorkerState =
+	| { type: 'convert-probed'; jobId: string; info: ConvertInputInfo }
+	| { type: 'convert-probe-failed'; jobId: string; message: string }
+	| { type: 'convert-progress'; jobId: string; fraction: number; processedSeconds: number }
+	| {
+			type: 'convert-done';
+			jobId: string;
+			/** Transferred to the UI; wrapped in a Blob for saving. */
+			output: ArrayBuffer;
+			fileName: string;
+			mimeType: string;
+			bytes: number;
+			elapsedSeconds: number;
+	  }
+	| { type: 'convert-failed'; jobId: string; message: string }
+	| { type: 'convert-canceled'; jobId: string };
+
 // ── Phase 29: Auto Captions (ASR) — Whisper on ONNX Runtime Web ──
 
 /** ASR availability recommendation from the probe. */

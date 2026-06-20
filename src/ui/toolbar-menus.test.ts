@@ -160,6 +160,14 @@ describe('buildMenuBarGroups (IA-T1 / D13 dedupe)', () => {
 		);
 		expect(items.some((item) => item.id === 'render-queue')).toBe(true);
 	});
+
+	it('homes Convert media under Project, enabled and once', () => {
+		const convert = allItems().filter((item) => item.id === 'convert');
+		expect(convert).toHaveLength(1);
+		expect(convert[0]!.group).toBe('project');
+		expect(convert[0]!.label).toBe('Convert media…');
+		expect(convert[0]!.disabled).toBeFalsy();
+	});
 });
 
 function commandOptions(
@@ -174,6 +182,7 @@ function commandOptions(
 		audioCleanupAvailable: false,
 		languageToolsAvailable: true,
 		onImport: noop,
+		onConvert: noop,
 		onPlayPause: noop,
 		onAudioCleanup: noop,
 		onAutoCaptions: noop,
@@ -255,5 +264,20 @@ describe('buildCommandActions (IA-T1 / D13 launcher routing, D12 audio gating)',
 		for (const expected of ['Record', 'Captions', 'View scopes', 'Render queue']) {
 			expect(labels).toContain(expected);
 		}
+	});
+
+	it('exposes Convert media and routes it to onConvert', () => {
+		let convertCalls = 0;
+		const action = buildCommandActions(
+			commandOptions({ onConvert: () => (convertCalls += 1) })
+		).find((entry) => entry.label === 'Convert media');
+		expect(action).toBeDefined();
+		expect(action!.disabled).toBeFalsy();
+		void action!.onSelect();
+		expect(convertCalls).toBe(1);
+	});
+
+	it('keeps the play/pause entry at index 1 after adding Convert media', () => {
+		expect(buildCommandActions(commandOptions())[1]!.label).toBe('Play transport');
 	});
 });

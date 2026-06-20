@@ -122,6 +122,8 @@ import { cn } from '../lib/utils';
 import { CapabilityPanel } from './CapabilityPanel';
 import { DocsPage } from '../features/docs/DocsPage';
 import { DOCS_INDEX_SLUG, docsPath, parseDocsPath } from '../features/docs/docsManifest';
+import { ConvertPage } from '../features/convert/ConvertPage';
+import { CONVERT_BASE_PATH, parseConvertPath } from '../features/convert/convert-formats';
 import { PublishPanel } from './PublishPanel';
 import { createPublishController, type PublishTapStats } from './publish-controller';
 import { LimitedPreview } from './LimitedPreview';
@@ -416,6 +418,12 @@ export function App() {
 	// In-app user guide route (/docs[/section]); null means the editor view.
 	const [docsSlug, setDocsSlug] = createSignal<string | null>(
 		typeof window === 'undefined' ? null : parseDocsPath(window.location.pathname)
+	);
+	// Media converter route (/convert); true means the Convert view covers the
+	// editor. A history-backed overlay like the user guide, so the editor stays
+	// mounted underneath.
+	const [convertOpen, setConvertOpen] = createSignal<boolean>(
+		typeof window === 'undefined' ? false : parseConvertPath(window.location.pathname)
 	);
 	const [publishState, setPublishState] = createSignal<PublishState>({ phase: 'idle' });
 	const [publishTapStats, setPublishTapStats] = createSignal<PublishTapStats | null>(null);
@@ -1842,6 +1850,30 @@ export function App() {
 		docsReturnFocus = null;
 		// `setDocsSlug(null)` triggers a synchronous Solid update that removes
 		// `inert` from the editor shell; queue the focus so it runs after that flush.
+		queueMicrotask(() => target?.focus());
+	}
+
+	// The converter mirrors the user guide: a history-backed view over the editor.
+	let convertReturnFocus: HTMLElement | null = null;
+
+	function openConvert() {
+		if (!convertOpen()) {
+			convertReturnFocus =
+				document.activeElement instanceof HTMLElement ? document.activeElement : null;
+		}
+		if (window.location.pathname !== CONVERT_BASE_PATH) {
+			window.history.pushState(null, '', CONVERT_BASE_PATH);
+		}
+		setConvertOpen(true);
+	}
+
+	function closeConvert() {
+		if (parseConvertPath(window.location.pathname)) {
+			window.history.pushState(null, '', '/');
+		}
+		setConvertOpen(false);
+		const target = convertReturnFocus;
+		convertReturnFocus = null;
 		queueMicrotask(() => target?.focus());
 	}
 
@@ -3961,11 +3993,14 @@ export function App() {
 				console.error('[safe-zones] Failed to load:', err);
 			});
 
-		const handlePopState = () => setDocsSlug(parseDocsPath(window.location.pathname));
+		const handlePopState = () => {
+			setDocsSlug(parseDocsPath(window.location.pathname));
+			setConvertOpen(parseConvertPath(window.location.pathname));
+		};
 		window.addEventListener('popstate', handlePopState);
 
 		const unregisterKeyboard = registerKeyboardShortcuts({
-			enabled: () => docsSlug() === null,
+			enabled: () => docsSlug() === null && !convertOpen(),
 			onUndo: () => bridge?.send({ type: 'undo' }),
 			onRedo: () => bridge?.send({ type: 'redo' }),
 			onSplit: splitSelectedClip,
@@ -4092,7 +4127,7 @@ export function App() {
 					app: true,
 					'is-dragging-file': isDraggingFile()
 				}}
-				inert={docsSlug() !== null}
+				inert={docsSlug() !== null || convertOpen()}
 			>
 				<Toolbar
 					metadata={metadata()}
@@ -4135,6 +4170,7 @@ export function App() {
 					encodeFps={encodeFps()}
 					onOpenCapabilities={() => setCapabilityPanelOpen(true)}
 					onOpenHelp={() => openDocs()}
+					onOpenConvert={() => openConvert()}
 					onOpenAudioCleanup={() => setAudioCleanupOpen(true)}
 					audioCleanupAvailable={selectedAudioCleanupClip() !== null}
 					onOpenAutoCaptions={() => setAsrPanelOpen(true)}
@@ -5903,6 +5939,17 @@ export function App() {
 					slug={docsSlug()!}
 					onNavigate={openDocs}
 					onClose={closeDocs}
+				/>
+			</Show>
+			<Show when={convertOpen()}>
+				<ConvertPage
+					onClose={closeConvert}
+					onOpenGuide={() => {
+						const target = convertReturnFocus;
+						closeConvert();
+						openDocs('media-conversion');
+						if (target) docsReturnFocus = target;
+					}}
 				/>
 			</Show>
 		</>
