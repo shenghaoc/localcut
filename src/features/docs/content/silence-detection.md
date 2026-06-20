@@ -15,7 +15,7 @@ a single undo step.
    scan. With no audio clip selected the panel falls back to every audio
    track and intersects the silence found on each one, so it only proposes
    ranges that are quiet on every track simultaneously.
-2. Open **Silence Review** from the toolbar.
+2. Open the command palette (**⌘K** / **Ctrl+K**) and choose **Remove silences** to open Silence Review.
 3. Tweak the parameters if needed (defaults work for most narration):
    - **Open / Close threshold** — RMS hysteresis in dBFS. Audio below the open
      threshold starts a region; audio above the close threshold ends it.

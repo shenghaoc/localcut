@@ -322,7 +322,7 @@ LocalCut Studio can reduce background noise in audio clips entirely on your devi
 
 **How to use it**:
 
-1. Click **Audio Cleanup** in the toolbar to open the panel. Nothing is downloaded at app startup; the model loads only when you ask for it.
+1. Open the command palette (**⌘K** / **Ctrl+K**) and choose **Audio Cleanup** to open the panel — the action is enabled once an audio clip is selected. Nothing is downloaded at app startup; the model loads only when you ask for it.
 2. Click **Load model** to fetch and verify the two DTLN ONNX model files (~4 MB total, downloaded from GitHub via a same-origin proxy and SHA-256-verified). After one successful load the models are cached in OPFS for offline use.
 3. Select an audio clip on the timeline.
 4. Click **Preview cleanup** to denoise the first 10 seconds and A/B compare **Play original** vs **Play cleaned**.
@@ -539,7 +539,7 @@ The output is ordinary, **editable transform keyframes** — never a baked-in cr
 
 **How to use it**:
 
-1. Select a video clip on the timeline and click **Smart Reframe** in the toolbar.
+1. Select a video clip on the timeline, then open the command palette (**⌘K** / **Ctrl+K**) and choose **Smart Reframe**.
 2. Choose a **target aspect ratio** (9:16, 1:1, 4:5, 16:9, or 4:3).
 3. Click **Analyse**. A dedicated worker scans the clip (cancel any time). When it finishes, the program monitor shows a preview overlay of the proposed crop and its action-safe zone at the playhead.
 4. **Apply** writes the keyframes, **Discard** throws the result away, and **Adjust** exposes the velocity/acceleration bounds for a re-analysis.

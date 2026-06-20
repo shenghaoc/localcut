@@ -31,7 +31,7 @@ still runs to centre the subject, but no crop change is needed.
 
 ## The review / apply flow
 
-1. Select a video clip and open **Smart Reframe** from the toolbar.
+1. Select a video clip, then open the command palette (**⌘K** / **Ctrl+K**) and choose **Smart Reframe**.
 2. Pick a target aspect ratio.
 3. **Analyse** — a dedicated, lazily-spawned worker scans the clip's used range
    at a low analysis frame rate (default 2 fps). A progress bar reports frames

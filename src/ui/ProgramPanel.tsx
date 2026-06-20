@@ -17,6 +17,7 @@ import type {
 	CapabilityProbeResult
 } from '../protocol';
 import { captureUnavailableReasons } from '../engine/capture-reasons';
+import { CaptureUnavailableNotice } from './CaptureUnavailableNotice';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -116,15 +117,14 @@ export function ProgramPanel(props: ProgramPanelProps) {
 						when={props.probe}
 						fallback={<p class="program-panel-disabled-reason">Checking browser capabilities…</p>}
 					>
-						<div class="program-panel-disabled-reason">
-							<p>Program Mode is unavailable:</p>
-							<ul>
-								<For each={disabledReasons()}>{(reason) => <li>{reason}</li>}</For>
-								<Show when={disabledReasons().length === 0}>
-									<li>Required capabilities are missing.</li>
-								</Show>
-							</ul>
-						</div>
+						<CaptureUnavailableNotice
+							subject="Program Mode"
+							reasons={
+								disabledReasons().length > 0
+									? disabledReasons()
+									: ['Required capabilities are missing.']
+							}
+						/>
 					</Show>
 				</div>
 			}

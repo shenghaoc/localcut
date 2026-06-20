@@ -363,7 +363,7 @@ const SIDE_RAIL_TABS = [
 	{ id: 'program', label: 'Program' },
 	{ id: 'replay', label: 'Replay' },
 	{ id: 'live-audio', label: 'Audio' },
-	{ id: 'voice-cleanup', label: 'Cleanup' }
+	{ id: 'voice-cleanup', label: 'Voice FX' }
 ] as const;
 type SideRailTab = (typeof SIDE_RAIL_TABS)[number]['id'];
 
@@ -4014,6 +4014,7 @@ export function App() {
 					onOpenCapabilities={() => setCapabilityPanelOpen(true)}
 					onOpenHelp={() => openDocs()}
 					onOpenAudioCleanup={() => setAudioCleanupOpen(true)}
+					audioCleanupAvailable={selectedAudioCleanupClip() !== null}
 					onOpenAutoCaptions={() => setAsrPanelOpen(true)}
 					onOpenSmartReframe={() => setSmartReframeOpen(true)}
 					onOpenSilenceReview={() => setSilenceReviewOpen(true)}
