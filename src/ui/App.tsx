@@ -5945,8 +5945,10 @@ export function App() {
 				<ConvertPage
 					onClose={closeConvert}
 					onOpenGuide={() => {
+						const target = convertReturnFocus;
 						closeConvert();
 						openDocs('media-conversion');
+						if (target) docsReturnFocus = target;
 					}}
 				/>
 			</Show>
