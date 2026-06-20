@@ -24,8 +24,12 @@ interface CaptureUnavailableNoticeProps {
  */
 export function CaptureUnavailableNotice(props: CaptureUnavailableNoticeProps) {
 	const count = () => props.reasons.length;
+	// No `role="status"`/live region here: the notice holds an interactive
+	// `<details>` disclosure (ARIA forbids interactive controls inside a status
+	// region), and it is persistent conditional content rather than a transient
+	// announcement. The surrounding panel already provides the labelled region.
 	return (
-		<div class="capture-unavailable" role="status">
+		<div class="capture-unavailable">
 			<p class="capture-unavailable-status">
 				<span class="capture-unavailable-dot" aria-hidden="true" />
 				<span>{props.subject} unavailable</span>

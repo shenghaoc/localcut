@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vite-plus/test';
-import { buildMenuBarGroups, type MenuBarBuildOptions } from './toolbar-menus';
+import {
+	buildCommandActions,
+	buildMenuBarGroups,
+	type CommandActionsBuildOptions,
+	type MenuBarBuildOptions
+} from './toolbar-menus';
 
 function options(overrides: Partial<MenuBarBuildOptions> = {}): MenuBarBuildOptions {
 	return {
@@ -83,5 +88,89 @@ describe('buildMenuBarGroups (IA-T1 / D13 dedupe)', () => {
 		expect(beatOn.find((item) => item.id === 'snap')!.label).toBe('Disable snap');
 		expect(beatOn.find((item) => item.id === 'beat-snap')!.label).toBe('Disable beat snap');
 		expect(beatOn.find((item) => item.id === 'beat-snap')!.disabled).toBe(false);
+	});
+});
+
+function commandOptions(
+	overrides: Partial<CommandActionsBuildOptions> = {}
+): CommandActionsBuildOptions {
+	const noop = () => {};
+	return {
+		importHint: null,
+		importBlocked: false,
+		playing: false,
+		transportDisabled: false,
+		audioCleanupAvailable: false,
+		languageToolsAvailable: true,
+		onImport: noop,
+		onPlayPause: noop,
+		onAudioCleanup: noop,
+		onAutoCaptions: noop,
+		onLanguageTools: noop,
+		onSmartReframe: noop,
+		onSilenceReview: noop,
+		onPublish: noop,
+		onCapabilities: noop,
+		onHelp: noop,
+		...overrides
+	};
+}
+
+describe('buildCommandActions (IA-T1 / D13 launcher routing, D12 audio gating)', () => {
+	it('routes the collapsed launcher tools into the command palette', () => {
+		const labels = buildCommandActions(commandOptions()).map((action) => action.label);
+		for (const expected of [
+			'Audio Cleanup',
+			'Auto captions',
+			'Translate',
+			'Smart reframe',
+			'Remove silences',
+			'Go live',
+			'Browser capabilities',
+			'User guide'
+		]) {
+			expect(labels).toContain(expected);
+		}
+	});
+
+	it('gates Audio Cleanup on a selected audio clip', () => {
+		const without = buildCommandActions(commandOptions({ audioCleanupAvailable: false })).find(
+			(action) => action.label === 'Audio Cleanup'
+		)!;
+		expect(without.disabled).toBe(true);
+		expect(without.detail).toBe('Select an audio clip first');
+
+		const withClip = buildCommandActions(commandOptions({ audioCleanupAvailable: true })).find(
+			(action) => action.label === 'Audio Cleanup'
+		)!;
+		expect(withClip.disabled).toBe(false);
+		expect(withClip.detail).toBe('Reduce noise on the selected clip');
+	});
+
+	it('includes Translate only when the language tools are available', () => {
+		const present = buildCommandActions(commandOptions({ languageToolsAvailable: true })).map(
+			(action) => action.label
+		);
+		expect(present).toContain('Translate');
+		const absent = buildCommandActions(commandOptions({ languageToolsAvailable: false })).map(
+			(action) => action.label
+		);
+		expect(absent).not.toContain('Translate');
+	});
+
+	it('reflects transport state in the play/pause entry', () => {
+		const stopped = buildCommandActions(commandOptions({ playing: false }))[1]!;
+		expect(stopped.label).toBe('Play transport');
+		const playing = buildCommandActions(commandOptions({ playing: true }))[1]!;
+		expect(playing.label).toBe('Pause transport');
+		const disabled = buildCommandActions(commandOptions({ transportDisabled: true }))[1]!;
+		expect(disabled.disabled).toBe(true);
+	});
+
+	it('disables Import when importing is blocked', () => {
+		const importAction = buildCommandActions(commandOptions({ importBlocked: true })).find(
+			(action) => action.label === 'Import media'
+		)!;
+		expect(importAction.disabled).toBe(true);
 	});
 });

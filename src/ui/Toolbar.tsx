@@ -27,7 +27,12 @@ import { Button } from './components/button';
 import type { CapabilityTier } from './capabilities';
 import type { MediaMetadata } from '../protocol';
 import { MeterStrip } from './MeterStrip';
-import { buildMenuBarGroups, type MenuBarGroup } from './toolbar-menus';
+import {
+	buildCommandActions,
+	buildMenuBarGroups,
+	type CommandAction,
+	type MenuBarGroup
+} from './toolbar-menus';
 
 interface ToolbarProps {
 	metadata: MediaMetadata | null;
@@ -77,13 +82,6 @@ interface ToolbarProps {
 	meterSab: SharedArrayBuffer | null;
 	onMasterGain: (gain: number) => void;
 	exportControl?: JSX.Element;
-}
-
-interface CommandAction {
-	label: string;
-	detail: string;
-	disabled?: boolean;
-	onSelect: () => void | Promise<void>;
 }
 
 function formatToolbarTimecode(seconds: number, fps: number | null): string {
@@ -164,67 +162,25 @@ export function Toolbar(props: ToolbarProps) {
 		const fps = video.frameRate ? `${Math.round(video.frameRate)} FPS` : 'FPS ?';
 		return `${video.width}×${video.height} · ${fps}`;
 	};
-	const commandActions = (): CommandAction[] => [
-		{
-			label: 'Import media',
-			detail: props.importHint ?? 'Add clips, images, or audio',
-			disabled: props.importBlocked,
-			onSelect: openImport
-		},
-		{
-			label: props.playing() ? 'Pause transport' : 'Play transport',
-			detail: 'Preview playback',
-			disabled: transportDisabled(),
-			onSelect: props.playing() ? props.onPause : props.onPlay
-		},
-		{
-			label: 'Audio Cleanup',
-			detail: props.audioCleanupAvailable
-				? 'Reduce noise on the selected clip'
-				: 'Select an audio clip first',
-			disabled: !props.audioCleanupAvailable,
-			onSelect: () => props.onOpenAudioCleanup?.()
-		},
-		{
-			label: 'Auto captions',
-			detail: 'On-device speech recognition',
-			onSelect: () => props.onOpenAutoCaptions?.()
-		},
-		...(props.onOpenLanguageTools
-			? [
-					{
-						label: 'Translate',
-						detail: 'Translate captions and draft copy on-device',
-						onSelect: () => props.onOpenLanguageTools?.()
-					}
-				]
-			: []),
-		{
-			label: 'Smart reframe',
-			detail: 'Generate crop-path keyframes',
-			onSelect: () => props.onOpenSmartReframe?.()
-		},
-		{
-			label: 'Remove silences',
-			detail: 'Find and trim silent gaps',
-			onSelect: () => props.onOpenSilenceReview?.()
-		},
-		{
-			label: 'Go live',
-			detail: 'Open WHIP publish controls',
-			onSelect: () => props.onOpenPublish?.()
-		},
-		{
-			label: 'Browser capabilities',
-			detail: 'Inspect browser pipeline support',
-			onSelect: () => props.onOpenCapabilities?.()
-		},
-		{
-			label: 'User guide',
-			detail: 'Open in-app documentation',
-			onSelect: () => props.onOpenHelp?.()
-		}
-	];
+	const commandActions = (): CommandAction[] =>
+		buildCommandActions({
+			importHint: props.importHint,
+			importBlocked: props.importBlocked ?? false,
+			playing: props.playing(),
+			transportDisabled: transportDisabled(),
+			audioCleanupAvailable: props.audioCleanupAvailable ?? false,
+			languageToolsAvailable: props.onOpenLanguageTools != null,
+			onImport: openImport,
+			onPlayPause: props.playing() ? props.onPause : props.onPlay,
+			onAudioCleanup: () => props.onOpenAudioCleanup?.(),
+			onAutoCaptions: () => props.onOpenAutoCaptions?.(),
+			onLanguageTools: () => props.onOpenLanguageTools?.(),
+			onSmartReframe: () => props.onOpenSmartReframe?.(),
+			onSilenceReview: () => props.onOpenSilenceReview?.(),
+			onPublish: () => props.onOpenPublish?.(),
+			onCapabilities: () => props.onOpenCapabilities?.(),
+			onHelp: () => props.onOpenHelp?.()
+		});
 	const runCommand = (action: CommandAction) => {
 		if (action.disabled) return;
 		void action.onSelect();
