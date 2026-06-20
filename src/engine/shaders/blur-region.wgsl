@@ -1,8 +1,6 @@
 @group(0) @binding(0) var<uniform> u: BlurRegionUniform;
 @group(0) @binding(1) var src: texture_2d<f32>;
-@group(0) @binding(2) var tmpOut: texture_storage_2d<rgba16float, write>;
-@group(0) @binding(3) var tmpIn: texture_2d<f32>;
-@group(0) @binding(4) var dst: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(2) var dst: texture_storage_2d<rgba16float, write>;
 
 struct BlurRegionUniform {
 	rx: f32,
@@ -31,7 +29,7 @@ fn horizontal_pass(@builtin(global_invocation_id) gid: vec3u) {
 
 	if (!inRect(uv)) {
 		// Outside rect: copy unchanged
-		textureStore(tmpOut, gid.xy, textureLoad(src, gid.xy, 0));
+		textureStore(dst, gid.xy, textureLoad(src, gid.xy, 0));
 		return;
 	}
 
@@ -47,7 +45,7 @@ fn horizontal_pass(@builtin(global_invocation_id) gid: vec3u) {
 		wSum += w;
 	}
 
-	textureStore(tmpOut, gid.xy, sum / wSum);
+	textureStore(dst, gid.xy, sum / wSum);
 }
 
 @compute @workgroup_size(8, 8, 1)
@@ -71,7 +69,7 @@ fn vertical_pass(@builtin(global_invocation_id) gid: vec3u) {
 	for (var i = -radiusI; i <= radiusI; i++) {
 		let sy = clamp(i32(gid.y) + i, 0, i32(dims.y) - 1);
 		let w = gaussianWeight(f32(i), sigma);
-		sum += textureLoad(tmpIn, vec2u(gid.x, u32(sy)), 0) * w;
+		sum += textureLoad(src, vec2u(gid.x, u32(sy)), 0) * w;
 		wSum += w;
 	}
 
