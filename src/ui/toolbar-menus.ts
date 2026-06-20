@@ -36,11 +36,18 @@ export interface MenuBarBuildOptions {
 	canRedo: boolean;
 	timelineSnapEnabled: boolean;
 	timelineSnapToBeats: boolean;
+	/** True when at least one timeline clip is selected — gates `Clip › Split/Delete`. */
+	hasSelection: boolean;
 }
 
 /**
  * Build the menu-bar groups for the given toolbar state. Pure: no Solid
  * reactivity, no DOM — the component wraps this in a `createMemo`.
+ *
+ * `Clip › Split at playhead` / `Delete selected` invoke the real timeline
+ * handlers (the same ones bound to the `S` / `⌫` shortcuts) and are disabled
+ * when nothing is selected — so selecting them acts on the timeline instead of
+ * dead-ending in the command palette.
  */
 export function buildMenuBarGroups(options: MenuBarBuildOptions): MenuBarGroup[] {
 	const { mod } = options;
@@ -70,11 +77,24 @@ export function buildMenuBarGroups(options: MenuBarBuildOptions): MenuBarGroup[]
 			id: 'clip',
 			label: 'Clip',
 			items: [
-				// No `detail`: the menu template renders `kbd ?? detail`, so with a kbd set
-				// the detail never shows (it was dead). These are timeline keyboard actions
-				// surfaced in the menu for discoverability.
-				{ kind: 'item', id: 'split', label: 'Split at playhead', kbd: 'S' },
-				{ kind: 'item', id: 'delete', label: 'Delete selected', kbd: '⌫' }
+				// Real timeline actions (wired to onSplit/onDelete in the component),
+				// disabled when nothing is selected so selecting them never dead-ends in
+				// the palette. No `detail`: the template renders `kbd ?? detail`, so the
+				// kbd hint already wins (a bare `detail` would have been dead).
+				{
+					kind: 'item',
+					id: 'split',
+					label: 'Split at playhead',
+					kbd: 'S',
+					disabled: !options.hasSelection
+				},
+				{
+					kind: 'item',
+					id: 'delete',
+					label: 'Delete selected',
+					kbd: '⌫',
+					disabled: !options.hasSelection
+				}
 			]
 		},
 		{

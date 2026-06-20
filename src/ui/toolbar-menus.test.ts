@@ -14,6 +14,7 @@ function options(overrides: Partial<MenuBarBuildOptions> = {}): MenuBarBuildOpti
 		canRedo: true,
 		timelineSnapEnabled: true,
 		timelineSnapToBeats: false,
+		hasSelection: true,
 		...overrides
 	};
 }
@@ -88,6 +89,25 @@ describe('buildMenuBarGroups (IA-T1 / D13 dedupe)', () => {
 		expect(beatOn.find((item) => item.id === 'snap')!.label).toBe('Disable snap');
 		expect(beatOn.find((item) => item.id === 'beat-snap')!.label).toBe('Disable beat snap');
 		expect(beatOn.find((item) => item.id === 'beat-snap')!.disabled).toBe(false);
+	});
+
+	it('gates Clip › Split/Delete on a timeline selection', () => {
+		// Both are real actions now (wired to onSplit/onDelete in the component),
+		// disabled when nothing is selected so selecting them never dead-ends in
+		// the palette.
+		const none = allItems(options({ hasSelection: false }));
+		expect(none.find((item) => item.id === 'split')!.disabled).toBe(true);
+		expect(none.find((item) => item.id === 'delete')!.disabled).toBe(true);
+
+		const selected = allItems(options({ hasSelection: true }));
+		expect(selected.find((item) => item.id === 'split')!.disabled).toBe(false);
+		expect(selected.find((item) => item.id === 'delete')!.disabled).toBe(false);
+	});
+
+	it('keeps the shortcut hints on the Clip actions', () => {
+		const items = allItems();
+		expect(items.find((item) => item.id === 'split')!.kbd).toBe('S');
+		expect(items.find((item) => item.id === 'delete')!.kbd).toBe('⌫');
 	});
 });
 

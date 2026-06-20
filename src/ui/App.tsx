@@ -3746,7 +3746,14 @@ export function App() {
 	function splitSelectedClip() {
 		const clip = selectedClip();
 		if (!clip) return;
-		bridge?.send({ type: 'split', trackId: clip.trackId, time: clock.currentTime() });
+		const time = clock.currentTime();
+		// Clips on a track never overlap, so the worker's split-at-time targets the
+		// unique clip under the playhead. Only split when the playhead falls inside
+		// the selected clip — otherwise we'd split whatever *other* clip on that
+		// track sits under the playhead, not the selection. Containment matches the
+		// worker's handleSplit (`time >= start && time < start + duration`).
+		if (time < clip.start || time >= clip.start + clip.duration) return;
+		bridge?.send({ type: 'split', trackId: clip.trackId, time });
 	}
 
 	function playFromKeyboard() {
@@ -3992,6 +3999,9 @@ export function App() {
 					canRedo={historyState().canRedo}
 					onUndo={() => bridge?.send({ type: 'undo' })}
 					onRedo={() => bridge?.send({ type: 'redo' })}
+					onSplit={splitSelectedClip}
+					onDelete={deleteSelectedClips}
+					hasSelection={selectedClipRefs().length > 0}
 					transportDisabled={!previewSurfaceAvailable()}
 					importBlocked={importBlocked()}
 					importHint={importHint()}
