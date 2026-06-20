@@ -70,8 +70,11 @@ export function buildMenuBarGroups(options: MenuBarBuildOptions): MenuBarGroup[]
 			id: 'clip',
 			label: 'Clip',
 			items: [
-				{ kind: 'item', id: 'split', label: 'Split at playhead', kbd: 'S', detail: 'on timeline' },
-				{ kind: 'item', id: 'delete', label: 'Delete selected', kbd: '⌫', detail: 'on timeline' }
+				// No `detail`: the menu template renders `kbd ?? detail`, so with a kbd set
+				// the detail never shows (it was dead). These are timeline keyboard actions
+				// surfaced in the menu for discoverability.
+				{ kind: 'item', id: 'split', label: 'Split at playhead', kbd: 'S' },
+				{ kind: 'item', id: 'delete', label: 'Delete selected', kbd: '⌫' }
 			]
 		},
 		{
