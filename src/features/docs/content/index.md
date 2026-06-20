@@ -31,6 +31,6 @@ LocalCut Studio is a static web app. Once it has loaded, core editing works with
 
 The only times the app touches the network are: loading the app itself, fetching optional on-device model files when you explicitly ask for them (for example Audio Cleanup), and live streaming — which sends your stream directly to the ingest server _you_ configure.
 
-## About this alpha
+## Limits and feedback
 
-LocalCut Studio is alpha software. Features are honest about their limits: when your browser can't run the full accelerated pipeline, the app tells you and falls back to a clearly labeled reduced mode instead of failing silently. If something behaves unexpectedly, the [Troubleshooting](/docs/troubleshooting) page and the in-app **Diagnostics** panel are the best places to look first.
+Features are honest about their limits: when your browser can't run the full accelerated pipeline, the app tells you and falls back to a clearly labeled reduced mode instead of failing silently. If something behaves unexpectedly, the [Troubleshooting](/docs/troubleshooting) page and the in-app **Diagnostics** panel are the best places to look first.

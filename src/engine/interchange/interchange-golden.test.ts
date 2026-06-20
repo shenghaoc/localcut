@@ -35,7 +35,7 @@ async function compareToGolden(name: string, golden: string, text: string): Prom
 	expect(text).toBe(golden);
 }
 
-const OPTIONS = { displayName: 'Fixture Project', appVersion: '0.1.0' };
+const OPTIONS = { displayName: 'Fixture Project', appVersion: '1.0.0' };
 
 describe('interchange golden fixtures', () => {
 	it('multi-track .otio matches the golden', async () => {

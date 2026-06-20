@@ -4,7 +4,7 @@
     "localcut": {
       "projectId": "fixture-missing-source",
       "projectSchemaVersion": 20,
-      "appVersion": "0.1.0",
+      "appVersion": "1.0.0",
       "savedAt": "2026-01-01T00:00:00.000Z",
       "masterGain": 1,
       "captionTracks": []
