@@ -21,19 +21,16 @@ import {
 	Output
 } from 'mediabunny';
 import type { ConvertTargetSpec, ConvertWorkerCommand, ConvertWorkerState } from '../../protocol';
-import {
-	createOutputFormat,
-	probeInput,
-	qualityFor,
-	resolveAudioCodec,
-	resolveVideoCodec
-} from './convert';
+import { createOutputFormat, probeInput, qualityFor } from './convert';
 import { convertFormatById, outputFileName } from '../../features/convert/convert-formats';
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 
 let activeConversion: Conversion | null = null;
 let activeJobId: string | null = null;
+// A cancel can arrive while `Conversion.init` is still running, before
+// `activeConversion` exists. We record it here and honor it once init resolves.
+let pendingCancelJobId: string | null = null;
 
 function post(message: ConvertWorkerState, transfer?: Transferable[]): void {
 	if (transfer?.length) ctx.postMessage(message, transfer);
@@ -75,40 +72,56 @@ async function handleStart(command: {
 	// Everything that can throw (including `convertFormatById` for a malformed
 	// command) lives inside the try so a failure always posts `convert-failed`
 	// and the finally resets state — the UI job never sticks in `converting`.
+	let input: Input | null = null;
 	try {
 		activeJobId = jobId;
 		const descriptor = convertFormatById(target.formatId);
 		const startedAt = performance.now();
-		const input = openInput(file);
+		input = openInput(file);
 		const format = createOutputFormat(target.formatId);
 		const output = new Output({ format, target: new BufferTarget() });
 		const quality = qualityFor(target.quality);
 
-		// Audio-only containers discard video; video containers keep both. Codecs
-		// are resolved to what the browser can encode *and* the container holds.
+		// Let Mediabunny stream-copy when the source codec already fits the target
+		// container, and only force a (lossy) transcode — applying the quality
+		// preset — when it doesn't. Forcing `bitrate`/`codec` on a compatible track
+		// would defeat the copy fast-path and can fail on browsers that can mux but
+		// not encode that codec. Codec choice on transcode is left to Mediabunny.
 		const wantsVideo = descriptor.kind === 'video';
-		const videoCodec = wantsVideo ? await resolveVideoCodec(target.formatId, format) : null;
-		const audioCodec = await resolveAudioCodec(target.formatId, format);
-
-		if (descriptor.kind === 'audio' && audioCodec === null) {
-			post({
-				type: 'convert-failed',
-				jobId,
-				message: `This browser can't encode audio for ${descriptor.shortLabel}.`
-			});
-			return;
-		}
+		const [videoTracks, audioTracks] = await Promise.all([
+			input.getVideoTracks(),
+			input.getAudioTracks()
+		]);
+		const srcVideo = videoTracks[0] ?? null;
+		const srcAudio = audioTracks[0] ?? null;
+		const supportedVideo = new Set(format.getSupportedVideoCodecs());
+		const supportedAudio = new Set(format.getSupportedAudioCodecs());
+		const videoNeedsTranscode =
+			srcVideo !== null && (srcVideo.codec === null || !supportedVideo.has(srcVideo.codec));
+		const audioNeedsTranscode =
+			srcAudio !== null && (srcAudio.codec === null || !supportedAudio.has(srcAudio.codec));
 
 		const conversion = await Conversion.init({
 			input,
 			output,
-			video: wantsVideo && videoCodec ? { codec: videoCodec, bitrate: quality } : { discard: true },
-			audio: audioCodec ? { codec: audioCodec, bitrate: quality } : { discard: true },
+			video: !wantsVideo ? { discard: true } : videoNeedsTranscode ? { bitrate: quality } : {},
+			audio: audioNeedsTranscode ? { bitrate: quality } : {},
 			showWarnings: false
 		});
 
-		if (!conversion.isValid) {
-			const reasons = conversion.discardedTracks.map((track) => track.reason);
+		// Never silently ship a file that lost a track we meant to keep: if an
+		// existing source track couldn't be copied or encoded, fail honestly.
+		// (Video dropped by an audio-only target is `discarded_by_user`, not here.)
+		const lost = conversion.discardedTracks.filter(
+			(track) =>
+				track.reason === 'no_encodable_target_codec' ||
+				track.reason === 'undecodable_source_codec' ||
+				track.reason === 'unknown_source_codec'
+		);
+		if (!conversion.isValid || lost.length > 0) {
+			const reasons = (lost.length > 0 ? lost : conversion.discardedTracks).map(
+				(track) => track.reason
+			);
 			post({
 				type: 'convert-failed',
 				jobId,
@@ -122,6 +135,11 @@ async function handleStart(command: {
 		};
 
 		activeConversion = conversion;
+		// Honor a cancel that arrived during the (potentially slow) init window.
+		if (pendingCancelJobId === jobId) {
+			post({ type: 'convert-canceled', jobId });
+			return;
+		}
 		await conversion.execute();
 
 		const buffer = (output.target as BufferTarget).buffer;
@@ -148,8 +166,11 @@ async function handleStart(command: {
 			post({ type: 'convert-failed', jobId, message: errorMessage(error) });
 		}
 	} finally {
+		// Free the input's reads/decoders; cheap and idempotent if already disposed.
+		input?.dispose();
 		activeConversion = null;
 		activeJobId = null;
+		pendingCancelJobId = null;
 	}
 }
 
@@ -177,8 +198,11 @@ ctx.addEventListener('message', (event: MessageEvent<ConvertWorkerCommand>) => {
 			void handleStart(command);
 			return;
 		case 'convert-cancel':
-			if (activeConversion && activeJobId === command.jobId) {
-				void activeConversion.cancel();
+			if (activeJobId === command.jobId) {
+				// If the conversion object exists, cancel it; otherwise it's still
+				// initializing — record the intent so handleStart honors it.
+				if (activeConversion) void activeConversion.cancel();
+				else pendingCancelJobId = command.jobId;
 			}
 			return;
 	}

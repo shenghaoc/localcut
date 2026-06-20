@@ -1,14 +1,12 @@
 /**
  * Mediabunny mapping for the media converter: turns a `ConvertFormatId` into a
- * concrete `OutputFormat`, resolves browser-encodable codecs constrained to
- * what the chosen container supports, and probes input files. The actual
- * conversion loop lives in `convert-worker.ts`; this module is the pure-ish
- * boundary between our format registry and Mediabunny.
+ * concrete `OutputFormat`, maps the quality preset onto a Mediabunny `Quality`,
+ * and probes input files. The actual conversion loop lives in
+ * `convert-worker.ts`; codec selection (and the copy-vs-transcode decision) is
+ * left to Mediabunny's `Conversion` rather than resolved here.
  */
 
 import {
-	type AudioCodec,
-	type VideoCodec,
 	type OutputFormat,
 	type Quality,
 	type Input,
@@ -19,17 +17,11 @@ import {
 	Mp3OutputFormat,
 	WavOutputFormat,
 	OggOutputFormat,
-	getFirstEncodableVideoCodec,
-	getFirstEncodableAudioCodec,
 	QUALITY_HIGH,
 	QUALITY_MEDIUM,
 	QUALITY_LOW
 } from 'mediabunny';
 import type { ConvertFormatId, ConvertInputInfo, ConvertQuality } from '../../protocol';
-import {
-	PREFERRED_AUDIO_CODECS,
-	PREFERRED_VIDEO_CODECS
-} from '../../features/convert/convert-formats';
 
 export function createOutputFormat(id: ConvertFormatId): OutputFormat {
 	switch (id) {
@@ -59,31 +51,6 @@ export function qualityFor(quality: ConvertQuality): Quality {
 		case 'low':
 			return QUALITY_LOW;
 	}
-}
-
-/**
- * Picks an encodable video codec for the container: the first of the preferred
- * list that both the browser can encode and the container supports. Returns
- * null when none qualify (the worker then reports an honest failure).
- */
-export async function resolveVideoCodec(
-	id: ConvertFormatId,
-	format: OutputFormat
-): Promise<VideoCodec | null> {
-	const supported = new Set(format.getSupportedVideoCodecs());
-	const candidates = PREFERRED_VIDEO_CODECS[id].filter((codec) => supported.has(codec));
-	if (candidates.length === 0) return null;
-	return getFirstEncodableVideoCodec(candidates);
-}
-
-export async function resolveAudioCodec(
-	id: ConvertFormatId,
-	format: OutputFormat
-): Promise<AudioCodec | null> {
-	const supported = new Set(format.getSupportedAudioCodecs());
-	const candidates = PREFERRED_AUDIO_CODECS[id].filter((codec) => supported.has(codec));
-	if (candidates.length === 0) return null;
-	return getFirstEncodableAudioCodec(candidates);
 }
 
 /** Maps a Mediabunny `InputFormat` constructor name to a friendly label. */

@@ -5,7 +5,6 @@
  * only — no DOM, no media objects.
  */
 
-import type { AudioCodec, VideoCodec } from 'mediabunny';
 import type { ConvertFormatId, ConvertInputInfo } from '../../protocol';
 
 export interface ConvertFormatDescriptor {
@@ -88,33 +87,6 @@ export const CONVERT_FORMATS: readonly ConvertFormatDescriptor[] = [
 		hint: 'Compact, royalty-free audio.'
 	}
 ];
-
-/**
- * Preferred encode codecs per container, in search order. The worker keeps the
- * first one that is both browser-encodable and supported by the container.
- * Audio-only containers have no video codecs. These are plain data (the
- * Mediabunny codec types are imported type-only and erase at build), so they
- * stay in this main-thread-safe module and are unit-testable without Mediabunny.
- */
-export const PREFERRED_VIDEO_CODECS: Record<ConvertFormatId, readonly VideoCodec[]> = {
-	mp4: ['avc', 'hevc', 'av1', 'vp9'],
-	mov: ['avc', 'hevc'],
-	webm: ['vp9', 'av1', 'vp8'],
-	mkv: ['vp9', 'av1', 'avc'],
-	mp3: [],
-	wav: [],
-	ogg: []
-};
-
-export const PREFERRED_AUDIO_CODECS: Record<ConvertFormatId, readonly AudioCodec[]> = {
-	mp4: ['aac', 'opus'],
-	mov: ['aac'],
-	webm: ['opus', 'vorbis'],
-	mkv: ['opus', 'aac'],
-	mp3: ['mp3'],
-	wav: ['pcm-s16'],
-	ogg: ['opus', 'vorbis']
-};
 
 const FORMATS_BY_ID = new Map<ConvertFormatId, ConvertFormatDescriptor>(
 	CONVERT_FORMATS.map((format) => [format.id, format])

@@ -321,6 +321,14 @@ export function ConvertPage(props: ConvertPageProps) {
 					props.onClose();
 				}
 			}}
+			onDragOver={(event) => event.preventDefault()}
+			onDrop={(event) => {
+				// Swallow any drop on the converter overlay so it never bubbles to the
+				// editor's window-level importer (which would mutate the timeline behind
+				// us). The drop zone's own handler adds files before this runs.
+				event.preventDefault();
+				event.stopPropagation();
+			}}
 		>
 			<header class="convert-header">
 				<Button variant="ghost" onClick={() => props.onClose()}>
@@ -364,6 +372,7 @@ export function ConvertPage(props: ConvertPageProps) {
 					onDragLeave={() => setDragging(false)}
 					onDrop={(event) => {
 						event.preventDefault();
+						event.stopPropagation();
 						setDragging(false);
 						const dropped = event.dataTransfer ? Array.from(event.dataTransfer.files) : [];
 						if (dropped.length > 0) addFiles(dropped);
@@ -470,6 +479,19 @@ function JobRow(props: { job: ConvertJob } & JobRowDeps) {
 	// Match the icon to the source: audio-only files get the audio glyph.
 	const audioOnly = () => job().info?.hasVideo === false && job().info?.hasAudio === true;
 
+	// Changing the target after a job finished must discard the stale result so
+	// the Done summary / Save button can't download a file for the old format.
+	const retarget = (patch: Partial<ConvertJob>) => {
+		const terminal =
+			job().status === 'done' || job().status === 'failed' || job().status === 'canceled';
+		props.updateJob(
+			job().id,
+			terminal
+				? { ...patch, status: 'ready', result: null, output: null, error: null, fraction: 0 }
+				: patch
+		);
+	};
+
 	return (
 		<li class="convert-job" classList={{ [`is-${job().status}`]: true }}>
 			<div class="convert-job-head">
@@ -499,9 +521,7 @@ function JobRow(props: { job: ConvertJob } & JobRowDeps) {
 							disabled={controlsLocked()}
 							value={job().formatId}
 							onChange={(event) =>
-								props.updateJob(job().id, {
-									formatId: event.currentTarget.value as ConvertFormatId
-								})
+								retarget({ formatId: event.currentTarget.value as ConvertFormatId })
 							}
 						>
 							<optgroup label="Keep video">
@@ -519,9 +539,7 @@ function JobRow(props: { job: ConvertJob } & JobRowDeps) {
 							disabled={controlsLocked()}
 							value={job().quality}
 							onChange={(event) =>
-								props.updateJob(job().id, {
-									quality: event.currentTarget.value as ConvertQuality
-								})
+								retarget({ quality: event.currentTarget.value as ConvertQuality })
 							}
 						>
 							<option value="high">{QUALITY_LABELS.high}</option>

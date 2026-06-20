@@ -2,8 +2,6 @@ import { describe, it, expect } from 'vite-plus/test';
 import type { ConvertInputInfo } from '../../protocol';
 import {
 	CONVERT_FORMATS,
-	PREFERRED_AUDIO_CODECS,
-	PREFERRED_VIDEO_CODECS,
 	convertFormatById,
 	defaultFormatForInput,
 	outputFileName,
@@ -39,20 +37,13 @@ describe('convert format registry', () => {
 		}
 	});
 
-	it('classifies containers as video or audio consistently with codecs', () => {
+	it('classifies every container as video or audio', () => {
 		for (const format of CONVERT_FORMATS) {
-			const videoCodecs = PREFERRED_VIDEO_CODECS[format.id];
-			const audioCodecs = PREFERRED_AUDIO_CODECS[format.id];
-			// Every container can carry audio.
-			expect(audioCodecs.length).toBeGreaterThan(0);
-			if (format.kind === 'video') {
-				// Video containers must offer at least one encodable video codec.
-				expect(videoCodecs.length).toBeGreaterThan(0);
-			} else {
-				// Audio-only containers carry no video codecs.
-				expect(videoCodecs.length).toBe(0);
-			}
+			expect(format.kind === 'video' || format.kind === 'audio').toBe(true);
 		}
+		// Both kinds are represented (video containers + audio-only containers).
+		expect(CONVERT_FORMATS.some((f) => f.kind === 'video')).toBe(true);
+		expect(CONVERT_FORMATS.some((f) => f.kind === 'audio')).toBe(true);
 	});
 
 	it('throws on an unknown format id', () => {
