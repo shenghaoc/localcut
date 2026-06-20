@@ -16,7 +16,7 @@ import {
 import { buildDefaultPerformanceBudgets } from '../diagnostics/performance-budgets';
 import type { CapabilitySnapshot, CapabilityTier } from './capabilities';
 
-const APP_VERSION = '0.1.0';
+const APP_VERSION = '1.0.0';
 // Guard the build-time global so the module is importable under unit tests (the
 // node test env doesn't `define` it), matching asr/cleanup/worker controllers.
 const BUILD_ID = `${APP_VERSION}+${typeof __BUILD_SHA__ === 'string' ? __BUILD_SHA__ : 'dev'}`;

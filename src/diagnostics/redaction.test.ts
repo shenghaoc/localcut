@@ -22,7 +22,7 @@ function baseSnapshot(): DiagnosticSnapshot {
 		schemaVersion: 1,
 		snapshotId: 'diag-test',
 		createdAt: '2026-06-07T00:00:00.000Z',
-		appVersion: '0.1.0',
+		appVersion: '1.0.0',
 		browser: { userAgentFamily: 'Chromium', userAgentVersion: '126', platformFamily: 'macOS' },
 		capability: {
 			tier: 'limited',

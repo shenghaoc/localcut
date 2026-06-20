@@ -93,7 +93,7 @@ describe('project bundle manifest', () => {
 			bundleSchemaVersion: BUNDLE_SCHEMA_VERSION as typeof BUNDLE_SCHEMA_VERSION,
 			bundleId: 'bundle-1',
 			createdAt: new Date().toISOString(),
-			appVersion: '0.1.0',
+			appVersion: '1.0.0',
 			projectSchemaVersion: PROJECT_SCHEMA_VERSION,
 			projectId: 'project-1',
 			displayName: 'clip',

@@ -13,7 +13,7 @@ function acceleratedSnapshot(): DiagnosticSnapshot {
 		schemaVersion: DIAGNOSTIC_SNAPSHOT_SCHEMA_VERSION,
 		snapshotId: 'selfcheck-accel',
 		createdAt: new Date().toISOString(),
-		appVersion: '0.1.0',
+		appVersion: '1.0.0',
 		browser: { userAgentFamily: 'Chrome', userAgentVersion: '120', platformFamily: 'macOS' },
 		capability: acceleratedCapability(),
 		storage: {

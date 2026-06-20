@@ -13,7 +13,7 @@ import {
 } from './otio';
 import { validateOtioDocument } from './otio-validate';
 
-const OPTIONS = { displayName: 'Fixture Project', appVersion: '0.1.0' };
+const OPTIONS = { displayName: 'Fixture Project', appVersion: '1.0.0' };
 
 function parse(text: string): OtioTimeline {
 	return JSON.parse(text) as OtioTimeline;
@@ -130,7 +130,7 @@ describe('serializeTimelineToOtio structure', () => {
 		const top = timeline.metadata.localcut as Record<string, unknown>;
 		expect(top.projectId).toBe('fixture-multi-track');
 		expect(top.masterGain).toBe(1);
-		expect(top.appVersion).toBe('0.1.0');
+		expect(top.appVersion).toBe('1.0.0');
 		expect(Array.isArray(top.captionTracks)).toBe(true);
 		const clip = trackChildren(timeline, 0)[0] as OtioClip;
 		const clipMeta = clip.metadata.localcut as Record<string, unknown>;
