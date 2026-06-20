@@ -206,6 +206,10 @@ const VIDEO_PICKER_TYPES = [
 ];
 
 const MEDIA_FILE_PATTERN = /\.(mp4|mov|webm|png|jpe?g|webp|gif|bmp|avif|mp3|m4a|wav|ogg|json)$/i;
+// Main-frames fallback (B5/T5.5): max `capture-push-frame` messages per source in
+// flight (transferred, not yet acked) before the main thread drops frames. Mirrors
+// the in-worker VIDEO_QUEUE_BOUND so the cross-thread queue stays bounded too.
+const CAPTURE_PUSH_FRAME_BOUND = 8;
 const INTERPOLATION_EXPORT_PIPELINE_WIRED = false;
 const INITIAL_INTERPOLATION_AVAILABILITY: InterpolationAvailability = {
 	state: 'unavailable',
@@ -654,6 +658,11 @@ export function App() {
 	// Phase 46: Replay Buffer + Live Audio Chain
 	const [captureSession, setCaptureSession] = createSignal<CaptureSessionState | null>(null);
 	const [recorderStatus, setRecorderStatus] = createSignal<RecorderStatusSnapshot | null>(null);
+	// Main-frames fallback (bugfix B5/T5.5): per-source count of `capture-push-frame`
+	// messages transferred but not yet acked by the worker. Bounds how far the main
+	// thread runs ahead so a busy worker can't accumulate an unbounded queue of
+	// (large) transferred frame handles; the worker also drops via encodeQueueSize.
+	const capturePushInFlight = new Map<string, number>();
 	// Phase 41: own-tab DOM event tap — singleton driven by capture-dom-tap-init /
 	// capture-dom-tap-stop messages from the worker. Idle when no session is active
 	// (no DOM listeners installed). Cleaned up on App unmount.
@@ -2811,7 +2820,15 @@ export function App() {
 					remainingSeconds: msg.remainingSeconds,
 					sources: msg.sources
 				});
+				// No session ⇒ no frames can be in flight; drop the stale in-flight counts.
+				if (msg.state === 'idle') capturePushInFlight.clear();
 				break;
+			case 'capture-push-ack': {
+				// One pushed frame consumed by the worker — free an in-flight slot.
+				const inFlight = capturePushInFlight.get(msg.sourceId) ?? 0;
+				if (inFlight > 0) capturePushInFlight.set(msg.sourceId, inFlight - 1);
+				break;
+			}
 			case 'capture-error':
 				setStatusLine(`Recorder: ${msg.detail}`);
 				break;
@@ -2977,6 +2994,11 @@ export function App() {
 		// so DOM listeners are removed synchronously.
 		captureDomTap.stop();
 		setSidecarReadySessionId(null);
+		// A crashed worker can't drain forwarded frames or finalize the session. Reset
+		// the recorder to idle so the Record panel stops its main-thread frame readers
+		// (B5/T5.5) instead of pulling from the user's screen/camera/mic into the void.
+		setRecorderStatus(null);
+		capturePushInFlight.clear();
 		// The crashed worker no longer owns a WebGPU device; reflect that until the
 		// restarted worker re-publishes its `ready` (with the true webgpu flag).
 		setWebgpuAvailable(false);
@@ -5075,8 +5097,40 @@ export function App() {
 												retakeSourceKinds={retakeSourceKinds()}
 												landedSessionId={recorderLandedSessionId()}
 												onAddSource={(source, track, transfer) =>
-													bridge?.send({ type: 'capture-add-source', source, track }, transfer)
+													bridge?.send(
+														// track === null ⇒ main-frames push pipeline (no transfer).
+														{ type: 'capture-add-source', source, track: track ?? undefined },
+														transfer
+													)
 												}
+												onPushFrame={(sourceId, frame) => {
+													// The frame must be closed exactly once. With no worker (teardown
+													// race), close it here and return quietly.
+													if (!bridge) {
+														frame.close();
+														return;
+													}
+													// Backpressure: if too many frames are already in flight to the
+													// worker, drop this one (close it) instead of growing the transfer
+													// queue with large frame handles. Acks (capture-push-ack) decrement.
+													const inFlight = capturePushInFlight.get(sourceId) ?? 0;
+													if (inFlight >= CAPTURE_PUSH_FRAME_BOUND) {
+														frame.close();
+														return;
+													}
+													// A transfer failure (e.g. DataCloneError — the frame is still owned
+													// here) propagates so the frame reader closes the un-transferred frame,
+													// surfaces the error, and stops forwarding. Increment only after a
+													// successful transfer.
+													bridge.send({ type: 'capture-push-frame', sourceId, frame }, [
+														frame as unknown as Transferable
+													]);
+													capturePushInFlight.set(sourceId, inFlight + 1);
+												}}
+												onSourceEnded={(sourceId) => {
+													capturePushInFlight.delete(sourceId);
+													bridge?.send({ type: 'capture-source-ended', sourceId });
+												}}
 												onStart={(settings, writerPort, activeRetakeClipId, transfer) => {
 													setRecorderLandedSessionId(null);
 													bridge?.send(

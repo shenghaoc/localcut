@@ -610,21 +610,38 @@ export function probeImageDecoder(): FeatureSupport {
 		: 'unsupported';
 }
 
+/** Which path the recorder feeds frames into the pipeline-worker encoder. */
+export type CaptureTapMode = 'worker-track' | 'main-frames';
+
+/**
+ * Chooses the recorder data-plane path (bugfix B5/T5.5), mirroring publish's
+ * `selectTapMode`. With Transferable MediaStreamTrack the source track is
+ * transferred into the worker (`worker-track`); without it the main thread keeps
+ * the track, reads it with its own `MediaStreamTrackProcessor`, and forwards each
+ * frame to the worker encoder (`main-frames`). 'unknown' takes the safe main-frames
+ * path — it never attempts a transfer that could throw `DataCloneError`.
+ */
+export function selectCaptureMode(probe: CapabilityProbeResult): CaptureTapMode {
+	return probe.capture.transferableMediaStreamTrack === 'supported'
+		? 'worker-track'
+		: 'main-frames';
+}
+
 /**
  * Whether recording is available: accelerated tier + all critical capture probes
  * are `'supported'`. Display audio is NOT critical (its absence only disables the
  * audio toggle; video recording remains available).
+ *
+ * Transferable MediaStreamTrack is NOT required: without it the recorder uses the
+ * off-main-thread main-frames path (bugfix B5/T5.5), which needs only
+ * `MediaStreamTrackProcessor` (read on the main thread). `MediaStreamTrackProcessor`
+ * is the universal requirement of both data-plane paths — see {@link selectCaptureMode}.
  */
 export function recordingAvailable(probe: CapabilityProbeResult): boolean {
 	const cap = probe.capture;
 	return (
 		probe.tier === 'core-webgpu' &&
 		cap.mediaStreamTrackProcessor === 'supported' &&
-		// The recording path transfers each source track into the pipeline worker,
-		// which requires Transferable MediaStreamTrack. A no-flag off-main-thread
-		// fallback is a separate engine task (see bugfix spec B5); until then this
-		// stays a hard requirement so we never offer a recording that can't capture.
-		cap.transferableMediaStreamTrack !== 'unsupported' &&
 		cap.displayCapture === 'supported' &&
 		cap.videoEncodeRealtime === 'supported' &&
 		cap.audioEncodeOpus === 'supported' &&
@@ -632,9 +649,18 @@ export function recordingAvailable(probe: CapabilityProbeResult): boolean {
 	);
 }
 
-/** Phase 45: Program mode derivation follows Phase 41 recording availability. */
+/**
+ * Phase 45: Program mode derivation follows Phase 41 recording availability — but
+ * Program Mode still transfers every source track into the worker (no main-frames
+ * fallback yet), so it additionally requires Transferable MediaStreamTrack even
+ * though plain recording now degrades without it (bugfix B5/T5.5).
+ *
+ * No separate WebGPU gate is needed: `recordingAvailable` already requires
+ * `tier === 'core-webgpu'`, which `deriveCapabilityTierV2` only returns when
+ * `webGPUCore === 'supported'`.
+ */
 export function deriveProgramModeSupport(probe: CapabilityProbeResult): FeatureSupport {
-	return recordingAvailable(probe) && probe.webGPUCore !== 'unsupported'
+	return recordingAvailable(probe) && probe.capture.transferableMediaStreamTrack !== 'unsupported'
 		? 'supported'
 		: 'unsupported';
 }

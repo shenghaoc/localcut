@@ -7,10 +7,12 @@ import {
 	deriveCapabilityTierV2,
 	exportConstraintsForProbe,
 	h264ConstrainedBaseline,
+	deriveProgramModeSupport,
 	probeImageDecoder,
 	probeOpfsSyncAccessHandleInWorker,
 	probeSmartReframe,
-	recordingAvailable
+	recordingAvailable,
+	selectCaptureMode
 } from './capability-probe-v2';
 import type { CapabilityProbeResult } from '../protocol';
 import { compatAdapterProbeResult, probeResultFor } from './compatibility/capability-fixtures';
@@ -230,7 +232,7 @@ describe('probeOpfsSyncAccessHandleInWorker', () => {
 	});
 });
 
-describe('recordingAvailable transferable-track gate', () => {
+describe('recordingAvailable / selectCaptureMode (main-frames fallback, B5/T5.5)', () => {
 	const withCapture = (overrides: Partial<CapabilityProbeResult['capture']>) => {
 		const base = probeResultFor('core-webgpu');
 		return { ...base, capture: { ...base.capture, ...overrides } };
@@ -247,7 +249,9 @@ describe('recordingAvailable transferable-track gate', () => {
 		).toBe(true);
 	});
 
-	it('returns false when transferableMediaStreamTrack is unsupported (worker-track transfer needs it)', () => {
+	it('returns true when transfer is unsupported but MSTP is supported (main-frames fallback)', () => {
+		// The off-main-thread main-frames path needs only MediaStreamTrackProcessor,
+		// so recording stays available without Transferable MediaStreamTrack.
 		expect(
 			recordingAvailable(
 				withCapture({
@@ -255,10 +259,10 @@ describe('recordingAvailable transferable-track gate', () => {
 					mediaStreamTrackProcessor: 'supported'
 				})
 			)
-		).toBe(false);
+		).toBe(true);
 	});
 
-	it("tolerates transferableMediaStreamTrack 'unknown' (probe inconclusive, not a hard block)", () => {
+	it("tolerates transferableMediaStreamTrack 'unknown'", () => {
 		expect(
 			recordingAvailable(
 				withCapture({
@@ -269,7 +273,7 @@ describe('recordingAvailable transferable-track gate', () => {
 		).toBe(true);
 	});
 
-	it('returns false when MSTP is unsupported', () => {
+	it('returns false when MSTP is unsupported (the universal requirement of both paths)', () => {
 		expect(
 			recordingAvailable(
 				withCapture({
@@ -278,5 +282,32 @@ describe('recordingAvailable transferable-track gate', () => {
 				})
 			)
 		).toBe(false);
+	});
+
+	it('selects worker-track only when transfer is supported, else main-frames', () => {
+		expect(selectCaptureMode(withCapture({ transferableMediaStreamTrack: 'supported' }))).toBe(
+			'worker-track'
+		);
+		expect(selectCaptureMode(withCapture({ transferableMediaStreamTrack: 'unsupported' }))).toBe(
+			'main-frames'
+		);
+		// 'unknown' takes the safe main-frames path — never risks a DataCloneError.
+		expect(selectCaptureMode(withCapture({ transferableMediaStreamTrack: 'unknown' }))).toBe(
+			'main-frames'
+		);
+	});
+
+	it('keeps Program Mode gated on transferable tracks (no main-frames path there)', () => {
+		// Recording degrades without transfer, but Program Mode still transfers every
+		// source track into the worker, so it stays unsupported.
+		const noTransfer = withCapture({
+			transferableMediaStreamTrack: 'unsupported',
+			mediaStreamTrackProcessor: 'supported'
+		});
+		expect(recordingAvailable(noTransfer)).toBe(true);
+		expect(deriveProgramModeSupport(noTransfer)).toBe('unsupported');
+		expect(
+			deriveProgramModeSupport(withCapture({ transferableMediaStreamTrack: 'supported' }))
+		).toBe('supported');
 	});
 });

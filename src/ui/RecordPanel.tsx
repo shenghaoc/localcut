@@ -28,8 +28,9 @@ import type {
 	CaptureSourceStatusSnapshot,
 	CaptureWebcamPipPresetSnapshot
 } from '../protocol';
-import { recordingAvailable } from '../engine/capability-probe-v2';
+import { recordingAvailable, selectCaptureMode } from '../engine/capability-probe-v2';
 import { captureUnavailableReasons } from '../engine/capture-reasons';
+import { startCaptureFrameReader, type CaptureFrameReader } from './capture-frame-reader';
 import {
 	DEFAULT_CAPTURE_SETTINGS,
 	loadCaptureSettings,
@@ -63,11 +64,20 @@ interface RecordPanelProps {
 	retakeClipId: string | null;
 	retakeSourceKinds: readonly CaptureSourceKind[];
 	landedSessionId: string | null;
+	/**
+	 * Registers a source with the worker. `track` is non-null for the worker-track
+	 * path (transferred via `transfer`); null for the main-frames fallback, where
+	 * `transfer` is empty and frames arrive later through {@link RecordPanelProps.onPushFrame}.
+	 */
 	onAddSource: (
 		source: CaptureSourceDescriptor,
-		track: MediaStreamTrack,
+		track: MediaStreamTrack | null,
 		transfer: Transferable[]
 	) => void;
+	/** Forwards one main-thread-read frame to the worker (main-frames fallback). */
+	onPushFrame: (sourceId: string, frame: VideoFrame | AudioData) => void;
+	/** Notifies the worker a main-frames source's track ended on its own. */
+	onSourceEnded: (sourceId: string) => void;
 	onStart: (
 		settings: CaptureSettingsSnapshot,
 		writerPort: MessagePort,
@@ -196,6 +206,9 @@ export function RecordPanel(props: RecordPanelProps) {
 	let pipDispose: (() => void) | null = null;
 	let pipWindow: Window | null = null;
 	let writerWorker: Worker | null = null;
+	// Main-frames fallback (bugfix B5/T5.5): one main-thread MSTP reader per source,
+	// keyed by sourceId, forwarding frames to the worker push pipeline.
+	const frameReaders = new Map<string, CaptureFrameReader>();
 	let regionClickHandler: ((event: MouseEvent) => void) | null = null;
 	let previousStatusState: CaptureStatusState | null = null;
 	let currentRetakeClipId: string | null = null;
@@ -210,6 +223,12 @@ export function RecordPanel(props: RecordPanelProps) {
 		return state === 'recording' || state === 'paused' || state === 'stopping';
 	});
 	const canRecord = createMemo(() => (props.probe ? recordingAvailable(props.probe) : false));
+	// Worker-track when Transferable MediaStreamTrack is available; otherwise the
+	// off-main-thread main-frames fallback (bugfix B5/T5.5). Default to worker-track
+	// until the probe lands so the optimistic path is assumed.
+	const captureMode = createMemo(() =>
+		props.probe ? selectCaptureMode(props.probe) : 'worker-track'
+	);
 	const statusSources = createMemo(() => status()?.sources ?? []);
 	const hasWebcam = createMemo(
 		() =>
@@ -320,6 +339,13 @@ export function RecordPanel(props: RecordPanelProps) {
 		if (sessionState() === 'recording' && !documentPipActive()) {
 			void openDocumentPip();
 		}
+		// Stop the main-thread readers the moment the session begins stopping — including
+		// a worker-initiated auto-stop (overrun / source failure), which never routes
+		// through stopRecording(). During 'stopping' the worker drops pushed frames, so
+		// this only avoids wasted main→worker traffic; cleanup still finalizes on 'idle'.
+		if (sessionState() === 'stopping') {
+			stopAllReaders();
+		}
 		if (sessionState() === 'idle') {
 			cleanupSessionUi();
 		}
@@ -334,6 +360,7 @@ export function RecordPanel(props: RecordPanelProps) {
 	});
 
 	function resetLocalSources(): void {
+		stopAllReaders();
 		const current = sources();
 		if (current.length === 0) return;
 		for (const source of current) {
@@ -419,7 +446,16 @@ export function RecordPanel(props: RecordPanelProps) {
 
 	function transferSource(source: LocalCaptureSource): void {
 		if (source.transferred) return;
-		props.onAddSource(source.descriptor, source.track, [source.track]);
+		if (captureMode() === 'main-frames') {
+			// Trackless push pipeline: keep the track on main, register the source
+			// without it, then forward frames via the worker push message. Frames read
+			// before capture-start lands are dropped/closed worker-side (the next
+			// encoded frame is a key frame regardless), so no extra ordering is needed.
+			props.onAddSource(source.descriptor, null, []);
+			startReaderFor(source);
+		} else {
+			props.onAddSource(source.descriptor, source.track, [source.track]);
+		}
 		setSources((prev) =>
 			prev.map((candidate) =>
 				candidate.descriptor.sourceId === source.descriptor.sourceId
@@ -427,6 +463,37 @@ export function RecordPanel(props: RecordPanelProps) {
 					: candidate
 			)
 		);
+	}
+
+	function startReaderFor(source: LocalCaptureSource): void {
+		const sourceId = source.descriptor.sourceId;
+		if (frameReaders.has(sourceId)) return;
+		// Read the stable callback props into locals so the forwarding closures carry
+		// no reactivity into the (untracked) reader loop.
+		const pushFrame = props.onPushFrame;
+		const sourceEnded = props.onSourceEnded;
+		frameReaders.set(
+			sourceId,
+			startCaptureFrameReader(
+				source.track,
+				(frame) => pushFrame(sourceId, frame),
+				(error) =>
+					setMessage(
+						`Capture frame reader stopped: ${error instanceof Error ? error.message : String(error)}`
+					),
+				() => {
+					// Track ended on its own (the user stopped sharing). Drop our reader
+					// handle and tell the worker to end the source so auto-stop can run.
+					frameReaders.delete(sourceId);
+					sourceEnded(sourceId);
+				}
+			)
+		);
+	}
+
+	function stopAllReaders(): void {
+		for (const reader of frameReaders.values()) reader.stop();
+		frameReaders.clear();
 	}
 
 	function clearCountdown(): void {
@@ -467,11 +534,10 @@ export function RecordPanel(props: RecordPanelProps) {
 	}
 
 	function beginRecording(): void {
-		// Recording transfers each source track into the pipeline worker, which
-		// owns the per-source MediaStreamTrackProcessor + realtime encoder. That
-		// transfer requires Transferable MediaStreamTrack, which `recordingAvailable`
-		// gates on. A no-flag, off-main-thread fallback (pushing main-thread frames
-		// into the worker encoder) is a separate engine task — see the bugfix spec.
+		// Register every source with the worker. In the worker-track path this
+		// transfers the source track in; in the main-frames fallback (bugfix B5/T5.5)
+		// it registers a trackless push pipeline and starts a main-thread reader that
+		// forwards frames to the worker encoder (see transferSource/selectCaptureMode).
 		for (const source of sources()) transferSource(source);
 		writerWorker?.terminate();
 		writerWorker = new CaptureWriterWorker();
@@ -495,11 +561,15 @@ export function RecordPanel(props: RecordPanelProps) {
 	}
 
 	function stopRecording(): void {
+		// Stop main-thread readers promptly so we stop forwarding frames the moment
+		// the user stops; the worker flushes the encoders on capture-stop.
+		stopAllReaders();
 		props.onStop();
 		closeDocumentPip();
 	}
 
 	function cleanupSessionUi(): void {
+		stopAllReaders();
 		closeDocumentPip();
 		writerWorker?.terminate();
 		writerWorker = null;
@@ -634,13 +704,26 @@ export function RecordPanel(props: RecordPanelProps) {
 						<For
 							each={
 								props.probe
-									? captureUnavailableReasons(props.probe)
+									? // Transferable MediaStreamTrack is not required for recording — the
+										// main-frames fallback covers it — so it is never a blocking reason here.
+										captureUnavailableReasons(props.probe, { requireTransferableTrack: false })
 									: ['Checking browser capabilities…']
 							}
 						>
 							{(reason) => <li>{reason}</li>}
 						</For>
 					</ul>
+				</div>
+			</Show>
+
+			<Show when={canRecord() && captureMode() === 'main-frames'}>
+				<div class="record-compat-note" role="note">
+					<p>
+						<strong>Compatibility recording mode.</strong> Transferable MediaStreamTrack is
+						unavailable, so frames are read on the main thread and forwarded to the encoder.
+						Recording works; for best performance enable{' '}
+						<code>chrome://flags/#enable-experimental-web-platform-features</code> and reload.
+					</p>
 				</div>
 			</Show>
 

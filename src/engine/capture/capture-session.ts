@@ -140,11 +140,17 @@ export class CaptureSession {
 		}
 	}
 
+	/**
+	 * Adds a capture source. Pass a non-null `track` for the in-worker reader path
+	 * (the transferred source track). Pass `null` to build a **trackless push
+	 * pipeline** (bugfix B5/T5.5): on profiles without Transferable MediaStreamTrack
+	 * the main thread keeps the track and forwards frames via {@link pushFrame}.
+	 */
 	addSource(
 		sourceId: string,
 		kind: CaptureSourceKind,
 		label: string,
-		track: MediaStreamTrack,
+		track: MediaStreamTrack | null,
 		videoEncodeConfig?: VideoEncoderConfig,
 		audioEncodeConfig?: AudioEncoderConfig,
 		sourceInfo: { width?: number; height?: number; frameRate?: number | null } = {},
@@ -169,7 +175,8 @@ export class CaptureSession {
 		const pipeline = new TrackPipeline({
 			sourceId,
 			kind,
-			track,
+			// undefined track ⇒ trackless push pipeline (main forwards frames).
+			track: track ?? undefined,
 			videoEncodeConfig,
 			audioEncodeConfig,
 			onVideoFrame,
@@ -205,6 +212,35 @@ export class CaptureSession {
 		if (this.state === 'recording') {
 			entry.pipeline.start(this.keyframeIntervalUs());
 		}
+	}
+
+	/**
+	 * Forwards a main-thread-read frame to a trackless push pipeline (bugfix B5/T5.5).
+	 * The pipeline closes the frame exactly once (encoded or dropped); an unknown
+	 * source id closes it here so a late/misrouted frame never leaks.
+	 */
+	pushFrame(sourceId: string, frame: VideoFrame | AudioData): void {
+		const entry = this.sources.get(sourceId);
+		if (!entry) {
+			frame.close();
+			return;
+		}
+		entry.pipeline.pushFrame(frame);
+	}
+
+	/**
+	 * Ends a main-frames push source whose main-thread track ended on its own
+	 * (bugfix B5/T5.5). Stopping the pipeline flushes + closes the encoder and emits
+	 * the pipeline-ended signal, which writes `source-ended` and triggers the
+	 * all-sources-ended auto-stop — the same lifecycle an in-worker reader gets when
+	 * its `MediaStreamTrackProcessor` reaches `done`.
+	 */
+	endSource(sourceId: string): void {
+		const entry = this.sources.get(sourceId);
+		if (!entry || entry.state === 'ended' || entry.state === 'error') return;
+		void entry.pipeline.stop().catch(() => {
+			// best-effort — handlePipelineEnded still fires via emitEnded
+		});
 	}
 
 	async start(chunkDurationS: number): Promise<void> {

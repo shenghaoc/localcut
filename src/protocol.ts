@@ -202,7 +202,8 @@ export interface CapabilityProbeResult {
 	/** Phase 32b (Beauty): display/feature-gate only — never
 	 *  consulted by tier derivation or any pipeline code path. */
 	beauty?: BeautyProbeResult;
-	/** Phase 45 (Program Mode): derived from recordingAvailable + WebGPU core. */
+	/** Phase 45 (Program Mode): derived from recordingAvailable + WebGPU core +
+	 *  Transferable MediaStreamTrack (Program Mode has no main-frames fallback). */
 	programMode?: FeatureSupport;
 }
 
@@ -2511,8 +2512,17 @@ export type WorkerCommand =
 	// transfers one VideoFrame at a time (bounded to a single frame in flight).
 	| { type: 'publish-tap-start'; mode: 'worker-track' | 'main-frames' }
 	| { type: 'publish-tap-stop' }
-	| { type: 'capture-add-source'; source: CaptureSourceDescriptor; track: MediaStreamTrack }
+	// `track` present ⇒ the in-worker reader path (track transferred into the worker).
+	// `track` omitted ⇒ the off-main-thread "main-frames" fallback (bugfix B5/T5.5):
+	// main keeps the track and forwards frames via `capture-push-frame`.
+	| { type: 'capture-add-source'; source: CaptureSourceDescriptor; track?: MediaStreamTrack }
 	| { type: 'capture-remove-source'; sourceId: string }
+	// Forwards one main-thread-read frame to a trackless push pipeline. The frame is
+	// transferred (ownership moves to the worker) and closed there exactly once.
+	| { type: 'capture-push-frame'; sourceId: string; frame: VideoFrame | AudioData }
+	// The main-frames track ended on its own (e.g. the user stopped sharing); end the
+	// worker-side push source so all-sources-ended auto-stop runs.
+	| { type: 'capture-source-ended'; sourceId: string }
 	| {
 			type: 'capture-start';
 			settings: CaptureSettingsSnapshot;
@@ -2851,6 +2861,9 @@ export type WorkerStateMessage =
 			code: CaptureErrorCode;
 			detail: string;
 	  }
+	// Acks one `capture-push-frame` after the worker has consumed (encoded/dropped +
+	// closed) it, so the main thread can bound how many frames it transfers ahead.
+	| { type: 'capture-push-ack'; sourceId: string }
 	| { type: 'capture-recovery-list'; sessions: CaptureRecoverySessionSnapshot[] }
 	| {
 			type: 'capture-landed';

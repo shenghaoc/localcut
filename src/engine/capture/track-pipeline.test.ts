@@ -358,3 +358,303 @@ describe('TrackPipeline audio', () => {
 		}
 	});
 });
+
+/**
+ * Bugfix B5/T5.5: trackless push pipeline (off-main-thread main-frames fallback).
+ * Frames arrive via pushFrame() instead of an in-worker reader; the close-exactly-once
+ * invariant and encoder lifecycle must match the reader path.
+ */
+function buildPushPipeline(
+	kind: 'screen' | 'mic',
+	onVideoFrame?: (sourceId: string, frame: VideoFrame) => void
+): PipelineHarness {
+	stubGlobals();
+
+	const overruns: string[] = [];
+	const errors: string[] = [];
+	let resolveEnded: () => void;
+	const ended = new Promise<void>((resolve) => {
+		resolveEnded = resolve;
+	});
+
+	const callbacks: TrackPipelineCallbacks = {
+		onEncodedChunk: () => {},
+		onChunkAck: () => {},
+		onEncodeError: (_id, error) => {
+			errors.push(error);
+		},
+		onAudioOverrun: (id) => {
+			overruns.push(id);
+		},
+		onPipelineEnded: () => {
+			resolveEnded();
+		}
+	};
+
+	const pipeline = new TrackPipeline({
+		sourceId: 'src-1',
+		kind,
+		// No track ⇒ trackless push pipeline; main forwards frames via pushFrame().
+		videoEncodeConfig:
+			kind === 'screen'
+				? { codec: 'avc1.42001E', width: 1920, height: 1080, bitrate: 5_000_000 }
+				: undefined,
+		audioEncodeConfig:
+			kind === 'mic' ? { codec: 'opus', sampleRate: 48_000, numberOfChannels: 2 } : undefined,
+		onVideoFrame,
+		callbacks,
+		abort: new AbortController()
+	});
+
+	return { pipeline, ended, overruns, errors };
+}
+
+describe('TrackPipeline push mode (main-frames, B5/T5.5)', () => {
+	it('encodes pushed video frames, closes each exactly once, and flushes on stop', async () => {
+		const frames = vfrFrames([0, 0.033, 0.1, 0.5, 0.9]);
+		const harness = buildPushPipeline('screen');
+
+		harness.pipeline.start(2_000_000);
+		for (const frame of frames) harness.pipeline.pushFrame(frame);
+		await harness.pipeline.stop();
+		await harness.ended;
+
+		expect(encoderState.videoEncodes).toHaveLength(frames.length);
+		expect(encoderState.flushed).toBe(true);
+		expect(encoderState.closed).toBe(true);
+		for (const frame of frames) {
+			expect(getCloseCount(frame)).toBe(1);
+		}
+	});
+
+	it('requests key frames on the chunk-duration cadence for pushed frames', async () => {
+		const frames = vfrFrames([0, 0.5, 1.0, 1.5, 2.0, 2.5, 4.6]);
+		const harness = buildPushPipeline('screen');
+
+		harness.pipeline.start(2_000_000);
+		for (const frame of frames) harness.pipeline.pushFrame(frame);
+		await harness.pipeline.stop();
+
+		const keyTimestamps = encoderState.videoEncodes
+			.filter((c) => c.keyFrame)
+			.map((c) => c.timestamp);
+		expect(keyTimestamps).toEqual([0, 2_000_000, 4_600_000]);
+	});
+
+	it('drops pushed frames under backpressure, still closing each exactly once', async () => {
+		const frames = vfrFrames([0, 0.033, 0.066, 0.1]);
+		const harness = buildPushPipeline('screen');
+		harness.pipeline.start();
+		encoderState.queueSize = 9; // above VIDEO_QUEUE_BOUND
+
+		for (const frame of frames) harness.pipeline.pushFrame(frame);
+		await harness.pipeline.stop();
+
+		expect(encoderState.videoEncodes).toHaveLength(0);
+		for (const frame of frames) {
+			expect(getCloseCount(frame)).toBe(1);
+		}
+	});
+
+	it('hands cloned frames to the compose tap before encode, like the reader path', async () => {
+		const frames = vfrFrames([0, 0.033]);
+		const clones = vfrFrames([0, 0.033]);
+		frames.forEach((frame, index) => {
+			Object.defineProperty(frame, 'clone', {
+				value: () => clones[index]!,
+				configurable: true
+			});
+		});
+		const received: VideoFrame[] = [];
+		const harness = buildPushPipeline('screen', (_sourceId, frame) => {
+			received.push(frame);
+		});
+
+		harness.pipeline.start();
+		for (const frame of frames) harness.pipeline.pushFrame(frame);
+		await harness.pipeline.stop();
+
+		expect(received).toEqual(clones);
+		for (const frame of frames) {
+			expect(getCloseCount(frame)).toBe(1);
+		}
+		// The tap owns the clones it received; the pipeline must not close them.
+		for (const clone of clones) {
+			expect(getCloseCount(clone)).toBe(0);
+		}
+	});
+
+	it('drops (and closes) frames pushed before start, after stop, and while paused', async () => {
+		const before = vfrFrames([0])[0]!;
+		const live = vfrFrames([0.033])[0]!;
+		const paused = vfrFrames([0.066])[0]!;
+		const afterResume = vfrFrames([0.1])[0]!;
+		const afterStop = vfrFrames([0.2])[0]!;
+		const harness = buildPushPipeline('screen');
+
+		// Before start(): not running ⇒ dropped + closed.
+		harness.pipeline.pushFrame(before);
+		expect(getCloseCount(before)).toBe(1);
+		expect(encoderState.videoEncodes).toHaveLength(0);
+
+		harness.pipeline.start();
+		harness.pipeline.pushFrame(live);
+		await harness.pipeline.pause();
+		// While paused ⇒ dropped + closed, no encode.
+		harness.pipeline.pushFrame(paused);
+		expect(getCloseCount(paused)).toBe(1);
+
+		await harness.pipeline.resume();
+		harness.pipeline.pushFrame(afterResume);
+		await harness.pipeline.stop();
+
+		// After stop ⇒ dropped + closed.
+		harness.pipeline.pushFrame(afterStop);
+		expect(getCloseCount(afterStop)).toBe(1);
+
+		// Encoded: the live frame (first ⇒ key) and the post-resume frame (key again
+		// because resume forces a key frame at the resume point).
+		expect(encoderState.videoEncodes).toEqual([
+			{ timestamp: 0.033 * 1_000_000, keyFrame: true },
+			{ timestamp: 0.1 * 1_000_000, keyFrame: true }
+		]);
+		for (const frame of [before, live, paused, afterResume, afterStop]) {
+			expect(getCloseCount(frame)).toBe(1);
+		}
+	});
+
+	it('encodes pushed AudioData and closes each exactly once', async () => {
+		const datas = audioDatas(6);
+		const harness = buildPushPipeline('mic');
+
+		harness.pipeline.start();
+		for (const data of datas) harness.pipeline.pushFrame(data);
+		await harness.pipeline.stop();
+
+		expect(encoderState.audioEncodes).toBe(datas.length);
+		expect(harness.overruns).toHaveLength(0);
+		for (const data of datas) {
+			expect(getCloseCount(data)).toBe(1);
+		}
+	});
+
+	it('trips the sustained-overrun stop for pushed audio without leaking', async () => {
+		const datas = audioDatas(6);
+		const harness = buildPushPipeline('mic');
+		harness.pipeline.start();
+		encoderState.queueSize = 17; // above AUDIO_QUEUE_BOUND
+
+		for (const data of datas) harness.pipeline.pushFrame(data);
+
+		expect(harness.overruns).toEqual(['src-1']);
+		expect(encoderState.audioEncodes).toBe(3); // first 3 encode, 4th trips overrun
+		// Every pushed frame is closed exactly once (encoded, overrun-dropped, or
+		// dropped because the overrun already stopped the pipeline).
+		for (const data of datas) {
+			expect(getCloseCount(data)).toBe(1);
+		}
+		await harness.pipeline.stop();
+	});
+
+	it('closes a frame misrouted to a track-mode pipeline instead of encoding it', async () => {
+		const frames = vfrFrames([0]);
+		const harness = buildPipeline('screen', frames); // track mode (has a reader)
+		const stray = vfrFrames([0.5])[0]!;
+
+		harness.pipeline.pushFrame(stray);
+
+		expect(getCloseCount(stray)).toBe(1);
+		expect(encoderState.videoEncodes).toHaveLength(0);
+		await harness.pipeline.stop();
+	});
+
+	it('reports a missing encode config via onEncodeError instead of stopping silently', () => {
+		stubGlobals();
+		const errors: string[] = [];
+		const pipeline = new TrackPipeline({
+			sourceId: 'src-1',
+			kind: 'screen',
+			// No track ⇒ push pipeline; no videoEncodeConfig ⇒ a misconfiguration.
+			callbacks: {
+				onEncodedChunk: () => {},
+				onChunkAck: () => {},
+				onEncodeError: (_id, error) => errors.push(error),
+				onAudioOverrun: () => {},
+				onPipelineEnded: () => {}
+			},
+			abort: new AbortController()
+		});
+
+		pipeline.start();
+
+		expect(errors).toEqual(['Missing video encode configuration.']);
+	});
+
+	it('reports an encoder configure failure via onEncodeError instead of throwing', () => {
+		stubGlobals();
+		class ThrowingVideoEncoder {
+			constructor(_init: VideoEncoderInit) {}
+			get encodeQueueSize(): number {
+				return 0;
+			}
+			configure(_config: VideoEncoderConfig): void {
+				throw new DOMException('Unsupported config', 'NotSupportedError');
+			}
+			encode(): void {}
+			async flush(): Promise<void> {}
+			close(): void {}
+		}
+		vi.stubGlobal('VideoEncoder', ThrowingVideoEncoder);
+
+		const errors: string[] = [];
+		const pipeline = new TrackPipeline({
+			sourceId: 'src-1',
+			kind: 'screen',
+			videoEncodeConfig: { codec: 'avc1.42001E', width: 1920, height: 1080, bitrate: 5_000_000 },
+			callbacks: {
+				onEncodedChunk: () => {},
+				onChunkAck: () => {},
+				onEncodeError: (_id, error) => errors.push(error),
+				onAudioOverrun: () => {},
+				onPipelineEnded: () => {}
+			},
+			abort: new AbortController()
+		});
+
+		// Must not let the synchronous configure throw escape start().
+		expect(() => pipeline.start()).not.toThrow();
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain('Encoder configure failed');
+	});
+
+	it('closes pushed AudioData even when the overrun callback throws', () => {
+		stubGlobals();
+		const datas = audioDatas(4);
+		const pipeline = new TrackPipeline({
+			sourceId: 'src-1',
+			kind: 'mic',
+			audioEncodeConfig: { codec: 'opus', sampleRate: 48_000, numberOfChannels: 2 },
+			callbacks: {
+				onEncodedChunk: () => {},
+				onChunkAck: () => {},
+				onEncodeError: () => {},
+				onAudioOverrun: () => {
+					throw new Error('overrun handler blew up');
+				},
+				onPipelineEnded: () => {}
+			},
+			abort: new AbortController()
+		});
+
+		pipeline.start();
+		encoderState.queueSize = 17; // above AUDIO_QUEUE_BOUND
+		// The 4th over-bound frame trips the overrun callback, which throws; the data
+		// must still be closed (single outer finally), and pushFrame must not throw.
+		expect(() => {
+			for (const data of datas) pipeline.pushFrame(data);
+		}).not.toThrow();
+		for (const data of datas) {
+			expect(getCloseCount(data)).toBe(1);
+		}
+	});
+});

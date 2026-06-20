@@ -1,5 +1,15 @@
 import type { CapabilityProbeResult } from '../protocol';
 
+export interface CaptureReasonOptions {
+	/**
+	 * Whether Transferable MediaStreamTrack is required for the feature. Program Mode
+	 * still transfers every source track into the worker, so it requires it (default).
+	 * Plain recording no longer does — it falls back to the off-main-thread
+	 * main-frames path (bugfix B5/T5.5) — so RecordPanel passes `false`.
+	 */
+	requireTransferableTrack?: boolean;
+}
+
 /**
  * Human-readable reasons recording / Program Mode is unavailable. Covers **every**
  * hard gate in `recordingAvailable()` (capability-probe-v2): the tier-level gates
@@ -8,7 +18,11 @@ import type { CapabilityProbeResult } from '../protocol';
  * means a disabled Record/Program panel always has at least one actionable line,
  * even when the blocker is a non-capture capability.
  */
-export function captureUnavailableReasons(probe: CapabilityProbeResult): string[] {
+export function captureUnavailableReasons(
+	probe: CapabilityProbeResult,
+	options: CaptureReasonOptions = {}
+): string[] {
+	const requireTransferableTrack = options.requireTransferableTrack ?? true;
 	const reasons: string[] = [];
 	const cap = probe.capture;
 	const codecs = probe.codecs;
@@ -38,9 +52,10 @@ export function captureUnavailableReasons(probe: CapabilityProbeResult): string[
 	if (cap.mediaStreamTrackProcessor !== 'supported') {
 		reasons.push('MediaStreamTrackProcessor is unavailable.');
 	}
-	if (cap.transferableMediaStreamTrack === 'unsupported') {
-		// Recording transfers the source track into the pipeline worker, so this is
-		// a genuine blocker. Surface the actionable workaround rather than a dead end.
+	if (requireTransferableTrack && cap.transferableMediaStreamTrack === 'unsupported') {
+		// Program Mode transfers each source track into the pipeline worker, so this is
+		// a genuine blocker there. Surface the actionable workaround rather than a dead
+		// end. (Plain recording degrades to the main-frames path instead — see B5/T5.5.)
 		reasons.push(
 			'Transferable MediaStreamTrack is unavailable. Enable chrome://flags/#enable-experimental-web-platform-features to record on this browser.'
 		);
