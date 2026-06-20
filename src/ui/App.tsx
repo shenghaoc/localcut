@@ -3992,6 +3992,9 @@ export function App() {
 					canRedo={historyState().canRedo}
 					onUndo={() => bridge?.send({ type: 'undo' })}
 					onRedo={() => bridge?.send({ type: 'redo' })}
+					onSplit={splitSelectedClip}
+					onDelete={deleteSelectedClips}
+					hasSelection={selectedClipRefs().length > 0}
 					transportDisabled={!previewSurfaceAvailable()}
 					importBlocked={importBlocked()}
 					importHint={importHint()}
