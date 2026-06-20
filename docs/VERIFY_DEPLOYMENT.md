@@ -23,7 +23,7 @@ Use this checklist to verify a deployed instance of LocalCut Studio. Each item c
 
 ### 3. Capability tier
 
-- [ ] Click **Capabilities** in the toolbar (or status bar).
+- [ ] Open **Help → Browser capabilities**.
 - [ ] The panel shows WebGPU as supported, WebCodecs as supported, SharedArrayBuffer as available.
 - [ ] COOP/COEP isolation shows as active.
 

@@ -13,7 +13,7 @@ LocalCut Studio uses your browser's hardware acceleration for real-time video pr
 | **Limited WebCodecs** | Canvas2D preview, limited export         | Browser with WebCodecs decode but no WebGPU                            |
 | **Shell Only**        | App loads but preview/export unavailable | Any modern browser                                                     |
 
-The status bar at the bottom shows your current tier. Click **Capabilities** in the toolbar for details about what your browser supports and what's missing.
+The status bar at the bottom shows your current tier. Open **Help → Browser capabilities** for details about what your browser supports and what's missing.
 
 ## Getting Started
 
@@ -322,9 +322,9 @@ LocalCut Studio can reduce background noise in audio clips entirely on your devi
 
 **How to use it**:
 
-1. Open the command palette (**⌘K** / **Ctrl+K**) and choose **Audio Cleanup** to open the panel — the action is enabled once an audio clip is selected. Nothing is downloaded at app startup; the model loads only when you ask for it.
-2. Click **Load model** to fetch and verify the two DTLN ONNX model files (~4 MB total, downloaded from GitHub via a same-origin proxy and SHA-256-verified). After one successful load the models are cached in OPFS for offline use.
-3. Select an audio clip on the timeline.
+1. Select an audio clip on the timeline. (The **Audio Cleanup** command is disabled until an audio clip is selected, so do this first.)
+2. Open the command palette (**⌘K** / **Ctrl+K**) and choose **Audio Cleanup** to open the panel. Nothing is downloaded at app startup; the model loads only when you ask for it.
+3. Click **Load model** to fetch and verify the two DTLN ONNX model files (~4 MB total, downloaded from GitHub via a same-origin proxy and SHA-256-verified). After one successful load the models are cached in OPFS for offline use.
 4. Click **Preview cleanup** to denoise the first 10 seconds and A/B compare **Play original** vs **Play cleaned**.
 5. Click **Apply to export / create cleaned audio asset** to process the whole clip. This creates a derived `*.cleaned.wav` asset in the Media Bin and routes the clip's audio through it for both playback and export.
 6. Use **Cancel** at any time to stop a running model load or cleanup pass.
@@ -557,8 +557,8 @@ Full details are in the [Smart Reframe guide](SMART-REFRAME.md).
 
 An optional bonus built on Chrome's built-in AI. It runs **entirely on-device** — nothing is
 uploaded, and there is **no cloud fallback**. On browsers that don't expose these APIs (Firefox,
-Safari, most Chromium derivatives, or hardware below Chrome's floor), the **Language Tools** button
-does not appear and nothing else changes. See [Language tools](../src/features/docs/content/language-tools.md)
+Safari, most Chromium derivatives, or hardware below Chrome's floor), the **Language Tools** command
+(in the ⌘K palette) does not appear and nothing else changes. See [Language tools](../src/features/docs/content/language-tools.md)
 for the in-app guide.
 
 - **Requirements**: recent desktop Chrome with the built-in AI models. Each tool needs a one-time,

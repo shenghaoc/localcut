@@ -122,7 +122,7 @@ describe('buildCommandActions (IA-T1 / D13 launcher routing, D12 audio gating)',
 		for (const expected of [
 			'Audio Cleanup',
 			'Auto captions',
-			'Translate',
+			'Language Tools',
 			'Smart reframe',
 			'Remove silences',
 			'Go live',
@@ -147,15 +147,15 @@ describe('buildCommandActions (IA-T1 / D13 launcher routing, D12 audio gating)',
 		expect(withClip.detail).toBe('Reduce noise on the selected clip');
 	});
 
-	it('includes Translate only when the language tools are available', () => {
+	it('includes Language Tools only when the language tools are available', () => {
 		const present = buildCommandActions(commandOptions({ languageToolsAvailable: true })).map(
 			(action) => action.label
 		);
-		expect(present).toContain('Translate');
+		expect(present).toContain('Language Tools');
 		const absent = buildCommandActions(commandOptions({ languageToolsAvailable: false })).map(
 			(action) => action.label
 		);
-		expect(absent).not.toContain('Translate');
+		expect(absent).not.toContain('Language Tools');
 	});
 
 	it('reflects transport state in the play/pause entry', () => {

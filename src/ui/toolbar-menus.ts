@@ -170,8 +170,10 @@ export function buildCommandActions(options: CommandActionsBuildOptions): Comman
 		...(options.languageToolsAvailable
 			? [
 					{
-						label: 'Translate',
-						detail: 'Translate captions and draft copy on-device',
+						// Broader than "Translate" so the Draft titles/hashtags flow in the
+						// same panel stays discoverable — this is its only launcher.
+						label: 'Language Tools',
+						detail: 'Translate captions · draft titles, hashtags & copy on-device',
 						onSelect: options.onLanguageTools
 					}
 				]

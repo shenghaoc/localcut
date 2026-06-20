@@ -12,7 +12,7 @@ When the app loads, look at the pipeline strip under the toolbar:
 - **GPU compat / Limited WebCodecs** — a reduced but working mode. Editing works; preview and export are slower or constrained.
 - **Limited shell / Blocked** — the browser is missing required features. The app stays up and explains what's missing.
 
-Click **Capabilities** in the pipeline strip at any time to see exactly what your browser supports and what would unlock more. The details live in [Browser limitations](/docs/browser-limitations).
+Open **Help → Browser capabilities** at any time to see exactly what your browser supports and what would unlock more. The details live in [Browser limitations](/docs/browser-limitations).
 
 ## 2. Import your first clip
 
