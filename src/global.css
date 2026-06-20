@@ -4686,15 +4686,9 @@ button.status-badge:hover {
 		min-height: 44px;
 	}
 
-	.workspace,
-	.workspace.has-bin,
-	.workspace.rail-collapsed,
-	.workspace.has-bin.rail-collapsed {
-		display: flex;
-		flex-direction: column;
-		min-height: auto;
-		overflow: visible;
-	}
+	/* The workspace single-column collapse lives *after* the base `.workspace`
+	   grid block (which is later in the file) so it wins the cascade at this
+	   width — see the `@media` immediately following that block. */
 
 	/* Side-rail tab bar: scroll horizontally on narrow screens */
 	.side-rail-tab-bar {
@@ -6335,6 +6329,21 @@ button.status-badge:hover {
 }
 .workspace.has-bin.rail-collapsed {
 	grid-template-columns: 236px minmax(0, 1fr) 28px;
+}
+/* Single-column collapse. Declared right after the base `.workspace` grid rules
+   above so it wins the cascade at ≤1240px (equal specificity → later source
+   order). The breakpoint is ≥ the 3-column minimum (236 + 304 + gaps), so there
+   is no width band where the grid neither fits nor collapses. */
+@media (max-width: 1240px) {
+	.workspace,
+	.workspace.has-bin,
+	.workspace.rail-collapsed,
+	.workspace.has-bin.rail-collapsed {
+		display: flex;
+		flex-direction: column;
+		min-height: auto;
+		overflow: visible;
+	}
 }
 .dock-left {
 	display: flex;

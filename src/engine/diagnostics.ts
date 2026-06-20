@@ -3,7 +3,6 @@ import type {
 	FeatureSupport,
 	LivePublishProbeResult,
 	VoiceCleanupSettings,
-	CaptureProbeResult,
 	CapabilityProbeResult
 } from '../protocol';
 import { DEFAULT_VOICE_CLEANUP_SETTINGS } from '../protocol';
@@ -52,8 +51,9 @@ export interface WorkerDiagnosticInput {
 	readonly livePublish?: LivePublishProbeResult | null;
 	/** Phase 45: program mode capability (derived from capture + WebGPU probes). */
 	readonly programMode?: FeatureSupport;
-	/** Capture probe results for dynamic unavailable-reason strings. */
-	readonly capture?: CaptureProbeResult;
+	/** Full capability probe, used to build dynamic unavailable-reason strings
+	 *  (needs the tier-level fields, not just `capture`). */
+	readonly probe?: CapabilityProbeResult | null;
 }
 
 function makeSnapshotId(): string {
@@ -405,8 +405,7 @@ async function buildCapabilityReport(input: WorkerDiagnosticInput): Promise<Capa
 		findings.push(...publishFindings(input.livePublish));
 	}
 	if (input.programMode) {
-		const probe = input.capture ? ({ capture: input.capture } as CapabilityProbeResult) : null;
-		const captureReasons = probe ? captureUnavailableReasons(probe) : [];
+		const captureReasons = input.probe ? captureUnavailableReasons(input.probe) : [];
 		const reasonStr =
 			captureReasons.length > 0 ? captureReasons.join(' ') : 'Missing required capabilities.';
 		findings.push(

@@ -12,6 +12,7 @@ import type {
 } from '../protocol';
 import type { CleanupProbeResult } from '../protocol';
 import { probeAsr } from './asr/asr-probe';
+import { CAPTURE_VIDEO_CODEC_FALLBACKS } from './replay-buffer/capture';
 
 type VideoCodecProbeName = 'h264' | 'vp9' | 'av1';
 type AudioCodecProbeName = 'aac' | 'opus';
@@ -394,20 +395,27 @@ async function probeDisplayAudioCapture(): Promise<FeatureSupport> {
 
 async function probeVideoEncodeRealtime(): Promise<FeatureSupport> {
 	if (typeof VideoEncoder !== 'function') return 'unsupported';
-	try {
-		const config: VideoEncoderConfig = {
-			codec: h264ConstrainedBaseline(1920, 1080),
-			width: 1920,
-			height: 1080,
-			bitrate: 5_000_000,
-			latencyMode: 'realtime',
-			hardwareAcceleration: 'prefer-hardware'
-		};
-		const result = await VideoEncoder.isConfigSupported(config);
-		return result.supported === true ? 'supported' : 'unsupported';
-	} catch {
-		return 'unknown';
+	// Probe the exact codecs the capture session chooses between (the worker
+	// builds its candidate list from CAPTURE_VIDEO_CODEC_FALLBACKS), so a
+	// 'supported' here means the recording encoder can actually configure — not
+	// just that some unrelated H.264 profile/level works.
+	let threw = false;
+	for (const codec of CAPTURE_VIDEO_CODEC_FALLBACKS) {
+		try {
+			const result = await VideoEncoder.isConfigSupported({
+				codec,
+				width: 1920,
+				height: 1080,
+				bitrate: 5_000_000,
+				latencyMode: 'realtime',
+				hardwareAcceleration: 'prefer-hardware'
+			});
+			if (result.supported === true) return 'supported';
+		} catch {
+			threw = true;
+		}
 	}
+	return threw ? 'unknown' : 'unsupported';
 }
 
 async function probeAudioEncode(codec: 'opus' | 'aac'): Promise<FeatureSupport> {
@@ -430,28 +438,31 @@ export async function probeOpfsSyncAccessHandleInWorker(): Promise<FeatureSuppor
 	if (typeof Worker === 'undefined' || typeof navigator?.storage?.getDirectory !== 'function') {
 		return 'unsupported';
 	}
+	// The result is posted only AFTER the temp file is removed, so the parent's
+	// worker.terminate() (which runs as soon as it receives the message) cannot
+	// race the cleanup and leave a _cap_probe_*.tmp behind on every startup.
 	const src = `self.onmessage = async () => {
+		let result = 'unknown';
+		let root, name, created = false;
 		try {
-			const root = await navigator.storage.getDirectory();
-			const name = '_cap_probe_' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.tmp';
-			let handle;
-			try {
-				handle = await root.getFileHandle(name, { create: true });
-				if (typeof handle.createSyncAccessHandle !== 'function') {
-					self.postMessage('unsupported');
-					return;
-				}
+			root = await navigator.storage.getDirectory();
+			name = '_cap_probe_' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.tmp';
+			const handle = await root.getFileHandle(name, { create: true });
+			created = true;
+			if (typeof handle.createSyncAccessHandle !== 'function') {
+				result = 'unsupported';
+			} else {
 				const access = await handle.createSyncAccessHandle();
 				access.close();
-				self.postMessage('supported');
-			} catch {
-				self.postMessage('unknown');
-			} finally {
-				if (handle) {
-					try { await root.removeEntry(name); } catch {}
-				}
+				result = 'supported';
 			}
-		} catch { self.postMessage('unknown'); }
+		} catch {
+			result = 'unknown';
+		}
+		if (created && root && name) {
+			try { await root.removeEntry(name); } catch {}
+		}
+		self.postMessage(result);
 	};`;
 	const url = URL.createObjectURL(new Blob([src], { type: 'application/javascript' }));
 	let worker: Worker;

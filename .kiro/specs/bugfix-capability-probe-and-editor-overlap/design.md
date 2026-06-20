@@ -30,7 +30,7 @@ function h264ConstrainedBaseline(width: number, height: number): string {
 ```
 
 - **D1 (B1, export):** replace the static `videoCodecStrings.h264` use in `probeCodecs` with `h264ConstrainedBaseline(width, height)` for both the decode and encode probes (decode already passes, but keep them symmetric so a future resolution bump can't silently regress decode). 1280×720 → 3600 MBs → L3.1 (`avc1.42E01F`), which the evidence table shows encodes `true`.
-- **D2 (B2, recording):** in `probeVideoEncodeRealtime`, replace `'avc1.42001E'` with `h264ConstrainedBaseline(1920, 1080)` → 8160 MBs → L4.0 (`avc1.42E028`), which encodes `true` under `latencyMode:'realtime'` + `hardwareAcceleration:'prefer-hardware'`. Keep the realtime/HW hints unchanged.
+- **D2 (B2, recording) — revised:** the realtime probe must test the codec recording **actually configures**, not just any valid-level H.264 (Codex review). Recording's encoder picks from `CAPTURE_VIDEO_CODEC_FALLBACKS` (`['avc1.64002a', 'avc1.42e02a', 'avc1.42002a']`, all High/Baseline **Level 4.2**) — the worker builds its candidate list from that constant. So `probeVideoEncodeRealtime` iterates the same constant and returns `'supported'` if **any** candidate is realtime-encodable (`'unknown'` only if none pass but some threw). This avoids a false positive where the probe asks for Baseline L4.0 but recording then fails to `configure()` `avc1.64002a` on a profile that rejects High Profile. (`h264ConstrainedBaseline` stays in use for the export-codec probe, D1.)
 
 **Why not just hardcode L4.2 everywhere?** A hardcoded high level works for these two resolutions but reintroduces the same trap if a probe is added at 4K (L4.2 maxes ~2048×1080 area-wise; 4K needs L5.1). Deriving from the frame size is the durable fix and is trivially unit-testable.
 
@@ -48,20 +48,37 @@ async function probeOpfsSyncAccessHandleInWorker(): Promise<FeatureSupport> {
 	if (typeof Worker === 'undefined' || typeof navigator?.storage?.getDirectory !== 'function') {
 		return 'unsupported';
 	}
+	// The worker removes the temp file and posts the result as its LAST action, so
+	// the parent's worker.terminate() (fired on message receipt) cannot race the
+	// cleanup and leave a _cap_probe_*.tmp behind on every startup.
 	const src = `self.onmessage = async () => {
+		let result = 'unknown';
+		let root, name, created = false;
 		try {
-			const root = await navigator.storage.getDirectory();
-			const name = '_cap_probe_' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.tmp';
+			root = await navigator.storage.getDirectory();
+			name = '_cap_probe_' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.tmp';
 			const handle = await root.getFileHandle(name, { create: true });
-			if (typeof handle.createSyncAccessHandle !== 'function') { self.postMessage('unsupported'); return; }
-			const access = await handle.createSyncAccessHandle();
-			access.close();
-			await root.removeEntry(name);
-			self.postMessage('supported');
-		} catch { self.postMessage('unknown'); }
+			created = true;
+			if (typeof handle.createSyncAccessHandle !== 'function') {
+				result = 'unsupported';
+			} else {
+				const access = await handle.createSyncAccessHandle();
+				access.close();
+				result = 'supported';
+			}
+		} catch { result = 'unknown'; }
+		if (created && root && name) { try { await root.removeEntry(name); } catch {} }
+		self.postMessage(result);
 	};`;
+	// Revoke immediately after construction (the worker script fetch starts
+	// synchronously) and inside a finally so a throwing `new Worker` can't leak the URL.
 	const url = URL.createObjectURL(new Blob([src], { type: 'application/javascript' }));
-	const worker = new Worker(url);
+	let worker: Worker;
+	try {
+		worker = new Worker(url);
+	} finally {
+		URL.revokeObjectURL(url);
+	}
 	try {
 		return await new Promise<FeatureSupport>((resolve) => {
 			const timer = setTimeout(() => resolve('unknown'), 3_000);
@@ -71,19 +88,20 @@ async function probeOpfsSyncAccessHandleInWorker(): Promise<FeatureSupport> {
 		});
 	} finally {
 		worker.terminate();
-		URL.revokeObjectURL(url);
 	}
 }
 ```
 
-`probeCaptureCapabilities` awaits this in place of the current main-thread `probeOpfsSyncAccessHandle`. Confirmed on the reference machine: the worker path returns `'supported'`. (Keep the bundle worker-free — this is a transient blob worker, not a build entry.)
+`probeCaptureCapabilities` awaits this in place of the current main-thread `probeOpfsSyncAccessHandle`. Confirmed on the reference machine: the worker path returns `'supported'`. (Keep the bundle worker-free — this is a transient blob worker, not a build entry.) Temp-file/Object-URL leaks and the terminate-vs-cleanup race were all closed (Gemini + Codex review).
 
 ## D4 — Make the Program Mode / recording-blocked message name the real cause
 
 Two changes, no new gates:
 
 1. With D2 + D3 landed, `recordingAvailable()` (and therefore `deriveProgramModeSupport()`) passes on the reference profile via the corrected sub-probes — no logic change needed there.
-2. Replace the static string at [`ProgramPanel.tsx:105`](../../../src/ui/ProgramPanel.tsx) (and the equivalents in [`diagnostics.ts:409,412`](../../../src/engine/diagnostics.ts)) with a derived reason. Reuse `captureUnavailableReasons(probe)` ([`RecordPanel.tsx:151-170`](../../../src/ui/RecordPanel.tsx)) — promote it to a shared helper (e.g. `src/engine/capability-probe-v2.ts` or a small `capture-reasons.ts`) and render the concrete list ("Realtime video encode is unavailable.", etc.) plus the WebGPU-core check, instead of asserting WebGPU/WebCodecs are missing when they are not.
+2. Replace the static string at `ProgramPanel.tsx` (and the equivalents in `diagnostics.ts`) with a derived reason from the shared `src/engine/capture-reasons.ts` helper, instead of asserting WebGPU/WebCodecs are missing when they are not.
+
+`captureUnavailableReasons(probe)` must enumerate **every** hard gate in `recordingAvailable()` — not just the capture probes (Codex review). That includes the tier-level gates that compose `tier === 'core-webgpu'` (cross-origin isolation, `SharedArrayBuffer`, `OffscreenCanvas`, WebGPU core, video decode) **and** `audioEncodeOpus`, so a reduced-tier profile (capture probes pass, but COOP/COEP or SAB missing) never renders "Program Mode is unavailable:" with an empty list. Because it now reads top-level probe fields, the diagnostics worker passes the **full** `CapabilityProbeResult` (not a `{capture}`-only cast). `ProgramPanel` renders the list via a `createMemo`, drops the redundant separate WebGPU note (WebGPU core is in the list), and keeps a "Required capabilities are missing." fallback for any uncovered gate.
 
 ## D5 — Recording track-transfer gate: honest message now, off-main fallback deferred
 
@@ -114,6 +132,8 @@ The Ark editor-kit block at [`global.css:7641-7780`](../../../src/global.css) is
 Recommended combination: (a) `minmax(0,1fr)` middle column **and** keep a single-column collapse at a breakpoint ≥ the true minimum, eliminating both the overflow and the dead zone.
 
 **Consolidation gotcha (must verify):** the deleted original block was the *only* declaration of `display: grid` (plus `flex: 1; min-height: 0`) on `.workspace`; the Ark duplicate only overrode `grid-template-columns`/`gap`/`padding`/`background` and inherited the rest. The surviving consolidated block **must re-declare `display: grid; flex: 1; min-height: 0`** — otherwise `grid-template-columns` is inert above the collapse breakpoint and the three panels stack full-width (a worse regression than the original overlap). Shipped: `.workspace { display: grid; flex: 1; min-height: 0; gap: 6px; padding: 6px; grid-template-columns: minmax(0,1fr) 304px }`, `has-bin` = `236px minmax(0,1fr) 304px`, collapse to `display: flex; flex-direction: column` at `@media (max-width: 1240px)`.
+
+**Cascade-order gotcha (must verify):** the single-column collapse `@media` and the base `.workspace { display: grid }` rule have **equal specificity** (media queries add none), so the collapse only wins if it is **later in source order**. The base grid block lives near the end of the file (~line 6319), so the collapse `@media` must be placed **immediately after it** — not in the earlier (~line 4538) responsive block, where the later base grid rule overrides it and the multi-column grid persists in the 900–1240px range. Shipped: the collapse `@media` sits right after the base `.workspace` block; the stale earlier copy was removed.
 
 ## D7 — Surface WebNN as a capability/diagnostics row
 

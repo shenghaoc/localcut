@@ -1,24 +1,60 @@
 import type { CapabilityProbeResult } from '../protocol';
 
+/**
+ * Human-readable reasons recording / Program Mode is unavailable. Covers **every**
+ * hard gate in `recordingAvailable()` (capability-probe-v2): the tier-level gates
+ * that compose `tier === 'core-webgpu'` (isolation, SAB, OffscreenCanvas, WebGPU
+ * core, video decode) *and* the capture-pipeline probes. Keeping this exhaustive
+ * means a disabled Record/Program panel always has at least one actionable line,
+ * even when the blocker is a non-capture capability.
+ */
 export function captureUnavailableReasons(probe: CapabilityProbeResult): string[] {
 	const reasons: string[] = [];
-	if (probe.capture.mediaStreamTrackProcessor !== 'supported') {
+	const cap = probe.capture;
+	const codecs = probe.codecs;
+
+	// Tier-level gates (recordingAvailable requires tier === 'core-webgpu').
+	if (probe.crossOriginIsolated !== true) {
+		reasons.push('Cross-origin isolation (COOP/COEP) is unavailable.');
+	}
+	if (probe.sharedArrayBuffer !== 'supported') {
+		reasons.push('SharedArrayBuffer is unavailable.');
+	}
+	if (probe.offscreenCanvas !== 'supported') {
+		reasons.push('OffscreenCanvas is unavailable.');
+	}
+	if (probe.webGPUCore !== 'supported') {
+		reasons.push('WebGPU (core) is unavailable.');
+	}
+	if (
+		codecs.h264Decode !== 'supported' &&
+		codecs.vp9Decode !== 'supported' &&
+		codecs.av1Decode !== 'supported'
+	) {
+		reasons.push('Hardware video decode is unavailable.');
+	}
+
+	// Capture-pipeline gates.
+	if (cap.mediaStreamTrackProcessor !== 'supported') {
 		reasons.push('MediaStreamTrackProcessor is unavailable.');
 	}
-	if (probe.capture.transferableMediaStreamTrack === 'unsupported') {
+	if (cap.transferableMediaStreamTrack === 'unsupported') {
 		// Recording transfers the source track into the pipeline worker, so this is
 		// a genuine blocker. Surface the actionable workaround rather than a dead end.
 		reasons.push(
 			'Transferable MediaStreamTrack is unavailable. Enable chrome://flags/#enable-experimental-web-platform-features to record on this browser.'
 		);
 	}
-	if (probe.capture.displayCapture !== 'supported') {
+	if (cap.displayCapture !== 'supported') {
 		reasons.push('Display capture is unavailable.');
 	}
-	if (probe.capture.videoEncodeRealtime !== 'supported') {
+	if (cap.videoEncodeRealtime !== 'supported') {
 		reasons.push('Realtime video encode is unavailable.');
 	}
-	if (probe.capture.opfsSyncAccessHandle !== 'supported') {
+	if (cap.audioEncodeOpus !== 'supported') {
+		reasons.push('Opus audio encode is unavailable.');
+	}
+	if (cap.opfsSyncAccessHandle !== 'supported') {
 		reasons.push('OPFS SyncAccessHandle is unavailable.');
 	}
 	return reasons;

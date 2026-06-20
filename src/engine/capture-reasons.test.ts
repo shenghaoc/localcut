@@ -2,8 +2,28 @@ import { describe, it, expect } from 'vite-plus/test';
 import { captureUnavailableReasons } from './capture-reasons';
 import type { CapabilityProbeResult } from '../protocol';
 
-function probe(overrides: Partial<CapabilityProbeResult['capture']> = {}): CapabilityProbeResult {
+function probe(
+	captureOverrides: Partial<CapabilityProbeResult['capture']> = {},
+	probeOverrides: Partial<CapabilityProbeResult> = {}
+): CapabilityProbeResult {
+	const allDecode = {
+		h264Decode: 'supported',
+		vp9Decode: 'supported',
+		av1Decode: 'supported',
+		h264Encode: 'supported',
+		vp9Encode: 'supported',
+		av1Encode: 'supported',
+		aacDecode: 'supported',
+		opusDecode: 'supported',
+		aacEncode: 'supported',
+		opusEncode: 'supported'
+	};
 	return {
+		crossOriginIsolated: true,
+		sharedArrayBuffer: 'supported',
+		offscreenCanvas: 'supported',
+		webGPUCore: 'supported',
+		codecs: allDecode,
 		capture: {
 			mediaStreamTrackProcessor: 'supported',
 			transferableMediaStreamTrack: 'supported',
@@ -13,13 +33,14 @@ function probe(overrides: Partial<CapabilityProbeResult['capture']> = {}): Capab
 			audioEncodeOpus: 'supported',
 			audioEncodeAac: 'supported',
 			opfsSyncAccessHandle: 'supported',
-			...overrides
-		}
+			...captureOverrides
+		},
+		...probeOverrides
 	} as unknown as CapabilityProbeResult;
 }
 
 describe('captureUnavailableReasons', () => {
-	it('returns empty array when all capture probes pass', () => {
+	it('returns empty array when all gates pass', () => {
 		expect(captureUnavailableReasons(probe())).toEqual([]);
 	});
 	it('names realtime video encode when missing', () => {
@@ -30,7 +51,27 @@ describe('captureUnavailableReasons', () => {
 		const reasons = captureUnavailableReasons(probe({ opfsSyncAccessHandle: 'unknown' }));
 		expect(reasons).toContain('OPFS SyncAccessHandle is unavailable.');
 	});
-	it('never mentions WebGPU or WebCodecs', () => {
+	it('names Opus audio encode when missing (a hard recordingAvailable gate)', () => {
+		const reasons = captureUnavailableReasons(probe({ audioEncodeOpus: 'unsupported' }));
+		expect(reasons).toContain('Opus audio encode is unavailable.');
+	});
+	it('names tier-level gates (COOP/COEP, SAB, OffscreenCanvas, WebGPU) when missing', () => {
+		expect(
+			captureUnavailableReasons(probe({}, { crossOriginIsolated: false })).some((r) =>
+				r.includes('COOP/COEP')
+			)
+		).toBe(true);
+		expect(captureUnavailableReasons(probe({}, { sharedArrayBuffer: 'unsupported' }))).toContain(
+			'SharedArrayBuffer is unavailable.'
+		);
+		expect(captureUnavailableReasons(probe({}, { offscreenCanvas: 'unsupported' }))).toContain(
+			'OffscreenCanvas is unavailable.'
+		);
+		expect(captureUnavailableReasons(probe({}, { webGPUCore: 'unsupported' }))).toContain(
+			'WebGPU (core) is unavailable.'
+		);
+	});
+	it('does not blame WebGPU or WebCodecs when those are present', () => {
 		const reasons = captureUnavailableReasons(probe({ videoEncodeRealtime: 'unsupported' }));
 		expect(reasons.some((r) => r.includes('WebGPU'))).toBe(false);
 		expect(reasons.some((r) => r.includes('WebCodecs'))).toBe(false);

@@ -7685,7 +7685,7 @@ async function handleDiagnosticSnapshot(requestId: string): Promise<void> {
 		sources,
 		voiceCleanup: voiceCleanupSettings,
 		livePublish: currentCapabilityProbe?.livePublish ?? null,
-		capture: currentCapabilityProbe?.capture,
+		probe: currentCapabilityProbe ?? null,
 		programMode: currentCapabilityProbe?.programMode
 	});
 	post({ type: 'diagnostic-snapshot', requestId, snapshot });
