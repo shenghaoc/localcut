@@ -6,8 +6,7 @@ import {
 	Show,
 	on,
 	onMount,
-	onCleanup,
-	type JSX
+	onCleanup
 } from 'solid-js';
 import { Tabs } from '@ark-ui/solid/tabs';
 import { useRegisterSW } from 'virtual:pwa-register/solid';
@@ -96,6 +95,7 @@ import {
 	type SideRailTab,
 	type TextSideRailTab
 } from './side-rail-tabs';
+import { SecondaryRailPanel, SecondaryRailTabs } from './SecondaryRailTabs';
 import { CalloutTool } from './CalloutTool';
 import { Timeline } from './Timeline';
 import { Inspector, type SelectedClip, type SelectedTransition } from './Inspector';
@@ -389,42 +389,6 @@ function readInitialSideRailState(): InitialSideRailState {
 	} catch {
 		return { collapsed: false, tab: 'inspector' };
 	}
-}
-
-function secondaryTabId(prefix: string, tab: string): string {
-	return `${prefix}-tab-${tab}`;
-}
-
-function secondaryPanelId(prefix: string, tab: string): string {
-	return `${prefix}-panel-${tab}`;
-}
-
-function SecondaryRailTabs<T extends string>(props: {
-	idPrefix: string;
-	label: string;
-	tabs: readonly { readonly id: T; readonly label: string }[];
-	value: T;
-	onSelect: (tab: T) => void;
-}): JSX.Element {
-	return (
-		<div class="side-rail-secondary-tabs" role="tablist" aria-label={props.label}>
-			<For each={props.tabs}>
-				{(tab) => (
-					<button
-						type="button"
-						id={secondaryTabId(props.idPrefix, tab.id)}
-						class="side-rail-secondary-tab"
-						role="tab"
-						aria-selected={props.value === tab.id ? 'true' : 'false'}
-						aria-controls={secondaryPanelId(props.idPrefix, tab.id)}
-						onClick={() => props.onSelect(tab.id)}
-					>
-						{tab.label}
-					</button>
-				)}
-			</For>
-		</div>
-	);
 }
 
 export function App() {
@@ -5073,166 +5037,160 @@ export function App() {
 												value={activeTextSideRailTab()}
 												onSelect={openTextSideRailTab}
 											/>
-											<Show when={activeTextSideRailTab() === 'captions'}>
-												<div
-													id={secondaryPanelId('text', 'captions')}
-													class="side-rail-secondary-panel"
-													role="tabpanel"
-													aria-labelledby={secondaryTabId('text', 'captions')}
-												>
-													<TranscriptPanel
-														captionTracks={captionTracks()}
-														diagnostics={captionDiagnostics()}
-														playheadTime={clock.currentTime()}
-														selectedTrackId={selectedCaptionTrackId()}
-														selectedSegmentIds={selectedCaptionSegmentIds()}
-														onSelectTrack={setSelectedCaptionTrackId}
-														onSelectSegmentIds={setSelectedCaptionSegmentIds}
-														onImport={(file, trackId) =>
-															captionBridge().send(
-																trackId
-																	? { type: 'import-captions', file, trackId }
-																	: { type: 'import-captions', file }
-															)
-														}
-														onExport={(settings: CaptionExportSettingsSnapshot) =>
-															captionBridge().send({ type: 'export-captions', settings })
-														}
-														onSetTrack={(trackId, patch) =>
-															captionBridge().send({
-																type: 'set-caption-track',
-																trackId,
-																...patch
-															})
-														}
-														onDeleteTrack={(trackId) =>
-															captionBridge().send({ type: 'delete-caption-track', trackId })
-														}
-														onDeleteTracks={(trackIds) => {
-															captionBridge().send({ type: 'delete-caption-tracks', trackIds });
-														}}
-														onSetSegmentText={(trackId, segmentId, text) =>
-															captionBridge().send({
-																type: 'set-caption-segment-text',
-																trackId,
-																segmentId,
-																text
-															})
-														}
-														onSetSegmentTiming={(trackId, segmentId, start, end) =>
-															captionBridge().send({
-																type: 'set-caption-segment-timing',
-																trackId,
-																segmentId,
-																start,
-																end
-															})
-														}
-														onSetSegmentStyle={(trackId, segmentId, style) =>
-															captionBridge().send({
-																type: 'set-caption-segment-style',
-																trackId,
-																segmentId,
-																style
-															})
-														}
-														onSplit={(trackId, segmentId, time) =>
-															captionBridge().send({
-																type: 'split-caption-segment',
-																trackId,
-																segmentId,
-																time
-															})
-														}
-														onMerge={(trackId, segmentIds) =>
-															captionBridge().send({
-																type: 'merge-caption-segments',
-																trackId,
-																segmentIds
-															})
-														}
-														onDelete={(trackId, segmentIds) =>
-															captionBridge().send({
-																type: 'delete-caption-segments',
-																trackId,
-																segmentIds
-															})
-														}
-														onSnap={(trackId, segmentId, edge) =>
-															captionBridge().send({
-																type: 'snap-caption-segment',
-																trackId,
-																segmentId,
-																edge
-															})
-														}
-														customAnimCaptionPresets={customAnimCaptionPresets()}
-														onSetAnimPreset={(trackId, segmentId, presetId) =>
-															captionBridge().send({
-																type: 'caption-set-anim-style',
-																trackId,
-																segmentId,
-																presetId
-															})
-														}
-														onImportCustomPreset={(preset) =>
-															captionBridge().send({
-																type: 'caption-import-custom-preset',
-																preset
-															})
-														}
-														onDeleteCustomPreset={(presetId) =>
-															captionBridge().send({
-																type: 'caption-delete-custom-preset',
-																presetId
-															})
-														}
-													/>
-												</div>
-											</Show>
-											<Show when={activeTextSideRailTab() === 'language-tools'}>
-												<div
-													id={secondaryPanelId('text', 'language-tools')}
-													class="side-rail-secondary-panel"
-													role="tabpanel"
-													aria-labelledby={secondaryTabId('text', 'language-tools')}
-												>
-													<LanguageToolsPanel
-														mode="embedded"
-														open={true}
-														translationState={translationState()}
-														draftState={draftState()}
-														captionTracks={captionTracks()}
-														onTranslate={(trackId, targetLang) => {
-															const track = captionTracks().find((t) => t.id === trackId);
-															if (!track) return;
-															pauseFromKeyboard();
-															void translationController.translateTrack(
-																{
-																	id: track.id,
-																	name: track.name,
-																	language: track.language ?? undefined,
-																	segments: track.segments
-																},
-																targetLang
-															);
-														}}
-														onCancelTranslate={() => translationController.cancel()}
-														onGenerateDraft={(trackId) => {
-															const track = captionTracks().find((t) => t.id === trackId);
-															if (!track) return;
-															pauseFromKeyboard();
-															void draftController.generateDraft(track.segments);
-														}}
-														onCancelDraft={() => draftController.cancel()}
-														onExportBilingual={(sourceTrackId, translatedTrackId) => {
-															exportBilingualCaptions(sourceTrackId, translatedTrackId);
-														}}
-														onOpenGuide={() => openDocs('language-tools')}
-														onClose={() => openTextSideRailTab('captions')}
-													/>
-												</div>
-											</Show>
+											<SecondaryRailPanel
+												idPrefix="text"
+												tab="captions"
+												value={activeTextSideRailTab()}
+											>
+												<TranscriptPanel
+													captionTracks={captionTracks()}
+													diagnostics={captionDiagnostics()}
+													playheadTime={clock.currentTime()}
+													selectedTrackId={selectedCaptionTrackId()}
+													selectedSegmentIds={selectedCaptionSegmentIds()}
+													onSelectTrack={setSelectedCaptionTrackId}
+													onSelectSegmentIds={setSelectedCaptionSegmentIds}
+													onImport={(file, trackId) =>
+														captionBridge().send(
+															trackId
+																? { type: 'import-captions', file, trackId }
+																: { type: 'import-captions', file }
+														)
+													}
+													onExport={(settings: CaptionExportSettingsSnapshot) =>
+														captionBridge().send({ type: 'export-captions', settings })
+													}
+													onSetTrack={(trackId, patch) =>
+														captionBridge().send({
+															type: 'set-caption-track',
+															trackId,
+															...patch
+														})
+													}
+													onDeleteTrack={(trackId) =>
+														captionBridge().send({ type: 'delete-caption-track', trackId })
+													}
+													onDeleteTracks={(trackIds) => {
+														captionBridge().send({ type: 'delete-caption-tracks', trackIds });
+													}}
+													onSetSegmentText={(trackId, segmentId, text) =>
+														captionBridge().send({
+															type: 'set-caption-segment-text',
+															trackId,
+															segmentId,
+															text
+														})
+													}
+													onSetSegmentTiming={(trackId, segmentId, start, end) =>
+														captionBridge().send({
+															type: 'set-caption-segment-timing',
+															trackId,
+															segmentId,
+															start,
+															end
+														})
+													}
+													onSetSegmentStyle={(trackId, segmentId, style) =>
+														captionBridge().send({
+															type: 'set-caption-segment-style',
+															trackId,
+															segmentId,
+															style
+														})
+													}
+													onSplit={(trackId, segmentId, time) =>
+														captionBridge().send({
+															type: 'split-caption-segment',
+															trackId,
+															segmentId,
+															time
+														})
+													}
+													onMerge={(trackId, segmentIds) =>
+														captionBridge().send({
+															type: 'merge-caption-segments',
+															trackId,
+															segmentIds
+														})
+													}
+													onDelete={(trackId, segmentIds) =>
+														captionBridge().send({
+															type: 'delete-caption-segments',
+															trackId,
+															segmentIds
+														})
+													}
+													onSnap={(trackId, segmentId, edge) =>
+														captionBridge().send({
+															type: 'snap-caption-segment',
+															trackId,
+															segmentId,
+															edge
+														})
+													}
+													customAnimCaptionPresets={customAnimCaptionPresets()}
+													onSetAnimPreset={(trackId, segmentId, presetId) =>
+														captionBridge().send({
+															type: 'caption-set-anim-style',
+															trackId,
+															segmentId,
+															presetId
+														})
+													}
+													onImportCustomPreset={(preset) =>
+														captionBridge().send({
+															type: 'caption-import-custom-preset',
+															preset
+														})
+													}
+													onDeleteCustomPreset={(presetId) =>
+														captionBridge().send({
+															type: 'caption-delete-custom-preset',
+															presetId
+														})
+													}
+												/>
+											</SecondaryRailPanel>
+											<SecondaryRailPanel
+												idPrefix="text"
+												tab="language-tools"
+												value={activeTextSideRailTab()}
+											>
+												<LanguageToolsPanel
+													mode="embedded"
+													open={true}
+													translationState={translationState()}
+													draftState={draftState()}
+													captionTracks={captionTracks()}
+													onTranslate={(trackId, targetLang) => {
+														const track = captionTracks().find((t) => t.id === trackId);
+														if (!track) return;
+														pauseFromKeyboard();
+														void translationController.translateTrack(
+															{
+																id: track.id,
+																name: track.name,
+																language: track.language ?? undefined,
+																segments: track.segments
+															},
+															targetLang
+														);
+													}}
+													onCancelTranslate={() => translationController.cancel()}
+													onGenerateDraft={(trackId) => {
+														const track = captionTracks().find((t) => t.id === trackId);
+														if (!track) return;
+														pauseFromKeyboard();
+														void draftController.generateDraft(track.segments);
+													}}
+													onCancelDraft={() => draftController.cancel()}
+													onExportBilingual={(sourceTrackId, translatedTrackId) => {
+														exportBilingualCaptions(sourceTrackId, translatedTrackId);
+													}}
+													onOpenGuide={() => openDocs('language-tools')}
+													onClose={() => openTextSideRailTab('captions')}
+												/>
+											</SecondaryRailPanel>
 										</Tabs.Content>
 										<Tabs.Content
 											value="capture"
@@ -5247,161 +5205,149 @@ export function App() {
 												value={activeCaptureSideRailTab()}
 												onSelect={openCaptureSideRailTab}
 											/>
-											<Show when={activeCaptureSideRailTab() === 'record'}>
-												<div
-													id={secondaryPanelId('capture', 'record')}
-													class="side-rail-secondary-panel"
-													role="tabpanel"
-													aria-labelledby={secondaryTabId('capture', 'record')}
-												>
-													<RecordPanel
-														probe={capabilityProbeV2()}
-														status={recorderStatus()}
-														retakeClipId={retakeClipId()}
-														retakeSourceKinds={retakeSourceKinds()}
-														landedSessionId={recorderLandedSessionId()}
-														onAddSource={(source, track, transfer) =>
-															bridge?.send(
-																// track === null ⇒ main-frames push pipeline (no transfer).
-																{
-																	type: 'capture-add-source',
-																	source,
-																	track: track ?? undefined
-																},
-																transfer
-															)
+											<SecondaryRailPanel
+												idPrefix="capture"
+												tab="record"
+												value={activeCaptureSideRailTab()}
+											>
+												<RecordPanel
+													probe={capabilityProbeV2()}
+													status={recorderStatus()}
+													retakeClipId={retakeClipId()}
+													retakeSourceKinds={retakeSourceKinds()}
+													landedSessionId={recorderLandedSessionId()}
+													onAddSource={(source, track, transfer) =>
+														bridge?.send(
+															// track === null ⇒ main-frames push pipeline (no transfer).
+															{
+																type: 'capture-add-source',
+																source,
+																track: track ?? undefined
+															},
+															transfer
+														)
+													}
+													onPushFrame={(sourceId, frame) => {
+														// The frame must be closed exactly once. With no worker (teardown
+														// race), close it here and return quietly.
+														if (!bridge) {
+															frame.close();
+															return;
 														}
-														onPushFrame={(sourceId, frame) => {
-															// The frame must be closed exactly once. With no worker (teardown
-															// race), close it here and return quietly.
-															if (!bridge) {
-																frame.close();
-																return;
-															}
-															// Backpressure: if too many frames are already in flight to the
-															// worker, drop this one (close it) instead of growing the transfer
-															// queue with large frame handles. Acks (capture-push-ack) decrement.
-															const inFlight = capturePushInFlight.get(sourceId) ?? 0;
-															if (inFlight >= CAPTURE_PUSH_FRAME_BOUND) {
-																frame.close();
-																return;
-															}
-															// A transfer failure (e.g. DataCloneError — the frame is still owned
-															// here) propagates so the frame reader closes the un-transferred frame,
-															// surfaces the error, and stops forwarding. Increment only after a
-															// successful transfer.
-															bridge.send({ type: 'capture-push-frame', sourceId, frame }, [
-																frame as unknown as Transferable
-															]);
-															capturePushInFlight.set(sourceId, inFlight + 1);
-														}}
-														onSourceEnded={(sourceId) => {
-															capturePushInFlight.delete(sourceId);
-															bridge?.send({ type: 'capture-source-ended', sourceId });
-														}}
-														onStart={(settings, writerPort, activeRetakeClipId, transfer) => {
-															setRecorderLandedSessionId(null);
-															bridge?.send(
-																{
-																	type: 'capture-start',
-																	settings,
-																	writerPort,
-																	retakeClipId: activeRetakeClipId ?? undefined
-																},
-																transfer
-															);
-														}}
-														onPause={() => bridge?.send({ type: 'capture-pause' })}
-														onResume={() => bridge?.send({ type: 'capture-resume' })}
-														onStop={() => bridge?.send({ type: 'capture-stop' })}
-														onApplyRegion={(sourceId, mode) =>
-															bridge?.send({ type: 'capture-apply-region', sourceId, mode })
+														// Backpressure: if too many frames are already in flight to the
+														// worker, drop this one (close it) instead of growing the transfer
+														// queue with large frame handles. Acks (capture-push-ack) decrement.
+														const inFlight = capturePushInFlight.get(sourceId) ?? 0;
+														if (inFlight >= CAPTURE_PUSH_FRAME_BOUND) {
+															frame.close();
+															return;
 														}
-														onRetakeCleared={() => setRetakeClipId(null)}
-													/>
-												</div>
-											</Show>
-											<Show when={activeCaptureSideRailTab() === 'program'}>
-												<div
-													id={secondaryPanelId('capture', 'program')}
-													class="side-rail-secondary-panel"
-													role="tabpanel"
-													aria-labelledby={secondaryTabId('capture', 'program')}
-												>
-													<ProgramPanel
-														programMode={programModeSupport}
-														probe={capabilityProbeV2()}
-														scenes={programScenes}
-														sessionState={programSessionState}
-														activeSceneId={programActiveSceneId}
-														sourceStatus={programSourceStatus}
-														budgetUsage={programBudgetUsage}
-														acquiredSources={programSources}
-														error={programError}
-														transitionMs={programTransitionMs}
-														onAddScreen={() => void addProgramScreen()}
-														onAddCamera={(deviceId) => void addProgramCamera(deviceId)}
-														onAddMic={(deviceId) => void addProgramMic(deviceId)}
-														onRemoveSource={removeProgramSource}
-														onAddScene={addProgramScene}
-														onRemoveScene={removeProgramScene}
-														onRenameScene={renameProgramScene}
-														onSetHotkey={setProgramSceneHotkey}
-														onUpdateLayers={updateProgramSceneLayers}
-														onSetTransitionMs={setProgramTransitionMs}
-														onStart={startProgramSession}
-														onStop={stopProgramSession}
-														onSwitchScene={switchProgramScene}
-													/>
-												</div>
-											</Show>
-											<Show when={activeCaptureSideRailTab() === 'replay'}>
-												<div
-													id={secondaryPanelId('capture', 'replay')}
-													class="side-rail-secondary-panel"
-													role="tabpanel"
-													aria-labelledby={secondaryTabId('capture', 'replay')}
-												>
-													<ReplayBufferPanel
-														captureState={captureSession()}
-														ringBufferState={replayBufferState()}
-														onStartCapture={() => void startReplayCapture()}
-														onStopCapture={stopReplayCapture}
-														onSaveLastN={(nSeconds) => {
-															if (!bridge) return;
-															setReplaySaveInProgress(true);
-															bridge.send({ type: 'replay-save-last-n', nSeconds });
-														}}
-														saveInProgress={replaySaveInProgress()}
-														isSupported={replayCaptureSupported()}
-														supportedReason={replayCaptureUnsupportedReason()}
-														crossOriginIsolated={capabilities().crossOriginIsolated}
-														initiallyExpanded={true}
-													/>
-												</div>
-											</Show>
-											<Show when={activeCaptureSideRailTab() === 'publish'}>
-												<div
-													id={secondaryPanelId('capture', 'publish')}
-													class="side-rail-secondary-panel"
-													role="tabpanel"
-													aria-labelledby={secondaryTabId('capture', 'publish')}
-												>
-													<PublishPanel
-														mode="embedded"
-														open={true}
-														probe={capabilityProbeV2()}
-														state={publishState()}
-														tapStats={publishTapStats()}
-														errorDetail={publishErrorDetail()}
-														recordWhileStreamingAvailable={recordWhileStreaming()}
-														onGoLive={(settings) => void publishController.goLive(settings)}
-														onStop={() => void publishController.stop()}
-														onClose={() => openCaptureSideRailTab('record')}
-														onOpenGuide={() => openDocs('live-streaming')}
-													/>
-												</div>
-											</Show>
+														// A transfer failure (e.g. DataCloneError — the frame is still owned
+														// here) propagates so the frame reader closes the un-transferred frame,
+														// surfaces the error, and stops forwarding. Increment only after a
+														// successful transfer.
+														bridge.send({ type: 'capture-push-frame', sourceId, frame }, [
+															frame as unknown as Transferable
+														]);
+														capturePushInFlight.set(sourceId, inFlight + 1);
+													}}
+													onSourceEnded={(sourceId) => {
+														capturePushInFlight.delete(sourceId);
+														bridge?.send({ type: 'capture-source-ended', sourceId });
+													}}
+													onStart={(settings, writerPort, activeRetakeClipId, transfer) => {
+														setRecorderLandedSessionId(null);
+														bridge?.send(
+															{
+																type: 'capture-start',
+																settings,
+																writerPort,
+																retakeClipId: activeRetakeClipId ?? undefined
+															},
+															transfer
+														);
+													}}
+													onPause={() => bridge?.send({ type: 'capture-pause' })}
+													onResume={() => bridge?.send({ type: 'capture-resume' })}
+													onStop={() => bridge?.send({ type: 'capture-stop' })}
+													onApplyRegion={(sourceId, mode) =>
+														bridge?.send({ type: 'capture-apply-region', sourceId, mode })
+													}
+													onRetakeCleared={() => setRetakeClipId(null)}
+												/>
+											</SecondaryRailPanel>
+											<SecondaryRailPanel
+												idPrefix="capture"
+												tab="program"
+												value={activeCaptureSideRailTab()}
+											>
+												<ProgramPanel
+													programMode={programModeSupport}
+													probe={capabilityProbeV2()}
+													scenes={programScenes}
+													sessionState={programSessionState}
+													activeSceneId={programActiveSceneId}
+													sourceStatus={programSourceStatus}
+													budgetUsage={programBudgetUsage}
+													acquiredSources={programSources}
+													error={programError}
+													transitionMs={programTransitionMs}
+													onAddScreen={() => void addProgramScreen()}
+													onAddCamera={(deviceId) => void addProgramCamera(deviceId)}
+													onAddMic={(deviceId) => void addProgramMic(deviceId)}
+													onRemoveSource={removeProgramSource}
+													onAddScene={addProgramScene}
+													onRemoveScene={removeProgramScene}
+													onRenameScene={renameProgramScene}
+													onSetHotkey={setProgramSceneHotkey}
+													onUpdateLayers={updateProgramSceneLayers}
+													onSetTransitionMs={setProgramTransitionMs}
+													onStart={startProgramSession}
+													onStop={stopProgramSession}
+													onSwitchScene={switchProgramScene}
+												/>
+											</SecondaryRailPanel>
+											<SecondaryRailPanel
+												idPrefix="capture"
+												tab="replay"
+												value={activeCaptureSideRailTab()}
+											>
+												<ReplayBufferPanel
+													captureState={captureSession()}
+													ringBufferState={replayBufferState()}
+													onStartCapture={() => void startReplayCapture()}
+													onStopCapture={stopReplayCapture}
+													onSaveLastN={(nSeconds) => {
+														if (!bridge) return;
+														setReplaySaveInProgress(true);
+														bridge.send({ type: 'replay-save-last-n', nSeconds });
+													}}
+													saveInProgress={replaySaveInProgress()}
+													isSupported={replayCaptureSupported()}
+													supportedReason={replayCaptureUnsupportedReason()}
+													crossOriginIsolated={capabilities().crossOriginIsolated}
+													initiallyExpanded={true}
+												/>
+											</SecondaryRailPanel>
+											<SecondaryRailPanel
+												idPrefix="capture"
+												tab="publish"
+												value={activeCaptureSideRailTab()}
+											>
+												<PublishPanel
+													mode="embedded"
+													open={true}
+													probe={capabilityProbeV2()}
+													state={publishState()}
+													tapStats={publishTapStats()}
+													errorDetail={publishErrorDetail()}
+													recordWhileStreamingAvailable={recordWhileStreaming()}
+													onGoLive={(settings) => void publishController.goLive(settings)}
+													onStop={() => void publishController.stop()}
+													onClose={() => openCaptureSideRailTab('record')}
+													onOpenGuide={() => openDocs('live-streaming')}
+												/>
+											</SecondaryRailPanel>
 										</Tabs.Content>
 										<Tabs.Content
 											value="audio"
@@ -5416,84 +5362,78 @@ export function App() {
 												value={activeAudioSideRailTab()}
 												onSelect={openAudioSideRailTab}
 											/>
-											<Show when={activeAudioSideRailTab() === 'live-chain'}>
-												<div
-													id={secondaryPanelId('audio', 'live-chain')}
-													class="side-rail-secondary-panel"
-													role="tabpanel"
-													aria-labelledby={secondaryTabId('audio', 'live-chain')}
-												>
-													<LiveAudioChainPanel
-														config={liveChainConfig()}
-														onConfigChange={(partial) =>
-															bridge?.send({ type: 'update-live-chain-config', config: partial })
-														}
-														latencyMs={liveChainLatencyMs()}
-														crossOriginIsolated={capabilities().crossOriginIsolated}
-														isCapturing={captureSession()?.active ?? false}
-														initiallyExpanded={true}
-													/>
-												</div>
-											</Show>
-											<Show when={activeAudioSideRailTab() === 'voice-fx'}>
-												<div
-													id={secondaryPanelId('audio', 'voice-fx')}
-													class="side-rail-secondary-panel"
-													role="tabpanel"
-													aria-labelledby={secondaryTabId('audio', 'voice-fx')}
-												>
-													<VoiceCleanupPanel
-														settings={voiceCleanupSettings()}
-														trackNames={
-															new Map(
-																timeline()
-																	.filter((t) => t.type === 'audio')
-																	.map((t) => [t.id, `Audio ${t.id.slice(0, 8)}`])
-															)
-														}
-														onSettingsChange={(settings) => {
-															setVoiceCleanupSettings(settings);
-															bridge?.send({ type: 'voice-cleanup-update-settings', settings });
-														}}
-														onAnalyseLoudness={(targetLufs) => {
-															setVoiceCleanupAnalysisState('running');
-															setVoiceCleanupAnalysisProgress(0);
-															setVoiceCleanupMeasuredLufs(0);
-															setVoiceCleanupProposedGainDb(0);
-															setVoiceCleanupNormalisedLufs(0);
-															bridge?.send({
-																type: 'voice-cleanup-analyse-loudness',
-																targetLufs
-															});
-														}}
-														onCancelAnalysis={() => {
-															bridge?.send({ type: 'voice-cleanup-cancel-analysis' });
-														}}
-														onApplyNormalisation={(gainDb) => {
-															setVoiceCleanupSettings((s) => ({
-																...s,
-																normaliseGainDb: gainDb
-															}));
-															bridge?.send({
-																type: 'voice-cleanup-apply-normalisation',
-																normalisationGainDb: gainDb
-															});
-														}}
-														analysisState={voiceCleanupAnalysisState()}
-														analysisProgress={voiceCleanupAnalysisProgress()}
-														measuredLufs={voiceCleanupMeasuredLufs()}
-														proposedGainDb={voiceCleanupProposedGainDb()}
-														normalisedLufs={voiceCleanupNormalisedLufs()}
-														analysisError={voiceCleanupAnalysisError()}
-														latencyMs={voiceCleanupMonitorLatencyMs()}
-														sampleRate={voiceCleanupMonitorSampleRate()}
-														timelineEmpty={timeline().length === 0}
-														denoiserStatus={voiceCleanupDenoiserStatus()}
-														denoiserUnavailableReason={voiceCleanupDenoiserUnavailableReason()}
-														initiallyExpanded={true}
-													/>
-												</div>
-											</Show>
+											<SecondaryRailPanel
+												idPrefix="audio"
+												tab="live-chain"
+												value={activeAudioSideRailTab()}
+											>
+												<LiveAudioChainPanel
+													config={liveChainConfig()}
+													onConfigChange={(partial) =>
+														bridge?.send({ type: 'update-live-chain-config', config: partial })
+													}
+													latencyMs={liveChainLatencyMs()}
+													crossOriginIsolated={capabilities().crossOriginIsolated}
+													isCapturing={captureSession()?.active ?? false}
+													initiallyExpanded={true}
+												/>
+											</SecondaryRailPanel>
+											<SecondaryRailPanel
+												idPrefix="audio"
+												tab="voice-fx"
+												value={activeAudioSideRailTab()}
+											>
+												<VoiceCleanupPanel
+													settings={voiceCleanupSettings()}
+													trackNames={
+														new Map(
+															timeline()
+																.filter((t) => t.type === 'audio')
+																.map((t) => [t.id, `Audio ${t.id.slice(0, 8)}`])
+														)
+													}
+													onSettingsChange={(settings) => {
+														setVoiceCleanupSettings(settings);
+														bridge?.send({ type: 'voice-cleanup-update-settings', settings });
+													}}
+													onAnalyseLoudness={(targetLufs) => {
+														setVoiceCleanupAnalysisState('running');
+														setVoiceCleanupAnalysisProgress(0);
+														setVoiceCleanupMeasuredLufs(0);
+														setVoiceCleanupProposedGainDb(0);
+														setVoiceCleanupNormalisedLufs(0);
+														bridge?.send({
+															type: 'voice-cleanup-analyse-loudness',
+															targetLufs
+														});
+													}}
+													onCancelAnalysis={() => {
+														bridge?.send({ type: 'voice-cleanup-cancel-analysis' });
+													}}
+													onApplyNormalisation={(gainDb) => {
+														setVoiceCleanupSettings((s) => ({
+															...s,
+															normaliseGainDb: gainDb
+														}));
+														bridge?.send({
+															type: 'voice-cleanup-apply-normalisation',
+															normalisationGainDb: gainDb
+														});
+													}}
+													analysisState={voiceCleanupAnalysisState()}
+													analysisProgress={voiceCleanupAnalysisProgress()}
+													measuredLufs={voiceCleanupMeasuredLufs()}
+													proposedGainDb={voiceCleanupProposedGainDb()}
+													normalisedLufs={voiceCleanupNormalisedLufs()}
+													analysisError={voiceCleanupAnalysisError()}
+													latencyMs={voiceCleanupMonitorLatencyMs()}
+													sampleRate={voiceCleanupMonitorSampleRate()}
+													timelineEmpty={timeline().length === 0}
+													denoiserStatus={voiceCleanupDenoiserStatus()}
+													denoiserUnavailableReason={voiceCleanupDenoiserUnavailableReason()}
+													initiallyExpanded={true}
+												/>
+											</SecondaryRailPanel>
 										</Tabs.Content>
 									</div>
 								</Tabs.Root>

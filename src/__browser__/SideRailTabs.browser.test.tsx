@@ -4,11 +4,14 @@ import { createSignal, For } from 'solid-js';
 import { Tabs } from '@ark-ui/solid/tabs';
 import '../global.css';
 import {
+	CAPTURE_SIDE_RAIL_TABS,
 	SIDE_RAIL_TABS,
 	isSideRailTab,
 	sideRailTabTriggerId,
+	type CaptureSideRailTab,
 	type SideRailTab
 } from '../ui/side-rail-tabs';
+import { SecondaryRailPanel, SecondaryRailTabs } from '../ui/SecondaryRailTabs';
 
 const disposers: Array<() => void> = [];
 
@@ -43,6 +46,35 @@ function renderSideRailTabs(widthPx = 302): HTMLElement {
 					</button>
 				</Tabs.List>
 			</Tabs.Root>
+		),
+		container
+	);
+	disposers.push(dispose);
+	return container;
+}
+
+function renderSecondaryCaptureTabs(): HTMLElement {
+	const container = document.createElement('div');
+	document.body.appendChild(container);
+	const [value, setValue] = createSignal<CaptureSideRailTab>('record');
+	const dispose = render(
+		() => (
+			<div class="side-rail-tab-panel">
+				<SecondaryRailTabs
+					idPrefix="capture"
+					label="Capture tools"
+					tabs={CAPTURE_SIDE_RAIL_TABS}
+					value={value()}
+					onSelect={(tab) => setValue(tab)}
+				/>
+				<For each={CAPTURE_SIDE_RAIL_TABS}>
+					{(tab) => (
+						<SecondaryRailPanel idPrefix="capture" tab={tab.id} value={value()}>
+							<button type="button">Panel {tab.label}</button>
+						</SecondaryRailPanel>
+					)}
+				</For>
+			</div>
 		),
 		container
 	);
@@ -87,5 +119,61 @@ describe('right-rail primary destinations (IA-T4 / IA-T5)', () => {
 			await nextFrame();
 			expect(tab.getAttribute('data-selected')).not.toBeNull();
 		}
+	});
+
+	it('keeps secondary tab ARIA targets mounted and keyboard navigable', async () => {
+		const container = renderSecondaryCaptureTabs();
+		await nextFrame();
+
+		const tabs = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+		expect(tabs.map((tab) => tab.textContent?.trim())).toEqual([
+			'Record',
+			'Program',
+			'Replay',
+			'Go Live'
+		]);
+
+		for (const tab of tabs) {
+			const panelId = tab.getAttribute('aria-controls');
+			expect(panelId).toBeTruthy();
+			if (!panelId) throw new Error('secondary tab is missing aria-controls');
+			expect(document.getElementById(panelId)).not.toBeNull();
+		}
+
+		const panels = Array.from(container.querySelectorAll<HTMLDivElement>('[role="tabpanel"]'));
+		expect(panels).toHaveLength(4);
+		for (const panel of panels) {
+			expect(panel.tabIndex).toBe(0);
+			const tabId = panel.getAttribute('aria-labelledby');
+			if (!tabId) throw new Error('secondary panel is missing aria-labelledby');
+			expect(document.getElementById(tabId)).not.toBeNull();
+		}
+
+		const [record, program, replay, publish] = tabs;
+		if (!record || !program || !replay || !publish) throw new Error('expected four secondary tabs');
+		expect(record.tabIndex).toBe(0);
+		expect(record.getAttribute('aria-selected')).toBe('true');
+		expect(program.tabIndex).toBe(-1);
+		expect(document.getElementById('capture-panel-record')?.hidden).toBe(false);
+		expect(document.getElementById('capture-panel-program')?.hidden).toBe(true);
+
+		record.focus();
+		record.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+		await nextFrame();
+		expect(program.tabIndex).toBe(0);
+		expect(program.getAttribute('aria-selected')).toBe('true');
+		expect(document.activeElement).toBe(program);
+		expect(document.getElementById('capture-panel-program')?.hidden).toBe(false);
+
+		program.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
+		await nextFrame();
+		expect(publish.tabIndex).toBe(0);
+		expect(document.activeElement).toBe(publish);
+
+		publish.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+		await nextFrame();
+		expect(record.tabIndex).toBe(0);
+		expect(replay.tabIndex).toBe(-1);
+		expect(document.activeElement).toBe(record);
 	});
 });

@@ -6900,6 +6900,9 @@ button.status-badge:hover {
 	flex-direction: column;
 	overflow: auto;
 }
+.side-rail-secondary-panel[hidden] {
+	display: none;
+}
 .side-rail-secondary-panel .replay-buffer-panel,
 .side-rail-secondary-panel .live-audio-chain-panel {
 	display: flex;
