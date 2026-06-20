@@ -77,6 +77,11 @@ interface ToolbarProps {
 	keystrokeOverlayAvailable?: boolean;
 	onOpenLanguageTools?: () => void;
 	onOpenPublish?: () => void;
+	onOpenRecord?: () => void;
+	onOpenCaptions?: () => void;
+	onToggleScopes?: () => void;
+	scopesPanelVisible?: boolean;
+	onScrollToRenderQueue?: () => void;
 	calloutTool?: JSX.Element;
 	/** True while a publish session is connecting/live/reconnecting. */
 	publishLive?: boolean;
@@ -185,7 +190,10 @@ export function Toolbar(props: ToolbarProps) {
 			onSilenceReview: () => props.onOpenSilenceReview?.(),
 			onPublish: () => props.onOpenPublish?.(),
 			onCapabilities: () => props.onOpenCapabilities?.(),
-			onHelp: () => props.onOpenHelp?.()
+			onHelp: () => props.onOpenHelp?.(),
+			onOpenRecord: () => props.onOpenRecord?.(),
+			onOpenCaptions: () => props.onOpenCaptions?.(),
+			onToggleScopes: () => props.onToggleScopes?.()
 		})
 	);
 	const runCommand = (action: CommandAction) => {
@@ -211,7 +219,8 @@ export function Toolbar(props: ToolbarProps) {
 			canRedo: props.canRedo,
 			timelineSnapEnabled: props.timelineSnapEnabled,
 			timelineSnapToBeats: props.timelineSnapToBeats,
-			hasSelection: props.hasSelection
+			hasSelection: props.hasSelection,
+			scopesPanelVisible: props.scopesPanelVisible ?? false
 		})
 	);
 	const runMenuItem = (group: MenuBarGroup, value: string) => {
@@ -239,9 +248,13 @@ export function Toolbar(props: ToolbarProps) {
 			case 'beat-snap':
 				props.onSetTimelineSnapToBeats(!props.timelineSnapToBeats);
 				return;
+			case 'scopes':
+				props.onToggleScopes?.();
+				return;
+			case 'render-queue':
+				props.onScrollToRenderQueue?.();
+				return;
 			case 'split':
-				// Disabled unless a clip is selected (see buildMenuBarGroups); the
-				// guard above already blocks the no-selection case.
 				props.onSplit();
 				return;
 			case 'delete':

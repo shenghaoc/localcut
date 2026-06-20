@@ -38,6 +38,7 @@ export interface MenuBarBuildOptions {
 	timelineSnapToBeats: boolean;
 	/** True when at least one timeline clip is selected — gates `Clip › Split/Delete`. */
 	hasSelection: boolean;
+	scopesPanelVisible: boolean;
 }
 
 /**
@@ -56,7 +57,8 @@ export function buildMenuBarGroups(options: MenuBarBuildOptions): MenuBarGroup[]
 			id: 'project',
 			label: 'Project',
 			items: [
-				{ kind: 'item', id: 'import', label: 'Import media…', disabled: options.importBlocked }
+				{ kind: 'item', id: 'import', label: 'Import media…', disabled: options.importBlocked },
+				{ kind: 'item', id: 'render-queue', label: 'Render queue' }
 			]
 		},
 		{
@@ -70,6 +72,17 @@ export function buildMenuBarGroups(options: MenuBarBuildOptions): MenuBarGroup[]
 					label: 'Redo',
 					kbd: `${mod}+⇧+Z`,
 					disabled: !options.canRedo
+				}
+			]
+		},
+		{
+			id: 'view',
+			label: 'View',
+			items: [
+				{
+					kind: 'item',
+					id: 'scopes',
+					label: options.scopesPanelVisible ? 'Hide scopes' : 'Show scopes'
 				}
 			]
 		},
@@ -152,6 +165,9 @@ export interface CommandActionsBuildOptions {
 	onPublish: () => void;
 	onCapabilities: () => void;
 	onHelp: () => void;
+	onOpenRecord: () => void;
+	onOpenCaptions: () => void;
+	onToggleScopes: () => void;
 }
 
 /**
@@ -210,6 +226,21 @@ export function buildCommandActions(options: CommandActionsBuildOptions): Comman
 			label: 'Remove silences',
 			detail: 'Find and trim silent gaps',
 			onSelect: options.onSilenceReview
+		},
+		{
+			label: 'Record',
+			detail: 'Open recording controls',
+			onSelect: options.onOpenRecord
+		},
+		{
+			label: 'Captions',
+			detail: 'Open caption track editor',
+			onSelect: options.onOpenCaptions
+		},
+		{
+			label: 'View scopes',
+			detail: 'Toggle waveform and vectorscope overlays',
+			onSelect: options.onToggleScopes
 		},
 		{
 			label: 'Go live',

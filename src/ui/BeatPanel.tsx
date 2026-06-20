@@ -23,6 +23,8 @@ export interface BeatPanelProps {
 	onOffsetChange: (offsetMs: number) => void;
 	onAutoCut: (mode: 'split' | 'align') => void;
 	selectedClipCount: () => number;
+	snapToBeats: boolean;
+	onToggleSnapToBeats: (enabled: boolean) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -45,6 +47,16 @@ export function BeatPanel(props: BeatPanelProps) {
 	return (
 		<div class="beat-panel" role="region" aria-label="Beat analysis">
 			<h3 class="beat-panel-title">Beat Detection</h3>
+
+			<label class="beat-panel-snap-link">
+				<input
+					type="checkbox"
+					checked={props.snapToBeats}
+					onChange={(e) => props.onToggleSnapToBeats(e.currentTarget.checked)}
+					disabled={!hasBeatData()}
+				/>
+				<span>{hasBeatData() ? 'Snap to these beats' : 'Analyse audio to enable beat-snap'}</span>
+			</label>
 
 			{/* Per-source rows */}
 			<div class="beat-panel-sources">

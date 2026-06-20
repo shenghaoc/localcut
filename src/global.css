@@ -4575,13 +4575,7 @@ button.status-badge:hover {
 		margin-right: 8px;
 	}
 
-	/* Dock-left: collapse the 66px icon rail to 48px */
-	.dock-left {
-		grid-template-columns: 48px minmax(0, 1fr);
-		gap: 6px;
-	}
-
-	.dock-rail button {
+	.dock-tabs button {
 		min-height: 44px;
 	}
 
@@ -4622,7 +4616,7 @@ button.status-badge:hover {
 	/* WCAG 2.5.5: minimum 44×44 CSS px touch target */
 	.toolbar-menu-item,
 	.side-rail-tab,
-	.dock-rail button,
+	.dock-tabs button,
 	.pipeline-chip-button,
 	.timeline-toggle,
 	.timeline-toggle-status,
@@ -6193,6 +6187,24 @@ button.status-badge:hover {
 	font-size: var(--text-xs);
 }
 
+.beat-panel-snap-link {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 0;
+	font-size: var(--text-xs, 11px);
+	color: var(--ink-400, var(--muted-foreground));
+	cursor: pointer;
+}
+
+.beat-panel-snap-link input[type='checkbox'] {
+	accent-color: var(--amber, var(--primary));
+}
+
+.beat-panel-snap-link input:disabled + span {
+	opacity: 0.5;
+}
+
 .beat-panel-sources {
 	display: flex;
 	flex-direction: column;
@@ -6439,15 +6451,6 @@ button.status-badge:hover {
 	min-width: 0;
 	min-height: 0;
 	overflow: hidden;
-}
-.dock-left > .media-bin {
-	flex: 1 1 auto;
-	min-height: 140px;
-}
-.dock-left > .beat-panel {
-	flex: 0 0 auto;
-	max-height: 36vh;
-	overflow-y: auto;
 }
 
 /* ── Panel chrome — flat, hairline, no glass blur ── */
@@ -7248,7 +7251,7 @@ body::-webkit-scrollbar,
 .transcript-panel::-webkit-scrollbar,
 .timeline-scroll-viewport::-webkit-scrollbar,
 .pipeline-strip::-webkit-scrollbar,
-.dock-left > .beat-panel::-webkit-scrollbar,
+.dock-left .beat-panel::-webkit-scrollbar,
 .replay-buffer-panel .collapse-body::-webkit-scrollbar,
 .live-audio-chain-panel .collapse-body::-webkit-scrollbar,
 .silence-review-panel::-webkit-scrollbar,
@@ -7267,7 +7270,7 @@ body::-webkit-scrollbar-track,
 .transcript-panel::-webkit-scrollbar-track,
 .timeline-scroll-viewport::-webkit-scrollbar-track,
 .pipeline-strip::-webkit-scrollbar-track,
-.dock-left > .beat-panel::-webkit-scrollbar-track,
+.dock-left .beat-panel::-webkit-scrollbar-track,
 .replay-buffer-panel .collapse-body::-webkit-scrollbar-track,
 .live-audio-chain-panel .collapse-body::-webkit-scrollbar-track,
 .silence-review-panel::-webkit-scrollbar-track,
@@ -7285,7 +7288,7 @@ body::-webkit-scrollbar-thumb,
 .transcript-panel::-webkit-scrollbar-thumb,
 .timeline-scroll-viewport::-webkit-scrollbar-thumb,
 .pipeline-strip::-webkit-scrollbar-thumb,
-.dock-left > .beat-panel::-webkit-scrollbar-thumb,
+.dock-left .beat-panel::-webkit-scrollbar-thumb,
 .replay-buffer-panel .collapse-body::-webkit-scrollbar-thumb,
 .live-audio-chain-panel .collapse-body::-webkit-scrollbar-thumb,
 .silence-review-panel::-webkit-scrollbar-thumb,
@@ -7304,7 +7307,7 @@ body::-webkit-scrollbar-thumb:hover,
 .transcript-panel::-webkit-scrollbar-thumb:hover,
 .timeline-scroll-viewport::-webkit-scrollbar-thumb:hover,
 .pipeline-strip::-webkit-scrollbar-thumb:hover,
-.dock-left > .beat-panel::-webkit-scrollbar-thumb:hover,
+.dock-left .beat-panel::-webkit-scrollbar-thumb:hover,
 .replay-buffer-panel .collapse-body::-webkit-scrollbar-thumb:hover,
 .live-audio-chain-panel .collapse-body::-webkit-scrollbar-thumb:hover,
 .silence-review-panel::-webkit-scrollbar-thumb:hover,
@@ -7820,73 +7823,78 @@ body::-webkit-scrollbar-thumb:hover,
 }
 
 .dock-left {
-	display: grid;
-	grid-template-columns: 66px minmax(0, 1fr);
-	gap: 8px;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
 	min-width: 0;
 	min-height: 0;
 	overflow: hidden;
 }
 
-.dock-rail {
+.dock-tabs {
 	display: flex;
-	flex-direction: column;
-	align-items: stretch;
 	gap: 0;
-	min-width: 0;
-	min-height: 0;
-	overflow-y: auto;
+	flex: 0 0 auto;
 	border: 1px solid var(--edge);
 	border-radius: var(--radius-md);
 	background: var(--plate);
+	overflow: hidden;
 }
 
-.dock-rail button {
-	display: grid;
-	place-items: center;
-	min-height: 56px;
-	padding: 4px;
+.dock-tabs button {
+	flex: 1;
+	min-height: 32px;
+	padding: 6px 8px;
 	border: 0;
-	border-bottom: 1px solid var(--edge);
 	background: transparent;
 	color: var(--ink-300);
 	font-family: var(--font-mono);
-	font-size: 9px;
+	font-size: 10px;
 	font-weight: 800;
-	letter-spacing: 0.12em;
-	line-height: 1.15;
+	letter-spacing: 0.08em;
 	text-transform: uppercase;
+	cursor: pointer;
 }
 
-.dock-rail button:hover,
-.dock-rail button:focus-visible,
-.dock-rail button[aria-current='page'] {
+.dock-tabs button + button {
+	border-left: 1px solid var(--edge);
+}
+
+.dock-tabs button:hover,
+.dock-tabs button:focus-visible {
 	color: var(--amber);
 	background: var(--amber-soft);
 }
 
-.dock-rail button:disabled {
-	cursor: not-allowed;
-	opacity: 0.42;
+.dock-tabs button[aria-selected='true'] {
+	color: var(--amber);
+	background: var(--amber-soft);
 }
 
 .dock-library {
 	display: flex;
 	flex-direction: column;
-	gap: 8px;
+	flex: 1 1 auto;
 	min-width: 0;
 	min-height: 0;
 	overflow: hidden;
 }
 
-.dock-library > .media-bin {
+.dock-library > [role='tabpanel'] {
+	display: flex;
+	flex-direction: column;
 	flex: 1 1 auto;
-	min-height: 180px;
+	min-height: 0;
+	overflow: hidden;
 }
 
-.dock-library > .beat-panel {
-	flex: 0 0 auto;
-	max-height: 30vh;
+.dock-library > [role='tabpanel'] > .media-bin {
+	flex: 1 1 auto;
+	min-height: 0;
+}
+
+.dock-library > [role='tabpanel'] > .beat-panel {
+	flex: 1 1 auto;
 	overflow-y: auto;
 }
 
@@ -7965,15 +7973,11 @@ body::-webkit-scrollbar-thumb:hover,
 	}
 
 	.dock-left {
-		grid-template-columns: 60px minmax(0, 1fr);
-		gap: 6px;
 		min-height: 260px;
 	}
 
-	.dock-rail button {
+	.dock-tabs button {
 		min-height: 44px;
-		padding: 4px 2px;
-		letter-spacing: 0.04em;
 	}
 
 	.preview {
