@@ -59,7 +59,7 @@ export function BeatPanel(props: BeatPanelProps) {
 			<label class="beat-panel-snap-link">
 				<input
 					type="checkbox"
-					checked={props.snapToBeats && snapAvailable()}
+					checked={props.snapToBeats}
 					onChange={(e) => props.onToggleSnapToBeats(e.currentTarget.checked)}
 					disabled={!snapAvailable()}
 				/>
