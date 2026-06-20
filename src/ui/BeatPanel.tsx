@@ -54,63 +54,80 @@ export function BeatPanel(props: BeatPanelProps) {
 						const progress = () => props.analysisProgress().get(source.sourceId);
 						const isEnabled = () => props.beatSettings().enabledSourceIds.includes(source.sourceId);
 						const isAnalysing = () => progress() !== undefined;
+						const progressPercent = () => Math.round((progress() ?? 0) * 100);
 
 						return (
 							<div class="beat-panel-source-row">
-								<div class="beat-panel-source-name" title={source.fileName}>
-									{source.fileName}
-								</div>
-								<div class="beat-panel-source-controls">
+								<div class="beat-panel-source-head">
+									<div class="beat-panel-source-name" title={source.fileName}>
+										{source.fileName}
+									</div>
 									<Show
-										when={result()}
+										when={isAnalysing()}
 										fallback={
 											<Show
-												when={isAnalysing()}
-												fallback={
-													<button
-														type="button"
-														class="beat-panel-analyse-btn"
-														onClick={() => props.onAnalyse(source.sourceId)}
-														aria-label={`Analyse beats for ${source.fileName}`}
-													>
-														Analyse
-													</button>
-												}
+												when={result()}
+												fallback={<span class="beat-panel-state">Not analysed</span>}
 											>
-												<div class="beat-panel-progress-wrap">
-													<div
-														class="beat-panel-progress-bar"
-														role="progressbar"
-														aria-valuenow={Math.round((progress() ?? 0) * 100)}
-														aria-valuemin={0}
-														aria-valuemax={100}
-														aria-label="Beat analysis progress"
-														style={{ transform: `scaleX(${progress() ?? 0})` }}
-													/>
-													<button
-														type="button"
-														class="beat-panel-cancel-btn"
-														onClick={() => props.onCancel(source.sourceId)}
-														aria-label="Cancel analysis"
-														title="Cancel"
-													>
-														×
-													</button>
-												</div>
+												<span class="beat-panel-state is-ready">Ready</span>
 											</Show>
 										}
 									>
-										<div class="beat-panel-result">
-											<span class="beat-panel-bpm">{result()!.tempoBpm.toFixed(0)} BPM</span>
-											<span class="beat-panel-count">{result()!.beatTimesMs.length} beats</span>
+										<span class="beat-panel-state is-busy">Analysing {progressPercent()}%</span>
+									</Show>
+								</div>
+
+								<Show when={result()} keyed>
+									{(beatResult) => (
+										<div
+											class="beat-panel-result"
+											aria-label={`${beatResult.tempoBpm.toFixed(0)} BPM, ${beatResult.beatTimesMs.length} beats`}
+										>
+											<span class="beat-panel-metric">
+												<strong>{beatResult.tempoBpm.toFixed(0)}</strong>
+												<span>BPM</span>
+											</span>
+											<span class="beat-panel-metric">
+												<strong>{beatResult.beatTimesMs.length}</strong>
+												<span>beats</span>
+											</span>
+										</div>
+									)}
+								</Show>
+
+								<div class="beat-panel-source-controls">
+									<Show
+										when={isAnalysing()}
+										fallback={
 											<button
 												type="button"
 												class="beat-panel-analyse-btn"
 												onClick={() => props.onAnalyse(source.sourceId)}
-												aria-label={`Re-analyse beats for ${source.fileName}`}
-												title="Re-analyse"
+												aria-label={`${result() ? 'Re-analyse' : 'Analyse'} beats for ${source.fileName}`}
 											>
-												↻
+												{result() ? 'Re-analyse' : 'Analyse beats'}
+											</button>
+										}
+									>
+										<div class="beat-panel-progress-wrap" role="status" aria-live="polite">
+											<div class="beat-panel-progress-track">
+												<div
+													class="beat-panel-progress-bar"
+													role="progressbar"
+													aria-valuenow={progressPercent()}
+													aria-valuemin={0}
+													aria-valuemax={100}
+													aria-label="Beat analysis progress"
+													style={{ transform: `scaleX(${progress() ?? 0})` }}
+												/>
+											</div>
+											<button
+												type="button"
+												class="beat-panel-cancel-btn"
+												onClick={() => props.onCancel(source.sourceId)}
+												aria-label="Cancel beat analysis"
+											>
+												Cancel
 											</button>
 										</div>
 									</Show>
@@ -123,7 +140,7 @@ export function BeatPanel(props: BeatPanelProps) {
 										title={isEnabled() ? 'Hide beats' : 'Show beats'}
 										disabled={!result()}
 									>
-										{isEnabled() ? 'On' : 'Off'}
+										{isEnabled() ? 'Grid on' : 'Show grid'}
 									</button>
 								</div>
 							</div>
@@ -139,7 +156,10 @@ export function BeatPanel(props: BeatPanelProps) {
 			<Show when={hasBeatData()}>
 				<div class="beat-panel-global">
 					<label class="beat-panel-offset-label">
-						Offset: {props.beatSettings().globalOffsetMs}ms
+						<span class="beat-panel-field-head">
+							<span>Grid offset</span>
+							<output>{props.beatSettings().globalOffsetMs} ms</output>
+						</span>
 						<input
 							type="range"
 							min={-500}
@@ -159,7 +179,7 @@ export function BeatPanel(props: BeatPanelProps) {
 							title={autoCutTooltip() || 'Split clips at beats'}
 							aria-disabled={autoCutDisabled()}
 						>
-							Split
+							Split at beats
 						</button>
 						<button
 							type="button"
@@ -169,7 +189,7 @@ export function BeatPanel(props: BeatPanelProps) {
 							title={autoCutTooltip() || 'Align clips to beats'}
 							aria-disabled={autoCutDisabled()}
 						>
-							Align
+							Align to beats
 						</button>
 					</div>
 				</div>
