@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite-plus';
+import { readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import solid from 'vite-plugin-solid';
 import tailwindcss from '@tailwindcss/vite';
@@ -16,6 +17,7 @@ function gitSha(): string {
 }
 
 const BUILD_SHA = gitSha();
+const APP_VERSION: string = JSON.parse(readFileSync('package.json', 'utf-8')).version;
 
 // Mirror the build SHA into the environment so the Vite+ task runner can fold
 // it into the `check:build` cache fingerprint (see run.tasks below): the SHA is
@@ -243,7 +245,8 @@ export default defineConfig({
 		ignorePatterns: ['dist', 'dev-dist', 'coverage', '.kiro/', '.claude/', '.jules/']
 	},
 	define: {
-		__BUILD_SHA__: JSON.stringify(BUILD_SHA)
+		__BUILD_SHA__: JSON.stringify(BUILD_SHA),
+		__APP_VERSION__: JSON.stringify(APP_VERSION)
 	},
 	plugins: [
 		dropBundledOrtWasmPlugin(),

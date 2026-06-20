@@ -7673,7 +7673,7 @@ async function handleDiagnosticSnapshot(requestId: string): Promise<void> {
 	else webgpuStatus = 'unavailable';
 
 	const snapshot = await buildWorkerDiagnosticSnapshot({
-		appVersion: '1.0.0',
+		appVersion: typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '0.0.0-dev',
 		webgpuReady,
 		webgpuStatus,
 		webgpuFeatures: lastWebgpuFeatures,
