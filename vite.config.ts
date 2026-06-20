@@ -17,7 +17,9 @@ function gitSha(): string {
 }
 
 const BUILD_SHA = gitSha();
-const APP_VERSION: string = JSON.parse(readFileSync('package.json', 'utf-8')).version;
+const APP_VERSION: string = JSON.parse(
+	readFileSync(new URL('./package.json', import.meta.url), 'utf-8')
+).version;
 
 // Mirror the build SHA into the environment so the Vite+ task runner can fold
 // it into the `check:build` cache fingerprint (see run.tasks below): the SHA is

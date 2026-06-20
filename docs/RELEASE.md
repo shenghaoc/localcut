@@ -30,9 +30,7 @@ These features are the core editing loop and are expected to work reliably on a 
 - **Recording**: screen/webcam/mic capture with realtime WebCodecs encode, crash-safe OPFS chunks, quota preflight.
 - **Smart Reframe**: automatic crop-path generation for aspect ratio conversion (16:9, 9:16, 1:1, 4:5) with saliency and optional face detection.
 - **Portrait Matting**: on-device person segmentation (MODNet ONNX on ORT-WebGPU) for background remove/replace/blur.
-- **Frame Interpolation**: RIFE-class learned interpolation on ORT-WebGPU for slow-motion and fps upconversion.
-- **Audio Cleanup**: on-device noise suppression via ORT DTLN; optional WebNN RNNoise path.
-- **On-Device Language Tools**: Chrome built-in AI translation, summarization, and title/hashtag generation from captions.
+- **Audio Cleanup**: on-device noise suppression via ORT DTLN on WASM; experimental WebNN acceleration where the browser supports it.
 - **WHIP Publish**: RFC 9725 live streaming over WebRTC with bearer-token endpoints.
 - **OpenTimelineIO export**: `.otio` + CMX3600 EDL interchange for round-tripping with other NLEs.
 - **Media Converter**: standalone re-container/transcode view with batch job list.
@@ -48,7 +46,9 @@ These features are present but may have edge cases or limited browser support:
 
 - **Cross-browser reduced tiers** -- Limited WebCodecs and Shell Only tiers. The app loads but functionality is constrained.
 - **WebNN execution providers** -- WebNN-accelerated ML inference depends on browser and hardware support; ORT-WASM is the reliable fallback.
+- **Frame Interpolation** -- RIFE-class learned interpolation on ORT-WebGPU for slow-motion and fps upconversion. Ships with a `template: true` manifest; the feature is hidden until a license-verified ONNX model is provided.
 - **Frame interpolation export** -- export-time fps upconversion is gated pending validated ONNX model licensing.
+- **On-Device Language Tools** -- Chrome built-in AI translation, summarization, and title/hashtag generation from captions. Requires Chrome 138+ with the experimental built-in AI origin trial; unavailable on other browsers.
 
 ## Not Supported
 

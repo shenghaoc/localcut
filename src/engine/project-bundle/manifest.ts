@@ -287,7 +287,7 @@ export function makeAssetId(): string {
 }
 
 export function defaultAppVersion(): string {
-	return '0.1.0';
+	return typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '0.0.0-dev';
 }
 
 export function assertProjectSchemaSupported(projectSchemaVersion: number): boolean {
