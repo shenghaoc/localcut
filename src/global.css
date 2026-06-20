@@ -6005,15 +6005,70 @@ button.status-badge:hover {
 }
 
 .record-disabled-note p,
-.record-disabled-note ul,
 .record-retake-note span,
 .record-panel-message {
 	margin: 0;
 }
 
-.record-disabled-note ul {
+/* Compact capture-unavailable notice (IA-T3 / D16) — shared by Record + Program. */
+.capture-unavailable {
+	display: flex;
+	flex-direction: column;
+	gap: 0.4rem;
+	padding: 0.6rem 0.7rem;
+	border: 1px solid color-mix(in srgb, var(--warn) 38%, var(--border));
+	border-radius: var(--radius-md);
+	background: var(--bg-elevated);
+	color: var(--text-muted);
+	font-size: var(--text-sm);
+	line-height: 1.4;
+}
+
+.capture-unavailable-status {
+	display: flex;
+	align-items: center;
+	gap: 0.4rem;
+	margin: 0;
+	color: var(--text);
+	font-size: var(--text-sm);
+}
+
+.capture-unavailable-dot {
+	flex: 0 0 auto;
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: var(--warn);
+}
+
+.capture-unavailable-count {
+	margin-left: auto;
+	padding: 0.05rem 0.4rem;
+	border-radius: var(--radius-md);
+	background: color-mix(in srgb, var(--warn) 18%, transparent);
+	color: var(--warn);
+	font-size: var(--text-xs);
+	white-space: nowrap;
+}
+
+.capture-unavailable-details {
+	font-size: var(--text-xs);
+}
+
+.capture-unavailable-details summary {
+	cursor: pointer;
+	color: var(--text-muted);
+}
+
+.capture-unavailable-details summary:hover {
+	color: var(--text);
+}
+
+.capture-unavailable-details ul {
+	margin: 0.45rem 0 0;
 	padding-left: 1.1rem;
-	margin-top: 0.35rem;
+	display: grid;
+	gap: 0.25rem;
 }
 
 .record-section {

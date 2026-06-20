@@ -31,6 +31,7 @@ import type {
 import { recordingAvailable, selectCaptureMode } from '../engine/capability-probe-v2';
 import { captureUnavailableReasons } from '../engine/capture-reasons';
 import { startCaptureFrameReader, type CaptureFrameReader } from './capture-frame-reader';
+import { CaptureUnavailableNotice } from './CaptureUnavailableNotice';
 import {
 	DEFAULT_CAPTURE_SETTINGS,
 	loadCaptureSettings,
@@ -698,22 +699,23 @@ export function RecordPanel(props: RecordPanelProps) {
 			</Show>
 
 			<Show when={!canRecord()}>
-				<div class="record-disabled-note">
-					<p>Recording is unavailable on this browser profile.</p>
-					<ul>
-						<For
-							each={
-								props.probe
-									? // Transferable MediaStreamTrack is not required for recording — the
-										// main-frames fallback covers it — so it is never a blocking reason here.
-										captureUnavailableReasons(props.probe, { requireTransferableTrack: false })
-									: ['Checking browser capabilities…']
-							}
-						>
-							{(reason) => <li>{reason}</li>}
-						</For>
-					</ul>
-				</div>
+				<Show
+					when={props.probe}
+					fallback={
+						<div class="record-disabled-note">
+							<p>Checking browser capabilities…</p>
+						</div>
+					}
+				>
+					{(probe) => (
+						<CaptureUnavailableNotice
+							subject="Recording"
+							// Transferable MediaStreamTrack is not required for recording — the
+							// main-frames fallback covers it — so it is never a blocking reason here.
+							reasons={captureUnavailableReasons(probe(), { requireTransferableTrack: false })}
+						/>
+					)}
+				</Show>
 			</Show>
 
 			<Show when={canRecord() && captureMode() === 'main-frames'}>

@@ -5,18 +5,12 @@ import { Popover } from '@ark-ui/solid/popover';
 import { ToggleGroup } from '@ark-ui/solid/toggle-group';
 import {
 	Activity,
-	AudioWaveform,
 	Command,
 	Cpu,
 	Crosshair,
-	Crop,
 	FolderOpen,
-	Globe,
 	Gauge,
 	Keyboard,
-	Languages,
-	CircleQuestionMark,
-	Info,
 	Pause,
 	Play,
 	Radio,
@@ -26,14 +20,19 @@ import {
 	ShieldCheck,
 	SkipBack,
 	SkipForward,
-	Undo2,
-	VolumeX
+	Undo2
 } from 'lucide-solid';
 import { cn } from '../lib/utils';
 import { Button } from './components/button';
 import type { CapabilityTier } from './capabilities';
 import type { MediaMetadata } from '../protocol';
 import { MeterStrip } from './MeterStrip';
+import {
+	buildCommandActions,
+	buildMenuBarGroups,
+	type CommandAction,
+	type MenuBarGroup
+} from './toolbar-menus';
 
 interface ToolbarProps {
 	metadata: MediaMetadata | null;
@@ -63,6 +62,8 @@ interface ToolbarProps {
 	onOpenCapabilities?: () => void;
 	onOpenHelp?: () => void;
 	onOpenAudioCleanup?: () => void;
+	/** True when an audio clip is selected — gates the palette's Audio Cleanup action. */
+	audioCleanupAvailable?: boolean;
 	onOpenAutoCaptions?: () => void;
 	onOpenSmartReframe?: () => void;
 	onOpenSilenceReview?: () => void;
@@ -81,30 +82,6 @@ interface ToolbarProps {
 	meterSab: SharedArrayBuffer | null;
 	onMasterGain: (gain: number) => void;
 	exportControl?: JSX.Element;
-}
-
-interface CommandAction {
-	label: string;
-	detail: string;
-	disabled?: boolean;
-	onSelect: () => void | Promise<void>;
-}
-
-type MenuBarItem =
-	| { kind: 'separator' }
-	| {
-			kind: 'item';
-			id: string;
-			label: string;
-			kbd?: string;
-			detail?: string;
-			disabled?: boolean;
-	  };
-
-interface MenuBarGroup {
-	id: string;
-	label: string;
-	items: readonly MenuBarItem[];
 }
 
 function formatToolbarTimecode(seconds: number, fps: number | null): string {
@@ -185,45 +162,26 @@ export function Toolbar(props: ToolbarProps) {
 		const fps = video.frameRate ? `${Math.round(video.frameRate)} FPS` : 'FPS ?';
 		return `${video.width}×${video.height} · ${fps}`;
 	};
-	const commandActions = (): CommandAction[] => [
-		{
-			label: 'Import media',
-			detail: props.importHint ?? 'Add clips, images, or audio',
-			disabled: props.importBlocked,
-			onSelect: openImport
-		},
-		{
-			label: props.playing() ? 'Pause transport' : 'Play transport',
-			detail: 'Preview playback',
-			disabled: transportDisabled(),
-			onSelect: props.playing() ? props.onPause : props.onPlay
-		},
-		{
-			label: 'Go live',
-			detail: 'Open WHIP publish controls',
-			onSelect: () => props.onOpenPublish?.()
-		},
-		{
-			label: 'Auto captions',
-			detail: 'On-device speech recognition',
-			onSelect: () => props.onOpenAutoCaptions?.()
-		},
-		{
-			label: 'Smart reframe',
-			detail: 'Generate crop-path keyframes',
-			onSelect: () => props.onOpenSmartReframe?.()
-		},
-		{
-			label: 'Capabilities',
-			detail: 'Inspect browser pipeline support',
-			onSelect: () => props.onOpenCapabilities?.()
-		},
-		{
-			label: 'User guide',
-			detail: 'Open in-app documentation',
-			onSelect: () => props.onOpenHelp?.()
-		}
-	];
+	const commandActions = createMemo<CommandAction[]>(() =>
+		buildCommandActions({
+			importHint: props.importHint,
+			importBlocked: props.importBlocked ?? false,
+			playing: props.playing(),
+			transportDisabled: transportDisabled(),
+			audioCleanupAvailable: props.audioCleanupAvailable ?? false,
+			languageToolsAvailable: props.onOpenLanguageTools != null,
+			onImport: openImport,
+			onPlayPause: props.playing() ? props.onPause : props.onPlay,
+			onAudioCleanup: () => props.onOpenAudioCleanup?.(),
+			onAutoCaptions: () => props.onOpenAutoCaptions?.(),
+			onLanguageTools: () => props.onOpenLanguageTools?.(),
+			onSmartReframe: () => props.onOpenSmartReframe?.(),
+			onSilenceReview: () => props.onOpenSilenceReview?.(),
+			onPublish: () => props.onOpenPublish?.(),
+			onCapabilities: () => props.onOpenCapabilities?.(),
+			onHelp: () => props.onOpenHelp?.()
+		})
+	);
 	const runCommand = (action: CommandAction) => {
 		if (action.disabled) return;
 		void action.onSelect();
@@ -239,98 +197,22 @@ export function Toolbar(props: ToolbarProps) {
 		typeof navigator !== 'undefined' && /Mac|iP(hone|ad|od)/.test(navigator.platform)
 			? '⌘'
 			: 'Ctrl';
-	const menuBarGroups = createMemo<MenuBarGroup[]>(() => {
-		const mod = isMod();
-		return [
-			{
-				id: 'project',
-				label: 'Project',
-				items: [
-					{ kind: 'item', id: 'import', label: 'Import media…', disabled: props.importBlocked },
-					{ kind: 'separator' },
-					{ kind: 'item', id: 'palette', label: 'Search actions…', kbd: `${mod}+K` }
-				]
-			},
-			{
-				id: 'edit',
-				label: 'Edit',
-				items: [
-					{ kind: 'item', id: 'undo', label: 'Undo', kbd: `${mod}+Z`, disabled: !props.canUndo },
-					{
-						kind: 'item',
-						id: 'redo',
-						label: 'Redo',
-						kbd: `${mod}+⇧+Z`,
-						disabled: !props.canRedo
-					},
-					{ kind: 'separator' },
-					{ kind: 'item', id: 'palette', label: 'Search actions…', kbd: `${mod}+K` }
-				]
-			},
-			{
-				id: 'clip',
-				label: 'Clip',
-				items: [
-					{
-						kind: 'item',
-						id: 'split',
-						label: 'Split at playhead',
-						kbd: 'S',
-						detail: 'on timeline'
-					},
-					{ kind: 'item', id: 'delete', label: 'Delete selected', kbd: '⌫', detail: 'on timeline' },
-					{ kind: 'separator' },
-					{ kind: 'item', id: 'palette', label: 'Search actions…', kbd: `${mod}+K` }
-				]
-			},
-			{
-				id: 'timeline',
-				label: 'Timeline',
-				items: [
-					{
-						kind: 'item',
-						id: 'snap',
-						label: props.timelineSnapEnabled ? 'Disable snap' : 'Enable snap'
-					},
-					{
-						kind: 'item',
-						id: 'beat-snap',
-						label: props.timelineSnapToBeats ? 'Disable beat snap' : 'Enable beat snap',
-						disabled: !props.timelineSnapEnabled
-					},
-					{ kind: 'separator' },
-					{ kind: 'item', id: 'palette', label: 'Search actions…', kbd: `${mod}+K` }
-				]
-			},
-			{
-				id: 'view',
-				label: 'View',
-				items: [
-					{ kind: 'item', id: 'capabilities', label: 'Browser capabilities' },
-					{ kind: 'separator' },
-					{ kind: 'item', id: 'palette', label: 'Search actions…', kbd: `${mod}+K` }
-				]
-			},
-			{
-				id: 'help',
-				label: 'Help',
-				items: [
-					{ kind: 'item', id: 'user-guide', label: 'User guide' },
-					{ kind: 'separator' },
-					{ kind: 'item', id: 'palette', label: 'Search actions…', kbd: `${mod}+K` }
-				]
-			}
-		];
-	});
+	const menuBarGroups = createMemo<MenuBarGroup[]>(() =>
+		buildMenuBarGroups({
+			mod: isMod(),
+			importBlocked: props.importBlocked ?? false,
+			canUndo: props.canUndo,
+			canRedo: props.canRedo,
+			timelineSnapEnabled: props.timelineSnapEnabled,
+			timelineSnapToBeats: props.timelineSnapToBeats
+		})
+	);
 	const runMenuItem = (group: MenuBarGroup, value: string) => {
 		const item = group.items.find((i) => i.kind === 'item' && i.id === value);
 		if (!item || item.kind !== 'item' || item.disabled) return;
 		switch (value) {
 			case 'import':
 				void openImport();
-				return;
-			case 'palette':
-				openCommandPalette();
 				return;
 			case 'capabilities':
 				props.onOpenCapabilities?.();
@@ -661,53 +543,12 @@ export function Toolbar(props: ToolbarProps) {
 					<Radio size={11} aria-hidden="true" />
 					{props.publishLive ? 'Live' : 'Go Live'}
 				</button>
-				<button
-					type="button"
-					class="pipeline-chip pipeline-chip-button is-tool"
-					onClick={() => props.onOpenAudioCleanup?.()}
-					title="Clean up audio noise — runs on your device"
-				>
-					<AudioWaveform size={11} aria-hidden="true" />
-					Cleanup
-				</button>
-				<button
-					type="button"
-					class="pipeline-chip pipeline-chip-button is-tool"
-					onClick={() => props.onOpenAutoCaptions?.()}
-					title="Generate captions from speech — on-device"
-				>
-					<Languages size={11} aria-hidden="true" />
-					Captions
-				</button>
-				<Show when={props.onOpenLanguageTools}>
-					<button
-						type="button"
-						class="pipeline-chip pipeline-chip-button is-tool"
-						onClick={() => props.onOpenLanguageTools?.()}
-						title="Language Tools — translate and draft copy on-device"
-					>
-						<Globe size={11} aria-hidden="true" />
-						Translate
-					</button>
-				</Show>
-				<button
-					type="button"
-					class="pipeline-chip pipeline-chip-button is-tool"
-					onClick={() => props.onOpenSmartReframe?.()}
-					title="Auto-reframe for different aspect ratios"
-				>
-					<Crop size={11} aria-hidden="true" />
-					Reframe
-				</button>
-				<button
-					type="button"
-					class="pipeline-chip pipeline-chip-button is-tool"
-					onClick={() => props.onOpenSilenceReview?.()}
-					title="Find and remove silent gaps"
-				>
-					<VolumeX size={11} aria-hidden="true" />
-					Silence
-				</button>
+				{/*
+				 * IA-T1/D13: the launcher strip is collapsed to frequent + contextual
+				 * tools only. Audio Cleanup, Captions, Translate, Reframe, and Silence
+				 * are reached through the command palette (⌘K) and menus; Capabilities
+				 * and Help have a single home under the `Help` menu.
+				 */}
 				{props.calloutTool}
 				<Show when={props.keystrokeOverlayAvailable}>
 					<button
@@ -720,24 +561,6 @@ export function Toolbar(props: ToolbarProps) {
 						Keys
 					</button>
 				</Show>
-				<button
-					type="button"
-					class="pipeline-chip pipeline-chip-button is-tool"
-					onClick={() => props.onOpenCapabilities?.()}
-					title="What this browser supports"
-				>
-					<Info size={11} aria-hidden="true" />
-					Capabilities
-				</button>
-				<button
-					type="button"
-					class="pipeline-chip pipeline-chip-button is-tool"
-					onClick={() => props.onOpenHelp?.()}
-					title="Open help and user guide"
-				>
-					<CircleQuestionMark size={11} aria-hidden="true" />
-					Help
-				</button>
 			</div>
 		</header>
 	);

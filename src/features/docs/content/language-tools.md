@@ -6,7 +6,7 @@ that don't expose these APIs (Firefox, Safari, most Chromium derivatives, or har
 Chrome's requirements), the feature is simply hidden — everything else in the app works exactly
 the same.
 
-There are two tools, both reachable from the **Language Tools** button in the toolbar:
+There are two tools, both reachable from the command palette (**⌘K** / **Ctrl+K** → **Language Tools**):
 
 - **Translate captions** — turn a caption track into a second, timing-identical track in the other
   language (zh ⇄ en), ready for bilingual subtitle export.

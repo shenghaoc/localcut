@@ -17,6 +17,7 @@ import type {
 	CapabilityProbeResult
 } from '../protocol';
 import { captureUnavailableReasons } from '../engine/capture-reasons';
+import { CaptureUnavailableNotice } from './CaptureUnavailableNotice';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -101,10 +102,15 @@ export function ProgramPanel(props: ProgramPanelProps) {
 
 	// Exhaustive reasons (tier + capture gates) so the disabled panel always has at
 	// least one actionable line — including reduced-tier profiles where the capture
-	// probes pass but isolation/SAB/OffscreenCanvas/WebGPU do not.
-	const disabledReasons = createMemo(() =>
-		props.probe ? captureUnavailableReasons(props.probe) : []
-	);
+	// probes pass but isolation/SAB/OffscreenCanvas/WebGPU do not. The trailing
+	// fallback is defensive: captureUnavailableReasons is exhaustive for the
+	// core-webgpu gates that gate programMode, so an empty list shouldn't occur,
+	// but the panel must never render a header with no reason.
+	const disabledReasons = createMemo(() => {
+		if (!props.probe) return [];
+		const reasons = captureUnavailableReasons(props.probe);
+		return reasons.length > 0 ? reasons : ['Required capabilities are missing.'];
+	});
 
 	return (
 		<Show
@@ -116,15 +122,7 @@ export function ProgramPanel(props: ProgramPanelProps) {
 						when={props.probe}
 						fallback={<p class="program-panel-disabled-reason">Checking browser capabilities…</p>}
 					>
-						<div class="program-panel-disabled-reason">
-							<p>Program Mode is unavailable:</p>
-							<ul>
-								<For each={disabledReasons()}>{(reason) => <li>{reason}</li>}</For>
-								<Show when={disabledReasons().length === 0}>
-									<li>Required capabilities are missing.</li>
-								</Show>
-							</ul>
-						</div>
+						<CaptureUnavailableNotice subject="Program Mode" reasons={disabledReasons()} />
 					</Show>
 				</div>
 			}

@@ -17,7 +17,7 @@ extend any of them in the Inspector. The whole reframe is a single undo step.
 ## Using it
 
 1. Select a video clip on the timeline.
-2. Open **Smart Reframe** from the toolbar.
+2. Open the command palette (**⌘K** / **Ctrl+K**) and choose **Smart Reframe**.
 3. Pick a **target aspect ratio** (9:16, 1:1, 4:5, 16:9, or 4:3).
 4. Click **Analyse**. A dedicated worker scans the clip; a progress bar shows
    how far it has got, and you can cancel at any time.

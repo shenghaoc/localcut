@@ -11,7 +11,7 @@ Work top-down: most problems are explained by the capability tier, the source fi
 
 ## Preview is black or playback won't start
 
-- Check the pipeline strip: **Limited shell / Blocked** means the pipeline isn't running — open **Capabilities** for the reason.
+- Check the pipeline strip: **Limited shell / Blocked** means the pipeline isn't running — open **Help → Browser capabilities** for the reason.
 - If the tier is Accelerated but the preview is black, the pipeline worker may have crashed; the app restarts it automatically and the status bar says so. If restarts are exhausted, reload the page — autosave restores your timeline.
 - A clip whose primary track failed to decode shows a named codec warning at import; the clip can't play. Replace or re-encode the source.
 
@@ -32,7 +32,7 @@ If a source moved, renamed, or permissions were lost, a banner lists the offline
 
 ## The app says my browser is limited
 
-Open **Capabilities** in the pipeline strip — each row says what was probed and what's missing (WebGPU, WebCodecs, cross-origin isolation…). On a Chromium browser, the usual fixes are enabling hardware acceleration in browser settings and updating GPU drivers. Background and full explanations in [Browser limitations](/docs/browser-limitations).
+Open **Help → Browser capabilities** — each row says what was probed and what's missing (WebGPU, WebCodecs, cross-origin isolation…). On a Chromium browser, the usual fixes are enabling hardware acceleration in browser settings and updating GPU drivers. Background and full explanations in [Browser limitations](/docs/browser-limitations).
 
 ## Worker crashed / "restart available"
 

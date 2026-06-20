@@ -1,6 +1,6 @@
-# Tasks — Capability-probe false negatives + editor chrome overlap
+# Tasks — Capability-probe false negatives + editor chrome overlap & IA
 
-> Status: **Implemented — in review** (T1–T11; `pnpm run check` green). The off-main-thread main-frames recording fallback **T5.5 is now implemented + verified in real Chromium** (it was deferred out of the original PR #130 to its own branch — this is that branch). The editor-chrome IA reorganization remains a **separate branch**. Remaining items are **manual/on-device verification** (T6.4, T10, T11.4) that need the deployed build + real interaction. Tasks map to bugs (Bn) in [`bugfix.md`](./bugfix.md) and design entries (Dn) in [`design.md`](./design.md).
+> Status: **Part 1 (T1–T11): Implemented — merged (#130 + #131)** (`pnpm run check` green; the off-main-thread main-frames recording fallback **T5.5 landed + was verified in real Chromium** in #131; remaining items are **manual/on-device verification** — T6.4, T10, T11.4 — that need the deployed build + real interaction). **Part 2 Phase 1 (IA-T1–IA-T3): Implemented on this branch** (copy/labelling/density; no nav restructure). **Part 2 Phases 2–3 (IA-T4–IA-T7): Proposed.** Tasks map to bugs (Bn) in [`bugfix.md`](./bugfix.md) and design entries (Dn) in [`design.md`](./design.md).
 
 ## T1 — H.264 level helper + general codec probe (B1, D1)
 
@@ -78,3 +78,66 @@ Decision: PR #130 shipped an **honest gate** (T5.1–T5.4); the deferred **off-m
 - [x] ~~If T5 lands the fallback-message path only, file a follow-up for the bounded main-frames capture route.~~ Done — T5.5 implemented the off-main-thread main-frames capture route on this branch.
 - [ ] Optional polish: pause the per-source main-thread reader while a main-frames session is **paused** (frames are read + forwarded and safely dropped/closed worker-side — correct but slightly wasteful). The **stop/auto-stop** case is already handled — readers stop when the session enters `'stopping'`.
 
+
+---
+
+# Part 2 — Editor chrome IA (B10–B16, D10–D16)
+
+Ordered by the design's incremental rollout — Phase 1 is copy/labelling/density (low risk), Phase 2 restructures the right rail, Phase 3 the left rail. Resolve the three **Open decisions** (design Part 2) before Phase 2/3.
+
+## Phase 1 — Labels, dedupe, density (no nav restructure)
+
+### IA-T1 — Menu/toolbar dedupe (B13, D13)
+
+- [x] IA-T1.1 Remove the per-menu `Search actions…` items from each `MENU_GROUPS` entry in [`Toolbar.tsx`](../../../src/ui/Toolbar.tsx); keep the single `command-search` trigger. Menu taxonomy extracted to a pure, testable [`toolbar-menus.ts`](../../../src/ui/toolbar-menus.ts) (`buildMenuBarGroups`).
+- [x] IA-T1.2 Move `Browser capabilities` to one home under `Help`; remove from `View` and the top-strip `Capabilities` chip. The `View` menu (only ever holding the capability item + the duplicate palette) is dropped rather than shown empty — its `layout/panels/scopes/overlays` content is a Phase 2/3 addition.
+- [x] IA-T1.3 Remove the top-strip `Help` chip; keep the `Help` menu (now `User guide` + `Browser capabilities`).
+- [x] IA-T1.4 Collapse the launcher strip to frequent/contextual tools (Go Live, callout, Keys); route Audio Cleanup/Captions/Translate/Reframe/Silence through the command palette (⌘K). Right-rail destinations are the Phase 2 home; Phase 1 routes via the palette only.
+- [x] IA-T1.5 Update Toolbar component tests: [`toolbar-menus.test.ts`](../../../src/ui/toolbar-menus.test.ts) (menu dedupe), [`Toolbar.browser.test.tsx`](../../../src/__browser__/Toolbar.browser.test.tsx) (collapsed strip), [`editor-chrome-ia.test.ts`](../../../src/ui/editor-chrome-ia.test.ts) (source-level guards).
+
+### IA-T2 — Audio cleanup disambiguation (B12, D12)
+
+- [x] IA-T2.1 Rename the top-toolbar `Cleanup` action to **`Audio Cleanup`** and gate on a selected clip — now a clip-gated command-palette action (`audioCleanupAvailable` ← `selectedAudioCleanupClip()`); disabled with a "Select an audio clip first" hint when nothing is selected.
+- [x] IA-T2.2 Rename the right-rail `voice-cleanup` tab `Cleanup` → `Voice FX` ([`App.tsx`](../../../src/ui/App.tsx) `SIDE_RAIL_TABS`); no bare `Cleanup` left anywhere.
+- [x] IA-T2.3 Assert label uniqueness across the three audio surfaces (live chain `Audio`, right-rail `Voice FX`, palette `Audio Cleanup`) in [`editor-chrome-ia.test.ts`](../../../src/ui/editor-chrome-ia.test.ts).
+
+### IA-T3 — Compact unavailable states (B16, D16)
+
+- [x] IA-T3.1 Collapse the `captureUnavailableReasons(probe)` body list in [`RecordPanel.tsx`](../../../src/ui/RecordPanel.tsx)/[`ProgramPanel.tsx`](../../../src/ui/ProgramPanel.tsx) to a one-line status chip + `<details>` via the shared [`CaptureUnavailableNotice`](../../../src/ui/CaptureUnavailableNotice.tsx); Record keeps its source-action buttons as the call-to-action.
+- [x] IA-T3.2 Reuse the disclosure styling (`.capture-unavailable*` in [`global.css`](../../../src/global.css)); reason data/copy unchanged (still sourced from `captureUnavailableReasons`).
+- [x] IA-T3.3 Update the affected `__browser__` panel tests: [`RecordPanel.browser.test.tsx`](../../../src/__browser__/RecordPanel.browser.test.tsx), [`ProgramPanel.browser.test.tsx`](../../../src/__browser__/ProgramPanel.browser.test.tsx).
+
+## Phase 2 — Right rail by job (B10, B14, D10, D14)
+
+### IA-T4 — Collapse seven tabs to four job destinations
+
+- [ ] IA-T4.1 Replace `SIDE_RAIL_TABS` ([`App.tsx:354`](../../../src/ui/App.tsx)) with `Inspector`/`Text`/`Audio`/`Capture`; update `SideRailTab`, `isSideRailTab`, `openSideRailTab`, `SIDE_RAIL_COLLAPSED_KEY`, and keyboard-map tab ids together.
+- [ ] IA-T4.2 `Text` = Captions + language tools; `Capture` = Record · Program · Replay · go-live (secondary segmented control); `Audio` = live chain + Voice FX.
+- [ ] IA-T4.3 Add the in-panel secondary segmented control; ensure it fits/wraps within ~302px.
+- [ ] IA-T4.4 **Remove `overflow-x: auto` + hidden scrollbar from `.side-rail-tab-bar`** and delete the duplicate blocks in [`global.css`](../../../src/global.css) (~2240, ~6834, ~7854) so one definition governs.
+- [ ] IA-T4.5 Fallback only if overflow remains: add a **visible** "⋯ More" overflow menu (never a hidden scroll region).
+- [ ] IA-T4.6 Update App/right-rail browser + keyboard tests; migrate the persisted collapsed-key value (old ids → new).
+
+### IA-T5 — Verify right-rail fit
+
+- [ ] IA-T5.1 At 1280×720: all four destinations fully visible/clickable; activating one does not clip another; no `overflow-x` scroll on the tab bar.
+
+## Phase 3 — Left rail + Beats (B11, B15, D11, D15)
+
+### IA-T6 — Left rail → library switcher (Option B)
+
+- [ ] IA-T6.1 Reduce `.dock-rail` ([`App.tsx:4299`](../../../src/ui/App.tsx)) to `Media`/`Beats`; make each switch `.dock-library` content (or a header toggle if only two).
+- [ ] IA-T6.2 Remove the dead `Media` button; move workflow launchers to palette/menus and/or right-rail destinations; `Scopes` → `View`; `Project`/`Output` → `Project` menu + toolbar.
+- [ ] IA-T6.3 Route import/picker failures through the recent-error log, not the status line.
+
+### IA-T7 — Beat Detection home (B15, D15)
+
+- [ ] IA-T7.1 Present `BeatPanel` as a Media-Analysis sub-section shown when an audio source is selected (or the left-rail `Beats` destination from IA-T6).
+- [ ] IA-T7.2 Link Beats state to the transport `Beat`-snap toggle (shared signal) with a one-line affordance.
+
+## Part 2 quality gate (each phase)
+
+- [ ] IA-G1 `pnpm run check` green (format + lint + typecheck + Vitest + build).
+- [ ] IA-G2 Test count does not decrease; updated component/keyboard tests reflect the new IA.
+- [ ] IA-G3 Existing ARIA roles (`tab`/`tabpanel`/`region`) remain correct after restructure.
+- [ ] IA-G4 Re-run the audit captures (or a focused subset) at 1280×720 to confirm each finding is resolved.

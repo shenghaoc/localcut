@@ -13,7 +13,7 @@ The app probes your browser at startup and picks the best pipeline it can:
 | **Limited WebCodecs** | Basic preview and constrained export             | WebCodecs decode without usable WebGPU                  |
 | **Shell only**        | App loads; preview/export unavailable            | Any modern browser                                      |
 
-Your current tier shows in the pipeline strip and the status bar. **Capabilities** (in the pipeline strip) lists each feature, whether it was found, and what would unlock more.
+Your current tier shows in the pipeline strip and the status bar. **Browser capabilities** (in the **Help** menu) lists each feature, whether it was found, and what would unlock more.
 
 ## Why browsers behave differently
 

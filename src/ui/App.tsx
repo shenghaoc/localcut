@@ -80,6 +80,12 @@ import { PreviewGizmo } from './PreviewGizmo';
 import { DiagnosticsPanel } from './DiagnosticsPanel';
 import { buildUiDiagnosticSnapshot } from './diagnostic-snapshot';
 import { Toolbar } from './Toolbar';
+import {
+	SIDE_RAIL_TABS,
+	SIDE_RAIL_COLLAPSED_KEY,
+	isSideRailTab,
+	type SideRailTab
+} from './side-rail-tabs';
 import { CalloutTool } from './CalloutTool';
 import { Timeline } from './Timeline';
 import { Inspector, type SelectedClip, type SelectedTransition } from './Inspector';
@@ -354,23 +360,6 @@ function capabilityTierV2Label(probe: CapabilityProbeResult | null): string | nu
 		case 'shell-only':
 			return 'Shell Only';
 	}
-}
-
-const SIDE_RAIL_TABS = [
-	{ id: 'inspector', label: 'Inspector' },
-	{ id: 'captions', label: 'Captions' },
-	{ id: 'record', label: 'Record' },
-	{ id: 'program', label: 'Program' },
-	{ id: 'replay', label: 'Replay' },
-	{ id: 'live-audio', label: 'Audio' },
-	{ id: 'voice-cleanup', label: 'Cleanup' }
-] as const;
-type SideRailTab = (typeof SIDE_RAIL_TABS)[number]['id'];
-
-const SIDE_RAIL_COLLAPSED_KEY = 'side-rail-collapsed';
-
-function isSideRailTab(value: string | null): value is SideRailTab {
-	return SIDE_RAIL_TABS.some((tab) => tab.id === value);
 }
 
 function readSideRailCollapsed(): boolean {
@@ -4014,6 +4003,7 @@ export function App() {
 					onOpenCapabilities={() => setCapabilityPanelOpen(true)}
 					onOpenHelp={() => openDocs()}
 					onOpenAudioCleanup={() => setAudioCleanupOpen(true)}
+					audioCleanupAvailable={selectedAudioCleanupClip() !== null}
 					onOpenAutoCaptions={() => setAsrPanelOpen(true)}
 					onOpenSmartReframe={() => setSmartReframeOpen(true)}
 					onOpenSilenceReview={() => setSilenceReviewOpen(true)}
