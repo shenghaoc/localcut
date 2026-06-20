@@ -32,6 +32,12 @@ let activeJobId: string | null = null;
 // `activeConversion` exists. We record it here and honor it once init resolves.
 let pendingCancelJobId: string | null = null;
 
+const KEEP_TRACK_FAILURE_REASONS = new Set([
+	'no_encodable_target_codec',
+	'undecodable_source_codec',
+	'unknown_source_codec'
+]);
+
 function post(message: ConvertWorkerState, transfer?: Transferable[]): void {
 	if (transfer?.length) ctx.postMessage(message, transfer);
 	else ctx.postMessage(message);
@@ -100,23 +106,28 @@ async function handleStart(command: {
 			srcVideo !== null && (srcVideo.codec === null || !supportedVideo.has(srcVideo.codec));
 		const audioNeedsTranscode =
 			srcAudio !== null && (srcAudio.codec === null || !supportedAudio.has(srcAudio.codec));
+		const videoOptions =
+			!wantsVideo || srcVideo === null
+				? { discard: true }
+				: videoNeedsTranscode
+					? { bitrate: quality }
+					: {};
+		const audioOptions =
+			srcAudio === null ? { discard: true } : audioNeedsTranscode ? { bitrate: quality } : {};
 
 		const conversion = await Conversion.init({
 			input,
 			output,
-			video: !wantsVideo ? { discard: true } : videoNeedsTranscode ? { bitrate: quality } : {},
-			audio: audioNeedsTranscode ? { bitrate: quality } : {},
+			video: videoOptions,
+			audio: audioOptions,
 			showWarnings: false
 		});
 
 		// Never silently ship a file that lost a track we meant to keep: if an
 		// existing source track couldn't be copied or encoded, fail honestly.
 		// (Video dropped by an audio-only target is `discarded_by_user`, not here.)
-		const lost = conversion.discardedTracks.filter(
-			(track) =>
-				track.reason === 'no_encodable_target_codec' ||
-				track.reason === 'undecodable_source_codec' ||
-				track.reason === 'unknown_source_codec'
+		const lost = conversion.discardedTracks.filter((track) =>
+			KEEP_TRACK_FAILURE_REASONS.has(track.reason)
 		);
 		if (!conversion.isValid || lost.length > 0) {
 			const reasons = (lost.length > 0 ? lost : conversion.discardedTracks).map(
@@ -137,6 +148,7 @@ async function handleStart(command: {
 		activeConversion = conversion;
 		// Honor a cancel that arrived during the (potentially slow) init window.
 		if (pendingCancelJobId === jobId) {
+			await conversion.cancel().catch(() => {});
 			post({ type: 'convert-canceled', jobId });
 			return;
 		}

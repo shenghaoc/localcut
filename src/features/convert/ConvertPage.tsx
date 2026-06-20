@@ -1,5 +1,5 @@
 import { For, Show, createMemo, createSignal, onCleanup, onMount } from 'solid-js';
-import { createStore, produce } from 'solid-js/store';
+import { createStore } from 'solid-js/store';
 import {
 	ArrowLeft,
 	Download,
@@ -57,6 +57,15 @@ interface ConvertJob {
 
 const VIDEO_FORMATS = CONVERT_FORMATS.filter((f) => f.kind === 'video');
 const AUDIO_FORMATS = CONVERT_FORMATS.filter((f) => f.kind === 'audio');
+const MEDIA_PICKER_TYPES = [
+	{
+		description: 'Video and audio files',
+		accept: {
+			'video/*': ['.mp4', '.mov', '.webm', '.mkv'],
+			'audio/*': ['.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac']
+		}
+	}
+];
 
 const QUALITY_LABELS: Record<ConvertQuality, string> = {
 	high: 'High quality',
@@ -94,10 +103,7 @@ export function ConvertPage(props: ConvertPageProps) {
 	const originalTitle = typeof document !== 'undefined' ? document.title : '';
 
 	const updateJob = (id: string, patch: Partial<ConvertJob>) => {
-		setJobs(
-			(job) => job.id === id,
-			produce((job) => Object.assign(job, patch))
-		);
+		setJobs((job) => job.id === id, patch);
 	};
 
 	const readyCount = createMemo(() => jobs.filter((j) => j.status === 'ready').length);
@@ -171,26 +177,23 @@ export function ConvertPage(props: ConvertPageProps) {
 
 	const addFiles = (files: readonly File[]) => {
 		if (!port) return;
-		for (const file of files) {
-			const id = newJobId();
-			setJobs(
-				produce((list) => {
-					list.push({
-						id,
-						file,
-						fileName: file.name,
-						info: null,
-						formatId: 'mp4',
-						quality: 'high',
-						status: 'probing',
-						fraction: 0,
-						error: null,
-						result: null,
-						output: null
-					});
-				})
-			);
-			port.send({ type: 'convert-probe', jobId: id, file });
+		setPickError(null);
+		const added: ConvertJob[] = files.map((file) => ({
+			id: newJobId(),
+			file,
+			fileName: file.name,
+			info: null,
+			formatId: 'mp4',
+			quality: 'high',
+			status: 'probing',
+			fraction: 0,
+			error: null,
+			result: null,
+			output: null
+		}));
+		setJobs((list) => [...list, ...added]);
+		for (const job of added) {
+			port.send({ type: 'convert-probe', jobId: job.id, file: job.file });
 		}
 	};
 
@@ -203,7 +206,7 @@ export function ConvertPage(props: ConvertPageProps) {
 		if (typeof picker === 'function') {
 			setPickError(null);
 			try {
-				const handles = await picker({ multiple: true });
+				const handles = await picker({ multiple: true, types: MEDIA_PICKER_TYPES });
 				const picked = await Promise.all(handles.map((h) => h.getFile()));
 				addFiles(picked);
 			} catch (error) {
@@ -225,13 +228,7 @@ export function ConvertPage(props: ConvertPageProps) {
 	};
 
 	const convertAll = () => {
-		setJobs(
-			(j) => j.status === 'ready',
-			produce((j) => {
-				j.status = 'queued';
-				j.error = null;
-			})
-		);
+		setJobs((j) => j.status === 'ready', { status: 'queued', error: null });
 		pump();
 	};
 
@@ -265,7 +262,16 @@ export function ConvertPage(props: ConvertPageProps) {
 		).showSaveFilePicker;
 		if (typeof saver === 'function') {
 			try {
-				const handle = await saver({ suggestedName });
+				const descriptor = convertFormatById(job.formatId);
+				const handle = await saver({
+					suggestedName,
+					types: [
+						{
+							description: `${descriptor.shortLabel} file`,
+							accept: { [descriptor.mimeType]: [`.${descriptor.extension}`] }
+						}
+					]
+				});
 				const writable = await handle.createWritable();
 				await writable.write(job.output);
 				await writable.close();
@@ -295,13 +301,10 @@ export function ConvertPage(props: ConvertPageProps) {
 		setWorkerError(null);
 		port = spawnConvertWorker(handleState, (message) => {
 			setWorkerError(message);
-			setJobs(
-				(j) => j.status === 'converting' || j.status === 'queued' || j.status === 'probing',
-				produce((j) => {
-					j.status = 'failed';
-					j.error = 'Media converter worker crashed.';
-				})
-			);
+			setJobs((j) => j.status === 'converting' || j.status === 'queued' || j.status === 'probing', {
+				status: 'failed',
+				error: 'Media converter worker crashed.'
+			});
 			port?.terminate();
 			consecutiveCrashes += 1;
 			if (consecutiveCrashes < 3) {
