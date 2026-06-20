@@ -198,15 +198,13 @@ export function ConvertPage(props: ConvertPageProps) {
 	};
 
 	const pickFiles = async () => {
-		const picker = (
-			window as unknown as {
-				showOpenFilePicker?: (options?: unknown) => Promise<{ getFile(): Promise<File> }[]>;
-			}
-		).showOpenFilePicker;
-		if (typeof picker === 'function') {
+		if (typeof window !== 'undefined' && typeof window.showOpenFilePicker === 'function') {
 			setPickError(null);
 			try {
-				const handles = await picker({ multiple: true, types: MEDIA_PICKER_TYPES });
+				const handles = await window.showOpenFilePicker({
+					multiple: true,
+					types: MEDIA_PICKER_TYPES
+				});
 				const picked = await Promise.all(handles.map((h) => h.getFile()));
 				addFiles(picked);
 			} catch (error) {
@@ -250,20 +248,10 @@ export function ConvertPage(props: ConvertPageProps) {
 	const saveJob = async (job: ConvertJob) => {
 		if (!job.output || !job.result) return;
 		const suggestedName = job.result.fileName;
-		const saver = (
-			window as unknown as {
-				showSaveFilePicker?: (options?: unknown) => Promise<{
-					createWritable(): Promise<{
-						write(data: Blob): Promise<void>;
-						close(): Promise<void>;
-					}>;
-				}>;
-			}
-		).showSaveFilePicker;
-		if (typeof saver === 'function') {
+		if (typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function') {
 			try {
 				const descriptor = convertFormatById(job.formatId);
-				const handle = await saver({
+				const handle = await window.showSaveFilePicker({
 					suggestedName,
 					types: [
 						{
@@ -321,13 +309,17 @@ export function ConvertPage(props: ConvertPageProps) {
 	onMount(() => {
 		spawn();
 		pageRef?.focus();
-		document.title = 'Convert media · LocalCut Studio';
+		if (typeof document !== 'undefined') {
+			document.title = 'Convert media · LocalCut Studio';
+		}
 	});
 
 	onCleanup(() => {
 		port?.terminate();
 		port = null;
-		document.title = originalTitle || 'LocalCut Studio';
+		if (typeof document !== 'undefined') {
+			document.title = originalTitle || 'LocalCut Studio';
+		}
 	});
 
 	return (
@@ -374,20 +366,20 @@ export function ConvertPage(props: ConvertPageProps) {
 					</p>
 				</div>
 
-				<Show when={workerError()}>
+				<Show keyed when={workerError()}>
 					{(message) => (
 						<p class="convert-banner convert-banner-error" role="alert">
 							<TriangleAlert size={14} aria-hidden="true" />
-							{message()}
+							{message}
 						</p>
 					)}
 				</Show>
 
-				<Show when={pickError()}>
+				<Show keyed when={pickError()}>
 					{(message) => (
 						<p class="convert-banner convert-banner-error" role="alert">
 							<TriangleAlert size={14} aria-hidden="true" />
-							{message()}
+							{message}
 						</p>
 					)}
 				</Show>
@@ -406,7 +398,7 @@ export function ConvertPage(props: ConvertPageProps) {
 						event.preventDefault();
 						event.stopPropagation();
 						setDragging(false);
-						const dropped = event.dataTransfer ? Array.from(event.dataTransfer.files) : [];
+						const dropped = event.dataTransfer?.files ? Array.from(event.dataTransfer.files) : [];
 						if (dropped.length > 0) addFiles(dropped);
 					}}
 				>
@@ -537,8 +529,12 @@ function JobRow(props: { job: ConvertJob } & JobRowDeps) {
 					<span class="convert-job-name" title={job().fileName}>
 						{job().fileName}
 					</span>
-					<Show when={summary()} fallback={<span class="convert-job-meta">Reading file…</span>}>
-						{(text) => <span class="convert-job-meta">{text()}</span>}
+					<Show
+						keyed
+						when={summary()}
+						fallback={<span class="convert-job-meta">Reading file…</span>}
+					>
+						{(text) => <span class="convert-job-meta">{text}</span>}
 					</Show>
 				</div>
 				<JobStatusChip status={job().status} />
@@ -608,12 +604,12 @@ function JobRow(props: { job: ConvertJob } & JobRowDeps) {
 				</div>
 			</Show>
 
-			<Show when={done() && job().result}>
+			<Show keyed when={done() && job().result}>
 				{(result) => (
 					<p class="convert-result-summary">
 						<CheckCircle2 size={14} aria-hidden="true" />
-						Saved as {result().fileName} · {formatBytes(result().bytes)} · converted in{' '}
-						{formatClock(result().elapsedSeconds)}
+						Saved as {result.fileName} · {formatBytes(result.bytes)} · converted in{' '}
+						{formatClock(result.elapsedSeconds)}
 					</p>
 				)}
 			</Show>

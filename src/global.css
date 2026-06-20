@@ -8175,6 +8175,10 @@ body::-webkit-scrollbar-thumb:hover,
 		background 120ms;
 }
 
+.convert-dropzone * {
+	pointer-events: none;
+}
+
 .convert-dropzone:hover,
 .convert-dropzone.is-dragging {
 	border-color: var(--primary);
