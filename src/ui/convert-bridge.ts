@@ -24,8 +24,14 @@ export function spawnConvertWorker(
 	const errorHandler = (event: ErrorEvent) => {
 		onCrash(event.message || 'Media converter worker crashed.');
 	};
+	// `messageerror` (a message that fails structured-clone on receipt) is a
+	// distinct event from `error`; treat it as a crash so the UI can recover.
+	const messageErrorHandler = () => {
+		onCrash('Media converter worker sent an unreadable message.');
+	};
 	worker.addEventListener('message', handler);
 	worker.addEventListener('error', errorHandler);
+	worker.addEventListener('messageerror', messageErrorHandler);
 	return {
 		send(command, transfer) {
 			if (transfer?.length) worker.postMessage(command, transfer);
@@ -34,6 +40,7 @@ export function spawnConvertWorker(
 		terminate() {
 			worker.removeEventListener('message', handler);
 			worker.removeEventListener('error', errorHandler);
+			worker.removeEventListener('messageerror', messageErrorHandler);
 			worker.terminate();
 		}
 	};

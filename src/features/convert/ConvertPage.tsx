@@ -83,6 +83,9 @@ export function ConvertPage(props: ConvertPageProps) {
 	const [jobs, setJobs] = createStore<ConvertJob[]>([]);
 	const [dragging, setDragging] = createSignal(false);
 	const [workerError, setWorkerError] = createSignal<string | null>(null);
+	// Kept separate from `workerError` so a transient file-picker failure isn't
+	// reported as a worker crash (and vice versa).
+	const [pickError, setPickError] = createSignal<string | null>(null);
 	// Guards against an infinite crash→respawn loop when the worker fails on
 	// startup (e.g. an environment incompatibility); reset whenever the worker
 	// proves healthy by sending a message.
@@ -198,6 +201,7 @@ export function ConvertPage(props: ConvertPageProps) {
 			}
 		).showOpenFilePicker;
 		if (typeof picker === 'function') {
+			setPickError(null);
 			try {
 				const handles = await picker({ multiple: true });
 				const picked = await Promise.all(handles.map((h) => h.getFile()));
@@ -205,7 +209,9 @@ export function ConvertPage(props: ConvertPageProps) {
 			} catch (error) {
 				// AbortError = the user dismissed the picker; nothing to report.
 				if (!(error instanceof DOMException && error.name === 'AbortError')) {
-					setWorkerError(error instanceof Error ? error.message : String(error));
+					setPickError(
+						`Couldn't open the file picker: ${error instanceof Error ? error.message : String(error)}`
+					);
 				}
 			}
 			return;
@@ -301,6 +307,9 @@ export function ConvertPage(props: ConvertPageProps) {
 			if (consecutiveCrashes < 3) {
 				spawn();
 			} else {
+				// Give up: drop the dead reference so addFiles/pump bail via their
+				// `if (!port)` guards instead of pushing jobs that never get probed.
+				port = null;
 				setWorkerError('Media converter keeps crashing. Please refresh the page to try again.');
 			}
 		});
@@ -363,6 +372,15 @@ export function ConvertPage(props: ConvertPageProps) {
 				</div>
 
 				<Show when={workerError()}>
+					{(message) => (
+						<p class="convert-banner convert-banner-error" role="alert">
+							<TriangleAlert size={14} aria-hidden="true" />
+							{message()}
+						</p>
+					)}
+				</Show>
+
+				<Show when={pickError()}>
 					{(message) => (
 						<p class="convert-banner convert-banner-error" role="alert">
 							<TriangleAlert size={14} aria-hidden="true" />
