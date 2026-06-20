@@ -1,6 +1,8 @@
-# Bugfix — Capability-probe false negatives + editor chrome overlap
+# Bugfix — Capability-probe false negatives + editor chrome overlap & IA
 
-> Status: **Implemented — in review** — features that should work on a fully capable Chromium profile (WebGPU + WebNN + COOP/COEP isolation) were reported unavailable, the editor side docks overlapped on narrower windows, and two UI strings misrepresented what the app can do. B1–B4, B6–B8 fixed; B5 ships an honest, actionable gate with the off-main-thread fallback deferred (see D5). `pnpm run check` green.
+> Status: **Mixed** — **Part 1 (B1–B9, capability + layout): Implemented, in review** (`pnpm run check` green; B1–B4/B6–B9 fixed; B5 ships an honest, actionable gate with the off-main-thread fallback deferred — see D5). **Part 2 (B10–B16, editor chrome information architecture): Proposed**, from the [editor-chrome panels audit](../../../audits/editor-chrome-panels-2026-06-20/audit.md); not yet implemented.
+>
+> This single spec covers the full editor-chrome workstream of this PR: the capability-probe false negatives and the workspace-layout/media-bin overlaps (Part 1), plus the navigation/information-architecture reorganization the audit surfaced (Part 2). They share surfaces and one recurring anti-pattern — primary navigation hidden behind `overflow-x` scrollbars (media bin B9, right-rail tabs B10).
 
 ## Summary
 
@@ -105,13 +107,61 @@ Live computed `.workspace.has-bin` columns were `364px 756px 360px` — matching
 - **Expected:** The Add/Remove buttons are always in frame at every dock width; no horizontal scrolling to reach delete.
 - **Root cause:** The item's fixed thumbnail + action footprint was sized for a wider bin than the consolidated dock provides, and the list permitted horizontal overflow.
 
+---
+
+# Part 2 — Editor chrome information architecture (B10–B16, Proposed)
+
+Source: [`audits/editor-chrome-panels-2026-06-20/audit.md`](../../../audits/editor-chrome-panels-2026-06-20/audit.md) (visual + DOM-rect + code audit at 1280×720). The editor exposes the same concepts through **three competing navigation systems** with overlapping, differently-labelled entry points (left rail, top menu/toolbar, right rail). The fix is to **consolidate by user job, give every nav control one honest behavior, and never hide primary navigation behind a scrollbar**. Design lives in D10–D16; the target IA and the open product decisions are there too.
+
+### B10 — Right-rail tabs don't fit; primary nav hidden behind a scrollbar
+
+- **Where:** `SIDE_RAIL_TABS` ([`App.tsx:354`](../../../src/ui/App.tsx)) defines seven tabs (Inspector, Captions, Record, Program, Replay, Audio, Cleanup); `.side-rail-tab-bar` is `display:flex; overflow-x:auto` with a hidden/thin scrollbar ([`global.css:6834`](../../../src/global.css), plus duplicate blocks at ~2240, ~7854).
+- **Observed (1280×720):** the rail is ~302px but the seven labels measure 62+59+50+56+48+44+55 = **374px**. Tabs overflow; `Audio`/`Cleanup` sit at/over the right edge, and activating `Cleanup` scrolls the strip left so `Inspector` (x=901) clips off the rail's left edge (971). (`cleanup-tab-attempt.json`.) Same hidden-scroll-nav anti-pattern as B9.
+- **Expected:** every top-level right-rail destination is fully visible and clickable at the default viewport; switching one never clips another.
+
+### B11 — Left rail looks like navigation but fires mixed commands
+
+- **Where:** `.dock-rail` ([`App.tsx:4299-4334`](../../../src/ui/App.tsx)).
+- **Observed:** styled as persistent workspace tabs, but: `Project`→import picker (can leave a picker-failure in the status bar), `Media`→**no handler** (dead label), `Record`/`Captions`→`openSideRailTab(...)` (switches the *right* rail), `Scopes`→floating overlay toggle, `AI`→Auto-Captions modal, `Reframe`→modal, `Output`→`scrollIntoView`.
+- **Expected:** the left rail is one thing — true dock navigation **or** a clearly-styled command launcher — not both; no dead controls; no control that silently changes a different surface.
+
+### B12 — `Cleanup` means two different things
+
+- **Where:** top toolbar `Cleanup` ([`Toolbar.tsx:667`](../../../src/ui/Toolbar.tsx) → Local Audio Cleanup sheet) vs right-rail `Cleanup` tab (`voice-cleanup` → Voice Cleanup); a third nearby `Audio` tab is the live chain.
+- **Observed:** three overlapping audio concepts (`Audio`, `Cleanup`, top-toolbar `Cleanup`) that do not lead to the same surface — not learnable.
+- **Expected:** one label per concept; no bare `Cleanup` anywhere. (Completes the audio-labelling cleanup begun in B8.)
+
+### B13 — Sparse menus duplicate the toolbar
+
+- **Where:** [`Toolbar.tsx`](../../../src/ui/Toolbar.tsx) `MENU_GROUPS` (each appends `Search actions…` at ~251/267/283/302/311/320); `Browser capabilities` under `View` (~309) **and** the top-strip `Capabilities` chip (~726); `Help` as both menu (~316) and chip (~735).
+- **Observed:** every menu repeats `Search actions…`; `Browser capabilities` and `Help` are each reachable from two redundant surfaces.
+- **Expected:** menu bar = command taxonomy, toolbar = frequent actions; one home each for capability info and Help; no per-menu palette duplication.
+
+### B14 — Right rail mixes properties, capture workflows, and audio processing
+
+- **Where:** the seven `SIDE_RAIL_TABS`.
+- **Observed:** `Inspector` (contextual properties) sits beside capture workflows (`Record`/`Program`/`Replay`) and audio processing (`Audio`/`Cleanup`) — different jobs flattened into one tab row, which also fights the left-rail `Record`/`Captions` and top `Go Live`.
+- **Expected:** group by job — at most ~4 stable destinations (`Inspector`, `Text`, `Audio`, `Capture`) with secondary controls inside each.
+
+### B15 — Beat Detection is styled but orphaned
+
+- **Where:** `BeatPanel` under `MediaBin` in `.dock-library` ([`App.tsx:4359`](../../../src/ui/App.tsx)); transport also has `Beat` snapping.
+- **Observed:** the Beat Detection card no longer looks broken but doesn't explain whether it is a media-analysis, timeline-snapping, or audio tool; its relationship to transport beat-snap is implicit.
+- **Expected:** a clear home (media analysis when an audio source is selected, or an Audio/Timing panel) with an explicit link to beat-snap state.
+
+### B16 — Unavailable states dominate the primary panel
+
+- **Where:** `RecordPanel`/`ProgramPanel` render the full `captureUnavailableReasons(probe)` list (made accurate + exhaustive by B4/D4) in the primary body.
+- **Observed:** unavailable Record/Program devote large panel space to reason lists instead of what the user can do next.
+- **Expected:** a compact status row with the full browser/flag reasons behind a details disclosure/tooltip; keep a primary call-to-action.
+
 ## Non-goals
 
 - Implementing transferable MediaStreamTrack support in the browser, or shipping a new main-thread frame-reading capture path beyond reusing publish's existing bounded main-frames fallback (B5 may land as "accurate gate + workaround surfaced" if the fallback proves out of scope).
 - Adding `generateKeyFrame` support or changing WHIP GOP behavior — it is already correctly optional (publish degrades to platform-default GOP).
-- The "GPU (compat)" / `limited-webcodecs` / `shell-only` tiers and their derivation (B-bugs here are encode/OPFS/layout/UX only; tier derivation is correct).
-- Redesigning the editor chrome; B6 is a CSS consolidation, not a visual redesign.
+- The "GPU (compat)" / `limited-webcodecs` / `shell-only` tiers and their derivation (Part 1 B-bugs are encode/OPFS/layout/UX only; tier derivation is correct).
 - Rebuilding the Live Audio Chain DSP; B8 removes the placeholder unless a real live-chain denoiser is implemented.
+- **Part 2 (IA):** full accessibility certification (keyboard/screen-reader/responsive — the audit scopes that to a separate pass); rebuilding the underlying features (capture, voice cleanup, captions, reframe) — Part 2 is navigation/labelling/density only; changing the dark precision-instrument visual language (IA, not theme); and new left-dock panels for a full dock-switcher unless those surfaces are actually built (see D11 Option A vs B).
 
 ## Acceptance criteria
 
@@ -124,3 +174,11 @@ Live computed `.workspace.has-bin` columns were `364px 756px 360px` — matching
 7. A capability/diagnostics row reflects **WebNN** availability and the active ORT execution provider (B7).
 8. The Live Audio Chain no longer shows a disabled "Noise Suppression" placeholder while the app ships Voice Cleanup / Local Audio Cleanup elsewhere (B8).
 9. `pnpm run check` is green and the unit-test count does not decrease; new probe unit tests cover B1–B3 (and B5 if the fallback lands).
+
+**Part 2 — editor chrome IA (when implemented):**
+
+10. At 1280×720 every top-level right-rail destination is fully visible/clickable; no primary nav relies on a hidden-scrollbar `overflow-x` region, and switching one destination never clips another (B10, B14).
+11. Each left-rail control's behavior matches its visual affordance; no dead controls and none silently switch a different surface (B11).
+12. No bare `Cleanup` label appears on two surfaces; each audio concept maps to exactly one destination (B12).
+13. No command is reachable from more than one redundant top-chrome surface (`Browser capabilities`/`Help` have one home); `Search actions…` is not repeated per menu (B13).
+14. Beat Detection has a clearly-named home linked to transport beat-snap (B15); unavailable Record/Program panels show a compact status + disclosure rather than a full-body reason dump (B16).
