@@ -249,7 +249,12 @@ export function AutoZoomPanel(props: AutoZoomPanelProps) {
 						</label>
 					</div>
 
-					<button type="button" class="recluster-btn" aria-label="Re-cluster proposals" onClick={handleRecluster}>
+					<button
+						type="button"
+						class="recluster-btn"
+						aria-label="Re-cluster proposals"
+						onClick={handleRecluster}
+					>
 						Re-cluster
 					</button>
 
