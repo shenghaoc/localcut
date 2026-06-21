@@ -8402,8 +8402,11 @@ body::-webkit-scrollbar-thumb:hover,
 
 .convert-progress-fill {
 	height: 100%;
+	width: 100%;
 	background: var(--primary);
-	transition: width 160ms linear;
+	transform-origin: left;
+	transition: transform 160ms linear;
+	will-change: transform;
 }
 
 .convert-progress-label {

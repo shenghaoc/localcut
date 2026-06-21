@@ -601,7 +601,8 @@ function JobRow(props: { job: ConvertJob } & JobRowDeps) {
 						aria-valuemax={100}
 						aria-valuenow={Math.round(job().fraction * 100)}
 					>
-						<div class="convert-progress-fill" style={{ width: `${job().fraction * 100}%` }} />
+						{/* Bolt ⚡: Use hardware-accelerated scaleX instead of width to avoid layout thrashing. */}
+						<div class="convert-progress-fill" style={{ transform: `scaleX(${job().fraction})` }} />
 					</div>
 					<span class="convert-progress-label">
 						<Loader2 size={12} aria-hidden="true" class="convert-spin" />
