@@ -97,33 +97,47 @@ export const ReframeOverlay: Component<ReframeOverlayProps> = (props) => {
 					'z-index': '10'
 				}}
 			>
-				{/* Semi-transparent crop rectangle */}
+				{/* Bolt ⚡: Hardware-accelerate translation. Using a full-sized inset wrapper
+				    allows percentage translates to be relative to the container rather than the element itself,
+				    bypassing main-thread layout thrashing when X/Y animate during playback. */}
 				<div
-					class="reframe-crop-rect"
+					class="reframe-crop-wrapper"
 					style={{
 						position: 'absolute',
-						left: `${cropRect()!.left}%`,
-						top: `${cropRect()!.top}%`,
-						width: `${cropRect()!.width}%`,
-						height: `${cropRect()!.height}%`,
-						border: '2px solid rgba(74, 144, 226, 0.8)',
-						'box-shadow': '0 0 0 9999px rgba(0, 0, 0, 0.4)',
-						'border-radius': '2px'
+						inset: '0',
+						translate: `${cropRect()!.left}% ${cropRect()!.top}%`,
+						'will-change': 'translate'
 					}}
 				>
-					{/* Action-safe zone (dashed inner rectangle) */}
+					{/* Semi-transparent crop rectangle */}
 					<div
-						class="reframe-safe-zone"
+						class="reframe-crop-rect"
 						style={{
 							position: 'absolute',
-							left: `${safeZoneStyle().left}`,
-							top: `${safeZoneStyle().top}`,
-							width: `${safeZoneStyle().width}`,
-							height: `${safeZoneStyle().height}`,
-							border: '1px dashed rgba(255, 255, 255, 0.5)',
-							'border-radius': '1px'
+							left: '0',
+							top: '0',
+							width: `${cropRect()!.width}%`,
+							height: `${cropRect()!.height}%`,
+							border: '2px solid rgba(74, 144, 226, 0.8)',
+							'box-shadow': '0 0 0 9999px rgba(0, 0, 0, 0.4)',
+							'border-radius': '2px',
+							'will-change': 'width, height'
 						}}
-					/>
+					>
+						{/* Action-safe zone (dashed inner rectangle) */}
+						<div
+							class="reframe-safe-zone"
+							style={{
+								position: 'absolute',
+								left: `${safeZoneStyle().left}`,
+								top: `${safeZoneStyle().top}`,
+								width: `${safeZoneStyle().width}`,
+								height: `${safeZoneStyle().height}`,
+								border: '1px dashed rgba(255, 255, 255, 0.5)',
+								'border-radius': '1px'
+							}}
+						/>
+					</div>
 				</div>
 			</div>
 		</Show>

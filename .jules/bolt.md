@@ -27,3 +27,8 @@
 
 **Learning:** Animating a continuously updating progress bar (like the replay buffer) using the CSS `width` property inline (e.g. `style={{ width: \`${percent}%\` }}`) forces main-thread layout recalculations (reflows) on every update. This thrashes performance.
 **Action:** Use hardware-accelerated CSS `transform: scaleX(...)` combined with `transform-origin: left` and `width: 100%` on the base class instead. The browser can offload this to the compositor thread (GPU), bypassing the layout phase entirely for much smoother animation.
+
+## 2026-06-22 - CSS Layout Thrashing on Reframe Crop Overlay
+
+**Learning:** Animating a Smart Reframe crop overlay's position using CSS `left` and `top` properties inline (e.g. `style={{ left: \`\${x}%\`, top: \`\${y}%\` }}`) during a high-frequency 60fps playback loop forces main-thread layout recalculations (reflows) on every frame. This causes severe layout thrashing because the DOM element is continuously repositioned based on the playhead.
+**Action:** Use a full-sized wrapper (`inset: 0`) and the standalone hardware-accelerated CSS `translate` property for positioning, rather than applying `left` and `top` directly on the percentage-sized child. The wrapper ensures that translation percentages are relative to the parent container's size (since the wrapper is 100% size), while still bypassing the layout phase entirely by offloading to the compositor thread (GPU).
