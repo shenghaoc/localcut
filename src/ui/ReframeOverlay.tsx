@@ -97,9 +97,12 @@ export const ReframeOverlay: Component<ReframeOverlayProps> = (props) => {
 					'z-index': '10'
 				}}
 			>
-				{/* Bolt ⚡: Hardware-accelerate translation. Using a full-sized inset wrapper
-				    allows percentage translates to be relative to the container rather than the element itself,
-				    bypassing main-thread layout thrashing when X/Y animate during playback. */}
+				{/* Hardware-accelerated positioning: a full-size wrapper (inset: 0) makes the
+				    percentage translate values resolve to the same pixels as left/top on the
+				    container. CSS `translate` always resolves percentages against the element's
+				    own size, but because the wrapper is the same size as the container the offset
+				    is identical — and translate skips layout entirely, composited by the GPU,
+				    avoiding main-thread layout thrashing when X/Y animate during playback. */}
 				<div
 					class="reframe-crop-wrapper"
 					style={{
