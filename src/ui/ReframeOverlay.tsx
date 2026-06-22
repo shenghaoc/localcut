@@ -120,8 +120,7 @@ export const ReframeOverlay: Component<ReframeOverlayProps> = (props) => {
 							height: `${cropRect()!.height}%`,
 							border: '2px solid rgba(74, 144, 226, 0.8)',
 							'box-shadow': '0 0 0 9999px rgba(0, 0, 0, 0.4)',
-							'border-radius': '2px',
-							'will-change': 'width, height'
+							'border-radius': '2px'
 						}}
 					>
 						{/* Action-safe zone (dashed inner rectangle) */}
