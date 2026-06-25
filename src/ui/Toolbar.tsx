@@ -414,7 +414,7 @@ export function Toolbar(props: ToolbarProps) {
 							onClick={() => props.onRedo()}
 							disabled={!props.canRedo}
 							aria-label="Redo"
-							title={`Redo (${glyphs.shift}+${glyphs.mod}+Z)`}
+							title={`Redo (${glyphs.mod}+${glyphs.shift}+Z)`}
 						>
 							<Redo2 size={14} aria-hidden="true" />
 						</Button>
