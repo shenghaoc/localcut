@@ -405,7 +405,7 @@ export function Toolbar(props: ToolbarProps) {
 							onClick={() => props.onUndo()}
 							disabled={!props.canUndo}
 							aria-label="Undo"
-							title="Undo"
+							title={`Undo (${glyphs.mod}+Z)`}
 						>
 							<Undo2 size={14} aria-hidden="true" />
 						</Button>
@@ -414,7 +414,7 @@ export function Toolbar(props: ToolbarProps) {
 							onClick={() => props.onRedo()}
 							disabled={!props.canRedo}
 							aria-label="Redo"
-							title="Redo"
+							title={`Redo (${glyphs.mod}+${glyphs.shift}+Z)`}
 						>
 							<Redo2 size={14} aria-hidden="true" />
 						</Button>
@@ -425,7 +425,7 @@ export function Toolbar(props: ToolbarProps) {
 							onClick={() => props.onStep(-1)}
 							disabled={transportDisabled()}
 							aria-label="Step back one frame"
-							title="Step back one frame"
+							title="Step back one frame (J)"
 						>
 							<SkipBack size={14} aria-hidden="true" />
 						</Button>
@@ -434,6 +434,7 @@ export function Toolbar(props: ToolbarProps) {
 							onClick={() => props.onPlay()}
 							disabled={transportDisabled() || props.playing()}
 							aria-label="Play transport"
+							title="Play transport (L)"
 						>
 							<Play size={14} aria-hidden="true" />
 							Play
@@ -442,6 +443,7 @@ export function Toolbar(props: ToolbarProps) {
 							onClick={() => props.onPause()}
 							disabled={transportDisabled() || !props.playing()}
 							aria-label="Pause transport"
+							title="Pause transport (K)"
 						>
 							<Pause size={14} aria-hidden="true" />
 							Pause
