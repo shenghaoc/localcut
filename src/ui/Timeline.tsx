@@ -18,6 +18,7 @@ import { TimelineClip } from './TimelineClip';
 import { TimelineTrack } from './TimelineTrack';
 import { ASSET_DRAG_MIME } from './MediaBin';
 import type { ThumbnailEntry } from './thumbnail-store';
+import { modifierGlyphs } from './platform';
 import {
 	type ClipEffectParamsSnapshot,
 	type TimelineClipMove,
@@ -146,6 +147,7 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
 }
 
 export function Timeline(props: TimelineProps) {
+	const glyphs = modifierGlyphs();
 	const fps = () => props.frameRate?.() ?? DEFAULT_FPS;
 	const [pxPerSecond, setPxPerSecond] = createSignal(DEFAULT_PX_PER_SECOND);
 	const [isScrubbing, setIsScrubbing] = createSignal(false);
@@ -661,7 +663,7 @@ export function Timeline(props: TimelineProps) {
 						class="timeline-tool-button"
 						onClick={() => zoomBy(0.8)}
 						aria-label="Zoom out"
-						title="Zoom out"
+						title={`Zoom out (${glyphs.mod}+-)`}
 					>
 						<ZoomOut size={13} aria-hidden="true" />
 					</button>
@@ -670,7 +672,7 @@ export function Timeline(props: TimelineProps) {
 						class="timeline-tool-button"
 						onClick={() => zoomBy(1.25)}
 						aria-label="Zoom in"
-						title="Zoom in"
+						title={`Zoom in (${glyphs.mod}+=)`}
 					>
 						<ZoomIn size={13} aria-hidden="true" />
 					</button>

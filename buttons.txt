@@ -1,0 +1,158 @@
+src/ui/Timeline.tsx:555:					<button
+src/ui/Timeline.tsx:564:					<button
+src/ui/Timeline.tsx:573:					<button
+src/ui/Timeline.tsx:582:					<button
+src/ui/Timeline.tsx:595:					<button
+src/ui/Timeline.tsx:607:					<button
+src/ui/Timeline.tsx:648:					<button
+src/ui/Timeline.tsx:659:					<button
+src/ui/Timeline.tsx:668:					<button
+src/ui/Timeline.tsx:764:													<button
+src/ui/Timeline.tsx:803:											<button
+src/ui/Timeline.tsx:812:											<button
+src/ui/components/button.tsx:29:		<button
+src/ui/ZoomPresetPanel.tsx:98:						<button
+src/ui/ZoomPresetPanel.tsx:184:					<button type="button" onClick={handleApply}>
+src/ui/ZoomPresetPanel.tsx:187:					<button type="button" onClick={() => setShowWarning(false)}>
+src/ui/ZoomPresetPanel.tsx:193:			<button type="button" class="apply-btn" onClick={handleApply}>
+src/ui/DiagnosticsPanel.tsx:395:									<button
+src/ui/ScopePanel.tsx:150:				<button
+src/ui/ScopePanel.tsx:227:				<button
+src/ui/Toolbar.tsx:346:												<button
+src/ui/Toolbar.tsx:568:				<button
+src/ui/Toolbar.tsx:585:					<button
+src/ui/BeatPanel.tsx:122:											<button
+src/ui/BeatPanel.tsx:144:											<button
+src/ui/BeatPanel.tsx:154:									<button
+src/ui/BeatPanel.tsx:194:						<button
+src/ui/BeatPanel.tsx:204:						<button
+src/ui/PublishPanel.tsx:493:					<button type="button" class="export-why-link" onClick={() => props.onOpenGuide()}>
+src/ui/Inspector.tsx:1258:								<button
+src/ui/Inspector.tsx:1495:													<button
+src/ui/Inspector.tsx:1504:													<button
+src/ui/Inspector.tsx:1527:													<button
+src/ui/Inspector.tsx:1644:										<button
+src/ui/Inspector.tsx:1732:												<button
+src/ui/Inspector.tsx:1755:											<button
+src/ui/Inspector.tsx:1786:													<button
+src/ui/Inspector.tsx:1795:													<button
+src/ui/Inspector.tsx:1818:													<button
+src/ui/Inspector.tsx:1871:												<button
+src/ui/Inspector.tsx:1880:												<button
+src/ui/Inspector.tsx:1909:												<button
+src/ui/Inspector.tsx:1925:												<button
+src/ui/Inspector.tsx:1979:												<button
+src/ui/Inspector.tsx:2005:											<button
+src/ui/Inspector.tsx:2046:												<button
+src/ui/Inspector.tsx:2055:												<button
+src/ui/Inspector.tsx:2081:												<button
+src/ui/Inspector.tsx:2101:													<button
+src/ui/Inspector.tsx:2156:																<button
+src/ui/Inspector.tsx:2165:																<button
+src/ui/Inspector.tsx:2188:																<button
+src/ui/Inspector.tsx:2202:													<button
+src/ui/Inspector.tsx:2351:										<button
+src/ui/Inspector.tsx:2380:										<button
+src/ui/Inspector.tsx:2404:											<button
+src/ui/Inspector.tsx:2413:											<button
+src/ui/Inspector.tsx:2440:											<button
+src/ui/Inspector.tsx:2459:											<button
+src/ui/Inspector.tsx:2468:											<button
+src/ui/Inspector.tsx:2493:											<button
+src/ui/Inspector.tsx:2512:											<button
+src/ui/Inspector.tsx:2521:											<button
+src/ui/Inspector.tsx:2546:											<button
+src/ui/Inspector.tsx:2565:											<button
+src/ui/Inspector.tsx:2574:											<button
+src/ui/Inspector.tsx:2599:											<button
+src/ui/Inspector.tsx:2618:											<button
+src/ui/Inspector.tsx:2627:											<button
+src/ui/Inspector.tsx:2652:											<button
+src/ui/Inspector.tsx:2750:							<button
+src/ui/AutoZoomPanel.tsx:252:					<button
+src/ui/AutoZoomPanel.tsx:271:									<button
+src/ui/AutoZoomPanel.tsx:283:									<button
+src/ui/KeystrokeOverlayPanel.tsx:205:				<button
+src/ui/App.tsx:4467:							<button
+src/ui/App.tsx:4712:								<button
+src/ui/App.tsx:4732:												<button
+src/ui/App.tsx:4769:									<button
+src/ui/App.tsx:4873:												<button
+src/ui/App.tsx:4882:											<button
+src/ui/App.tsx:4909:									<button
+src/ui/App.tsx:4943:										<button
+src/ui/App.tsx:5665:								<button
+src/ui/App.tsx:5709:							<button
+src/ui/SecondaryRailTabs.tsx:71:					<button
+src/ui/InterpolationControls.tsx:73:							<button
+src/ui/InterpolationControls.tsx:106:					<button
+src/ui/ExportDialog.tsx:392:									<button
+src/ui/ExportDialog.tsx:437:							<button
+src/ui/ExportDialog.tsx:449:							<button
+src/ui/ExportDialog.tsx:471:										<button
+src/ui/ExportDialog.tsx:514:									<button type="button" class="export-why-link" onClick={props.onWhyConstraints}>
+src/ui/ExportDialog.tsx:664:							<button
+src/ui/ExportDialog.tsx:677:							<button
+src/ui/ExportDialog.tsx:691:								<button
+src/ui/ExportDialog.tsx:903:							<button
+src/ui/CapabilityPanel.tsx:94:					<button type="button" class="export-why-link" onClick={() => props.onOpenGuide?.()}>
+src/ui/TimelineTrack.tsx:64:				<button
+src/ui/TimelineTrack.tsx:78:				<button
+src/ui/TimelineTrack.tsx:92:				<button
+src/ui/TimelineTrack.tsx:104:				<button
+src/ui/TimelineTrack.tsx:116:				<button
+src/ui/TimelineTrack.tsx:126:				<button
+src/ui/TimelineTrack.tsx:136:				<button
+src/ui/CalloutTool.tsx:52:			<button
+src/ui/CalloutTool.tsx:77:							<button
+src/ui/RecordPanel.tsx:735:					<button type="button" onClick={() => void addScreen()} disabled={!canRecord()}>
+src/ui/RecordPanel.tsx:739:					<button type="button" onClick={() => void addCamera()} disabled={!canRecord()}>
+src/ui/RecordPanel.tsx:743:					<button type="button" onClick={() => void addMic()} disabled={!canRecord()}>
+src/ui/RecordPanel.tsx:825:								<button
+src/ui/RecordPanel.tsx:871:						<button
+src/ui/RecordPanel.tsx:882:						<button
+src/ui/RecordPanel.tsx:904:								<button type="button" onClick={props.onPause}>
+src/ui/RecordPanel.tsx:910:								<button type="button" onClick={props.onResume}>
+src/ui/RecordPanel.tsx:915:							<button
+src/ui/RecordPanel.tsx:926:					<button type="button" onClick={startRequested} disabled={!canStart()}>
+src/ui/RecordPanel.tsx:933:						<button type="button" onClick={clearCountdown}>
+src/ui/RecordPanel.tsx:945:					<button type="button" onClick={clearCountdown}>
+src/ui/RecorderControlStrip.tsx:32:					<button type="button" aria-label="Pause recording" onClick={() => props.onPause()}>
+src/ui/RecorderControlStrip.tsx:37:					<button type="button" aria-label="Resume recording" onClick={() => props.onResume()}>
+src/ui/RecorderControlStrip.tsx:41:				<button
+src/ui/ProgramPanel.tsx:151:							<button
+src/ui/ProgramPanel.tsx:159:							<button
+src/ui/ProgramPanel.tsx:167:							<button
+src/ui/ProgramPanel.tsx:181:									<button
+src/ui/ProgramPanel.tsx:200:							<button
+src/ui/ProgramPanel.tsx:222:										<button
+src/ui/ProgramPanel.tsx:250:									<button
+src/ui/ProgramPanel.tsx:287:							<button
+src/ui/ProgramPanel.tsx:298:						<button
+src/ui/CaptionStyleInspector.tsx:457:						<button
+src/ui/CaptionStyleInspector.tsx:657:				<button type="button" onClick={handleImport} aria-label="Import preset from file">
+src/ui/CaptionStyleInspector.tsx:660:				<button
+src/ui/CaptionStyleInspector.tsx:668:				<button
+src/ui/CaptionStyleInspector.tsx:678:					<button
+src/ui/TranscriptPanel.tsx:259:						<button
+src/ui/TranscriptPanel.tsx:270:					<button type="button" class="button secondary" onClick={() => importInput?.click()}>
+src/ui/TranscriptPanel.tsx:284:					<button
+src/ui/TranscriptPanel.tsx:355:									<button
+src/ui/TranscriptPanel.tsx:378:									<button
+src/ui/TranscriptPanel.tsx:500:											<button
+src/ui/TranscriptPanel.tsx:522:													<button
+src/ui/TranscriptPanel.tsx:544:											<button
+src/ui/TranscriptPanel.tsx:646:													<button
+src/ui/TranscriptPanel.tsx:655:													<button
+src/ui/TranscriptPanel.tsx:663:													<button
+src/ui/TranscriptPanel.tsx:670:													<button
+src/ui/TranscriptPanel.tsx:677:													<button
+src/ui/TranscriptPanel.tsx:684:													<button
+src/ui/RenderQueuePanel.tsx:179:										<button
+src/ui/RenderQueuePanel.tsx:189:										<button
+src/ui/RenderQueuePanel.tsx:199:										<button
+src/ui/MediaBin.tsx:300:										<button
+src/ui/MediaBin.tsx:310:										<button
+src/ui/SilenceReviewPanel.tsx:209:					<button
+src/ui/SilenceReviewPanel.tsx:371:												<button
+src/ui/SilenceReviewPanel.tsx:380:												<button

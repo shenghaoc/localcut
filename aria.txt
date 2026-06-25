@@ -1,0 +1,248 @@
+src/ui/Timeline.tsx:554:				<div class="timeline-actions" role="group" aria-label="Timeline tools">
+src/ui/Timeline.tsx:559:						aria-label="Add video track"
+src/ui/Timeline.tsx:568:						aria-label="Add audio track"
+src/ui/Timeline.tsx:577:						aria-label="Add title clip"
+src/ui/Timeline.tsx:590:						aria-label="Previous marker"
+src/ui/Timeline.tsx:602:						aria-label="Add marker at playhead"
+src/ui/Timeline.tsx:615:						aria-label="Next marker"
+src/ui/Timeline.tsx:624:						aria-label="Timeline snapping modes"
+src/ui/Timeline.tsx:630:							aria-label="Toggle snapping"
+src/ui/Timeline.tsx:640:							aria-label="Toggle snap to beats"
+src/ui/Timeline.tsx:653:						aria-label="Close gaps"
+src/ui/Timeline.tsx:663:						aria-label="Zoom out"
+src/ui/Timeline.tsx:672:						aria-label="Zoom in"
+src/ui/Timeline.tsx:783:														aria-label={`${transition.kind} transition between ${transition.fromClipId} and ${transition.toClipId}`}
+src/ui/Timeline.tsx:816:												aria-label={`Delete ${marker.label}`}
+src/ui/Timeline.tsx:833:								aria-label="Timeline"
+src/ui/TimelineClip.tsx:337:			aria-label={`${clipTitle()}${props.clip.offline ? ' offline' : ''}`}
+src/ui/TimelineClip.tsx:361:						aria-label="Portrait matte enabled"
+src/ui/TimelineClip.tsx:367:				<span class="timeline-clip-left-handle" role="separator" aria-label="Trim start" />
+src/ui/TimelineClip.tsx:368:				<span class="timeline-clip-right-handle" role="separator" aria-label="Trim end" />
+src/ui/TimelineClip.tsx:374:						aria-label={`Delete ${props.clip.id}`}
+src/ui/SafeZoneOverlay.tsx:21:						aria-label={zone.label}
+src/ui/LiveAudioChainPanel.tsx:45:					aria-label={props.bypass ? `Enable ${props.label}` : `Bypass ${props.label}`}
+src/ui/DiagnosticsPanel.tsx:93:				aria-labelledby="diagnostics-panel-title"
+src/ui/DiagnosticsPanel.tsx:140:							aria-label="Refresh diagnostics"
+src/ui/DiagnosticsPanel.tsx:148:							aria-label="Copy diagnostics report"
+src/ui/DiagnosticsPanel.tsx:156:							aria-label="Close diagnostics panel"
+src/ui/ProgramMonitor.tsx:66:				aria-label="Program output preview"
+src/ui/PreviewCanvas.tsx:26:			aria-label="Video preview"
+src/ui/ScopePanel.tsx:147:			aria-label="Video scopes"
+src/ui/ScopePanel.tsx:230:					aria-label={`Toggle ${props.label} fullscreen`}
+src/ui/InterchangeMenu.tsx:60:						aria-label="Timeline interchange"
+src/ui/Toolbar.tsx:286:				<nav class="toolbar-menu-nav" aria-label="Application menu">
+src/ui/Toolbar.tsx:329:					<Popover.Trigger class="command-search" aria-label="Search actions">
+src/ui/Toolbar.tsx:337:							<Popover.Content class="command-popover" aria-label="Command palette">
+src/ui/Toolbar.tsx:385:						aria-label="Import media"
+src/ui/Toolbar.tsx:402:					<div class="edit-controls" role="group" aria-label="Edit history">
+src/ui/Toolbar.tsx:407:							aria-label="Undo"
+src/ui/Toolbar.tsx:416:							aria-label="Redo"
+src/ui/Toolbar.tsx:422:					<div class="transport-controls" role="group" aria-label="Transport">
+src/ui/Toolbar.tsx:427:							aria-label="Step back one frame"
+src/ui/Toolbar.tsx:436:							aria-label="Play transport"
+src/ui/Toolbar.tsx:444:							aria-label="Pause transport"
+src/ui/Toolbar.tsx:453:							aria-label="Step forward one frame"
+src/ui/Toolbar.tsx:463:							aria-label="Loop playback"
+src/ui/Toolbar.tsx:472:					<div class="toolbar-timecode" aria-label="Playback timecode">
+src/ui/Toolbar.tsx:483:						aria-label="Timeline snapping modes"
+src/ui/Toolbar.tsx:489:							aria-label="Toggle timeline snapping"
+src/ui/Toolbar.tsx:498:							aria-label="Toggle beat-grid snapping"
+src/ui/Toolbar.tsx:508:					<div class="master-mix" role="group" aria-label="Master mix">
+src/ui/Toolbar.tsx:534:			<div class="pipeline-strip" aria-label="Pipeline status">
+src/ui/BeatPanel.tsx:56:		<div class="beat-panel" role="region" aria-label="Beat analysis">
+src/ui/BeatPanel.tsx:104:											aria-label={`${beatResult.tempoBpm.toFixed(0)} BPM, ${beatResult.beatTimesMs.length} beats`}
+src/ui/BeatPanel.tsx:126:												aria-label={`${result() ? 'Re-analyse' : 'Analyse'} beats for ${source.fileName}`}
+src/ui/BeatPanel.tsx:140:													aria-label="Beat analysis progress"
+src/ui/BeatPanel.tsx:148:												aria-label="Cancel beat analysis"
+src/ui/BeatPanel.tsx:159:										aria-label={`${isEnabled() ? 'Hide' : 'Show'} beat grid for ${source.fileName}`}
+src/ui/BeatPanel.tsx:190:							aria-label="Global beat offset in milliseconds"
+src/ui/BundleDialog.tsx:94:					<Popover.Content class="export-popover bundle-popover panel" aria-label="Project bundle">
+src/ui/PublishPanel.tsx:183:				aria-labelledby="publish-panel-title"
+src/ui/PublishPanel.tsx:228:							aria-label="Close publish panel"
+src/ui/PublishPanel.tsx:485:				<section class="publish-rtmp-note" aria-label="RTMP platforms">
+src/ui/Inspector.tsx:1498:														aria-label={`Previous ${spec.label} keyframe`}
+src/ui/Inspector.tsx:1507:														aria-label={`Toggle ${spec.label} keyframe`}
+src/ui/Inspector.tsx:1530:														aria-label={`Next ${spec.label} keyframe`}
+src/ui/Inspector.tsx:1647:											aria-label="Add speed ramp"
+src/ui/Inspector.tsx:1682:																		aria-label={`Speed ramp keyframe ${i() + 1} time`}
+src/ui/Inspector.tsx:1700:																		aria-label={`Speed ramp keyframe ${i() + 1} speed`}
+src/ui/Inspector.tsx:1714:																		aria-label={`Speed ramp keyframe ${i() + 1} easing`}
+src/ui/Inspector.tsx:1735:													aria-label="Add speed ramp keyframe"
+src/ui/Inspector.tsx:1744:														aria-label="Pitch preserve"
+src/ui/Inspector.tsx:1758:												aria-label="Clear speed ramp"
+src/ui/Inspector.tsx:1789:														aria-label={`Previous ${spec.label} keyframe`}
+src/ui/Inspector.tsx:1798:														aria-label={`Toggle ${spec.label} keyframe`}
+src/ui/Inspector.tsx:1821:														aria-label={`Next ${spec.label} keyframe`}
+src/ui/Inspector.tsx:1874:													aria-label="Previous Skin Smoothing keyframe"
+src/ui/Inspector.tsx:1883:													aria-label="Toggle Skin Smoothing keyframe"
+src/ui/Inspector.tsx:1912:													aria-label="Next Skin Smoothing keyframe"
+src/ui/Inspector.tsx:1929:													aria-label="Bypass skin smoothing (A/B)"
+src/ui/Inspector.tsx:1963:																aria-label={spec.label}
+src/ui/Inspector.tsx:2008:												aria-label="Import LUT"
+src/ui/Inspector.tsx:2049:													aria-label="Previous LUT strength keyframe"
+src/ui/Inspector.tsx:2058:													aria-label="Toggle LUT strength keyframe"
+src/ui/Inspector.tsx:2084:													aria-label="Next LUT strength keyframe"
+src/ui/Inspector.tsx:2104:														aria-label="Apply Look Preset"
+src/ui/Inspector.tsx:2159:																	aria-label={`Previous ${spec.label} keyframe`}
+src/ui/Inspector.tsx:2168:																	aria-label={`Toggle ${spec.label} keyframe`}
+src/ui/Inspector.tsx:2191:																	aria-label={`Next ${spec.label} keyframe`}
+src/ui/Inspector.tsx:2383:											aria-label={beauty().enabled ? 'Disable Beauty' : 'Enable Beauty'}
+src/ui/Inspector.tsx:2407:												aria-label="Previous Beauty master strength keyframe"
+src/ui/Inspector.tsx:2416:												aria-label="Toggle Beauty master strength keyframe"
+src/ui/Inspector.tsx:2443:												aria-label="Next Beauty master strength keyframe"
+src/ui/Inspector.tsx:2462:												aria-label="Previous Jaw Slim keyframe"
+src/ui/Inspector.tsx:2471:												aria-label="Toggle Jaw Slim keyframe"
+src/ui/Inspector.tsx:2496:												aria-label="Next Jaw Slim keyframe"
+src/ui/Inspector.tsx:2515:												aria-label="Previous Eye Enlarge keyframe"
+src/ui/Inspector.tsx:2524:												aria-label="Toggle Eye Enlarge keyframe"
+src/ui/Inspector.tsx:2549:												aria-label="Next Eye Enlarge keyframe"
+src/ui/Inspector.tsx:2568:												aria-label="Previous Nose Width keyframe"
+src/ui/Inspector.tsx:2577:												aria-label="Toggle Nose Width keyframe"
+src/ui/Inspector.tsx:2602:												aria-label="Next Nose Width keyframe"
+src/ui/Inspector.tsx:2621:												aria-label="Previous Mouth keyframe"
+src/ui/Inspector.tsx:2630:												aria-label="Toggle Mouth keyframe"
+src/ui/Inspector.tsx:2655:												aria-label="Next Mouth keyframe"
+src/ui/AutoZoomPanel.tsx:255:						aria-label="Re-cluster proposals"
+src/ui/AutoZoomPanel.tsx:275:										aria-label={
+src/ui/AutoZoomPanel.tsx:287:										aria-label={
+src/ui/KeystrokeOverlayPanel.tsx:202:		<div class="keystroke-overlay-panel" role="region" aria-label="Keystroke Overlay">
+src/ui/KeystrokeOverlayPanel.tsx:208:					aria-label="Close panel"
+src/ui/App.tsx:4350:								aria-labelledby="bundle-replace-title"
+src/ui/App.tsx:4482:							<aside class="dock-left" aria-label="Library">
+src/ui/App.tsx:4659:									aria-label="Drag to set zoom region"
+src/ui/App.tsx:4680:									aria-label="Draw callout"
+src/ui/App.tsx:4727:										aria-label="Project format"
+src/ui/App.tsx:4741:													aria-label={`Set project format to ${aspect} (${aspectLabel(aspect)})`}
+src/ui/App.tsx:4751:											aria-label="Safe zone platform"
+src/ui/App.tsx:4788:											aria-label="Cover title overlay"
+src/ui/App.tsx:4805:												aria-label="Cover frame preview"
+src/ui/App.tsx:4865:											aria-label="Import media"
+src/ui/App.tsx:4905:						<div id="side-rail" class="side-rail" role="region" aria-label="Side panel">
+src/ui/App.tsx:4912:										aria-label="Expand side panel"
+src/ui/App.tsx:4931:									<Tabs.List class="side-rail-tab-bar" aria-label="Side panel tabs">
+src/ui/App.tsx:4945:											aria-label="Collapse side panel"
+src/ui/App.tsx:4959:											aria-labelledby={sideRailTabTriggerId('inspector')}
+src/ui/App.tsx:5143:											aria-labelledby={sideRailTabTriggerId('text')}
+src/ui/App.tsx:5313:											aria-labelledby={sideRailTabTriggerId('capture')}
+src/ui/App.tsx:5476:											aria-labelledby={sideRailTabTriggerId('audio')}
+src/ui/SecondaryRailTabs.tsx:66:			aria-label={props.label}
+src/ui/SecondaryRailTabs.tsx:105:			aria-labelledby={secondaryTabId(props.idPrefix, props.tab)}
+src/ui/InterpolationControls.tsx:57:		<div class="interpolation-controls" role="group" aria-label="Frame Interpolation">
+src/ui/InterpolationControls.tsx:78:								aria-label={
+src/ui/InterpolationControls.tsx:111:						aria-label="Preview interpolated segment"
+src/ui/ExportDialog.tsx:354:					<Popover.Content class="export-popover panel" aria-label="Export">
+src/ui/ExportDialog.tsx:395:										aria-label="Delete preset"
+src/ui/ExportDialog.tsx:436:						<div class="export-presets" role="group" aria-label="Export preset">
+src/ui/ExportDialog.tsx:464:						<div class="export-codecs" role="group" aria-label="Export codec">
+src/ui/ExportDialog.tsx:663:						<div class="export-presets" role="group" aria-label="Export range">
+src/ui/AutoCaptionsPanel.tsx:117:				aria-labelledby="auto-captions-panel-title"
+src/ui/AutoCaptionsPanel.tsx:134:						aria-label="Close auto captions panel"
+src/ui/AutoCaptionsPanel.tsx:163:													aria-label="Auto captions progress"
+src/ui/AutoCaptionsPanel.tsx:187:										aria-label="Model download progress"
+src/ui/LanguageToolsPanel.tsx:122:				aria-labelledby="language-tools-panel-title"
+src/ui/LanguageToolsPanel.tsx:141:							aria-label="Close language tools panel"
+src/ui/LanguageToolsPanel.tsx:154:						aria-label="Select caption track"
+src/ui/LanguageToolsPanel.tsx:196:								aria-label="Target language"
+src/ui/LanguageToolsPanel.tsx:379:												aria-label="Copy titles"
+src/ui/LanguageToolsPanel.tsx:413:												aria-label="Copy hashtags"
+src/ui/LanguageToolsPanel.tsx:441:												aria-label="Copy caption"
+src/ui/CapabilityPanel.tsx:39:				aria-labelledby="capability-panel-title"
+src/ui/CapabilityPanel.tsx:83:						aria-label="Close capability panel"
+src/ui/TimelineTrack.tsx:68:					aria-label={props.track.locked ? `Unlock ${props.track.id}` : `Lock ${props.track.id}`}
+src/ui/TimelineTrack.tsx:82:					aria-label={props.track.visible ? `Hide ${props.track.id}` : `Show ${props.track.id}`}
+src/ui/TimelineTrack.tsx:96:					aria-label={
+src/ui/TimelineTrack.tsx:108:					aria-label={
+src/ui/TimelineTrack.tsx:121:					aria-label={`Move ${props.track.id} up`}
+src/ui/TimelineTrack.tsx:131:					aria-label={`Move ${props.track.id} down`}
+src/ui/TimelineTrack.tsx:140:					aria-label={`Remove ${props.track.id}`}
+src/ui/CalloutTool.tsx:58:				aria-label="Callout tool"
+src/ui/CalloutTool.tsx:67:					aria-label="Select callout kind"
+src/ui/RecordPanel.tsx:671:		<section class="record-panel" aria-labelledby="record-panel-title">
+src/ui/RecordPanel.tsx:790:				<div class="record-segmented" role="radiogroup" aria-label="Countdown duration">
+src/ui/RecordPanel.tsx:813:					<div class="record-corner-grid" aria-label="Webcam corner">
+src/ui/RecordPanel.tsx:827:									aria-label={`Webcam ${corner}`}
+src/ui/RecordPanel.tsx:836:					<div class="record-segmented" role="radiogroup" aria-label="Webcam size">
+src/ui/LimitedPreview.tsx:14:		<div class="limited-preview" aria-label="Compatibility preview">
+src/ui/RecorderControlStrip.tsx:28:				<span aria-label="Paused">Paused {formatTime(props.pausedUs)}</span>
+src/ui/RecorderControlStrip.tsx:32:					<button type="button" aria-label="Pause recording" onClick={() => props.onPause()}>
+src/ui/RecorderControlStrip.tsx:37:					<button type="button" aria-label="Resume recording" onClick={() => props.onResume()}>
+src/ui/RecorderControlStrip.tsx:43:					aria-label="Stop recording"
+src/ui/ProgramPanel.tsx:119:				<div class="program-panel program-panel--disabled" role="region" aria-label="Program Mode">
+src/ui/ProgramPanel.tsx:133:				aria-label="Program Mode"
+src/ui/ProgramPanel.tsx:148:					<div class="program-panel-sources" role="group" aria-label="Sources">
+src/ui/ProgramPanel.tsx:155:								aria-label="Add screen source"
+src/ui/ProgramPanel.tsx:163:								aria-label="Add camera source"
+src/ui/ProgramPanel.tsx:171:								aria-label="Add microphone"
+src/ui/ProgramPanel.tsx:185:										aria-label={`Remove ${source.label}`}
+src/ui/ProgramPanel.tsx:196:				<div class="program-panel-scenes" role="group" aria-label="Scenes">
+src/ui/ProgramPanel.tsx:205:								aria-label="Add scene"
+src/ui/ProgramPanel.tsx:239:										aria-label={`Scene name for ${scene.name}`}
+src/ui/ProgramPanel.tsx:245:										aria-label={`Hotkey for ${scene.name}`}
+src/ui/ProgramPanel.tsx:254:										aria-label={`Remove scene ${scene.name}`}
+src/ui/ProgramPanel.tsx:271:				<div class="program-panel-options" role="group" aria-label="Program transition options">
+src/ui/ProgramPanel.tsx:292:								aria-label="Stop program session"
+src/ui/ProgramPanel.tsx:306:							aria-label="Start program session"
+src/ui/ProgramPanel.tsx:340:						<div class="program-panel-hotkey-hint" aria-label="Press 1-9 to switch scenes">
+src/ui/VoiceCleanupPanel.tsx:59:					aria-label={props.bypass ? `Enable ${props.label}` : `Bypass ${props.label}`}
+src/ui/VoiceCleanupPanel.tsx:99:					aria-label={props.label}
+src/ui/StorageCleanupDialog.tsx:56:				aria-labelledby="storage-cleanup-title"
+src/ui/StorageCleanupDialog.tsx:82:						aria-label="Close storage cleanup"
+src/ui/ReplayBufferPanel.tsx:56:					<span class="recording-indicator" aria-label="Recording">
+src/ui/ReplayBufferPanel.tsx:87:								<div class="elapsed-time" aria-label="Elapsed time">
+src/ui/ReplayBufferPanel.tsx:110:									aria-label={`Save last ${saveSeconds()} seconds`}
+src/ui/MeterStrip.tsx:53:		<div class="meter-strip" role="meter" aria-label="Master output levels">
+src/ui/CaptionStyleInspector.tsx:452:		<div class="caption-style-inspector" role="group" aria-label="Caption animation style">
+src/ui/CaptionStyleInspector.tsx:454:			<div class="caption-preset-grid" role="listbox" aria-label="Caption presets">
+src/ui/CaptionStyleInspector.tsx:461:							aria-label={preset.label}
+src/ui/CaptionStyleInspector.tsx:468:									<span class="caption-preset-badge" aria-label="Has glow" title="Glow">
+src/ui/CaptionStyleInspector.tsx:473:									<span class="caption-preset-badge" aria-label="Has pill" title="Pill">
+src/ui/CaptionStyleInspector.tsx:478:									<span class="caption-preset-badge" aria-label="Animated" title="Animated">
+src/ui/CaptionStyleInspector.tsx:490:			<div class="caption-overrides" role="group" aria-label="Preset overrides">
+src/ui/CaptionStyleInspector.tsx:497:							aria-label="Text color"
+src/ui/CaptionStyleInspector.tsx:509:							aria-label="Font size in pixels"
+src/ui/CaptionStyleInspector.tsx:518:							aria-label="Outline color"
+src/ui/CaptionStyleInspector.tsx:530:							aria-label="Outline width in pixels"
+src/ui/CaptionStyleInspector.tsx:541:							aria-label="Enable glow"
+src/ui/CaptionStyleInspector.tsx:552:							aria-label="Glow color"
+src/ui/CaptionStyleInspector.tsx:565:							aria-label="Glow blur radius in pixels"
+src/ui/CaptionStyleInspector.tsx:576:							aria-label="Enable background pill"
+src/ui/CaptionStyleInspector.tsx:587:							aria-label="Pill color"
+src/ui/CaptionStyleInspector.tsx:600:							aria-label="Pill opacity"
+src/ui/CaptionStyleInspector.tsx:613:							aria-label="Pill corner radius"
+src/ui/CaptionStyleInspector.tsx:624:							aria-label="Enter animation kind"
+src/ui/CaptionStyleInspector.tsx:634:							aria-label="Exit animation kind"
+src/ui/CaptionStyleInspector.tsx:648:							aria-label="Animation duration in seconds"
+src/ui/CaptionStyleInspector.tsx:657:				<button type="button" onClick={handleImport} aria-label="Import preset from file">
+src/ui/CaptionStyleInspector.tsx:663:					aria-label="Export preset to file"
+src/ui/CaptionStyleInspector.tsx:671:					aria-label="Save current overrides as a new preset"
+src/ui/CaptionStyleInspector.tsx:681:						aria-label="Delete custom preset"
+src/ui/TranscriptPanel.tsx:263:							aria-label={`Delete ${olderAutoCaptionTrackIds().length} older auto-caption track${olderAutoCaptionTrackIds().length === 1 ? '' : 's'} and keep the newest run`}
+src/ui/TranscriptPanel.tsx:382:										aria-label={`Delete ${track.name}`}
+src/ui/TranscriptPanel.tsx:516:														aria-label={`Select segment ${segmentWindow().start + index() + 1}`}
+src/ui/AudioCleanupPanel.tsx:123:				aria-labelledby="audio-cleanup-panel-title"
+src/ui/AudioCleanupPanel.tsx:140:						aria-label="Close audio cleanup panel"
+src/ui/AudioCleanupPanel.tsx:215:										aria-label="Cleanup progress"
+src/ui/SmartReframePanel.tsx:108:				aria-labelledby="smart-reframe-panel-title"
+src/ui/SmartReframePanel.tsx:127:						aria-label="Close Smart Reframe panel"
+src/ui/SmartReframePanel.tsx:202:								aria-label="Analyse clip for Smart Reframe"
+src/ui/SmartReframePanel.tsx:215:								aria-label="Analysis progress"
+src/ui/RenderQueuePanel.tsx:87:			<section class="render-queue-panel" aria-label="Render Queue">
+src/ui/RenderQueuePanel.tsx:126:								aria-label={`${codecLabel(job.settings.codec)} ${jobRangeLabel(job.jobRange)}`}
+src/ui/RenderQueuePanel.tsx:182:											aria-label="Remove job"
+src/ui/RenderQueuePanel.tsx:192:											aria-label="Cancel job"
+src/ui/RenderQueuePanel.tsx:202:											aria-label="Retry job"
+src/ui/MediaBin.tsx:119:				aria-label={`File details for ${props.asset.fileName}`}
+src/ui/MediaBin.tsx:128:						aria-label={`File details for ${props.asset.fileName}`}
+src/ui/MediaBin.tsx:130:						<Popover.CloseTrigger class="media-info-close" aria-label="Close file details">
+src/ui/MediaBin.tsx:242:		<section class="media-bin panel" aria-label="Media bin">
+src/ui/MediaBin.tsx:305:											aria-label={`Add ${asset.fileName} to timeline`}
+src/ui/MediaBin.tsx:314:											aria-label={`Remove ${asset.fileName} from bin`}
+src/ui/SilenceReviewPanel.tsx:205:		<div class="silence-review-panel" role="region" aria-label="Silence Detection">
+src/ui/SilenceReviewPanel.tsx:212:						aria-label="Close panel"
+src/ui/SilenceReviewPanel.tsx:234:							aria-label="Open threshold"
+src/ui/SilenceReviewPanel.tsx:248:							aria-label="Close threshold"
+src/ui/SilenceReviewPanel.tsx:262:							aria-label="Minimum silence duration"
+src/ui/SilenceReviewPanel.tsx:276:							aria-label="Keep padding"
+src/ui/SilenceReviewPanel.tsx:290:							aria-label="Minimum kept segment"
+src/ui/SilenceReviewPanel.tsx:376:													aria-label={`Apply region ${i() + 1}`}
+src/ui/SilenceReviewPanel.tsx:385:													aria-label={
