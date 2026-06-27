@@ -1,3 +1,4 @@
+import { currentIsoTimestamp } from '../time';
 import { describe, expect, it } from 'vite-plus/test';
 import {
 	DEFAULT_CLIP_AUDIO_FADES,
@@ -182,7 +183,7 @@ describe('import → edit → export integration', () => {
 			sourceStatuses: new Map(),
 			revision: 5,
 			activeExportSettings: settings,
-			createdAt: new Date().toISOString()
+			createdAt: currentIsoTimestamp()
 		});
 
 		machine.recordCrash();

@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vite-plus/test';
+import { currentIsoTimestamp } from '../time';
+import { describe, expect, it } from 'vite-plus/test';
 import { createRecoveryMachine, type WorkerRecoveryMachine } from './recovery';
 
 describe('GPU unavailable / device-lost recovery paths', () => {
@@ -26,7 +27,7 @@ describe('GPU unavailable / device-lost recovery paths', () => {
 			projectDoc: {
 				schemaVersion: 20 as const,
 				projectId: 'test-preview',
-				savedAt: new Date().toISOString(),
+				savedAt: currentIsoTimestamp(),
 				timeline: [],
 				captionTracks: [],
 				transitions: [],
@@ -37,7 +38,7 @@ describe('GPU unavailable / device-lost recovery paths', () => {
 			sourceStatuses: new Map(),
 			revision: 5,
 			activeExportSettings: null,
-			createdAt: new Date().toISOString()
+			createdAt: currentIsoTimestamp()
 		});
 		machine.recordCrash();
 		expect(machine.state).toBe('crashed');
@@ -59,7 +60,7 @@ describe('GPU unavailable / device-lost recovery paths', () => {
 			projectDoc: {
 				schemaVersion: 20 as const,
 				projectId: 'test-export',
-				savedAt: new Date().toISOString(),
+				savedAt: currentIsoTimestamp(),
 				timeline: [],
 				captionTracks: [],
 				transitions: [],
@@ -70,7 +71,7 @@ describe('GPU unavailable / device-lost recovery paths', () => {
 			sourceStatuses: new Map([['source-1', 'ready']]),
 			revision: 3,
 			activeExportSettings: exportSettings,
-			createdAt: new Date().toISOString()
+			createdAt: currentIsoTimestamp()
 		});
 		machine.recordCrash();
 		expect(machine.lastCheckpoint?.activeExportSettings).toBe(exportSettings);
@@ -92,12 +93,11 @@ describe('GPU unavailable / device-lost recovery paths', () => {
 	});
 
 	it('export item failed is retryable after recovery', () => {
-		setupMachine();
+		let now = 0;
+		machine = createRecoveryMachine(() => now);
 		machine.recordCrash();
 		machine.recordRestartFailure();
-		vi.useFakeTimers();
-		vi.advanceTimersByTime(5_000);
+		now = 5_000;
 		expect(machine.canRestart()).toBe(true);
-		vi.useRealTimers();
 	});
 });

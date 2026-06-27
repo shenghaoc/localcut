@@ -1,3 +1,4 @@
+import { monotonicNowMs } from '../time';
 import type { Timeline, TimelineMarker, TimelineTransition } from './timeline';
 import type { CaptionTrack } from './captions/types';
 import type { VoiceCleanupSettings } from '../protocol';
@@ -58,7 +59,7 @@ function keysEqual(a: HistoryCoalesceKey | null, b: HistoryCoalesceKey | null): 
 export function createTimelineHistory(options: TimelineHistoryOptions = {}): TimelineHistory {
 	const limit = Math.max(1, Math.floor(options.limit ?? DEFAULT_HISTORY_LIMIT));
 	const coalesceWindowMs = Math.max(0, options.coalesceWindowMs ?? DEFAULT_COALESCE_WINDOW_MS);
-	const now = options.now ?? (() => Date.now());
+	const now = options.now ?? (() => monotonicNowMs());
 	const past: HistoryEntry[] = [];
 	const future: TimelineHistorySnapshot[] = [];
 

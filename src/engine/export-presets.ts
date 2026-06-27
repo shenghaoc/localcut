@@ -1,3 +1,4 @@
+import { currentIsoTimestamp } from '../time';
 import type {
 	CapabilityProbeResult,
 	ExportPresetDoc,
@@ -303,13 +304,13 @@ export function buildTemplateContext(
 	rangeEndS: number | undefined,
 	jobIndex: number
 ): OutputNameTemplateContext {
-	const now = new Date();
+	const now = currentIsoTimestamp();
 	return {
 		project: projectName || 'Untitled',
 		preset: presetName,
 		codec: codecLabelForTemplate(codec),
-		date: now.toISOString().slice(0, 10),
-		time: now.toISOString().slice(11, 19).replace(/:/g, ''),
+		date: now.slice(0, 10),
+		time: now.slice(11, 19).replace(/:/g, ''),
 		range: formatRangeForTemplate(rangeStartS, rangeEndS),
 		index: jobIndex
 	};

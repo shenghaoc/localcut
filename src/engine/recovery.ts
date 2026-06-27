@@ -1,3 +1,4 @@
+import { currentIsoTimestamp, monotonicNowMs } from '../time';
 import type { ProjectDoc } from './project';
 import type { ExportSettings } from '../protocol';
 
@@ -32,12 +33,12 @@ export interface WorkerRecoveryMachine {
 	reset(): void;
 }
 
-export function createRecoveryMachine(): WorkerRecoveryMachine {
+export function createRecoveryMachine(nowMs: () => number = monotonicNowMs): WorkerRecoveryMachine {
 	let state: WorkerRecoveryState = 'running';
 	let restartAttempts = 0;
 	let lastCrashAt: string | null = null;
 	let lastCheckpoint: RecoveryCheckpoint | null = null;
-	let lastRestartTimestamp = 0;
+	let lastRestartTimestamp = Number.NEGATIVE_INFINITY;
 
 	const machine: WorkerRecoveryMachine = {
 		get state() {
@@ -55,12 +56,12 @@ export function createRecoveryMachine(): WorkerRecoveryMachine {
 
 		canRestart(): boolean {
 			if (restartAttempts >= MAX_RESTART_ATTEMPTS) return false;
-			const elapsed = Date.now() - lastRestartTimestamp;
+			const elapsed = nowMs() - lastRestartTimestamp;
 			return elapsed >= RESTART_COOLDOWN_MS;
 		},
 
 		recordCrash(): WorkerRecoveryState {
-			lastCrashAt = new Date().toISOString();
+			lastCrashAt = currentIsoTimestamp();
 			if (restartAttempts >= MAX_RESTART_ATTEMPTS) {
 				state = 'throttled';
 			} else {
@@ -75,7 +76,7 @@ export function createRecoveryMachine(): WorkerRecoveryMachine {
 
 		recordRestartFailure(): WorkerRecoveryState {
 			restartAttempts++;
-			lastRestartTimestamp = Date.now();
+			lastRestartTimestamp = nowMs();
 			if (restartAttempts >= MAX_RESTART_ATTEMPTS) {
 				state = 'throttled';
 			} else {
@@ -93,7 +94,7 @@ export function createRecoveryMachine(): WorkerRecoveryMachine {
 			restartAttempts = 0;
 			lastCrashAt = null;
 			lastCheckpoint = null;
-			lastRestartTimestamp = 0;
+			lastRestartTimestamp = Number.NEGATIVE_INFINITY;
 		}
 	};
 

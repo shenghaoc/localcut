@@ -1,3 +1,4 @@
+import { currentIsoTimestamp } from '../../time';
 /// <reference lib="webworker" />
 
 /**
@@ -328,7 +329,7 @@ class CaptureWriter {
 					kind: 'header',
 					version: 1,
 					sessionId,
-					startedAtIso: new Date().toISOString(),
+					startedAtIso: currentIsoTimestamp(),
 					epochUs: null,
 					sources: sources.map((s) => ({ sourceId: s.sourceId, kind: s.kind })),
 					chunkTargetS
@@ -458,7 +459,7 @@ class CaptureWriter {
 			const record =
 				JSON.stringify({
 					kind: 'finalize',
-					endedAtIso: new Date().toISOString(),
+					endedAtIso: currentIsoTimestamp(),
 					reason
 				}) + '\n';
 			const encoded = new TextEncoder().encode(record);

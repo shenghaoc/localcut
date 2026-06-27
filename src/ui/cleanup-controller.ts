@@ -1,3 +1,4 @@
+import { monotonicNowMs } from '../time';
 /**
  * Orchestration for Local Audio Cleanup (Phase 28). Framework-free state
  * machine between three parties:
@@ -394,7 +395,7 @@ export class CleanupController {
 			cancelled: false,
 			originalChunks: [],
 			originalChannels: 1,
-			startedAt: Date.now()
+			startedAt: monotonicNowMs()
 		};
 		this.activeJob = job;
 		this.update({

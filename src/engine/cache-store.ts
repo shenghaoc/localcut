@@ -1,3 +1,4 @@
+import { currentEpochMs } from '../time';
 import type { ProxyManifest } from './cache-types';
 import type { CacheStorageEstimate } from './cache-budget';
 import { hashString } from './cache-key';
@@ -232,7 +233,7 @@ class IndexedDbCacheStore implements CacheStore {
 		const db = await this.db();
 		const tx = db.transaction(CACHE_STORE_NAME, 'readwrite');
 		const store = tx.objectStore(CACHE_STORE_NAME);
-		const record: IndexedCacheRecord = { path, blob, updatedAt: Date.now() };
+		const record: IndexedCacheRecord = { path, blob, updatedAt: currentEpochMs() };
 		await idbRequest(store.put(record));
 		await transactionDone(tx);
 		return { path, byteSize: blob.size };

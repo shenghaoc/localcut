@@ -78,7 +78,7 @@ WASM 197.3M samples/sec — **3.12x** speedup.
 Record results in a local file (not committed):
 
 ```
-Date: YYYY-MM-DD
+Calendar day: YYYY-MM-DD
 Browser: Chrome XXX
 GPU: [model]
 OS: [platform]

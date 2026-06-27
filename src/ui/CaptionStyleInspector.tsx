@@ -1,3 +1,4 @@
+import { currentEpochMs } from '../time';
 /** Phase 30 — Caption style inspector: preset picker, import/export, per-field
  *  overrides for titleStyle / glow / pill / animation. Edits are gathered as
  *  a local draft and committed to the project as a new custom preset via
@@ -52,7 +53,7 @@ function newPresetId(): string {
 	// Final fallback for environments without Web Crypto. Not cryptographically
 	// strong, but preset IDs are not security material — they just need to be
 	// unique inside a single project doc.
-	return `preset-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+	return `preset-${currentEpochMs()}-${Math.random().toString(16).slice(2, 10)}`;
 }
 
 interface CaptionStyleInspectorProps {

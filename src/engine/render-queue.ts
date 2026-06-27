@@ -1,3 +1,4 @@
+import { currentIsoTimestamp } from '../time';
 import type {
 	ExportProgress,
 	ExportRange,
@@ -46,7 +47,7 @@ export function createJob(
 		status: 'pending',
 		error: null,
 		progress: null,
-		enqueuedAt: new Date().toISOString(),
+		enqueuedAt: currentIsoTimestamp(),
 		startedAt: null,
 		completedAt: null,
 		elapsedSeconds: null,
@@ -114,7 +115,7 @@ export function markJobRunning(state: RenderQueueState, jobId: string): RenderQu
 		activeJobId: jobId,
 		jobs: state.jobs.map((j) =>
 			j.id === jobId
-				? { ...j, status: 'running' as JobStatus, startedAt: new Date().toISOString() }
+				? { ...j, status: 'running' as JobStatus, startedAt: currentIsoTimestamp() }
 				: j
 		)
 	};
@@ -143,7 +144,7 @@ export function markJobCompleted(
 						...j,
 						status: 'completed' as JobStatus,
 						outputFileName: fileName,
-						completedAt: new Date().toISOString(),
+						completedAt: currentIsoTimestamp(),
 						elapsedSeconds,
 						outputBytes,
 						progress: null
@@ -167,7 +168,7 @@ export function markJobFailed(
 						...j,
 						status: 'failed' as JobStatus,
 						error,
-						completedAt: new Date().toISOString(),
+						completedAt: currentIsoTimestamp(),
 						progress: null
 					}
 				: j
@@ -184,7 +185,7 @@ export function markJobCanceled(state: RenderQueueState, jobId: string): RenderQ
 				? {
 						...j,
 						status: 'canceled' as JobStatus,
-						completedAt: new Date().toISOString(),
+						completedAt: currentIsoTimestamp(),
 						progress: null
 					}
 				: j
@@ -193,7 +194,7 @@ export function markJobCanceled(state: RenderQueueState, jobId: string): RenderQ
 }
 
 export function cancelAllPending(state: RenderQueueState): RenderQueueState {
-	const now = new Date().toISOString();
+	const now = currentIsoTimestamp();
 	return {
 		...state,
 		jobs: state.jobs.map((j) =>
@@ -218,7 +219,7 @@ export function retryJob(state: RenderQueueState, jobId: string): RenderQueueSta
 		completedAt: null,
 		elapsedSeconds: null,
 		outputBytes: null,
-		enqueuedAt: new Date().toISOString()
+		enqueuedAt: currentIsoTimestamp()
 	};
 	const idx = state.jobs.findIndex((j) => j.id === jobId);
 	const jobs = [...state.jobs];

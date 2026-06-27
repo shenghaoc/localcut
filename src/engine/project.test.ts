@@ -1,3 +1,4 @@
+import { currentIsoTimestamp } from '../time';
 import { describe, expect, it } from 'vite-plus/test';
 import {
 	DEFAULT_CLIP_AUDIO_FADES,
@@ -197,7 +198,7 @@ describe('project serialization', () => {
 		const result = deserializeProject({
 			schemaVersion: PROJECT_SCHEMA_VERSION,
 			projectId: 'project-1',
-			savedAt: new Date().toISOString(),
+			savedAt: currentIsoTimestamp(),
 			timeline: [
 				{
 					id: 'track-video-1',
@@ -262,7 +263,7 @@ describe('project serialization', () => {
 			markers: [{ id: 'marker-1', time: 4.5, label: 'Pull quote' }],
 			sources: [sourceFixture()],
 			masterGain: 0.85,
-			savedAt: new Date('2026-06-06T00:00:00.000Z')
+			savedAt: '2026-06-06T00:00:00.000Z'
 		});
 
 		expect(doc.schemaVersion).toBe(PROJECT_SCHEMA_VERSION);
@@ -530,7 +531,7 @@ describe('source descriptor matching', () => {
 			projectId: 'project-legacy',
 			timeline: timelineFixture(),
 			sources: [legacy],
-			savedAt: new Date('2026-06-06T00:00:00.000Z')
+			savedAt: '2026-06-06T00:00:00.000Z'
 		});
 		const result = deserializeProject({ ...doc, schemaVersion: 6, sources: [legacy] });
 		expect(result.ok).toBe(true);
@@ -661,7 +662,7 @@ describe('Phase 46 config persistence (schema v11)', () => {
 		const v11Doc = {
 			schemaVersion: 11,
 			projectId: 'test-v11',
-			savedAt: new Date().toISOString(),
+			savedAt: currentIsoTimestamp(),
 			timeline: [
 				{
 					id: 'video-track',

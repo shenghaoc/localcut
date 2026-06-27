@@ -40,7 +40,7 @@ below is testable in isolation; where numbers appear they are not suggestions.
   and JS reference implementations use the same algorithm but differ in
   floating-point ordering). Determinism is tested with golden-fixture vectors
   separately for each path -- the spec does not claim cross-path bit-exactness.
-  No `Math.random`, no `Date.now`, no `performance.now` is used inside the
+  No random IDs or runtime clocks is used inside the
   analyser.
 
 - **R1.4** The concrete DSP pipeline (all parameters are fixed, not

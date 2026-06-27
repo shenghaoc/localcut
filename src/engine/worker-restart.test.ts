@@ -1,14 +1,8 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vite-plus/test';
+import { currentIsoTimestamp } from '../time';
+import { describe, expect, it } from 'vite-plus/test';
 import { createRecoveryMachine } from './recovery';
 
 describe('Worker crash/restart flow', () => {
-	beforeEach(() => {
-		vi.useFakeTimers();
-	});
-	afterEach(() => {
-		vi.useRealTimers();
-	});
-
 	it('crash → auto-restart → success cycle', () => {
 		const machine = createRecoveryMachine();
 		expect(machine.state).toBe('running');
@@ -23,13 +17,14 @@ describe('Worker crash/restart flow', () => {
 	});
 
 	it('crash → restart failure → cooldown → retry → success', () => {
-		const machine = createRecoveryMachine();
+		let now = 0;
+		const machine = createRecoveryMachine(() => now);
 		machine.recordCrash();
 		machine.recordRestartFailure();
 		expect(machine.state).toBe('restart-failed');
 		expect(machine.canRestart()).toBe(false);
 
-		vi.advanceTimersByTime(5_000);
+		now = 5_000;
 		expect(machine.canRestart()).toBe(true);
 
 		machine.recordRestartSuccess();
@@ -37,15 +32,16 @@ describe('Worker crash/restart flow', () => {
 	});
 
 	it('three consecutive failures throttle permanently', () => {
-		const machine = createRecoveryMachine();
+		let now = 0;
+		const machine = createRecoveryMachine(() => now);
 
 		machine.recordCrash();
 		machine.recordRestartFailure();
-		vi.advanceTimersByTime(5_000);
+		now = 5_000;
 
 		machine.recordCrash();
 		machine.recordRestartFailure();
-		vi.advanceTimersByTime(5_000);
+		now = 10_000;
 
 		machine.recordCrash();
 		machine.recordRestartFailure();
@@ -104,12 +100,13 @@ describe('Worker crash/restart flow', () => {
 	});
 
 	it('reset after throttle allows fresh restart cycle', () => {
-		const machine = createRecoveryMachine();
+		let now = 0;
+		const machine = createRecoveryMachine(() => now);
 
 		for (let i = 0; i < 3; i++) {
 			machine.recordCrash();
 			machine.recordRestartFailure();
-			vi.advanceTimersByTime(5_000);
+			now += 5_000;
 		}
 		expect(machine.state).toBe('throttled');
 
@@ -149,7 +146,7 @@ describe('Worker crash/restart flow', () => {
 			sourceStatuses: new Map<string, 'ready' | 'offline' | 'restoring'>(),
 			revision: 10,
 			activeExportSettings: settings,
-			createdAt: new Date().toISOString()
+			createdAt: currentIsoTimestamp()
 		};
 
 		machine.setCheckpoint(checkpoint);

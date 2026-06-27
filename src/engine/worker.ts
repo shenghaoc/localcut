@@ -1,3 +1,4 @@
+import { currentEpochMs, currentIsoTimestamp } from '../time';
 /// <reference lib="webworker" />
 import {
 	assertCrossOriginIsolated,
@@ -720,7 +721,7 @@ async function handleRendererDeviceLost(info: {
 	lastDeviceLost = {
 		reason: String(info.reason),
 		message: info.message,
-		occurredAt: new Date().toISOString(),
+		occurredAt: currentIsoTimestamp(),
 		recoveryAttempts: 0,
 		fallbackMode: 'limited-preview'
 	};
@@ -6453,7 +6454,7 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
 		const exportCaptionTextureGroupId =
 			typeof crypto !== 'undefined' && 'randomUUID' in crypto
 				? crypto.randomUUID()
-				: `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+				: `${currentEpochMs()}-${Math.random().toString(36).slice(2)}`;
 		exportCaptionTextureIds = rasterizeExportCaptionTextures(
 			exportCaptionTextureGroupId,
 			exportCaptionTracksSnapshot
@@ -6834,7 +6835,7 @@ async function runQueueJob(job: RenderQueueJob): Promise<void> {
 		const exportCaptionTextureGroupId =
 			typeof crypto !== 'undefined' && 'randomUUID' in crypto
 				? crypto.randomUUID()
-				: `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+				: `${currentEpochMs()}-${Math.random().toString(36).slice(2)}`;
 		exportCaptionTextureIds = rasterizeExportCaptionTextures(
 			exportCaptionTextureGroupId,
 			exportCaptionTracksSnapshot
@@ -8237,7 +8238,7 @@ async function handleReplaySaveLastN(nSeconds?: number): Promise<void> {
 			throw new Error('Audio decoder configuration is unavailable for the buffered media.');
 		}
 
-		const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+		const stamp = currentIsoTimestamp().replace(/[:.]/g, '-');
 		saveFileName = `replay-${stamp}.mp4`;
 		const fileHandle = await createReplaySaveFile(saveFileName);
 		const writable = await fileHandle.createWritable();
@@ -8829,7 +8830,7 @@ async function handleProgramStart(
 		programTap = createLiveComposeTap(programCompositor);
 
 		sessionForStart = new CaptureSession(
-			`program-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+			`program-${currentEpochMs()}-${Math.random().toString(36).slice(2, 8)}`,
 			{
 				onStatusChange(status) {
 					const programState = (
@@ -9663,7 +9664,7 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 		case 'capture-start': {
 			if (pendingCaptureSources.size === 0) break;
 			captureSession = new CaptureSession(
-				`session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+				`session-${currentEpochMs()}-${Math.random().toString(36).slice(2, 8)}`,
 				{
 					onStatusChange(status) {
 						post({ type: 'capture-status', ...status });

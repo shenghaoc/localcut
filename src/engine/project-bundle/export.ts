@@ -1,3 +1,4 @@
+import { currentIsoTimestamp } from '../../time';
 import { serializeCubeLut, type ClipLut } from '../lut';
 import type { ProjectDoc, SourceDescriptor } from '../project';
 import { throwIfBundleJobCanceled } from './errors';
@@ -299,7 +300,7 @@ export async function exportProjectBundle(
 	const manifest: ProjectBundleManifest = {
 		bundleSchemaVersion: 1,
 		bundleId,
-		createdAt: new Date().toISOString(),
+		createdAt: currentIsoTimestamp(),
 		appVersion: defaultAppVersion(),
 		projectSchemaVersion: options.doc.schemaVersion,
 		projectId: options.doc.projectId,

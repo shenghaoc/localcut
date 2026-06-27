@@ -1,14 +1,8 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vite-plus/test';
+import { currentIsoTimestamp } from '../time';
+import { describe, expect, it } from 'vite-plus/test';
 import { createRecoveryMachine } from './recovery';
 
 describe('WorkerRecoveryMachine', () => {
-	beforeEach(() => {
-		vi.useFakeTimers();
-	});
-	afterEach(() => {
-		vi.useRealTimers();
-	});
-
 	it('starts in running state', () => {
 		const machine = createRecoveryMachine();
 		expect(machine.state).toBe('running');
@@ -47,23 +41,25 @@ describe('WorkerRecoveryMachine', () => {
 	});
 
 	it('throttles after max restart attempts', () => {
-		const machine = createRecoveryMachine();
+		let now = 0;
+		const machine = createRecoveryMachine(() => now);
 		machine.recordCrash();
 		machine.recordRestartFailure();
-		vi.advanceTimersByTime(5_000);
+		now = 5_000;
 		machine.recordRestartFailure();
-		vi.advanceTimersByTime(5_000);
+		now = 10_000;
 		machine.recordRestartFailure();
 		expect(machine.state).toBe('throttled');
 		expect(machine.canRestart()).toBe(false);
 	});
 
 	it('respects cooldown between restart attempts', () => {
-		const machine = createRecoveryMachine();
+		let now = 0;
+		const machine = createRecoveryMachine(() => now);
 		machine.recordCrash();
 		machine.recordRestartFailure();
 		expect(machine.canRestart()).toBe(false);
-		vi.advanceTimersByTime(5_000);
+		now = 5_000;
 		expect(machine.canRestart()).toBe(true);
 	});
 
@@ -90,7 +86,7 @@ describe('WorkerRecoveryMachine', () => {
 			sourceStatuses: new Map([['source-1', 'ready' as const]]),
 			revision: 1,
 			activeExportSettings: null,
-			createdAt: new Date().toISOString()
+			createdAt: currentIsoTimestamp()
 		};
 		machine.setCheckpoint(checkpoint);
 		machine.recordCrash();
@@ -110,11 +106,12 @@ describe('WorkerRecoveryMachine', () => {
 	});
 
 	it('repeated restart throttling stops at max', () => {
-		const machine = createRecoveryMachine();
+		let now = 0;
+		const machine = createRecoveryMachine(() => now);
 		for (let i = 0; i < 5; i++) {
 			machine.recordCrash();
 			machine.recordRestartFailure();
-			vi.advanceTimersByTime(5_000);
+			now += 5_000;
 		}
 		expect(machine.state).toBe('throttled');
 		expect(machine.restartAttempts).toBe(5);

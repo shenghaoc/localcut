@@ -1,3 +1,4 @@
+import { currentIsoTimestamp } from '../time';
 import { describe, expect, it } from 'vite-plus/test';
 import {
 	DIAGNOSTIC_SNAPSHOT_SCHEMA_VERSION,
@@ -12,7 +13,7 @@ function acceleratedSnapshot(): DiagnosticSnapshot {
 	return {
 		schemaVersion: DIAGNOSTIC_SNAPSHOT_SCHEMA_VERSION,
 		snapshotId: 'selfcheck-accel',
-		createdAt: new Date().toISOString(),
+		createdAt: currentIsoTimestamp(),
 		appVersion: '1.0.0',
 		browser: { userAgentFamily: 'Chrome', userAgentVersion: '120', platformFamily: 'macOS' },
 		capability: acceleratedCapability(),

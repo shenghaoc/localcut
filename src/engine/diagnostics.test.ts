@@ -1,3 +1,4 @@
+import { currentIsoTimestamp } from '../time';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import {
 	buildWorkerDiagnosticSnapshot,
@@ -121,7 +122,7 @@ describe('diagnostics probe caching', () => {
 			lastDeviceLost: {
 				reason: 'unknown',
 				message: 'device reset',
-				occurredAt: new Date().toISOString(),
+				occurredAt: currentIsoTimestamp(),
 				recoveryAttempts: 0,
 				fallbackMode: 'limited-preview'
 			}

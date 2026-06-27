@@ -10,7 +10,7 @@ import { compareStrings, interchangeRate, snapToFrames } from './time';
  * DaVinci Resolve. Everything LocalCut-specific nests under a
  * `metadata.localcut` namespace so foreign tools ignore it and a future OTIO
  * import phase can round-trip it. Output is a pure, deterministic function of
- * the `ProjectDoc`: no `Date.now()`, no generated IDs.
+ * the `ProjectDoc`: no runtime clock reads, no generated IDs.
  */
 
 export const OTIO_SCHEMA_ALLOWLIST = [
