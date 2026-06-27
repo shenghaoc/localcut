@@ -1,3 +1,4 @@
+import { currentIsoTimestamp } from '../time';
 import type {
 	CaptionTrackSnapshot,
 	CoverFrameDoc,
@@ -121,7 +122,7 @@ export interface SerializeProjectOptions {
 	markers?: readonly TimelineMarker[];
 	sources: readonly SourceDescriptor[];
 	masterGain?: number;
-	savedAt?: Date;
+	savedAt?: string;
 	exportSettings?: ExportSettings;
 	exportPresets?: readonly ExportPresetDoc[];
 	renderQueueHistory?: readonly PersistedQueueJob[];
@@ -527,7 +528,7 @@ export function serializeProject(options: SerializeProjectOptions): ProjectDoc {
 	const doc: ProjectDoc = {
 		schemaVersion: PROJECT_SCHEMA_VERSION,
 		projectId: options.projectId,
-		savedAt: (options.savedAt ?? new Date()).toISOString(),
+		savedAt: options.savedAt ?? currentIsoTimestamp(),
 		timeline: cloneTimelineSnapshot(options.timeline),
 		captionTracks: cloneCaptionTracksSnapshot(options.captionTracks ?? []),
 		transitions: cloneTransitionsSnapshot(options.transitions ?? []),
@@ -1486,7 +1487,7 @@ function parsePersistedQueueHistory(value: unknown): PersistedQueueJob[] {
 			outputFileName: typeof v.outputFileName === 'string' ? v.outputFileName : null,
 			status,
 			error: typeof v.error === 'string' ? v.error : null,
-			enqueuedAt: typeof v.enqueuedAt === 'string' ? v.enqueuedAt : new Date().toISOString(),
+			enqueuedAt: typeof v.enqueuedAt === 'string' ? v.enqueuedAt : currentIsoTimestamp(),
 			startedAt: typeof v.startedAt === 'string' ? v.startedAt : null,
 			completedAt: typeof v.completedAt === 'string' ? v.completedAt : null,
 			elapsedSeconds: typeof v.elapsedSeconds === 'number' ? v.elapsedSeconds : null,

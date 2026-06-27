@@ -1,3 +1,4 @@
+import { currentEpochMs, currentIsoTimestamp } from '../time';
 import type {
 	ExportSettings,
 	FeatureSupport,
@@ -477,7 +478,7 @@ async function buildCapabilityReport(input: WorkerDiagnosticInput): Promise<Capa
 }
 
 async function storageSummary(): Promise<StorageDiagnosticSummary> {
-	const now = Date.now();
+	const now = currentEpochMs();
 	if (cachedStorage && now - cachedStorage.at < STORAGE_CACHE_TTL_MS) {
 		return cachedStorage.value;
 	}
@@ -724,7 +725,7 @@ export async function buildWorkerDiagnosticSnapshot(
 	return {
 		schemaVersion: DIAGNOSTIC_SNAPSHOT_SCHEMA_VERSION,
 		snapshotId: makeSnapshotId(),
-		createdAt: new Date().toISOString(),
+		createdAt: currentIsoTimestamp(),
 		appVersion: input.appVersion,
 		browser: userAgentSummary(),
 		capability: await buildCapabilityReport(input),

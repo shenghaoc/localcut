@@ -112,7 +112,7 @@ in the order listed within each group unless a dependency is noted.
 
 - [ ] **T5.3** `src/engine/gpu.ts` + `src/engine/export.ts`: Confirm
   `frameTimeSeed` is derived from the timeline timestamp during both preview
-  and export (not from `Date.now()`). For export, the seed is the timeline
+  and export (not from runtime wall-clock state). For export, the seed is the timeline
   timestamp of the frame being rendered. Shared preview/export path ensures
   grain pattern is deterministic given the same timestamp.
 

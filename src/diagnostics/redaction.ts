@@ -1,3 +1,4 @@
+import { currentIsoTimestamp } from '../time';
 import type {
 	CopyableDiagnosticReport,
 	DiagnosticSnapshot,
@@ -107,7 +108,7 @@ function redactRecentErrorLog(log: RecentErrorLog): RecentErrorLog {
 export function buildCopyableDiagnosticReport(
 	snapshot: DiagnosticSnapshot,
 	sources: readonly DiagnosticSourceInput[] = [],
-	generatedAt = new Date().toISOString()
+	generatedAt = currentIsoTimestamp()
 ): CopyableDiagnosticReport {
 	return {
 		reportSchemaVersion: 1,

@@ -114,7 +114,7 @@ For browsers without full WebGPU or COOP/COEP isolation:
 
 Record verification results with:
 
-- Date and time
+- Calendar day and time
 - Browser name and version
 - Operating system
 - App version and build SHA (from diagnostics report)

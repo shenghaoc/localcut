@@ -1,3 +1,4 @@
+import { currentEpochMs, currentIsoTimestamp } from '../time';
 import type { ProjectDoc } from './project';
 import type { ExportSettings } from '../protocol';
 
@@ -55,12 +56,12 @@ export function createRecoveryMachine(): WorkerRecoveryMachine {
 
 		canRestart(): boolean {
 			if (restartAttempts >= MAX_RESTART_ATTEMPTS) return false;
-			const elapsed = Date.now() - lastRestartTimestamp;
+			const elapsed = currentEpochMs() - lastRestartTimestamp;
 			return elapsed >= RESTART_COOLDOWN_MS;
 		},
 
 		recordCrash(): WorkerRecoveryState {
-			lastCrashAt = new Date().toISOString();
+			lastCrashAt = currentIsoTimestamp();
 			if (restartAttempts >= MAX_RESTART_ATTEMPTS) {
 				state = 'throttled';
 			} else {
@@ -75,7 +76,7 @@ export function createRecoveryMachine(): WorkerRecoveryMachine {
 
 		recordRestartFailure(): WorkerRecoveryState {
 			restartAttempts++;
-			lastRestartTimestamp = Date.now();
+			lastRestartTimestamp = currentEpochMs();
 			if (restartAttempts >= MAX_RESTART_ATTEMPTS) {
 				state = 'throttled';
 			} else {

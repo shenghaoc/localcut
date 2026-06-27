@@ -1,3 +1,4 @@
+import { currentEpochMs } from '../../time';
 /**
  * Phase 40: Translation controller — framework-free state machine.
  *
@@ -198,7 +199,7 @@ export class TranslationController {
 			return;
 		}
 
-		const startedAt = Date.now();
+		const startedAt = currentEpochMs();
 		this.abortController = new AbortController();
 		const combinedSignal = signal
 			? AbortSignal.any([signal, this.abortController.signal])
@@ -329,7 +330,7 @@ export class TranslationController {
 				segments: translatedSegments
 			});
 
-			this.updateJob({ phase: 'done', durationMs: Date.now() - startedAt });
+			this.updateJob({ phase: 'done', durationMs: currentEpochMs() - startedAt });
 		} catch (err) {
 			if (err instanceof TranslationCancelledError) {
 				this.updateJob({ phase: 'idle' });

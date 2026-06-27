@@ -1,3 +1,4 @@
+import { currentEpochMs } from '../time';
 import type { BudgetMetric } from './types';
 
 export interface BudgetSample {
@@ -16,14 +17,17 @@ export interface BudgetCounter {
 
 const MAX_SAMPLES = 120;
 
-export function createBudgetCounter(metric: BudgetMetric): BudgetCounter {
+export function createBudgetCounter(
+	metric: BudgetMetric,
+	nowMs: () => number = currentEpochMs
+): BudgetCounter {
 	const samples: BudgetSample[] = [];
 
 	return {
 		metric,
 
 		record(value: number): void {
-			samples.push({ value, timestamp: Date.now() });
+			samples.push({ value, timestamp: nowMs() });
 			if (samples.length > MAX_SAMPLES) {
 				samples.splice(0, samples.length - MAX_SAMPLES);
 			}
@@ -34,7 +38,7 @@ export function createBudgetCounter(metric: BudgetMetric): BudgetCounter {
 		},
 
 		average(windowMs: number): number | null {
-			const cutoff = Date.now() - windowMs;
+			const cutoff = nowMs() - windowMs;
 			const recent = samples.filter((s) => s.timestamp >= cutoff);
 			if (recent.length === 0) return null;
 			return recent.reduce((sum, s) => sum + s.value, 0) / recent.length;

@@ -1,3 +1,4 @@
+import { currentIsoTimestamp } from '../../time';
 import type {
 	AsrAccelerator,
 	AsrEngine,
@@ -14,11 +15,11 @@ export interface CreateAsrCaptionTrackOptions {
 	engine: AsrEngine;
 	accelerator: AsrAccelerator;
 	phraseLevel: boolean;
-	createdAt?: Date;
+	createdAt?: string;
 }
 
 export function createAsrCaptionTrack(options: CreateAsrCaptionTrackOptions): CaptionTrack {
-	const createdAt = options.createdAt ?? new Date();
+	const createdAt = options.createdAt ?? currentIsoTimestamp();
 	return createCaptionTrack({
 		id: makeCaptionTrackId(),
 		name: options.trackName,
@@ -35,7 +36,7 @@ export function createAsrCaptionTrack(options: CreateAsrCaptionTrackOptions): Ca
 			accelerator: options.accelerator,
 			language: options.language,
 			phraseLevel: options.phraseLevel,
-			createdAt: createdAt.toISOString()
+			createdAt
 		} satisfies AsrGeneratedCaptionMetadata)
 	});
 }

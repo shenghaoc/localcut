@@ -1,3 +1,4 @@
+import { currentIsoTimestamp } from '../time';
 import type { AsrAccelerator, AsrEngine, ExportSettings, MediaAssetSnapshot } from '../protocol';
 import {
 	DIAGNOSTIC_SNAPSHOT_SCHEMA_VERSION,
@@ -336,7 +337,7 @@ export async function buildUiDiagnosticSnapshot(
 	return {
 		schemaVersion: DIAGNOSTIC_SNAPSHOT_SCHEMA_VERSION,
 		snapshotId: makeSnapshotId(),
-		createdAt: new Date().toISOString(),
+		createdAt: currentIsoTimestamp(),
 		appVersion: APP_VERSION,
 		buildId: BUILD_ID,
 		browser: browserSummary(),

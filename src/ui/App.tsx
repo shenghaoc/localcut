@@ -1,3 +1,4 @@
+import { currentEpochMs, formatIsoForDisplay } from '../time';
 import {
 	createEffect,
 	createMemo,
@@ -316,14 +317,8 @@ function captureKindFromSourceId(sourceId: string): CaptureSourceKind | null {
 }
 
 function formatSavedAt(value: string): string {
-	const date = new Date(value);
-	if (Number.isNaN(date.getTime())) return value;
-	return date.toLocaleString(undefined, {
-		month: 'short',
-		day: 'numeric',
-		hour: '2-digit',
-		minute: '2-digit'
-	});
+	const formatted = formatIsoForDisplay(value);
+	return formatted === 'Generated' ? value : formatted.replace(/^Generated /, '');
 }
 
 function downloadTextFile(fileName: string, mimeType: string, content: string): void {
@@ -1820,7 +1815,7 @@ export function App() {
 			const requestId =
 				typeof crypto !== 'undefined' && 'randomUUID' in crypto
 					? crypto.randomUUID()
-					: `diag-${Date.now()}`;
+					: `diag-${currentEpochMs()}`;
 			bridge.send({ type: 'request-diagnostic-snapshot', requestId });
 		}
 	}
@@ -1962,7 +1957,7 @@ export function App() {
 	function makeProgramId(prefix: string): string {
 		return typeof crypto !== 'undefined' && 'randomUUID' in crypto
 			? `${prefix}-${crypto.randomUUID()}`
-			: `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+			: `${prefix}-${currentEpochMs()}-${Math.random().toString(36).slice(2, 8)}`;
 	}
 
 	function sanitizedProgramSources(): ProgramSourceDescriptor[] {

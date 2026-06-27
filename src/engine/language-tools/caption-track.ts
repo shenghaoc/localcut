@@ -1,3 +1,4 @@
+import { currentIsoTimestamp } from '../../time';
 /**
  * Phase 40: helper to create a translated caption track in the pipeline worker.
  *
@@ -14,7 +15,7 @@ export interface CreateTranslatedCaptionTrackOptions {
 	trackName: string;
 	language: string;
 	sourceTrackId: string;
-	createdAt?: Date;
+	createdAt?: string;
 }
 
 /** Metadata stored in the `generatedBy` JSON field. */
@@ -28,7 +29,7 @@ export interface TranslatedCaptionMetadata {
 export function createTranslatedCaptionTrack(
 	options: CreateTranslatedCaptionTrackOptions
 ): CaptionTrack {
-	const createdAt = options.createdAt ?? new Date();
+	const createdAt = options.createdAt ?? currentIsoTimestamp();
 	return createCaptionTrack({
 		id: makeCaptionTrackId(),
 		name: options.trackName,
@@ -43,7 +44,7 @@ export function createTranslatedCaptionTrack(
 			generatedBy: 'language-tools-phase-40',
 			sourceTrackId: options.sourceTrackId,
 			language: options.language,
-			createdAt: createdAt.toISOString()
+			createdAt
 		} satisfies TranslatedCaptionMetadata)
 	});
 }

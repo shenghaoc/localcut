@@ -1,14 +1,7 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vite-plus/test';
+import { describe, expect, it } from 'vite-plus/test';
 import { createBudgetCounter, createBudgetCounterRegistry } from './budget-counters';
 
 describe('BudgetCounter', () => {
-	beforeEach(() => {
-		vi.useFakeTimers();
-	});
-	afterEach(() => {
-		vi.useRealTimers();
-	});
-
 	it('starts with no samples', () => {
 		const counter = createBudgetCounter('gpu-submissions-per-frame');
 		expect(counter.latest()).toBeNull();
@@ -24,22 +17,22 @@ describe('BudgetCounter', () => {
 	});
 
 	it('computes windowed average', () => {
-		const counter = createBudgetCounter('dropped-preview-frame-rate');
-		vi.setSystemTime(1000);
+		let nowMs = 1000;
+		const counter = createBudgetCounter('dropped-preview-frame-rate', () => nowMs);
 		counter.record(10);
-		vi.setSystemTime(2000);
+		nowMs = 2000;
 		counter.record(20);
-		vi.setSystemTime(3000);
+		nowMs = 3000;
 		counter.record(30);
 		const avg = counter.average(1500);
 		expect(avg).toBeCloseTo(25);
 	});
 
 	it('returns null average with no samples in window', () => {
-		const counter = createBudgetCounter('export-throughput-fps');
-		vi.setSystemTime(0);
+		let nowMs = 0;
+		const counter = createBudgetCounter('export-throughput-fps', () => nowMs);
 		counter.record(5);
-		vi.setSystemTime(10_000);
+		nowMs = 10_000;
 		expect(counter.average(1000)).toBeNull();
 	});
 

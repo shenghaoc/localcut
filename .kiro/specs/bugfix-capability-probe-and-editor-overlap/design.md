@@ -56,7 +56,7 @@ async function probeOpfsSyncAccessHandleInWorker(): Promise<FeatureSupport> {
 		let root, name, created = false;
 		try {
 			root = await navigator.storage.getDirectory();
-			name = '_cap_probe_' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.tmp';
+			name = '_cap_probe_' + currentEpochMs() + '_' + Math.random().toString(36).slice(2) + '.tmp';
 			const handle = await root.getFileHandle(name, { create: true });
 			created = true;
 			if (typeof handle.createSyncAccessHandle !== 'function') {

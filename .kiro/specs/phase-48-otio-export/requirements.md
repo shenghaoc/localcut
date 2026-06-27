@@ -4,7 +4,7 @@
 
 - **R1.1** A pure TypeScript serialiser converts a `ProjectDoc` into an OpenTimelineIO `.otio` JSON document — no Python runtime, no WASM, no native bindings, no new runtime dependencies.
 - **R1.2** Every emitted object carries a valid `OTIO_SCHEMA` tag from a fixed allowlist: `Timeline.1`, `Stack.1`, `Track.1`, `Clip.2`, `Gap.1`, `Transition.1`, `Marker.2`, `ExternalReference.1`, `GeneratorReference.1`, `MissingReference.1`, `RationalTime.1`, `TimeRange.1`.
-- **R1.3** Serialisation is deterministic: the same `ProjectDoc` always produces byte-identical output. Timestamps come from `doc.savedAt`, never `Date.now()`; no random IDs are generated.
+- **R1.3** Serialisation is deterministic: the same `ProjectDoc` always produces byte-identical output. Timestamps come from `doc.savedAt`, never runtime wall-clock state; no random IDs are generated.
 - **R1.4** All times are frame-snapped `RationalTime` values at a single sequence rate derived from the project (export settings fps, else the dominant source video frame rate, else 30). Boundaries are snapped independently and durations derived from snapped boundaries, so adjacent clips stay adjacent — rounding never introduces overlaps or gaps.
 - **R1.5** Generation runs in the pipeline worker and produces a string; memory is bounded by the size of the timeline model, never by media size (no media bytes are read).
 

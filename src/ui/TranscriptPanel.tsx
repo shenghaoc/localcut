@@ -1,3 +1,4 @@
+import { formatIsoForDisplay, isIsoTimestamp } from '../time';
 import { createEffect, createMemo, createSignal, For, on, Show } from 'solid-js';
 import { Trash2 } from 'lucide-solid';
 import { TRANSCRIPT_WINDOW_RADIUS, computeSegmentWindow } from './transcript-window';
@@ -84,7 +85,7 @@ function trackMeta(track: CaptionTrackSnapshot): string {
 }
 
 interface GeneratedTrackInfo {
-	createdAt: Date | null;
+	createdAt: string | null;
 	label: string;
 }
 
@@ -98,8 +99,8 @@ function generatedTrackInfo(track: CaptionTrackSnapshot): GeneratedTrackInfo | n
 		};
 		if (parsed.generatedBy !== 'auto-captions-phase-29') return null;
 		const createdAt =
-			typeof parsed.createdAt === 'string' && Number.isFinite(Date.parse(parsed.createdAt))
-				? new Date(parsed.createdAt)
+			typeof parsed.createdAt === 'string' && isIsoTimestamp(parsed.createdAt)
+				? parsed.createdAt
 				: null;
 		const engine = typeof parsed.engine === 'string' ? parsed.engine : 'auto captions';
 		const knownEngine = engine === 'ort-whisper';
@@ -114,12 +115,7 @@ function generatedTrackInfo(track: CaptionTrackSnapshot): GeneratedTrackInfo | n
 
 function formatGeneratedAt(info: GeneratedTrackInfo | null): string {
 	if (!info?.createdAt) return 'Generated';
-	return `Generated ${info.createdAt.toLocaleString([], {
-		month: 'short',
-		day: 'numeric',
-		hour: '2-digit',
-		minute: '2-digit'
-	})}`;
+	return formatIsoForDisplay(info.createdAt);
 }
 
 function trackDuration(track: CaptionTrackSnapshot): string {
@@ -227,8 +223,8 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
 		if (tracks.length < 2) return [];
 		let latest = tracks[0]!;
 		for (const entry of tracks.slice(1)) {
-			const entryTime = entry.info?.createdAt?.getTime() ?? entry.index;
-			const latestTime = latest.info?.createdAt?.getTime() ?? latest.index;
+			const entryTime = entry.info?.createdAt ?? String(entry.index).padStart(6, '0');
+			const latestTime = latest.info?.createdAt ?? String(latest.index).padStart(6, '0');
 			if (entryTime > latestTime) latest = entry;
 		}
 		return tracks

@@ -1,3 +1,4 @@
+import { currentIsoTimestamp } from '../time';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vite-plus/test';
 import { createRecoveryMachine } from './recovery';
 
@@ -90,7 +91,7 @@ describe('WorkerRecoveryMachine', () => {
 			sourceStatuses: new Map([['source-1', 'ready' as const]]),
 			revision: 1,
 			activeExportSettings: null,
-			createdAt: new Date().toISOString()
+			createdAt: currentIsoTimestamp()
 		};
 		machine.setCheckpoint(checkpoint);
 		machine.recordCrash();

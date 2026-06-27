@@ -14,7 +14,7 @@ describe('createTranslatedCaptionTrack', () => {
 			trackName: 'Clip (zh)',
 			language: 'zh',
 			sourceTrackId: 'src-1',
-			createdAt: new Date('2026-06-15T00:00:00.000Z')
+			createdAt: '2026-06-15T00:00:00.000Z'
 		});
 
 		expect(track.name).toBe('Clip (zh)');

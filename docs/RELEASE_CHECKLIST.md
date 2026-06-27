@@ -85,7 +85,7 @@ After deployment, verify the live URL using [VERIFY_DEPLOYMENT.md](VERIFY_DEPLOY
 
 Document verification results with:
 
-- Date
+- Calendar day
 - Build SHA (from diagnostics report)
 - Browser and OS used for smoke test
 - Pass/fail for each gate

@@ -274,7 +274,7 @@
   proposals (zoomOut of proposal A > zoomIn of proposal B by > 50 ms) → merged
   into one; determinism check (identical output on second call with same input);
   performance bound (generate 216 000 synthetic click entries uniformly
-  distributed over 3600 s, measure `Date.now()` before/after `clusterEvents`;
+  distributed over 3600 s, measure the monotonic timer before/after `clusterEvents`;
   assert `elapsed < 100`).
 - [ ] **T11.3** `src/engine/callout.test.ts` (new): test cases —
   `calloutContentHash` changes when `style.color` changes; changes when

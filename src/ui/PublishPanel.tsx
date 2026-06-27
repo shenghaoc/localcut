@@ -1,3 +1,4 @@
+import { currentEpochMs } from '../time';
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
 import { Radio, Square, X } from 'lucide-solid';
 import { Button } from './components/button';
@@ -104,10 +105,10 @@ export function PublishPanel(props: PublishPanelProps) {
 			setRetryRemainingS(null);
 			return;
 		}
-		const deadline = Date.now() + state.nextRetryMs;
+		const deadline = currentEpochMs() + state.nextRetryMs;
 		setRetryRemainingS(Math.ceil(state.nextRetryMs / 1_000));
 		const timer = setInterval(() => {
-			setRetryRemainingS(Math.max(0, Math.ceil((deadline - Date.now()) / 1_000)));
+			setRetryRemainingS(Math.max(0, Math.ceil((deadline - currentEpochMs()) / 1_000)));
 		}, 500);
 		onCleanup(() => clearInterval(timer));
 	});

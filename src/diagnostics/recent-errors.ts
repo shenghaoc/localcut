@@ -1,3 +1,4 @@
+import { currentIsoTimestamp } from '../time';
 import type { DiagnosticSeverity, DiagnosticSubsystem, RecentError, RecentErrorLog } from './types';
 import { redactDiagnosticText } from './redaction';
 
@@ -26,7 +27,7 @@ function makeErrorId(input: RecentErrorInput, occurredAt: string): string {
 }
 
 export function createRecentError(input: RecentErrorInput): RecentError {
-	const occurredAt = input.occurredAt ?? new Date().toISOString();
+	const occurredAt = input.occurredAt ?? currentIsoTimestamp();
 	return {
 		id: makeErrorId(input, occurredAt),
 		code: input.code,

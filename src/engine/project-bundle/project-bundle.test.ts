@@ -1,3 +1,4 @@
+import { currentIsoTimestamp } from '../../time';
 import { describe, expect, it } from 'vite-plus/test';
 import { DEFAULT_TRACK_MIX, type Timeline } from '../timeline';
 import {
@@ -92,7 +93,7 @@ describe('project bundle manifest', () => {
 		const manifest = {
 			bundleSchemaVersion: BUNDLE_SCHEMA_VERSION as typeof BUNDLE_SCHEMA_VERSION,
 			bundleId: 'bundle-1',
-			createdAt: new Date().toISOString(),
+			createdAt: currentIsoTimestamp(),
 			appVersion: '1.0.0',
 			projectSchemaVersion: PROJECT_SCHEMA_VERSION,
 			projectId: 'project-1',

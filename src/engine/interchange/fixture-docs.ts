@@ -14,7 +14,7 @@ import {
  * interchange only reads the timeline model.
  */
 
-const FIXTURE_SAVED_AT = new Date('2026-01-01T00:00:00.000Z');
+const FIXTURE_SAVED_AT = '2026-01-01T00:00:00.000Z';
 
 export const FIXTURE_FINGERPRINT_DIGEST = 'a1b2c3d4'.repeat(8);
 

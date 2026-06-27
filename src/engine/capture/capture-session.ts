@@ -1,3 +1,4 @@
+import { currentIsoTimestamp } from '../../time';
 import type { EncodedPacket } from 'mediabunny';
 import type {
 	CaptureSourceKind,
@@ -249,7 +250,7 @@ export class CaptureSession {
 			kind: entry.kind
 		}));
 		this.state = 'recording';
-		this.startedAtIso = new Date().toISOString();
+		this.startedAtIso = currentIsoTimestamp();
 		this.startTime = performance.now();
 		if (this.writerPort) {
 			this.writerPort.postMessage({

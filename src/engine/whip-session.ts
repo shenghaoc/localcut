@@ -1,3 +1,4 @@
+import { currentEpochMs } from '../time';
 /**
  * Phase 47 (T2/T3): main-thread WHIP session orchestrator. Owns the
  * `RTCPeerConnection` (which does not exist in workers) and the WHIP signaling
@@ -151,7 +152,7 @@ export function createWhipSession(deps: WhipSessionDeps): WhipSession {
 	const statsIntervalMs = deps.statsIntervalMs ?? 1_000;
 	const gatherTimeoutMs = deps.gatherTimeoutMs ?? 2_500;
 	const attemptTimeoutMs = deps.attemptTimeoutMs ?? 8_000;
-	const now = deps.now ?? (() => Date.now());
+	const now = deps.now ?? (() => currentEpochMs());
 	const makeClient = deps.createClient ?? createWhipClient;
 
 	let state: PublishState = { phase: 'idle' };

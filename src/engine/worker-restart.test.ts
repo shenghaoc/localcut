@@ -1,3 +1,4 @@
+import { currentIsoTimestamp } from '../time';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vite-plus/test';
 import { createRecoveryMachine } from './recovery';
 
@@ -149,7 +150,7 @@ describe('Worker crash/restart flow', () => {
 			sourceStatuses: new Map<string, 'ready' | 'offline' | 'restoring'>(),
 			revision: 10,
 			activeExportSettings: settings,
-			createdAt: new Date().toISOString()
+			createdAt: currentIsoTimestamp()
 		};
 
 		machine.setCheckpoint(checkpoint);
