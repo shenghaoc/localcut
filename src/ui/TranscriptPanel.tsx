@@ -223,9 +223,15 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
 		if (tracks.length < 2) return [];
 		let latest = tracks[0]!;
 		for (const entry of tracks.slice(1)) {
-			const entryTime = entry.info?.createdAt ?? String(entry.index).padStart(6, '0');
-			const latestTime = latest.info?.createdAt ?? String(latest.index).padStart(6, '0');
-			if (entryTime > latestTime) latest = entry;
+			const entryTime = entry.info?.createdAt;
+			const latestTime = latest.info?.createdAt;
+			if (entryTime && latestTime) {
+				if (entryTime > latestTime) latest = entry;
+			} else if (entryTime) {
+				latest = entry;
+			} else if (!latestTime) {
+				if (entry.index > latest.index) latest = entry;
+			}
 		}
 		return tracks
 			.filter((entry) => entry.track.id !== latest.track.id)

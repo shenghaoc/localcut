@@ -40,7 +40,9 @@ function pad(value: number, width: number): string {
 }
 
 export function isoFromEpochMs(epochMs: number): string {
-	if (!Number.isFinite(epochMs)) return '1970-01-01T00:00:00.000Z';
+	if (!Number.isFinite(epochMs) || epochMs < -8.64e15 || epochMs > 8.64e15) {
+		return '1970-01-01T00:00:00.000Z';
+	}
 	let days = Math.floor(epochMs / MS_PER_DAY);
 	let dayMs = epochMs - days * MS_PER_DAY;
 	if (dayMs < 0) {
@@ -54,6 +56,9 @@ export function isoFromEpochMs(epochMs: number): string {
 		days -= cycles * DAYS_PER_400_YEARS;
 		while (days >= daysInYear(year)) days -= daysInYear(year++);
 	} else {
+		const cycles = Math.floor(-days / DAYS_PER_400_YEARS);
+		year -= cycles * 400;
+		days += cycles * DAYS_PER_400_YEARS;
 		while (days < 0) days += daysInYear(--year);
 	}
 	let month = 1;
@@ -79,7 +84,7 @@ function isoParts(value: string): {
 	minute: number;
 	second: number;
 } | null {
-	const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{3})?Z$/.exec(value);
+	const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?Z$/.exec(value);
 	if (!match) return null;
 	const [, yearText, monthText, dayText, hourText, minuteText, secondText] = match;
 	const year = Number(yearText);
