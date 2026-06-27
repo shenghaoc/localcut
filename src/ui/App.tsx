@@ -1,4 +1,4 @@
-import { currentEpochMs, formatIsoForDisplay } from '../time';
+import { currentEpochMs, isIsoTimestamp } from '../time';
 import {
 	createEffect,
 	createMemo,
@@ -317,8 +317,14 @@ function captureKindFromSourceId(sourceId: string): CaptureSourceKind | null {
 }
 
 function formatSavedAt(value: string): string {
-	const formatted = formatIsoForDisplay(value);
-	return formatted === 'Generated' ? value : formatted.replace(/^Generated /, '');
+	if (!isIsoTimestamp(value)) return value;
+	const d = new Date(value);
+	return d.toLocaleString(undefined, {
+		month: 'short',
+		day: 'numeric',
+		hour: '2-digit',
+		minute: '2-digit'
+	});
 }
 
 function downloadTextFile(fileName: string, mimeType: string, content: string): void {
