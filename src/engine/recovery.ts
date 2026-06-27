@@ -33,7 +33,7 @@ export interface WorkerRecoveryMachine {
 	reset(): void;
 }
 
-export function createRecoveryMachine(): WorkerRecoveryMachine {
+export function createRecoveryMachine(nowMs: () => number = monotonicNowMs): WorkerRecoveryMachine {
 	let state: WorkerRecoveryState = 'running';
 	let restartAttempts = 0;
 	let lastCrashAt: string | null = null;
@@ -56,7 +56,7 @@ export function createRecoveryMachine(): WorkerRecoveryMachine {
 
 		canRestart(): boolean {
 			if (restartAttempts >= MAX_RESTART_ATTEMPTS) return false;
-			const elapsed = monotonicNowMs() - lastRestartTimestamp;
+			const elapsed = nowMs() - lastRestartTimestamp;
 			return elapsed >= RESTART_COOLDOWN_MS;
 		},
 
@@ -76,7 +76,7 @@ export function createRecoveryMachine(): WorkerRecoveryMachine {
 
 		recordRestartFailure(): WorkerRecoveryState {
 			restartAttempts++;
-			lastRestartTimestamp = monotonicNowMs();
+			lastRestartTimestamp = nowMs();
 			if (restartAttempts >= MAX_RESTART_ATTEMPTS) {
 				state = 'throttled';
 			} else {

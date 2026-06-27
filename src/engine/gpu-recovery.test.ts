@@ -1,5 +1,5 @@
 import { currentIsoTimestamp } from '../time';
-import { describe, expect, it, vi } from 'vite-plus/test';
+import { describe, expect, it } from 'vite-plus/test';
 import { createRecoveryMachine, type WorkerRecoveryMachine } from './recovery';
 
 describe('GPU unavailable / device-lost recovery paths', () => {
@@ -93,12 +93,11 @@ describe('GPU unavailable / device-lost recovery paths', () => {
 	});
 
 	it('export item failed is retryable after recovery', () => {
-		setupMachine();
+		let now = 0;
+		machine = createRecoveryMachine(() => now);
 		machine.recordCrash();
 		machine.recordRestartFailure();
-		vi.useFakeTimers();
-		vi.advanceTimersByTime(5_000);
+		now = 5_000;
 		expect(machine.canRestart()).toBe(true);
-		vi.useRealTimers();
 	});
 });
