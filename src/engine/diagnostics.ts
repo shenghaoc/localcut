@@ -1,4 +1,4 @@
-import { currentEpochMs, currentIsoTimestamp } from '../time';
+import { currentIsoTimestamp, monotonicNowMs } from '../time';
 import type {
 	ExportSettings,
 	FeatureSupport,
@@ -478,7 +478,7 @@ async function buildCapabilityReport(input: WorkerDiagnosticInput): Promise<Capa
 }
 
 async function storageSummary(): Promise<StorageDiagnosticSummary> {
-	const now = currentEpochMs();
+	const now = monotonicNowMs();
 	if (cachedStorage && now - cachedStorage.at < STORAGE_CACHE_TTL_MS) {
 		return cachedStorage.value;
 	}

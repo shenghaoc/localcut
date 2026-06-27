@@ -1,4 +1,4 @@
-import { currentEpochMs } from '../../time';
+import { monotonicNowMs } from '../../time';
 /**
  * Phase 40: Draft controller — framework-free state machine.
  *
@@ -210,7 +210,7 @@ export class DraftController {
 			return;
 		}
 
-		const startedAt = currentEpochMs();
+		const startedAt = monotonicNowMs();
 		this.abortController = new AbortController();
 		const combinedSignal = signal
 			? AbortSignal.any([signal, this.abortController.signal])
@@ -290,14 +290,14 @@ export class DraftController {
 				this.updateJob({
 					phase: 'done',
 					draft: parseDraftResponse(accumulated),
-					durationMs: currentEpochMs() - startedAt
+					durationMs: monotonicNowMs() - startedAt
 				});
 			} else {
 				// Summarizer only — present the summary as a draft caption.
 				this.updateJob({
 					phase: 'done',
 					draft: { titles: [], hashtags: [], caption: condensed },
-					durationMs: currentEpochMs() - startedAt
+					durationMs: monotonicNowMs() - startedAt
 				});
 			}
 		} catch (err) {

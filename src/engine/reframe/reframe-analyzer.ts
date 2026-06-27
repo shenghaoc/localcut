@@ -1,4 +1,4 @@
-import { currentEpochMs } from '../../time';
+import { monotonicNowMs } from '../../time';
 /**
  * Smart Reframe analysis worker (Phase 33). Owns its own Mediabunny demux +
  * VideoDecoder instance for offline frame scanning. Receives a File, decodes
@@ -266,7 +266,7 @@ async function handleStart(
 			trajectory.push({ time: clipTime, cx: smoothed.cx - 0.5, cy: smoothed.cy - 0.5 });
 
 			// Progress update (throttled)
-			const now = currentEpochMs();
+			const now = monotonicNowMs();
 			if (now - lastProgressPost > PROGRESS_THROTTLE_MS) {
 				post({
 					type: 'reframe-progress',

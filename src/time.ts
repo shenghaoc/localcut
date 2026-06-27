@@ -71,18 +71,40 @@ export function currentIsoTimestamp(): string {
 	return isoFromEpochMs(currentEpochMs());
 }
 
+function isoParts(value: string): {
+	year: number;
+	month: number;
+	day: number;
+	hour: number;
+	minute: number;
+	second: number;
+} | null {
+	const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{3})?Z$/.exec(value);
+	if (!match) return null;
+	const [, yearText, monthText, dayText, hourText, minuteText, secondText] = match;
+	const year = Number(yearText);
+	const month = Number(monthText);
+	const day = Number(dayText);
+	const hour = Number(hourText);
+	const minute = Number(minuteText);
+	const second = Number(secondText);
+	if (month < 1 || month > 12) return null;
+	if (day < 1 || day > daysInMonth(year, month)) return null;
+	if (hour > 23 || minute > 59 || second > 59) return null;
+	return { year, month, day, hour, minute, second };
+}
+
 export function isIsoTimestamp(value: string): boolean {
-	return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value);
+	return isoParts(value) !== null;
 }
 
 export function formatIsoForDisplay(value: string): string {
-	if (!isIsoTimestamp(value)) return 'Generated';
-	const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(value);
-	if (!match) return 'Generated';
-	const [, , month, day, hour, minute] = match;
+	const parts = isoParts(value);
+	if (!parts) return 'Generated';
+	const { month, day, hour, minute } = parts;
 	const monthName =
 		['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][
-			Number(month) - 1
-		] ?? month;
-	return `Generated ${monthName} ${Number(day)}, ${hour}:${minute} UTC`;
+			month - 1
+		] ?? pad(month, 2);
+	return `Generated ${monthName} ${day}, ${pad(hour, 2)}:${pad(minute, 2)} UTC`;
 }

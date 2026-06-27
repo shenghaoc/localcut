@@ -1,4 +1,4 @@
-import { currentEpochMs } from '../../time';
+import { monotonicNowMs } from '../../time';
 /**
  * Phase 40: Translation controller — framework-free state machine.
  *
@@ -199,7 +199,7 @@ export class TranslationController {
 			return;
 		}
 
-		const startedAt = currentEpochMs();
+		const startedAt = monotonicNowMs();
 		this.abortController = new AbortController();
 		const combinedSignal = signal
 			? AbortSignal.any([signal, this.abortController.signal])
@@ -330,7 +330,7 @@ export class TranslationController {
 				segments: translatedSegments
 			});
 
-			this.updateJob({ phase: 'done', durationMs: currentEpochMs() - startedAt });
+			this.updateJob({ phase: 'done', durationMs: monotonicNowMs() - startedAt });
 		} catch (err) {
 			if (err instanceof TranslationCancelledError) {
 				this.updateJob({ phase: 'idle' });
