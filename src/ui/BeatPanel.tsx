@@ -138,7 +138,10 @@ export function BeatPanel(props: BeatPanelProps) {
 													aria-valuemin={0}
 													aria-valuemax={100}
 													aria-label="Beat analysis progress"
-													style={{ transform: `scaleX(${progress() ?? 0})` }}
+													style={{
+														transform: `scaleX(${progress() ?? 0})`,
+														'will-change': 'transform' // Bolt ⚡: Hardware acceleration for smooth progress updates
+													}}
 												/>
 											</div>
 											<button

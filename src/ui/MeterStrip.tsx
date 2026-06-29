@@ -11,11 +11,17 @@ function MeterBar(props: { label: string; peak: () => number; rms: () => number 
 			<div class="meter-bar">
 				<div
 					class="meter-rms"
-					style={{ transform: `scaleY(${(meterHeightPercent(props.rms()) || 0) / 100})` }}
+					style={{
+						transform: `scaleY(${(meterHeightPercent(props.rms()) || 0) / 100})`,
+						'will-change': 'transform' // Bolt ⚡: Hardware acceleration for 60fps meter updates
+					}}
 				/>
 				<div
 					class="meter-peak"
-					style={{ transform: `scaleY(${(meterHeightPercent(props.peak()) || 0) / 100})` }}
+					style={{
+						transform: `scaleY(${(meterHeightPercent(props.peak()) || 0) / 100})`,
+						'will-change': 'transform' // Bolt ⚡: Hardware acceleration for 60fps meter updates
+					}}
 				/>
 			</div>
 			<span class="meter-label">{props.label}</span>
