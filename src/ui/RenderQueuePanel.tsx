@@ -180,6 +180,7 @@ export function RenderQueuePanel(props: RenderQueuePanelProps) {
 											type="button"
 											class="render-queue-icon-btn"
 											aria-label="Remove job"
+											title="Remove job"
 											onClick={() => props.onRemove(job.id)}
 										>
 											<Trash2 size={13} />
@@ -190,6 +191,7 @@ export function RenderQueuePanel(props: RenderQueuePanelProps) {
 											type="button"
 											class="render-queue-icon-btn"
 											aria-label="Cancel job"
+											title="Cancel job"
 											onClick={() => props.onCancelJob(job.id)}
 										>
 											<X size={13} />
@@ -200,6 +202,7 @@ export function RenderQueuePanel(props: RenderQueuePanelProps) {
 											type="button"
 											class="render-queue-icon-btn"
 											aria-label="Retry job"
+											title="Retry job"
 											onClick={() => props.onRetry(job.id)}
 										>
 											<RotateCcw size={13} />
