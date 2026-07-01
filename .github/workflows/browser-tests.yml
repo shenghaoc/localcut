@@ -59,7 +59,7 @@ jobs:
           npm install -g "pnpm@${PNPM_VERSION}"
           pnpm config set store-dir /github/home/.pnpm-store
       - name: Cache pnpm store
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: /github/home/.pnpm-store
           # Include runner.arch so the linux/arm64 store (this job) and any
