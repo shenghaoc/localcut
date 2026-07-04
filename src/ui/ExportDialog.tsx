@@ -4,6 +4,7 @@ import { Popover } from '@ark-ui/solid/popover';
 import { Copy, Download, ListPlus, Save } from 'lucide-solid';
 import { Button, buttonVariants } from './components/button';
 import { copyToClipboard } from '../lib/clipboard';
+import { downloadBlob } from '../lib/blob-download';
 import { validateOutputTemplate, resolvePlatformPresetCodec } from '../engine/export-presets';
 import { aspectOutputSize } from '../engine/project';
 import { exportConstraintsForProbe } from '../engine/capability-probe-v2';
@@ -987,15 +988,6 @@ function ChaptersSection(props: {
 			downloadBlob(textBlob, textName);
 			downloadBlob(jsonBlob, jsonName);
 		}
-	}
-
-	function downloadBlob(blob: Blob, name: string) {
-		const url = URL.createObjectURL(blob);
-		const a = document.createElement('a');
-		a.href = url;
-		a.download = name;
-		a.click();
-		URL.revokeObjectURL(url);
 	}
 
 	return (

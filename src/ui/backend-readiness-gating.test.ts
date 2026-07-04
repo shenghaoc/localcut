@@ -13,7 +13,7 @@ describe('backend readiness UI gating', () => {
 	it('gates direct export on export readiness and handles reduced blob downloads', () => {
 		expect(appSource).toContain('const exportSurfaceAvailable = () => exportReady();');
 		expect(appSource).toContain("case 'export-download-ready'");
-		expect(appSource).toContain('setTimeout(() => URL.revokeObjectURL(url), 10_000)');
+		expect(appSource).toContain("import { downloadBlob } from '../lib/blob-download'");
 		expect(appSource).not.toContain('queueMicrotask(() => URL.revokeObjectURL(url))');
 		expect(appSource).toContain("b.send({ type: 'export-start', settings, output })");
 	});

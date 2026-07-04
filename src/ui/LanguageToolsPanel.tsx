@@ -270,7 +270,12 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 
 						{/* Translation progress */}
 						<Show when={translateJob()}>
-							<div role="status" aria-live="polite" style={{ 'margin-top': '8px' }}>
+							<div
+								role="status"
+								aria-live="polite"
+								aria-atomic="true"
+								style={{ 'margin-top': '8px' }}
+							>
 								<Show when={translateJob()!.phase === 'detecting'}>
 									<p style={{ 'font-size': '0.85em' }}>
 										Detecting language…{formatPercent(translateJob()!.downloadFraction)}
@@ -340,7 +345,12 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 
 						{/* Draft progress */}
 						<Show when={draftJob()}>
-							<div role="status" aria-live="polite" style={{ 'margin-top': '8px' }}>
+							<div
+								role="status"
+								aria-live="polite"
+								aria-atomic="true"
+								style={{ 'margin-top': '8px' }}
+							>
 								<Show when={draftJob()!.phase === 'preparing'}>
 									<p style={{ 'font-size': '0.85em' }}>
 										Preparing model…{formatPercent(draftJob()!.downloadFraction)}

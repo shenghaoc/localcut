@@ -120,6 +120,7 @@ import { BundleDialog } from './BundleDialog';
 import { InterchangeMenu } from './InterchangeMenu';
 import { Button, buttonVariants } from './components/button';
 import { cn } from '../lib/utils';
+import { downloadBlob } from '../lib/blob-download';
 import { CapabilityPanel } from './CapabilityPanel';
 import { DocsPage } from '../features/docs/DocsPage';
 import { DOCS_INDEX_SLUG, docsPath, parseDocsPath } from '../features/docs/docsManifest';
@@ -328,15 +329,7 @@ function formatSavedAt(value: string): string {
 }
 
 function downloadTextFile(fileName: string, mimeType: string, content: string): void {
-	const blob = new Blob([content], { type: mimeType });
-	const url = URL.createObjectURL(blob);
-	const anchor = document.createElement('a');
-	anchor.href = url;
-	anchor.download = fileName;
-	document.body.appendChild(anchor);
-	anchor.click();
-	document.body.removeChild(anchor);
-	URL.revokeObjectURL(url);
+	downloadBlob(new Blob([content], { type: mimeType }), fileName);
 }
 
 /** File System Access save with download-blob fallback (Phase 48 R8.1). */
@@ -2468,13 +2461,10 @@ export function App() {
 				setRuntimeIssue(msg.message);
 				break;
 			case 'look-preset-exported': {
-				const blob = new Blob([msg.json], { type: 'application/json' });
-				const url = URL.createObjectURL(blob);
-				const a = document.createElement('a');
-				a.href = url;
-				a.download = `${msg.clipId.slice(0, 8)}-look.json`;
-				a.click();
-				URL.revokeObjectURL(url);
+				downloadBlob(
+					new Blob([msg.json], { type: 'application/json' }),
+					`${msg.clipId.slice(0, 8)}-look.json`
+				);
 				setStatusLine(
 					msg.lutFileName
 						? `Look preset exported (paired LUT: ${msg.lutFileName})`
@@ -2734,15 +2724,7 @@ export function App() {
 				setStatusLine(`Export complete · ${msg.mimeType}`);
 				break;
 			case 'export-download-ready': {
-				const url = URL.createObjectURL(msg.blob);
-				const anchor = document.createElement('a');
-				anchor.href = url;
-				anchor.download = msg.fileName;
-				anchor.rel = 'noopener';
-				document.body.append(anchor);
-				anchor.click();
-				anchor.remove();
-				setTimeout(() => URL.revokeObjectURL(url), 10_000);
+				downloadBlob(msg.blob, msg.fileName);
 				setExporting(false);
 				setExportProgress(null);
 				setExportError(null);
