@@ -889,17 +889,14 @@ export function Timeline(props: TimelineProps) {
 								{(box) => (
 									<div
 										class="timeline-marquee"
-										// Bolt ⚡: Use hardware-accelerated translate + scale to avoid
-										// layout thrashing and main-thread reflows 60x a second during drag.
+										// Keep width/height direct so the border width is not scaled with the box.
 										style={{
 											left: 0,
 											top: 0,
-											width: '1px',
-											height: '1px',
+											width: `${box().width}px`,
+											height: `${box().height}px`,
 											translate: `${box().left}px ${box().top}px`,
-											'transform-origin': '0 0',
-											transform: `scaleX(${box().width}) scaleY(${box().height})`,
-											'will-change': 'translate, transform'
+											'will-change': 'translate'
 										}}
 									/>
 								)}

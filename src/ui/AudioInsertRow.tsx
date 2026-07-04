@@ -1,4 +1,4 @@
-import { createSignal, createUniqueId, type JSX } from 'solid-js';
+import { createSignal, createUniqueId, Show, type JSX } from 'solid-js';
 import { Power, PowerOff } from 'lucide-solid';
 import { Button } from './components/button';
 
@@ -24,11 +24,9 @@ export function AudioInsertRow(props: AudioInsertRowProps) {
 					aria-label={props.bypass ? `Enable ${props.label}` : `Bypass ${props.label}`}
 					aria-pressed={!props.bypass}
 				>
-					{props.bypass ? (
+					<Show when={props.bypass} fallback={<Power size={14} aria-hidden="true" />}>
 						<PowerOff size={14} aria-hidden="true" />
-					) : (
-						<Power size={14} aria-hidden="true" />
-					)}
+					</Show>
 				</Button>
 				<button
 					class="insert-expand"
@@ -44,11 +42,11 @@ export function AudioInsertRow(props: AudioInsertRowProps) {
 					</span>
 				</button>
 			</div>
-			{expanded() ? (
+			<Show when={expanded()}>
 				<div class="insert-params" id={paramsId}>
 					{props.children}
 				</div>
-			) : null}
+			</Show>
 		</div>
 	);
 }

@@ -6,7 +6,7 @@
  * Draft (transcript → titles/hashtags/文案). Both are progressive
  * enhancement — hidden when the APIs are absent.
  */
-import { createEffect, createSignal, For, Show, type Component } from 'solid-js';
+import { createEffect, createSignal, For, onCleanup, Show, type Component } from 'solid-js';
 import { X, Copy, Check, Languages, FileText } from 'lucide-solid';
 import { copyToClipboard } from '../lib/clipboard';
 import { Button } from './components/button';
@@ -45,6 +45,7 @@ function formatPercent(fraction: number | null): string {
 
 export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) => {
 	let panelRef: HTMLElement | undefined;
+	let copiedFieldResetTimer: ReturnType<typeof setTimeout> | undefined;
 	const [selectedTrackId, setSelectedTrackId] = createSignal<string>('');
 	const [targetLang, setTargetLang] = createSignal<'auto' | 'zh' | 'en'>('auto');
 	const [copiedField, setCopiedField] = createSignal<string | null>(null);
@@ -66,6 +67,10 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 			// user must pick a target explicitly.
 			setTargetLang(detectorUsable() ? 'auto' : 'en');
 		}
+	});
+
+	onCleanup(() => {
+		if (copiedFieldResetTimer !== undefined) clearTimeout(copiedFieldResetTimer);
 	});
 
 	const translateJob = () => props.translationState.job;
@@ -101,8 +106,12 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 	const handleCopy = async (text: string, field: string) => {
 		const res = await copyToClipboard(text);
 		if (res.ok) {
+			if (copiedFieldResetTimer !== undefined) clearTimeout(copiedFieldResetTimer);
 			setCopiedField(field);
-			setTimeout(() => setCopiedField(null), 2000);
+			copiedFieldResetTimer = setTimeout(() => {
+				setCopiedField(null);
+				copiedFieldResetTimer = undefined;
+			}, 2000);
 		} else {
 			console.debug('Clipboard write failed:', res.error);
 		}

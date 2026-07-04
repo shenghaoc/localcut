@@ -12,8 +12,11 @@ export function downloadBlob(blob: Blob, name: string): void {
 	a.href = url;
 	a.download = name;
 	document.body.appendChild(a);
-	a.click();
-	document.body.removeChild(a);
+	try {
+		a.click();
+	} finally {
+		document.body.removeChild(a);
+	}
 	// Revoke after a short delay to ensure the browser has started the download.
-	setTimeout(() => URL.revokeObjectURL(url), 10_000);
+	setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }

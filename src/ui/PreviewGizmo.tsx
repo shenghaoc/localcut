@@ -105,6 +105,7 @@ export function PreviewGizmo(props: PreviewGizmoProps) {
 			width: '100px',
 			height: '100px',
 			translate: `${b.left + cx - 50}px ${b.top + cy - 50}px`,
+			'transform-origin': '50% 50%',
 			transform: `scaleX(${w / 100}) scaleY(${h / 100}) rotate(${t.rotation}deg)`,
 			'will-change':
 				d?.mode === 'move' || d?.mode === 'scale'

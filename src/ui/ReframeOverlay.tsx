@@ -119,10 +119,8 @@ export const ReframeOverlay: Component<ReframeOverlayProps> = (props) => {
 							position: 'absolute',
 							left: '0',
 							top: '0',
-							width: '100%',
-							height: '100%',
-							'transform-origin': '0 0',
-							transform: `scaleX(${cropRect()!.width / 100}) scaleY(${cropRect()!.height / 100})`,
+							width: `${cropRect()!.width}%`,
+							height: `${cropRect()!.height}%`,
 							border: '2px solid rgba(74, 144, 226, 0.8)',
 							'box-shadow': '0 0 0 9999px rgba(0, 0, 0, 0.4)',
 							'border-radius': '2px'

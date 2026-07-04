@@ -73,11 +73,13 @@ provided no invariant.
 `sendInit(canvas)` failed after `probeCapabilitiesV2()` succeeded, all derived
 state was skipped. Moved sendInit() after capability setup.
 
-### B8 — Interpolation double-dispose risk
+### B8 — Interpolation tensor cleanup after queue submission
 
 `interpolation-engine.ts:387-390` — `.then().catch()` chaining meant if
 `dispose()` threw in the fulfilled handler, the catch handler caught it and
-called `dispose()` again. Changed to `.then(onFulfilled, onRejected)`.
+called `dispose()` again. The follow-up review also noted that
+`onSubmittedWorkDone()` can reject during WebGPU device loss. The cleanup now
+handles that rejection before disposing the output tensor.
 
 ### B9 — Export dialog no download fallback
 
@@ -108,11 +110,25 @@ injection. No URL validation issues.
 - 5 missing `aria-controls` on collapse toggle buttons
 - 13 missing `aria-live`/`aria-atomic` on status elements
 
-### bolt.md (Performance) — 6 violations, all fixed
+### bolt.md (Performance) — audited with review corrections
 
-- ReframeOverlay crop rect: `width`/`height` → `scaleX`/`scaleY`
-- Timeline marquee: `width`/`height` → `scaleX`/`scaleY`
+- ReframeOverlay crop rect: direct dimensions retained because scaling distorts
+  borders and shadows on this absolutely positioned overlay
+- Timeline marquee: direct dimensions retained because scaling distorts the
+  selection border
 - PreviewGizmo: `width`/`height` → `scaleX`/`scaleY` combined with rotation
+
+## Active review follow-up
+
+The 2026-07-04 Gemini pass added active review threads after the initial PR
+body/spec update. This branch now also covers:
+
+- queued tensor cleanup after WebGPU device loss,
+- short-lived, DOM-backed blob downloads,
+- Solid `<Show>` conditional rendering in `AudioInsertRow`,
+- copy-feedback timeout cleanup in `LanguageToolsPanel`,
+- bordered overlay sizing corrections in ReframeOverlay and Timeline,
+- explicit centered transform origin in PreviewGizmo.
 
 ## Shared code extraction
 
@@ -126,4 +142,4 @@ injection. No URL validation issues.
 - PR #155 has no unresolved GitHub review threads.
 - All `.jules/` points fully covered (sentinel, palette, bolt).
 - `vp run check` — full quality gate passes.
-- 2457 tests, 220 files, all passing.
+- Focused review-comment regression guards pass.

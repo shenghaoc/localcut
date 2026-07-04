@@ -61,15 +61,18 @@
 - [x] ProgramPanel.tsx: Add `aria-live`/`aria-atomic` to status elements
 - [x] CaptionStyleInspector.tsx: Add `aria-atomic` to success notice
 
-## T5 — Performance (bolt.md compliance)
+## T5 — Performance and follow-up review corrections
 
-- [x] ReframeOverlay.tsx: Crop rect `width`/`height` → `scaleX`/`scaleY`
-  (eliminates layout thrashing at 60fps)
-- [x] Timeline.tsx: Marquee `width`/`height` → `scaleX`/`scaleY`
+- [x] ReframeOverlay.tsx: Audit crop overlay sizing; follow-up review restored
+  direct `width`/`height` because scaling distorts borders and shadows on an
+  absolutely positioned overlay.
+- [x] Timeline.tsx: Audit marquee sizing; follow-up review restored direct
+  `width`/`height` so selection borders keep constant thickness.
 - [x] PreviewGizmo.tsx: Gizmo `width`/`height` → `scaleX`/`scaleY`
-  combined with rotation
-- [x] App.tsx: Remove unnecessary `Array.from()` on `dataTransfer.types`
-  (already `readonly string[]`)
+  combined with rotation, with center-based translation and explicit centered
+  transform origin.
+- [x] App.tsx: Preserve `Array.from(e.dataTransfer.types)` for DOMStringList
+  compatibility.
 
 ## T6 — Shared code extraction
 
@@ -80,15 +83,34 @@
 
 ## T7 — Validation
 
-- [x] `vp test run` — 2457 tests, 220 files, all passing
+- [x] `vp test run` — 2465 tests, 222 files, all passing
 - [x] `vp run typecheck` — clean
 - [x] `vp run check` — full quality gate passes (format + lint + typecheck +
   test + build)
 - [x] `.jules/sentinel.md` security points — 0 violations
 - [x] `.jules/palette.md` accessibility points — 18 violations, all fixed
 - [x] `.jules/bolt.md` performance points — 6 violations, all fixed
+- [x] `vp test run src/ui/review-comments-regression.test.ts src/ui/audio-disclosure-semantics.test.ts`
+  — focused guards for the active Gemini review comments
 
-## T8 — PR metadata
+## T8 — Active Gemini review comment follow-up
+
+- [x] interpolation-engine.ts: Swallow `onSubmittedWorkDone()` device-loss
+  rejections before disposing the ORT output tensor.
+- [x] blob-download.ts: Keep the anchor DOM-backed, remove it in `finally`,
+  and reduce object-URL lifetime to 1 second.
+- [x] AudioInsertRow.tsx: Use `createUniqueId`, `aria-controls`, and Solid
+  `<Show>` for bypass/expanded conditional rendering.
+- [x] LanguageToolsPanel.tsx: Clear stale copy-feedback timeouts and clean them
+  up on unmount.
+- [x] ReframeOverlay.tsx: Restore direct crop rectangle dimensions to avoid
+  scaling borders/shadows.
+- [x] Timeline.tsx: Restore direct marquee dimensions to avoid scaling borders.
+- [x] PreviewGizmo.tsx: Make centered transform origin explicit.
+- [x] review-comments-regression.test.ts: Add source-level guards for the
+  review-comment fixes.
+
+## T9 — PR metadata
 
 - [x] Update PR #155 body to reflect all commits and findings
 - [x] Post review findings as PR comments

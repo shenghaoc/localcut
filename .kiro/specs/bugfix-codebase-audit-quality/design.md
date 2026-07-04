@@ -45,5 +45,11 @@ the editor chrome.
 
 `audio-disclosure-semantics.test.ts` imports the relevant UI modules as raw
 source and guards the invariant that these panels no longer implement
-disclosure with `role="button"` or event-propagation workarounds. This follows
-the repo's existing source-guard pattern for architectural invariants.
+disclosure with `role="button"` or event-propagation workarounds.
+
+`review-comments-regression.test.ts` adds focused guards for the active Gemini
+review fixes: queued tensor cleanup after device-loss rejection, short-lived
+DOM-backed blob downloads, unscaled bordered overlays, centered preview-gizmo
+rotation, Solid `<Show>` usage in `AudioInsertRow`, and copy-feedback timer
+cleanup in `LanguageToolsPanel`. This follows the repo's existing source-guard
+pattern for architectural invariants.

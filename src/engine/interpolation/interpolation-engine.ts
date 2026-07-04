@@ -384,7 +384,10 @@ export class InterpolationEngine {
 
 		// Release ORT's output tensor (and its GPU buffer) only after the postprocess
 		// pass that reads it has finished on the GPU — avoids a use-after-free.
-		void device.queue.onSubmittedWorkDone().finally(() => outputTensor.dispose());
+		void device.queue
+			.onSubmittedWorkDone()
+			.catch(() => {})
+			.finally(() => outputTensor.dispose());
 	}
 
 	async dispose(): Promise<void> {
