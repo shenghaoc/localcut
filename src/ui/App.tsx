@@ -4038,19 +4038,19 @@ export function App() {
 		const onDragEnter = (e: DragEvent) => {
 			// Only count external file drags so internal drags (e.g. media-bin to track)
 			// never increment the counter and cause it to desync from dragOver/drop.
-			if (e.dataTransfer?.types && e.dataTransfer.types.includes('Files')) {
+			if (e.dataTransfer?.types && Array.from(e.dataTransfer.types).includes('Files')) {
 				dragDepth++;
 			}
 		};
 		const onDragOver = (e: DragEvent) => {
 			// Ignore internal drags (e.g. a media-bin asset onto a track); only OS file
 			// drops carry the "Files" type and should raise the import overlay.
-			if (!e.dataTransfer?.types || !e.dataTransfer.types.includes('Files')) return;
+			if (!e.dataTransfer?.types || !Array.from(e.dataTransfer.types).includes('Files')) return;
 			e.preventDefault();
 			setIsDraggingFile(true);
 		};
 		const onDragLeave = (e: DragEvent) => {
-			if (!e.dataTransfer?.types || !e.dataTransfer.types.includes('Files')) return;
+			if (!e.dataTransfer?.types || !Array.from(e.dataTransfer.types).includes('Files')) return;
 			dragDepth--;
 			if (dragDepth <= 0) {
 				dragDepth = 0;

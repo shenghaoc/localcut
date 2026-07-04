@@ -8,6 +8,7 @@
  */
 import { createEffect, createSignal, For, Show, type Component } from 'solid-js';
 import { X, Copy, Check, Languages, FileText } from 'lucide-solid';
+import { copyToClipboard } from '../lib/clipboard';
 import { Button } from './components/button';
 import type { TranslationControllerState } from './language-tools/translation-controller';
 import type { DraftControllerState } from './language-tools/draft-controller';
@@ -97,13 +98,13 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 		return selectedTrackId() && props.draftState.available;
 	};
 
-	const copyToClipboard = async (text: string, field: string) => {
-		try {
-			await navigator.clipboard.writeText(text);
+	const handleCopy = async (text: string, field: string) => {
+		const res = await copyToClipboard(text);
+		if (res.ok) {
 			setCopiedField(field);
 			setTimeout(() => setCopiedField(null), 2000);
-		} catch (err) {
-			console.debug('Clipboard write failed:', err);
+		} else {
+			console.debug('Clipboard write failed:', res.error);
 		}
 	};
 
@@ -373,9 +374,7 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 											<Button
 												size="icon"
 												variant="ghost"
-												onClick={() =>
-													copyToClipboard(draftJob()!.draft!.titles.join('\n'), 'titles')
-												}
+												onClick={() => handleCopy(draftJob()!.draft!.titles.join('\n'), 'titles')}
 												aria-label="Copy titles"
 											>
 												<Show when={copiedField() === 'titles'} fallback={<Copy size={14} />}>
@@ -408,7 +407,7 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 												size="icon"
 												variant="ghost"
 												onClick={() =>
-													copyToClipboard(draftJob()!.draft!.hashtags.join(' '), 'hashtags')
+													handleCopy(draftJob()!.draft!.hashtags.join(' '), 'hashtags')
 												}
 												aria-label="Copy hashtags"
 											>
@@ -437,7 +436,7 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 											<Button
 												size="icon"
 												variant="ghost"
-												onClick={() => copyToClipboard(draftJob()!.draft!.caption, 'caption')}
+												onClick={() => handleCopy(draftJob()!.draft!.caption, 'caption')}
 												aria-label="Copy caption"
 											>
 												<Show when={copiedField() === 'caption'} fallback={<Copy size={14} />}>

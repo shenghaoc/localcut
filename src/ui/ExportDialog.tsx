@@ -3,6 +3,7 @@ import { Portal } from 'solid-js/web';
 import { Popover } from '@ark-ui/solid/popover';
 import { Copy, Download, ListPlus, Save } from 'lucide-solid';
 import { Button, buttonVariants } from './components/button';
+import { copyToClipboard } from '../lib/clipboard';
 import { validateOutputTemplate, resolvePlatformPresetCodec } from '../engine/export-presets';
 import { aspectOutputSize } from '../engine/project';
 import { exportConstraintsForProbe } from '../engine/capability-probe-v2';
@@ -944,11 +945,8 @@ function ChaptersSection(props: {
 	async function handleCopy() {
 		const text = chapterText();
 		if (!text) return;
-		try {
-			await navigator.clipboard.writeText(text);
-		} catch (err) {
-			console.debug('Clipboard write failed:', err);
-		}
+		const res = await copyToClipboard(text);
+		if (!res.ok) console.debug('Clipboard write failed:', res.error);
 	}
 
 	async function handleSave() {

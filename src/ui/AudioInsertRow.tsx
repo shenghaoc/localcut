@@ -1,4 +1,4 @@
-import { createSignal, type JSX } from 'solid-js';
+import { createSignal, createUniqueId, type JSX } from 'solid-js';
 import { Power, PowerOff } from 'lucide-solid';
 import { Button } from './components/button';
 
@@ -12,6 +12,7 @@ export interface AudioInsertRowProps {
 
 export function AudioInsertRow(props: AudioInsertRowProps) {
 	const [expanded, setExpanded] = createSignal(false);
+	const paramsId = createUniqueId();
 
 	return (
 		<div class="insert-row">
@@ -34,7 +35,7 @@ export function AudioInsertRow(props: AudioInsertRowProps) {
 					type="button"
 					onClick={() => setExpanded(!expanded())}
 					aria-expanded={expanded()}
-					aria-controls={`insert-params-${props.label}`}
+					aria-controls={paramsId}
 				>
 					{props.icon}
 					<span class="insert-name">{props.label}</span>
@@ -44,7 +45,7 @@ export function AudioInsertRow(props: AudioInsertRowProps) {
 				</button>
 			</div>
 			{expanded() ? (
-				<div class="insert-params" id={`insert-params-${props.label}`}>
+				<div class="insert-params" id={paramsId}>
 					{props.children}
 				</div>
 			) : null}

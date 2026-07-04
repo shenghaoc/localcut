@@ -894,8 +894,8 @@ export function Timeline(props: TimelineProps) {
 										style={{
 											left: 0,
 											top: 0,
-											width: '100%',
-											height: '100%',
+											width: '1px',
+											height: '1px',
 											translate: `${box().left}px ${box().top}px`,
 											'transform-origin': '0 0',
 											transform: `scaleX(${box().width}) scaleY(${box().height})`,
