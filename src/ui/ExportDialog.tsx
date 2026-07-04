@@ -975,7 +975,7 @@ function ChaptersSection(props: {
 				// Download JSON as sidecar fallback (parent directory not accessible from file handle).
 				downloadBlob(jsonBlob, jsonName);
 			} catch (err) {
-				if (err instanceof DOMException && err.name === 'AbortError') {
+				if (err instanceof Error && err.name === 'AbortError') {
 					// User cancelled file picker — no feedback needed
 					return;
 				}

@@ -3930,8 +3930,9 @@ export function App() {
 
 	onMount(() => {
 		void (async () => {
+			let probe;
 			try {
-				const probe = await probeCapabilitiesV2();
+				probe = await probeCapabilitiesV2();
 				setCapabilityProbeV2(probe);
 				setExportCodecs([...exportConstraintsForProbe(probe)]);
 				cleanupController.setCleanupProbe(probe.cleanup ?? null);
@@ -3976,15 +3977,23 @@ export function App() {
 						setStatusLine('Shell-only · preview and export unavailable');
 						break;
 				}
-				if (pendingInitCanvas) {
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				setStatusLine(`Capability detection failed: ${message}`);
+				setRuntimeIssue('Failed to detect browser capabilities. Try reloading.');
+				return;
+			}
+
+			if (pendingInitCanvas) {
+				try {
 					const canvas = pendingInitCanvas;
 					pendingInitCanvas = null;
 					await sendInit(canvas);
+				} catch (error) {
+					const message = error instanceof Error ? error.message : String(error);
+					setStatusLine(`Canvas initialization failed: ${message}`);
+					setRuntimeIssue('Failed to initialize editor canvas. Try reloading.');
 				}
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				setStatusLine(`Initialization failed: ${message}`);
-				setRuntimeIssue('Failed to detect browser capabilities. Try reloading.');
 			}
 		})();
 
