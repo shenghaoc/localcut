@@ -102,13 +102,14 @@ export function PreviewGizmo(props: PreviewGizmoProps) {
 		return {
 			left: '0px',
 			top: '0px',
-			width: `${w}px`,
-			height: `${h}px`,
+			width: '100px',
+			height: '100px',
 			translate: `${b.left + cx - w / 2}px ${b.top + cy - h / 2}px`,
-			transform: `rotate(${t.rotation}deg)`,
+			'transform-origin': '0 0',
+			transform: `scaleX(${w / 100}) scaleY(${h / 100}) rotate(${t.rotation}deg)`,
 			'will-change':
 				d?.mode === 'move' || d?.mode === 'scale'
-					? 'translate'
+					? 'translate, transform'
 					: d?.mode === 'rotate'
 						? 'transform'
 						: undefined

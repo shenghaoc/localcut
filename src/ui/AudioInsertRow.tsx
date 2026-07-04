@@ -34,6 +34,7 @@ export function AudioInsertRow(props: AudioInsertRowProps) {
 					type="button"
 					onClick={() => setExpanded(!expanded())}
 					aria-expanded={expanded()}
+					aria-controls={`insert-params-${props.label}`}
 				>
 					{props.icon}
 					<span class="insert-name">{props.label}</span>
@@ -42,7 +43,11 @@ export function AudioInsertRow(props: AudioInsertRowProps) {
 					</span>
 				</button>
 			</div>
-			{expanded() ? <div class="insert-params">{props.children}</div> : null}
+			{expanded() ? (
+				<div class="insert-params" id={`insert-params-${props.label}`}>
+					{props.children}
+				</div>
+			) : null}
 		</div>
 	);
 }

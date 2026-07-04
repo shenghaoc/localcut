@@ -151,6 +151,7 @@ export default function ScopePanel(props: ScopePanelProps) {
 					class="scope-panel__toggle"
 					onClick={() => props.setCollapsed(!props.collapsed())}
 					aria-expanded={!props.collapsed()}
+					aria-controls="scope-panel-grid"
 				>
 					Scopes <span class="text-xs text-muted-foreground font-normal">(Experimental)</span>{' '}
 					{props.collapsed() ? '▸' : '▾'}
@@ -163,7 +164,7 @@ export default function ScopePanel(props: ScopePanelProps) {
 			</header>
 
 			{!props.collapsed() && (
-				<div class="scope-panel__grid">
+				<div class="scope-panel__grid" id="scope-panel-grid">
 					<ScopeView
 						label="Histogram"
 						width={HIST_CANVAS_W}

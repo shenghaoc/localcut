@@ -693,7 +693,12 @@ export function CaptionStyleInspector(props: CaptionStyleInspectorProps) {
 				</div>
 			</Show>
 			<Show when={importSuccess()}>
-				<div class="caption-notice caption-notice-success" role="status" aria-live="polite">
+				<div
+					class="caption-notice caption-notice-success"
+					role="status"
+					aria-live="polite"
+					aria-atomic="true"
+				>
 					{importSuccess()}
 				</div>
 			</Show>

@@ -58,7 +58,12 @@ export const InterpolationControls: Component<InterpolationControlsProps> = (pro
 			<div class="interpolation-controls__header">
 				<span class="interpolation-controls__title">Frame Interpolation (ML)</span>
 				<Show when={reason()}>
-					<span class="interpolation-controls__reason" role="status">
+					<span
+						class="interpolation-controls__reason"
+						role="status"
+						aria-live="polite"
+						aria-atomic="true"
+					>
 						{reason()}
 					</span>
 				</Show>
@@ -158,7 +163,12 @@ export const InterpolationControls: Component<InterpolationControlsProps> = (pro
 						</Show>
 
 						<Show when={isExportOnly()}>
-							<span class="interpolation-controls__slow-label" role="status">
+							<span
+								class="interpolation-controls__slow-label"
+								role="status"
+								aria-live="polite"
+								aria-atomic="true"
+							>
 								Export only — preview requires the accelerated tier
 							</span>
 						</Show>

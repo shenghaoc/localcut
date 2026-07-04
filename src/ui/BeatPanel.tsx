@@ -129,7 +129,12 @@ export function BeatPanel(props: BeatPanelProps) {
 											</button>
 										}
 									>
-										<div class="beat-panel-progress-wrap" role="status" aria-live="polite">
+										<div
+											class="beat-panel-progress-wrap"
+											role="status"
+											aria-live="polite"
+											aria-atomic="true"
+										>
 											<div class="beat-panel-progress-track">
 												<div
 													class="beat-panel-progress-bar"

@@ -43,6 +43,7 @@ export function ReplayBufferPanel(props: ReplayBufferPanelProps) {
 				type="button"
 				onClick={() => setExpanded(!expanded())}
 				aria-expanded={expanded()}
+				aria-controls="replay-buffer-body"
 			>
 				<span class="panel-title">Replay Buffer</span>
 				<Show when={isCapturing()}>
@@ -54,7 +55,7 @@ export function ReplayBufferPanel(props: ReplayBufferPanelProps) {
 			</button>
 
 			<Show when={expanded()}>
-				<div class="collapse-body">
+				<div class="collapse-body" id="replay-buffer-body">
 					<Show when={!props.isSupported}>
 						<div class="capability-warning" role="alert">
 							{props.supportedReason ?? 'Replay Buffer is not available in this browser.'}

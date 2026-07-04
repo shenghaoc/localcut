@@ -427,7 +427,7 @@ export function ExportDialog(props: ExportDialogProps) {
 									settings().codec
 							}
 						>
-							<p class="export-aspect-warning" role="status">
+							<p class="export-aspect-warning" role="status" aria-live="polite" aria-atomic="true">
 								H.264 is not supported on this device; falling back to VP9 (WebM).
 							</p>
 						</Show>
@@ -774,7 +774,7 @@ export function ExportDialog(props: ExportDialogProps) {
 							<p class="export-error">{props.error}</p>
 						</Show>
 						<Show when={props.warnings.length > 0}>
-							<div class="export-warning-list" role="status" aria-live="polite">
+							<div class="export-warning-list" role="status" aria-live="polite" aria-atomic="true">
 								<For each={props.warnings}>{(warning) => <p class="export-note">{warning}</p>}</For>
 							</div>
 						</Show>

@@ -889,17 +889,17 @@ export function Timeline(props: TimelineProps) {
 								{(box) => (
 									<div
 										class="timeline-marquee"
-										// Bolt ⚡: Use hardware-accelerated translate instead of left/top to avoid
+										// Bolt ⚡: Use hardware-accelerated translate + scale to avoid
 										// layout thrashing and main-thread reflows 60x a second during drag.
 										style={{
 											left: 0,
 											top: 0,
+											width: '100%',
+											height: '100%',
 											translate: `${box().left}px ${box().top}px`,
-											width: `${box().width}px`,
-											height: `${box().height}px`,
-											// will-change lists only translate: width/height force layout
-											// regardless, so hinting them wastes memory without any gain.
-											'will-change': 'translate'
+											'transform-origin': '0 0',
+											transform: `scaleX(${box().width}) scaleY(${box().height})`,
+											'will-change': 'translate, transform'
 										}}
 									/>
 								)}

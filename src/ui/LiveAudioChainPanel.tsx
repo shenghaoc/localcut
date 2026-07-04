@@ -56,6 +56,7 @@ export function LiveAudioChainPanel(props: LiveAudioChainPanelProps) {
 				type="button"
 				onClick={() => setExpanded(!expanded())}
 				aria-expanded={expanded()}
+				aria-controls="live-audio-chain-body"
 			>
 				<span class="panel-title">Live Audio Chain</span>
 				<span class="latency-display" aria-live="polite">
@@ -64,7 +65,7 @@ export function LiveAudioChainPanel(props: LiveAudioChainPanelProps) {
 			</button>
 
 			<Show when={expanded()}>
-				<div class="collapse-body">
+				<div class="collapse-body" id="live-audio-chain-body">
 					<Show when={!props.crossOriginIsolated}>
 						<div class="capability-warning" role="alert">
 							Live Audio Chain requires cross-origin isolation.

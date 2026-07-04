@@ -141,6 +141,7 @@ export function VoiceCleanupPanel(props: VoiceCleanupPanelProps) {
 				type="button"
 				onClick={() => setExpanded(!expanded())}
 				aria-expanded={expanded()}
+				aria-controls="voice-cleanup-body"
 			>
 				<span class="panel-title">Voice Cleanup</span>
 				<span class="latency-display" aria-live="polite">
@@ -148,7 +149,7 @@ export function VoiceCleanupPanel(props: VoiceCleanupPanelProps) {
 				</span>
 			</button>
 			<Show when={expanded()}>
-				<div class="collapse-body">
+				<div class="collapse-body" id="voice-cleanup-body">
 					{/* Section (a): Denoiser */}
 					<AudioInsertRow
 						label="Denoiser"
@@ -173,12 +174,12 @@ export function VoiceCleanupPanel(props: VoiceCleanupPanelProps) {
 								</div>
 							</Show>
 							<Show when={props.denoiserStatus === 'loading'}>
-								<p class="insert-hint" role="status">
+								<p class="insert-hint" role="status" aria-live="polite" aria-atomic="true">
 									Loading RNNoise WASM…
 								</p>
 							</Show>
 							<Show when={props.denoiserStatus === 'ready'}>
-								<p class="insert-hint" role="status">
+								<p class="insert-hint" role="status" aria-live="polite" aria-atomic="true">
 									RNNoise WASM ready.
 								</p>
 							</Show>
