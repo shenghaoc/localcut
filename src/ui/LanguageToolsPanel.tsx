@@ -103,15 +103,19 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 		return selectedTrackId() && props.draftState.available;
 	};
 
+	function scheduleCopiedFieldReset() {
+		if (copiedFieldResetTimer !== undefined) clearTimeout(copiedFieldResetTimer);
+		copiedFieldResetTimer = setTimeout(() => {
+			setCopiedField(null);
+			copiedFieldResetTimer = undefined;
+		}, 2000);
+	}
+
 	const handleCopy = async (text: string, field: string) => {
 		const res = await copyToClipboard(text);
 		if (res.ok) {
-			if (copiedFieldResetTimer !== undefined) clearTimeout(copiedFieldResetTimer);
 			setCopiedField(field);
-			copiedFieldResetTimer = setTimeout(() => {
-				setCopiedField(null);
-				copiedFieldResetTimer = undefined;
-			}, 2000);
+			scheduleCopiedFieldReset();
 		} else {
 			console.debug('Clipboard write failed:', res.error);
 		}

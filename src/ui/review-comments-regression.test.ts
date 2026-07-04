@@ -35,7 +35,10 @@ describe('review comment regression guards', () => {
 	});
 
 	it('keeps preview gizmo rotation centered', () => {
-		expect(previewGizmoSource).toContain('translate: `${b.left + cx - 50}px ${b.top + cy - 50}px`');
+		expect(previewGizmoSource).toContain(
+			'const centerTranslate = `${b.left + cx - 50}px ${b.top + cy - 50}px`'
+		);
+		expect(previewGizmoSource).toContain('translate: centerTranslate');
 		expect(previewGizmoSource).toContain("'transform-origin': '50% 50%'");
 	});
 
@@ -48,7 +51,9 @@ describe('review comment regression guards', () => {
 	it('clears stale language-tool copy feedback timers', () => {
 		expect(languageToolsPanelSource).toContain('let copiedFieldResetTimer');
 		expect(languageToolsPanelSource).toContain('onCleanup(() => {');
+		expect(languageToolsPanelSource).toContain('function scheduleCopiedFieldReset()');
 		expect(languageToolsPanelSource).toContain('clearTimeout(copiedFieldResetTimer)');
 		expect(languageToolsPanelSource).toContain('copiedFieldResetTimer = setTimeout');
+		expect(languageToolsPanelSource).toContain('scheduleCopiedFieldReset();');
 	});
 });
