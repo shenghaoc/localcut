@@ -237,6 +237,8 @@ function ScopeView(props: ScopeViewProps) {
 				class="scope-view__canvas"
 				width={props.width}
 				height={props.height}
+				role="img"
+				aria-label={props.label}
 			/>
 		</div>
 	);

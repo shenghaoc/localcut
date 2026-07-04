@@ -15,7 +15,7 @@ export function filterCaptionSegmentsForRange(
 	const startS = range.mode === 'timeline-range' ? range.startS : 0;
 	const endS = range.mode === 'timeline-range' ? range.endS : Number.POSITIVE_INFINITY;
 	return track.segments
-		.filter((segment) => segment.start < endS && captionSegmentEnd(segment) > startS)
+		.filter((segment) => segment.start < endS && captionSegmentEnd(segment) >= startS)
 		.map((segment) => {
 			const originalEnd = captionSegmentEnd(segment);
 			const newStart = Math.max(0, segment.start - startS);

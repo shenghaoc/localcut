@@ -524,12 +524,20 @@ export class CaptureSession {
 				(s.kind === 'screen' || s.kind === 'webcam') && s.state !== 'error' && s.state !== 'ended'
 		);
 		if (remainingVideo.length === 0 && (this.state === 'recording' || this.state === 'paused')) {
-			this.stop('error').catch(() => {});
+			this.stop('error').catch((err) => {
+				console.error('Failed to auto-stop capture session after source error:', err);
+				this.state = 'idle';
+				this.callbacks.onError(null, 'stop-failed', 'Recording stopped unexpectedly.');
+			});
 		}
 	}
 
 	private handleAudioOverrun(_sourceId: string): void {
-		this.stop('audio-overrun').catch(() => {});
+		this.stop('audio-overrun').catch((err) => {
+			console.error('Failed to auto-stop capture session after audio overrun:', err);
+			this.state = 'idle';
+			this.callbacks.onError(null, 'stop-failed', 'Recording stopped unexpectedly.');
+		});
 	}
 
 	private handlePipelineEnded(sourceId: string): void {
@@ -549,7 +557,11 @@ export class CaptureSession {
 			(s) => s.state === 'ended' || s.state === 'error'
 		);
 		if (allEnded && (this.state === 'recording' || this.state === 'paused')) {
-			this.stop('user-stop').catch(() => {});
+			this.stop('user-stop').catch((err) => {
+				console.error('Failed to auto-stop capture session after all pipelines ended:', err);
+				this.state = 'idle';
+				this.callbacks.onError(null, 'stop-failed', 'Recording stopped unexpectedly.');
+			});
 		}
 	}
 

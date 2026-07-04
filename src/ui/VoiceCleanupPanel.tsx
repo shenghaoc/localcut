@@ -186,24 +186,17 @@ export function VoiceCleanupPanel(props: VoiceCleanupPanelProps) {
 
 	return (
 		<div class="live-audio-chain-panel voice-cleanup-panel panel">
-			<div
+			<button
 				class="collapse-header"
+				type="button"
 				onClick={() => setExpanded(!expanded())}
-				onKeyDown={(e) => {
-					if (e.key === 'Enter' || e.key === ' ') {
-						e.preventDefault();
-						setExpanded(!expanded());
-					}
-				}}
-				role="button"
 				aria-expanded={expanded()}
-				tabIndex={0}
 			>
 				<span class="panel-title">Voice Cleanup</span>
 				<span class="latency-display" aria-live="polite">
 					Latency: {props.latencyMs.toFixed(1)} ms
 				</span>
-			</div>
+			</button>
 			<Show when={expanded()}>
 				<div class="collapse-body">
 					{/* Section (a): Denoiser */}

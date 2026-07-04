@@ -2365,7 +2365,10 @@ async function restoreStoredSources(
 		sourceDescriptors.set(descriptor.sourceId, descriptor);
 		let attached = false;
 		try {
-			const stored = await loadStoredSource(descriptor.sourceId).catch(() => null);
+			const stored = await loadStoredSource(descriptor.sourceId).catch((err) => {
+				console.warn(`Failed to load stored source ${descriptor.sourceId}:`, err);
+				return null;
+			});
 			if (!isCurrent()) break;
 			if (stored?.file) {
 				const result = await attachSourceFile(
@@ -2479,7 +2482,9 @@ function afterTimelineMutation(
 		playback?.setDuration(getTimelineDuration(timeline));
 		playback?.seek(clockView?.[0] ?? 0);
 	}
-	void restoreMissingSources().catch(() => undefined);
+	void restoreMissingSources().catch((err) => {
+		console.warn('Source restoration failed:', err);
+	});
 }
 
 function historySnapshot() {
@@ -5073,7 +5078,9 @@ function handleRemoveAsset(cmd: Extract<WorkerCommand, { type: 'remove-asset' }>
 	// Keep the descriptor in memory so undo can resurrect the clips as an
 	// offline, re-linkable source (reconciled in applyHistoryRestore). Drop the
 	// stored file record either way — the bin no longer claims it.
-	void deleteStoredSource(cmd.sourceId).catch(() => undefined);
+	void deleteStoredSource(cmd.sourceId).catch((err) => {
+		console.warn(`Failed to delete stored source ${cmd.sourceId}:`, err);
+	});
 	// A pure bin removal skips the clip commit above, so persist the bin change
 	// explicitly; otherwise the autosaved project keeps referencing the source.
 	scheduleAutosave();
@@ -5951,7 +5958,9 @@ async function applyImportedDoc(doc: ProjectDoc): Promise<void> {
 		sourceInputs.get(id)?.dispose();
 		sourceInputs.delete(id);
 		sourceDescriptors.delete(id);
-		void deleteStoredSource(id).catch(() => undefined);
+		void deleteStoredSource(id).catch((err) => {
+			console.warn(`Failed to delete stored source ${id}:`, err);
+		});
 	}
 	for (const descriptor of doc.sources) {
 		sourceDescriptors.set(descriptor.sourceId, descriptor);

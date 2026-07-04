@@ -102,8 +102,8 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 			await navigator.clipboard.writeText(text);
 			setCopiedField(field);
 			setTimeout(() => setCopiedField(null), 2000);
-		} catch {
-			// clipboard API may be unavailable
+		} catch (err) {
+			console.debug('Clipboard write failed:', err);
 		}
 	};
 

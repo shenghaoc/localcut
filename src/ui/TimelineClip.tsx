@@ -367,26 +367,19 @@ export function TimelineClip(props: TimelineClipProps) {
 				<span class="timeline-clip-left-handle" role="separator" aria-label="Trim start" />
 				<span class="timeline-clip-right-handle" role="separator" aria-label="Trim end" />
 				{props.clip.duration > 0.2 ? (
-					<span
+					<button
 						class="timeline-clip-delete"
-						role="button"
+						type="button"
 						tabIndex={-1}
 						aria-label={`Delete ${props.clip.id}`}
 						onPointerDown={(event) => event.stopPropagation()}
-						onKeyDown={(event) => {
-							if (event.key === 'Enter' || event.key === ' ') {
-								event.stopPropagation();
-								event.preventDefault();
-								props.onDelete?.(props.trackId, props.clip.id);
-							}
-						}}
 						onClick={(event) => {
 							event.stopPropagation();
 							props.onDelete?.(props.trackId, props.clip.id);
 						}}
 					>
 						×
-					</span>
+					</button>
 				) : null}
 			</span>
 		</div>

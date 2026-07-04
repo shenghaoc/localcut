@@ -946,8 +946,8 @@ function ChaptersSection(props: {
 		if (!text) return;
 		try {
 			await navigator.clipboard.writeText(text);
-		} catch {
-			// Clipboard API may be unavailable; silently ignore.
+		} catch (err) {
+			console.debug('Clipboard write failed:', err);
 		}
 	}
 
@@ -976,8 +976,12 @@ function ChaptersSection(props: {
 				await writable.close();
 				// Download JSON as sidecar fallback (parent directory not accessible from file handle).
 				downloadBlob(jsonBlob, jsonName);
-			} catch {
-				// User cancelled or API unavailable; fall through to download.
+			} catch (err) {
+				if (err instanceof DOMException && err.name === 'AbortError') {
+					// User cancelled file picker — no feedback needed
+					return;
+				}
+				console.warn('Native save failed, falling back to download:', err);
 			}
 		} else {
 			downloadBlob(textBlob, textName);

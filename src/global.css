@@ -32,7 +32,9 @@
 	/* Type */
 	--ink-100: #f4f6fa;
 	--ink-300: #c7c9d6;
+	--ink-400: #a8aab8;
 	--ink-500: #8e90a3;
+	--ink-600: #737591;
 	--ink-700: #5a5c70;
 	--ink-900: #3b3d4e;
 
@@ -78,6 +80,7 @@
 	--accent-soft: var(--sage-soft);
 
 	--warn: var(--signal-amber);
+	--warning: var(--signal-amber);
 	--warn-foreground: #1a1100;
 	--destructive: var(--vermillion);
 	--destructive-foreground: #1a0405;
@@ -86,6 +89,7 @@
 	--border: var(--edge);
 	--border-strong: var(--edge-strong);
 	--input: var(--elevated);
+	--input-bg: var(--elevated);
 	--ring: var(--amber);
 
 	--stage: var(--well);
@@ -102,6 +106,8 @@
 	--bg-elevated: var(--elevated);
 	--bg-control: var(--elevated);
 	--bg-control-hover: color-mix(in oklab, var(--elevated), var(--ink-100) 8%);
+	--surface: var(--elevated);
+	--surface-hover: var(--bg-control-hover);
 	--text: var(--ink-100);
 	--text-muted: var(--ink-500);
 	--accent-strong: var(--amber);
@@ -242,7 +248,7 @@ body {
 	content: '';
 	position: fixed;
 	inset: 0;
-	z-index: 9999;
+	z-index: 50;
 	pointer-events: none;
 	opacity: 0.025;
 	background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");

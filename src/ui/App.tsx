@@ -3930,55 +3930,61 @@ export function App() {
 
 	onMount(() => {
 		void (async () => {
-			const probe = await probeCapabilitiesV2();
-			setCapabilityProbeV2(probe);
-			setExportCodecs([...exportConstraintsForProbe(probe)]);
-			cleanupController.setCleanupProbe(probe.cleanup ?? null);
-			asrController.setProbe();
-			if (pendingInitCanvas) {
-				const canvas = pendingInitCanvas;
-				pendingInitCanvas = null;
-				await sendInit(canvas);
-			}
-			setIsIsolated(probe.crossOriginIsolated);
-			setCapabilities(
-				probeCapabilities({
-					crossOriginIsolated: probe.crossOriginIsolated,
-					sharedArrayBuffer: probe.sharedArrayBuffer === 'supported',
-					webgpu: probe.webGPUCore === 'supported' || probe.webGPUCompat === 'supported',
-					webCodecs: probe.webCodecsDecode === 'supported',
-					offscreenCanvas: probe.offscreenCanvas === 'supported',
-					fileSystemAccess: probe.fileSystemAccess === 'supported',
-					audioWorklet: probe.audioWorklet === 'supported'
-				})
-			);
-			switch (probe.tier) {
-				case 'core-webgpu':
-					ensureWorker();
-					setStatusLine('Starting pipeline worker…');
-					break;
-				case 'compatibility-webgpu':
-					ensureWorker();
-					setRuntimeIssue(
-						probe.sharedArrayBuffer === 'supported'
-							? 'Compatibility GPU tier active. Preview remains client-side with reduced effects and export constraints.'
-							: 'Compatibility GPU tier active without SharedArrayBuffer. Clock updates use reduced rAF messages.'
-					);
-					setStatusLine('Compatibility GPU tier · reduced effects');
-					break;
-				case 'limited-webcodecs':
-					ensureWorker();
-					setRuntimeIssue(
-						'Limited WebCodecs tier active. Preview uses client-side compatibility rendering and export is codec constrained.'
-					);
-					setStatusLine('Limited WebCodecs tier · GPU effects unavailable');
-					break;
-				case 'shell-only':
-					setRuntimeIssue(
-						'Preview unavailable: this browser exposes neither WebGPU nor WebCodecs decode support.'
-					);
-					setStatusLine('Shell-only · preview and export unavailable');
-					break;
+			try {
+				const probe = await probeCapabilitiesV2();
+				setCapabilityProbeV2(probe);
+				setExportCodecs([...exportConstraintsForProbe(probe)]);
+				cleanupController.setCleanupProbe(probe.cleanup ?? null);
+				asrController.setProbe();
+				if (pendingInitCanvas) {
+					const canvas = pendingInitCanvas;
+					pendingInitCanvas = null;
+					await sendInit(canvas);
+				}
+				setIsIsolated(probe.crossOriginIsolated);
+				setCapabilities(
+					probeCapabilities({
+						crossOriginIsolated: probe.crossOriginIsolated,
+						sharedArrayBuffer: probe.sharedArrayBuffer === 'supported',
+						webgpu: probe.webGPUCore === 'supported' || probe.webGPUCompat === 'supported',
+						webCodecs: probe.webCodecsDecode === 'supported',
+						offscreenCanvas: probe.offscreenCanvas === 'supported',
+						fileSystemAccess: probe.fileSystemAccess === 'supported',
+						audioWorklet: probe.audioWorklet === 'supported'
+					})
+				);
+				switch (probe.tier) {
+					case 'core-webgpu':
+						ensureWorker();
+						setStatusLine('Starting pipeline worker…');
+						break;
+					case 'compatibility-webgpu':
+						ensureWorker();
+						setRuntimeIssue(
+							probe.sharedArrayBuffer === 'supported'
+								? 'Compatibility GPU tier active. Preview remains client-side with reduced effects and export constraints.'
+								: 'Compatibility GPU tier active without SharedArrayBuffer. Clock updates use reduced rAF messages.'
+						);
+						setStatusLine('Compatibility GPU tier · reduced effects');
+						break;
+					case 'limited-webcodecs':
+						ensureWorker();
+						setRuntimeIssue(
+							'Limited WebCodecs tier active. Preview uses client-side compatibility rendering and export is codec constrained.'
+						);
+						setStatusLine('Limited WebCodecs tier · GPU effects unavailable');
+						break;
+					case 'shell-only':
+						setRuntimeIssue(
+							'Preview unavailable: this browser exposes neither WebGPU nor WebCodecs decode support.'
+						);
+						setStatusLine('Shell-only · preview and export unavailable');
+						break;
+				}
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				setStatusLine(`Initialization failed: ${message}`);
+				setRuntimeIssue('Failed to detect browser capabilities. Try reloading.');
 			}
 		})();
 

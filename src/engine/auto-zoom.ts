@@ -169,9 +169,9 @@ function mergeProposals(proposals: ZoomProposal[], mergeThresholdUs: number): Zo
 	for (let i = 1; i < proposals.length; i++) {
 		const prev = merged[merged.length - 1]!;
 		const curr = proposals[i]!;
-		if (prev.zoomOutAtUs - curr.zoomInAtUs > mergeThresholdUs) {
-			// Merge: move prev's zoomOut to curr's zoomIn
-			prev.zoomOutAtUs = curr.zoomInAtUs;
+		if (curr.zoomInAtUs - prev.zoomOutAtUs < mergeThresholdUs) {
+			// Merge: proposals overlap or are within threshold — extend to cover both
+			prev.zoomOutAtUs = Math.max(prev.zoomOutAtUs, curr.zoomOutAtUs);
 		} else {
 			merged.push(curr);
 		}

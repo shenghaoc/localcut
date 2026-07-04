@@ -181,6 +181,7 @@ export function selectNormalizeTransfer(transfer: TransferCharacteristic): numbe
 		case 'arib-std-b67':
 			return NormalizeTransfer.HLG;
 		case 'bt2020-10':
+		case 'bt2020-12':
 			return NormalizeTransfer.BT2020_10;
 		case 'linear':
 			return NormalizeTransfer.IDENTITY;
