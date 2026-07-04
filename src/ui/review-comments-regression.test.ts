@@ -49,11 +49,12 @@ describe('review comment regression guards', () => {
 	});
 
 	it('clears stale language-tool copy feedback timers', () => {
-		expect(languageToolsPanelSource).toContain('let copiedFieldResetTimer');
+		expect(languageToolsPanelSource).toContain('function createCopiedFieldFeedback');
+		expect(languageToolsPanelSource).toContain('let resetTimer');
 		expect(languageToolsPanelSource).toContain('onCleanup(() => {');
-		expect(languageToolsPanelSource).toContain('function scheduleCopiedFieldReset()');
-		expect(languageToolsPanelSource).toContain('clearTimeout(copiedFieldResetTimer)');
-		expect(languageToolsPanelSource).toContain('copiedFieldResetTimer = setTimeout');
-		expect(languageToolsPanelSource).toContain('scheduleCopiedFieldReset();');
+		expect(languageToolsPanelSource).toContain('clearTimeout(resetTimer)');
+		expect(languageToolsPanelSource).toContain('resetTimer = setTimeout');
+		expect(languageToolsPanelSource).toContain('const markCopiedField = createCopiedFieldFeedback');
+		expect(languageToolsPanelSource).toContain('markCopiedField(field);');
 	});
 });

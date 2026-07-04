@@ -43,12 +43,29 @@ function formatPercent(fraction: number | null): string {
 	return ` ${Math.round(fraction * 100)}%`;
 }
 
+function createCopiedFieldFeedback(setCopiedField: (field: string | null) => void) {
+	let resetTimer: ReturnType<typeof setTimeout> | undefined;
+
+	onCleanup(() => {
+		if (resetTimer !== undefined) clearTimeout(resetTimer);
+	});
+
+	return (field: string) => {
+		if (resetTimer !== undefined) clearTimeout(resetTimer);
+		setCopiedField(field);
+		resetTimer = setTimeout(() => {
+			setCopiedField(null);
+			resetTimer = undefined;
+		}, 2000);
+	};
+}
+
 export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) => {
 	let panelRef: HTMLElement | undefined;
-	let copiedFieldResetTimer: ReturnType<typeof setTimeout> | undefined;
 	const [selectedTrackId, setSelectedTrackId] = createSignal<string>('');
 	const [targetLang, setTargetLang] = createSignal<'auto' | 'zh' | 'en'>('auto');
 	const [copiedField, setCopiedField] = createSignal<string | null>(null);
+	const markCopiedField = createCopiedFieldFeedback(setCopiedField);
 	const embedded = () => props.mode === 'embedded';
 
 	const detectorUsable = () => {
@@ -67,10 +84,6 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 			// user must pick a target explicitly.
 			setTargetLang(detectorUsable() ? 'auto' : 'en');
 		}
-	});
-
-	onCleanup(() => {
-		if (copiedFieldResetTimer !== undefined) clearTimeout(copiedFieldResetTimer);
 	});
 
 	const translateJob = () => props.translationState.job;
@@ -103,19 +116,10 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 		return selectedTrackId() && props.draftState.available;
 	};
 
-	function scheduleCopiedFieldReset() {
-		if (copiedFieldResetTimer !== undefined) clearTimeout(copiedFieldResetTimer);
-		copiedFieldResetTimer = setTimeout(() => {
-			setCopiedField(null);
-			copiedFieldResetTimer = undefined;
-		}, 2000);
-	}
-
 	const handleCopy = async (text: string, field: string) => {
 		const res = await copyToClipboard(text);
 		if (res.ok) {
-			setCopiedField(field);
-			scheduleCopiedFieldReset();
+			markCopiedField(field);
 		} else {
 			console.debug('Clipboard write failed:', res.error);
 		}
