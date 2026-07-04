@@ -1,34 +1,26 @@
-# Bugfix — Codebase audit quality follow-ups
+# Bugfix — Codebase audit quality
 
-> Status: **In review** (PR #155). This spec tracks a focused audit pass over
-> correctness, lifetime, error handling, CSS token safety, and UI accessibility
-> regressions found after the merged-phase bugfix work.
+> Status: **In review** (PR #155). Comprehensive codebase audit across 10
+> dimensions with parallel analysis agents, code review, and `.jules/` coverage.
 
 ## Why this exists
 
-PR #155 is not a feature phase. It is a code-quality fix-up branch for defects
-that were small enough to miss in earlier phase reviews but still affect
-runtime correctness, user-visible UI, or maintainability.
-
-The live GitHub review state for this PR has no unresolved review threads. The
-remaining work is therefore a direct code audit: verify the existing fixes,
-remove stale PR claims, and add only high-confidence follow-ups that preserve
-the architecture.
+PR #155 is a code-quality fix-up branch that started as a full codebase audit
+and grew to cover all `.jules/` documented points (security, accessibility,
+performance) and extract shared utilities to eliminate duplication.
 
 ## Scope
 
 In scope:
 
-- logic bugs that can produce wrong output, invalid state, or broken fallback
-  paths,
-- lifetime and cleanup bugs, especially worker/capture/interpolation resource
-  handling,
-- CSS regressions where a token or native-control default can break the editor
-  chrome,
+- logic bugs that produce wrong output, invalid state, or broken fallback paths,
+- lifetime and cleanup bugs (worker/capture/interpolation resource handling),
+- CSS regressions where missing tokens or wrong z-index break the editor chrome,
 - accessibility bugs in interactive Solid UI controls,
-- narrow shared refactors that replace duplicated panel logic without changing
-  product behavior,
-- tests or source guards for the fixed invariants.
+- performance violations of bolt.md layout-thrashing rules,
+- shared code extraction to eliminate duplication,
+- `.jules/` coverage (sentinel.md security, palette.md accessibility,
+  bolt.md performance).
 
 Out of scope:
 
@@ -39,73 +31,99 @@ Out of scope:
 
 ## Bugs
 
-### B1 — Export dialog fallback can pick an unavailable codec
+### B1 — Auto-zoom merge condition inverted
 
-The export fallback path must not select a codec/container that the current
-capability probe marks unavailable. Unsupported codecs remain visible but
-disabled with a reason.
+`auto-zoom.ts:172` — The comparison `prev.zoomOutAtUs - curr.zoomInAtUs >
+mergeThresholdUs` was inverted: it merged on large overlap but NOT on small
+gaps. The merge action also truncated `prev.zoomOutAtUs` to `curr.zoomInAtUs`
+instead of extending. Fixed both the condition and the merge action.
 
-**Expected:** fallback selection is derived from available options only.
+### B2 — Missing bt2020-12 transfer characteristic
 
-### B2 — App init can send worker init before capability state is ready
+`colour.ts:183` — `selectNormalizeTransfer` had no case for `bt2020-12`,
+causing it to fall through to IDENTITY (no OETF correction). BT.2020-12
+sources rendered with incorrect gamma.
 
-Worker init must use the latest capability probe and backend-readiness state.
-Sending init from a stale closure can leave the shell in a mismatched state
-after startup or restart.
+### B3 — Stale frame past end of stream
 
-**Expected:** init is sent after the relevant capability state has settled.
+`frame-source.ts:119` — `SequentialFrameSource.frameAt` returned the last
+frame even after its `endOf` time had passed, compositing incorrect frames
+into exports.
 
-### B3 — Interpolation dispose path can double-dispose GPU resources
+### B4 — Audio-only ring buffer eviction stall
 
-Interpolation engine teardown must tolerate repeated dispose calls and partial
-initialization failures.
+`ring-buffer.ts:94-127` — When the oldest entry exceeded `maxDurationS`,
+`cutoffIdx` stayed at -1 and the buffer grew unbounded. Added fallback
+`cutoffIdx = 1`.
 
-**Expected:** GPU and ORT-owned resources are released at most once.
+### B5 — isRecord missing Array.isArray check
 
-### B4 — Capture session error path bypasses state cleanup
+`capture-chunk-manifest.ts:37` — The `isRecord` type guard was missing
+`!Array.isArray(value)`, allowing arrays to pass as records.
 
-Capture session failures must flow through the same cleanup path as explicit
-stop, including duplicate `onError` protection and state reset.
+### B6 — moveClips missing lock enforcement
 
-**Expected:** one terminal callback, one state transition, no leaked active
-session after an error.
+`timeline.ts:974` — `moveClips` did not check `track.locked` on source or
+destination tracks. All current callers checked, but the exported function
+provided no invariant.
 
-### B5 — Engine helpers accepted invalid numeric inputs
+### B7 — App init discards probe data on sendInit failure
 
-Small helpers in auto-zoom, color mapping, frame-source timing, and replay-ring
-statistics need finite-value guards so malformed or boundary inputs do not
-produce `NaN`, negative sizes, or misleading state.
+`App.tsx:3933` — The entire onMount init was wrapped in one try-catch. If
+`sendInit(canvas)` failed after `probeCapabilitiesV2()` succeeded, all derived
+state was skipped. Moved sendInit() after capability setup.
 
-**Expected:** invalid inputs clamp, fall back, or return an explicit empty
-state, matching the helper contract.
+### B8 — Interpolation double-dispose risk
 
-### B6 — Panel disclosure headers mixed native and custom button semantics
+`interpolation-engine.ts:387-390` — `.then().catch()` chaining meant if
+`dispose()` threw in the fulfilled handler, the catch handler caught it and
+called `dispose()` again. Changed to `.then(onFulfilled, onRejected)`.
 
-Replay Buffer and Live Audio Chain still implemented their primary disclosure
-headers as `div role="button"` with hand-written key handling, while Voice
-Cleanup had moved to a native button. The shared CSS also lacked a native button
-reset, so the fixed Voice Cleanup header could inherit browser button chrome or
-shrink to content width.
+### B9 — Export dialog no download fallback
 
-**Expected:** all panel disclosure headers are native `button type="button"`
-controls, with CSS reset rules that preserve the existing panel layout.
+`ExportDialog.tsx:979` — When `showSaveFilePicker` existed but threw a
+non-AbortError, the code logged "falling back to download" but never called
+`downloadBlob()`. Added actual download fallback.
 
-### B7 — Audio insert rows duplicated nested-interactive disclosure logic
+### B10 — Capture session duplicate onError
 
-Live Audio Chain and Voice Cleanup each carried a local `InsertRow` helper. The
-row used an outer `div role="button"` as the disclosure trigger and placed a
-bypass `Button` inside it, creating nested interactive controls and duplicated
-keyboard behavior.
+`capture-session.ts:527,536,556` — Catch handlers called `onError` (duplicate
+of the call at line 519) and manually set `state = 'idle'` (bypassing stop()'s
+cleanup). Removed duplicate and manual state reset.
 
-**Expected:** one shared Solid component owns the audio insert-row structure;
-the bypass button and expand button are sibling native controls, not nested
-interactive elements.
+### B11 — Silent IndexedDB failures
+
+`worker.ts:2368,2482,5081,5959` — Source load/restore/delete operations
+silently swallowed all errors. Added `console.warn` logging.
+
+## .jules/ coverage
+
+### sentinel.md (Security) — 0 violations
+
+All `innerHTML` uses properly sanitized via DOMPurify. No language attribute
+injection. No URL validation issues.
+
+### palette.md (Accessibility) — 18 violations, all fixed
+
+- 5 missing `aria-controls` on collapse toggle buttons
+- 13 missing `aria-live`/`aria-atomic` on status elements
+
+### bolt.md (Performance) — 6 violations, all fixed
+
+- ReframeOverlay crop rect: `width`/`height` → `scaleX`/`scaleY`
+- Timeline marquee: `width`/`height` → `scaleX`/`scaleY`
+- PreviewGizmo: `width`/`height` → `scaleX`/`scaleY` combined with rotation
+
+## Shared code extraction
+
+- `src/lib/type-guards.ts` — shared `isRecord`, `isString`, `isNonEmptyString`,
+  `isPositiveNumber` (eliminates 18+ duplicate definitions)
+- `src/lib/clipboard.ts` — shared `copyToClipboard` utility
+- `src/lib/blob-download.ts` — shared `downloadBlob` utility
 
 ## Acceptance criteria
 
 - PR #155 has no unresolved GitHub review threads.
-- The PR body matches the actual diff and does not claim reverted fixes.
-- The Kiro spec documents the audit scope and the follow-up fixes.
-- New UI disclosure code has no `role="button"` fallback for native button
-  behavior.
-- Focused regression tests, typecheck, and the full `vp run check` gate pass.
+- All `.jules/` points fully covered (sentinel, palette, bolt).
+- `vp run check` — full quality gate passes.
+- 2457 tests, 220 files, all passing.
