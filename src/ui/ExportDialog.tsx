@@ -981,7 +981,9 @@ function ChaptersSection(props: {
 					// User cancelled file picker — no feedback needed
 					return;
 				}
-				console.warn('Native save failed, falling back to download:', err);
+				console.warn('Native save failed:', err);
+				downloadBlob(textBlob, textName);
+				downloadBlob(jsonBlob, jsonName);
 			}
 		} else {
 			downloadBlob(textBlob, textName);

@@ -526,8 +526,6 @@ export class CaptureSession {
 		if (remainingVideo.length === 0 && (this.state === 'recording' || this.state === 'paused')) {
 			this.stop('error').catch((err) => {
 				console.error('Failed to auto-stop capture session after source error:', err);
-				this.state = 'idle';
-				this.callbacks.onError(null, 'stop-failed', 'Recording stopped unexpectedly.');
 			});
 		}
 	}
@@ -535,8 +533,6 @@ export class CaptureSession {
 	private handleAudioOverrun(_sourceId: string): void {
 		this.stop('audio-overrun').catch((err) => {
 			console.error('Failed to auto-stop capture session after audio overrun:', err);
-			this.state = 'idle';
-			this.callbacks.onError(null, 'stop-failed', 'Recording stopped unexpectedly.');
 		});
 	}
 
@@ -559,8 +555,6 @@ export class CaptureSession {
 		if (allEnded && (this.state === 'recording' || this.state === 'paused')) {
 			this.stop('user-stop').catch((err) => {
 				console.error('Failed to auto-stop capture session after all pipelines ended:', err);
-				this.state = 'idle';
-				this.callbacks.onError(null, 'stop-failed', 'Recording stopped unexpectedly.');
 			});
 		}
 	}

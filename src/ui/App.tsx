@@ -3936,11 +3936,6 @@ export function App() {
 				setExportCodecs([...exportConstraintsForProbe(probe)]);
 				cleanupController.setCleanupProbe(probe.cleanup ?? null);
 				asrController.setProbe();
-				if (pendingInitCanvas) {
-					const canvas = pendingInitCanvas;
-					pendingInitCanvas = null;
-					await sendInit(canvas);
-				}
 				setIsIsolated(probe.crossOriginIsolated);
 				setCapabilities(
 					probeCapabilities({
@@ -3980,6 +3975,11 @@ export function App() {
 						);
 						setStatusLine('Shell-only · preview and export unavailable');
 						break;
+				}
+				if (pendingInitCanvas) {
+					const canvas = pendingInitCanvas;
+					pendingInitCanvas = null;
+					await sendInit(canvas);
 				}
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
