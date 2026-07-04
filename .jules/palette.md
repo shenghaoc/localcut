@@ -15,3 +15,7 @@
 **Learning:** In SolidJS, the `<For>` component keys by item reference — replacing an object (e.g. `{ ...p, status: 'applied' }`) destroys and recreates the DOM node, causing focus to reset to `<body>` for keyboard and screen reader users. The `<Index>` component keys by position instead, preserving DOM nodes across reference changes. Inside `<Index>`, each item is an `Accessor<T>` (call it as `proposal()`) and the index is a static `number` (use `index + 1`, not `index() + 1`).
 
 **Action:** Switched the proposal list in `AutoZoomPanel.tsx` from `<For>` to `<Index>` so button DOM nodes are preserved when status changes. Added `aria-label` attributes that reflect the current button state (e.g. `"Applied proposal 1"` vs `"Apply proposal 1"`) so screen readers announce the correct action.
+
+## 2024-05-24 - Icon-Only Button Tooltips
+**Learning:** Found that while icon-only buttons in Kiro frequently have `aria-label` attributes for screen readers, they often lack the native `title` attribute, depriving mouse users of visual tooltips.
+**Action:** When adding or reviewing icon-only buttons, always ensure both `aria-label` and `title` attributes are present.
