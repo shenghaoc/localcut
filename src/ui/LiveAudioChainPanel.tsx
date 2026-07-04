@@ -1,6 +1,5 @@
-import { createSignal, Show, type JSX } from 'solid-js';
-import { Power, PowerOff } from 'lucide-solid';
-import { Button } from './components/button';
+import { createSignal, Show } from 'solid-js';
+import { AudioInsertRow } from './AudioInsertRow';
 import type { LiveAudioChainConfig } from '../protocol';
 
 export interface LiveAudioChainPanelProps {
@@ -10,55 +9,6 @@ export interface LiveAudioChainPanelProps {
 	crossOriginIsolated: boolean;
 	isCapturing: boolean;
 	initiallyExpanded?: boolean;
-}
-
-function InsertRow(props: {
-	label: string;
-	bypass: boolean;
-	onToggleBypass: () => void;
-	children?: JSX.Element;
-}) {
-	const [expanded, setExpanded] = createSignal(false);
-
-	return (
-		<div class="insert-row">
-			<div
-				class="insert-header"
-				onClick={() => setExpanded(!expanded())}
-				onKeyDown={(e) => {
-					if (e.key === 'Enter' || e.key === ' ') {
-						e.preventDefault();
-						setExpanded(!expanded());
-					}
-				}}
-				role="button"
-				aria-expanded={expanded()}
-				tabIndex={0}
-			>
-				<Button
-					variant="ghost"
-					size="icon"
-					onClick={(e: MouseEvent) => {
-						e.stopPropagation();
-						props.onToggleBypass();
-					}}
-					aria-label={props.bypass ? `Enable ${props.label}` : `Bypass ${props.label}`}
-					aria-pressed={!props.bypass}
-				>
-					<Show when={props.bypass} fallback={<Power size={14} />}>
-						<PowerOff size={14} />
-					</Show>
-				</Button>
-				<span class="insert-name">{props.label}</span>
-				<span class={`insert-status ${props.bypass ? 'bypassed' : 'active'}`}>
-					{props.bypass ? 'Bypassed' : 'Active'}
-				</span>
-			</div>
-			<Show when={expanded()}>
-				<div class="insert-params">{props.children}</div>
-			</Show>
-		</div>
-	);
 }
 
 function SliderControl(props: {
@@ -101,24 +51,17 @@ export function LiveAudioChainPanel(props: LiveAudioChainPanelProps) {
 
 	return (
 		<div class="live-audio-chain-panel panel">
-			<div
+			<button
 				class="collapse-header"
+				type="button"
 				onClick={() => setExpanded(!expanded())}
-				onKeyDown={(e) => {
-					if (e.key === 'Enter' || e.key === ' ') {
-						e.preventDefault();
-						setExpanded(!expanded());
-					}
-				}}
-				role="button"
 				aria-expanded={expanded()}
-				tabIndex={0}
 			>
 				<span class="panel-title">Live Audio Chain</span>
 				<span class="latency-display" aria-live="polite">
 					Latency: {props.latencyMs.toFixed(1)} ms
 				</span>
-			</div>
+			</button>
 
 			<Show when={expanded()}>
 				<div class="collapse-body">
@@ -130,7 +73,7 @@ export function LiveAudioChainPanel(props: LiveAudioChainPanelProps) {
 
 					<Show when={props.crossOriginIsolated}>
 						{/* Gate */}
-						<InsertRow
+						<AudioInsertRow
 							label="Gate"
 							bypass={cfg().gate.bypass}
 							onToggleBypass={() =>
@@ -184,10 +127,10 @@ export function LiveAudioChainPanel(props: LiveAudioChainPanelProps) {
 								unit=" ms"
 								onChange={(v) => props.onConfigChange({ gate: { ...cfg().gate, releaseMs: v } })}
 							/>
-						</InsertRow>
+						</AudioInsertRow>
 
 						{/* Compressor */}
-						<InsertRow
+						<AudioInsertRow
 							label="Compressor"
 							bypass={cfg().compressor.bypass}
 							onToggleBypass={() =>
@@ -262,10 +205,10 @@ export function LiveAudioChainPanel(props: LiveAudioChainPanelProps) {
 									props.onConfigChange({ compressor: { ...cfg().compressor, makeupGainDb: v } })
 								}
 							/>
-						</InsertRow>
+						</AudioInsertRow>
 
 						{/* Limiter */}
-						<InsertRow
+						<AudioInsertRow
 							label="Limiter"
 							bypass={cfg().limiter.bypass}
 							onToggleBypass={() =>
@@ -307,7 +250,7 @@ export function LiveAudioChainPanel(props: LiveAudioChainPanelProps) {
 									props.onConfigChange({ limiter: { ...cfg().limiter, releaseMs: v } })
 								}
 							/>
-						</InsertRow>
+						</AudioInsertRow>
 
 						{/* Print to recording toggle */}
 						<Show when={props.isCapturing}>

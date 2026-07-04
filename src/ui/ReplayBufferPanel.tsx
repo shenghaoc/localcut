@@ -38,18 +38,11 @@ export function ReplayBufferPanel(props: ReplayBufferPanelProps) {
 
 	return (
 		<div class="replay-buffer-panel panel">
-			<div
+			<button
 				class="collapse-header"
+				type="button"
 				onClick={() => setExpanded(!expanded())}
-				onKeyDown={(e) => {
-					if (e.key === 'Enter' || e.key === ' ') {
-						e.preventDefault();
-						setExpanded(!expanded());
-					}
-				}}
-				role="button"
 				aria-expanded={expanded()}
-				tabIndex={0}
 			>
 				<span class="panel-title">Replay Buffer</span>
 				<Show when={isCapturing()}>
@@ -58,7 +51,7 @@ export function ReplayBufferPanel(props: ReplayBufferPanelProps) {
 						<span>Recording</span>
 					</span>
 				</Show>
-			</div>
+			</button>
 
 			<Show when={expanded()}>
 				<div class="collapse-body">
