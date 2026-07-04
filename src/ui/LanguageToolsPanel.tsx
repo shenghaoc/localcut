@@ -60,12 +60,24 @@ function createCopiedFieldFeedback(setCopiedField: (field: string | null) => voi
 	};
 }
 
+function createFieldCopier(markCopiedField: (field: string) => void) {
+	return async (text: string, field: string) => {
+		const res = await copyToClipboard(text);
+		if (res.ok) {
+			markCopiedField(field);
+		} else {
+			console.debug('Clipboard write failed:', res.error);
+		}
+	};
+}
+
 export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) => {
 	let panelRef: HTMLElement | undefined;
 	const [selectedTrackId, setSelectedTrackId] = createSignal<string>('');
 	const [targetLang, setTargetLang] = createSignal<'auto' | 'zh' | 'en'>('auto');
 	const [copiedField, setCopiedField] = createSignal<string | null>(null);
 	const markCopiedField = createCopiedFieldFeedback(setCopiedField);
+	const copyField = createFieldCopier(markCopiedField);
 	const embedded = () => props.mode === 'embedded';
 
 	const detectorUsable = () => {
@@ -114,15 +126,6 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 		)
 			return false;
 		return selectedTrackId() && props.draftState.available;
-	};
-
-	const handleCopy = async (text: string, field: string) => {
-		const res = await copyToClipboard(text);
-		if (res.ok) {
-			markCopiedField(field);
-		} else {
-			console.debug('Clipboard write failed:', res.error);
-		}
 	};
 
 	return (
@@ -391,7 +394,7 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 											<Button
 												size="icon"
 												variant="ghost"
-												onClick={() => handleCopy(draftJob()!.draft!.titles.join('\n'), 'titles')}
+												onClick={() => copyField(draftJob()!.draft!.titles.join('\n'), 'titles')}
 												aria-label="Copy titles"
 											>
 												<Show when={copiedField() === 'titles'} fallback={<Copy size={14} />}>
@@ -423,9 +426,7 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 											<Button
 												size="icon"
 												variant="ghost"
-												onClick={() =>
-													handleCopy(draftJob()!.draft!.hashtags.join(' '), 'hashtags')
-												}
+												onClick={() => copyField(draftJob()!.draft!.hashtags.join(' '), 'hashtags')}
 												aria-label="Copy hashtags"
 											>
 												<Show when={copiedField() === 'hashtags'} fallback={<Copy size={14} />}>
@@ -453,7 +454,7 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 											<Button
 												size="icon"
 												variant="ghost"
-												onClick={() => handleCopy(draftJob()!.draft!.caption, 'caption')}
+												onClick={() => copyField(draftJob()!.draft!.caption, 'caption')}
 												aria-label="Copy caption"
 											>
 												<Show when={copiedField() === 'caption'} fallback={<Copy size={14} />}>

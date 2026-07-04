@@ -55,6 +55,8 @@ describe('review comment regression guards', () => {
 		expect(languageToolsPanelSource).toContain('clearTimeout(resetTimer)');
 		expect(languageToolsPanelSource).toContain('resetTimer = setTimeout');
 		expect(languageToolsPanelSource).toContain('const markCopiedField = createCopiedFieldFeedback');
+		expect(languageToolsPanelSource).toContain('function createFieldCopier');
+		expect(languageToolsPanelSource).toContain('const copyField = createFieldCopier');
 		expect(languageToolsPanelSource).toContain('markCopiedField(field);');
 	});
 });
