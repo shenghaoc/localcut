@@ -4,6 +4,7 @@ import { Popover } from '@ark-ui/solid/popover';
 import { FolderArchive, FolderInput, FolderOutput } from 'lucide-solid';
 import { Button, buttonVariants } from './components/button';
 import { isAbortError } from '../lib/abort-error';
+import { errorMessage } from '../lib/error-message';
 import type {
 	BundleIntegrityItemSnapshot,
 	BundleIntegrityReportSnapshot,
@@ -23,6 +24,8 @@ interface BundleDialogProps {
 	lastMessage: string | null;
 }
 
+const DIRECTORY_PERMISSION_DENIED_MESSAGE = 'Directory access was not granted.';
+
 async function pickDirectory(
 	mode: 'read' | 'readwrite'
 ): Promise<FileSystemDirectoryHandle | null> {
@@ -34,36 +37,49 @@ async function pickDirectory(
 		const handle = await picker();
 		if (mode === 'readwrite' && handle.requestPermission) {
 			const status = await handle.requestPermission({ mode: 'readwrite' });
-			if (status !== 'granted') return null;
+			if (status !== 'granted') throw new Error(DIRECTORY_PERMISSION_DENIED_MESSAGE);
 		}
 		return handle;
 	} catch (error) {
 		if (isAbortError(error)) return null;
-		console.warn('Directory picker failed:', error);
-		return null;
+		throw error;
 	}
 }
 
 export function BundleDialog(props: BundleDialogProps) {
 	const [open, setOpen] = createSignal(false);
 	const [relocate, setRelocate] = createSignal(false);
+	const [pickerError, setPickerError] = createSignal<string | null>(null);
+
+	async function requestDirectory(
+		mode: 'read' | 'readwrite'
+	): Promise<FileSystemDirectoryHandle | null> {
+		setPickerError(null);
+		try {
+			return await pickDirectory(mode);
+		} catch (error) {
+			setPickerError(errorMessage(error));
+			setOpen(true);
+			return null;
+		}
+	}
 
 	const runExport = async (policy: BundleSourcePolicySnapshot) => {
-		const dir = await pickDirectory('readwrite');
+		const dir = await requestDirectory('readwrite');
 		if (!dir) return;
 		props.onExport(policy, dir);
 		setOpen(true);
 	};
 
 	const runImport = async () => {
-		const dir = await pickDirectory('read');
+		const dir = await requestDirectory('read');
 		if (!dir) return;
 		props.onImport(dir);
 		setOpen(true);
 	};
 
 	const runCollect = async () => {
-		const dir = await pickDirectory('readwrite');
+		const dir = await requestDirectory('readwrite');
 		if (!dir) return;
 		props.onCollect(relocate(), dir);
 		setOpen(true);
@@ -134,9 +150,18 @@ export function BundleDialog(props: BundleDialogProps) {
 							</Button>
 						</div>
 						<Show
-							when={props.busy || props.progressPhase || props.integrityReport || props.lastMessage}
+							when={
+								props.busy ||
+								props.progressPhase ||
+								props.integrityReport ||
+								props.lastMessage ||
+								pickerError()
+							}
 						>
 							<div class="bundle-status" aria-live="polite">
+								<Show when={pickerError()}>
+									<p class="is-warn">{pickerError()}</p>
+								</Show>
 								<Show when={props.busy && props.progressPhase}>
 									<p>Working… {props.progressPhase}</p>
 								</Show>

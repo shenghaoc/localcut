@@ -7,6 +7,7 @@ import clipboardSource from '../lib/clipboard.ts?raw';
 import audioInsertRowSource from './AudioInsertRow.tsx?raw';
 import appSource from './App.tsx?raw';
 import captionStyleInspectorSource from './CaptionStyleInspector.tsx?raw';
+import bundleDialogSource from './BundleDialog.tsx?raw';
 import exportDialogSource from './ExportDialog.tsx?raw';
 import languageToolsPanelSource from './LanguageToolsPanel.tsx?raw';
 import liveAudioChainPanelSource from './LiveAudioChainPanel.tsx?raw';
@@ -55,6 +56,19 @@ describe('review comment regression guards', () => {
 		expect(captionStyleInspectorSource).toContain('downloadBlob(blob, filename);');
 		expect(captionStyleInspectorSource).not.toContain("document.createElement('a')");
 		expect(captionStyleInspectorSource).not.toContain('instanceof DOMException');
+	});
+
+	it('surfaces non-cancel bundle directory picker failures', () => {
+		expect(bundleDialogSource).toContain("import { errorMessage } from '../lib/error-message';");
+		expect(bundleDialogSource).toContain(
+			"const DIRECTORY_PERMISSION_DENIED_MESSAGE = 'Directory access was not granted.';"
+		);
+		expect(bundleDialogSource).toContain(
+			"if (status !== 'granted') throw new Error(DIRECTORY_PERMISSION_DENIED_MESSAGE);"
+		);
+		expect(bundleDialogSource).toContain('const [pickerError, setPickerError] = createSignal');
+		expect(bundleDialogSource).toContain('setPickerError(errorMessage(error));');
+		expect(bundleDialogSource).not.toContain("console.warn('Directory picker failed:'");
 	});
 
 	it('provides downloadBlob fallback in ExportDialog chapter save', () => {
