@@ -94,21 +94,21 @@ export function PreviewGizmo(props: PreviewGizmoProps) {
 		if (!b) return null;
 		const rect = layerRect();
 		const t = props.transform;
+
+		// Draw the preview rectangle at the fitted+scaled size directly so chrome
+		// hit targets stay fixed while the rectangle itself remains correct size.
 		const w = rect.width * b.width;
 		const h = rect.height * b.height;
 		const cx = (0.5 + t.x) * b.width;
 		const cy = (0.5 + t.y) * b.height;
 		const d = drag();
-		// Fixed 100px proxy: scale in local axes (before rotation) keeps handles
-		// aligned for non-square, rotated clips. CSS transforms compose right-to-left
-		// so `rotate(deg) scaleX(sx) scaleY(sy)` applies scale in the un-rotated frame.
-		const centerTranslate = `${b.left + cx - 50}px ${b.top + cy - 50}px`;
-		const centeredTransform = `rotate(${t.rotation}deg) scaleX(${w / 100}) scaleY(${h / 100})`;
+		const centerTranslate = `${b.left + cx - w / 2}px ${b.top + cy - h / 2}px`;
+		const centeredTransform = `rotate(${t.rotation}deg)`;
 		return {
 			left: '0px',
 			top: '0px',
-			width: '100px',
-			height: '100px',
+			width: `${w}px`,
+			height: `${h}px`,
 			translate: centerTranslate,
 			'transform-origin': '50% 50%',
 			transform: centeredTransform,

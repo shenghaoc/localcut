@@ -162,6 +162,30 @@ function createProposal(
 	};
 }
 
+function mergeClusters(base: ZoomProposal, next: ZoomProposal): ZoomProposal {
+	const baseCount = base.cluster.eventCount;
+	const nextCount = next.cluster.eventCount;
+	const totalCount = baseCount + nextCount;
+	const mergedCentroidX = (base.centroidX * baseCount + next.centroidX * nextCount) / totalCount;
+	const mergedCentroidY = (base.centroidY * baseCount + next.centroidY * nextCount) / totalCount;
+	const mergedCluster = {
+		...base.cluster,
+		endUs: Math.max(base.cluster.endUs, next.cluster.endUs),
+		centroidX: mergedCentroidX,
+		centroidY: mergedCentroidY,
+		eventCount: totalCount
+	};
+
+	base.zoomOutAtUs = Math.max(base.zoomOutAtUs, next.zoomOutAtUs);
+	base.cluster = mergedCluster;
+	base.centroidX = mergedCentroidX;
+	base.centroidY = mergedCentroidY;
+	base.id = stableProposalId(
+		`${mergedCluster.startUs}:${mergedCluster.centroidX.toFixed(4)}:${mergedCluster.centroidY.toFixed(4)}`
+	);
+	return base;
+}
+
 function mergeProposals(proposals: ZoomProposal[], mergeThresholdUs: number): ZoomProposal[] {
 	if (proposals.length <= 1) return proposals;
 
@@ -170,8 +194,9 @@ function mergeProposals(proposals: ZoomProposal[], mergeThresholdUs: number): Zo
 		const prev = merged[merged.length - 1]!;
 		const curr = proposals[i]!;
 		if (curr.zoomInAtUs - prev.zoomOutAtUs < mergeThresholdUs) {
-			// Merge: proposals overlap or gap is within threshold — extend to cover both
-			prev.zoomOutAtUs = Math.max(prev.zoomOutAtUs, curr.zoomOutAtUs);
+			// Merge: proposals overlap or gap is within threshold.
+			// Recompute cluster centroid and events so zoom frame tracks both regions.
+			mergeClusters(prev, curr);
 		} else {
 			merged.push(curr);
 		}

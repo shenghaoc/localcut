@@ -139,6 +139,12 @@
   clipboard, and abort-error handling where applicable.
 - [x] review-comments-regression.test.ts: Add guards for the July 5 review
   fixes and shared-helper adoption.
+- [x] auto-zoom.ts: Recompute merged proposal centroid and cluster metadata
+  when lead/hold windows overlap.
+- [x] PreviewGizmo.tsx: Apply preview rectangle size in CSS width/height so chrome
+  controls stay unscaled.
+- [x] AudioInsertRow.tsx: Give bypass toggle a stateful action label (for
+  screen-reader distinction).
 
 ## T10 — PR metadata
 

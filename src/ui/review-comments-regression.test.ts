@@ -98,13 +98,13 @@ describe('review comment regression guards', () => {
 
 	it('keeps preview gizmo rotation centered', () => {
 		expect(previewGizmoSource).toContain(
-			'const centerTranslate = `${b.left + cx - 50}px ${b.top + cy - 50}px`'
+			'const centerTranslate = `${b.left + cx - w / 2}px ${b.top + cy - h / 2}px`'
 		);
-		expect(previewGizmoSource).toContain(
-			'const centeredTransform = `rotate(${t.rotation}deg) scaleX(${w / 100}) scaleY(${h / 100})`'
-		);
+		expect(previewGizmoSource).toContain('width: `${w}px`');
+		expect(previewGizmoSource).toContain('height: `${h}px`');
+		expect(previewGizmoSource).toContain('const centeredTransform = `rotate(${t.rotation}deg)`');
 		expect(previewGizmoSource).not.toContain(
-			'const centeredTransform = `scaleX(${w / 100}) scaleY(${h / 100}) rotate(${t.rotation}deg)`'
+			'const centeredTransform = `rotate(${t.rotation}deg) scaleX(${w / 100}) scaleY(${h / 100})`'
 		);
 		expect(previewGizmoSource).toContain('translate: centerTranslate');
 		expect(previewGizmoSource).toContain("'transform-origin': '50% 50%'");
@@ -114,6 +114,10 @@ describe('review comment regression guards', () => {
 		expect(audioInsertRowSource).toContain('Show, type JSX');
 		expect(audioInsertRowSource).toContain('<Show when={props.bypass}');
 		expect(audioInsertRowSource).toContain('<Show when={expanded()}>');
+		expect(audioInsertRowSource).toContain(
+			'const bypassActionLabel = () => (props.bypass ? `Enable ${props.label}` : `Bypass ${props.label}`);'
+		);
+		expect(audioInsertRowSource).toContain('aria-label={bypassActionLabel()}');
 	});
 
 	it('clears stale language-tool copy feedback timers', () => {

@@ -147,6 +147,10 @@ branch now additionally covers:
 - a shared `isAbortError()` helper handles browser and test cancellation
   objects without duplicating DOMException checks,
 - Caption preset export and diagnostics copy flows use the shared helpers.
+- Recent thread cleanup continues with:
+  - merged auto-zoom proposals now recompute cluster centroid and event metadata,
+  - PreviewGizmo keeps chrome size independent from rectangle sizing,
+  - bypass toggle labels now describe stateful action intent (`Enable ...`/`Bypass ...`).
 
 ## Shared code extraction
 

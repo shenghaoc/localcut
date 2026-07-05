@@ -13,6 +13,7 @@ export interface AudioInsertRowProps {
 export function AudioInsertRow(props: AudioInsertRowProps) {
 	const [expanded, setExpanded] = createSignal(false);
 	const paramsId = createUniqueId();
+	const bypassActionLabel = () => (props.bypass ? `Enable ${props.label}` : `Bypass ${props.label}`);
 
 	return (
 		<div class="insert-row">
@@ -21,7 +22,7 @@ export function AudioInsertRow(props: AudioInsertRowProps) {
 					variant="ghost"
 					size="icon"
 					onClick={props.onToggleBypass}
-					aria-label={props.label}
+					aria-label={bypassActionLabel()}
 					aria-pressed={!props.bypass}
 				>
 					<Show when={props.bypass} fallback={<Power size={14} aria-hidden="true" />}>
