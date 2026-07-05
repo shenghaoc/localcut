@@ -100,7 +100,7 @@ export function PreviewGizmo(props: PreviewGizmoProps) {
 		const cy = (0.5 + t.y) * b.height;
 		const d = drag();
 		const centerTranslate = `${b.left + cx - 50}px ${b.top + cy - 50}px`;
-		const centeredTransform = `scaleX(${w / 100}) scaleY(${h / 100}) rotate(${t.rotation}deg)`;
+		const centeredTransform = `rotate(${t.rotation}deg) scaleX(${w / 100}) scaleY(${h / 100})`;
 		return {
 			left: '0px',
 			top: '0px',

@@ -129,6 +129,8 @@ body/spec update. This branch now also covers:
 - copy-feedback timeout cleanup in `LanguageToolsPanel`,
 - bordered overlay sizing corrections in ReframeOverlay and Timeline,
 - explicit centered transform origin in PreviewGizmo.
+- PreviewGizmo transform order applies non-uniform scale in local axes before
+  rotation so non-square rotated clips keep aligned handles.
 
 The 2026-07-05 Gemini pass added another set of active review threads. This
 branch now additionally covers:

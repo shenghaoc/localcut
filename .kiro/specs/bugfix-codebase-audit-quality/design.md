@@ -54,6 +54,11 @@ rotation, Solid `<Show>` usage in `AudioInsertRow`, and copy-feedback timer
 cleanup in `LanguageToolsPanel`. This follows the repo's existing source-guard
 pattern for architectural invariants.
 
+The PreviewGizmo guard also pins transform order: the 100px centered proxy uses
+`rotate(...) scaleX(...) scaleY(...)` so CSS applies scale in the gizmo's local
+axes before the final rotation. This keeps handles aligned for rotated,
+non-square clips.
+
 ### Shared fallback helpers
 
 The latest review pass extends the helper extraction:

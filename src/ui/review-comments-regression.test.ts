@@ -88,6 +88,12 @@ describe('review comment regression guards', () => {
 		expect(previewGizmoSource).toContain(
 			'const centerTranslate = `${b.left + cx - 50}px ${b.top + cy - 50}px`'
 		);
+		expect(previewGizmoSource).toContain(
+			'const centeredTransform = `rotate(${t.rotation}deg) scaleX(${w / 100}) scaleY(${h / 100})`'
+		);
+		expect(previewGizmoSource).not.toContain(
+			'const centeredTransform = `scaleX(${w / 100}) scaleY(${h / 100}) rotate(${t.rotation}deg)`'
+		);
 		expect(previewGizmoSource).toContain('translate: centerTranslate');
 		expect(previewGizmoSource).toContain("'transform-origin': '50% 50%'");
 	});

@@ -115,6 +115,8 @@
   scaling borders/shadows.
 - [x] Timeline.tsx: Restore direct marquee dimensions to avoid scaling borders.
 - [x] PreviewGizmo.tsx: Make centered transform origin explicit.
+- [x] PreviewGizmo.tsx: Apply non-uniform gizmo scale before rotation so
+  rotated non-square clips do not skew overlay handles.
 - [x] review-comments-regression.test.ts: Add source-level guards for the
   review-comment fixes.
 
