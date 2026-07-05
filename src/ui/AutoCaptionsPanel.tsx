@@ -132,6 +132,7 @@ export const AutoCaptionsPanel: Component<AutoCaptionsPanelProps> = (props) => {
 						variant="ghost"
 						onClick={props.onClose}
 						aria-label="Close auto captions panel"
+						title="Close auto captions panel"
 					>
 						<X size={16} aria-hidden="true" />
 					</Button>

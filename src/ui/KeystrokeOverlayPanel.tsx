@@ -205,7 +205,8 @@ export function KeystrokeOverlayPanel(props: KeystrokeOverlayPanelProps) {
 				<button
 					type="button"
 					class="keystroke-overlay-close"
-					aria-label="Close panel"
+					aria-label="Close keystroke overlay panel"
+					title="Close keystroke overlay panel"
 					onClick={handleClose}
 				>
 					×

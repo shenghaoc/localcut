@@ -125,6 +125,7 @@ export const SmartReframePanel: Component<SmartReframePanelProps> = (props) => {
 						variant="ghost"
 						onClick={() => props.onClose()}
 						aria-label="Close Smart Reframe panel"
+						title="Close Smart Reframe panel"
 					>
 						<X size={16} aria-hidden="true" />
 					</Button>

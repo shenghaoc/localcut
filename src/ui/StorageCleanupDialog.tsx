@@ -80,6 +80,7 @@ export function StorageCleanupDialog(props: StorageCleanupDialogProps) {
 						variant="ghost"
 						onClick={props.onClose}
 						aria-label="Close storage cleanup"
+						title="Close storage cleanup"
 					>
 						<X size={16} aria-hidden="true" />
 					</Button>

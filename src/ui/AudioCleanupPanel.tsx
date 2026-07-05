@@ -138,6 +138,7 @@ export const AudioCleanupPanel: Component<AudioCleanupPanelProps> = (props) => {
 						variant="ghost"
 						onClick={props.onClose}
 						aria-label="Close audio cleanup panel"
+						title="Close audio cleanup panel"
 					>
 						<X size={16} aria-hidden="true" />
 					</Button>

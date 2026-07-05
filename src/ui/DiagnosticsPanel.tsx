@@ -130,6 +130,7 @@ export function DiagnosticsPanel(props: DiagnosticsPanelProps) {
 							variant="ghost"
 							onClick={props.onRefresh}
 							aria-label="Refresh diagnostics"
+							title="Refresh diagnostics"
 						>
 							<RefreshCw size={16} aria-hidden="true" />
 						</Button>
@@ -138,6 +139,7 @@ export function DiagnosticsPanel(props: DiagnosticsPanelProps) {
 							variant="ghost"
 							onClick={copyReport}
 							aria-label="Copy diagnostics report"
+							title="Copy diagnostics report"
 						>
 							<Clipboard size={16} aria-hidden="true" />
 						</Button>
@@ -146,6 +148,7 @@ export function DiagnosticsPanel(props: DiagnosticsPanelProps) {
 							variant="ghost"
 							onClick={props.onClose}
 							aria-label="Close diagnostics panel"
+							title="Close diagnostics panel"
 						>
 							<X size={16} aria-hidden="true" />
 						</Button>

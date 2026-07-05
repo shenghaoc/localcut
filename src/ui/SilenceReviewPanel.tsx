@@ -209,7 +209,8 @@ export function SilenceReviewPanel(props: SilenceReviewPanelProps) {
 					<button
 						type="button"
 						class="silence-review-close"
-						aria-label="Close panel"
+						aria-label="Close silence review panel"
+						title="Close silence review panel"
 						onClick={requestClose}
 					>
 						×

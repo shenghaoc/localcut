@@ -227,6 +227,7 @@ export function PublishPanel(props: PublishPanelProps) {
 							variant="ghost"
 							onClick={props.onClose}
 							aria-label="Close publish panel"
+							title="Close publish panel"
 						>
 							<X size={16} aria-hidden="true" />
 						</Button>

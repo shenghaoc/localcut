@@ -160,6 +160,7 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 							variant="ghost"
 							onClick={props.onClose}
 							aria-label="Close language tools panel"
+							title="Close language tools panel"
 						>
 							<X size={16} aria-hidden="true" />
 						</Button>
@@ -406,6 +407,7 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 												variant="ghost"
 												onClick={() => copyField(draftJob()!.draft!.titles.join('\n'), 'titles')}
 												aria-label="Copy titles"
+												title="Copy titles"
 											>
 												<Show when={copiedField() === 'titles'} fallback={<Copy size={14} />}>
 													<Check size={14} />
@@ -438,6 +440,7 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 												variant="ghost"
 												onClick={() => copyField(draftJob()!.draft!.hashtags.join(' '), 'hashtags')}
 												aria-label="Copy hashtags"
+												title="Copy hashtags"
 											>
 												<Show when={copiedField() === 'hashtags'} fallback={<Copy size={14} />}>
 													<Check size={14} />
@@ -466,6 +469,7 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 												variant="ghost"
 												onClick={() => copyField(draftJob()!.draft!.caption, 'caption')}
 												aria-label="Copy caption"
+												title="Copy caption"
 											>
 												<Show when={copiedField() === 'caption'} fallback={<Copy size={14} />}>
 													<Check size={14} />
