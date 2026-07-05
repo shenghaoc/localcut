@@ -16,15 +16,13 @@ import {
 } from '../diagnostics/types';
 import { buildDefaultPerformanceBudgets } from '../diagnostics/performance-budgets';
 import type { CapabilitySnapshot, CapabilityTier } from './capabilities';
+import { generateId } from '../utils/uuid';
 
 const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '0.0.0-dev';
 const BUILD_ID = `${APP_VERSION}+${typeof __BUILD_SHA__ === 'string' ? __BUILD_SHA__ : 'dev'}`;
 
 function makeSnapshotId(): string {
-	if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-		return `diag-${crypto.randomUUID()}`;
-	}
-	return `diag-${Math.random().toString(36).slice(2)}`;
+	return `diag-${generateId()}`;
 }
 
 function finding(

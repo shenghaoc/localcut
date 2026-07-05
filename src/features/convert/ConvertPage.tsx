@@ -75,11 +75,10 @@ const QUALITY_LABELS: Record<ConvertQuality, string> = {
 	medium: 'Medium',
 	low: 'Low (smaller file)'
 };
+import { generateId } from '../../utils/uuid';
 
 function newJobId(): string {
-	return typeof crypto !== 'undefined' && 'randomUUID' in crypto
-		? crypto.randomUUID()
-		: `job-${Math.random().toString(36).slice(2)}`;
+	return `job-${generateId()}`;
 }
 
 /**

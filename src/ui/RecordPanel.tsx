@@ -32,6 +32,7 @@ import { recordingAvailable, selectCaptureMode } from '../engine/capability-prob
 import { captureUnavailableReasons } from '../engine/capture-reasons';
 import { startCaptureFrameReader, type CaptureFrameReader } from './capture-frame-reader';
 import { CaptureUnavailableNotice } from './CaptureUnavailableNotice';
+import { generateId } from '../utils/uuid';
 import {
 	DEFAULT_CAPTURE_SETTINGS,
 	loadCaptureSettings,
@@ -137,11 +138,7 @@ function regionApi(name: 'CropTarget' | 'RestrictionTarget'): RegionTargetApi | 
 }
 
 function makeSourceId(kind: CaptureSourceKind): string {
-	const suffix =
-		typeof crypto !== 'undefined' && 'randomUUID' in crypto
-			? crypto.randomUUID()
-			: Math.random().toString(36).slice(2);
-	return `capture-${kind}-${suffix}`;
+	return `capture-${kind}-${generateId()}`;
 }
 
 function descriptorForTrack(

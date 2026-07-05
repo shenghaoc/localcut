@@ -268,22 +268,18 @@ export function parseBundleManifest(value: unknown): ParseManifestResult {
 	return { ok: true, manifest };
 }
 
+import { generateId } from '../../utils/uuid';
+
 export function serializeBundleManifest(manifest: ProjectBundleManifest): string {
 	return JSON.stringify(manifest, null, 2);
 }
 
 export function makeBundleId(): string {
-	if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-		return `bundle-${crypto.randomUUID()}`;
-	}
-	return `bundle-${Math.random().toString(36).slice(2)}`;
+	return `bundle-${generateId()}`;
 }
 
 export function makeAssetId(): string {
-	if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-		return `asset-${crypto.randomUUID()}`;
-	}
-	return `asset-${Math.random().toString(36).slice(2)}`;
+	return `asset-${generateId()}`;
 }
 
 export function defaultAppVersion(): string {
