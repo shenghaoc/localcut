@@ -21,5 +21,5 @@ export function generateId(): string {
 	// Final fallback for environments without Web Crypto. Not cryptographically
 	// strong, but IDs are not security material — they just need to be
 	// unique inside a single project doc.
-	return `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+	return `${Date.now()}-${Math.random().toString(16).padEnd(10, '0').slice(2, 10)}`;
 }
