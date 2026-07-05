@@ -198,7 +198,7 @@ function mergeProposals(proposals: ZoomProposal[], mergeThresholdUs: number): Zo
 			// Recompute cluster centroid and events so zoom frame tracks both regions.
 			mergeClusters(prev, curr);
 		} else {
-			merged.push(curr);
+			merged.push({ ...curr });
 		}
 	}
 	return merged;
