@@ -16,7 +16,9 @@ export function downloadBlob(blob: Blob, name: string): void {
 		a.click();
 	} finally {
 		// Schedule revocation even if the synthetic click or cleanup throws.
-		setTimeout(() => URL.revokeObjectURL(url), 1_000);
+		// A 10-second timeout is safer for large files (like video exports) to
+		// prevent premature revocation in Safari's async download manager.
+		setTimeout(() => URL.revokeObjectURL(url), 10_000);
 		a.remove();
 	}
 }

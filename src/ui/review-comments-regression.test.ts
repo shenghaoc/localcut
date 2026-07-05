@@ -23,9 +23,9 @@ describe('review comment regression guards', () => {
 
 	it('keeps shared blob downloads DOM-backed and short-lived', () => {
 		expect(blobDownloadSource).toContain('document.body.appendChild(a)');
-		expect(blobDownloadSource).toContain('setTimeout(() => URL.revokeObjectURL(url), 1_000)');
+		expect(blobDownloadSource).toContain('setTimeout(() => URL.revokeObjectURL(url), 10_000)');
 		expect(blobDownloadSource).toContain(
-			'try {\n\t\tdocument.body.appendChild(a);\n\t\ta.click();\n\t} finally {\n\t\t// Schedule revocation even if the synthetic click or cleanup throws.\n\t\tsetTimeout(() => URL.revokeObjectURL(url), 1_000);\n\t\ta.remove();\n\t}'
+			"try {\n\t\tdocument.body.appendChild(a);\n\t\ta.click();\n\t} finally {\n\t\t// Schedule revocation even if the synthetic click or cleanup throws.\n\t\t// A 10-second timeout is safer for large files (like video exports) to\n\t\t// prevent premature revocation in Safari's async download manager.\n\t\tsetTimeout(() => URL.revokeObjectURL(url), 10_000);\n\t\ta.remove();\n\t}"
 		);
 	});
 
