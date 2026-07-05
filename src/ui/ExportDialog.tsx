@@ -10,6 +10,7 @@ import { validateOutputTemplate, resolvePlatformPresetCodec } from '../engine/ex
 import { aspectOutputSize } from '../engine/project';
 import { exportConstraintsForProbe } from '../engine/capability-probe-v2';
 import { generateChapterText, generateChaptersJson } from '../engine/chapters';
+import { generateId } from '../utils/uuid';
 import type {
 	CapabilityProbeResult,
 	ExportCodecSupport,
@@ -303,10 +304,7 @@ export function ExportDialog(props: ExportDialogProps) {
 		}
 		const current = settings();
 		const preset: ExportPresetDoc = {
-			id:
-				typeof crypto !== 'undefined' && 'randomUUID' in crypto
-					? crypto.randomUUID()
-					: `preset-${Math.random().toString(36).slice(2)}`,
+			id: `preset-${generateId()}`,
 			name,
 			builtIn: false,
 			codec: current.codec,

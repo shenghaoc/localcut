@@ -1,4 +1,4 @@
-import { currentEpochMs, isIsoTimestamp } from '../time';
+import { isIsoTimestamp } from '../time';
 import {
 	createEffect,
 	createMemo,
@@ -104,6 +104,7 @@ import { Inspector, type SelectedClip, type SelectedTransition } from './Inspect
 import { MediaBin } from './MediaBin';
 import { BeatPanel } from './BeatPanel';
 import { TranscriptPanel } from './TranscriptPanel';
+import { generateId } from '../utils/uuid';
 import { ThumbnailStore } from './thumbnail-store';
 import { AudioEngine } from './audio-engine';
 import { writeChainParamsToSab, writeDenoiserBypassToSab } from '../engine/live-audio/live-chain';
@@ -1809,10 +1810,7 @@ export function App() {
 		setDiagnosticsPanelOpen(true);
 		void refreshDiagnostics();
 		if (bridge) {
-			const requestId =
-				typeof crypto !== 'undefined' && 'randomUUID' in crypto
-					? crypto.randomUUID()
-					: `diag-${currentEpochMs()}`;
+			const requestId = `diag-${generateId()}`;
 			bridge.send({ type: 'request-diagnostic-snapshot', requestId });
 		}
 	}
@@ -1952,9 +1950,7 @@ export function App() {
 	});
 
 	function makeProgramId(prefix: string): string {
-		return typeof crypto !== 'undefined' && 'randomUUID' in crypto
-			? `${prefix}-${crypto.randomUUID()}`
-			: `${prefix}-${currentEpochMs()}-${Math.random().toString(36).slice(2, 8)}`;
+		return `${prefix}-${generateId()}`;
 	}
 
 	function sanitizedProgramSources(): ProgramSourceDescriptor[] {
@@ -3679,9 +3675,7 @@ export function App() {
 	}
 
 	function makeBundleJobId(): string {
-		return typeof crypto !== 'undefined' && 'randomUUID' in crypto
-			? crypto.randomUUID()
-			: `bundle-job-${Math.random().toString(36).slice(2)}`;
+		return `bundle-job-${generateId()}`;
 	}
 
 	function startBundleExport(

@@ -27,6 +27,7 @@ import { DIAGNOSTIC_SNAPSHOT_SCHEMA_VERSION } from '../diagnostics/types';
 import { buildDefaultPerformanceBudgets } from '../diagnostics/performance-budgets';
 import { probeAllCodecs } from './codec-support';
 import { captureUnavailableReasons } from './capture-reasons';
+import { generateId } from '../utils/uuid';
 
 interface DiagnosticSourceLike {
 	readonly proxy?: {
@@ -58,10 +59,7 @@ export interface WorkerDiagnosticInput {
 }
 
 function makeSnapshotId(): string {
-	if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-		return `diag-${crypto.randomUUID()}`;
-	}
-	return `diag-${Math.random().toString(36).slice(2)}`;
+	return `diag-${generateId()}`;
 }
 
 function finding(

@@ -1,4 +1,5 @@
-import { currentEpochMs, currentIsoTimestamp } from '../time';
+import { currentIsoTimestamp } from '../time';
+import { generateId } from '../utils/uuid';
 /// <reference lib="webworker" />
 import { isAbortError } from '../lib/abort-error';
 import {
@@ -1048,34 +1049,19 @@ function makeSourceId(): string {
 function makeClipId(sourceId: string): string {
 	// A globally-unique suffix (not a per-session counter) so clips placed after a
 	// project restore can't collide with restored clip ids like `clip-<source>-…`.
-	const suffix =
-		typeof crypto !== 'undefined' && 'randomUUID' in crypto
-			? crypto.randomUUID()
-			: Math.random().toString(36).slice(2);
-	return `clip-${sourceId}-${suffix}`;
+	return `clip-${sourceId}-${generateId()}`;
 }
 
 function makeTransitionId(): string {
-	const suffix =
-		typeof crypto !== 'undefined' && 'randomUUID' in crypto
-			? crypto.randomUUID()
-			: Math.random().toString(36).slice(2);
-	return `transition-${suffix}`;
+	return `transition-${generateId()}`;
 }
 
 function makeProjectId(): string {
-	if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-		return `project-${crypto.randomUUID()}`;
-	}
-	return `project-${Math.random().toString(36).slice(2)}`;
+	return `project-${generateId()}`;
 }
 
 function makeTrackId(sourceId: string): string {
-	const suffix =
-		typeof crypto !== 'undefined' && 'randomUUID' in crypto
-			? crypto.randomUUID()
-			: Math.random().toString(36).slice(2);
-	return `track-${sourceId}-${suffix}`;
+	return `track-${sourceId}-${generateId()}`;
 }
 
 function captureTrackType(kind: import('../protocol').CaptureSourceKind): TimelineTrack['type'] {
@@ -4933,11 +4919,7 @@ function handleSetStillDuration(cmd: Extract<WorkerCommand, { type: 'set-still-d
 }
 
 function makeTitleClipId(): string {
-	const suffix =
-		typeof crypto !== 'undefined' && 'randomUUID' in crypto
-			? crypto.randomUUID()
-			: Math.random().toString(36).slice(2);
-	return `clip-title-${suffix}`;
+	return `clip-title-${generateId()}`;
 }
 
 /**
@@ -4985,11 +4967,7 @@ function handleSetTitle(cmd: Extract<WorkerCommand, { type: 'set-title' }>) {
 }
 
 function makeCalloutClipId(): string {
-	const suffix =
-		typeof crypto !== 'undefined' && 'randomUUID' in crypto
-			? crypto.randomUUID()
-			: Math.random().toString(36).slice(2);
-	return `clip-callout-${suffix}`;
+	return `clip-callout-${generateId()}`;
 }
 
 function handleAddCallout(cmd: Extract<WorkerCommand, { type: 'add-callout' }>) {
@@ -6464,10 +6442,7 @@ async function handleExportStart(cmd: Extract<WorkerCommand, { type: 'export-sta
 	try {
 		const exportTimelineSnapshot = cloneTimelineForExport();
 		const exportCaptionTracksSnapshot = cloneCaptionTracksSnapshot(captionTracks);
-		const exportCaptionTextureGroupId =
-			typeof crypto !== 'undefined' && 'randomUUID' in crypto
-				? crypto.randomUUID()
-				: `${currentEpochMs()}-${Math.random().toString(36).slice(2)}`;
+		const exportCaptionTextureGroupId = generateId();
 		exportCaptionTextureIds = rasterizeExportCaptionTextures(
 			exportCaptionTextureGroupId,
 			exportCaptionTracksSnapshot
@@ -6845,10 +6820,7 @@ async function runQueueJob(job: RenderQueueJob): Promise<void> {
 	try {
 		const exportTimelineSnapshot = cloneTimelineForExport();
 		const exportCaptionTracksSnapshot = cloneCaptionTracksSnapshot(captionTracks);
-		const exportCaptionTextureGroupId =
-			typeof crypto !== 'undefined' && 'randomUUID' in crypto
-				? crypto.randomUUID()
-				: `${currentEpochMs()}-${Math.random().toString(36).slice(2)}`;
+		const exportCaptionTextureGroupId = generateId();
 		exportCaptionTextureIds = rasterizeExportCaptionTextures(
 			exportCaptionTextureGroupId,
 			exportCaptionTracksSnapshot
@@ -8843,7 +8815,7 @@ async function handleProgramStart(
 		programTap = createLiveComposeTap(programCompositor);
 
 		sessionForStart = new CaptureSession(
-			`program-${currentEpochMs()}-${Math.random().toString(36).slice(2, 8)}`,
+			`program-${generateId()}`,
 			{
 				onStatusChange(status) {
 					const programState = (
@@ -9677,7 +9649,7 @@ self.addEventListener('message', (event: MessageEvent<WorkerCommand>) => {
 		case 'capture-start': {
 			if (pendingCaptureSources.size === 0) break;
 			captureSession = new CaptureSession(
-				`session-${currentEpochMs()}-${Math.random().toString(36).slice(2, 8)}`,
+				`session-${generateId()}`,
 				{
 					onStatusChange(status) {
 						post({ type: 'capture-status', ...status });

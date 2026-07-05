@@ -27,6 +27,7 @@ import type {
 	ConvertWorkerState
 } from '../../protocol';
 import { CONVERT_FORMATS, convertFormatById, defaultFormatForInput } from './convert-formats';
+import { generateId } from '../../utils/uuid';
 
 interface ConvertPageProps {
 	onClose: () => void;
@@ -77,9 +78,7 @@ const QUALITY_LABELS: Record<ConvertQuality, string> = {
 };
 
 function newJobId(): string {
-	return typeof crypto !== 'undefined' && 'randomUUID' in crypto
-		? crypto.randomUUID()
-		: `job-${Math.random().toString(36).slice(2)}`;
+	return `job-${generateId()}`;
 }
 
 /**

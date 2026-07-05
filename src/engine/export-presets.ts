@@ -9,6 +9,7 @@ import type {
 	OutputNameTemplateContext
 } from '../protocol';
 import { exportConstraintsForProbe } from './capability-probe-v2';
+import { generateId } from '../utils/uuid';
 
 const TEMPLATE_VARIABLES = new Set([
 	'project',
@@ -140,9 +141,7 @@ export const BUILT_IN_PRESETS: readonly ExportPresetDoc[] = [
 ];
 
 function makePresetId(): string {
-	return typeof crypto !== 'undefined' && 'randomUUID' in crypto
-		? crypto.randomUUID()
-		: `preset-${Math.random().toString(36).slice(2)}`;
+	return `preset-${generateId()}`;
 }
 
 export function mergePresetsWithBuiltIns(

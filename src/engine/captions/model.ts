@@ -13,6 +13,7 @@ import {
 	type CaptionStyle,
 	type CaptionTrack
 } from './types';
+import { generateId } from '../../utils/uuid';
 
 export interface CaptionSnapTarget {
 	time: number;
@@ -24,17 +25,11 @@ export function cloneCaptionTracks(tracks: readonly CaptionTrack[]): CaptionTrac
 }
 
 export function makeCaptionTrackId(): string {
-	if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-		return `caption-track-${crypto.randomUUID()}`;
-	}
-	return `caption-track-${Math.random().toString(36).slice(2)}`;
+	return `caption-track-${generateId()}`;
 }
 
 export function makeCaptionSegmentId(): string {
-	if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-		return `caption-segment-${crypto.randomUUID()}`;
-	}
-	return `caption-segment-${Math.random().toString(36).slice(2)}`;
+	return `caption-segment-${generateId()}`;
 }
 
 function findTrackIndex(tracks: readonly CaptionTrack[], trackId: string): number {

@@ -18,13 +18,12 @@ import {
 	expandOutputTemplate,
 	sanitizeOutputFileNameBase
 } from './export-presets';
+import { generateId } from '../utils/uuid';
 
 const MAX_QUEUE_HISTORY = 50;
 
 function makeJobId(): string {
-	return typeof crypto !== 'undefined' && 'randomUUID' in crypto
-		? crypto.randomUUID()
-		: `job-${Math.random().toString(36).slice(2)}`;
+	return `job-${generateId()}`;
 }
 
 export function createEmptyQueueState(): RenderQueueState {

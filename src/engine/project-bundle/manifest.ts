@@ -8,6 +8,7 @@ import {
 	type MediaFingerprint,
 	type ProjectBundleManifest
 } from './types';
+import { generateId } from '../../utils/uuid';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -273,17 +274,11 @@ export function serializeBundleManifest(manifest: ProjectBundleManifest): string
 }
 
 export function makeBundleId(): string {
-	if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-		return `bundle-${crypto.randomUUID()}`;
-	}
-	return `bundle-${Math.random().toString(36).slice(2)}`;
+	return `bundle-${generateId()}`;
 }
 
 export function makeAssetId(): string {
-	if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-		return `asset-${crypto.randomUUID()}`;
-	}
-	return `asset-${Math.random().toString(36).slice(2)}`;
+	return `asset-${generateId()}`;
 }
 
 export function defaultAppVersion(): string {
