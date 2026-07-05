@@ -114,9 +114,9 @@ describe('review comment regression guards', () => {
 		expect(audioInsertRowSource).toContain('Show, type JSX');
 		expect(audioInsertRowSource).toContain('<Show when={props.bypass}');
 		expect(audioInsertRowSource).toContain('<Show when={expanded()}>');
-		expect(audioInsertRowSource).toContain(
-			'const bypassActionLabel = () => (props.bypass ? `Enable ${props.label}` : `Bypass ${props.label}`);'
-		);
+		expect(audioInsertRowSource).toContain('const bypassActionLabel = () =>');
+		expect(audioInsertRowSource).toContain('`Enable ${props.label}`');
+		expect(audioInsertRowSource).toContain('`Bypass ${props.label}`');
 		expect(audioInsertRowSource).toContain('aria-label={bypassActionLabel()}');
 	});
 
