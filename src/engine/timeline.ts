@@ -1,6 +1,7 @@
 import { clamp, clamp01, isFiniteNumber as finite } from '../lib/math';
 import { DEFAULT_CLIP_EFFECTS, normalizeClipEffects, type ClipEffectParams } from './effects';
 import { buildRemapLUT, remapOutputToSource, type RemapLUT } from './time-remap';
+import { generateId } from '../utils/uuid';
 import {
 	DEFAULT_TRANSFORM,
 	normalizeTransform,
@@ -738,10 +739,7 @@ export function revalidateTransitions(
 }
 
 function newId(prefix: string): string {
-	if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-		return `${prefix}-${crypto.randomUUID()}`;
-	}
-	return `${prefix}-${Math.random().toString(36).slice(2)}`;
+	return `${prefix}-${generateId()}`;
 }
 
 function trackWithClip(timeline: Timeline, trackId: string, clipId: string) {

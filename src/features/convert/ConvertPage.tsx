@@ -27,6 +27,7 @@ import type {
 	ConvertWorkerState
 } from '../../protocol';
 import { CONVERT_FORMATS, convertFormatById, defaultFormatForInput } from './convert-formats';
+import { generateId } from '../../utils/uuid';
 
 interface ConvertPageProps {
 	onClose: () => void;
@@ -75,7 +76,6 @@ const QUALITY_LABELS: Record<ConvertQuality, string> = {
 	medium: 'Medium',
 	low: 'Low (smaller file)'
 };
-import { generateId } from '../../utils/uuid';
 
 function newJobId(): string {
 	return `job-${generateId()}`;

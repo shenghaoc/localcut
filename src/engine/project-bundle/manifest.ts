@@ -8,6 +8,7 @@ import {
 	type MediaFingerprint,
 	type ProjectBundleManifest
 } from './types';
+import { generateId } from '../../utils/uuid';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -267,8 +268,6 @@ export function parseBundleManifest(value: unknown): ParseManifestResult {
 	}
 	return { ok: true, manifest };
 }
-
-import { generateId } from '../../utils/uuid';
 
 export function serializeBundleManifest(manifest: ProjectBundleManifest): string {
 	return JSON.stringify(manifest, null, 2);

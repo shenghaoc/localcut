@@ -32,14 +32,7 @@ function coerceAnimKind(value: string): AnimKind {
 	return (ANIM_KINDS as readonly string[]).includes(value) ? (value as AnimKind) : 'none';
 }
 
-/**
- * UUID for a freshly imported / saved preset. `crypto.randomUUID()` requires a
- * secure context (HTTPS or `localhost`); when a non-isolated HTTP deployment
- * loads the editor, the call would throw. `crypto.getRandomValues` is
- * available without secure context, so we fall back to an RFC-4122 v4 UUID
- * built from 16 random bytes. Matches the inline guard pattern used elsewhere
- * in the repo (e.g. App.tsx, ExportDialog.tsx).
- */
+/** Generate a unique preset ID via the centralized utility. */
 function newPresetId(): string {
 	return `preset-${generateId()}`;
 }

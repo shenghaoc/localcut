@@ -13,13 +13,12 @@ import {
 	type CaptionStyle,
 	type CaptionTrack
 } from './types';
+import { generateId } from '../../utils/uuid';
 
 export interface CaptionSnapTarget {
 	time: number;
 	label: string;
 }
-
-import { generateId } from '../../utils/uuid';
 
 export function cloneCaptionTracks(tracks: readonly CaptionTrack[]): CaptionTrack[] {
 	return tracks.map(cloneCaptionTrack);
