@@ -32,6 +32,9 @@
   failures (was logging "falling back to download" but never downloading)
 - [x] ExportDialog.tsx: Add debug logging for clipboard failures
 - [x] LanguageToolsPanel.tsx: Add debug logging for clipboard failures
+- [x] Shared picker cancellation handling: add `src/lib/abort-error.ts` and use
+  it from App, BundleDialog, ExportDialog, CaptionStyleInspector, and the
+  voice-cleanup worker cancellation path
 
 ## T3 — CSS tokens and z-index
 
@@ -60,6 +63,8 @@
 - [x] KeystrokeOverlayPanel.tsx: Add `aria-live`/`aria-atomic` to status
 - [x] ProgramPanel.tsx: Add `aria-live`/`aria-atomic` to status elements
 - [x] CaptionStyleInspector.tsx: Add `aria-atomic` to success notice
+- [x] LiveAudioChainPanel.tsx and VoiceCleanupPanel.tsx: Remove `aria-live`
+  from frequently updating passive latency metrics
 
 ## T5 — Performance and follow-up review corrections
 
@@ -80,17 +85,20 @@
   `isNonEmptyString`, `isPositiveNumber` (eliminates 18+ duplicate definitions)
 - [x] Create `src/lib/clipboard.ts` with shared `copyToClipboard` utility
 - [x] Create `src/lib/blob-download.ts` with shared `downloadBlob` utility
+- [x] Create `src/lib/abort-error.ts` with shared `isAbortError` utility
+- [x] Convert CaptionStyleInspector preset download and DiagnosticsPanel copy
+  flows to the shared helpers
 
 ## T7 — Validation
 
-- [x] `vp test run` — 2465 tests, 222 files, all passing
+- [x] `vp test run` — 2472 tests, 223 files, all passing
 - [x] `vp run typecheck` — clean
 - [x] `vp run check` — full quality gate passes (format + lint + typecheck +
   test + build)
 - [x] `.jules/sentinel.md` security points — 0 violations
 - [x] `.jules/palette.md` accessibility points — 18 violations, all fixed
 - [x] `.jules/bolt.md` performance points — 6 violations, all fixed
-- [x] `vp test run src/ui/review-comments-regression.test.ts src/ui/audio-disclosure-semantics.test.ts`
+- [x] `vp test run src/lib/clipboard.test.ts src/ui/review-comments-regression.test.ts src/ui/audio-disclosure-semantics.test.ts src/ui/backend-readiness-gating.test.ts`
   — focused guards for the active Gemini review comments
 
 ## T8 — Active Gemini review comment follow-up
@@ -110,7 +118,27 @@
 - [x] review-comments-regression.test.ts: Add source-level guards for the
   review-comment fixes.
 
-## T9 — PR metadata
+## T9 — 2026-07-05 active Gemini review follow-up
+
+- [x] blob-download.ts: Move append/click under `try`, schedule URL revocation
+  in `finally`, and use idempotent `a.remove()` cleanup.
+- [x] clipboard.ts: Guard unavailable Clipboard API before calling
+  `navigator.clipboard.writeText`.
+- [x] clipboard.test.ts: Cover unavailable, success, and write-failure paths
+  for the shared clipboard helper.
+- [x] timeline.ts: Guard stale/out-of-bounds `source.trackIndex` in
+  `moveClips`.
+- [x] App.tsx: Scope `probe` to the capability-probe phase and keep canvas init
+  failure reporting separate.
+- [x] LiveAudioChainPanel.tsx and VoiceCleanupPanel.tsx: Remove disruptive
+  latency live regions.
+- [x] CaptionStyleInspector.tsx, DiagnosticsPanel.tsx, BundleDialog.tsx,
+  ExportDialog.tsx, App.tsx, worker.ts: Use shared helpers for download,
+  clipboard, and abort-error handling where applicable.
+- [x] review-comments-regression.test.ts: Add guards for the July 5 review
+  fixes and shared-helper adoption.
+
+## T10 — PR metadata
 
 - [x] Update PR #155 body to reflect all commits and findings
 - [x] Post review findings as PR comments

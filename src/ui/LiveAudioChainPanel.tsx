@@ -59,9 +59,7 @@ export function LiveAudioChainPanel(props: LiveAudioChainPanelProps) {
 				aria-controls="live-audio-chain-body"
 			>
 				<span class="panel-title">Live Audio Chain</span>
-				<span class="latency-display" aria-live="polite">
-					Latency: {props.latencyMs.toFixed(1)} ms
-				</span>
+				<span class="latency-display">Latency: {props.latencyMs.toFixed(1)} ms</span>
 			</button>
 
 			<Show when={expanded()}>

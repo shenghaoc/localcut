@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vite-plus/test';
 import interpolationEngineSource from '../engine/interpolation/interpolation-engine.ts?raw';
+import timelineModelSource from '../engine/timeline.ts?raw';
+import abortErrorSource from '../lib/abort-error.ts?raw';
 import blobDownloadSource from '../lib/blob-download.ts?raw';
+import clipboardSource from '../lib/clipboard.ts?raw';
 import audioInsertRowSource from './AudioInsertRow.tsx?raw';
+import appSource from './App.tsx?raw';
+import captionStyleInspectorSource from './CaptionStyleInspector.tsx?raw';
 import languageToolsPanelSource from './LanguageToolsPanel.tsx?raw';
+import liveAudioChainPanelSource from './LiveAudioChainPanel.tsx?raw';
 import previewGizmoSource from './PreviewGizmo.tsx?raw';
 import reframeOverlaySource from './ReframeOverlay.tsx?raw';
 import timelineSource from './Timeline.tsx?raw';
+import voiceCleanupPanelSource from './VoiceCleanupPanel.tsx?raw';
 
 describe('review comment regression guards', () => {
 	it('handles queued tensor cleanup after device-loss rejections', () => {
@@ -16,8 +23,51 @@ describe('review comment regression guards', () => {
 
 	it('keeps shared blob downloads DOM-backed and short-lived', () => {
 		expect(blobDownloadSource).toContain('document.body.appendChild(a)');
-		expect(blobDownloadSource).toContain('document.body.removeChild(a)');
 		expect(blobDownloadSource).toContain('setTimeout(() => URL.revokeObjectURL(url), 1_000)');
+		expect(blobDownloadSource).toContain(
+			'try {\n\t\tdocument.body.appendChild(a);\n\t\ta.click();\n\t} finally {\n\t\t// Schedule revocation even if the synthetic click or cleanup throws.\n\t\tsetTimeout(() => URL.revokeObjectURL(url), 1_000);\n\t\ta.remove();\n\t}'
+		);
+	});
+
+	it('guards clipboard and timeline edge cases', () => {
+		expect(clipboardSource).toContain('const clipboard = getClipboard();');
+		expect(clipboardSource).toContain(
+			'return { ok: false, error: CLIPBOARD_UNAVAILABLE_MESSAGE };'
+		);
+		expect(abortErrorSource).toContain("'name' in error");
+		expect(abortErrorSource).toContain("error.name === 'AbortError'");
+		expect(timelineModelSource).toContain('const sourceTrack = timeline[source.trackIndex];');
+		expect(timelineModelSource).toContain(
+			'if (!sourceTrack || sourceTrack.locked) return timeline;'
+		);
+	});
+
+	it('uses shared download and abort helpers for caption preset export', () => {
+		expect(captionStyleInspectorSource).toContain(
+			"import { isAbortError } from '../lib/abort-error';"
+		);
+		expect(captionStyleInspectorSource).toContain(
+			"import { downloadBlob } from '../lib/blob-download';"
+		);
+		expect(captionStyleInspectorSource).toContain('downloadBlob(blob, filename);');
+		expect(captionStyleInspectorSource).not.toContain("document.createElement('a')");
+		expect(captionStyleInspectorSource).not.toContain('instanceof DOMException');
+	});
+
+	it('keeps capability probing separate from canvas initialization', () => {
+		expect(appSource).toContain('const probe = await probeCapabilitiesV2();');
+		expect(appSource).toContain('async function initializePendingCanvas()');
+		expect(appSource).toContain('await initializePendingCanvas();');
+		expect(appSource).toContain('Capability detection failed: ${message}');
+		expect(appSource).toContain('Canvas initialization failed: ${message}');
+		expect(appSource).not.toContain('let probe;');
+	});
+
+	it('does not announce passive latency metrics as live regions', () => {
+		expect(liveAudioChainPanelSource).toContain('class="latency-display"');
+		expect(voiceCleanupPanelSource).toContain('class="latency-display"');
+		expect(liveAudioChainPanelSource).not.toContain('class="latency-display" aria-live');
+		expect(voiceCleanupPanelSource).not.toContain('class="latency-display" aria-live');
 	});
 
 	it('does not scale bordered review overlays', () => {

@@ -130,12 +130,29 @@ body/spec update. This branch now also covers:
 - bordered overlay sizing corrections in ReframeOverlay and Timeline,
 - explicit centered transform origin in PreviewGizmo.
 
+The 2026-07-05 Gemini pass added another set of active review threads. This
+branch now additionally covers:
+
+- `downloadBlob()` schedules Object URL cleanup from `finally` even when append
+  or click fails, and uses idempotent anchor removal,
+- `copyToClipboard()` reports a clean unavailable-API error in insecure or
+  unsupported contexts,
+- `moveClips()` safely rejects stale/out-of-bounds source track indexes,
+- App capability probing keeps canvas initialization in a separate error
+  boundary with probe scoped to the probe phase,
+- Live Audio Chain and Voice Cleanup latency metrics are passive text, not
+  frequently updating live regions,
+- a shared `isAbortError()` helper handles browser and test cancellation
+  objects without duplicating DOMException checks,
+- Caption preset export and diagnostics copy flows use the shared helpers.
+
 ## Shared code extraction
 
 - `src/lib/type-guards.ts` — shared `isRecord`, `isString`, `isNonEmptyString`,
   `isPositiveNumber` (eliminates 18+ duplicate definitions)
 - `src/lib/clipboard.ts` — shared `copyToClipboard` utility
 - `src/lib/blob-download.ts` — shared `downloadBlob` utility
+- `src/lib/abort-error.ts` — shared `isAbortError` cancellation predicate
 
 ## Acceptance criteria
 

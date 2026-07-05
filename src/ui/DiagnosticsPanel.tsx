@@ -9,6 +9,7 @@ import {
 	buildCopyableDiagnosticReport,
 	formatCopyableDiagnosticReport
 } from '../diagnostics/redaction';
+import { copyToClipboard } from '../lib/clipboard';
 import { formatBytes } from '../lib/format';
 import { Button } from './components/button';
 
@@ -69,17 +70,8 @@ export function DiagnosticsPanel(props: DiagnosticsPanelProps) {
 	async function copyReport() {
 		const text = reportText();
 		if (!text) return;
-		if (!navigator.clipboard) {
-			setCopyStatus('Copy failed: Clipboard API is not available (requires HTTPS).');
-			return;
-		}
-		try {
-			await navigator.clipboard.writeText(text);
-			setCopyStatus('Diagnostics report copied.');
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			setCopyStatus(`Copy failed: ${message}`);
-		}
+		const result = await copyToClipboard(text);
+		setCopyStatus(result.ok ? 'Diagnostics report copied.' : `Copy failed: ${result.error}`);
 	}
 
 	return (

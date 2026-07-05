@@ -4,6 +4,7 @@ import { Popover } from '@ark-ui/solid/popover';
 import { Copy, Download, ListPlus, Save } from 'lucide-solid';
 import { Button, buttonVariants } from './components/button';
 import { copyToClipboard } from '../lib/clipboard';
+import { isAbortError } from '../lib/abort-error';
 import { downloadBlob } from '../lib/blob-download';
 import { validateOutputTemplate, resolvePlatformPresetCodec } from '../engine/export-presets';
 import { aspectOutputSize } from '../engine/project';
@@ -976,7 +977,7 @@ function ChaptersSection(props: {
 				// Download JSON as sidecar fallback (parent directory not accessible from file handle).
 				downloadBlob(jsonBlob, jsonName);
 			} catch (err) {
-				if (err instanceof Error && err.name === 'AbortError') {
+				if (isAbortError(err)) {
 					// User cancelled file picker — no feedback needed
 					return;
 				}

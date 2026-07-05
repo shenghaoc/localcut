@@ -3,6 +3,7 @@ import { Portal } from 'solid-js/web';
 import { Popover } from '@ark-ui/solid/popover';
 import { FolderArchive, FolderInput, FolderOutput } from 'lucide-solid';
 import { Button, buttonVariants } from './components/button';
+import { isAbortError } from '../lib/abort-error';
 import type {
 	BundleIntegrityItemSnapshot,
 	BundleIntegrityReportSnapshot,
@@ -20,10 +21,6 @@ interface BundleDialogProps {
 	progressPhase: string | null;
 	integrityReport: BundleIntegrityReportSnapshot | null;
 	lastMessage: string | null;
-}
-
-function isAbortError(error: unknown): boolean {
-	return error instanceof DOMException && error.name === 'AbortError';
 }
 
 async function pickDirectory(

@@ -144,9 +144,7 @@ export function VoiceCleanupPanel(props: VoiceCleanupPanelProps) {
 				aria-controls="voice-cleanup-body"
 			>
 				<span class="panel-title">Voice Cleanup</span>
-				<span class="latency-display" aria-live="polite">
-					Latency: {props.latencyMs.toFixed(1)} ms
-				</span>
+				<span class="latency-display">Latency: {props.latencyMs.toFixed(1)} ms</span>
 			</button>
 			<Show when={expanded()}>
 				<div class="collapse-body" id="voice-cleanup-body">

@@ -1,5 +1,6 @@
 import { currentEpochMs, currentIsoTimestamp } from '../time';
 /// <reference lib="webworker" />
+import { isAbortError } from '../lib/abort-error';
 import {
 	assertCrossOriginIsolated,
 	type CapabilityProbeResult,
@@ -7333,7 +7334,7 @@ async function handleVoiceCleanupAnalyseLoudness(
 				: result.measuredLufs
 		});
 	} catch (err) {
-		if (err instanceof DOMException && err.name === 'AbortError') {
+		if (isAbortError(err)) {
 			post({ type: 'voice-cleanup-analysis-cancelled' });
 		} else {
 			post({

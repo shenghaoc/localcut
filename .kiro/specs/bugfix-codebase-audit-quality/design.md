@@ -53,3 +53,16 @@ DOM-backed blob downloads, unscaled bordered overlays, centered preview-gizmo
 rotation, Solid `<Show>` usage in `AudioInsertRow`, and copy-feedback timer
 cleanup in `LanguageToolsPanel`. This follows the repo's existing source-guard
 pattern for architectural invariants.
+
+### Shared fallback helpers
+
+The latest review pass extends the helper extraction:
+
+- `downloadBlob()` owns the temporary anchor path, keeps the Object URL alive
+  briefly, and schedules revocation from `finally` even when the synthetic
+  click path throws.
+- `copyToClipboard()` owns Clipboard API availability checks and returns a
+  result object to keep UI callers exception-free.
+- `isAbortError()` centralizes cancellation detection for picker and worker
+  abort paths. It checks the structural `name` field so mocked errors and
+  cross-realm DOM exceptions follow the same path.

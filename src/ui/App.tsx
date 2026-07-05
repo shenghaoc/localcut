@@ -120,6 +120,7 @@ import { BundleDialog } from './BundleDialog';
 import { InterchangeMenu } from './InterchangeMenu';
 import { Button, buttonVariants } from './components/button';
 import { cn } from '../lib/utils';
+import { isAbortError } from '../lib/abort-error';
 import { downloadBlob } from '../lib/blob-download';
 import { CapabilityPanel } from './CapabilityPanel';
 import { DocsPage } from '../features/docs/DocsPage';
@@ -284,10 +285,6 @@ function initialOnlineStatus(): boolean {
 	return typeof navigator === 'undefined' ? true : navigator.onLine;
 }
 
-function isAbortError(error: unknown): boolean {
-	return error instanceof DOMException && error.name === 'AbortError';
-}
-
 const DEFAULT_PROGRAM_LAYER_TRANSFORM = {
 	x: 0,
 	y: 0,
@@ -340,7 +337,7 @@ async function saveTextFile(fileName: string, mimeType: string, content: string)
 			handle = await window.showSaveFilePicker({ suggestedName: fileName });
 		} catch (error) {
 			// User canceled the picker — not a failure, and not a download.
-			if (error instanceof DOMException && error.name === 'AbortError') return;
+			if (isAbortError(error)) return;
 			// The picker API itself failed; fall back to a plain download.
 			handle = null;
 		}
@@ -3244,6 +3241,19 @@ export function App() {
 		b.send({ type: 'init', canvas, sab, audioSab, scopeSab, probeResult: probe }, [canvas]);
 	}
 
+	async function initializePendingCanvas(): Promise<void> {
+		if (!pendingInitCanvas) return;
+		try {
+			const canvas = pendingInitCanvas;
+			pendingInitCanvas = null;
+			await sendInit(canvas);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			setStatusLine(`Canvas initialization failed: ${message}`);
+			setRuntimeIssue('Failed to initialize editor canvas. Try reloading.');
+		}
+	}
+
 	async function importCompatibilityMedia(file: File) {
 		if (importing()) return;
 		const generation = ++compatibilityImportGeneration;
@@ -3458,7 +3468,7 @@ export function App() {
 				]
 			});
 		} catch (e) {
-			if (e instanceof DOMException && e.name === 'AbortError') return null;
+			if (isAbortError(e)) return null;
 			throw e;
 		}
 	}
@@ -3531,10 +3541,6 @@ export function App() {
 		return candidate;
 	}
 
-	function pickerWasCanceled(error: unknown): boolean {
-		return error instanceof DOMException && error.name === 'AbortError';
-	}
-
 	async function preselectQueueOutputHandles(): Promise<boolean> {
 		const pendingJobs = renderQueue().jobs.filter((job) => job.status === 'pending');
 		if (pendingJobs.length === 0 || typeof window.showSaveFilePicker !== 'function') return true;
@@ -3569,7 +3575,7 @@ export function App() {
 				}
 				return true;
 			} catch (error) {
-				if (!pickerWasCanceled(error)) {
+				if (!isAbortError(error)) {
 					const message = error instanceof Error ? error.message : String(error);
 					setStatusLine(`Queue destination failed: ${message}`);
 				}
@@ -3592,7 +3598,7 @@ export function App() {
 			bridge?.send({ type: 'queue-job-output', jobId: job.id, handle });
 			return true;
 		} catch (error) {
-			if (!pickerWasCanceled(error)) {
+			if (!isAbortError(error)) {
 				const message = error instanceof Error ? error.message : String(error);
 				setStatusLine(`Queue destination failed: ${message}`);
 			}
@@ -3912,9 +3918,8 @@ export function App() {
 
 	onMount(() => {
 		void (async () => {
-			let probe;
 			try {
-				probe = await probeCapabilitiesV2();
+				const probe = await probeCapabilitiesV2();
 				setCapabilityProbeV2(probe);
 				setExportCodecs([...exportConstraintsForProbe(probe)]);
 				cleanupController.setCleanupProbe(probe.cleanup ?? null);
@@ -3966,17 +3971,7 @@ export function App() {
 				return;
 			}
 
-			if (pendingInitCanvas) {
-				try {
-					const canvas = pendingInitCanvas;
-					pendingInitCanvas = null;
-					await sendInit(canvas);
-				} catch (error) {
-					const message = error instanceof Error ? error.message : String(error);
-					setStatusLine(`Canvas initialization failed: ${message}`);
-					setRuntimeIssue('Failed to initialize editor canvas. Try reloading.');
-				}
-			}
+			await initializePendingCanvas();
 		})();
 
 		// Phase 39: Fetch platform safe-zone data.
