@@ -21,7 +21,7 @@ export function AudioInsertRow(props: AudioInsertRowProps) {
 					variant="ghost"
 					size="icon"
 					onClick={props.onToggleBypass}
-					aria-label={props.label}
+					aria-label={props.bypass ? `Enable ${props.label}` : `Bypass ${props.label}`}
 					aria-pressed={!props.bypass}
 				>
 					<Show when={props.bypass} fallback={<Power size={14} aria-hidden="true" />}>
