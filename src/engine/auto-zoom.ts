@@ -58,6 +58,16 @@ interface RunningCluster {
 	count: number;
 }
 
+interface WorkingZoomProposal {
+	cluster: EventCluster;
+	zoomInAtUs: number;
+	zoomOutAtUs: number;
+	centroidX: number;
+	centroidY: number;
+	scale: number;
+	status: 'pending' | 'applied' | 'skipped';
+}
+
 /**
  * Cluster entries into zoom proposals. Pure function; deterministic given the
  * same input. Runs in O(n log n) time (sort by t, linear sweep).
@@ -76,7 +86,7 @@ export function clusterEvents(
 	const mergeThresholdUs = params.overlapMergeThresholdMs * 1000;
 
 	// Linear sweep: build clusters
-	const proposals: ZoomProposal[] = [];
+	const proposals: WorkingZoomProposal[] = [];
 	let current: RunningCluster | null = null;
 	const distThresholdSq = distThreshold * distThreshold;
 	let lastT = Number.NEGATIVE_INFINITY;
@@ -127,7 +137,9 @@ export function clusterEvents(
 		);
 	}
 
-	return mergeProposals(proposals, mergeThresholdUs);
+	// Only the final merged geometry is observable, so defer stable ID hashing
+	// until after overlap merges finish.
+	return mergeProposals(proposals, mergeThresholdUs).map(finalizeProposal);
 }
 
 function closeCluster(c: RunningCluster): EventCluster {
@@ -146,12 +158,10 @@ function createProposal(
 	leadInUs: number,
 	holdUs: number,
 	clipStartUs: number
-): ZoomProposal {
+): WorkingZoomProposal {
 	const zoomInAtUs = cluster.startUs - leadInUs;
 	const zoomOutAtUs = cluster.endUs + holdUs;
-	const idInput = `${cluster.startUs}:${cluster.centroidX.toFixed(4)}:${cluster.centroidY.toFixed(4)}`;
 	return {
-		id: stableProposalId(idInput),
 		cluster,
 		zoomInAtUs: Math.max(clipStartUs, zoomInAtUs),
 		zoomOutAtUs,
@@ -162,7 +172,7 @@ function createProposal(
 	};
 }
 
-function mergeClusters(base: ZoomProposal, next: ZoomProposal): ZoomProposal {
+function mergeClusters(base: WorkingZoomProposal, next: WorkingZoomProposal): WorkingZoomProposal {
 	const baseCount = base.cluster.eventCount;
 	const nextCount = next.cluster.eventCount;
 	const totalCount = baseCount + nextCount;
@@ -180,16 +190,16 @@ function mergeClusters(base: ZoomProposal, next: ZoomProposal): ZoomProposal {
 	base.cluster = mergedCluster;
 	base.centroidX = mergedCentroidX;
 	base.centroidY = mergedCentroidY;
-	base.id = stableProposalId(
-		`${mergedCluster.startUs}:${mergedCluster.centroidX.toFixed(4)}:${mergedCluster.centroidY.toFixed(4)}`
-	);
 	return base;
 }
 
-function mergeProposals(proposals: ZoomProposal[], mergeThresholdUs: number): ZoomProposal[] {
+function mergeProposals(
+	proposals: WorkingZoomProposal[],
+	mergeThresholdUs: number
+): WorkingZoomProposal[] {
 	if (proposals.length <= 1) return proposals;
 
-	const merged: ZoomProposal[] = [{ ...proposals[0]! }];
+	const merged: WorkingZoomProposal[] = [{ ...proposals[0]! }];
 	for (let i = 1; i < proposals.length; i++) {
 		const prev = merged[merged.length - 1]!;
 		const curr = proposals[i]!;
@@ -202,6 +212,15 @@ function mergeProposals(proposals: ZoomProposal[], mergeThresholdUs: number): Zo
 		}
 	}
 	return merged;
+}
+
+function finalizeProposal(proposal: WorkingZoomProposal): ZoomProposal {
+	return {
+		...proposal,
+		id: stableProposalId(
+			`${proposal.cluster.startUs}:${proposal.centroidX.toFixed(4)}:${proposal.centroidY.toFixed(4)}`
+		)
+	};
 }
 
 /**
