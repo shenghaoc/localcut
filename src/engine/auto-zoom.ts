@@ -165,7 +165,7 @@ function createProposal(
 function mergeProposals(proposals: ZoomProposal[], mergeThresholdUs: number): ZoomProposal[] {
 	if (proposals.length <= 1) return proposals;
 
-	const merged: ZoomProposal[] = [proposals[0]!];
+	const merged: ZoomProposal[] = [{ ...proposals[0]! }];
 	for (let i = 1; i < proposals.length; i++) {
 		const prev = merged[merged.length - 1]!;
 		const curr = proposals[i]!;
