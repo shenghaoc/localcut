@@ -64,7 +64,7 @@ non-square clips.
 The latest review pass extends the helper extraction:
 
 - `downloadBlob()` owns the temporary anchor path, keeps the Object URL alive
-  briefly, and schedules revocation from `finally` even when the synthetic
+  briefly (10 seconds, for Safari large-file safety), and schedules revocation from `finally` even when the synthetic
   click path throws.
 - `copyToClipboard()` owns Clipboard API availability checks and returns a
   result object to keep UI callers exception-free.

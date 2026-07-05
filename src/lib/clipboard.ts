@@ -6,18 +6,16 @@
  * need their own try-catch.
  */
 
-const CLIPBOARD_UNAVAILABLE_MESSAGE =
-	'Clipboard API is not available (requires a secure HTTPS context)';
+import { errorMessage } from './error-message';
 
-type ClipboardResult = { ok: boolean; error?: string };
+const CLIPBOARD_UNAVAILABLE_MESSAGE =
+	'Clipboard API is not available (requires a secure context in a browser environment)';
+
+export type ClipboardResult = { ok: true } | { ok: false; error: string };
 
 function getClipboard(): Clipboard | null {
 	const nav = typeof navigator === 'undefined' ? null : navigator;
 	return nav?.clipboard ?? null;
-}
-
-function clipboardErrorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }
 
 export async function copyToClipboard(text: string): Promise<ClipboardResult> {
@@ -30,6 +28,6 @@ export async function copyToClipboard(text: string): Promise<ClipboardResult> {
 		await clipboard.writeText(text);
 		return { ok: true };
 	} catch (error) {
-		return { ok: false, error: clipboardErrorMessage(error) };
+		return { ok: false, error: errorMessage(error) };
 	}
 }

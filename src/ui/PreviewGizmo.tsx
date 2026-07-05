@@ -99,6 +99,9 @@ export function PreviewGizmo(props: PreviewGizmoProps) {
 		const cx = (0.5 + t.x) * b.width;
 		const cy = (0.5 + t.y) * b.height;
 		const d = drag();
+		// Fixed 100px proxy: scale in local axes (before rotation) keeps handles
+		// aligned for non-square, rotated clips. CSS transforms compose right-to-left
+		// so `rotate(deg) scaleX(sx) scaleY(sy)` applies scale in the un-rotated frame.
 		const centerTranslate = `${b.left + cx - 50}px ${b.top + cy - 50}px`;
 		const centeredTransform = `rotate(${t.rotation}deg) scaleX(${w / 100}) scaleY(${h / 100})`;
 		return {

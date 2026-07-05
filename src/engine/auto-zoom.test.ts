@@ -58,13 +58,8 @@ describe('clusterEvents', () => {
 		// With default params, zoomOut of first = cluster.endUs + 1500ms = 1_000_000 + 1_500_000 = 2_500_000
 		// zoomIn of second = 2_500_000 - 200_000 = 2_300_000
 		// overlap = 2_500_000 - 2_300_000 = 200_000 µs > 50_000 threshold → merged
-		if (result.length === 1) {
-			// Merged
-			expect(result[0]!.cluster.eventCount).toBe(2);
-		} else {
-			// Not merged (depends on exact timing)
-			expect(result).toHaveLength(2);
-		}
+		expect(result).toHaveLength(1);
+		expect(result[0]!.cluster.eventCount).toBe(2);
 	});
 
 	it('is deterministic — same input produces same output', () => {

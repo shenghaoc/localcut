@@ -122,6 +122,7 @@ import { Button, buttonVariants } from './components/button';
 import { cn } from '../lib/utils';
 import { isAbortError } from '../lib/abort-error';
 import { downloadBlob } from '../lib/blob-download';
+import { errorMessage } from '../lib/error-message';
 import { CapabilityPanel } from './CapabilityPanel';
 import { DocsPage } from '../features/docs/DocsPage';
 import { DOCS_INDEX_SLUG, docsPath, parseDocsPath } from '../features/docs/docsManifest';
@@ -3241,16 +3242,24 @@ export function App() {
 		b.send({ type: 'init', canvas, sab, audioSab, scopeSab, probeResult: probe }, [canvas]);
 	}
 
+	function handleInitError(statusMsg: string, issueMsg: string, error: unknown): void {
+		const message = errorMessage(error);
+		setStatusLine(`${statusMsg}: ${message}`);
+		setRuntimeIssue(issueMsg);
+	}
+
 	async function initializePendingCanvas(): Promise<void> {
 		if (!pendingInitCanvas) return;
+		const canvas = pendingInitCanvas;
 		try {
-			const canvas = pendingInitCanvas;
-			pendingInitCanvas = null;
 			await sendInit(canvas);
+			pendingInitCanvas = null;
 		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			setStatusLine(`Canvas initialization failed: ${message}`);
-			setRuntimeIssue('Failed to initialize editor canvas. Try reloading.');
+			handleInitError(
+				'Canvas initialization failed',
+				'Failed to initialize editor canvas. Try reloading.',
+				error
+			);
 		}
 	}
 
@@ -3965,9 +3974,11 @@ export function App() {
 						break;
 				}
 			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				setStatusLine(`Capability detection failed: ${message}`);
-				setRuntimeIssue('Failed to detect browser capabilities. Try reloading.');
+				handleInitError(
+					'Capability detection failed',
+					'Failed to detect browser capabilities. Try reloading.',
+					error
+				);
 				return;
 			}
 

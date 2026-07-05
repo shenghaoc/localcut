@@ -948,7 +948,7 @@ function ChaptersSection(props: {
 		const text = chapterText();
 		if (!text) return;
 		const res = await copyToClipboard(text);
-		if (!res.ok) console.debug('Clipboard write failed:', res.error);
+		if (!res.ok) console.warn('Clipboard write failed:', res.error);
 	}
 
 	async function handleSave() {

@@ -6,7 +6,14 @@
  * here instead of defining its own copy.
  */
 
-/** Returns `true` when `value` is a plain object (not null, not an array). */
+/**
+ * Returns `true` when `value` is a plain object (not null, not an array).
+ *
+ * Note: this also accepts exotic object types (Date, Map, class instances)
+ * since they satisfy `typeof === 'object' && !Array.isArray`. For JSON
+ * deserialization contexts this is safe because `JSON.parse` only produces
+ * plain objects, arrays, and primitives.
+ */
 export function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

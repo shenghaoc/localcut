@@ -7,6 +7,7 @@ import clipboardSource from '../lib/clipboard.ts?raw';
 import audioInsertRowSource from './AudioInsertRow.tsx?raw';
 import appSource from './App.tsx?raw';
 import captionStyleInspectorSource from './CaptionStyleInspector.tsx?raw';
+import exportDialogSource from './ExportDialog.tsx?raw';
 import languageToolsPanelSource from './LanguageToolsPanel.tsx?raw';
 import liveAudioChainPanelSource from './LiveAudioChainPanel.tsx?raw';
 import previewGizmoSource from './PreviewGizmo.tsx?raw';
@@ -17,15 +18,16 @@ import voiceCleanupPanelSource from './VoiceCleanupPanel.tsx?raw';
 describe('review comment regression guards', () => {
 	it('handles queued tensor cleanup after device-loss rejections', () => {
 		expect(interpolationEngineSource).toContain('.onSubmittedWorkDone()');
-		expect(interpolationEngineSource).toContain('.catch(() => {})');
+		expect(interpolationEngineSource).toContain('.catch((err)');
 		expect(interpolationEngineSource).toContain('.finally(() => outputTensor.dispose())');
 	});
 
 	it('keeps shared blob downloads DOM-backed and short-lived', () => {
+		expect(blobDownloadSource).toContain('url = URL.createObjectURL(blob)');
 		expect(blobDownloadSource).toContain('document.body.appendChild(a)');
-		expect(blobDownloadSource).toContain('setTimeout(() => URL.revokeObjectURL(url), 10_000)');
+		expect(blobDownloadSource).toContain('setTimeout(() => URL.revokeObjectURL(url!), 10_000)');
 		expect(blobDownloadSource).toContain(
-			"try {\n\t\tdocument.body.appendChild(a);\n\t\ta.click();\n\t} finally {\n\t\t// Schedule revocation even if the synthetic click or cleanup throws.\n\t\t// A 10-second timeout is safer for large files (like video exports) to\n\t\t// prevent premature revocation in Safari's async download manager.\n\t\tsetTimeout(() => URL.revokeObjectURL(url), 10_000);\n\t\ta.remove();\n\t}"
+			"try {\n\t\turl = URL.createObjectURL(blob);\n\t\ta.href = url;\n\t\ta.download = name;\n\t\tdocument.body.appendChild(a);\n\t\ta.click();\n\t} finally {\n\t\t// Schedule revocation even if the synthetic click or cleanup throws.\n\t\t// A 10-second timeout is safer for large files (like video exports) to\n\t\t// prevent premature revocation in Safari's async download manager.\n\t\tif (url) setTimeout(() => URL.revokeObjectURL(url!), 10_000);\n\t\ta.remove();\n\t}"
 		);
 	});
 
@@ -34,6 +36,8 @@ describe('review comment regression guards', () => {
 		expect(clipboardSource).toContain(
 			'return { ok: false, error: CLIPBOARD_UNAVAILABLE_MESSAGE };'
 		);
+		expect(clipboardSource).toContain('{ ok: true }');
+		expect(clipboardSource).toContain('{ ok: false; error: string }');
 		expect(abortErrorSource).toContain("'name' in error");
 		expect(abortErrorSource).toContain("error.name === 'AbortError'");
 		expect(timelineModelSource).toContain('const sourceTrack = timeline[source.trackIndex];');
@@ -54,12 +58,20 @@ describe('review comment regression guards', () => {
 		expect(captionStyleInspectorSource).not.toContain('instanceof DOMException');
 	});
 
+	it('provides downloadBlob fallback in ExportDialog chapter save', () => {
+		expect(exportDialogSource).toContain("import { downloadBlob } from '../lib/blob-download';");
+		// The native-save catch block must fall back to downloadBlob
+		expect(exportDialogSource).toContain('downloadBlob(textBlob, textName)');
+		expect(exportDialogSource).toContain('downloadBlob(jsonBlob, jsonName)');
+	});
+
 	it('keeps capability probing separate from canvas initialization', () => {
 		expect(appSource).toContain('const probe = await probeCapabilitiesV2();');
 		expect(appSource).toContain('async function initializePendingCanvas()');
 		expect(appSource).toContain('await initializePendingCanvas();');
-		expect(appSource).toContain('Capability detection failed: ${message}');
-		expect(appSource).toContain('Canvas initialization failed: ${message}');
+		expect(appSource).toContain('Capability detection failed');
+		expect(appSource).toContain('Canvas initialization failed');
+		expect(appSource).toContain('handleInitError');
 		expect(appSource).not.toContain('let probe;');
 	});
 

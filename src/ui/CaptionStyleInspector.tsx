@@ -114,10 +114,11 @@ export function serializeAndSavePreset(
 				// "user cancelled" — anything else (QuotaExceededError,
 				// NotAllowedError from a lost user gesture, an unexpected
 				// I/O failure) is a real problem and must surface to the user.
-				if (!isAbortError(error) && onError) {
+				if (!isAbortError(error)) {
 					const message =
 						error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-					onError(message);
+					if (onError) onError(message);
+					else console.warn('Preset save failed:', message);
 				}
 			}
 		})();

@@ -109,6 +109,11 @@ describe('NormalizeTransfer selection', () => {
 		expect(selectNormalizeTransfer('srgb')).toBe(NormalizeTransfer.SRGB);
 	});
 
+	it('selects BT2020_10 for bt2020-10 and bt2020-12', () => {
+		expect(selectNormalizeTransfer('bt2020-10')).toBe(NormalizeTransfer.BT2020_10);
+		expect(selectNormalizeTransfer('bt2020-12')).toBe(NormalizeTransfer.BT2020_10);
+	});
+
 	it('defaults to identity for unknown', () => {
 		expect(selectNormalizeTransfer('unknown')).toBe(NormalizeTransfer.IDENTITY);
 	});

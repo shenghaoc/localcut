@@ -39,7 +39,8 @@ async function pickDirectory(
 		return handle;
 	} catch (error) {
 		if (isAbortError(error)) return null;
-		throw error;
+		console.warn('Directory picker failed:', error);
+		return null;
 	}
 }
 

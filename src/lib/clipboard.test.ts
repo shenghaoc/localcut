@@ -11,7 +11,16 @@ describe('copyToClipboard', () => {
 
 		await expect(copyToClipboard('hello')).resolves.toEqual({
 			ok: false,
-			error: 'Clipboard API is not available (requires a secure HTTPS context)'
+			error: 'Clipboard API is not available (requires a secure context in a browser environment)'
+		});
+	});
+
+	it('returns a clear error when navigator exists but clipboard is undefined', async () => {
+		vi.stubGlobal('navigator', { clipboard: undefined });
+
+		await expect(copyToClipboard('hello')).resolves.toEqual({
+			ok: false,
+			error: 'Clipboard API is not available (requires a secure context in a browser environment)'
 		});
 	});
 
@@ -35,6 +44,21 @@ describe('copyToClipboard', () => {
 		await expect(copyToClipboard('hello')).resolves.toEqual({
 			ok: false,
 			error: 'blocked'
+		});
+	});
+
+	it('coerces non-Error thrown values to string', async () => {
+		vi.stubGlobal('navigator', {
+			clipboard: {
+				writeText: vi.fn(async () => {
+					throw 'string error';
+				})
+			}
+		});
+
+		await expect(copyToClipboard('hello')).resolves.toEqual({
+			ok: false,
+			error: 'string error'
 		});
 	});
 });

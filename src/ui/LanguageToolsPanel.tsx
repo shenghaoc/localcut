@@ -66,7 +66,7 @@ function createFieldCopier(markCopiedField: (field: string) => void) {
 		if (res.ok) {
 			markCopiedField(field);
 		} else {
-			console.debug('Clipboard write failed:', res.error);
+			console.warn('Clipboard write failed:', res.error);
 		}
 	};
 }

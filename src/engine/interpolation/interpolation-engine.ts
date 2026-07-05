@@ -386,7 +386,9 @@ export class InterpolationEngine {
 		// pass that reads it has finished on the GPU — avoids a use-after-free.
 		void device.queue
 			.onSubmittedWorkDone()
-			.catch(() => {})
+			.catch((err) => {
+				console.warn('GPU work submission failed (device may be lost):', err);
+			})
 			.finally(() => outputTensor.dispose());
 	}
 

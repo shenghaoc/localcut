@@ -337,6 +337,13 @@ import {
 	saveStoredSourceWithoutHandle,
 	type StoredSourceRecord
 } from './persistence';
+
+/** Delete a stored source record, logging but not propagating any failure. */
+function deleteStoredSourceLogged(sourceId: string): void {
+	void deleteStoredSource(sourceId).catch((err) => {
+		console.warn(`Failed to delete stored source ${sourceId}:`, err);
+	});
+}
 import {
 	cancelBundleJob,
 	makeStoredSourceResolver,
@@ -5079,9 +5086,7 @@ function handleRemoveAsset(cmd: Extract<WorkerCommand, { type: 'remove-asset' }>
 	// Keep the descriptor in memory so undo can resurrect the clips as an
 	// offline, re-linkable source (reconciled in applyHistoryRestore). Drop the
 	// stored file record either way — the bin no longer claims it.
-	void deleteStoredSource(cmd.sourceId).catch((err) => {
-		console.warn(`Failed to delete stored source ${cmd.sourceId}:`, err);
-	});
+	deleteStoredSourceLogged(cmd.sourceId);
 	// A pure bin removal skips the clip commit above, so persist the bin change
 	// explicitly; otherwise the autosaved project keeps referencing the source.
 	scheduleAutosave();
@@ -5959,9 +5964,7 @@ async function applyImportedDoc(doc: ProjectDoc): Promise<void> {
 		sourceInputs.get(id)?.dispose();
 		sourceInputs.delete(id);
 		sourceDescriptors.delete(id);
-		void deleteStoredSource(id).catch((err) => {
-			console.warn(`Failed to delete stored source ${id}:`, err);
-		});
+		deleteStoredSourceLogged(id);
 	}
 	for (const descriptor of doc.sources) {
 		sourceDescriptors.set(descriptor.sourceId, descriptor);

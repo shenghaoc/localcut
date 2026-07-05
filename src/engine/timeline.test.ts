@@ -378,6 +378,54 @@ describe('timeline', () => {
 		).toBe(timeline);
 	});
 
+	it('rejects moveClips from a locked source track', () => {
+		const timeline: TimelineTrack[] = [
+			{
+				id: 'video-track',
+				type: 'video',
+				...DEFAULT_TRACK_MIX,
+				locked: true,
+				clips: [clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 1, inPoint: 0 })]
+			},
+			{
+				id: 'video-track-2',
+				type: 'video',
+				...DEFAULT_TRACK_MIX,
+				clips: []
+			}
+		];
+
+		expect(
+			moveClips(timeline, [
+				{ trackId: 'video-track', clipId: 'a', toTrackId: 'video-track-2', toStart: 0 }
+			])
+		).toBe(timeline);
+	});
+
+	it('rejects moveClips to a locked target track', () => {
+		const timeline: TimelineTrack[] = [
+			{
+				id: 'video-track',
+				type: 'video',
+				...DEFAULT_TRACK_MIX,
+				clips: [clip({ id: 'a', sourceId: 'src-1', start: 0, duration: 1, inPoint: 0 })]
+			},
+			{
+				id: 'video-track-2',
+				type: 'video',
+				...DEFAULT_TRACK_MIX,
+				locked: true,
+				clips: []
+			}
+		];
+
+		expect(
+			moveClips(timeline, [
+				{ trackId: 'video-track', clipId: 'a', toTrackId: 'video-track-2', toStart: 0 }
+			])
+		).toBe(timeline);
+	});
+
 	it('duplicates and pastes clips while preserving their relative offsets', () => {
 		const timeline: TimelineTrack[] = [
 			{

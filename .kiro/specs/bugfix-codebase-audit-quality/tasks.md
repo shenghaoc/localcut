@@ -106,7 +106,7 @@
 - [x] interpolation-engine.ts: Swallow `onSubmittedWorkDone()` device-loss
   rejections before disposing the ORT output tensor.
 - [x] blob-download.ts: Keep the anchor DOM-backed, remove it in `finally`,
-  and reduce object-URL lifetime to 1 second.
+  and reduce object-URL lifetime to 10 seconds (Safari large-file safety).
 - [x] AudioInsertRow.tsx: Use `createUniqueId`, `aria-controls`, and Solid
   `<Show>` for bypass/expanded conditional rendering.
 - [x] LanguageToolsPanel.tsx: Clear stale copy-feedback timeouts and clean them

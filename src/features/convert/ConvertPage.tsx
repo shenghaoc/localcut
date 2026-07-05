@@ -16,6 +16,9 @@ import {
 } from 'lucide-solid';
 import { Button } from '../../ui/components/button';
 import { formatBytes, formatClock } from '../../lib/format';
+import { isAbortError } from '../../lib/abort-error';
+import { downloadBlob } from '../../lib/blob-download';
+import { errorMessage } from '../../lib/error-message';
 import { spawnConvertWorker, type ConvertWorkerPort } from '../../ui/convert-bridge';
 import type {
 	ConvertFormatId,
@@ -209,10 +212,8 @@ export function ConvertPage(props: ConvertPageProps) {
 				addFiles(picked);
 			} catch (error) {
 				// AbortError = the user dismissed the picker; nothing to report.
-				if (!(error instanceof DOMException && error.name === 'AbortError')) {
-					setPickError(
-						`Couldn't open the file picker: ${error instanceof Error ? error.message : String(error)}`
-					);
+				if (!isAbortError(error)) {
+					setPickError(`Couldn't open the file picker: ${errorMessage(error)}`);
 				}
 			}
 			return;
@@ -265,21 +266,11 @@ export function ConvertPage(props: ConvertPageProps) {
 				await writable.close();
 				return;
 			} catch (error) {
-				if (error instanceof DOMException && error.name === 'AbortError') return;
+				if (isAbortError(error)) return;
 				// Fall through to the anchor download on any non-abort failure.
 			}
 		}
-		const url = URL.createObjectURL(job.output);
-		const anchor = document.createElement('a');
-		anchor.href = url;
-		anchor.download = suggestedName;
-		anchor.rel = 'noopener';
-		document.body.appendChild(anchor);
-		anchor.click();
-		anchor.remove();
-		// Revoking synchronously can truncate the download in some browsers before
-		// they've started fetching the blob URL; defer it (matches App.tsx).
-		setTimeout(() => URL.revokeObjectURL(url), 10_000);
+		downloadBlob(job.output, suggestedName);
 	};
 
 	// Wired so a worker crash both unsticks in-flight jobs and replaces the dead
