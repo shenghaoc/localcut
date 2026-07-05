@@ -3585,8 +3585,7 @@ export function App() {
 				return true;
 			} catch (error) {
 				if (!isAbortError(error)) {
-					const message = error instanceof Error ? error.message : String(error);
-					setStatusLine(`Queue destination failed: ${message}`);
+					setStatusLine(`Queue destination failed: ${errorMessage(error)}`);
 				}
 				return false;
 			}
@@ -3608,8 +3607,7 @@ export function App() {
 			return true;
 		} catch (error) {
 			if (!isAbortError(error)) {
-				const message = error instanceof Error ? error.message : String(error);
-				setStatusLine(`Queue destination failed: ${message}`);
+				setStatusLine(`Queue destination failed: ${errorMessage(error)}`);
 			}
 			return false;
 		}

@@ -35,9 +35,9 @@ export function AudioInsertRow(props: AudioInsertRowProps) {
 					type="button"
 					onClick={() => setExpanded(!expanded())}
 					aria-expanded={expanded()}
-					aria-controls={paramsId}
+					aria-controls={expanded() ? paramsId : undefined}
 				>
-					{props.icon}
+					<Show when={props.icon}>{props.icon}</Show>
 					<span class="insert-name">{props.label}</span>
 					<span class={`insert-status ${props.bypass ? 'bypassed' : 'active'}`}>
 						{props.bypass ? 'Bypassed' : 'Active'}

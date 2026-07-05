@@ -56,7 +56,7 @@ export function LiveAudioChainPanel(props: LiveAudioChainPanelProps) {
 				type="button"
 				onClick={() => setExpanded(!expanded())}
 				aria-expanded={expanded()}
-				aria-controls="live-audio-chain-body"
+				aria-controls={expanded() ? 'live-audio-chain-body' : undefined}
 			>
 				<span class="panel-title">Live Audio Chain</span>
 				<span class="latency-display">Latency: {props.latencyMs.toFixed(1)} ms</span>
@@ -88,7 +88,11 @@ export function LiveAudioChainPanel(props: LiveAudioChainPanelProps) {
 								max={0}
 								step={0.5}
 								unit=" dB"
-								onChange={(v) => props.onConfigChange({ gate: { ...cfg().gate, thresholdDb: v } })}
+								onChange={(v) =>
+									props.onConfigChange({
+										gate: { ...cfg().gate, thresholdDb: v }
+									})
+								}
 							/>
 							<SliderControl
 								label="Range"
@@ -124,7 +128,11 @@ export function LiveAudioChainPanel(props: LiveAudioChainPanelProps) {
 								max={1000}
 								step={1}
 								unit=" ms"
-								onChange={(v) => props.onConfigChange({ gate: { ...cfg().gate, releaseMs: v } })}
+								onChange={(v) =>
+									props.onConfigChange({
+										gate: { ...cfg().gate, releaseMs: v }
+									})
+								}
 							/>
 						</AudioInsertRow>
 
@@ -134,7 +142,10 @@ export function LiveAudioChainPanel(props: LiveAudioChainPanelProps) {
 							bypass={cfg().compressor.bypass}
 							onToggleBypass={() =>
 								props.onConfigChange({
-									compressor: { ...cfg().compressor, bypass: !cfg().compressor.bypass }
+									compressor: {
+										...cfg().compressor,
+										bypass: !cfg().compressor.bypass
+									}
 								})
 							}
 						>
@@ -146,7 +157,9 @@ export function LiveAudioChainPanel(props: LiveAudioChainPanelProps) {
 								step={0.5}
 								unit=" dB"
 								onChange={(v) =>
-									props.onConfigChange({ compressor: { ...cfg().compressor, thresholdDb: v } })
+									props.onConfigChange({
+										compressor: { ...cfg().compressor, thresholdDb: v }
+									})
 								}
 							/>
 							<SliderControl
@@ -157,7 +170,9 @@ export function LiveAudioChainPanel(props: LiveAudioChainPanelProps) {
 								step={0.1}
 								unit=":1"
 								onChange={(v) =>
-									props.onConfigChange({ compressor: { ...cfg().compressor, ratio: v } })
+									props.onConfigChange({
+										compressor: { ...cfg().compressor, ratio: v }
+									})
 								}
 							/>
 							<SliderControl
@@ -168,7 +183,9 @@ export function LiveAudioChainPanel(props: LiveAudioChainPanelProps) {
 								step={0.1}
 								unit=" ms"
 								onChange={(v) =>
-									props.onConfigChange({ compressor: { ...cfg().compressor, attackMs: v } })
+									props.onConfigChange({
+										compressor: { ...cfg().compressor, attackMs: v }
+									})
 								}
 							/>
 							<SliderControl
@@ -179,7 +196,9 @@ export function LiveAudioChainPanel(props: LiveAudioChainPanelProps) {
 								step={1}
 								unit=" ms"
 								onChange={(v) =>
-									props.onConfigChange({ compressor: { ...cfg().compressor, releaseMs: v } })
+									props.onConfigChange({
+										compressor: { ...cfg().compressor, releaseMs: v }
+									})
 								}
 							/>
 							<SliderControl
@@ -190,7 +209,9 @@ export function LiveAudioChainPanel(props: LiveAudioChainPanelProps) {
 								step={0.5}
 								unit=" dB"
 								onChange={(v) =>
-									props.onConfigChange({ compressor: { ...cfg().compressor, kneeDb: v } })
+									props.onConfigChange({
+										compressor: { ...cfg().compressor, kneeDb: v }
+									})
 								}
 							/>
 							<SliderControl
@@ -201,7 +222,9 @@ export function LiveAudioChainPanel(props: LiveAudioChainPanelProps) {
 								step={0.5}
 								unit=" dB"
 								onChange={(v) =>
-									props.onConfigChange({ compressor: { ...cfg().compressor, makeupGainDb: v } })
+									props.onConfigChange({
+										compressor: { ...cfg().compressor, makeupGainDb: v }
+									})
 								}
 							/>
 						</AudioInsertRow>
@@ -224,7 +247,9 @@ export function LiveAudioChainPanel(props: LiveAudioChainPanelProps) {
 								step={0.1}
 								unit=" dB"
 								onChange={(v) =>
-									props.onConfigChange({ limiter: { ...cfg().limiter, ceilingDb: v } })
+									props.onConfigChange({
+										limiter: { ...cfg().limiter, ceilingDb: v }
+									})
 								}
 							/>
 							<SliderControl
@@ -235,7 +260,9 @@ export function LiveAudioChainPanel(props: LiveAudioChainPanelProps) {
 								step={10}
 								unit=" µs"
 								onChange={(v) =>
-									props.onConfigChange({ limiter: { ...cfg().limiter, attackUs: v } })
+									props.onConfigChange({
+										limiter: { ...cfg().limiter, attackUs: v }
+									})
 								}
 							/>
 							<SliderControl
@@ -246,7 +273,9 @@ export function LiveAudioChainPanel(props: LiveAudioChainPanelProps) {
 								step={1}
 								unit=" ms"
 								onChange={(v) =>
-									props.onConfigChange({ limiter: { ...cfg().limiter, releaseMs: v } })
+									props.onConfigChange({
+										limiter: { ...cfg().limiter, releaseMs: v }
+									})
 								}
 							/>
 						</AudioInsertRow>
@@ -259,7 +288,9 @@ export function LiveAudioChainPanel(props: LiveAudioChainPanelProps) {
 										type="checkbox"
 										checked={cfg().printToRecording}
 										onChange={(e) =>
-											props.onConfigChange({ printToRecording: e.currentTarget.checked })
+											props.onConfigChange({
+												printToRecording: e.currentTarget.checked
+											})
 										}
 									/>
 									Print chain to recording

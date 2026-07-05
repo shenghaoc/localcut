@@ -90,7 +90,11 @@ export function voiceCleanupLatencyBudget(sampleRate: number): ReadonlyArray<{
 	return [
 		{ label: 'Quantum', samples: 128, ms: (128 / safeSampleRate) * 1000 },
 		{ label: 'Denoiser ring', samples: 480, ms: (480 / safeSampleRate) * 1000 },
-		{ label: 'Limiter lookahead', samples: 240, ms: (240 / safeSampleRate) * 1000 },
+		{
+			label: 'Limiter lookahead',
+			samples: 240,
+			ms: (240 / safeSampleRate) * 1000
+		},
 		{ label: 'Gate', samples: 0, ms: 0 }
 	];
 }
@@ -122,7 +126,9 @@ export function VoiceCleanupPanel(props: VoiceCleanupPanelProps) {
 	}
 
 	function updateLimiterParams(patch: Partial<LimiterParams>) {
-		updateSettings({ limiterParams: { ...props.settings.limiterParams, ...patch } });
+		updateSettings({
+			limiterParams: { ...props.settings.limiterParams, ...patch }
+		});
 	}
 
 	function toggleTrackDenoiser(trackId: string) {
@@ -141,7 +147,7 @@ export function VoiceCleanupPanel(props: VoiceCleanupPanelProps) {
 				type="button"
 				onClick={() => setExpanded(!expanded())}
 				aria-expanded={expanded()}
-				aria-controls="voice-cleanup-body"
+				aria-controls={expanded() ? 'voice-cleanup-body' : undefined}
 			>
 				<span class="panel-title">Voice Cleanup</span>
 				<span class="latency-display">Latency: {props.latencyMs.toFixed(1)} ms</span>
@@ -249,7 +255,9 @@ export function VoiceCleanupPanel(props: VoiceCleanupPanelProps) {
 											size="sm"
 											onClick={() => {
 												setUseCustomTarget(false);
-												updateSettings({ normalisationTargetLufs: target.value });
+												updateSettings({
+													normalisationTargetLufs: target.value
+												});
 											}}
 										>
 											{target.label}

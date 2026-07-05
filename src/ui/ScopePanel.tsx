@@ -151,7 +151,7 @@ export default function ScopePanel(props: ScopePanelProps) {
 					class="scope-panel__toggle"
 					onClick={() => props.setCollapsed(!props.collapsed())}
 					aria-expanded={!props.collapsed()}
-					aria-controls="scope-panel-grid"
+					aria-controls={!props.collapsed() ? 'scope-panel-grid' : undefined}
 				>
 					Scopes <span class="text-xs text-muted-foreground font-normal">(Experimental)</span>{' '}
 					{props.collapsed() ? '▸' : '▾'}

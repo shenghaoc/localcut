@@ -43,7 +43,7 @@ export function ReplayBufferPanel(props: ReplayBufferPanelProps) {
 				type="button"
 				onClick={() => setExpanded(!expanded())}
 				aria-expanded={expanded()}
-				aria-controls="replay-buffer-body"
+				aria-controls={expanded() ? 'replay-buffer-body' : undefined}
 			>
 				<span class="panel-title">Replay Buffer</span>
 				<Show when={isCapturing()}>

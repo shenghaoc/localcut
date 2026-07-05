@@ -10,7 +10,7 @@ describe('audio disclosure semantics', () => {
 		expect(audioInsertRowSource).toContain('class="insert-expand"');
 		expect(audioInsertRowSource).toContain('type="button"');
 		expect(audioInsertRowSource).toContain('createUniqueId');
-		expect(audioInsertRowSource).toContain('aria-controls={paramsId}');
+		expect(audioInsertRowSource).toContain('aria-controls={expanded() ? paramsId : undefined}');
 		expect(audioInsertRowSource).toContain('<Show when={expanded()}>');
 		expect(audioInsertRowSource).not.toContain('role="button"');
 		expect(audioInsertRowSource).not.toContain('stopPropagation');
