@@ -127,7 +127,7 @@ function MetaInfoPopover(props: { asset: MediaAssetSnapshot }) {
 						class="media-info-popover panel"
 						aria-label={`File details for ${props.asset.fileName}`}
 					>
-						<Popover.CloseTrigger class="media-info-close" aria-label="Close file details">
+						<Popover.CloseTrigger class="media-info-close" aria-label="Close file details" title="Close file details">
 							<X size={12} aria-hidden="true" />
 						</Popover.CloseTrigger>
 						<p class="media-info-filename">{props.asset.fileName}</p>
