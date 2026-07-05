@@ -13,7 +13,8 @@ export interface AudioInsertRowProps {
 export function AudioInsertRow(props: AudioInsertRowProps) {
 	const [expanded, setExpanded] = createSignal(false);
 	const paramsId = createUniqueId();
-	const bypassActionLabel = () => (props.bypass ? `Enable ${props.label}` : `Bypass ${props.label}`);
+	const bypassActionLabel = () =>
+		props.bypass ? `Enable ${props.label}` : `Bypass ${props.label}`;
 
 	return (
 		<div class="insert-row">
