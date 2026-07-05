@@ -29,12 +29,22 @@ export function RecorderControlStrip(props: RecorderControlStripProps) {
 			</div>
 			<div class="recorder-control-strip-actions">
 				<Show when={props.session === 'recording'}>
-					<button type="button" aria-label="Pause recording" title="Pause recording" onClick={() => props.onPause()}>
+					<button
+						type="button"
+						aria-label="Pause recording"
+						title="Pause recording"
+						onClick={() => props.onPause()}
+					>
 						<Pause size={16} aria-hidden="true" />
 					</button>
 				</Show>
 				<Show when={props.session === 'paused'}>
-					<button type="button" aria-label="Resume recording" title="Resume recording" onClick={() => props.onResume()}>
+					<button
+						type="button"
+						aria-label="Resume recording"
+						title="Resume recording"
+						onClick={() => props.onResume()}
+					>
 						<Play size={16} aria-hidden="true" />
 					</button>
 				</Show>

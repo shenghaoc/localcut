@@ -378,6 +378,7 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 													copyToClipboard(draftJob()!.draft!.titles.join('\n'), 'titles')
 												}
 												aria-label="Copy titles"
+												title="Copy titles"
 											>
 												<Show when={copiedField() === 'titles'} fallback={<Copy size={14} />}>
 													<Check size={14} />
@@ -412,6 +413,7 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 													copyToClipboard(draftJob()!.draft!.hashtags.join(' '), 'hashtags')
 												}
 												aria-label="Copy hashtags"
+												title="Copy hashtags"
 											>
 												<Show when={copiedField() === 'hashtags'} fallback={<Copy size={14} />}>
 													<Check size={14} />
@@ -440,6 +442,7 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 												variant="ghost"
 												onClick={() => copyToClipboard(draftJob()!.draft!.caption, 'caption')}
 												aria-label="Copy caption"
+												title="Copy caption"
 											>
 												<Show when={copiedField() === 'caption'} fallback={<Copy size={14} />}>
 													<Check size={14} />
