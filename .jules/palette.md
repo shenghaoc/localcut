@@ -16,6 +16,6 @@
 
 **Action:** Switched the proposal list in `AutoZoomPanel.tsx` from `<For>` to `<Index>` so button DOM nodes are preserved when status changes. Added `aria-label` attributes that reflect the current button state (e.g. `"Applied proposal 1"` vs `"Apply proposal 1"`) so screen readers announce the correct action.
 
-## 2024-05-24 - Icon-Only Button Tooltips
+## 2026-07-05 - Icon-Only Button Tooltips
 **Learning:** Found that while icon-only buttons in Kiro frequently have `aria-label` attributes for screen readers, they often lack the native `title` attribute, depriving mouse users of visual tooltips. Note: native `title` has accessibility limitations — it does not display on keyboard focus, does not work on touch devices, and some screen readers may redundantly announce both `aria-label` and `title`. A custom CSS-based tooltip (hover + focus) would be more accessible long-term.
-**Action:** When adding or reviewing icon-only buttons, always ensure both `aria-label` and `title` attributes are present. Use `title` as the standard tooltip approach to match the existing codebase pattern (Toolbar, RenderQueuePanel, BeatPanel). Consider a reusable custom Tooltip component for broader adoption later.
+**Action:** When adding or reviewing icon-only buttons, always ensure both `aria-label` and `title` attributes are present. Use `title` as the standard tooltip approach to match the existing codebase pattern (Toolbar, RenderQueuePanel, Timeline). Consider a reusable custom Tooltip component for broader adoption later.

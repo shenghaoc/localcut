@@ -139,6 +139,7 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 							variant="ghost"
 							onClick={props.onClose}
 							aria-label="Close language tools panel"
+							title="Close language tools panel"
 						>
 							<X size={16} aria-hidden="true" />
 						</Button>

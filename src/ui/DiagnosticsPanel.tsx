@@ -154,6 +154,7 @@ export function DiagnosticsPanel(props: DiagnosticsPanelProps) {
 							variant="ghost"
 							onClick={props.onClose}
 							aria-label="Close diagnostics panel"
+							title="Close diagnostics panel"
 						>
 							<X size={16} aria-hidden="true" />
 						</Button>

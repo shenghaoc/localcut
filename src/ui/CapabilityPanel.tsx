@@ -81,6 +81,7 @@ export function CapabilityPanel(props: CapabilityPanelProps) {
 						variant="ghost"
 						onClick={props.onClose}
 						aria-label="Close capability panel"
+						title="Close capability panel"
 					>
 						<X size={16} aria-hidden="true" />
 					</Button>
