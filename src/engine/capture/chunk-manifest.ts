@@ -1,4 +1,5 @@
 import type { CaptureSourceSnapshot } from '../../protocol';
+import { isRecord } from '../../lib/type-guards';
 
 export type CaptureManifestRecord =
 	| {
@@ -33,10 +34,6 @@ export type CaptureManifestRecord =
 	| { kind: 'scene-switch'; sceneId: string; atUs: number };
 
 export const MANIFEST_VERSION = 1;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null;
-}
 
 function isFiniteNumber(value: unknown): value is number {
 	return typeof value === 'number' && Number.isFinite(value);

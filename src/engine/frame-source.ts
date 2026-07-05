@@ -116,7 +116,10 @@ export class SequentialFrameSource implements VideoFrameProvider {
 			this.reset();
 			throw error;
 		}
-		return this.current ? this.current.clone() : null;
+		if (this.current && this.endOf(this.current) > time) {
+			return this.current.clone();
+		}
+		return null;
 	}
 
 	private endOf(sample: VideoSampleLike): number {

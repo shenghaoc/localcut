@@ -58,6 +58,16 @@ interface RunningCluster {
 	count: number;
 }
 
+interface WorkingZoomProposal {
+	cluster: EventCluster;
+	zoomInAtUs: number;
+	zoomOutAtUs: number;
+	centroidX: number;
+	centroidY: number;
+	scale: number;
+	status: 'pending' | 'applied' | 'skipped';
+}
+
 /**
  * Cluster entries into zoom proposals. Pure function; deterministic given the
  * same input. Runs in O(n log n) time (sort by t, linear sweep).
@@ -76,7 +86,7 @@ export function clusterEvents(
 	const mergeThresholdUs = params.overlapMergeThresholdMs * 1000;
 
 	// Linear sweep: build clusters
-	const proposals: ZoomProposal[] = [];
+	const proposals: WorkingZoomProposal[] = [];
 	let current: RunningCluster | null = null;
 	const distThresholdSq = distThreshold * distThreshold;
 	let lastT = Number.NEGATIVE_INFINITY;
@@ -127,7 +137,9 @@ export function clusterEvents(
 		);
 	}
 
-	return mergeProposals(proposals, mergeThresholdUs);
+	// Only the final merged geometry is observable, so defer stable ID hashing
+	// until after overlap merges finish.
+	return mergeProposals(proposals, mergeThresholdUs).map(finalizeProposal);
 }
 
 function closeCluster(c: RunningCluster): EventCluster {
@@ -146,12 +158,10 @@ function createProposal(
 	leadInUs: number,
 	holdUs: number,
 	clipStartUs: number
-): ZoomProposal {
+): WorkingZoomProposal {
 	const zoomInAtUs = cluster.startUs - leadInUs;
 	const zoomOutAtUs = cluster.endUs + holdUs;
-	const idInput = `${cluster.startUs}:${cluster.centroidX.toFixed(4)}:${cluster.centroidY.toFixed(4)}`;
 	return {
-		id: stableProposalId(idInput),
 		cluster,
 		zoomInAtUs: Math.max(clipStartUs, zoomInAtUs),
 		zoomOutAtUs,
@@ -162,21 +172,55 @@ function createProposal(
 	};
 }
 
-function mergeProposals(proposals: ZoomProposal[], mergeThresholdUs: number): ZoomProposal[] {
+function mergeClusters(base: WorkingZoomProposal, next: WorkingZoomProposal): WorkingZoomProposal {
+	const baseCount = base.cluster.eventCount;
+	const nextCount = next.cluster.eventCount;
+	const totalCount = baseCount + nextCount;
+	const mergedCentroidX = (base.centroidX * baseCount + next.centroidX * nextCount) / totalCount;
+	const mergedCentroidY = (base.centroidY * baseCount + next.centroidY * nextCount) / totalCount;
+	const mergedCluster = {
+		...base.cluster,
+		endUs: Math.max(base.cluster.endUs, next.cluster.endUs),
+		centroidX: mergedCentroidX,
+		centroidY: mergedCentroidY,
+		eventCount: totalCount
+	};
+
+	base.zoomOutAtUs = Math.max(base.zoomOutAtUs, next.zoomOutAtUs);
+	base.cluster = mergedCluster;
+	base.centroidX = mergedCentroidX;
+	base.centroidY = mergedCentroidY;
+	return base;
+}
+
+function mergeProposals(
+	proposals: WorkingZoomProposal[],
+	mergeThresholdUs: number
+): WorkingZoomProposal[] {
 	if (proposals.length <= 1) return proposals;
 
-	const merged: ZoomProposal[] = [proposals[0]!];
+	const merged: WorkingZoomProposal[] = [{ ...proposals[0]! }];
 	for (let i = 1; i < proposals.length; i++) {
 		const prev = merged[merged.length - 1]!;
 		const curr = proposals[i]!;
-		if (prev.zoomOutAtUs - curr.zoomInAtUs > mergeThresholdUs) {
-			// Merge: move prev's zoomOut to curr's zoomIn
-			prev.zoomOutAtUs = curr.zoomInAtUs;
+		if (curr.zoomInAtUs - prev.zoomOutAtUs < mergeThresholdUs) {
+			// Merge: proposals overlap or gap is within threshold.
+			// Recompute cluster centroid and events so zoom frame tracks both regions.
+			mergeClusters(prev, curr);
 		} else {
-			merged.push(curr);
+			merged.push({ ...curr });
 		}
 	}
 	return merged;
+}
+
+function finalizeProposal(proposal: WorkingZoomProposal): ZoomProposal {
+	return {
+		...proposal,
+		id: stableProposalId(
+			`${proposal.cluster.startUs}:${proposal.centroidX.toFixed(4)}:${proposal.centroidY.toFixed(4)}`
+		)
+	};
 }
 
 /**

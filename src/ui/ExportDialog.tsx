@@ -3,6 +3,9 @@ import { Portal } from 'solid-js/web';
 import { Popover } from '@ark-ui/solid/popover';
 import { Copy, Download, ListPlus, Save } from 'lucide-solid';
 import { Button, buttonVariants } from './components/button';
+import { copyToClipboard } from '../lib/clipboard';
+import { isAbortError } from '../lib/abort-error';
+import { downloadBlob } from '../lib/blob-download';
 import { validateOutputTemplate, resolvePlatformPresetCodec } from '../engine/export-presets';
 import { aspectOutputSize } from '../engine/project';
 import { exportConstraintsForProbe } from '../engine/capability-probe-v2';
@@ -427,7 +430,7 @@ export function ExportDialog(props: ExportDialogProps) {
 									settings().codec
 							}
 						>
-							<p class="export-aspect-warning" role="status">
+							<p class="export-aspect-warning" role="status" aria-live="polite" aria-atomic="true">
 								H.264 is not supported on this device; falling back to VP9 (WebM).
 							</p>
 						</Show>
@@ -774,7 +777,7 @@ export function ExportDialog(props: ExportDialogProps) {
 							<p class="export-error">{props.error}</p>
 						</Show>
 						<Show when={props.warnings.length > 0}>
-							<div class="export-warning-list" role="status" aria-live="polite">
+							<div class="export-warning-list" role="status" aria-live="polite" aria-atomic="true">
 								<For each={props.warnings}>{(warning) => <p class="export-note">{warning}</p>}</For>
 							</div>
 						</Show>
@@ -944,11 +947,8 @@ function ChaptersSection(props: {
 	async function handleCopy() {
 		const text = chapterText();
 		if (!text) return;
-		try {
-			await navigator.clipboard.writeText(text);
-		} catch {
-			// Clipboard API may be unavailable; silently ignore.
-		}
+		const res = await copyToClipboard(text);
+		if (!res.ok) console.warn('Clipboard write failed:', res.error);
 	}
 
 	async function handleSave() {
@@ -976,22 +976,19 @@ function ChaptersSection(props: {
 				await writable.close();
 				// Download JSON as sidecar fallback (parent directory not accessible from file handle).
 				downloadBlob(jsonBlob, jsonName);
-			} catch {
-				// User cancelled or API unavailable; fall through to download.
+			} catch (err) {
+				if (isAbortError(err)) {
+					// User cancelled file picker — no feedback needed
+					return;
+				}
+				console.warn('Native save failed:', err);
+				downloadBlob(textBlob, textName);
+				downloadBlob(jsonBlob, jsonName);
 			}
 		} else {
 			downloadBlob(textBlob, textName);
 			downloadBlob(jsonBlob, jsonName);
 		}
-	}
-
-	function downloadBlob(blob: Blob, name: string) {
-		const url = URL.createObjectURL(blob);
-		const a = document.createElement('a');
-		a.href = url;
-		a.download = name;
-		a.click();
-		URL.revokeObjectURL(url);
 	}
 
 	return (

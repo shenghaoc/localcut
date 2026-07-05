@@ -311,6 +311,12 @@ export class CaptureSession {
 		this.emitStatus();
 	}
 
+	private stopOrWarn(reason: CaptureStopReason, cause: string): void {
+		this.stop(reason).catch((err) => {
+			console.error(`Failed to auto-stop capture session after ${cause}:`, err);
+		});
+	}
+
 	appendSceneSwitch(sceneId: string, atUs: number): void {
 		if (this.state !== 'recording') return;
 		this.writerPort?.postMessage({
@@ -524,12 +530,12 @@ export class CaptureSession {
 				(s.kind === 'screen' || s.kind === 'webcam') && s.state !== 'error' && s.state !== 'ended'
 		);
 		if (remainingVideo.length === 0 && (this.state === 'recording' || this.state === 'paused')) {
-			this.stop('error').catch(() => {});
+			this.stopOrWarn('error', 'source error');
 		}
 	}
 
 	private handleAudioOverrun(_sourceId: string): void {
-		this.stop('audio-overrun').catch(() => {});
+		this.stopOrWarn('audio-overrun', 'audio overrun');
 	}
 
 	private handlePipelineEnded(sourceId: string): void {
@@ -549,7 +555,7 @@ export class CaptureSession {
 			(s) => s.state === 'ended' || s.state === 'error'
 		);
 		if (allEnded && (this.state === 'recording' || this.state === 'paused')) {
-			this.stop('user-stop').catch(() => {});
+			this.stopOrWarn('user-stop', 'all pipelines ended');
 		}
 	}
 

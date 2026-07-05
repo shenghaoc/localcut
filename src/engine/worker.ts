@@ -1,5 +1,6 @@
 import { currentEpochMs, currentIsoTimestamp } from '../time';
 /// <reference lib="webworker" />
+import { isAbortError } from '../lib/abort-error';
 import {
 	assertCrossOriginIsolated,
 	type CapabilityProbeResult,
@@ -336,6 +337,13 @@ import {
 	saveStoredSourceWithoutHandle,
 	type StoredSourceRecord
 } from './persistence';
+
+/** Delete a stored source record, logging but not propagating any failure. */
+function deleteStoredSourceLogged(sourceId: string): void {
+	void deleteStoredSource(sourceId).catch((err) => {
+		console.warn(`Failed to delete stored source ${sourceId}:`, err);
+	});
+}
 import {
 	cancelBundleJob,
 	makeStoredSourceResolver,
@@ -2365,7 +2373,10 @@ async function restoreStoredSources(
 		sourceDescriptors.set(descriptor.sourceId, descriptor);
 		let attached = false;
 		try {
-			const stored = await loadStoredSource(descriptor.sourceId).catch(() => null);
+			const stored = await loadStoredSource(descriptor.sourceId).catch((err) => {
+				console.warn(`Failed to load stored source ${descriptor.sourceId}:`, err);
+				return null;
+			});
 			if (!isCurrent()) break;
 			if (stored?.file) {
 				const result = await attachSourceFile(
@@ -2479,7 +2490,9 @@ function afterTimelineMutation(
 		playback?.setDuration(getTimelineDuration(timeline));
 		playback?.seek(clockView?.[0] ?? 0);
 	}
-	void restoreMissingSources().catch(() => undefined);
+	void restoreMissingSources().catch((err) => {
+		console.warn('Source restoration failed:', err);
+	});
 }
 
 function historySnapshot() {
@@ -5073,7 +5086,7 @@ function handleRemoveAsset(cmd: Extract<WorkerCommand, { type: 'remove-asset' }>
 	// Keep the descriptor in memory so undo can resurrect the clips as an
 	// offline, re-linkable source (reconciled in applyHistoryRestore). Drop the
 	// stored file record either way — the bin no longer claims it.
-	void deleteStoredSource(cmd.sourceId).catch(() => undefined);
+	deleteStoredSourceLogged(cmd.sourceId);
 	// A pure bin removal skips the clip commit above, so persist the bin change
 	// explicitly; otherwise the autosaved project keeps referencing the source.
 	scheduleAutosave();
@@ -5951,7 +5964,7 @@ async function applyImportedDoc(doc: ProjectDoc): Promise<void> {
 		sourceInputs.get(id)?.dispose();
 		sourceInputs.delete(id);
 		sourceDescriptors.delete(id);
-		void deleteStoredSource(id).catch(() => undefined);
+		deleteStoredSourceLogged(id);
 	}
 	for (const descriptor of doc.sources) {
 		sourceDescriptors.set(descriptor.sourceId, descriptor);
@@ -7324,7 +7337,7 @@ async function handleVoiceCleanupAnalyseLoudness(
 				: result.measuredLufs
 		});
 	} catch (err) {
-		if (err instanceof DOMException && err.name === 'AbortError') {
+		if (isAbortError(err)) {
 			post({ type: 'voice-cleanup-analysis-cancelled' });
 		} else {
 			post({

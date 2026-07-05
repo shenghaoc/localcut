@@ -6,8 +6,9 @@
  * Draft (transcript → titles/hashtags/文案). Both are progressive
  * enhancement — hidden when the APIs are absent.
  */
-import { createEffect, createSignal, For, Show, type Component } from 'solid-js';
+import { createEffect, createSignal, For, onCleanup, Show, type Component } from 'solid-js';
 import { X, Copy, Check, Languages, FileText } from 'lucide-solid';
+import { copyToClipboard } from '../lib/clipboard';
 import { Button } from './components/button';
 import type { TranslationControllerState } from './language-tools/translation-controller';
 import type { DraftControllerState } from './language-tools/draft-controller';
@@ -42,11 +43,41 @@ function formatPercent(fraction: number | null): string {
 	return ` ${Math.round(fraction * 100)}%`;
 }
 
+function createCopiedFieldFeedback(setCopiedField: (field: string | null) => void) {
+	let resetTimer: ReturnType<typeof setTimeout> | undefined;
+
+	onCleanup(() => {
+		if (resetTimer !== undefined) clearTimeout(resetTimer);
+	});
+
+	return (field: string) => {
+		if (resetTimer !== undefined) clearTimeout(resetTimer);
+		setCopiedField(field);
+		resetTimer = setTimeout(() => {
+			setCopiedField(null);
+			resetTimer = undefined;
+		}, 2000);
+	};
+}
+
+function createFieldCopier(markCopiedField: (field: string) => void) {
+	return async (text: string, field: string) => {
+		const res = await copyToClipboard(text);
+		if (res.ok) {
+			markCopiedField(field);
+		} else {
+			console.warn('Clipboard write failed:', res.error);
+		}
+	};
+}
+
 export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) => {
 	let panelRef: HTMLElement | undefined;
 	const [selectedTrackId, setSelectedTrackId] = createSignal<string>('');
 	const [targetLang, setTargetLang] = createSignal<'auto' | 'zh' | 'en'>('auto');
 	const [copiedField, setCopiedField] = createSignal<string | null>(null);
+	const markCopiedField = createCopiedFieldFeedback(setCopiedField);
+	const copyField = createFieldCopier(markCopiedField);
 	const embedded = () => props.mode === 'embedded';
 
 	const detectorUsable = () => {
@@ -95,16 +126,6 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 		)
 			return false;
 		return selectedTrackId() && props.draftState.available;
-	};
-
-	const copyToClipboard = async (text: string, field: string) => {
-		try {
-			await navigator.clipboard.writeText(text);
-			setCopiedField(field);
-			setTimeout(() => setCopiedField(null), 2000);
-		} catch {
-			// clipboard API may be unavailable
-		}
 	};
 
 	return (
@@ -249,7 +270,12 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 
 						{/* Translation progress */}
 						<Show when={translateJob()}>
-							<div role="status" aria-live="polite" style={{ 'margin-top': '8px' }}>
+							<div
+								role="status"
+								aria-live="polite"
+								aria-atomic="true"
+								style={{ 'margin-top': '8px' }}
+							>
 								<Show when={translateJob()!.phase === 'detecting'}>
 									<p style={{ 'font-size': '0.85em' }}>
 										Detecting language…{formatPercent(translateJob()!.downloadFraction)}
@@ -319,7 +345,12 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 
 						{/* Draft progress */}
 						<Show when={draftJob()}>
-							<div role="status" aria-live="polite" style={{ 'margin-top': '8px' }}>
+							<div
+								role="status"
+								aria-live="polite"
+								aria-atomic="true"
+								style={{ 'margin-top': '8px' }}
+							>
 								<Show when={draftJob()!.phase === 'preparing'}>
 									<p style={{ 'font-size': '0.85em' }}>
 										Preparing model…{formatPercent(draftJob()!.downloadFraction)}
@@ -373,9 +404,7 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 											<Button
 												size="icon"
 												variant="ghost"
-												onClick={() =>
-													copyToClipboard(draftJob()!.draft!.titles.join('\n'), 'titles')
-												}
+												onClick={() => copyField(draftJob()!.draft!.titles.join('\n'), 'titles')}
 												aria-label="Copy titles"
 											>
 												<Show when={copiedField() === 'titles'} fallback={<Copy size={14} />}>
@@ -407,9 +436,7 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 											<Button
 												size="icon"
 												variant="ghost"
-												onClick={() =>
-													copyToClipboard(draftJob()!.draft!.hashtags.join(' '), 'hashtags')
-												}
+												onClick={() => copyField(draftJob()!.draft!.hashtags.join(' '), 'hashtags')}
 												aria-label="Copy hashtags"
 											>
 												<Show when={copiedField() === 'hashtags'} fallback={<Copy size={14} />}>
@@ -437,7 +464,7 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 											<Button
 												size="icon"
 												variant="ghost"
-												onClick={() => copyToClipboard(draftJob()!.draft!.caption, 'caption')}
+												onClick={() => copyField(draftJob()!.draft!.caption, 'caption')}
 												aria-label="Copy caption"
 											>
 												<Show when={copiedField() === 'caption'} fallback={<Copy size={14} />}>

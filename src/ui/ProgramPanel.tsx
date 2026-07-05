@@ -262,7 +262,7 @@ export function ProgramPanel(props: ProgramPanelProps) {
 				</div>
 
 				{/* Budget display */}
-				<div class="program-panel-budget" role="status">
+				<div class="program-panel-budget" role="status" aria-live="polite" aria-atomic="true">
 					<span>
 						Encoder budget: {props.budgetUsage().active} / {props.budgetUsage().max}
 					</span>
@@ -312,7 +312,7 @@ export function ProgramPanel(props: ProgramPanelProps) {
 
 				{/* Running session status */}
 				<Show when={isRunning()}>
-					<div class="program-panel-status" role="status" aria-live="polite">
+					<div class="program-panel-status" role="status" aria-live="polite" aria-atomic="true">
 						<div class="program-panel-active-scene">
 							Active:{' '}
 							{props.activeSceneId()

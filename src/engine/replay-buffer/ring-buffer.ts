@@ -99,6 +99,10 @@ export function createRingBuffer(config: RingBufferConfig): RingBuffer {
 					break;
 				}
 			}
+			if (cutoffIdx === -1 && entries.length > 0) {
+				// Oldest entry exceeds maxDurationS — drop it to guarantee progress.
+				cutoffIdx = 1;
+			}
 		} else {
 			for (let i = 0; i < entries.length; i++) {
 				const e = entries[i];

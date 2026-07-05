@@ -1,5 +1,6 @@
-import { createEffect, createSignal, Show, For, type JSX } from 'solid-js';
-import { Power, PowerOff, Mic, BarChart3, Shield, AlertTriangle } from 'lucide-solid';
+import { createEffect, createSignal, Show, For } from 'solid-js';
+import { Mic, BarChart3, Shield, AlertTriangle } from 'lucide-solid';
+import { AudioInsertRow } from './AudioInsertRow';
 import { Button } from './components/button';
 import type { VoiceCleanupSettings, GateParams, LimiterParams } from '../protocol';
 
@@ -23,57 +24,6 @@ export interface VoiceCleanupPanelProps {
 	denoiserStatus: 'idle' | 'loading' | 'ready' | 'unavailable';
 	denoiserUnavailableReason: string;
 	initiallyExpanded?: boolean;
-}
-
-function InsertRow(props: {
-	label: string;
-	icon: JSX.Element;
-	bypass: boolean;
-	onToggleBypass: () => void;
-	children?: JSX.Element;
-}) {
-	const [expanded, setExpanded] = createSignal(false);
-
-	return (
-		<div class="insert-row">
-			<div
-				class="insert-header"
-				onClick={() => setExpanded(!expanded())}
-				onKeyDown={(e) => {
-					if (e.key === 'Enter' || e.key === ' ') {
-						e.preventDefault();
-						setExpanded(!expanded());
-					}
-				}}
-				role="button"
-				aria-expanded={expanded()}
-				tabIndex={0}
-			>
-				<Button
-					variant="ghost"
-					size="icon"
-					onClick={(e: MouseEvent) => {
-						e.stopPropagation();
-						props.onToggleBypass();
-					}}
-					aria-label={props.bypass ? `Enable ${props.label}` : `Bypass ${props.label}`}
-					aria-pressed={!props.bypass}
-				>
-					<Show when={props.bypass} fallback={<Power size={14} />}>
-						<PowerOff size={14} />
-					</Show>
-				</Button>
-				{props.icon}
-				<span class="insert-name">{props.label}</span>
-				<span class={`insert-status ${props.bypass ? 'bypassed' : 'active'}`}>
-					{props.bypass ? 'Bypassed' : 'Active'}
-				</span>
-			</div>
-			<Show when={expanded()}>
-				<div class="insert-params">{props.children}</div>
-			</Show>
-		</div>
-	);
 }
 
 function SliderControl(props: {
@@ -140,7 +90,11 @@ export function voiceCleanupLatencyBudget(sampleRate: number): ReadonlyArray<{
 	return [
 		{ label: 'Quantum', samples: 128, ms: (128 / safeSampleRate) * 1000 },
 		{ label: 'Denoiser ring', samples: 480, ms: (480 / safeSampleRate) * 1000 },
-		{ label: 'Limiter lookahead', samples: 240, ms: (240 / safeSampleRate) * 1000 },
+		{
+			label: 'Limiter lookahead',
+			samples: 240,
+			ms: (240 / safeSampleRate) * 1000
+		},
 		{ label: 'Gate', samples: 0, ms: 0 }
 	];
 }
@@ -172,7 +126,9 @@ export function VoiceCleanupPanel(props: VoiceCleanupPanelProps) {
 	}
 
 	function updateLimiterParams(patch: Partial<LimiterParams>) {
-		updateSettings({ limiterParams: { ...props.settings.limiterParams, ...patch } });
+		updateSettings({
+			limiterParams: { ...props.settings.limiterParams, ...patch }
+		});
 	}
 
 	function toggleTrackDenoiser(trackId: string) {
@@ -186,30 +142,22 @@ export function VoiceCleanupPanel(props: VoiceCleanupPanelProps) {
 
 	return (
 		<div class="live-audio-chain-panel voice-cleanup-panel panel">
-			<div
+			<button
 				class="collapse-header"
+				type="button"
 				onClick={() => setExpanded(!expanded())}
-				onKeyDown={(e) => {
-					if (e.key === 'Enter' || e.key === ' ') {
-						e.preventDefault();
-						setExpanded(!expanded());
-					}
-				}}
-				role="button"
 				aria-expanded={expanded()}
-				tabIndex={0}
+				aria-controls={expanded() ? 'voice-cleanup-body' : undefined}
 			>
 				<span class="panel-title">Voice Cleanup</span>
-				<span class="latency-display" aria-live="polite">
-					Latency: {props.latencyMs.toFixed(1)} ms
-				</span>
-			</div>
+				<span class="latency-display">Latency: {props.latencyMs.toFixed(1)} ms</span>
+			</button>
 			<Show when={expanded()}>
-				<div class="collapse-body">
+				<div class="collapse-body" id="voice-cleanup-body">
 					{/* Section (a): Denoiser */}
-					<InsertRow
+					<AudioInsertRow
 						label="Denoiser"
-						icon={<Mic size={14} />}
+						icon={<Mic size={14} aria-hidden="true" />}
 						bypass={props.settings.denoiserEnabledTracks.length === 0}
 						onToggleBypass={() => {
 							if (props.settings.denoiserEnabledTracks.length > 0) {
@@ -230,12 +178,12 @@ export function VoiceCleanupPanel(props: VoiceCleanupPanelProps) {
 								</div>
 							</Show>
 							<Show when={props.denoiserStatus === 'loading'}>
-								<p class="insert-hint" role="status">
+								<p class="insert-hint" role="status" aria-live="polite" aria-atomic="true">
 									Loading RNNoise WASM…
 								</p>
 							</Show>
 							<Show when={props.denoiserStatus === 'ready'}>
-								<p class="insert-hint" role="status">
+								<p class="insert-hint" role="status" aria-live="polite" aria-atomic="true">
 									RNNoise WASM ready.
 								</p>
 							</Show>
@@ -278,12 +226,12 @@ export function VoiceCleanupPanel(props: VoiceCleanupPanelProps) {
 								)}
 							</For>
 						</div>
-					</InsertRow>
+					</AudioInsertRow>
 
 					{/* Section (b): Loudness Normalisation */}
-					<InsertRow
+					<AudioInsertRow
 						label="Loudness Normalisation"
-						icon={<BarChart3 size={14} />}
+						icon={<BarChart3 size={14} aria-hidden="true" />}
 						bypass={props.settings.normaliseGainDb === 0}
 						onToggleBypass={() => {
 							if (props.settings.normaliseGainDb !== 0) {
@@ -307,7 +255,9 @@ export function VoiceCleanupPanel(props: VoiceCleanupPanelProps) {
 											size="sm"
 											onClick={() => {
 												setUseCustomTarget(false);
-												updateSettings({ normalisationTargetLufs: target.value });
+												updateSettings({
+													normalisationTargetLufs: target.value
+												});
 											}}
 										>
 											{target.label}
@@ -421,12 +371,12 @@ export function VoiceCleanupPanel(props: VoiceCleanupPanelProps) {
 								</p>
 							</Show>
 						</div>
-					</InsertRow>
+					</AudioInsertRow>
 
 					{/* Section (c): Gate */}
-					<InsertRow
+					<AudioInsertRow
 						label="Gate"
-						icon={<Shield size={14} />}
+						icon={<Shield size={14} aria-hidden="true" />}
 						bypass={gateBypass()}
 						onToggleBypass={() => updateGateParams({ bypass: !gateBypass() })}
 					>
@@ -475,12 +425,12 @@ export function VoiceCleanupPanel(props: VoiceCleanupPanelProps) {
 							unit=" ms"
 							onChange={(v) => updateGateParams({ releaseMs: v })}
 						/>
-					</InsertRow>
+					</AudioInsertRow>
 
 					{/* Section (d): Limiter */}
-					<InsertRow
+					<AudioInsertRow
 						label="Limiter"
-						icon={<AlertTriangle size={14} />}
+						icon={<AlertTriangle size={14} aria-hidden="true" />}
 						bypass={limiterBypass()}
 						onToggleBypass={() => updateLimiterParams({ bypass: !limiterBypass() })}
 					>
@@ -511,7 +461,7 @@ export function VoiceCleanupPanel(props: VoiceCleanupPanelProps) {
 							unit=" ms"
 							onChange={(v) => updateLimiterParams({ releaseMs: v })}
 						/>
-					</InsertRow>
+					</AudioInsertRow>
 				</div>
 			</Show>
 		</div>

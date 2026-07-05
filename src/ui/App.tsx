@@ -120,6 +120,9 @@ import { BundleDialog } from './BundleDialog';
 import { InterchangeMenu } from './InterchangeMenu';
 import { Button, buttonVariants } from './components/button';
 import { cn } from '../lib/utils';
+import { isAbortError } from '../lib/abort-error';
+import { downloadBlob } from '../lib/blob-download';
+import { errorMessage } from '../lib/error-message';
 import { CapabilityPanel } from './CapabilityPanel';
 import { DocsPage } from '../features/docs/DocsPage';
 import { DOCS_INDEX_SLUG, docsPath, parseDocsPath } from '../features/docs/docsManifest';
@@ -283,10 +286,6 @@ function initialOnlineStatus(): boolean {
 	return typeof navigator === 'undefined' ? true : navigator.onLine;
 }
 
-function isAbortError(error: unknown): boolean {
-	return error instanceof DOMException && error.name === 'AbortError';
-}
-
 const DEFAULT_PROGRAM_LAYER_TRANSFORM = {
 	x: 0,
 	y: 0,
@@ -328,15 +327,7 @@ function formatSavedAt(value: string): string {
 }
 
 function downloadTextFile(fileName: string, mimeType: string, content: string): void {
-	const blob = new Blob([content], { type: mimeType });
-	const url = URL.createObjectURL(blob);
-	const anchor = document.createElement('a');
-	anchor.href = url;
-	anchor.download = fileName;
-	document.body.appendChild(anchor);
-	anchor.click();
-	document.body.removeChild(anchor);
-	URL.revokeObjectURL(url);
+	downloadBlob(new Blob([content], { type: mimeType }), fileName);
 }
 
 /** File System Access save with download-blob fallback (Phase 48 R8.1). */
@@ -347,7 +338,7 @@ async function saveTextFile(fileName: string, mimeType: string, content: string)
 			handle = await window.showSaveFilePicker({ suggestedName: fileName });
 		} catch (error) {
 			// User canceled the picker — not a failure, and not a download.
-			if (error instanceof DOMException && error.name === 'AbortError') return;
+			if (isAbortError(error)) return;
 			// The picker API itself failed; fall back to a plain download.
 			handle = null;
 		}
@@ -2468,13 +2459,10 @@ export function App() {
 				setRuntimeIssue(msg.message);
 				break;
 			case 'look-preset-exported': {
-				const blob = new Blob([msg.json], { type: 'application/json' });
-				const url = URL.createObjectURL(blob);
-				const a = document.createElement('a');
-				a.href = url;
-				a.download = `${msg.clipId.slice(0, 8)}-look.json`;
-				a.click();
-				URL.revokeObjectURL(url);
+				downloadBlob(
+					new Blob([msg.json], { type: 'application/json' }),
+					`${msg.clipId.slice(0, 8)}-look.json`
+				);
 				setStatusLine(
 					msg.lutFileName
 						? `Look preset exported (paired LUT: ${msg.lutFileName})`
@@ -2734,15 +2722,7 @@ export function App() {
 				setStatusLine(`Export complete · ${msg.mimeType}`);
 				break;
 			case 'export-download-ready': {
-				const url = URL.createObjectURL(msg.blob);
-				const anchor = document.createElement('a');
-				anchor.href = url;
-				anchor.download = msg.fileName;
-				anchor.rel = 'noopener';
-				document.body.append(anchor);
-				anchor.click();
-				anchor.remove();
-				setTimeout(() => URL.revokeObjectURL(url), 10_000);
+				downloadBlob(msg.blob, msg.fileName);
 				setExporting(false);
 				setExportProgress(null);
 				setExportError(null);
@@ -3262,6 +3242,27 @@ export function App() {
 		b.send({ type: 'init', canvas, sab, audioSab, scopeSab, probeResult: probe }, [canvas]);
 	}
 
+	function handleInitError(statusMsg: string, issueMsg: string, error: unknown): void {
+		const message = errorMessage(error);
+		setStatusLine(`${statusMsg}: ${message}`);
+		setRuntimeIssue(issueMsg);
+	}
+
+	async function initializePendingCanvas(): Promise<void> {
+		if (!pendingInitCanvas) return;
+		const canvas = pendingInitCanvas;
+		try {
+			await sendInit(canvas);
+			pendingInitCanvas = null;
+		} catch (error) {
+			handleInitError(
+				'Canvas initialization failed',
+				'Failed to initialize editor canvas. Try reloading.',
+				error
+			);
+		}
+	}
+
 	async function importCompatibilityMedia(file: File) {
 		if (importing()) return;
 		const generation = ++compatibilityImportGeneration;
@@ -3476,7 +3477,7 @@ export function App() {
 				]
 			});
 		} catch (e) {
-			if (e instanceof DOMException && e.name === 'AbortError') return null;
+			if (isAbortError(e)) return null;
 			throw e;
 		}
 	}
@@ -3549,10 +3550,6 @@ export function App() {
 		return candidate;
 	}
 
-	function pickerWasCanceled(error: unknown): boolean {
-		return error instanceof DOMException && error.name === 'AbortError';
-	}
-
 	async function preselectQueueOutputHandles(): Promise<boolean> {
 		const pendingJobs = renderQueue().jobs.filter((job) => job.status === 'pending');
 		if (pendingJobs.length === 0 || typeof window.showSaveFilePicker !== 'function') return true;
@@ -3587,9 +3584,8 @@ export function App() {
 				}
 				return true;
 			} catch (error) {
-				if (!pickerWasCanceled(error)) {
-					const message = error instanceof Error ? error.message : String(error);
-					setStatusLine(`Queue destination failed: ${message}`);
+				if (!isAbortError(error)) {
+					setStatusLine(`Queue destination failed: ${errorMessage(error)}`);
 				}
 				return false;
 			}
@@ -3610,9 +3606,8 @@ export function App() {
 			bridge?.send({ type: 'queue-job-output', jobId: job.id, handle });
 			return true;
 		} catch (error) {
-			if (!pickerWasCanceled(error)) {
-				const message = error instanceof Error ? error.message : String(error);
-				setStatusLine(`Queue destination failed: ${message}`);
+			if (!isAbortError(error)) {
+				setStatusLine(`Queue destination failed: ${errorMessage(error)}`);
 			}
 			return false;
 		}
@@ -3930,56 +3925,62 @@ export function App() {
 
 	onMount(() => {
 		void (async () => {
-			const probe = await probeCapabilitiesV2();
-			setCapabilityProbeV2(probe);
-			setExportCodecs([...exportConstraintsForProbe(probe)]);
-			cleanupController.setCleanupProbe(probe.cleanup ?? null);
-			asrController.setProbe();
-			if (pendingInitCanvas) {
-				const canvas = pendingInitCanvas;
-				pendingInitCanvas = null;
-				await sendInit(canvas);
+			try {
+				const probe = await probeCapabilitiesV2();
+				setCapabilityProbeV2(probe);
+				setExportCodecs([...exportConstraintsForProbe(probe)]);
+				cleanupController.setCleanupProbe(probe.cleanup ?? null);
+				asrController.setProbe();
+				setIsIsolated(probe.crossOriginIsolated);
+				setCapabilities(
+					probeCapabilities({
+						crossOriginIsolated: probe.crossOriginIsolated,
+						sharedArrayBuffer: probe.sharedArrayBuffer === 'supported',
+						webgpu: probe.webGPUCore === 'supported' || probe.webGPUCompat === 'supported',
+						webCodecs: probe.webCodecsDecode === 'supported',
+						offscreenCanvas: probe.offscreenCanvas === 'supported',
+						fileSystemAccess: probe.fileSystemAccess === 'supported',
+						audioWorklet: probe.audioWorklet === 'supported'
+					})
+				);
+				switch (probe.tier) {
+					case 'core-webgpu':
+						ensureWorker();
+						setStatusLine('Starting pipeline worker…');
+						break;
+					case 'compatibility-webgpu':
+						ensureWorker();
+						setRuntimeIssue(
+							probe.sharedArrayBuffer === 'supported'
+								? 'Compatibility GPU tier active. Preview remains client-side with reduced effects and export constraints.'
+								: 'Compatibility GPU tier active without SharedArrayBuffer. Clock updates use reduced rAF messages.'
+						);
+						setStatusLine('Compatibility GPU tier · reduced effects');
+						break;
+					case 'limited-webcodecs':
+						ensureWorker();
+						setRuntimeIssue(
+							'Limited WebCodecs tier active. Preview uses client-side compatibility rendering and export is codec constrained.'
+						);
+						setStatusLine('Limited WebCodecs tier · GPU effects unavailable');
+						break;
+					case 'shell-only':
+						setRuntimeIssue(
+							'Preview unavailable: this browser exposes neither WebGPU nor WebCodecs decode support.'
+						);
+						setStatusLine('Shell-only · preview and export unavailable');
+						break;
+				}
+			} catch (error) {
+				handleInitError(
+					'Capability detection failed',
+					'Failed to detect browser capabilities. Try reloading.',
+					error
+				);
+				return;
 			}
-			setIsIsolated(probe.crossOriginIsolated);
-			setCapabilities(
-				probeCapabilities({
-					crossOriginIsolated: probe.crossOriginIsolated,
-					sharedArrayBuffer: probe.sharedArrayBuffer === 'supported',
-					webgpu: probe.webGPUCore === 'supported' || probe.webGPUCompat === 'supported',
-					webCodecs: probe.webCodecsDecode === 'supported',
-					offscreenCanvas: probe.offscreenCanvas === 'supported',
-					fileSystemAccess: probe.fileSystemAccess === 'supported',
-					audioWorklet: probe.audioWorklet === 'supported'
-				})
-			);
-			switch (probe.tier) {
-				case 'core-webgpu':
-					ensureWorker();
-					setStatusLine('Starting pipeline worker…');
-					break;
-				case 'compatibility-webgpu':
-					ensureWorker();
-					setRuntimeIssue(
-						probe.sharedArrayBuffer === 'supported'
-							? 'Compatibility GPU tier active. Preview remains client-side with reduced effects and export constraints.'
-							: 'Compatibility GPU tier active without SharedArrayBuffer. Clock updates use reduced rAF messages.'
-					);
-					setStatusLine('Compatibility GPU tier · reduced effects');
-					break;
-				case 'limited-webcodecs':
-					ensureWorker();
-					setRuntimeIssue(
-						'Limited WebCodecs tier active. Preview uses client-side compatibility rendering and export is codec constrained.'
-					);
-					setStatusLine('Limited WebCodecs tier · GPU effects unavailable');
-					break;
-				case 'shell-only':
-					setRuntimeIssue(
-						'Preview unavailable: this browser exposes neither WebGPU nor WebCodecs decode support.'
-					);
-					setStatusLine('Shell-only · preview and export unavailable');
-					break;
-			}
+
+			await initializePendingCanvas();
 		})();
 
 		// Phase 39: Fetch platform safe-zone data.

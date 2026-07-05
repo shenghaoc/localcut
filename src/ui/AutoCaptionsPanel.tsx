@@ -149,7 +149,12 @@ export const AutoCaptionsPanel: Component<AutoCaptionsPanelProps> = (props) => {
 								fallback={
 									<Show when={props.state.job}>
 										{(job) => (
-											<div class="asr-progress-block" role="status" aria-live="polite">
+											<div
+												class="asr-progress-block"
+												role="status"
+												aria-live="polite"
+												aria-atomic="true"
+											>
 												<div class="asr-progress-row">
 													<span class="asr-progress-label">{asrJobLabel(job())}</span>
 													<span class="asr-progress-value tabular-nums">
@@ -173,7 +178,7 @@ export const AutoCaptionsPanel: Component<AutoCaptionsPanelProps> = (props) => {
 									</Show>
 								}
 							>
-								<div class="asr-progress-block" role="status" aria-live="polite">
+								<div class="asr-progress-block" role="status" aria-live="polite" aria-atomic="true">
 									<div class="asr-progress-row">
 										<span class="asr-progress-label">{modelProgressLabel()}</span>
 										<span class="asr-progress-value tabular-nums">

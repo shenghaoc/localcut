@@ -94,21 +94,27 @@ export function PreviewGizmo(props: PreviewGizmoProps) {
 		if (!b) return null;
 		const rect = layerRect();
 		const t = props.transform;
+
+		// Draw the preview rectangle at the fitted+scaled size directly so chrome
+		// hit targets stay fixed while the rectangle itself remains correct size.
 		const w = rect.width * b.width;
 		const h = rect.height * b.height;
 		const cx = (0.5 + t.x) * b.width;
 		const cy = (0.5 + t.y) * b.height;
 		const d = drag();
+		const centerTranslate = `${b.left + cx - w / 2}px ${b.top + cy - h / 2}px`;
+		const centeredTransform = `rotate(${t.rotation}deg)`;
 		return {
 			left: '0px',
 			top: '0px',
 			width: `${w}px`,
 			height: `${h}px`,
-			translate: `${b.left + cx - w / 2}px ${b.top + cy - h / 2}px`,
-			transform: `rotate(${t.rotation}deg)`,
+			translate: centerTranslate,
+			'transform-origin': '50% 50%',
+			transform: centeredTransform,
 			'will-change':
 				d?.mode === 'move' || d?.mode === 'scale'
-					? 'translate'
+					? 'translate, transform'
 					: d?.mode === 'rotate'
 						? 'transform'
 						: undefined

@@ -981,9 +981,11 @@ export function moveClips(timeline: Timeline, moves: readonly MoveClipTarget[]):
 	for (const move of moves) {
 		const source = trackWithClip(timeline, move.trackId, move.clipId);
 		if (!source) return timeline;
-		const sourceTrack = timeline[source.trackIndex]!;
+		const sourceTrack = timeline[source.trackIndex];
+		if (!sourceTrack || sourceTrack.locked) return timeline;
 		const targetTrack = timeline.find((track) => track.id === move.toTrackId);
 		if (!targetTrack || sourceTrack.type !== targetTrack.type) return timeline;
+		if (targetTrack.locked) return timeline;
 		const toStart = normalizeMoveStart(move.toStart);
 		if (toStart === null) return timeline;
 		const key = `${move.trackId}:${move.clipId}`;

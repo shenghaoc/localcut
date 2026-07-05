@@ -51,20 +51,17 @@ describe('clusterEvents', () => {
 	it('merges overlapping proposals', () => {
 		// Two clusters close enough that zoomOut of A > zoomIn of B by < 50ms
 		const entries = [
-			makeEntry(1_000_000, 0.5, 0.5),
-			makeEntry(2_500_000, 0.5, 0.5) // >2s apart → two clusters
+			makeEntry(1_000_000, 0.2, 0.3),
+			makeEntry(2_500_000, 0.8, 0.7) // >2s apart and distant → two clusters, then merged by overlap window
 		];
 		const result = clusterEvents(entries, DEFAULT_AUTO_ZOOM_PARAMS, 0);
 		// With default params, zoomOut of first = cluster.endUs + 1500ms = 1_000_000 + 1_500_000 = 2_500_000
 		// zoomIn of second = 2_500_000 - 200_000 = 2_300_000
 		// overlap = 2_500_000 - 2_300_000 = 200_000 µs > 50_000 threshold → merged
-		if (result.length === 1) {
-			// Merged
-			expect(result[0]!.cluster.eventCount).toBe(2);
-		} else {
-			// Not merged (depends on exact timing)
-			expect(result).toHaveLength(2);
-		}
+		expect(result).toHaveLength(1);
+		expect(result[0]!.cluster.eventCount).toBe(2);
+		expect(result[0]!.centroidX).toBeCloseTo(0.5, 4);
+		expect(result[0]!.centroidY).toBeCloseTo(0.5, 4);
 	});
 
 	it('is deterministic — same input produces same output', () => {

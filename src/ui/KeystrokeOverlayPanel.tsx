@@ -247,7 +247,12 @@ export function KeystrokeOverlayPanel(props: KeystrokeOverlayPanelProps) {
 			</Show>
 
 			<Show when={source() === 'sidecar' && sidecarSessionId()}>
-				<div class="keystroke-overlay-sidecar-loaded" role="status">
+				<div
+					class="keystroke-overlay-sidecar-loaded"
+					role="status"
+					aria-live="polite"
+					aria-atomic="true"
+				>
 					Showing events from session <code>{sidecarSessionId()}</code>.
 				</div>
 			</Show>
@@ -307,7 +312,7 @@ export function KeystrokeOverlayPanel(props: KeystrokeOverlayPanelProps) {
 			</Show>
 
 			<Show when={recording()}>
-				<div class="keystroke-overlay-status" role="status">
+				<div class="keystroke-overlay-status" role="status" aria-live="polite" aria-atomic="true">
 					Recording… press shortcuts in any non-text element. Use <kbd>Stop recording</kbd> when
 					finished.
 				</div>

@@ -15,6 +15,8 @@ import {
 	validateCaptionAnimPreset
 } from '../engine/captions/anim-style';
 import type { CaptionAnimStylePresetSnapshot } from '../protocol';
+import { isAbortError } from '../lib/abort-error';
+import { downloadBlob } from '../lib/blob-download';
 
 // CaptionAnimStylePreset (engine) and CaptionAnimStylePresetSnapshot (protocol)
 // are structurally compatible — the protocol type relaxes the animation kind to
@@ -108,25 +110,20 @@ export function serializeAndSavePreset(
 				await writable.write(blob);
 				await writable.close();
 			} catch (error) {
-				// DOMException 'AbortError' is the only signal that means
+				// AbortError is the only signal that means
 				// "user cancelled" — anything else (QuotaExceededError,
 				// NotAllowedError from a lost user gesture, an unexpected
 				// I/O failure) is a real problem and must surface to the user.
-				const isCancel = error instanceof DOMException && error.name === 'AbortError';
-				if (!isCancel && onError) {
+				if (!isAbortError(error)) {
 					const message =
 						error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-					onError(message);
+					if (onError) onError(message);
+					else console.warn('Preset save failed:', message);
 				}
 			}
 		})();
 	} else {
-		const url = URL.createObjectURL(blob);
-		const a = document.createElement('a');
-		a.href = url;
-		a.download = filename;
-		a.click();
-		URL.revokeObjectURL(url);
+		downloadBlob(blob, filename);
 	}
 }
 
@@ -693,7 +690,12 @@ export function CaptionStyleInspector(props: CaptionStyleInspectorProps) {
 				</div>
 			</Show>
 			<Show when={importSuccess()}>
-				<div class="caption-notice caption-notice-success" role="status" aria-live="polite">
+				<div
+					class="caption-notice caption-notice-success"
+					role="status"
+					aria-live="polite"
+					aria-atomic="true"
+				>
 					{importSuccess()}
 				</div>
 			</Show>
