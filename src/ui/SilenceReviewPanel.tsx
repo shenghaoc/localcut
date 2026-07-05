@@ -14,6 +14,7 @@ import type {
 	WorkerStateMessage
 } from '../protocol';
 import { SILENCE_DEFAULTS } from '../engine/silence-detector';
+import { generateId } from '../utils/uuid';
 
 export interface SilenceReviewPanelProps {
 	/** Currently selected audio track IDs (or every audio track if no
@@ -123,7 +124,7 @@ export function SilenceReviewPanel(props: SilenceReviewPanelProps) {
 		setApplied(new Set<number>());
 		setDetecting(true);
 		setProgress(0);
-		const requestId = crypto.randomUUID();
+		const requestId = generateId();
 		currentRequestId = requestId;
 		const params: SilenceDetectionParams = {
 			openThreshold: openThreshold(),

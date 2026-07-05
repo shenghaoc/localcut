@@ -38,7 +38,7 @@ describe('generateId', () => {
 			}
 		});
 		const id = generateId();
-		// The 13th character (index of version nibble in the 8-4-4-4-12 format) must be '4'.
+		// The version nibble is at index 14 (0-indexed) in the 8-4-4-4-12 format.
 		expect(id[14]).toBe('4');
 		vi.unstubAllGlobals();
 	});
