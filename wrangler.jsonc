@@ -1,6 +1,6 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "browser-editor",
+	"name": "localcut",
 	// Worker entry: serves the SPA from the ASSETS binding and reverse-proxies the
 	// on-device ASR model from Hugging Face same-origin (see src/worker/index.ts).
 	"main": "src/worker/index.ts",
