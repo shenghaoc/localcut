@@ -117,23 +117,25 @@ Each spec has `design.md`, `requirements.md`, and `tasks.md` (bugfix specs use `
 ```bash
 vp install         # Clean install from the lockfile
 vp dev             # Vite dev server (COOP/COEP headers enabled)
-vp run check       # Full quality gate: format:check + lint + typecheck + test + build
+vp run check       # Full quality gate: format:check + lint + both typechecks + test + build
 vp build           # Production build
 vp test run        # Vitest unit tests (node environment)
 vp run test:browser     # Vitest Browser Mode (real Chromium, component/integration tests)
 vp run test:e2e         # Playwright E2E (full user-flow tests)
 vp lint .          # Lint
 vp fmt .           # Format
-vp run typecheck   # tsc --noEmit
+vp run typecheck         # Canonical stable TypeScript check (tsc --noEmit)
+vp run typecheck:native  # Required native compiler parity check (tsgo --noEmit)
 vp cache clean     # Clear the Vite+ task cache (node_modules/.vite/task-cache)
 ```
 
-The `check` quality-gate steps are declared as cached tasks (`check:format`, `check:lint`, `check:typecheck`, `check:test`, `check:build`) in [`vite.config.ts`](vite.config.ts) under `run` — prefixed because a Vite+ task may not share a name with a package.json script — so `vp run check` content-caches each step. CI persists `node_modules/.vite/task-cache` across runs, so a re-push only re-executes the steps whose inputs actually changed.
+The `check` quality-gate steps are declared as cached tasks (`check:format`, `check:lint`, `check:typecheck`, `check:typecheck-native`, `check:test`, `check:build`) in [`vite.config.ts`](vite.config.ts) under `run` — prefixed because a Vite+ task may not share a name with a package.json script — so `vp run check` content-caches each step. CI persists `node_modules/.vite/task-cache` across runs, so a re-push only re-executes the steps whose inputs actually changed.
 
-## TypeScript 6/7 transition
+## TypeScript verification
 
-- Prefer `vp run typecheck` / `tsgo --noEmit` for day-to-day type-checking while TypeScript 7 is in preview. Once TypeScript c is stable and installed as `typescript`, `tsgo` becomes `tsc` and `@typescript/native-preview` can be dropped.
-- Keep `typescript` at 6.x so peer-dependent tooling continues to import the TypeScript 6 API during the transition.
+- `vp run typecheck` / `tsc --noEmit` is the canonical stable TypeScript compatibility check.
+- `vp run typecheck:native` / `tsgo --noEmit` is a separately required parity and forward-compatibility check over the same `tsconfig.json`. `vp run check` runs both; neither result may be ignored.
+- Keep `typescript` at 6.x so peer-dependent tooling continues to import the TypeScript 6 API while the repository retains this toolchain.
 
 ## Architectural boundaries (hard gates)
 
@@ -146,7 +148,7 @@ The `check` quality-gate steps are declared as cached tasks (`check:format`, `ch
 
 ## Quality gate
 
-1. `vp run check` → green (format:check + lint + `tsc --noEmit` + Vitest + production build). This is what CI runs after `vp install`.
+1. `vp run check` → green (format:check + lint + stable `tsc --noEmit` + native `tsgo --noEmit` + Vitest + production build). This is what CI runs after `vp install`; both compiler results are required.
 2. Test count must not decrease for non-trivial logic changes.
 3. Full-performance dev and production must keep COOP/COEP so `crossOriginIsolated === true`; missing isolation must show the limited capability tier rather than crashing the shell.
 4. Every `VideoFrame` `.close()`d exactly once in engine code paths.
@@ -199,6 +201,6 @@ Be thorough but not noisy: surface every P0/P1 you can substantiate, and skip pe
 - **Preview shortcuts must be capability-tiered** — do not regress the worker WebGPU path. If adding Canvas/WebGL/CPU fallback preview, keep it separate, reduced capability, and visibly labeled.
 - **Single dev process** — no backend, media server, database, Docker, or `.env` secrets. Only `vp dev` (port **5173**) is required for interactive work; the pipeline worker is spawned automatically by the UI.
 - **Remote browser access** — when testing via the Desktop pane, start Vite with `vp dev --host 0.0.0.0` so Chrome can reach the server.
-- **Quality gate in CI-like runs** — `vp install` to install, then `vp run check` (format:check + lint + typecheck + Vitest + production build), mirroring `.github/workflows/ci.yml`.
+- **Quality gate in CI-like runs** — `vp install` to install, then `vp run check` (format:check + lint + stable and native typechecks + Vitest + production build), mirroring `.github/workflows/ci.yml`.
 - **Manual E2E smoke test** — open Chromium to `http://localhost:5173` (or the server's remote URL when using `--host 0.0.0.0`), confirm the status bar shows the accelerated/COOP-COEP OK tier, click **Import**, and load a local MP4/MOV/WebM. Also verify a non-isolated/missing-capability run shows limited mode instead of a blank app. A tiny test clip can be generated with `ffmpeg` if none is checked in.
 - **WebGPU in cloud VMs** — headless or software-rendered environments may report “No WebGPU adapter”; metadata import and the SAB clock still work. Full zero-copy preview requires hardware WebGPU.

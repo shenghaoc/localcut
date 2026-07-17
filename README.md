@@ -39,12 +39,18 @@ All 48 phases complete. See [AGENTS.md](AGENTS.md) for the full spec inventory a
 ```bash
 vp install         # Clean install from the lockfile
 vp dev             # http://localhost:5173 — check status bar for COOP/COEP OK
-vp run check       # Full quality gate: format:check + lint + typecheck + test + build
+vp run typecheck         # Canonical stable TypeScript check (tsc --noEmit)
+vp run typecheck:native  # Required native compiler parity check (tsgo --noEmit)
+vp run check             # Full gate: format + lint + both typechecks + tests + build
 vp build
 vp test run
 vp lint .
 vp fmt .
 ```
+
+`vp run typecheck` uses stable TypeScript as the canonical compatibility check.
+`vp run typecheck:native` checks the same project with the native compiler, and
+`vp run check` requires both compiler results.
 
 ### Testing
 

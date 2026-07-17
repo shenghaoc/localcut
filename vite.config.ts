@@ -55,10 +55,15 @@ export default defineConfig({
 		// prefix — the canonical `lint`/`test`/`build`/… scripts stay for direct
 		// `pnpm <script>` use. CI persists the cache dir across runs (see
 		// .github/workflows/ci.yml); `vp cache clean` clears it locally.
+		// Stable TypeScript is the compatibility authority; the native compiler
+		// remains a required parity and forward-compatibility check. Separate
+		// typecheck tasks keep failures attributable and let Vite+ cache each
+		// compiler run independently.
 		tasks: {
 			'check:format': { command: 'vp fmt --check .' },
 			'check:lint': { command: 'vp lint . --max-warnings=0' },
-			'check:typecheck': { command: 'tsgo --noEmit' },
+			'check:typecheck': { command: 'tsc --noEmit' },
+			'check:typecheck-native': { command: 'tsgo --noEmit' },
 			// Under CI=true, vitest writes test-results/junit-node.xml (see
 			// vitest.config.ts) — Vite+ detects the read+write on that path
 			// and forces check:test to re-run each time, so any GHA test-

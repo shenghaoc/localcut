@@ -5,6 +5,7 @@
 - **Runtime**: Modern desktop browser with progressive capability tiers. Chromium with WebCodecs + WebGPU + SAB is the full-performance target; other browsers may run reduced client-side workflows when feature detection supports them.
 - **Frontend**: SolidJS (no meta-framework) + Vite + `vite-plugin-solid`.
 - **Language**: TypeScript strict mode throughout.
+- **Type checking**: Stable TypeScript (`tsc --noEmit`) is the canonical compatibility authority. The native compiler (`tsgo --noEmit`) is a separately required parity and forward-compatibility check over the same `tsconfig.json`; the full gate and CI require both.
 - **Package manager**: **pnpm only** (`packageManager` in `package.json`; `pnpm-lock.yaml` lockfile).
 - **Media I/O**: Mediabunny (latest) — tree-shaken MP4/QTFF/WebM demux/mux + WebCodecs abstractions.
 - **GPU**: WebGPU compute shaders for accelerated effects and preview; future compatibility preview paths may use lower-resolution Canvas/WebGL/WebCodecs combinations when clearly labeled.

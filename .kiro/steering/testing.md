@@ -46,6 +46,10 @@ Manual only — no automated headless runner for GPU work:
 4. Export → confirm valid, timed MP4 plays back correctly.
 5. Verify limited mode displays when cross-origin isolation is absent (serve without COOP/COEP headers to test).
 
-## Quality Gate
+## Verification Gates
 
-`vp test run` must stay green with no test count regression before merging any non-trivial logic change. `vp build` (strict `tsc`) is a prerequisite for every merge regardless of test scope.
+- **Static verification**: `vp run typecheck` runs stable `tsc --noEmit` as the canonical compatibility check. `vp run typecheck:native` runs native `tsgo --noEmit` over the same `tsconfig.json`; both results are required.
+- **Unit tests**: `vp test run` must stay green with no test count regression before merging any non-trivial logic change.
+- **Browser Mode tests**: `vp run test:browser` validates component and integration behaviour in real Chromium.
+- **E2E tests**: `vp run test:e2e` validates full user flows when the changed scope requires it.
+- **Full repository gate**: `vp run check` runs formatting, lint, both static type checks, unit tests, and the production build. CI uses this same entry point.

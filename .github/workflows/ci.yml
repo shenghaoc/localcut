@@ -30,9 +30,9 @@ jobs:
           cache: true
           run-install: true
       # The dependency cache above does NOT cover the Vite+ task cache. Persist
-      # it here so `vp run check` (format:check/lint/typecheck/test/build, all
-      # defined as tasks in vite.config.ts) replays content-unchanged steps from
-      # cache across runs instead of re-executing them.
+      # it here so `vp run check` (format, lint, stable and native typechecks,
+      # tests, and build — all defined as tasks in vite.config.ts) replays
+      # content-unchanged steps from cache across runs instead of re-executing them.
       - name: Cache Vite+ task results
         uses: actions/cache@v6
         with:
