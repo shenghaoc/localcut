@@ -36,7 +36,6 @@
   --ink-500: #8e90a3;
   --ink-600: #737591;
   --ink-700: #5a5c70;
-  --ink-900: #3b3d4e;
 
   /* Single confident accent — warm amber/gold, like film stock and light meters.
 	   No AI product uses this. It's the colour of craft. */
@@ -46,26 +45,20 @@
 
   /* Cool slate for functional readouts (timecodes, technical values) */
   --slate: #8b9cc7;
-  --slate-soft: rgb(139 156 199 / 10%);
 
   /* Signal colours */
   --signal-amber: #f5b942;
-  --signal-amber-soft: rgb(245 185 66 / 14%);
   --vermillion: #ef4f4f;
   --vermillion-soft: rgb(239 79 79 / 14%);
   --sage: #6ee7b7;
   --sage-soft: rgb(110 231 183 / 14%);
 
   /* Semantic state tokens — extracted from repeated color-mix patterns.
-     Backgrounds at 12% opacity, borders at 35-40%. */
-  --state-info-bg: color-mix(in srgb, var(--accent) 12%, transparent);
-  --state-success-bg: color-mix(in srgb, var(--sage) 12%, transparent);
+     Backgrounds at 12% opacity, borders at 35-45%. */
   --state-warn-bg: color-mix(in srgb, var(--warn) 12%, transparent);
   --state-error-bg: color-mix(in srgb, var(--destructive) 12%, transparent);
   --state-info-border: color-mix(in srgb, var(--accent) 40%, var(--border));
-  --state-success-border: color-mix(in srgb, var(--sage) 40%, var(--border));
   --state-warn-border: color-mix(in srgb, var(--warn) 38%, var(--border));
-  --state-error-border: color-mix(in srgb, var(--destructive) 45%, var(--border));
 
   /* Legacy token bridge — map to the current palette so existing component CSS
 	   adopts the precision-instrument language automatically. Variants kept
@@ -92,7 +85,6 @@
 
   --warn: var(--signal-amber);
   --warning: var(--signal-amber);
-  --warn-foreground: #1a1100;
   --destructive: var(--vermillion);
   --destructive-foreground: #1a0405;
   --destructive-soft: var(--vermillion-soft);
@@ -108,10 +100,8 @@
   --scrubhead: var(--amber);
   --clip-video: var(--amber);
   --clip-audio: var(--sage);
-  --waveform: var(--amber);
 
   --bg-app: var(--ink);
-  --bg-app-top: var(--ink);
   --toolbar-bg: var(--ink);
   --bg-panel: var(--panel);
   --bg-elevated: var(--elevated);
@@ -121,7 +111,6 @@
   --surface-hover: var(--bg-control-hover);
   --text: var(--ink-100);
   --text-muted: var(--ink-500);
-  --accent-strong: var(--amber);
   --danger: var(--vermillion);
   --success: var(--sage);
 
@@ -146,14 +135,8 @@
   --text-lg: 1.25rem;
   --text-xl: 1.75rem;
 
-  /* Semantic type-scale aliases so consumers don't couple to size names */
-  --text-caption: var(--text-2xs);
-  --text-label: var(--text-xs);
-  --text-ui: var(--text-sm);
+  /* Semantic type-scale — consumers reference these, not raw sizes */
   --text-body: var(--text-base);
-  --text-subhead: var(--text-md);
-  --text-heading: var(--text-lg);
-  --text-display: var(--text-xl);
 
   /* Line-heights */
   --leading-heading: 1.15;
@@ -204,8 +187,6 @@
   --toolbar-h: 112px;
   --status-h: 28px;
   --timeline-h: 234px;
-  --control-h: 28px;
-  --icon-btn-w: 28px;
 
   /* Safe-area insets for notched phones and home indicators.
 	   Falls back to 0px on browsers that do not support env(). */
@@ -247,7 +228,6 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
 
-  --font-sans: var(--font-ui);
   --font-mono: var(--font-mono-stack);
 
   --radius-sm: 3px;
@@ -476,10 +456,6 @@ body {
   overflow-y: hidden;
   padding-top: 0.15rem;
   scrollbar-width: none;
-}
-
-.pipeline-strip::-webkit-scrollbar {
-  display: none;
 }
 
 .pipeline-chip {
@@ -1290,15 +1266,6 @@ body {
   font: inherit;
 }
 
-.export-range-toggle {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  margin-bottom: var(--space-md-tight);
-  font-size: 0.75rem;
-  color: var(--text-muted);
-}
-
 .segmented-btn {
   min-width: 0;
   padding: var(--space-sm-tight) 0.6rem;
@@ -1654,7 +1621,8 @@ body {
   font-size: var(--text-xs);
 }
 
-.restore-source-list {
+.restore-source-list,
+.source-health-list {
   display: flex;
   flex: 1;
   align-items: center;
@@ -1664,6 +1632,10 @@ body {
   padding: 0;
   list-style: none;
   overflow-x: auto;
+}
+
+.source-health-list {
+  gap: var(--space-sm-tight);
 }
 
 .restore-source-item {
@@ -1703,18 +1675,6 @@ body {
   padding: var(--space-md) 0.85rem;
   border-bottom: 1px solid var(--border);
   background: color-mix(in srgb, var(--warn) 7%, var(--card));
-}
-
-.source-health-list {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: var(--space-sm-tight);
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  overflow-x: auto;
 }
 
 .source-health-item {
@@ -1819,7 +1779,8 @@ body {
 }
 
 /* Title/action safe-area guides: a pure DOM overlay matching the canvas box. */
-.safe-area-overlay {
+.safe-area-overlay,
+.safe-zone-overlay {
   position: absolute;
   transition:
     width 180ms ease,
@@ -1873,46 +1834,7 @@ body {
   border-color: rgb(255 255 255 / 35%);
 }
 
-/* Phase 39: Platform safe-zone overlays */
-.safe-zone-overlay {
-  position: absolute;
-  transition:
-    width 180ms ease,
-    height 180ms ease,
-    top 180ms ease,
-    left 180ms ease,
-    transform 180ms ease;
-  top: var(--preview-canvas-top, 50%);
-  left: var(--preview-canvas-left, 50%);
-  transform: var(--preview-canvas-transform, translate(-50%, -50%));
-  width: min(
-    100%,
-    calc(
-      (100vh - var(--toolbar-h) - var(--timeline-h) - var(--status-h) - 28px) *
-        var(--preview-aspect-num, 1.778)
-    )
-  );
-  width: var(
-    --preview-canvas-width,
-    min(
-      100%,
-      calc(
-        (
-            100vh - var(--toolbar-h) - var(--timeline-h) - var(--status-h) -
-              28px
-          ) *
-          var(--preview-aspect-num, 1.778)
-      )
-    )
-  );
-  max-width: 100%;
-  aspect-ratio: var(--preview-aspect, 16 / 9);
-  height: var(--preview-canvas-height, auto);
-  max-height: 100%;
-  pointer-events: none;
-  z-index: 3;
-}
-
+/* Phase 39: Platform safe-zone regions */
 .safe-zone-rect-occluded {
   position: absolute;
   box-sizing: border-box;
@@ -2610,7 +2532,8 @@ body {
   background: color-mix(in srgb, var(--primary) 10%, transparent);
 }
 
-.transcript-track-main {
+.transcript-track-main,
+.transcript-row-main {
   display: grid;
   gap: 0.2rem;
   min-width: 0;
@@ -3004,17 +2927,6 @@ body {
 .transcript-row-select {
   width: 1rem;
   height: 1rem;
-}
-
-.transcript-row-main {
-  display: grid;
-  gap: 0.2rem;
-  min-width: 0;
-  background: transparent;
-  border: 0;
-  color: inherit;
-  text-align: left;
-  padding: 0;
 }
 
 .transcript-row-main:hover .transcript-text {
@@ -5326,7 +5238,8 @@ button.status-badge:hover {
 
 /* ── User Guide (/docs) ─────────────────────────────────────── */
 
-.docs-page {
+.docs-page,
+.convert-page {
   position: fixed;
   inset: 0;
   z-index: 60;
@@ -8417,16 +8330,7 @@ body::-webkit-scrollbar-thumb:hover,
 }
 
 /* ── Media converter (/convert), layered over the editor like the user guide ── */
-.convert-page {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  background: var(--background);
-  outline: none;
-}
+/* .convert-page and .convert-header share rules with .docs-page / .docs-header above. */
 
 .convert-header {
   display: flex;
@@ -8436,17 +8340,6 @@ body::-webkit-scrollbar-thumb:hover,
   border-bottom: 1px solid var(--border);
   background: var(--card);
   flex-shrink: 0;
-}
-
-.convert-header-title {
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--space-md);
-  font-family: var(--font-display);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--text);
 }
 
 .convert-body {
