@@ -2191,25 +2191,6 @@ body {
 	min-height: 0;
 }
 
-.side-rail-expand {
-	flex: 1;
-	border: 1px solid var(--border);
-	border-radius: var(--radius-lg);
-	background: var(--bg-control);
-	color: var(--text-muted);
-	font-size: var(--text-sm);
-	cursor: pointer;
-}
-
-.side-rail-expand:hover {
-	color: var(--text);
-}
-
-.side-rail-expand:focus-visible {
-	outline: 2px solid var(--ring);
-	outline-offset: -2px;
-}
-
 .program-panel {
 	display: flex;
 	min-width: 0;
@@ -6855,6 +6836,10 @@ button.status-badge:hover {
 	text-overflow: ellipsis;
 	white-space: nowrap;
 	cursor: pointer;
+	transition:
+		color 120ms ease-out,
+		background-color 120ms ease-out,
+		border-color 120ms ease-out;
 }
 .side-rail-tab:hover {
 	color: var(--ink-100);
@@ -6867,7 +6852,8 @@ button.status-badge:hover {
 }
 .side-rail-tab:focus-visible,
 .side-rail-secondary-tab:focus-visible,
-.side-rail-collapse:focus-visible {
+.side-rail-collapse:focus-visible,
+.side-rail-expand:focus-visible {
 	outline: 2px solid var(--ring);
 	outline-offset: -2px;
 }
@@ -6910,6 +6896,10 @@ button.status-badge:hover {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	cursor: pointer;
+	transition:
+		color 120ms ease-out,
+		background-color 120ms ease-out,
+		border-color 120ms ease-out;
 }
 .side-rail-secondary-tab:hover {
 	color: var(--ink-100);
@@ -6964,6 +6954,9 @@ button.status-badge:hover {
 	display: flex;
 	align-items: center;
 	justify-content: center;
+	transition:
+		color 120ms ease-out,
+		background-color 120ms ease-out;
 }
 .side-rail-collapse {
 	flex: 0 0 28px;
@@ -6978,7 +6971,9 @@ button.status-badge:hover {
 	background: rgb(255 255 255 / 4%);
 }
 .side-rail-expand {
+	flex: 1;
 	border: 1px solid var(--edge);
+	font-size: var(--text-sm);
 }
 
 /* ── Preview stage — calibration well ── */
