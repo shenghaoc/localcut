@@ -25,11 +25,7 @@ describe('SIDE_RAIL_TABS (IA-T4 / D10-D14 right-rail destinations)', () => {
 	it('keeps secondary destinations grouped by job', () => {
 		expect(TEXT_SIDE_RAIL_TABS.map((tab) => tab.id)).toEqual(['captions', 'language-tools']);
 		expect(AUDIO_SIDE_RAIL_TABS.map((tab) => tab.id)).toEqual(['live-chain', 'voice-fx']);
-		expect(CAPTURE_SIDE_RAIL_TABS.map((tab) => tab.id)).toEqual([
-			'record',
-			'program',
-			'publish'
-		]);
+		expect(CAPTURE_SIDE_RAIL_TABS.map((tab) => tab.id)).toEqual(['record', 'program', 'publish']);
 	});
 
 	it('only exposes Language Tools when the capability surface is visible', () => {

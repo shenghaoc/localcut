@@ -2849,6 +2849,77 @@ body {
   border: 1px solid color-mix(in srgb, var(--primary) 35%, var(--border));
 }
 
+.caption-notice-warn {
+  background: color-mix(in srgb, var(--warning, #f59e0b) 14%, transparent);
+  color: var(--text);
+  border: 1px solid
+    color-mix(in srgb, var(--warning, #f59e0b) 35%, var(--border));
+}
+
+.caption-notice-prompt {
+  background: color-mix(
+    in srgb,
+    var(--surface) 96%,
+    var(--brand, var(--primary))
+  );
+  color: var(--text);
+  border: 1px solid
+    color-mix(in srgb, var(--brand, var(--primary)) 40%, var(--border));
+}
+
+.caption-notice-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.caption-notice-actions button {
+  padding: 0.25rem 0.6rem;
+  font-size: var(--text-xs);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.caption-notice-actions button:hover {
+  background: var(--surface-hover);
+}
+
+.caption-notice-actions button:first-child {
+  background: var(--brand, var(--primary));
+  color: var(--brand-foreground, #fff);
+  border-color: var(--brand, var(--primary));
+}
+
+.caption-notice-actions button:first-child:hover {
+  opacity: 0.88;
+}
+
+.caption-notice-prompt label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.caption-notice-prompt input {
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--input-bg, var(--surface));
+  color: var(--text);
+  font-size: var(--text-sm);
+}
+
+.caption-notice-prompt input:focus {
+  outline: none;
+  border-color: var(--brand, var(--primary));
+  box-shadow: 0 0 0 1px var(--brand, var(--primary));
+}
+
 .transcript-segment-list {
   display: grid;
   gap: 0.35rem;
