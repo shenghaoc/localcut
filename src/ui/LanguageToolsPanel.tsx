@@ -303,7 +303,7 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 									</p>
 								</Show>
 								<Show when={translateJob()!.phase === 'error'}>
-									<p style={{ 'font-size': '0.85em', color: 'var(--danger)' }}>
+									<p style={{ 'font-size': '0.85em', color: 'var(--vermillion)' }}>
 										✗ {translateJob()!.error}
 									</p>
 								</Show>
@@ -381,7 +381,7 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 									</Show>
 								</Show>
 								<Show when={draftJob()!.phase === 'error'}>
-									<p style={{ 'font-size': '0.85em', color: 'var(--danger)' }}>
+									<p style={{ 'font-size': '0.85em', color: 'var(--vermillion)' }}>
 										✗ {draftJob()!.error}
 									</p>
 								</Show>
