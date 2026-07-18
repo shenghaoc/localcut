@@ -11,7 +11,7 @@ import {
 } from 'solid-js';
 import { Tabs } from '@ark-ui/solid/tabs';
 import { useRegisterSW } from 'virtual:pwa-register/solid';
-import { Link2, RotateCcw, Plus } from 'lucide-solid';
+import { ChevronsLeft, ChevronsRight, Link2, RotateCcw, Plus } from 'lucide-solid';
 import {
 	CLOCK_BUFFER_BYTES,
 	type CapabilityProbeResult,
@@ -4911,7 +4911,7 @@ export function App() {
 										title="Expand side panel"
 										onClick={() => toggleSideRail(false)}
 									>
-										‹
+										<ChevronsLeft size={16} aria-hidden="true" />
 									</button>
 								}
 							>
@@ -4944,7 +4944,7 @@ export function App() {
 											title="Collapse side panel"
 											onClick={() => toggleSideRail(true)}
 										>
-											›
+											<ChevronsRight size={16} aria-hidden="true" />
 										</button>
 									</Tabs.List>
 									<div class="side-rail-tab-content">
@@ -5386,6 +5386,22 @@ export function App() {
 													}
 													onRetakeCleared={() => setRetakeClipId(null)}
 												/>
+												<ReplayBufferPanel
+													captureState={captureSession()}
+													ringBufferState={replayBufferState()}
+													onStartCapture={() => void startReplayCapture()}
+													onStopCapture={stopReplayCapture}
+													onSaveLastN={(nSeconds) => {
+														if (!bridge) return;
+														setReplaySaveInProgress(true);
+														bridge.send({ type: 'replay-save-last-n', nSeconds });
+													}}
+													saveInProgress={replaySaveInProgress()}
+													isSupported={replayCaptureSupported()}
+													supportedReason={replayCaptureUnsupportedReason()}
+													crossOriginIsolated={capabilities().crossOriginIsolated}
+													initiallyExpanded={false}
+												/>
 											</SecondaryRailPanel>
 											<SecondaryRailPanel
 												idPrefix="capture"
@@ -5417,29 +5433,6 @@ export function App() {
 													onStart={startProgramSession}
 													onStop={stopProgramSession}
 													onSwitchScene={switchProgramScene}
-												/>
-											</SecondaryRailPanel>
-											<SecondaryRailPanel
-												idPrefix="capture"
-												tab="replay"
-												value={activeCaptureSideRailTab()}
-												keepMounted
-											>
-												<ReplayBufferPanel
-													captureState={captureSession()}
-													ringBufferState={replayBufferState()}
-													onStartCapture={() => void startReplayCapture()}
-													onStopCapture={stopReplayCapture}
-													onSaveLastN={(nSeconds) => {
-														if (!bridge) return;
-														setReplaySaveInProgress(true);
-														bridge.send({ type: 'replay-save-last-n', nSeconds });
-													}}
-													saveInProgress={replaySaveInProgress()}
-													isSupported={replayCaptureSupported()}
-													supportedReason={replayCaptureUnsupportedReason()}
-													crossOriginIsolated={capabilities().crossOriginIsolated}
-													initiallyExpanded={true}
 												/>
 											</SecondaryRailPanel>
 											<SecondaryRailPanel

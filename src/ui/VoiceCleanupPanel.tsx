@@ -167,10 +167,17 @@ export function VoiceCleanupPanel(props: VoiceCleanupPanelProps) {
 						}}
 					>
 						<div class="denoiser-tracks">
-							<p class="insert-hint">
-								Enable per-track denoising. The WASM RNNoise denoiser runs on the monitor bus and
-								export chain.
-							</p>
+							<Show when={props.trackNames.size === 0}>
+								<p class="placeholder-text">
+									Add audio clips to the timeline to enable per-track denoising.
+								</p>
+							</Show>
+							<Show when={props.trackNames.size > 0}>
+								<p class="insert-hint">
+									Enable per-track denoising. The WASM RNNoise denoiser runs on the monitor bus and
+									export chain.
+								</p>
+							</Show>
 							<Show when={props.denoiserStatus === 'unavailable'}>
 								<div class="analysis-error" role="alert">
 									<AlertTriangle size={14} />

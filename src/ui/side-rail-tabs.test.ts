@@ -28,7 +28,6 @@ describe('SIDE_RAIL_TABS (IA-T4 / D10-D14 right-rail destinations)', () => {
 		expect(CAPTURE_SIDE_RAIL_TABS.map((tab) => tab.id)).toEqual([
 			'record',
 			'program',
-			'replay',
 			'publish'
 		]);
 	});

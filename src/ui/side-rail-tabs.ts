@@ -41,7 +41,6 @@ export type AudioSideRailTab = (typeof AUDIO_SIDE_RAIL_TABS)[number]['id'];
 export const CAPTURE_SIDE_RAIL_TABS = [
 	{ id: 'record', label: 'Record' },
 	{ id: 'program', label: 'Program' },
-	{ id: 'replay', label: 'Replay' },
 	{ id: 'publish', label: 'Go Live' }
 ] as const;
 

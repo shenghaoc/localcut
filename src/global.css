@@ -1529,7 +1529,7 @@ body {
 
 .render-queue-job-cover-warning {
 	margin: 0;
-	color: rgb(255 200 0);
+	color: var(--warning);
 	font-size: 11px;
 }
 
@@ -1879,7 +1879,7 @@ body {
 .cover-thumb-warning {
 	max-width: 160px;
 	overflow: hidden;
-	color: rgb(255 200 0);
+	color: var(--warning);
 	font-size: 11px;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -1887,13 +1887,13 @@ body {
 
 /* Phase 39: Export dimension/preset warnings */
 .export-aspect-warning {
-	color: rgb(255 200 0);
+	color: var(--warning);
 	font-size: 12px;
 	margin: 4px 0;
 }
 
 .export-preset-blocked {
-	color: rgb(255 80 80);
+	color: var(--danger);
 	font-size: 12px;
 	margin: 4px 0;
 }
@@ -6491,7 +6491,7 @@ button.status-badge:hover {
 	font-size: 9.5px;
 	font-weight: 600;
 	letter-spacing: 0.04em;
-	color: var(--ink-700);
+	color: var(--ink-400);
 }
 .side-rail-tab-panel > .panel > .panel-title:first-child {
 	/* Tab label above already states the section — keep the title as a
@@ -6959,9 +6959,11 @@ button.status-badge:hover {
 	background: var(--plate);
 	border: none;
 	border-radius: var(--radius-md);
-	font-family: var(--font-mono);
 	cursor: pointer;
 	line-height: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
 }
 .side-rail-collapse {
 	flex: 0 0 28px;
@@ -7067,7 +7069,7 @@ button.status-badge:hover {
 	height: 36px;
 	padding: 0 18px;
 	background: var(--amber);
-	color: #04161a;
+	color: var(--primary-foreground);
 	border: 1px solid var(--amber);
 	border-radius: var(--radius-sm);
 	box-shadow: 0 0 0 1px rgb(212 168 83 / 15%);
@@ -7387,19 +7389,19 @@ body::-webkit-scrollbar-thumb:hover,
 .button-variant-default {
 	border-color: color-mix(in srgb, var(--amber) 55%, var(--edge));
 	background: var(--amber);
-	color: #1a1100;
+	color: var(--primary-foreground);
 	box-shadow: 0 0 0 1px rgb(212 168 83 / 15%);
 }
 
 .button-variant-default:hover:not(:disabled) {
 	background: color-mix(in oklab, var(--amber), white 6%);
-	color: #1a1100;
+	color: var(--primary-foreground);
 }
 
 .button-variant-destructive {
 	border-color: color-mix(in srgb, var(--vermillion) 62%, var(--edge));
 	background: color-mix(in srgb, var(--vermillion) 92%, black);
-	color: #1a0405;
+	color: var(--destructive-foreground);
 }
 
 .button-variant-outline {
