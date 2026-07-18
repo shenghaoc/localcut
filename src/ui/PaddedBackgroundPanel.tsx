@@ -99,13 +99,13 @@ export function PaddedBackgroundPanel(props: PaddedBackgroundPanelProps) {
 										onChange={() => {
 											const bg =
 												kind === 'solid'
-													? { kind: 'solid' as const, color: '#16151c' }
+													? { kind: 'solid' as const, color: '#1a1a2e' }
 													: kind === 'gradient'
 														? {
 																kind: 'gradient' as const,
 																stops: [
-																	{ color: '#16151c', pos: 0 },
-																	{ color: '#0f0e15', pos: 1 }
+																	{ color: '#1a1a2e', pos: 0 },
+																	{ color: '#16213e', pos: 1 }
 																],
 																angleDeg: 0
 															}

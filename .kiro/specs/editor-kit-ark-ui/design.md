@@ -1,5 +1,9 @@
 # Design: Editor Kit Ark UI Refresh
 
+> Status: **Implemented.** This document remains authoritative for Ark structure;
+> the later amber palette and responsive rules are defined by
+> [`feature-design-system-foundation`](../feature-design-system-foundation/design.md).
+
 This spec implements the single-slide `editor-kit-demo.pptx` as the app's production editor chrome. It is a UI-shell migration only: worker protocols, media engine modules, and frame lifetimes are unchanged.
 
 ## D1 — Chrome Layout

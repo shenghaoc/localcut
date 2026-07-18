@@ -12,10 +12,7 @@ export function RailEmpty(props: {
 	actions?: JSX.Element;
 }): JSX.Element {
 	return (
-		<div
-			classList={{ 'rail-empty': true, 'rail-empty--compact': props.compact === true }}
-			role="status"
-		>
+		<div classList={{ 'rail-empty': true, 'rail-empty--compact': props.compact === true }}>
 			<p class="rail-empty-title">{props.title}</p>
 			<Show when={props.children}>
 				<div class="rail-empty-copy">{props.children}</div>

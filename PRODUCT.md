@@ -14,7 +14,7 @@ A browser-native non-linear video editor that feels close to a desktop tool. Imp
 
 ## Brand Personality
 
-**Minimal, technical, warm.** The interface is precise like a measurement instrument, stripped of decoration — but never sterile. A warm amber accent (the colour of film stock and light meters) and a dark palette with a subtle warm undertone keep it human. JetBrains Mono for every technical readout; DM Sans for chrome. No gradients, no glass, no social-app energy.
+**Minimal, technical, warm.** The interface is precise like a measurement instrument, stripped of decoration — but never sterile. A warm amber accent (the colour of film stock and light meters) and a dark palette with a subtle warm undertone keep it human. JetBrains Mono for every technical readout; DM Sans for chrome. No promotional gradients, gradient text, glass, or social-app energy; restrained tonal gradients may communicate progress, state, or preview geometry.
 
 ## Anti-references
 
@@ -31,7 +31,7 @@ A browser-native non-linear video editor that feels close to a desktop tool. Imp
 
 3. **Task completion over architectural purity.** If a controlled compatibility path lets more users import, cut, preview, or export, it is allowed when explicit, measured, and clearly labeled.
 
-4. **Desktop-class first.** Optimise for desktop Chromium with a keyboard-driven editing workflow. Mobile and touch are not v1 concerns.
+4. **Desktop-class first.** Optimise the complete editing workflow for desktop Chromium and keyboard input. Narrow viewports and coarse pointers receive resilient reflow, safe-area handling, and usable targets, but phone-first editing is not a v1 product promise.
 
 5. **Precision over decoration.** Every pixel serves the edit. Typography is a tool (tabular-nums timecodes, monospace technicals), colour is signal (amber for the scrubhead and primary actions, sage for audio, vermillion for danger), and spacing follows a single disciplined scale.
 

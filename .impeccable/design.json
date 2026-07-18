@@ -1,6 +1,6 @@
 {
 	"schemaVersion": 2,
-	"generatedAt": "2026-07-18T03:55:00.000Z",
+	"generatedAt": "2026-07-18T07:55:21.000Z",
 	"title": "Design System: LocalCut Studio",
 	"extensions": {
 		"colorMeta": {
@@ -9,6 +9,11 @@
 				"displayName": "Film Stock Amber",
 				"canonical": "#d4a853",
 				"tonalRamp": ["#d4a853", "#c4983e", "#f5d78a", "#8c6a2c"]
+			},
+			"amber-pressed": {
+				"role": "primary",
+				"displayName": "Amber Pressed",
+				"canonical": "#c4983e"
 			},
 			"ink": {
 				"role": "neutral",
@@ -61,6 +66,11 @@
 				"displayName": "Text Muted",
 				"canonical": "#8e90a3"
 			},
+			"text-dim": {
+				"role": "neutral",
+				"displayName": "Text Dim",
+				"canonical": "#5a5c70"
+			},
 			"vermillion": {
 				"role": "signal",
 				"displayName": "Vermillion (Destructive)",
@@ -99,6 +109,19 @@
 				"displayName": "Mono",
 				"purpose": "Every timecode, frame count, codec string. JetBrains Mono, tabular-nums."
 			}
+		},
+		"spacingMeta": {
+			"2xs": "0.25rem",
+			"xs-tight": "0.3rem",
+			"xs": "0.35rem",
+			"sm-tight": "0.4rem",
+			"sm": "0.45rem",
+			"md": "0.5rem",
+			"md-tight": "0.55rem",
+			"lg": "0.65rem",
+			"xl": "0.75rem",
+			"2xl": "0.85rem",
+			"3xl": "1rem"
 		},
 		"shadows": [
 			{
@@ -171,14 +194,17 @@
 			"Lead with Film Stock Amber for exactly one primary action per view.",
 			"Use JetBrains Mono with tabular-nums for every timecode and technical value.",
 			"Use tonal surface layering (ink → plate → panel → elevated) for depth.",
-			"Keep borders at 1px in edge or edge-strong."
+			"Keep borders at 1px in edge or edge-strong.",
+			"Use signal colours only for their documented status meaning.",
+			"Respect prefers-reduced-motion for every transition."
 		],
 		"dontRules": [
 			"Do not introduce a second accent colour.",
 			"Do not use side-stripe borders as coloured accents.",
-			"Do not use gradient text, glassmorphism, or decorative blur effects.",
+			"Do not use gradient text, promotional gradients, glassmorphism, or decorative blur effects; restrained functional tonal gradients are permitted.",
 			"Do not display timecodes in DM Sans.",
 			"Do not add shadows to surfaces at rest.",
+			"Do not use bold or uppercase decoratively; reserve them for compact controls, status, and technical labels.",
 			"Do not emulate kdenlive, Final Cut, CapCut, or DaVinci Resolve aesthetics."
 		]
 	}

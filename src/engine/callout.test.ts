@@ -12,7 +12,7 @@ describe('calloutContentHash', () => {
 			calloutKind: 'arrow',
 			geometry: { kind: 'arrow', x1: 0, y1: 0, x2: 1, y2: 1 },
 			style: {
-				color: '#d4a853',
+				color: '#FFD700',
 				strokeWidth: 3,
 				fillOpacity: 0,
 				fontSize: 28,
@@ -31,7 +31,7 @@ describe('calloutContentHash', () => {
 			calloutKind: 'box',
 			geometry: { kind: 'box', x: 0, y: 0, w: 1, h: 1 },
 			style: {
-				color: '#d4a853',
+				color: '#FFD700',
 				strokeWidth: 3,
 				fillOpacity: 0,
 				fontSize: 28,
@@ -50,7 +50,7 @@ describe('calloutContentHash', () => {
 			calloutKind: 'arrow',
 			geometry: { kind: 'arrow', x1: 0.2, y1: 0.3, x2: 0.8, y2: 0.7 },
 			style: {
-				color: '#d4a853',
+				color: '#FFD700',
 				strokeWidth: 3,
 				fillOpacity: 0,
 				fontSize: 28,
@@ -72,7 +72,7 @@ describe('calloutContentHash', () => {
 			calloutKind: 'step',
 			geometry: { kind: 'step', cx: 0.5, cy: 0.5, r: 0.05, number: 1 },
 			style: {
-				color: '#d4a853',
+				color: '#FFD700',
 				strokeWidth: 3,
 				fillOpacity: 0,
 				fontSize: 28,
@@ -91,7 +91,7 @@ describe('parseCalloutPayload', () => {
 			calloutKind: 'arrow',
 			geometry: { kind: 'arrow', x1: 0, y1: 0, x2: 1, y2: 1 },
 			style: {
-				color: '#d4a853',
+				color: '#FFD700',
 				strokeWidth: 3,
 				fillOpacity: 0,
 				fontSize: 28,
@@ -126,7 +126,7 @@ describe('parseCalloutPayload', () => {
 describe('normalizeCalloutPayload', () => {
 	it('fills style defaults', () => {
 		const result = normalizeCalloutPayload({ calloutKind: 'box' });
-		expect(result.style.color).toBe('#d4a853');
+		expect(result.style.color).toBe('#FFD700');
 		expect(result.style.strokeWidth).toBe(3);
 		expect(result.style.fillOpacity).toBe(0);
 	});

@@ -174,17 +174,22 @@
   force `builtIn: false`, and dispatch `'caption-import-custom-preset'` to the
   worker. Display the label in a success notice.
 - [x] **T8.4** Implement the "Save as preset" action (saves current Inspector
-  overrides as a new custom preset with a user-provided label): prompts for a
-  label, builds a `CaptionAnimStylePreset` from the current state, dispatches
-  `'caption-import-custom-preset'`.
+  overrides as a new custom preset with a user-provided label): open a labelled
+  native modal, snapshot the base preset/current draft, keep the prompt mounted
+  for an empty name, disable Save until valid, and dispatch
+  `'caption-import-custom-preset'` from the snapshot.
 - [x] **T8.5** Implement the "Update / Save as copy" conflict resolution prompt
   (R4.3): when the incoming preset `label` matches an existing custom preset,
-  show a two-button prompt; "Update" overwrites the matching entry by ID; "Save
-  as copy" appends with a new UUID.
+  show a labelled native alert dialog with Cancel, "Update existing", and "Save
+  as copy"; the trailing safe copy action receives initial focus and appends
+  with a new UUID, while update overwrites the matching entry by ID.
 - [x] **T8.6** Accessibility pass: keyboard reachable (Tab / Enter on all
-  interactive elements), ARIA labels on all icon-only buttons, ARIA live region
-  on the success/error notice, no media objects or GPU handles in this file,
-  `onCleanup` for any signal subscriptions.
+  interactive elements), native modal focus containment, Escape and focus
+  return, ARIA labels/descriptions on dialogs and icon-only buttons, ARIA live
+  region on the success/error notice, no media objects or GPU handles in this
+  file, `onCleanup` for any signal subscriptions.
+- [x] **T8.7** Browser-test blank-name mounting, initial focus, Escape/focus
+  return, stable snapshot save, and conflict Cancel/Copy/Update behaviour.
 
 ## T9 — Unit tests (R9.1–R9.5)
 

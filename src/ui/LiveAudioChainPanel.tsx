@@ -72,9 +72,9 @@ export function LiveAudioChainPanel(props: LiveAudioChainPanelProps) {
 					</Show>
 
 					<Show when={props.crossOriginIsolated && !props.isCapturing}>
-						<RailEmpty compact title="Live chain waits for capture">
-							Gate, compressor, limiter, and denoiser run on the monitor path. Start a recording
-							from Capture to hear them.
+						<RailEmpty compact title="Configure before recording">
+							Gate, compressor, and limiter can be printed to recorded audio. Start a recording to
+							enable that option; live monitoring stays unprocessed.
 						</RailEmpty>
 					</Show>
 

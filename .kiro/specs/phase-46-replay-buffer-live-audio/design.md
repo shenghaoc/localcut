@@ -1,10 +1,18 @@
 # Design: Phase 46 — Replay Buffer and Live Audio Chain
 
 > Status: **Implemented (v1)** — live capture, GOP-aligned ring buffer with OPFS spill, instant replay clip drop, and the live audio insert chain on the recording path (print-to-recording). The monitor-path AudioWorklet (hearing the processed chain live) is a tracked follow-up; see tasks T6.2–T6.7.
+>
+> **Implementation truth:** any monitor-path diagrams or contracts below describe
+> that tracked T6 extension, not current v1 behaviour. Today the pipeline worker
+> processes capture audio before encoding and the audible monitor remains raw.
 
 ## Goal
 
-Add an always-on replay buffer that continuously encodes a browser capture session into a GOP-aligned ring buffer, letting the user save the last N seconds as a timeline clip at any moment without interrupting recording. Complement this with a live audio processing chain (gate, compressor, limiter) in the AudioWorklet monitor path so the user hears a polished signal during capture, with measured and surfaced latency.
+Add an always-on replay buffer that continuously encodes a browser capture
+session into a GOP-aligned ring buffer, letting the user save the last N seconds
+as a timeline clip at any moment without interrupting recording. V1 complements
+this with an opt-in gate/compressor/limiter chain printed to captured audio. The
+AudioWorklet monitor path is the separately tracked T6 extension.
 
 ## Non-goals (this phase)
 
@@ -256,7 +264,10 @@ The save operation reuses the existing Mediabunny mux path (Phase 6) by feeding 
 
 ### Insert Architecture
 
-The chain runs in the AudioWorklet processor on the monitor path — after capture audio + timeline audio are mixed, before the destination output. Each insert is a standalone processing function with a shared parameter interface:
+V1 runs the chain in the pipeline worker on capture audio before encoding (see
+Print to Recording below). The following AudioWorklet processor design is the
+T6 monitor-path extension; each insert remains a standalone processing function
+with the shared parameter interface:
 
 ```typescript
 interface AudioInsertParams {

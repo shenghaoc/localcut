@@ -1,6 +1,6 @@
 # Design — Capability-probe false negatives + editor chrome overlap & IA
 
-> Status: **Part 1 (D1–D9): Implemented — merged (#130 + #131).** **Part 2 (D10–D16, editor-chrome IA): this branch — Phase 1 implemented, Phases 2–3 proposed.** Each design entry Dn maps to bug Bn in [`bugfix.md`](./bugfix.md). The recurring theme for B1–B4 is one defect: H.264 codec strings encode a fixed **level** that is too low for the probe resolution, so `VideoEncoder.isConfigSupported` rejects the config on a fully capable encoder. D5 first shipped (#130) as an honest gate, then the deferred off-main-thread main-frames capture path **landed (T5.5, #131)**; D6 gained a consolidation gotcha (`display: grid` must survive).
+> Status: **Implemented.** Part 1 (D1–D9) merged in #130/#131. Part 2 (D10–D16) shipped the complete three-phase editor-chrome IA. Each design entry Dn maps to bug Bn in [`bugfix.md`](./bugfix.md). The later visual-token and responsive hardening is specified by [`feature-design-system-foundation`](../feature-design-system-foundation/design.md).
 
 ## D1 / D2 — Pick an H.264 level that matches the probe resolution
 
@@ -173,7 +173,7 @@ This composes with B6/D6: the 236px dock leaves the bin ~162px, which the reduce
 
 # Part 2 — Editor chrome IA design (D10–D16)
 
-> Maps to B10–B16. Guiding move: **consolidate by user job, give every nav control one honest behavior, and never hide primary navigation behind a scrollbar.** Code anchors current as of branch `claude/laughing-colden-c29248`. Status: Phase 1 (IA-T1–IA-T3) implemented; Phases 2–3 proposed.
+> Maps to B10–B16. Guiding move: **consolidate by user job, give every nav control one honest behavior, and never hide primary navigation behind a scrollbar.** Status: all three rollout phases implemented.
 
 ## Target information architecture
 
@@ -200,7 +200,7 @@ The audit's proposed reorganization, adopted as the design target:
 
 `SIDE_RAIL_TABS` ([`App.tsx:354-362`](../../../src/ui/App.tsx)) has seven entries; the tab bar is `display:flex; overflow-x:auto` with a hidden/thin scrollbar ([`global.css:6834-6845`](../../../src/global.css), plus duplicates at ~2240, ~7854). 374px of tabs in a ~302px rail ⇒ scroll/clip/strip-shift.
 
-- **Preferred:** fold to the four job destinations (D14). Four short labels (`Inspector`/`Text`/`Audio`/`Capture` ≈ 204px) fit 302px ⇒ **remove `overflow-x:auto` from `.side-rail-tab-bar`** entirely. Within a destination, a secondary segmented control (e.g. `Capture` → `Record | Program | Replay`) fits or wraps.
+- **Implemented:** fold to the four job destinations (D14). Four short labels (`Inspector`/`Text`/`Audio`/`Capture` ≈ 204px) fit 302px, so `.side-rail-tab-bar` has no horizontal scrolling. Capture's secondary control is `Record | Program | Go Live`; Replay Buffer is the first collapsible section inside Record because it shares the recording workflow and prerequisites.
 - **Fallback (if the four-tab regroup is deferred):** replace the hidden scrollbar with a **visible** "⋯ More" overflow menu so no destination is silently hidden. Never keep `overflow-x:auto` + hidden scrollbar for primary nav (same rule as media-bin B9).
 - Either way: delete the redundant `.side-rail-tab-bar` rule blocks so one definition governs (the duplicate-rule trap from B6 exists here too).
 
@@ -240,7 +240,7 @@ Replace `SIDE_RAIL_TABS` (7) with four job destinations, each holding the former
 | `Inspector` | contextual clip properties (unchanged) |
 | `Text` | Captions + translation/copy tools |
 | `Audio` | live chain + Voice FX (+ selected-clip cleanup entry) |
-| `Capture` | Record · Program · Replay · go-live/WHIP setup |
+| `Capture` | Record (Replay Buffer first) · Program · Go Live/WHIP setup |
 
 `isSideRailTab`, `openSideRailTab`, the persisted `SIDE_RAIL_COLLAPSED_KEY`, and any keyboard-map entry referencing tab ids must change together; migrate the persisted collapsed-key value safely. The secondary control is a small in-panel `Tabs`/segmented group. Subsumes D10 (four labels fit, so the scroll pattern is removed).
 
@@ -262,8 +262,9 @@ Incremental, smallest blast radius first — each independently shippable and ke
 
 Update the affected `__browser__` component tests and any keyboard-map tests that reference tab ids at each step.
 
-## Open decisions (Part 2 — resolve at design review)
+## Resolved decisions (Part 2)
 
-1. **Left rail direction (D11):** Option A (full dock switcher) vs **B** (library/source only, recommended).
-2. **Right-rail destination set (D14):** confirm `Captions`→`Text` and `Record`/`Program`/`Replay`→`Capture` grouping.
-3. Ship Part 2 incrementally (recommended) vs one redesign PR.
+1. The left rail is the focused Media/Beats library switcher (Option B).
+2. The right rail uses Inspector, Text, Audio, and Capture. Capture uses Record,
+   Program, and Go Live secondary choices; Replay lives within Record.
+3. The work shipped incrementally in the three rollout phases above.

@@ -48,10 +48,17 @@ rounded:
   lg: '6px'
   pill: '999px'
 spacing:
-  xs: '4px'
-  sm: '8px'
-  md: '12px'
-  lg: '18px'
+  2xs: '0.25rem'
+  xs-tight: '0.3rem'
+  xs: '0.35rem'
+  sm-tight: '0.4rem'
+  sm: '0.45rem'
+  md: '0.5rem'
+  md-tight: '0.55rem'
+  lg: '0.65rem'
+  xl: '0.75rem'
+  2xl: '0.85rem'
+  3xl: '1rem'
 components:
   button-primary:
     backgroundColor: '{colors.film-stock-amber}'
@@ -79,13 +86,13 @@ components:
 
 LocalCut Studio is a dark, focused workspace — the digital equivalent of a film editing bench: functional, precise, stripped of decoration. Every surface, every pixel, every type choice serves the edit. There is no chrome that doesn't earn its place. The palette is a single confident amber accent against a sequence of warm-undertone dark surfaces, like the glow of a light meter in a dim cutting room. DM Sans carries the interface voice with quiet authority; JetBrains Mono delivers every timecode, frame rate, and codec string with tabular-nums precision.
 
-This system explicitly rejects the consumer-social energy of CapCut, the industrial panel-density of DaVinci Resolve, the magnetic-track model of Final Cut Pro, and the open-source clutter of kdenlive. No gradients, no glassmorphism, no oversized hero typography. The amber accent is the only colour that draws the eye — its rarity is its power.
+This system explicitly rejects the consumer-social energy of CapCut, the industrial panel-density of DaVinci Resolve, the magnetic-track model of Final Cut Pro, and the open-source clutter of kdenlive. No promotional gradients, gradient text, glassmorphism, or oversized hero typography. Quiet tonal gradients remain acceptable when they communicate control state, progress, or preview geometry. The amber accent is the only interaction colour that draws the eye — its rarity is its power.
 
 **Key Characteristics:**
 
 - Single-accent palette: amber carries all primary actions, focus states, and the scrubhead
 - Tonal surface layering (ink → plate → panel → elevated) — no decorative shadows at rest
-- No bold, no italic, no uppercase — weight and size carry hierarchy
+- Restrained weight and case — 600/700 is reserved for controls and headings; uppercase is limited to compact technical labels
 - Tabular-nums everywhere time is displayed
 - Borders are 1px hairlines, never side-stripes
 - Everything is measured, nothing is gratuitous
@@ -132,7 +139,7 @@ A single amber accent against a warm-undertone dark neutral ramp. Three signal c
 **Display/UI Font:** DM Sans (with Noto Sans SC, Noto Sans JP, system-ui, -apple-system, Segoe UI fallback)
 **Mono Font:** JetBrains Mono (with Noto Sans SC, Noto Sans JP, ui-monospace, SF Mono fallback)
 
-**Character:** DM Sans brings a clean geometric warmth without the coldness of Inter or the playfulness of rounded sans-serifs. JetBrains Mono is the ruthless instrument — every timecode, FPS value, codec string, and sample rate is set in it with `font-variant-numeric: tabular-nums lining-nums`. No bold, no italic, no uppercase. Weight and size alone carry the hierarchy.
+**Character:** DM Sans brings a clean geometric warmth without the coldness of Inter or the playfulness of rounded sans-serifs. JetBrains Mono is the ruthless instrument — every timecode, FPS value, codec string, and sample rate is set in it with `font-variant-numeric: tabular-nums lining-nums`. Regular and semibold weights carry most hierarchy; bold and uppercase are reserved for compact controls, status badges, and technical readouts where fast scanning benefits.
 
 ### Hierarchy
 
@@ -191,13 +198,13 @@ This system uses **tonal layering**, not shadows, as its primary depth mechanism
 - **Corner Style:** 4px radius (`--radius-md`).
 - **Background:** Panel surface (`#16151c`).
 - **Shadow:** None at rest. Ambient-low shadow when floating.
-- **Border:** None. Surface contrast separates cards from the app background.
+- **Border:** 1px edge hairline. Tonal contrast does the primary separation; the border protects panel boundaries in dense layouts.
 
 ### Navigation
 
-- **Toolbar:** Ink background (`#0a090f`), 112px total height. Top row: menu bar + transport. Middle row: tool buttons. Bottom row: pipeline status chips.
+- **Toolbar:** Ink background (`#0a090f`), three compact rows: application menus/search, source + transport + export controls, then pipeline status and frequent live tools. Compact desktop widths remove lower-frequency controls before any export action can overflow.
 - **Left Dock:** Panel background, houses Media Bin and Beat Panel.
-- **Right Rail:** Fixed-width panel, houses Inspector, scopes, and contextual tools.
+- **Right Rail:** Fixed-width panel with four job destinations — Inspector, Text, Audio, and Capture — plus focused secondary controls inside each destination.
 - **Timeline:** 234px default height, ink background. Clips sit on panel-coloured tracks.
 
 ### Timeline (Signature Component)
@@ -223,11 +230,11 @@ This system uses **tonal layering**, not shadows, as its primary depth mechanism
 
 - **Don't** introduce a second accent colour. There is one amber. Sage, vermillion, and signal-amber are signals, not accents.
 - **Don't** use side-stripe borders (`border-left` > 1px) as coloured accents on cards or list items. Exception: 2px signal-coloured left borders on alert/status banners (`.restore-banner`, `.source-health-banner`) where the border carries severity information.
-- **Don't** use gradient text, glassmorphism, or decorative blur effects. Exception: `backdrop-filter: blur()` is permitted on floating overlay controls (safe-area toggles, preview overlays) where it serves legibility over video content — not as decoration on static surfaces.
+- **Don't** use gradient text, promotional gradients, glassmorphism, or decorative blur effects. Restrained tonal gradients are permitted for progress, selected controls, and functional preview guides. `backdrop-filter: blur()` is permitted on floating overlay controls where it serves legibility over video content — not as decoration on static surfaces.
 - **Don't** display timecodes in DM Sans. If it's a number an editor needs to read precisely, it's JetBrains Mono.
 - **Don't** add shadows to surfaces at rest. Shadows belong to floating elements (popovers, dialogs, tooltips).
 - **Don't** emulate kdenlive's cluttered panel layouts, Final Cut's magnetic timeline, CapCut's consumer-social chrome, or DaVinci Resolve's industrial density.
-- **Don't** use bold, italic, or uppercase as hierarchy tools. Weight and size carry the system.
+- **Don't** use bold, italic, or uppercase decoratively. Semibold/bold and uppercase are reserved for compact controls, status, and technical labels where they improve scanning.
 - **Don't** add an eyebrow label (small uppercase tracked text) above every section. Use only when scanning genuinely benefits.
 
 ## 7. Permitted Exceptions
@@ -258,7 +265,7 @@ Hard-coded colors in `src/engine/` (caption rendering, GPU passes, beauty effect
 
 Hard-coded colors in UI files that serve functional video-editing overlays — not interface chrome — are exempt:
 
-- Callout default stroke uses film-stock amber (`#d4a853` / `DEFAULT_CALLOUT_COLOR`) so on-preview markup shares the single UI accent rather than a second gold.
+- Phase 43 callout defaults use `#FFD700`. That is a persisted render-domain value defined by the Phase 43 contract, not editor chrome, so this design-system pass does not change it.
 - `CaptionStyleInspector.tsx` `#ffffff`: Caption rendering fallback (domain render parameter).
 - `ReframeOverlay.tsx` `rgba(74,144,226,0.8)` / `rgba(255,255,255,0.5)`: Crop guide and safe-zone overlay on the preview surface (video-compositing guides, not UI chrome).
 - `Timeline.tsx` `#b06cff`: Beat-marker visualization on the timeline ruler (data-viz overlay, not UI chrome).

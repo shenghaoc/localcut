@@ -1,6 +1,10 @@
 # Requirements: Phase 46 — Replay Buffer and Live Audio Chain
 
-> **Live capture, GOP-aligned ring buffer with OPFS spill, instant clip drop, and live audio processing chain in the monitor path.** Always-on replay buffer lets users save the last N seconds as a timeline clip while recording continues. Live audio inserts — gate, compressor, limiter, and the Phase 36 denoiser — process the monitor output with measured, surfaced latency.
+> Status: **Implemented (v1)** — live capture, GOP-aligned ring buffer with OPFS
+> spill, instant clip drop, and gate/compressor/limiter on the recording path when
+> Print to recording is enabled. The monitor AudioWorklet, processed monitoring,
+> per-insert meters, and denoiser insert remain explicitly tracked follow-ups in
+> tasks T6.2–T6.7; the v1 monitor output is unprocessed.
 
 ## R0 — Hard Constraints
 
@@ -18,7 +22,9 @@
 - **R1.1** Capture is initiated by explicit user action (a "Start Capture" button) that invokes `getDisplayMedia` or `getUserMedia` via a user-gesture-bound event. Capture never starts automatically.
 - **R1.2** The user selects a display surface (tab, window, or screen) or camera/mic device via the browser-native picker. The resulting `MediaStream` is inspected for video and audio tracks; absence of either is surfaced in the UI but does not block capture of the other.
 - **R1.3** `MediaStreamTrackProcessor` converts each `MediaStreamTrack` into a `ReadableStream` of `VideoFrame` / `AudioData` frames. These streams are transferred to the pipeline worker; no frame processing occurs on main.
-- **R1.4** The capture `MediaStream` is also routed to a monitor `<video>` element on main (muted, for the user to see what is being captured) and to the AudioWorklet monitor path (for live audio monitoring).
+- **R1.4** A muted monitor-attach helper exists for the capture `MediaStream`, but
+  v1 does not mount the processed AudioWorklet monitor path. Adding audible,
+  processed monitoring is the T6 follow-up and must not be claimed by the v1 UI.
 - **R1.5** Capture session state (active/inactive, source label, video/audio track presence, resolution, frame rate, elapsed time) is surfaced over typed messages to the UI.
 - **R1.6** Capture is stopped by user action or by the captured tab/surface being closed. Stop must: close all `MediaStreamTrack` instances, cancel the `ReadableStream` readers, flush any in-flight encoder work, and finalize the ring buffer without data loss for already-encoded chunks.
 - **R1.7** If the `MediaStreamTrackProcessor` API is unavailable (non-Chromium browsers), the feature is disabled with a capability message; the rest of the editor is unaffected.
@@ -44,19 +50,27 @@
 - **R3.7** Repeated saves (e.g. save-last-30s every 30 seconds with no loss, save-last-30s every 10 seconds with overlapping content) must produce valid, independently playable clips. Overlapping saves produce distinct assets with distinct fingerprints.
 - **R3.8** The save action is undoable via the existing snapshot undo/redo (Phase 9): undo removes the inserted clip and optionally the derived asset; the ring buffer is not affected.
 
-## R4 — Live Audio Monitor Chain
+## R4 — Live Audio Chain (v1 recording path; monitor follow-up)
 
-- **R4.1** A live audio processing chain is inserted in the AudioWorklet monitor path between the capture audio source and the monitor output. The chain is in the monitor path only — it does not affect the audio being recorded into the ring buffer unless the user explicitly chooses to print it.
+- **R4.1** In v1, the pipeline worker applies the chain to capture audio only
+  when the user explicitly enables Print to recording. The monitor output stays
+  raw. A future AudioWorklet will reuse the same chain contract for monitoring.
 - **R4.2** The chain includes three inserts, each independently bypassable:
   - **Gate** — noise gate with configurable threshold (dBFS), attack (ms), hold (ms), and release (ms). Signal below threshold is attenuated by the configured range (dB).
   - **Compressor** — feed-forward peak compressor with configurable threshold (dBFS), ratio, attack (ms), release (ms), knee (dB), and makeup gain (dB).
   - **Limiter** — brickwall peak limiter with configurable ceiling (dBFS), attack (µs), and release (ms). Precedes the final output; cannot be placed before gate/compressor.
-- **R4.3** The chain processes the mixed monitor signal (capture audio + timeline audio) before output to speakers. Each insert's input and output levels are sampled and reported over the existing Phase 16 SAB meter layout (extended with insert-level slots).
-- **R4.4** Each insert's parameters are adjustable via the UI and persisted with the project. Parameter changes are applied at the next processing block boundary (no audible zipper noise).
-- **R4.5** The Phase 36 denoiser is reserved as a future insert slot in the chain. The chain design must accommodate an additional insert between the gate and compressor without re-architecting. The denoiser slot is visible but disabled with an "Available in a future update" label in this phase.
+- **R4.3** The v1 chain processes captured audio before encoding; it does not
+  process the mixed timeline/monitor signal or report per-insert monitor meters.
+  Those behaviours belong to T6.2–T6.7.
+- **R4.4** Each implemented insert's parameters are adjustable via the UI and
+  persisted with the project. Changes affect subsequent recording-path frames.
+- **R4.5** The architecture reserves a Phase 36 denoiser insert between gate and
+  compressor, but v1 does not expose a disabled placeholder or claim denoising.
 - **R4.6** The complete chain latency (sum of all active inserts) is measured in samples and mapped to milliseconds at the current sample rate. This latency is surfaced in the diagnostics panel (Phase 25) and shown in the live audio chain UI.
 - **R4.7** The live chain defaults to fully bypassed. The user must explicitly enable each insert. State is visible: each bypass toggle, each parameter value, and the aggregate latency.
-- **R4.8** Live audio chain failure (e.g. an AudioWorklet processor crash) must not break capture or the ring buffer. The chain falls back to a clean bypass; the UI shows the failure reason and an "Attempt restart" affordance.
+- **R4.8** A recording-path chain failure must not break capture or the ring
+  buffer. AudioWorklet crash/restart handling applies when the T6 monitor worklet
+  is implemented.
 
 ## R5 — Latency Budget and Diagnostics
 

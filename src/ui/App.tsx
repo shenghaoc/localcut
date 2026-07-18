@@ -170,7 +170,6 @@ import {
 import { BUILT_IN_PRESETS } from '../engine/export-presets';
 import type { CaptionAnimStylePresetSnapshot } from '../protocol';
 import { aspectOutputSize } from '../engine/project';
-import { DEFAULT_CALLOUT_COLOR } from '../engine/callout';
 import { validateSafeZoneFile } from '../engine/safe-zones';
 import { SafeZoneOverlay } from './SafeZoneOverlay';
 import { createRecoveryMachine, type WorkerRecoveryState } from '../engine/recovery';
@@ -2370,7 +2369,7 @@ export function App() {
 				calloutKind: kind,
 				geometry,
 				style: {
-					color: DEFAULT_CALLOUT_COLOR,
+					color: '#FFD700',
 					strokeWidth: 3,
 					fillOpacity: kind === 'spotlight' ? 0.15 : 0,
 					fontSize: 28,
@@ -5464,7 +5463,27 @@ export function App() {
 												tab="record"
 												value={activeCaptureSideRailTab()}
 												keepMounted
+												class="capture-record-rail-panel"
 											>
+												<ReplayBufferPanel
+													captureState={captureSession()}
+													ringBufferState={replayBufferState()}
+													onStartCapture={() => void startReplayCapture()}
+													onStopCapture={stopReplayCapture}
+													onSaveLastN={(nSeconds) => {
+														if (!bridge) return;
+														setReplaySaveInProgress(true);
+														bridge.send({
+															type: 'replay-save-last-n',
+															nSeconds
+														});
+													}}
+													saveInProgress={replaySaveInProgress()}
+													isSupported={replayCaptureSupported()}
+													supportedReason={replayCaptureUnsupportedReason()}
+													crossOriginIsolated={capabilities().crossOriginIsolated}
+													initiallyExpanded={false}
+												/>
 												<RecordPanel
 													probe={capabilityProbeV2()}
 													status={recorderStatus()}
@@ -5536,25 +5555,6 @@ export function App() {
 														})
 													}
 													onRetakeCleared={() => setRetakeClipId(null)}
-												/>
-												<ReplayBufferPanel
-													captureState={captureSession()}
-													ringBufferState={replayBufferState()}
-													onStartCapture={() => void startReplayCapture()}
-													onStopCapture={stopReplayCapture}
-													onSaveLastN={(nSeconds) => {
-														if (!bridge) return;
-														setReplaySaveInProgress(true);
-														bridge.send({
-															type: 'replay-save-last-n',
-															nSeconds
-														});
-													}}
-													saveInProgress={replaySaveInProgress()}
-													isSupported={replayCaptureSupported()}
-													supportedReason={replayCaptureUnsupportedReason()}
-													crossOriginIsolated={capabilities().crossOriginIsolated}
-													initiallyExpanded={false}
 												/>
 											</SecondaryRailPanel>
 											<SecondaryRailPanel

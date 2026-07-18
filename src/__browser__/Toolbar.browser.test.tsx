@@ -1,11 +1,13 @@
 import { describe, it, expect, afterEach, vi } from 'vite-plus/test';
 import { render } from 'solid-js/web';
+import '../global.css';
 import { Toolbar } from '../ui/Toolbar';
 
 const disposers: Array<() => void> = [];
 
 function renderToolbar(overrides: Partial<Parameters<typeof Toolbar>[0]> = {}) {
 	const container = document.createElement('div');
+	container.style.width = '100vw';
 	document.body.appendChild(container);
 	const props: Parameters<typeof Toolbar>[0] = {
 		metadata: null,
@@ -102,5 +104,42 @@ describe('Toolbar pipeline-strip collapse (IA-T1 / D13)', () => {
 	it('still offers the contextual Keys tool when a keystroke overlay is available', () => {
 		const container = renderToolbar({ keystrokeOverlayAvailable: true });
 		expect(toolButtonLabels(container).some((label) => label.includes('Keys'))).toBe(true);
+	});
+
+	it('keeps application menus, master gain, and export controls visible at the browser width', async () => {
+		const container = renderToolbar({
+			exportControl: (
+				<div class="toolbar-export-test-controls">
+					<button type="button">Interchange</button>
+					<button type="button">Project</button>
+					<button type="button">Export</button>
+				</div>
+			)
+		});
+		await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+		const main = container.querySelector<HTMLElement>('.toolbar-main')!;
+		expect(main.scrollWidth).toBeLessThanOrEqual(main.clientWidth + 1);
+
+		const menuLabels = Array.from(
+			container.querySelectorAll<HTMLButtonElement>('.toolbar-menu-item')
+		).map((button) => button.textContent?.trim());
+		expect(menuLabels).toEqual(['Project', 'Edit', 'View', 'Clip', 'Timeline', 'Help']);
+
+		const mainRect = main.getBoundingClientRect();
+		const required = [
+			container.querySelector<HTMLElement>('.transport-controls'),
+			container.querySelector<HTMLInputElement>('.master-fader-input'),
+			...Array.from(
+				container.querySelectorAll<HTMLButtonElement>('.toolbar-export-test-controls button')
+			)
+		];
+		for (const control of required) {
+			expect(control).not.toBeNull();
+			const style = getComputedStyle(control!);
+			expect(style.display).not.toBe('none');
+			const rect = control!.getBoundingClientRect();
+			expect(rect.left).toBeGreaterThanOrEqual(mainRect.left - 0.5);
+			expect(rect.right).toBeLessThanOrEqual(mainRect.right + 0.5);
+		}
 	});
 });

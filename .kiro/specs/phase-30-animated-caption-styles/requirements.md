@@ -158,9 +158,10 @@ metadata, not carried in sidecar formats.
 - **R4.3** On successful import, the preset is assigned a new UUID `id`
   (ignoring any `id` in the file), forced `builtIn: false`, and added to
   `ProjectDoc.customAnimCaptionPresets`. A success notice shows the preset's
-  `label`. If a preset with the same `label` already exists in the project, the
-  user is asked: "Update existing?" (overwrites the matching entry) or "Save as
-  copy" (appends with new UUID).
+  `label`. If a preset with the same `label` already exists in the project, a
+  labelled native modal asks the user to Cancel, Update existing (destructive
+  replacement), or Save as copy (trailing safe default, appends with a new
+  UUID). Escape cancels and focus returns to the importer.
 - **R4.4** No network requests occur during import/export. The only I/O is the
   local File System Access or `<a download>` path.
 - **R4.5** Preset JSON files are not included as separate assets in Phase 23
@@ -172,6 +173,11 @@ metadata, not carried in sidecar formats.
   stylesheet records with no embedded raster data. The validator caps file
   size at 64 KiB before parsing; oversized files are rejected with a
   field-named error. No streaming JSON parser is required at this scale.
+- **R4.7** "Save as preset" opens a labelled native modal whose initial value,
+  base preset, and current overrides are snapshotted when the action is invoked.
+  The name field receives initial focus; clearing it keeps the modal mounted and
+  disables Save. Enter submits only a valid name; Escape cancels; background
+  controls are inert while open; focus returns to the invoking control.
 
 ## R5 — ProjectDoc schema migration (version 11 → 12)
 

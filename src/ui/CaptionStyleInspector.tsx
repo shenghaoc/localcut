@@ -6,7 +6,16 @@
  *  the only I/O.
  */
 
-import { createComputed, createMemo, createSignal, For, Show, onCleanup } from 'solid-js';
+import {
+	createComputed,
+	createMemo,
+	createSignal,
+	For,
+	Show,
+	onCleanup,
+	onMount,
+	type JSX
+} from 'solid-js';
 import type { CaptionAnimStylePreset } from '../engine/captions/anim-style';
 import {
 	ANIM_CAPTION_PRESETS,
@@ -48,6 +57,52 @@ interface CaptionStyleInspectorProps {
 	onImportPreset: (preset: UiPreset) => void;
 	/** Called to delete a custom preset. */
 	onDeletePreset: (presetId: string) => void;
+}
+
+function CaptionPresetDialog(props: {
+	class: string;
+	labelledBy: string;
+	describedBy: string;
+	initialFocusSelector: string;
+	onDismiss: () => void;
+	children: JSX.Element;
+}): JSX.Element {
+	let dialogRef: HTMLDialogElement | undefined;
+
+	onMount(() => {
+		if (!dialogRef) return;
+		dialogRef.showModal();
+		queueMicrotask(() => {
+			dialogRef?.querySelector<HTMLElement>(props.initialFocusSelector)?.focus();
+		});
+	});
+
+	onCleanup(() => {
+		if (dialogRef?.open) dialogRef.close();
+	});
+
+	return (
+		<dialog
+			ref={(element) => {
+				dialogRef = element;
+			}}
+			class={`caption-preset-dialog caption-notice ${props.class}`}
+			aria-modal="true"
+			aria-labelledby={props.labelledBy}
+			aria-describedby={props.describedBy}
+			onKeyDown={(event) => {
+				if (event.key !== 'Escape') return;
+				event.preventDefault();
+				props.onDismiss();
+			}}
+			onCancel={(event) => {
+				event.preventDefault();
+				props.onDismiss();
+			}}
+		>
+			{props.children}
+		</dialog>
+	);
 }
 
 /**
@@ -337,7 +392,11 @@ export function CaptionStyleInspector(props: CaptionStyleInspectorProps) {
 		conflictId: string;
 		label: string;
 	} | null>(null);
-	const [presetNameDraft, setPresetNameDraft] = createSignal<string | null>(null);
+	const [presetNamePrompt, setPresetNamePrompt] = createSignal<{
+		label: string;
+		base: UiPreset;
+		draft: Draft;
+	} | null>(null);
 
 	// Auto-clear the success notice after 3 s. Wrapping setImportSuccess in a
 	// helper that also schedules the timer is simpler than a createEffect for
@@ -422,27 +481,28 @@ export function CaptionStyleInspector(props: CaptionStyleInspectorProps) {
 	const handleSaveAsPreset = () => {
 		const base = activePreset();
 		if (!base) return;
-		const defaultLabel = `${base.label} (custom)`;
-		setPresetNameDraft(defaultLabel);
+		setPresetNamePrompt({
+			label: `${base.label} (custom)`,
+			base,
+			draft: d()
+		});
 	};
 
 	const handleCommitPresetName = () => {
-		const label = presetNameDraft();
-		if (label === null) return;
-		const trimmed = label.trim();
+		const prompt = presetNamePrompt();
+		if (!prompt) return;
+		const trimmed = prompt.label.trim();
 		if (trimmed.length === 0) return;
-		const base = activePreset();
-		if (!base) return;
-		const newPreset = presetFromDraft(trimmed, base, d());
+		const newPreset = presetFromDraft(trimmed, prompt.base, prompt.draft);
 		props.onImportPreset(newPreset);
 		// Switch the selection to the new preset so further edits land on it.
 		props.onSetPresetId(newPreset.id);
 		setImportSuccess(`Saved as preset: ${newPreset.label}`);
-		setPresetNameDraft(null);
+		setPresetNamePrompt(null);
 	};
 
 	const handleCancelPresetName = () => {
-		setPresetNameDraft(null);
+		setPresetNamePrompt(null);
 	};
 
 	const handleExport = () => {
@@ -714,55 +774,83 @@ export function CaptionStyleInspector(props: CaptionStyleInspectorProps) {
 				</div>
 			</Show>
 
-			{/* Import name conflict: inline confirmation instead of window.confirm */}
+			{/* Native modal semantics provide focus containment, Escape handling,
+			    background inertness, and focus return without duplicating a trap. */}
 			<Show when={importConflict()}>
 				{(c) => (
-					<div class="caption-notice caption-notice-warn" role="alertdialog" aria-modal="true">
-						<p>
+					<CaptionPresetDialog
+						class="caption-notice-warn"
+						labelledBy="caption-conflict-title"
+						describedBy="caption-conflict-description"
+						initialFocusSelector=".is-primary"
+						onDismiss={handleImportConflictCancel}
+					>
+						<h2 id="caption-conflict-title" class="caption-preset-dialog-title">
+							Preset already exists
+						</h2>
+						<p id="caption-conflict-description">
 							A preset named <strong>{c().label}</strong> already exists.
 						</p>
 						<div class="caption-notice-actions">
-							<button type="button" onClick={handleImportConflictUpdate}>
-								Update existing
-							</button>
-							<button type="button" onClick={handleImportConflictCopy}>
-								Save as copy
-							</button>
-							<button type="button" onClick={handleImportConflictCancel}>
+							<button type="button" data-caption-dialog-cancel onClick={handleImportConflictCancel}>
 								Cancel
 							</button>
+							<button type="button" class="is-destructive" onClick={handleImportConflictUpdate}>
+								Update existing
+							</button>
+							<button type="button" class="is-primary" onClick={handleImportConflictCopy}>
+								Save as copy
+							</button>
 						</div>
-					</div>
+					</CaptionPresetDialog>
 				)}
 			</Show>
 
-			{/* Inline preset name input: replaces window.prompt */}
-			<Show when={presetNameDraft()}>
-				{(label) => (
-					<div class="caption-notice caption-notice-prompt" role="dialog" aria-modal="true">
-						<label>
-							<span>Preset name</span>
-							<input
-								type="text"
-								value={label()}
-								aria-label="Preset name"
-								onInput={(e) => setPresetNameDraft(e.currentTarget.value)}
-								onKeyDown={(e) => {
-									if (e.key === 'Enter') handleCommitPresetName();
-									if (e.key === 'Escape') handleCancelPresetName();
-								}}
-							/>
-						</label>
-						<div class="caption-notice-actions">
-							<button type="button" onClick={handleCommitPresetName}>
-								Save
-							</button>
-							<button type="button" onClick={handleCancelPresetName}>
-								Cancel
-							</button>
-						</div>
+			<Show when={presetNamePrompt() !== null}>
+				<CaptionPresetDialog
+					class="caption-notice-prompt"
+					labelledBy="caption-preset-name-title"
+					describedBy="caption-preset-name-description"
+					initialFocusSelector="input"
+					onDismiss={handleCancelPresetName}
+				>
+					<h2 id="caption-preset-name-title" class="caption-preset-dialog-title">
+						Save caption preset
+					</h2>
+					<p id="caption-preset-name-description">Choose a name for these style settings.</p>
+					<label>
+						<span>Preset name</span>
+						<input
+							type="text"
+							value={presetNamePrompt()?.label ?? ''}
+							aria-label="Preset name"
+							onInput={(event) =>
+								setPresetNamePrompt((prompt) =>
+									prompt ? { ...prompt, label: event.currentTarget.value } : prompt
+								)
+							}
+							onKeyDown={(e) => {
+								if (e.key === 'Enter' && presetNamePrompt()?.label.trim()) {
+									e.preventDefault();
+									handleCommitPresetName();
+								}
+							}}
+						/>
+					</label>
+					<div class="caption-notice-actions">
+						<button type="button" onClick={handleCancelPresetName}>
+							Cancel
+						</button>
+						<button
+							type="button"
+							class="is-primary"
+							disabled={!presetNamePrompt()?.label.trim()}
+							onClick={handleCommitPresetName}
+						>
+							Save
+						</button>
 					</div>
-				)}
+				</CaptionPresetDialog>
 			</Show>
 		</div>
 	);
