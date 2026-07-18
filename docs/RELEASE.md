@@ -1,61 +1,86 @@
-# LocalCut Studio -- v1.0.0 Support Boundary
+# LocalCut Studio release support boundary
 
-All 48 development phases are complete. This document defines the support boundary for the v1.0.0 release.
+LocalCut Studio's supported v1 product is a local-first desktop editing loop: import media, organise it, edit a multi-track timeline, preview the result, finish picture and sound, save or relink the project, and export on the same device.
 
-## Supported
+Support is capability-based rather than tied to a browser version. A feature is available only when LocalCut's runtime probes confirm that the browser, operating system, and hardware provide the APIs and codecs it needs.
 
-These features are the core editing loop and are expected to work reliably on a Chromium desktop browser (Chrome 120+, Edge 120+) with WebGPU, WebCodecs, and COOP/COEP isolation:
+## Supported v1 editing loop
 
-- **Import**: MP4 (H.264/AAC), MOV (H.264/AAC), WebM (VP9/Opus), audio-only (WAV/MP3/M4A/OGG), and still images (PNG/JPG/WebP) via drag-and-drop or file picker.
-- **Media Bin**: browse imported sources, view details (resolution, frame rate, codec, rotation, actionable health warnings), add to timeline, remove.
-- **Timeline editing**: split, trim (edge drag), move, delete, copy/paste/duplicate, multi-select, undo/redo, markers.
-- **Multi-track**: video and audio tracks, track add/remove/reorder/lock/visibility/sync lock/edit targeting.
-- **Advanced editing**: insert/overwrite edits, ripple delete/trim, roll/slip/slide, lift/extract, linked A/V clips.
-- **Preview**: real-time WebGPU preview with adaptive resolution, transport controls (play/pause/seek/step), safe area guides, loop playback.
-- **Effects**: per-clip brightness, contrast, saturation, temperature via GPU compute shaders; keyframed animation.
-- **Transforms**: per-clip position, scale, rotation, opacity with preview gizmo; keyframed animation.
-- **Multi-track compositing**: layered video with Porter-Duff over compositing.
-- **Transitions**: cut-point dissolves and crossfades with dual-stream readahead.
-- **Titles**: text overlays with font size, color, alignment, background, outline, shadow.
-- **Audio mixing**: per-track gain/pan/mute/solo, clip fades, transition crossfades, master bus, real-time meters.
-- **Captions**: SRT/VTT import, inline editing, timing adjustment, split/merge, style presets, burn-in, export. Auto Captions via on-device ORT Whisper.
-- **Export**: H.264/VP9/AV1 with resolution/fps/bitrate overrides, full or range export, render queue with presets.
-- **Keyframes**: animated effect and transform parameters with interpolation.
-- **Colour grading**: `.cube` 3D LUT import; waveform, vectorscope, histogram scopes; BT.601/BT.709/Rec.2020/Display P3 conversions.
-- **Project persistence**: IndexedDB autosave, restore on reload, undo/redo history, project bundles with fingerprint dedup.
-- **Media re-linking**: offline sources can be re-linked to moved files.
-- **Media conformance**: VFR detection, rotation metadata, codec validation, source health warnings.
-- **Proxy/render cache**: LRU frame cache, proxy generation, OPFS storage with budgets.
-- **Time remapping**: per-clip keyframed speed curves (0.25x--4x) with pitch-preserving WSOLA stretch.
-- **Recording**: screen/webcam/mic capture with realtime WebCodecs encode, crash-safe OPFS chunks, quota preflight.
-- **Smart Reframe**: automatic crop-path generation for aspect ratio conversion (16:9, 9:16, 1:1, 4:5) with saliency and optional face detection.
-- **Portrait Matting**: on-device person segmentation (MODNet ONNX on ORT-WebGPU) for background remove/replace/blur.
-- **Audio Cleanup**: on-device noise suppression via ORT DTLN on WASM; experimental WebNN acceleration where the browser supports it.
-- **WHIP Publish**: RFC 9725 live streaming over WebRTC with bearer-token endpoints.
-- **OpenTimelineIO export**: `.otio` + CMX3600 EDL interchange for round-tripping with other NLEs.
-- **Media Converter**: standalone re-container/transcode view with batch job list.
-- **Cross-browser compatibility**: capability-tiered experience from accelerated WebGPU down to shell-only.
-- **PWA**: installable, works offline after first load.
-- **Diagnostics**: capability tier display, GPU/codec status, storage, performance budgets, privacy-redacted report copy, crash recovery.
-- **In-app User Guide**: routed `/docs` view with bundled markdown content and contextual links.
-- **Beat Tools**: onset-detection-driven beat markers and rhythm-aligned editing aids.
+- **Import and media management** -- import common browser-readable video, audio, still-image, SRT, and VTT files; inspect source details and health warnings; organise sources in the Media Bin; and relink moved files. Exact container and codec support depends on the browser.
+- **Timeline editing** -- create and manage video and audio tracks; split, trim, move, delete, copy, duplicate, insert, overwrite, ripple, roll, slip, slide, lift, and extract clips; use linked audio/video, markers, snapping, track controls, and undo/redo.
+- **Preview and sound** -- play, seek, step, and loop the timeline; composite multiple tracks; mix track and clip audio; and use fades, crossfades, gain, pan, mute, solo, and meters. Preview quality and effects depend on the active capability tier.
+- **Finishing** -- apply transforms, keyframes, transitions, titles, core colour controls, `.cube` LUTs, scopes, manual captions, caption burn-in, and SRT/VTT sidecar export.
+- **Projects and performance** -- autosave locally, restore projects, package project bundles, relink media, generate proxies, and use the bounded local render cache.
+- **Direct export** -- export supported codec/container combinations with resolution, frame-rate, bitrate, and timeline-range controls. Export choices are shown only after runtime codec probes succeed.
+- **Interchange and conversion** -- export OpenTimelineIO and cuts-only CMX3600 EDL files, and use the standalone local media converter for supported inputs and outputs.
+- **Application shell** -- install the PWA, use bundled help and diagnostics, and recover from missing capabilities without losing access to the shell. The app shell works offline after it has been cached; optional runtimes, models, and uncached media remain separate.
 
-## Experimental
+## Capability tiers
 
-These features are present but may have edge cases or limited browser support:
+LocalCut reports one of four canonical tiers:
 
-- **Cross-browser reduced tiers** -- Limited WebCodecs and Shell Only tiers. The app loads but functionality is constrained.
-- **WebNN execution providers** -- WebNN-accelerated ML inference depends on browser and hardware support; ORT-WASM is the reliable fallback.
-- **Frame Interpolation** -- RIFE-class learned interpolation on ORT-WebGPU for slow-motion and fps upconversion. Ships with a `template: true` manifest; the feature is hidden until a license-verified ONNX model is provided.
-- **Frame interpolation export** -- export-time fps upconversion is gated pending validated ONNX model licensing.
-- **On-Device Language Tools** -- Chrome built-in AI translation, summarization, and title/hashtag generation from captions. Requires Chrome 138+ with the experimental built-in AI origin trial; unavailable on other browsers.
+| Tier                   | Support boundary                                                                                                                                                                                                      |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `core-webgpu`          | Full accelerated path: WebGPU, usable WebCodecs decode, `OffscreenCanvas`, `SharedArrayBuffer`, and cross-origin isolation are available. Individual encode codecs and optional features are still probed separately. |
+| `compatibility-webgpu` | WebGPU compatibility rendering with usable decode and `OffscreenCanvas`. Preview is available; export is available only when an encoder probe succeeds, with reduced effects or codec choices where required.         |
+| `limited-webcodecs`    | Worker-owned Canvas2D preview over WebCodecs. Compatible export is available only when an encoder probe succeeds; GPU effects and other accelerated-only features are unavailable.                                    |
+| `shell-only`           | The application shell, documentation, and diagnostics remain available, but media preview and export are unavailable.                                                                                                 |
 
-## Not Supported
+## Export truth
 
-- **Collaboration** -- no multi-user editing, no shared projects.
-- **Cloud sync** -- no server-side storage, no upload/download of projects or media.
-- **Accounts** -- no login, no user profiles, no authentication.
-- **Mobile** -- designed for desktop browsers; mobile layout is not optimized.
-- **Server processing** -- no server-side transcoding, rendering, or media analysis.
-- **DRM/protected content** -- no playback or import of DRM-protected media.
-- **Professional broadcast formats** -- ProRes, DNxHR, MXF, and other professional container/codec formats are not supported.
+LocalCut does not promise a codec merely because the container appears in the UI. It probes the browser before offering:
+
+- H.264 in MP4 when H.264 encoding is supported.
+- VP9 in WebM when VP9 encoding is supported.
+- AV1 in WebM only in the `core-webgpu` tier and only when AV1 encoding is supported.
+
+An input that can be demuxed or decoded is not necessarily encodable on the same device.
+
+## Experimental features
+
+These surfaces are implemented but remain experimental and may have narrower input support, incomplete workflows, or browser-specific limitations:
+
+- Render queue and saved export presets.
+- Auto Captions using the opt-in ORT Whisper runtime and model.
+- Smart Reframe, including its optional face-detection model path.
+- Portrait Matte using the opt-in MODNet model on ORT-WebGPU.
+- Audio Cleanup using the opt-in DTLN model on ORT-WASM.
+- Region and element recording sources.
+- On-Device Language Tools backed by compatible Chrome built-in AI APIs. The surface stays hidden when those APIs are unavailable.
+- WebNN runtime work. It is infrastructure under evaluation, not a guaranteed acceleration path for the currently shipped model features.
+
+## Capability-gated features
+
+- **Recording and replay** require the core tier plus compatible capture, realtime encode, audio encode, and local-storage APIs. Program Mode additionally requires transferable media-track support.
+- **WHIP publishing** requires compatible WebRTC APIs and a user-supplied WHIP endpoint. It sends the program output to that external endpoint and is not a local-only operation.
+- **Optional ML tools** require an explicit model/runtime download and enough compatible memory, GPU, or WASM support. They are not loaded at startup.
+- **Offline use** covers assets already cached on the device. A first model/runtime download and any live-publishing workflow require a network connection.
+
+## Unavailable out of the box
+
+- **Landmark-driven Beauty** has a real gated ORT/WebGPU engine and UI integration, but LocalCut does not bundle a license-verified detector/landmark model pair. Its manifest remains a rejected template, its editing controls never unlock, and the feature is unavailable out of the box.
+- **Frame Interpolation** has ORT-WebGPU engine groundwork and a template model manifest, but no license-verified compatible model is bundled and export-time interpolation is not wired for release. It is unavailable out of the box.
+
+## Privacy and network boundary
+
+Normal importing, editing, preview, analysis, project storage, and export run in the browser. LocalCut has no account system, project-sync service, application media-upload backend, or product-analytics telemetry.
+
+Network activity still occurs in these explicit cases:
+
+- Loading the application and uncached static assets from its host.
+- Opt-in runtime and model downloads, proxied from documented upstream hosts. The proxy streams those assets; it is not a media-processing or project-storage service.
+- Browser-managed downloads used by On-Device Language Tools; inference content remains on device.
+- WHIP publishing to the endpoint configured by the user. A bearer token may be stored locally when the user opts in.
+- Ordinary hosting and CDN request handling. Hosting infrastructure may retain operational request logs or observability data according to its configuration and provider policy.
+
+## Not supported or out of scope
+
+- Accounts, cloud project sync, shared projects, or multi-user collaboration.
+- Mobile-optimised editing.
+- Server-side transcoding, rendering, media analysis, or storage for the core editor.
+- DRM-protected media.
+- Guaranteed support for professional broadcast formats such as ProRes, DNxHR, or MXF.
+- Direct RTMP publishing; use a user-managed WHIP endpoint or gateway.
+- `.lottie` ZIP packages; plain supported Lottie JSON can be imported.
+- Direct AAF or FCPXML generation. Export OTIO and convert it with external tooling when needed.
+- Embedded MP4 chapter metadata; chapter sidecars are the supported output.
