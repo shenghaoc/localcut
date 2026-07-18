@@ -92,6 +92,7 @@ import {
 	sideRailTabPanelId,
 	sideRailTabTriggerId,
 	visibleTextSideRailTabs,
+	sideRailTabLabel,
 	type AudioSideRailTab,
 	type CaptureSideRailTab,
 	type SideRailTab,
@@ -169,6 +170,7 @@ import {
 import { BUILT_IN_PRESETS } from '../engine/export-presets';
 import type { CaptionAnimStylePresetSnapshot } from '../protocol';
 import { aspectOutputSize } from '../engine/project';
+import { DEFAULT_CALLOUT_COLOR } from '../engine/callout';
 import { validateSafeZoneFile } from '../engine/safe-zones';
 import { SafeZoneOverlay } from './SafeZoneOverlay';
 import { createRecoveryMachine, type WorkerRecoveryState } from '../engine/recovery';
@@ -2368,7 +2370,7 @@ export function App() {
 				calloutKind: kind,
 				geometry,
 				style: {
-					color: '#FFD700',
+					color: DEFAULT_CALLOUT_COLOR,
 					strokeWidth: 3,
 					fillOpacity: kind === 'spotlight' ? 0.15 : 0,
 					fontSize: 28,
@@ -4771,11 +4773,7 @@ export function App() {
 							{/* Phase 39: format picker, platform picker, cover button */}
 							<Show when={previewSurfaceAvailable()}>
 								<div class="phase39-controls">
-									<fieldset
-										role="group"
-										aria-label="Project format"
-										style={{ display: 'flex', gap: '2px', 'flex-wrap': 'wrap' }}
-									>
+									<fieldset role="group" aria-label="Project format" class="phase39-format-group">
 										<For each={['16:9', '9:16', '1:1', '4:5'] as const}>
 											{(aspect) => (
 												<button
@@ -4797,17 +4795,10 @@ export function App() {
 									</fieldset>
 									<Show when={matchingPlatforms().length > 0}>
 										<select
+											class="phase39-platform-select"
 											aria-label="Safe zone platform"
 											value={selectedPlatformId()}
 											onChange={(e) => setSelectedPlatformId(e.currentTarget.value)}
-											style={{
-												'font-size': 'var(--text-xs)',
-												padding: '2px 4px',
-												background: 'var(--input-bg, #1a1d24)',
-												color: 'inherit',
-												border: '1px solid rgb(255 255 255 / 14%)',
-												'border-radius': 'var(--radius-sm)'
-											}}
 										>
 											<option value="">Off</option>
 											<For each={matchingPlatforms()}>
@@ -4961,13 +4952,18 @@ export function App() {
 									<button
 										id="side-rail-expand-btn"
 										class="side-rail-expand"
-										aria-label="Expand side panel"
+										aria-label={`Expand ${sideRailTabLabel(activeSideRailTab())} panel`}
 										aria-expanded="false"
 										aria-controls="side-rail"
-										title="Expand side panel"
+										title={`Expand ${sideRailTabLabel(activeSideRailTab())}`}
 										onClick={() => toggleSideRail(false)}
 									>
-										<ChevronsLeft size={16} aria-hidden="true" />
+										<span class="side-rail-expand-label">
+											{sideRailTabLabel(activeSideRailTab())}
+										</span>
+										<span class="side-rail-expand-icon" aria-hidden="true">
+											<ChevronsLeft size={14} />
+										</span>
 									</button>
 								}
 							>

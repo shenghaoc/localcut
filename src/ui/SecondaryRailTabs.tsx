@@ -1,4 +1,4 @@
-import { For, type JSX } from 'solid-js';
+import { For, Show, type JSX } from 'solid-js';
 
 export function secondaryTabId(prefix: string, tab: string): string {
 	return `${prefix}-tab-${tab}`;
@@ -59,30 +59,34 @@ export function SecondaryRailTabs<T extends string>(props: {
 		}
 	};
 
+	// One destination does not need a second nav tier — hide the bar so the
+	// rail does not spend vertical space on a single selected chip.
 	return (
-		<div
-			class="side-rail-secondary-tabs"
-			role="tablist"
-			aria-label={props.label}
-			onKeyDown={onKeyDown}
-		>
-			<For each={props.tabs}>
-				{(tab) => (
-					<button
-						type="button"
-						id={secondaryTabId(props.idPrefix, tab.id)}
-						class="side-rail-secondary-tab"
-						role="tab"
-						tabIndex={props.value === tab.id ? 0 : -1}
-						aria-selected={props.value === tab.id ? 'true' : 'false'}
-						aria-controls={secondaryPanelId(props.idPrefix, tab.id)}
-						onClick={() => props.onSelect(tab.id)}
-					>
-						{tab.label}
-					</button>
-				)}
-			</For>
-		</div>
+		<Show when={props.tabs.length > 1}>
+			<div
+				class="side-rail-secondary-tabs"
+				role="tablist"
+				aria-label={props.label}
+				onKeyDown={onKeyDown}
+			>
+				<For each={props.tabs}>
+					{(tab) => (
+						<button
+							type="button"
+							id={secondaryTabId(props.idPrefix, tab.id)}
+							class="side-rail-secondary-tab"
+							role="tab"
+							tabIndex={props.value === tab.id ? 0 : -1}
+							aria-selected={props.value === tab.id ? 'true' : 'false'}
+							aria-controls={secondaryPanelId(props.idPrefix, tab.id)}
+							onClick={() => props.onSelect(tab.id)}
+						>
+							{tab.label}
+						</button>
+					)}
+				</For>
+			</div>
+		</Show>
 	);
 }
 

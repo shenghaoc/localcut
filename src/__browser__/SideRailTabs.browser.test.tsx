@@ -87,6 +87,30 @@ function renderSecondaryCaptureTabs(): HTMLElement {
 	return container;
 }
 
+function renderSecondarySoloTab(): HTMLElement {
+	const container = document.createElement('div');
+	document.body.appendChild(container);
+	const dispose = render(
+		() => (
+			<div class="side-rail-tab-panel">
+				<SecondaryRailTabs
+					idPrefix="text"
+					label="Text tools"
+					tabs={[{ id: 'captions', label: 'Captions' }] as const}
+					value="captions"
+					onSelect={() => {}}
+				/>
+				<SecondaryRailPanel idPrefix="text" tab="captions" value="captions" keepMounted>
+					<button type="button">Captions panel</button>
+				</SecondaryRailPanel>
+			</div>
+		),
+		container
+	);
+	disposers.push(dispose);
+	return container;
+}
+
 afterEach(() => {
 	for (const dispose of disposers) dispose();
 	disposers.length = 0;
@@ -126,17 +150,12 @@ describe('right-rail primary destinations (IA-T4 / IA-T5)', () => {
 		}
 	});
 
-	it('keeps secondary tab ARIA targets mounted and keyboard navigable', async () => {
+	it('keeps secondary Capture destinations at three jobs (Replay lives under Record)', async () => {
 		const container = renderSecondaryCaptureTabs();
 		await nextFrame();
 
 		const tabs = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
-		expect(tabs.map((tab) => tab.textContent?.trim())).toEqual([
-			'Record',
-			'Program',
-			'Replay',
-			'Go Live'
-		]);
+		expect(tabs.map((tab) => tab.textContent?.trim())).toEqual(['Record', 'Program', 'Go Live']);
 
 		for (const tab of tabs) {
 			const panelId = tab.getAttribute('aria-controls');
@@ -146,7 +165,7 @@ describe('right-rail primary destinations (IA-T4 / IA-T5)', () => {
 		}
 
 		const panels = Array.from(container.querySelectorAll<HTMLDivElement>('[role="tabpanel"]'));
-		expect(panels).toHaveLength(4);
+		expect(panels).toHaveLength(3);
 		for (const panel of panels) {
 			expect(panel.tabIndex).toBe(0);
 			const tabId = panel.getAttribute('aria-labelledby');
@@ -154,8 +173,8 @@ describe('right-rail primary destinations (IA-T4 / IA-T5)', () => {
 			expect(document.getElementById(tabId)).not.toBeNull();
 		}
 
-		const [record, program, replay, publish] = tabs;
-		if (!record || !program || !replay || !publish) throw new Error('expected four secondary tabs');
+		const [record, program, publish] = tabs;
+		if (!record || !program || !publish) throw new Error('expected three secondary tabs');
 		expect(record.tabIndex).toBe(0);
 		expect(record.getAttribute('aria-selected')).toBe('true');
 		expect(program.tabIndex).toBe(-1);
@@ -165,7 +184,6 @@ describe('right-rail primary destinations (IA-T4 / IA-T5)', () => {
 		expect(
 			document.getElementById('capture-panel-program')?.querySelector('button')
 		).not.toBeNull();
-		expect(document.getElementById('capture-panel-replay')?.querySelector('button')).not.toBeNull();
 		expect(document.getElementById('capture-panel-publish')?.querySelector('button')).toBeNull();
 
 		record.focus();
@@ -191,8 +209,16 @@ describe('right-rail primary destinations (IA-T4 / IA-T5)', () => {
 		publish.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
 		await nextFrame();
 		expect(record.tabIndex).toBe(0);
-		expect(replay.tabIndex).toBe(-1);
+		expect(program.tabIndex).toBe(-1);
 		expect(document.activeElement).toBe(record);
 		expect(document.getElementById('capture-panel-publish')?.querySelector('button')).toBeNull();
+	});
+
+	it('hides the secondary tab bar when only one destination is available', async () => {
+		const container = renderSecondarySoloTab();
+		await nextFrame();
+		expect(container.querySelector('[role="tablist"]')).toBeNull();
+		expect(container.querySelector('[role="tabpanel"]')).not.toBeNull();
+		expect(container.textContent).toContain('Captions panel');
 	});
 });

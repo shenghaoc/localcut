@@ -258,7 +258,7 @@ Hard-coded colors in `src/engine/` (caption rendering, GPU passes, beauty effect
 
 Hard-coded colors in UI files that serve functional video-editing overlays — not interface chrome — are exempt:
 
-- `App.tsx` `#FFD700`: Callout annotation highlight color (user-facing visual markup tool).
+- Callout default stroke uses film-stock amber (`#d4a853` / `DEFAULT_CALLOUT_COLOR`) so on-preview markup shares the single UI accent rather than a second gold.
 - `CaptionStyleInspector.tsx` `#ffffff`: Caption rendering fallback (domain render parameter).
 - `ReframeOverlay.tsx` `rgba(74,144,226,0.8)` / `rgba(255,255,255,0.5)`: Crop guide and safe-zone overlay on the preview surface (video-compositing guides, not UI chrome).
 - `Timeline.tsx` `#b06cff`: Beat-marker visualization on the timeline ruler (data-viz overlay, not UI chrome).

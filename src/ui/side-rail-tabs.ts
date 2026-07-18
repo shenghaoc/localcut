@@ -52,6 +52,11 @@ export function isSideRailTab(value: string | null): value is SideRailTab {
 	return SIDE_RAIL_TABS.some((tab) => tab.id === value);
 }
 
+/** Visible label for a primary rail destination (expand strip, aria, titles). */
+export function sideRailTabLabel(tab: SideRailTab): string {
+	return SIDE_RAIL_TABS.find((entry) => entry.id === tab)?.label ?? 'Inspector';
+}
+
 export function sideRailTabTriggerId(tab: SideRailTab): string {
 	return `tab-${tab}`;
 }

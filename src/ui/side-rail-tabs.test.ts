@@ -6,6 +6,7 @@ import {
 	TEXT_SIDE_RAIL_TABS,
 	isSideRailTab,
 	migrateLegacySideRailTab,
+	sideRailTabLabel,
 	sideRailTabPanelId,
 	sideRailTabTriggerId,
 	visibleTextSideRailTabs
@@ -75,5 +76,12 @@ describe('SIDE_RAIL_TABS (IA-T4 / D10-D14 right-rail destinations)', () => {
 	it('keeps keyboard/focus ids aligned with the new tab ids', () => {
 		expect(sideRailTabTriggerId('capture')).toBe('tab-capture');
 		expect(sideRailTabPanelId('capture')).toBe('panel-capture');
+	});
+
+	it('exposes human labels for the collapsed expand strip', () => {
+		expect(sideRailTabLabel('inspector')).toBe('Inspector');
+		expect(sideRailTabLabel('text')).toBe('Text');
+		expect(sideRailTabLabel('audio')).toBe('Audio');
+		expect(sideRailTabLabel('capture')).toBe('Capture');
 	});
 });

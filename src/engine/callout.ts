@@ -28,8 +28,12 @@ export type {
 	CalloutStyle
 };
 
-const DEFAULT_CALLOUT_STYLE: CalloutStyle = {
-	color: '#FFD700',
+/** Film-stock amber — same hex as UI `--amber`. Callouts share the single accent;
+ *  a second gold would read as palette drift in the tool chrome and on-preview. */
+export const DEFAULT_CALLOUT_COLOR = '#d4a853';
+
+export const DEFAULT_CALLOUT_STYLE: CalloutStyle = {
+	color: DEFAULT_CALLOUT_COLOR,
 	strokeWidth: 3,
 	fillOpacity: 0,
 	fontSize: 28,
