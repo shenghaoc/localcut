@@ -58,7 +58,7 @@ export default defineConfig({
 		tasks: {
 			'check:format': { command: 'vp fmt --check .' },
 			'check:lint': { command: 'vp lint . --max-warnings=0' },
-			'check:typecheck': { command: 'tsgo --noEmit' },
+			'check:typecheck': { command: 'tsc --noEmit' },
 			// Under CI=true, vitest writes test-results/junit-node.xml (see
 			// vitest.config.ts) — Vite+ detects the read+write on that path
 			// and forces check:test to re-run each time, so any GHA test-

@@ -130,10 +130,16 @@ vp cache clean     # Clear the Vite+ task cache (node_modules/.vite/task-cache)
 
 The `check` quality-gate steps are declared as cached tasks (`check:format`, `check:lint`, `check:typecheck`, `check:test`, `check:build`) in [`vite.config.ts`](vite.config.ts) under `run` — prefixed because a Vite+ task may not share a name with a package.json script — so `vp run check` content-caches each step. CI persists `node_modules/.vite/task-cache` across runs, so a re-push only re-executes the steps whose inputs actually changed.
 
-## TypeScript 6/7 transition
+## TypeScript 7 + TypeScript 6 side-by-side
 
-- Prefer `vp run typecheck` / `tsgo --noEmit` for day-to-day type-checking while TypeScript 7 is in preview. Once TypeScript c is stable and installed as `typescript`, `tsgo` becomes `tsc` and `@typescript/native-preview` can be dropped.
-- Keep `typescript` at 6.x so peer-dependent tooling continues to import the TypeScript 6 API during the transition.
+TypeScript 7.0 does not ship a stable programmatic API. Project typechecking uses the native TS 7 `tsc` binary; tooling that imports `typescript` keeps the TS 6 API:
+
+| Package              | Resolves to                      | Purpose                                      |
+| -------------------- | -------------------------------- | -------------------------------------------- |
+| `@typescript/native` | `typescript@^7.0.2`              | native `tsc` (used by `vp run typecheck`)    |
+| `typescript`         | `@typescript/typescript6@^6.0.2` | TS 6 API + `tsc6` for peer-dependent tooling |
+
+See [Running Side-by-Side with TypeScript 6.0](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/#running-side-by-side-with-typescript-6.0).
 
 ## Architectural boundaries (hard gates)
 
