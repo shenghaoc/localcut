@@ -6,7 +6,16 @@
  *  the only I/O.
  */
 
-import { createComputed, createMemo, createSignal, For, Show, onCleanup } from 'solid-js';
+import {
+	createComputed,
+	createMemo,
+	createSignal,
+	For,
+	Show,
+	onCleanup,
+	onMount,
+	type JSX
+} from 'solid-js';
 import type { CaptionAnimStylePreset } from '../engine/captions/anim-style';
 import {
 	ANIM_CAPTION_PRESETS,
@@ -48,6 +57,52 @@ interface CaptionStyleInspectorProps {
 	onImportPreset: (preset: UiPreset) => void;
 	/** Called to delete a custom preset. */
 	onDeletePreset: (presetId: string) => void;
+}
+
+function CaptionPresetDialog(props: {
+	class: string;
+	labelledBy: string;
+	describedBy: string;
+	initialFocusSelector: string;
+	onDismiss: () => void;
+	children: JSX.Element;
+}): JSX.Element {
+	let dialogRef: HTMLDialogElement | undefined;
+
+	onMount(() => {
+		if (!dialogRef) return;
+		dialogRef.showModal();
+		queueMicrotask(() => {
+			dialogRef?.querySelector<HTMLElement>(props.initialFocusSelector)?.focus();
+		});
+	});
+
+	onCleanup(() => {
+		if (dialogRef?.open) dialogRef.close();
+	});
+
+	return (
+		<dialog
+			ref={(element) => {
+				dialogRef = element;
+			}}
+			class={`caption-preset-dialog caption-notice ${props.class}`}
+			aria-modal="true"
+			aria-labelledby={props.labelledBy}
+			aria-describedby={props.describedBy}
+			onKeyDown={(event) => {
+				if (event.key !== 'Escape') return;
+				event.preventDefault();
+				props.onDismiss();
+			}}
+			onCancel={(event) => {
+				event.preventDefault();
+				props.onDismiss();
+			}}
+		>
+			{props.children}
+		</dialog>
+	);
 }
 
 /**
@@ -178,7 +233,10 @@ function readAndValidate(
 			const raw = JSON.parse(reader.result as string);
 			const result = validateCaptionAnimPreset(raw);
 			if (!result.ok) {
-				resolve({ ok: false, error: `Invalid field: ${result.field} — ${result.message}` });
+				resolve({
+					ok: false,
+					error: `Invalid field: ${result.field} — ${result.message}`
+				});
 				return;
 			}
 			const preset: CaptionAnimStylePreset = {
@@ -329,6 +387,16 @@ function presetFromDraft(label: string, base: UiPreset, draft: Draft): UiPreset 
 export function CaptionStyleInspector(props: CaptionStyleInspectorProps) {
 	const [importError, setImportError] = createSignal<string | null>(null);
 	const [importSuccess, setImportSuccessSignal] = createSignal<string | null>(null);
+	const [importConflict, setImportConflict] = createSignal<{
+		preset: UiPreset;
+		conflictId: string;
+		label: string;
+	} | null>(null);
+	const [presetNamePrompt, setPresetNamePrompt] = createSignal<{
+		label: string;
+		base: UiPreset;
+		draft: Draft;
+	} | null>(null);
 
 	// Auto-clear the success notice after 3 s. Wrapping setImportSuccess in a
 	// helper that also schedules the timer is simpler than a createEffect for
@@ -379,35 +447,62 @@ export function CaptionStyleInspector(props: CaptionStyleInspectorProps) {
 		const incoming = result.preset;
 		const conflict = props.customPresets.find((p) => p.label === incoming.label);
 		if (conflict) {
-			const update = window.confirm(
-				`A custom preset named "${incoming.label}" already exists.\n\nClick OK to update it, or Cancel to save as a copy.`
-			);
-			if (update) {
-				// Overwrite: keep the existing preset's id.
-				props.onImportPreset({ ...incoming, id: conflict.id });
-			} else {
-				// Save as copy: keep the new UUID from openAndImportPreset.
-				props.onImportPreset({ ...incoming, label: `${incoming.label} (copy)` });
-			}
-		} else {
-			props.onImportPreset(incoming);
+			setImportConflict({
+				preset: incoming,
+				conflictId: conflict.id,
+				label: incoming.label
+			});
+			return;
 		}
+		props.onImportPreset(incoming);
 		setImportSuccess(`Imported: ${incoming.label}`);
+	};
+
+	const handleImportConflictUpdate = () => {
+		const c = importConflict();
+		if (!c) return;
+		setImportConflict(null);
+		props.onImportPreset({ ...c.preset, id: c.conflictId });
+		setImportSuccess(`Updated: ${c.label}`);
+	};
+
+	const handleImportConflictCopy = () => {
+		const c = importConflict();
+		if (!c) return;
+		setImportConflict(null);
+		props.onImportPreset({ ...c.preset, label: c.preset.label + ' (copy)' });
+		setImportSuccess(`Imported as copy: ${c.preset.label} (copy)`);
+	};
+
+	const handleImportConflictCancel = () => {
+		setImportConflict(null);
 	};
 
 	const handleSaveAsPreset = () => {
 		const base = activePreset();
 		if (!base) return;
-		const defaultLabel = `${base.label} (custom)`;
-		const label = window.prompt('Name this preset:', defaultLabel);
-		if (label === null) return; // User cancelled.
-		const trimmed = label.trim();
+		setPresetNamePrompt({
+			label: `${base.label} (custom)`,
+			base,
+			draft: d()
+		});
+	};
+
+	const handleCommitPresetName = () => {
+		const prompt = presetNamePrompt();
+		if (!prompt) return;
+		const trimmed = prompt.label.trim();
 		if (trimmed.length === 0) return;
-		const newPreset = presetFromDraft(trimmed, base, d());
+		const newPreset = presetFromDraft(trimmed, prompt.base, prompt.draft);
 		props.onImportPreset(newPreset);
 		// Switch the selection to the new preset so further edits land on it.
 		props.onSetPresetId(newPreset.id);
 		setImportSuccess(`Saved as preset: ${newPreset.label}`);
+		setPresetNamePrompt(null);
+	};
+
+	const handleCancelPresetName = () => {
+		setPresetNamePrompt(null);
 	};
 
 	const handleExport = () => {
@@ -677,6 +772,85 @@ export function CaptionStyleInspector(props: CaptionStyleInspectorProps) {
 				>
 					{importSuccess()}
 				</div>
+			</Show>
+
+			{/* Native modal semantics provide focus containment, Escape handling,
+			    background inertness, and focus return without duplicating a trap. */}
+			<Show when={importConflict()}>
+				{(c) => (
+					<CaptionPresetDialog
+						class="caption-notice-warn"
+						labelledBy="caption-conflict-title"
+						describedBy="caption-conflict-description"
+						initialFocusSelector=".is-primary"
+						onDismiss={handleImportConflictCancel}
+					>
+						<h2 id="caption-conflict-title" class="caption-preset-dialog-title">
+							Preset already exists
+						</h2>
+						<p id="caption-conflict-description">
+							A preset named <strong>{c().label}</strong> already exists.
+						</p>
+						<div class="caption-notice-actions">
+							<button type="button" data-caption-dialog-cancel onClick={handleImportConflictCancel}>
+								Cancel
+							</button>
+							<button type="button" class="is-destructive" onClick={handleImportConflictUpdate}>
+								Update existing
+							</button>
+							<button type="button" class="is-primary" onClick={handleImportConflictCopy}>
+								Save as copy
+							</button>
+						</div>
+					</CaptionPresetDialog>
+				)}
+			</Show>
+
+			<Show when={presetNamePrompt() !== null}>
+				<CaptionPresetDialog
+					class="caption-notice-prompt"
+					labelledBy="caption-preset-name-title"
+					describedBy="caption-preset-name-description"
+					initialFocusSelector="input"
+					onDismiss={handleCancelPresetName}
+				>
+					<h2 id="caption-preset-name-title" class="caption-preset-dialog-title">
+						Save caption preset
+					</h2>
+					<p id="caption-preset-name-description">Choose a name for these style settings.</p>
+					<label>
+						<span>Preset name</span>
+						<input
+							type="text"
+							value={presetNamePrompt()?.label ?? ''}
+							aria-label="Preset name"
+							onInput={(event) =>
+								setPresetNamePrompt((prompt) =>
+									prompt ? { ...prompt, label: event.currentTarget.value } : prompt
+								)
+							}
+							onKeyDown={(e) => {
+								if (e.key === 'Enter' && presetNamePrompt()?.label.trim()) {
+									e.preventDefault();
+									handleCommitPresetName();
+								}
+							}}
+						/>
+					</label>
+					<div class="caption-notice-actions">
+						<button type="button" onClick={handleCancelPresetName}>
+							Cancel
+						</button>
+						<button
+							type="button"
+							class="is-primary"
+							disabled={!presetNamePrompt()?.label.trim()}
+							onClick={handleCommitPresetName}
+						>
+							Save
+						</button>
+					</div>
+				</CaptionPresetDialog>
 			</Show>
 		</div>
 	);

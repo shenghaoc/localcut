@@ -112,7 +112,7 @@ Ordered by the design's incremental rollout — Phase 1 is copy/labelling/densit
 ### IA-T4 — Collapse seven tabs to four job destinations
 
 - [x] IA-T4.1 Replace `SIDE_RAIL_TABS` ([`App.tsx:354`](../../../src/ui/App.tsx)) with `Inspector`/`Text`/`Audio`/`Capture`; update `SideRailTab`, `isSideRailTab`, `openSideRailTab`, `SIDE_RAIL_COLLAPSED_KEY`, and keyboard-map tab ids together.
-- [x] IA-T4.2 `Text` = Captions + capability-gated language tools; `Capture` = Record · Program · Replay · go-live (secondary segmented control); `Audio` = live chain + Voice FX.
+- [x] IA-T4.2 `Text` = Captions + capability-gated language tools; `Capture` = Record · Program · Go Live (secondary segmented control), with Replay Buffer first inside Record; `Audio` = live chain + Voice FX.
 - [x] IA-T4.3 Add the in-panel secondary segmented control; ensure it fits/wraps within ~302px.
 - [x] IA-T4.4 **Remove `overflow-x: auto` + hidden scrollbar from `.side-rail-tab-bar`** and delete the duplicate blocks in [`global.css`](../../../src/global.css) (~2240, ~6834, ~7854) so one definition governs.
 - [x] IA-T4.5 Fallback only if overflow remains: add a **visible** "⋯ More" overflow menu (never a hidden scroll region).
@@ -138,7 +138,7 @@ Ordered by the design's incremental rollout — Phase 1 is copy/labelling/densit
 
 ## Part 2 quality gate (each phase)
 
-- [ ] IA-G1 `pnpm run check` green (format + lint + typecheck + Vitest + build).
-- [ ] IA-G2 Test count does not decrease; updated component/keyboard tests reflect the new IA.
-- [ ] IA-G3 Existing ARIA roles (`tab`/`tabpanel`/`region`) remain correct after restructure.
-- [ ] IA-G4 Re-run the audit captures (or a focused subset) at 1280×720 to confirm each finding is resolved.
+- [x] IA-G1 `vp run check` green (format + lint + typecheck + Vitest + build).
+- [x] IA-G2 Test count does not decrease; updated component/keyboard tests reflect the new IA.
+- [x] IA-G3 Existing ARIA roles (`tab`/`tabpanel`/`region`) remain correct after restructure.
+- [x] IA-G4 Re-run the audit captures (or a focused subset) at 1280×720 to confirm each finding is resolved.

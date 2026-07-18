@@ -86,7 +86,10 @@ export function SilenceReviewPanel(props: SilenceReviewPanelProps) {
 	// Cancel in-flight detection on unmount.
 	onCleanup(() => {
 		if (currentRequestId) {
-			props.sendCommand({ type: 'cancel-silence-detection', requestId: currentRequestId });
+			props.sendCommand({
+				type: 'cancel-silence-detection',
+				requestId: currentRequestId
+			});
 			currentRequestId = null;
 		}
 	});
@@ -109,7 +112,9 @@ export function SilenceReviewPanel(props: SilenceReviewPanelProps) {
 	function requestClose(): void {
 		if (hasUnreviewed()) {
 			// eslint-disable-next-line no-alert
-			const proceed = window.confirm('You have unreviewed silence regions. Discard them?');
+			const proceed = window.confirm(
+				'You have unreviewed silence regions. Closing will discard them — detected regions will not be applied to the timeline.'
+			);
 			if (!proceed) return;
 		}
 		props.onClose?.();
@@ -136,7 +141,12 @@ export function SilenceReviewPanel(props: SilenceReviewPanelProps) {
 			windowSamples: SILENCE_DEFAULTS.windowSamples,
 			hopSamples: SILENCE_DEFAULTS.hopSamples
 		};
-		props.sendCommand({ type: 'detect-silence', requestId, trackIds: props.trackIds, params });
+		props.sendCommand({
+			type: 'detect-silence',
+			requestId,
+			trackIds: props.trackIds,
+			params
+		});
 	}
 
 	function handleRetry() {
@@ -171,7 +181,13 @@ export function SilenceReviewPanel(props: SilenceReviewPanelProps) {
 		const shift = target.endS - target.startS;
 		setRegions((prev) =>
 			prev.map((region, i) =>
-				i > index ? { ...region, startS: region.startS - shift, endS: region.endS - shift } : region
+				i > index
+					? {
+							...region,
+							startS: region.startS - shift,
+							endS: region.endS - shift
+						}
+					: region
 			)
 		);
 	}

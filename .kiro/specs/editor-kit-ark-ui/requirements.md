@@ -1,5 +1,9 @@
 # Requirements: Editor Kit Ark UI Refresh
 
+> Status: **Implemented.** The Ark structural/accessibility contract remains
+> current. Visual tokens are governed by
+> [`feature-design-system-foundation`](../feature-design-system-foundation/requirements.md).
+
 ## R1 — PPTX-Grounded Editor Chrome
 
 - **R1.1** The visible editor shell follows `editor-kit-demo.pptx`: top application menu, command search, import/source strip, transport/timecode cluster, pipeline capability strip, left section rail + media library, dominant program monitor, right inspector rail, timeline, and status footer.
@@ -26,7 +30,9 @@
 - **R4.1** The command search in the top bar is functional. It opens an Ark popover with working actions for import, transport, publish, captions, smart reframe, capabilities, and help.
 - **R4.2** Menu labels are implemented as native buttons with real actions, not inert text.
 - **R4.3** Toolbar icon-only buttons keep `aria-label`/`title`; tab and popover semantics come from Ark primitives.
-- **R4.4** Focus rings remain visible and cyan; no global focus suppression is introduced.
+- **R4.4** Focus rings remain visible and use the canonical project interaction
+  token (film-stock amber in the current foundation); no global focus
+  suppression is introduced.
 
 ## R5 — Main-Thread Boundary
 

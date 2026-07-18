@@ -1,5 +1,9 @@
 # Design: Bugfix — Post-merge editor chrome cleanup
 
+> Status: **Implemented in PR #114.** Structural invariants remain current; the
+> historical cyan palette examples are superseded by
+> [`feature-design-system-foundation`](../feature-design-system-foundation/design.md).
+
 This document maps each bug in `bugfix.md` to the concrete change and the
 invariant the change protects. All edits stay within `src/global.css`,
 `src/ui/App.tsx`, and `src/ui/Toolbar.tsx`. No new component file, no new

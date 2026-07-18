@@ -1,4 +1,4 @@
-import { For, type JSX } from 'solid-js';
+import { For, Show, type JSX } from 'solid-js';
 
 export function secondaryTabId(prefix: string, tab: string): string {
 	return `${prefix}-tab-${tab}`;
@@ -59,30 +59,43 @@ export function SecondaryRailTabs<T extends string>(props: {
 		}
 	};
 
+	// One destination does not need a second nav tier — hide the bar so the
+	// rail does not spend vertical space on a single selected chip.
 	return (
-		<div
-			class="side-rail-secondary-tabs"
-			role="tablist"
-			aria-label={props.label}
-			onKeyDown={onKeyDown}
-		>
-			<For each={props.tabs}>
+		<>
+			<Show when={props.tabs.length > 1}>
+				<div
+					class="side-rail-secondary-tabs"
+					role="tablist"
+					aria-label={props.label}
+					onKeyDown={onKeyDown}
+				>
+					<For each={props.tabs}>
+						{(tab) => (
+							<button
+								type="button"
+								id={secondaryTabId(props.idPrefix, tab.id)}
+								class="side-rail-secondary-tab"
+								role="tab"
+								tabIndex={props.value === tab.id ? 0 : -1}
+								aria-selected={props.value === tab.id ? 'true' : 'false'}
+								aria-controls={secondaryPanelId(props.idPrefix, tab.id)}
+								onClick={() => props.onSelect(tab.id)}
+							>
+								{tab.label}
+							</button>
+						)}
+					</For>
+				</div>
+			</Show>
+			<Show when={props.tabs.length === 1 ? props.tabs[0] : undefined} keyed>
 				{(tab) => (
-					<button
-						type="button"
-						id={secondaryTabId(props.idPrefix, tab.id)}
-						class="side-rail-secondary-tab"
-						role="tab"
-						tabIndex={props.value === tab.id ? 0 : -1}
-						aria-selected={props.value === tab.id ? 'true' : 'false'}
-						aria-controls={secondaryPanelId(props.idPrefix, tab.id)}
-						onClick={() => props.onSelect(tab.id)}
-					>
+					<span id={secondaryTabId(props.idPrefix, tab.id)} class="sr-only">
 						{tab.label}
-					</button>
+					</span>
 				)}
-			</For>
-		</div>
+			</Show>
+		</>
 	);
 }
 
@@ -91,6 +104,7 @@ export function SecondaryRailPanel<T extends string>(props: {
 	tab: T;
 	value: T;
 	keepMounted?: boolean;
+	class?: string;
 	children: JSX.Element;
 }): JSX.Element {
 	const active = (): boolean => props.value === props.tab;
@@ -98,7 +112,7 @@ export function SecondaryRailPanel<T extends string>(props: {
 	return (
 		<div
 			id={secondaryPanelId(props.idPrefix, props.tab)}
-			class="side-rail-secondary-panel"
+			class={`side-rail-secondary-panel${props.class ? ` ${props.class}` : ''}`}
 			role="tabpanel"
 			tabIndex={0}
 			hidden={!active()}

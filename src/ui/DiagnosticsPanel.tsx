@@ -488,7 +488,7 @@ export function DiagnosticsPanel(props: DiagnosticsPanelProps) {
 								<h2>Recovery Actions</h2>
 								<Show
 									when={snapshot().recoveryActions.length > 0}
-									fallback={<p>Nothing to fix right now.</p>}
+									fallback={<p>No recovery actions are available for this report.</p>}
 								>
 									<ul class="diagnostics-list">
 										<For each={snapshot().recoveryActions}>

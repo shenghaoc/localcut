@@ -18,7 +18,7 @@ The editor targets desktop Chromium with keyboard + pointer as the primary input
 | Clip items | `role="button"` (or native `<button>`) with descriptive `aria-label` including clip name and position |
 | Toggle buttons (play/mute/solo) | `role="button"`, `aria-pressed` reflecting current state |
 | Capability warnings | `role="alert"` only when a required user action blocks the current workflow; use persistent visible text for passive status |
-| Modal dialogs (export) | `role="dialog"`, `aria-modal="true"`, `aria-labelledby` pointing to the dialog heading; focus trap while open |
+| Modal dialogs | Prefer native `<dialog>`; otherwise use `role="dialog"`, `aria-modal="true"`, and `aria-labelledby` pointing to the heading. Focus stays inside while open and returns to the trigger on close. |
 | Icon-only buttons | `aria-label` describing the action; no decorative text that the label would duplicate |
 
 ## Keyboard Navigation
@@ -43,10 +43,10 @@ The editor targets desktop Chromium with keyboard + pointer as the primary input
 
 ## Colour & Contrast
 
-- Text on panel backgrounds (`#e8e8ed` on `#1e1e24`) must meet WCAG AA (4.5:1 for normal text, 3:1 for large/UI text).
-- Muted text (`#9898a4`) is for supplementary labels only, not primary content; verify contrast meets 3:1 against its background at the sizes used.
+- Text on panel backgrounds (`#f4f6fa` on `#16151c`) must meet WCAG AA (4.5:1 for normal text, 3:1 for large/UI text).
+- Muted text (`#8e90a3`) is for supplementary labels only, not primary content; verify contrast meets 3:1 against its background at the sizes used.
 - Do not rely on colour alone to convey state (e.g., clip selected, muted, solo); add an outline, pattern, or text label.
-- The accent colour `#5b8def` used for the scrubhead and focus states: verify contrast against both `#16161a` and `#1e1e24` at use sites.
+- The amber interaction accent `#d4a853` used for the scrubhead and focus states must remain distinguishable against ink (`#0a090f`) and panel (`#16151c`) at each use site.
 
 ## Motion & Animation
 

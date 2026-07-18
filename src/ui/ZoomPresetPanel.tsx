@@ -182,7 +182,7 @@ export function ZoomPresetPanel(props: ZoomPresetPanelProps) {
 						Existing keyframes will be merged — existing values outside this range are preserved.
 					</p>
 					<button type="button" onClick={handleApply}>
-						Confirm
+						Apply merge
 					</button>
 					<button type="button" onClick={() => setShowWarning(false)}>
 						Cancel

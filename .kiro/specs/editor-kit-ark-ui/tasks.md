@@ -1,6 +1,9 @@
 # Tasks: Editor Kit Ark UI Refresh
 
-> Status: **Active**. Implements `editor-kit-demo.pptx` chrome, adopts Ark UI primitives, and retires Solid UI dependencies.
+> Status: **Implementation complete.** Unchecked manual browser-verification
+> items remain recorded honestly; current visual-token and responsive
+> verification is tracked in
+> [`feature-design-system-foundation`](../feature-design-system-foundation/tasks.md).
 
 ## T1 — Add Ark UI
 

@@ -24,7 +24,12 @@ export default function ColourInspector(props: ColourInspectorProps) {
 		<section class="inspector-section colour-section">
 			<h3 class="inspector-heading">Colour</h3>
 
-			{!hasMetadata() && !hasWarnings() && <p class="colour-none">No colour metadata available.</p>}
+			{!hasMetadata() && !hasWarnings() && (
+				<p class="colour-none">
+					No colour space metadata — source doesn&apos;t declare primaries or transfer
+					characteristics.
+				</p>
+			)}
 
 			{hasMetadata() && (
 				<dl class="colour-metadata">

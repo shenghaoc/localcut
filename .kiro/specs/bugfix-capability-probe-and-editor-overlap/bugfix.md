@@ -1,6 +1,6 @@
 # Bugfix — Capability-probe false negatives + editor chrome overlap & IA
 
-> Status: **Mixed** — **Part 1 (B1–B9, capability + layout): Implemented — merged in #130** (`pnpm run check` was green at merge; B1–B4/B6–B9 fixed; B5 ships an honest, actionable gate with the off-main-thread fallback deferred — see D5). **Part 2 (B10–B16, editor chrome information architecture): Phase 1 (B12/B13/B16 — labels, dedupe, density) implemented on this branch; B10/B11/B14/B15 (nav restructure) proposed**, from the [editor-chrome panels audit](../../../audits/editor-chrome-panels-2026-06-20/audit.md).
+> Status: **Implemented.** **Part 1 (B1–B9, capability + layout) merged in #130/#131**, including the off-main-thread main-frames capture fallback. **Part 2 (B10–B16, editor-chrome information architecture) is implemented**: four job-based right-rail destinations, an honest Media/Beats library switcher, menu/toolbar deduplication, disambiguated audio labels, and compact unavailable-state disclosures. The design-system foundation follow-up is specified separately in [`feature-design-system-foundation`](../feature-design-system-foundation/tasks.md).
 >
 > This single spec covers the full editor-chrome workstream: the capability-probe false negatives and the workspace-layout/media-bin overlaps (Part 1, merged in #130), plus the navigation/information-architecture reorganization the audit surfaced (Part 2, this branch). They share surfaces and one recurring anti-pattern — primary navigation hidden behind `overflow-x` scrollbars (media bin B9, right-rail tabs B10).
 
@@ -109,7 +109,7 @@ Live computed `.workspace.has-bin` columns were `364px 756px 360px` — matching
 
 ---
 
-# Part 2 — Editor chrome information architecture (B10–B16, Proposed)
+# Part 2 — Editor chrome information architecture (B10–B16, Implemented)
 
 Source: [`audits/editor-chrome-panels-2026-06-20/audit.md`](../../../audits/editor-chrome-panels-2026-06-20/audit.md) (visual + DOM-rect + code audit at 1280×720). The editor exposes the same concepts through **three competing navigation systems** with overlapping, differently-labelled entry points (left rail, top menu/toolbar, right rail). The fix is to **consolidate by user job, give every nav control one honest behavior, and never hide primary navigation behind a scrollbar**. Design lives in D10–D16; the target IA and the open product decisions are there too.
 

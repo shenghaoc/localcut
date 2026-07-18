@@ -1,0 +1,211 @@
+{
+	"schemaVersion": 2,
+	"generatedAt": "2026-07-18T07:55:21.000Z",
+	"title": "Design System: LocalCut Studio",
+	"extensions": {
+		"colorMeta": {
+			"film-stock-amber": {
+				"role": "primary",
+				"displayName": "Film Stock Amber",
+				"canonical": "#d4a853",
+				"tonalRamp": ["#d4a853", "#c4983e", "#f5d78a", "#8c6a2c"]
+			},
+			"amber-pressed": {
+				"role": "primary",
+				"displayName": "Amber Pressed",
+				"canonical": "#c4983e"
+			},
+			"ink": {
+				"role": "neutral",
+				"displayName": "Ink (App Background)",
+				"canonical": "#0a090f",
+				"tonalRamp": ["#0a090f", "#0f0e15", "#16151c", "#1d1c24"]
+			},
+			"plate": {
+				"role": "neutral",
+				"displayName": "Plate",
+				"canonical": "#0f0e15"
+			},
+			"panel": {
+				"role": "neutral",
+				"displayName": "Panel Surface",
+				"canonical": "#16151c"
+			},
+			"elevated": {
+				"role": "neutral",
+				"displayName": "Elevated Surface",
+				"canonical": "#1d1c24"
+			},
+			"well": {
+				"role": "neutral",
+				"displayName": "Well (Stage Background)",
+				"canonical": "#0c0b11"
+			},
+			"edge": {
+				"role": "neutral",
+				"displayName": "Edge Hairline",
+				"canonical": "#222230"
+			},
+			"edge-strong": {
+				"role": "neutral",
+				"displayName": "Edge Strong",
+				"canonical": "#33334a"
+			},
+			"text-primary": {
+				"role": "neutral",
+				"displayName": "Text Primary",
+				"canonical": "#f4f6fa"
+			},
+			"text-secondary": {
+				"role": "neutral",
+				"displayName": "Text Secondary",
+				"canonical": "#c7c9d6"
+			},
+			"text-muted": {
+				"role": "neutral",
+				"displayName": "Text Muted",
+				"canonical": "#8e90a3"
+			},
+			"text-dim": {
+				"role": "neutral",
+				"displayName": "Text Dim",
+				"canonical": "#5a5c70"
+			},
+			"vermillion": {
+				"role": "signal",
+				"displayName": "Vermillion (Destructive)",
+				"canonical": "#ef4f4f"
+			},
+			"sage": {
+				"role": "signal",
+				"displayName": "Sage (Success/Audio)",
+				"canonical": "#6ee7b7"
+			},
+			"signal-amber": {
+				"role": "signal",
+				"displayName": "Signal Amber (Warning)",
+				"canonical": "#f5b942"
+			},
+			"cool-slate": {
+				"role": "functional",
+				"displayName": "Cool Slate (Technical Readouts)",
+				"canonical": "#8b9cc7"
+			}
+		},
+		"typographyMeta": {
+			"display": {
+				"displayName": "Display",
+				"purpose": "Panel headers, dialog titles. 28px / 600."
+			},
+			"body": {
+				"displayName": "Body",
+				"purpose": "Primary UI text, 13.5px. Capped at 65ch in prose."
+			},
+			"label": {
+				"displayName": "Label",
+				"purpose": "Section eyebrow labels. 11.5px / 600 / 0.12em tracking."
+			},
+			"mono": {
+				"displayName": "Mono",
+				"purpose": "Every timecode, frame count, codec string. JetBrains Mono, tabular-nums."
+			}
+		},
+		"spacingMeta": {
+			"2xs": "0.25rem",
+			"xs-tight": "0.3rem",
+			"xs": "0.35rem",
+			"sm-tight": "0.4rem",
+			"sm": "0.45rem",
+			"md": "0.5rem",
+			"md-tight": "0.55rem",
+			"lg": "0.65rem",
+			"xl": "0.75rem",
+			"2xl": "0.85rem",
+			"3xl": "1rem"
+		},
+		"shadows": [
+			{
+				"name": "ambient-low",
+				"value": "0 1px 2px rgb(0 0 0 / 45%)",
+				"purpose": "Subtle separation for cards within panels."
+			},
+			{
+				"name": "surface-mid",
+				"value": "0 6px 18px -4px rgb(0 0 0 / 55%), 0 2px 6px rgb(0 0 0 / 35%)",
+				"purpose": "Popovers, dropdowns, floating panels."
+			},
+			{
+				"name": "surface-high",
+				"value": "0 16px 40px -12px rgb(0 0 0 / 70%), 0 4px 12px rgb(0 0 0 / 40%)",
+				"purpose": "Modal dialogs, highest elevation."
+			},
+			{
+				"name": "amber-glow",
+				"value": "0 0 0 1px rgb(212 168 83 / 18%), 0 0 12px rgb(212 168 83 / 12%)",
+				"purpose": "Primary buttons, active scrubhead."
+			},
+			{
+				"name": "focus-ring",
+				"value": "0 0 0 1px var(--amber), 0 0 0 3px rgb(212 168 83 / 18%)",
+				"purpose": "Keyboard focus indicator. Always amber."
+			}
+		],
+		"motion": [
+			{
+				"name": "ease-standard",
+				"value": "cubic-bezier(0.25, 0.1, 0.25, 1)",
+				"purpose": "Default transition easing. 220ms for buttons and state changes."
+			}
+		],
+		"breakpoints": []
+	},
+	"components": [
+		{
+			"name": "Primary Button",
+			"kind": "button",
+			"refersTo": "button-primary",
+			"description": "The single most important action on any screen. Amber background, dark text, subtle glow. Use once per section maximum.",
+			"html": "<button class=\"button button-variant-default button-size-default\">Render</button>",
+			"css": ".button-variant-default { border-color: color-mix(in srgb, #d4a853 55%, #222230); background: #d4a853; color: #1a1100; box-shadow: 0 0 0 1px rgb(212 168 83 / 15%); border-radius: 3px; padding: 0 12px; height: 28px; font-family: 'DM Sans', sans-serif; font-size: 11.5px; font-weight: 600; letter-spacing: 0.02em; transition: background 220ms cubic-bezier(0.25, 0.1, 0.25, 1); } .button-variant-default:hover { background: color-mix(in oklab, #d4a853, white 6%); }"
+		},
+		{
+			"name": "Secondary Button",
+			"kind": "button",
+			"refersTo": "button-secondary",
+			"description": "The default action button. Elevated surface, muted text, 1px edge border. Hover warms toward amber.",
+			"html": "<button class=\"button button-variant-secondary button-size-default\">Cancel</button>",
+			"css": ".button { border: 1px solid #222230; border-radius: 3px; background: #1d1c24; color: #c7c9d6; padding: 0 12px; height: 28px; font-size: 11.5px; font-weight: 600; font-family: 'DM Sans', sans-serif; letter-spacing: 0.02em; transition: background 220ms cubic-bezier(0.25, 0.1, 0.25, 1), border-color 220ms cubic-bezier(0.25, 0.1, 0.25, 1), color 220ms cubic-bezier(0.25, 0.1, 0.25, 1); } .button:hover:not(:disabled) { border-color: color-mix(in srgb, #d4a853 35%, #222230); color: #f4f6fa; background: color-mix(in srgb, #1d1c24 80%, rgb(212 168 83 / 10%)); }"
+		},
+		{
+			"name": "Ghost Button",
+			"kind": "button",
+			"refersTo": "button-ghost",
+			"description": "Tertiary actions and icon-only tool buttons. Transparent, muted text, no border.",
+			"html": "<button class=\"button button-variant-ghost button-size-icon\"><svg><!-- icon --></svg></button>",
+			"css": ".button-variant-ghost { border-color: transparent; background: transparent; color: #8e90a3; } .button-variant-ghost:hover:not(:disabled) { color: #f4f6fa; background: rgb(255 255 255 / 6%); }"
+		}
+	],
+	"narrative": {
+		"northStar": "The Editing Bench",
+		"overview": "A dark, focused workspace — the digital equivalent of a film editing bench: functional, precise, stripped of decoration. Every surface, every pixel, every type choice serves the edit.",
+		"colorCharacter": "A single confident amber accent against a warm-undertone dark neutral ramp. Three signal colours handle status; cool slate marks functional readouts.",
+		"elevationPhilosophy": "Tonal layering, not shadows. Surfaces progress from darkest (ink) to lightest (elevated). Shadows reserved for floating elements only.",
+		"doRules": [
+			"Lead with Film Stock Amber for exactly one primary action per view.",
+			"Use JetBrains Mono with tabular-nums for every timecode and technical value.",
+			"Use tonal surface layering (ink → plate → panel → elevated) for depth.",
+			"Keep borders at 1px in edge or edge-strong.",
+			"Use signal colours only for their documented status meaning.",
+			"Respect prefers-reduced-motion for every transition."
+		],
+		"dontRules": [
+			"Do not introduce a second accent colour.",
+			"Do not use side-stripe borders as coloured accents.",
+			"Do not use gradient text, promotional gradients, glassmorphism, or decorative blur effects; restrained functional tonal gradients are permitted.",
+			"Do not display timecodes in DM Sans.",
+			"Do not add shadows to surfaces at rest.",
+			"Do not use bold or uppercase decoratively; reserve them for compact controls, status, and technical labels.",
+			"Do not emulate kdenlive, Final Cut, CapCut, or DaVinci Resolve aesthetics."
+		]
+	}
+}

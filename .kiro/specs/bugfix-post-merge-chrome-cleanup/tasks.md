@@ -1,7 +1,9 @@
 # Tasks: Bugfix — Post-merge editor chrome cleanup
 
-> Status: **Active**. Tasks map to the bugs in `bugfix.md` and the design in
-> `design.md`. Tracks the work on `claude/charming-meitner-eb82d3` (PR #114).
+> Status: **Implementation merged in PR #114.** Unchecked items below preserve
+> the historical manual-verification record and are not retroactively marked
+> complete. Cyan-specific visual tasks are superseded by
+> [`feature-design-system-foundation`](../feature-design-system-foundation/tasks.md).
 
 ## T1 — Left dock wraps MediaBin + BeatPanel (B1)
 

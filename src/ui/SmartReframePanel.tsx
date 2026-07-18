@@ -165,7 +165,8 @@ export const SmartReframePanel: Component<SmartReframePanelProps> = (props) => {
 							}
 						>
 							<p class="capability-panel-note">
-								Face detection ready{faceEngineLabel() ? ` (${faceEngineLabel()}).` : '.'}
+								Face detection ready
+								{faceEngineLabel() ? ` (${faceEngineLabel()}).` : '.'}
 							</p>
 						</Show>
 					</section>
@@ -214,7 +215,11 @@ export const SmartReframePanel: Component<SmartReframePanelProps> = (props) => {
 								value={props.state.progress}
 								max={1}
 								aria-label="Analysis progress"
-								style={{ width: '100%', display: 'block', 'margin-top': '0.4rem' }}
+								style={{
+									width: '100%',
+									display: 'block',
+									'margin-top': '0.4rem'
+								}}
 							/>
 						</p>
 						<Button size="sm" variant="secondary" onClick={() => props.onCancel()}>
@@ -225,14 +230,14 @@ export const SmartReframePanel: Component<SmartReframePanelProps> = (props) => {
 					{/* Confirm replace dialog (R6.8) */}
 					<Show when={confirmReplace()}>
 						<p class="capability-panel-note" role="alert">
-							This clip already has transform keyframes. Replace them?
+							This clip already has transform keyframes. Re-analysis will overwrite them.
 						</p>
 						<div style={{ display: 'flex', gap: '0.5rem' }}>
 							<Button size="sm" variant="destructive" onClick={handleReanalyse}>
-								Replace
+								Replace keyframes
 							</Button>
 							<Button size="sm" variant="secondary" onClick={() => setConfirmReplace(false)}>
-								Cancel
+								Keep existing
 							</Button>
 						</div>
 					</Show>
@@ -284,7 +289,13 @@ export const SmartReframePanel: Component<SmartReframePanelProps> = (props) => {
 									</p>
 								</Show>
 
-								<div style={{ display: 'flex', gap: '0.5rem', 'flex-wrap': 'wrap' }}>
+								<div
+									style={{
+										display: 'flex',
+										gap: '0.5rem',
+										'flex-wrap': 'wrap'
+									}}
+								>
 									<Button size="sm" onClick={() => props.onApply()}>
 										Apply
 									</Button>

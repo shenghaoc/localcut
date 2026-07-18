@@ -11,6 +11,7 @@ import type {
 	CaptionStyleSnapshot
 } from '../protocol';
 import { CaptionStyleInspector } from './CaptionStyleInspector';
+import { RailEmpty } from './RailEmpty';
 
 interface TranscriptPanelProps {
 	captionTracks: CaptionTrackSnapshot[];
@@ -305,9 +306,10 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
 			<Show
 				when={props.captionTracks.length > 0}
 				fallback={
-					<p class="placeholder-text">
-						Import an SRT or WebVTT file, or generate captions from audio.
-					</p>
+					<RailEmpty title="No captions yet">
+						Import an SRT or WebVTT file with the Import button above, or generate captions from a
+						selected clip with Auto Captions.
+					</RailEmpty>
 				}
 			>
 				<Show when={activeTrack()}>

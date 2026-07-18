@@ -392,7 +392,7 @@ export function Toolbar(props: ToolbarProps) {
 						class="file-name"
 						title={props.metadata?.fileName ?? 'Drop or import a file to get started'}
 					>
-						<Show when={props.metadata} fallback="Nothing loaded">
+						<Show when={props.metadata} fallback="Drop or import a file to get started">
 							{(meta) => meta().fileName}
 						</Show>
 					</span>

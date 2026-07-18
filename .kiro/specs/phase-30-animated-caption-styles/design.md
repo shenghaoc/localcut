@@ -429,6 +429,15 @@ A panel section rendered when a caption track or segment is selected. Shows:
 - "Save as preset" (saves current overrides as a new custom preset).
 - Reduced-tier notice for burn-in when WebGPU is unavailable.
 
+Preset naming and import conflicts use a focused `CaptionPresetDialog` helper
+backed by the browser's native `<dialog>.showModal()` contract. It provides
+background inertness, focus containment, Escape/cancel handling, and focus
+return without introducing a second general-purpose modal system. The save
+prompt snapshots the selected base preset and edited draft at invocation time;
+its mounted state is keyed by the prompt object, never by the truthiness of the
+editable name. Import conflicts present Cancel first, Update existing as
+destructive, and Save as copy as the trailing, initially focused safe action.
+
 Follows UI-standards steering: dark professional aesthetic, keyboard accessible,
 ARIA labels on all controls, no media objects or GPU handles in UI code,
 `onCleanup` for any subscriptions.

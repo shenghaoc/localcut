@@ -41,7 +41,6 @@ export type AudioSideRailTab = (typeof AUDIO_SIDE_RAIL_TABS)[number]['id'];
 export const CAPTURE_SIDE_RAIL_TABS = [
 	{ id: 'record', label: 'Record' },
 	{ id: 'program', label: 'Program' },
-	{ id: 'replay', label: 'Replay' },
 	{ id: 'publish', label: 'Go Live' }
 ] as const;
 
@@ -51,6 +50,11 @@ export const SIDE_RAIL_COLLAPSED_KEY = 'side-rail-collapsed';
 
 export function isSideRailTab(value: string | null): value is SideRailTab {
 	return SIDE_RAIL_TABS.some((tab) => tab.id === value);
+}
+
+/** Visible label for a primary rail destination (expand strip, aria, titles). */
+export function sideRailTabLabel(tab: SideRailTab): string {
+	return SIDE_RAIL_TABS.find((entry) => entry.id === tab)?.label ?? 'Inspector';
 }
 
 export function sideRailTabTriggerId(tab: SideRailTab): string {

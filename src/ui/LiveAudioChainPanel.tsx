@@ -1,5 +1,6 @@
 import { createSignal, Show } from 'solid-js';
 import { AudioInsertRow } from './AudioInsertRow';
+import { RailEmpty } from './RailEmpty';
 import type { LiveAudioChainConfig } from '../protocol';
 
 export interface LiveAudioChainPanelProps {
@@ -68,6 +69,13 @@ export function LiveAudioChainPanel(props: LiveAudioChainPanelProps) {
 						<div class="capability-warning" role="alert">
 							Live Audio Chain requires cross-origin isolation.
 						</div>
+					</Show>
+
+					<Show when={props.crossOriginIsolated && !props.isCapturing}>
+						<RailEmpty compact title="Configure before recording">
+							Gate, compressor, and limiter can be printed to recorded audio. Start a recording to
+							enable that option; live monitoring stays unprocessed.
+						</RailEmpty>
 					</Show>
 
 					<Show when={props.crossOriginIsolated}>

@@ -178,3 +178,7 @@ public/models/whisper/vocab.json
 
 # Local audit artifacts (evidence travels with the relevant feature branch)
 audits/
+
+# Impeccable session output (design/live configuration stays tracked)
+**/.impeccable/hook.cache.json
+.impeccable/critique/

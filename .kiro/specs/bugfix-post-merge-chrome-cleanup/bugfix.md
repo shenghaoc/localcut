@@ -1,8 +1,9 @@
 # Bugfix — Post-merge editor chrome cleanup
 
-> Status: **Active**. Tracks the redesign that restores the editor chrome after
-> rapid PR-merger churn left the workspace grid structurally broken and the
-> design tokens visibly drifted. Tracked on PR #114.
+> Status: **Implemented in PR #114.** This is the historical structural cleanup
+> that restored the three-child workspace grid. Its electric-cyan visual-token
+> direction was later superseded by the canonical amber foundation in
+> [`feature-design-system-foundation`](../feature-design-system-foundation/design.md).
 
 ## Summary
 

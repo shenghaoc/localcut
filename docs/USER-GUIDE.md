@@ -128,7 +128,7 @@ Scopes are unavailable in Limited WebCodecs and Shell Only tiers because those m
 
 ## Side Panel
 
-The right sidebar hosts four job tabs — **Inspector**, **Text**, **Audio**, and **Capture** — with one destination visible at a time so each gets the full sidebar height, even on smaller laptop screens. **Text** contains Captions and, when Chrome's built-in AI APIs are available, Language Tools. **Audio** contains Live Chain and Voice FX. **Capture** contains Record, Program, Replay, and Go Live. The panel switches to Inspector automatically when you select a clip or transition, and to **Text > Captions** after a caption import. Use the **›** button at the right end of the tab bar to collapse the whole sidebar (handy on small screens — the preview and timeline get the extra width) and the **‹** strip to bring it back; the choice is remembered between sessions.
+The right sidebar hosts four job tabs — **Inspector**, **Text**, **Audio**, and **Capture** — with one destination visible at a time so each gets the full sidebar height, even on smaller laptop screens. **Text** contains Captions and, when Chrome's built-in AI APIs are available, Language Tools. **Audio** contains Live Chain and Voice FX. **Capture** contains Record, Program, and Go Live; the Replay Buffer is the first collapsible section inside **Record**. The panel switches to Inspector automatically when you select a clip or transition, and to **Text > Captions** after a caption import. Collapse the sidebar with the chevron at the right end of the tab bar. The remaining strip names the current destination and includes an expand chevron, so the way back stays visible; the choice is remembered between sessions.
 
 ## Inspector Panel
 
@@ -600,7 +600,7 @@ See the full [Recording guide](RECORDING.md) for details.
 
 Continuously record a screen capture into a rolling buffer and save the last moments as a timeline clip — without interrupting the recording.
 
-- **Start Capture**: Open **Capture > Replay** and click **Start Capture**. Your browser shows its screen-share picker; choose a tab, window, or screen. Capture begins immediately and the panel shows a red **Recording** indicator with the elapsed time.
+- **Start Capture**: Open **Capture > Record**, expand **Replay Buffer**, and click **Start Capture**. Your browser shows its screen-share picker; choose a tab, window, or screen. Capture begins immediately and the panel shows a red **Recording** indicator with the elapsed time.
 - **Rolling buffer**: The newest 30 seconds (by default) are kept encoded in memory, oldest-first eviction. The fill bar shows how much of the buffer window is populated. Excess data beyond the memory budget spills to private browser storage (OPFS) automatically.
 - **Save Last N Seconds**: Click **Save Last 30s** at any time. The buffered range is finalized into an MP4, added to the Media Bin, and appended to the timeline as a regular clip — capture keeps running while this happens. Saving is undoable like any other timeline edit.
 - **Stop Capture**: Click **Stop Capture** (or use the browser's own "Stop sharing" control). The buffered media stays available for one final save until the next capture starts.

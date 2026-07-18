@@ -417,7 +417,14 @@ export function ExportDialog(props: ExportDialogProps) {
 						</Show>
 						<Show when={platformCodecResolution() && 'blocked' in platformCodecResolution()!}>
 							<p class="export-preset-blocked" role="alert">
-								{(platformCodecResolution() as { blocked: true; reason: string }).reason}
+								{
+									(
+										platformCodecResolution() as {
+											blocked: true;
+											reason: string;
+										}
+									).reason
+								}
 							</p>
 						</Show>
 						<Show
@@ -429,7 +436,7 @@ export function ExportDialog(props: ExportDialogProps) {
 							}
 						>
 							<p class="export-aspect-warning" role="status" aria-live="polite" aria-atomic="true">
-								H.264 is not supported on this device; falling back to VP9 (WebM).
+								H.264 is not supported on this device; falling back to VP9 in WebM container.
 							</p>
 						</Show>
 
@@ -647,7 +654,10 @@ export function ExportDialog(props: ExportDialogProps) {
 												setSettings((current) => ({
 													...current,
 													interpolation: current.interpolation
-														? { ...current.interpolation, motionBlur: event.currentTarget.checked }
+														? {
+																...current.interpolation,
+																motionBlur: event.currentTarget.checked
+															}
 														: undefined
 												}));
 												setSelectedPresetId(null);
@@ -871,10 +881,15 @@ export function ExportDialog(props: ExportDialogProps) {
 							>
 								<ListPlus size={14} aria-hidden="true" />
 								Add to Queue{' '}
-								<span class="text-xs text-muted-foreground font-normal">(Experimental)</span>
+								<span
+									class="text-xs text-muted-foreground font-normal"
+									title="Render queue is under active development"
+								>
+									(Experimental)
+								</span>
 							</Button>
 							<Show when={props.exporting}>
-								<Button onClick={() => props.onCancel()}>Cancel</Button>
+								<Button onClick={() => props.onCancel()}>Stop export</Button>
 							</Show>
 							<Show when={!savingPreset()}>
 								<Button

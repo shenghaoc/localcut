@@ -1,5 +1,12 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const parsedE2ePort = Number.parseInt(process.env.LOCALCUT_E2E_PORT ?? '5173', 10);
+const e2ePort =
+	Number.isInteger(parsedE2ePort) && parsedE2ePort > 0 && parsedE2ePort <= 65_535
+		? parsedE2ePort
+		: 5173;
+const e2eBaseUrl = `http://127.0.0.1:${e2ePort}`;
+
 /**
  * Phase 47: WHIP integration tests only (R8.5) — everything else is Vitest.
  * Requires a MediaMTX instance on localhost (see
@@ -22,7 +29,7 @@ export default defineConfig({
 		? [['list'], ['github'], ['junit', { outputFile: 'test-results/junit-e2e.xml' }]]
 		: 'list',
 	use: {
-		baseURL: 'http://127.0.0.1:5173',
+		baseURL: e2eBaseUrl,
 		...devices['Desktop Chrome'],
 		trace: 'retain-on-failure',
 		// Sandboxed environments without access to the Playwright CDN can point
@@ -35,9 +42,12 @@ export default defineConfig({
 			: {})
 	},
 	webServer: {
-		command: 'vp dev -- --host 127.0.0.1 --port 5173 --strictPort',
-		url: 'http://127.0.0.1:5173',
-		reuseExistingServer: !process.env.CI,
+		command: `./node_modules/.bin/vp dev -- --host 127.0.0.1 --port ${e2ePort} --strictPort`,
+		url: e2eBaseUrl,
+		// Reusing an arbitrary process on the port can produce plausible but
+		// meaningless failures against another worktree's app. Use
+		// LOCALCUT_E2E_PORT when the default port is occupied instead.
+		reuseExistingServer: false,
 		timeout: 60_000
 	}
 });

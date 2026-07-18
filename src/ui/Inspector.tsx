@@ -28,6 +28,7 @@ import { clipLocalTime, hasKeyframeTrack, keyframeAt, sortedKeyframes } from './
 import { ZoomPresetPanel } from './ZoomPresetPanel';
 import { AutoZoomPanel } from './AutoZoomPanel';
 import { CalloutInspector } from './CalloutInspector';
+import { RailEmpty } from './RailEmpty';
 import { PaddedBackgroundPanel } from './PaddedBackgroundPanel';
 
 export interface SelectedTitle {
@@ -1233,12 +1234,9 @@ export function Inspector(props: InspectorProps) {
 			<Show
 				when={props.selectedClip}
 				fallback={
-					<div class="inspector-empty">
-						<p class="inspector-empty-title">Select a clip to inspect it</p>
-						<p class="placeholder-text">
-							Pick a clip on the timeline — its properties will show up here.
-						</p>
-					</div>
+					<RailEmpty title="Select a clip to edit its properties">
+						Click a clip on the timeline to adjust timing, effects, transform, and colour.
+					</RailEmpty>
 				}
 			>
 				{(clip) => (

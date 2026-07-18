@@ -87,7 +87,7 @@ export function BeatPanel(props: BeatPanelProps) {
 										fallback={
 											<Show
 												when={result()}
-												fallback={<span class="beat-panel-state">Not analysed</span>}
+												fallback={<span class="beat-panel-state">Not yet run</span>}
 											>
 												<span class="beat-panel-state is-ready">Ready</span>
 											</Show>

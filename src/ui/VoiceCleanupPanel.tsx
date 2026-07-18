@@ -2,6 +2,7 @@ import { createEffect, createSignal, Show, For } from 'solid-js';
 import { Mic, BarChart3, Shield, AlertTriangle } from 'lucide-solid';
 import { AudioInsertRow } from './AudioInsertRow';
 import { Button } from './components/button';
+import { RailEmpty } from './RailEmpty';
 import type { VoiceCleanupSettings, GateParams, LimiterParams } from '../protocol';
 
 export interface VoiceCleanupPanelProps {
@@ -154,6 +155,12 @@ export function VoiceCleanupPanel(props: VoiceCleanupPanelProps) {
 			</button>
 			<Show when={expanded()}>
 				<div class="collapse-body" id="voice-cleanup-body">
+					<Show when={props.timelineEmpty}>
+						<RailEmpty compact title="Add audio to clean it up">
+							Import a clip and place it on an audio track. Denoise and loudness tools activate once
+							timeline audio is present.
+						</RailEmpty>
+					</Show>
 					{/* Section (a): Denoiser */}
 					<AudioInsertRow
 						label="Denoiser"
@@ -167,10 +174,19 @@ export function VoiceCleanupPanel(props: VoiceCleanupPanelProps) {
 						}}
 					>
 						<div class="denoiser-tracks">
-							<p class="insert-hint">
-								Enable per-track denoising. The WASM RNNoise denoiser runs on the monitor bus and
-								export chain.
-							</p>
+							<Show when={props.trackNames.size === 0 && !props.timelineEmpty}>
+								<p class="placeholder-text">
+									Add audio clips to the timeline to enable per-track denoising.
+								</p>
+							</Show>
+							<Show when={props.trackNames.size === 0 && props.timelineEmpty}>
+								<p class="placeholder-text">No audio tracks yet.</p>
+							</Show>
+							<Show when={props.trackNames.size > 0}>
+								<p class="insert-hint">
+									Enable per-track denoising. The denoiser runs on the monitor bus and export chain.
+								</p>
+							</Show>
 							<Show when={props.denoiserStatus === 'unavailable'}>
 								<div class="analysis-error" role="alert">
 									<AlertTriangle size={14} />

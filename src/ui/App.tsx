@@ -11,7 +11,7 @@ import {
 } from 'solid-js';
 import { Tabs } from '@ark-ui/solid/tabs';
 import { useRegisterSW } from 'virtual:pwa-register/solid';
-import { Link2, RotateCcw, Plus } from 'lucide-solid';
+import { ChevronsLeft, ChevronsRight, Link2, RotateCcw, Plus } from 'lucide-solid';
 import {
 	CLOCK_BUFFER_BYTES,
 	type CapabilityProbeResult,
@@ -92,6 +92,7 @@ import {
 	sideRailTabPanelId,
 	sideRailTabTriggerId,
 	visibleTextSideRailTabs,
+	sideRailTabLabel,
 	type AudioSideRailTab,
 	type CaptureSideRailTab,
 	type SideRailTab,
@@ -418,7 +419,9 @@ export function App() {
 	const [convertOpen, setConvertOpen] = createSignal<boolean>(
 		typeof window === 'undefined' ? false : parseConvertPath(window.location.pathname)
 	);
-	const [publishState, setPublishState] = createSignal<PublishState>({ phase: 'idle' });
+	const [publishState, setPublishState] = createSignal<PublishState>({
+		phase: 'idle'
+	});
 	const [publishTapStats, setPublishTapStats] = createSignal<PublishTapStats | null>(null);
 	const [publishErrorDetail, setPublishErrorDetail] = createSignal<string | null>(null);
 	const [publishSettings, setPublishSettings] =
@@ -450,9 +453,10 @@ export function App() {
 	const [importing, setImporting] = createSignal(false);
 	const [statusLine, setStatusLine] = createSignal('Checking client capabilities…');
 	const [previewLabel, setPreviewLabel] = createSignal<string | null>(null);
-	const [previewSize, setPreviewSize] = createSignal<{ width: number; height: number } | null>(
-		null
-	);
+	const [previewSize, setPreviewSize] = createSignal<{
+		width: number;
+		height: number;
+	} | null>(null);
 	const [previewCanvasEl, setPreviewCanvasEl] = createSignal<HTMLCanvasElement | undefined>(
 		undefined
 	);
@@ -594,7 +598,10 @@ export function App() {
 			if (track.type !== 'video') continue;
 			for (const clip of track.clips) {
 				if (clip.kind !== 'title' || !clip.title) continue;
-				options.push({ id: clip.id, label: clip.title.text.trim() || 'Untitled title' });
+				options.push({
+					id: clip.id,
+					label: clip.title.text.trim() || 'Untitled title'
+				});
 			}
 		}
 		return options;
@@ -932,7 +939,10 @@ export function App() {
 		if (!wasmResponse.ok) {
 			throw new Error(`RNNoise WASM fetch failed with HTTP ${wasmResponse.status}`);
 		}
-		const manifest = (await manifestResponse.json()) as { sizeBytes: number; checksum: string };
+		const manifest = (await manifestResponse.json()) as {
+			sizeBytes: number;
+			checksum: string;
+		};
 		setVoiceCleanupWasmSha256(manifest.checksum);
 		const buffer = await wasmResponse.arrayBuffer();
 		if (buffer.byteLength !== manifest.sizeBytes) {
@@ -1023,7 +1033,10 @@ export function App() {
 			writeChainParamsToSab(sab, {
 				...DEFAULT_LIVE_AUDIO_CHAIN_CONFIG,
 				gate: settings.gateParams,
-				limiter: { ...settings.limiterParams, ceilingDb: settings.limiterCeilingDbtp },
+				limiter: {
+					...settings.limiterParams,
+					ceilingDb: settings.limiterCeilingDbtp
+				},
 				denoiserBypass: settings.denoiserEnabledTracks.length === 0
 			});
 			sab[VOICE_CLEANUP_NORMALISE_GAIN_DB] = settings.normaliseGainDb;
@@ -1080,7 +1093,9 @@ export function App() {
 		},
 		applyToClip: (request) => {
 			if (!bridge) throw new Error('Media pipeline is not ready.');
-			const file = new File([request.wav], request.fileName, { type: 'audio/wav' });
+			const file = new File([request.wav], request.fileName, {
+				type: 'audio/wav'
+			});
 			bridge.send({
 				type: 'apply-audio-cleanup',
 				trackId: request.trackId,
@@ -1410,7 +1425,11 @@ export function App() {
 	const reframePanelClip = createMemo(() => {
 		const clip = selectedReframeClip();
 		return clip
-			? { id: clip.clipId, trackId: clip.trackId, hasKeyframes: clip.hasKeyframes }
+			? {
+					id: clip.clipId,
+					trackId: clip.trackId,
+					hasKeyframes: clip.hasKeyframes
+				}
 			: null;
 	});
 
@@ -1892,7 +1911,9 @@ export function App() {
 			// The browser's own "Stop sharing" ends the track; mirror it as a stop.
 			const lifetimeTrack =
 				streams.mediaStream.getVideoTracks()[0] ?? streams.mediaStream.getAudioTracks()[0];
-			lifetimeTrack?.addEventListener('ended', () => stopReplayCapture(), { once: true });
+			lifetimeTrack?.addEventListener('ended', () => stopReplayCapture(), {
+				once: true
+			});
 			const transfer: Transferable[] = [];
 			if (streams.videoStream) transfer.push(streams.videoStream);
 			if (streams.audioStream) transfer.push(streams.audioStream);
@@ -2084,7 +2105,10 @@ export function App() {
 
 	async function addProgramScreen(): Promise<void> {
 		try {
-			const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+			const stream = await navigator.mediaDevices.getDisplayMedia({
+				video: true,
+				audio: false
+			});
 			const track = stream.getVideoTracks()[0];
 			if (!track) throw new Error('Screen picker returned no video track.');
 			const sourceId = makeProgramId('screen');
@@ -2274,7 +2298,11 @@ export function App() {
 
 	function switchProgramScene(sceneId: string): void {
 		setProgramActiveSceneId(sceneId);
-		bridge?.send({ type: 'program-scene-switch', sceneId, transitionMs: programTransitionMs() });
+		bridge?.send({
+			type: 'program-scene-switch',
+			sceneId,
+			transitionMs: programTransitionMs()
+		});
 	}
 
 	function handleAddCallout(payload: CalloutPayload, transform?: Partial<TransformParamsSnapshot>) {
@@ -2686,7 +2714,10 @@ export function App() {
 				break;
 			case 'preview-resolution':
 				setPreviewLabel(msg.resolution.label);
-				setPreviewSize({ width: msg.resolution.width, height: msg.resolution.height });
+				setPreviewSize({
+					width: msg.resolution.width,
+					height: msg.resolution.height
+				});
 				break;
 			case 'probe-result':
 				setEncodeFps(msg.probe.encodeFps);
@@ -2987,7 +3018,10 @@ export function App() {
 				setVoiceCleanupAnalysisError(msg.message);
 				break;
 			case 'voice-cleanup-applied':
-				setVoiceCleanupSettings((s) => ({ ...s, normaliseGainDb: msg.normalisationGainDb }));
+				setVoiceCleanupSettings((s) => ({
+					...s,
+					normaliseGainDb: msg.normalisationGainDb
+				}));
 				break;
 			case 'voice-cleanup-settings':
 				setVoiceCleanupSettings(msg.settings);
@@ -3408,7 +3442,12 @@ export function App() {
 				});
 				if (!handle) return;
 				const file = await handle.getFile();
-				bridge?.send({ type: 'relink-source', sourceId, file, fileHandle: handle });
+				bridge?.send({
+					type: 'relink-source',
+					sourceId,
+					file,
+					fileHandle: handle
+				});
 				return;
 			} catch (error) {
 				if (isAbortError(error)) return;
@@ -3575,8 +3614,15 @@ export function App() {
 						),
 						usedNames
 					);
-					const handle = await directory.getFileHandle(suggestedName, { create: true });
-					bridge?.send({ type: 'queue-job-output', jobId: job.id, handle, outputDir: directory });
+					const handle = await directory.getFileHandle(suggestedName, {
+						create: true
+					});
+					bridge?.send({
+						type: 'queue-job-output',
+						jobId: job.id,
+						handle,
+						outputDir: directory
+					});
 				}
 				return true;
 			} catch (error) {
@@ -3662,7 +3708,11 @@ export function App() {
 				rangeMode === 'full'
 					? { mode: 'full' as const }
 					: settings.range
-						? { mode: 'range' as const, startS: settings.range.startS, endS: settings.range.endS }
+						? {
+								mode: 'range' as const,
+								startS: settings.range.startS,
+								endS: settings.range.endS
+							}
 						: null;
 			if (!jobRange) return;
 			const job = createJob(settings, jobRange, presetId, outputTemplate);
@@ -3875,7 +3925,11 @@ export function App() {
 		// which releases them inside the delete handlers.
 		if (clips.length === 1) {
 			const clip = clips[0]!;
-			bridge?.send({ type: 'delete-clip', trackId: clip.trackId, clipId: clip.clipId });
+			bridge?.send({
+				type: 'delete-clip',
+				trackId: clip.trackId,
+				clipId: clip.clipId
+			});
 		} else {
 			bridge?.send({ type: 'delete-clips', clips });
 		}
@@ -4389,8 +4443,8 @@ export function App() {
 											Autosave from {formatSavedAt(offer().savedAt)}
 										</p>
 										<p class="restore-banner-detail">
-											{offer().sources.length} source{offer().sources.length === 1 ? '' : 's'} in
-											the saved project.
+											{offer().sources.length} source
+											{offer().sources.length === 1 ? '' : 's'} in the saved project.
 										</p>
 									</>
 								)}
@@ -4447,8 +4501,8 @@ export function App() {
 							<div class="restore-banner-copy">
 								<p class="restore-banner-title">Media health · {report().fileName}</p>
 								<p class="restore-banner-detail">
-									{report().warnings.length} issue{report().warnings.length === 1 ? '' : 's'}{' '}
-									detected.
+									{report().warnings.length} issue
+									{report().warnings.length === 1 ? '' : 's'} detected.
 								</p>
 							</div>
 							<ul class="source-health-list">
@@ -4718,11 +4772,7 @@ export function App() {
 							{/* Phase 39: format picker, platform picker, cover button */}
 							<Show when={previewSurfaceAvailable()}>
 								<div class="phase39-controls">
-									<fieldset
-										role="group"
-										aria-label="Project format"
-										style={{ display: 'flex', gap: '2px', 'flex-wrap': 'wrap' }}
-									>
+									<fieldset role="group" aria-label="Project format" class="phase39-format-group">
 										<For each={['16:9', '9:16', '1:1', '4:5'] as const}>
 											{(aspect) => (
 												<button
@@ -4744,17 +4794,10 @@ export function App() {
 									</fieldset>
 									<Show when={matchingPlatforms().length > 0}>
 										<select
+											class="phase39-platform-select"
 											aria-label="Safe zone platform"
 											value={selectedPlatformId()}
 											onChange={(e) => setSelectedPlatformId(e.currentTarget.value)}
-											style={{
-												'font-size': '11px',
-												padding: '2px 4px',
-												background: 'var(--input-bg, #1a1d24)',
-												color: 'inherit',
-												border: '1px solid rgb(255 255 255 / 14%)',
-												'border-radius': 'var(--radius-sm)'
-											}}
 										>
 											<option value="">Off</option>
 											<For each={matchingPlatforms()}>
@@ -4765,7 +4808,10 @@ export function App() {
 									<button
 										type="button"
 										class={cn(
-											buttonVariants({ variant: coverFrame() ? 'default' : 'ghost', size: 'sm' }),
+											buttonVariants({
+												variant: coverFrame() ? 'default' : 'ghost',
+												size: 'sm'
+											}),
 											'text-xs'
 										)}
 										onClick={() =>
@@ -4905,13 +4951,18 @@ export function App() {
 									<button
 										id="side-rail-expand-btn"
 										class="side-rail-expand"
-										aria-label="Expand side panel"
+										aria-label={`Expand ${sideRailTabLabel(activeSideRailTab())} panel`}
 										aria-expanded="false"
 										aria-controls="side-rail"
-										title="Expand side panel"
+										title={`Expand ${sideRailTabLabel(activeSideRailTab())}`}
 										onClick={() => toggleSideRail(false)}
 									>
-										‹
+										<span class="side-rail-expand-label">
+											{sideRailTabLabel(activeSideRailTab())}
+										</span>
+										<span class="side-rail-expand-icon" aria-hidden="true">
+											<ChevronsLeft size={14} />
+										</span>
 									</button>
 								}
 							>
@@ -4944,7 +4995,7 @@ export function App() {
 											title="Collapse side panel"
 											onClick={() => toggleSideRail(true)}
 										>
-											›
+											<ChevronsRight size={16} aria-hidden="true" />
 										</button>
 									</Tabs.List>
 									<div class="side-rail-tab-content">
@@ -4967,13 +5018,29 @@ export function App() {
 												mediaAssets={assets()}
 												onPickPreviewRegion={requestPreviewRegionPick}
 												onSetTitle={(trackId, clipId, patch) =>
-													bridge?.send({ type: 'set-title', trackId, clipId, ...patch })
+													bridge?.send({
+														type: 'set-title',
+														trackId,
+														clipId,
+														...patch
+													})
 												}
 												onEffectParam={(trackId, clipId, key, value) =>
-													bridge?.send({ type: 'set-effect-param', trackId, clipId, key, value })
+													bridge?.send({
+														type: 'set-effect-param',
+														trackId,
+														clipId,
+														key,
+														value
+													})
 												}
 												onTransform={(trackId, clipId, transform) =>
-													bridge?.send({ type: 'set-transform', trackId, clipId, transform })
+													bridge?.send({
+														type: 'set-transform',
+														trackId,
+														clipId,
+														transform
+													})
 												}
 												playheadTime={clock.currentTime()}
 												onSeek={(time) => bridge?.send({ type: 'seek', time })}
@@ -4989,7 +5056,13 @@ export function App() {
 													})
 												}
 												onDeleteKeyframe={(trackId, clipId, key, t) =>
-													bridge?.send({ type: 'delete-keyframe', trackId, clipId, key, t })
+													bridge?.send({
+														type: 'delete-keyframe',
+														trackId,
+														clipId,
+														key,
+														t
+													})
 												}
 												onReplaceKeyframeTracks={(trackId, clipId, tracks) =>
 													bridge?.send({
@@ -5000,7 +5073,12 @@ export function App() {
 													})
 												}
 												onSetCallout={(trackId, clipId, payload) =>
-													bridge?.send({ type: 'set-callout', trackId, clipId, payload })
+													bridge?.send({
+														type: 'set-callout',
+														trackId,
+														clipId,
+														payload
+													})
 												}
 												onSetPaddedBackground={(trackId, clipId, params) =>
 													bridge?.send({
@@ -5011,19 +5089,41 @@ export function App() {
 													})
 												}
 												onImportLut={(trackId, clipId, file) =>
-													bridge?.send({ type: 'import-lut', trackId, clipId, file })
+													bridge?.send({
+														type: 'import-lut',
+														trackId,
+														clipId,
+														file
+													})
 												}
 												onLutStrength={(trackId, clipId, strength) =>
-													bridge?.send({ type: 'set-lut-strength', trackId, clipId, strength })
+													bridge?.send({
+														type: 'set-lut-strength',
+														trackId,
+														clipId,
+														strength
+													})
 												}
 												onTrackGain={(trackId, gain) => {
-													bridge?.send({ type: 'set-track-gain', trackId, gain });
+													bridge?.send({
+														type: 'set-track-gain',
+														trackId,
+														gain
+													});
 												}}
 												onTrackMute={(trackId, muted) => {
-													bridge?.send({ type: 'set-track-mute', trackId, muted });
+													bridge?.send({
+														type: 'set-track-mute',
+														trackId,
+														muted
+													});
 												}}
 												onTrackSolo={(trackId, solo) => {
-													bridge?.send({ type: 'set-track-solo', trackId, solo });
+													bridge?.send({
+														type: 'set-track-solo',
+														trackId,
+														solo
+													});
 												}}
 												onTrackPan={(trackId, pan) => {
 													bridge?.send({ type: 'set-track-pan', trackId, pan });
@@ -5038,18 +5138,34 @@ export function App() {
 													});
 												}}
 												onTransitionKind={(transitionId, kind) => {
-													bridge?.send({ type: 'set-transition', transitionId, kind });
+													bridge?.send({
+														type: 'set-transition',
+														transitionId,
+														kind
+													});
 												}}
 												onTransitionDuration={(transitionId, durationS) => {
-													bridge?.send({ type: 'set-transition', transitionId, durationS });
+													bridge?.send({
+														type: 'set-transition',
+														transitionId,
+														durationS
+													});
 												}}
 												onRemoveTransition={(transitionId) => {
-													bridge?.send({ type: 'remove-transition', transitionId });
+													bridge?.send({
+														type: 'remove-transition',
+														transitionId
+													});
 													transitionMeta.delete(transitionId);
 													setSelectedTransitionId(null);
 												}}
 												onSkinMask={(trackId, clipId, mask) => {
-													bridge?.send({ type: 'set-skin-mask', trackId, clipId, mask });
+													bridge?.send({
+														type: 'set-skin-mask',
+														trackId,
+														clipId,
+														mask
+													});
 												}}
 												onSkinSmoothBypass={(trackId, clipId, bypass) => {
 													bridge?.send({
@@ -5093,10 +5209,19 @@ export function App() {
 												}
 												matteStatus={matteStatus()}
 												onSetTimeRemap={(trackId, clipId, remap) =>
-													bridge?.send({ type: 'set-time-remap', trackId, clipId, remap })
+													bridge?.send({
+														type: 'set-time-remap',
+														trackId,
+														clipId,
+														remap
+													})
 												}
 												onClearTimeRemap={(trackId, clipId) =>
-													bridge?.send({ type: 'clear-time-remap', trackId, clipId })
+													bridge?.send({
+														type: 'clear-time-remap',
+														trackId,
+														clipId
+													})
 												}
 												onImportLookPreset={(trackId, clipId, presetFile, lutFile) =>
 													bridge?.send({
@@ -5108,10 +5233,19 @@ export function App() {
 													})
 												}
 												onExportLookPreset={(trackId, clipId) =>
-													bridge?.send({ type: 'export-look-preset', trackId, clipId })
+													bridge?.send({
+														type: 'export-look-preset',
+														trackId,
+														clipId
+													})
 												}
 												onBeautyEffect={(trackId, clipId, beauty) => {
-													bridge?.send({ type: 'set-beauty-effect', trackId, clipId, beauty });
+													bridge?.send({
+														type: 'set-beauty-effect',
+														trackId,
+														clipId,
+														beauty
+													});
 												}}
 												beautyAvailable={beautyAvailable()}
 												recorderSessionState={recorderStatus()?.state ?? 'idle'}
@@ -5166,7 +5300,10 @@ export function App() {
 														)
 													}
 													onExport={(settings: CaptionExportSettingsSnapshot) =>
-														captionBridge().send({ type: 'export-captions', settings })
+														captionBridge().send({
+															type: 'export-captions',
+															settings
+														})
 													}
 													onSetTrack={(trackId, patch) =>
 														captionBridge().send({
@@ -5176,10 +5313,16 @@ export function App() {
 														})
 													}
 													onDeleteTrack={(trackId) =>
-														captionBridge().send({ type: 'delete-caption-track', trackId })
+														captionBridge().send({
+															type: 'delete-caption-track',
+															trackId
+														})
 													}
 													onDeleteTracks={(trackIds) => {
-														captionBridge().send({ type: 'delete-caption-tracks', trackIds });
+														captionBridge().send({
+															type: 'delete-caption-tracks',
+															trackIds
+														});
 													}}
 													onSetSegmentText={(trackId, segmentId, text) =>
 														captionBridge().send({
@@ -5320,7 +5463,27 @@ export function App() {
 												tab="record"
 												value={activeCaptureSideRailTab()}
 												keepMounted
+												class="capture-record-rail-panel"
 											>
+												<ReplayBufferPanel
+													captureState={captureSession()}
+													ringBufferState={replayBufferState()}
+													onStartCapture={() => void startReplayCapture()}
+													onStopCapture={stopReplayCapture}
+													onSaveLastN={(nSeconds) => {
+														if (!bridge) return;
+														setReplaySaveInProgress(true);
+														bridge.send({
+															type: 'replay-save-last-n',
+															nSeconds
+														});
+													}}
+													saveInProgress={replaySaveInProgress()}
+													isSupported={replayCaptureSupported()}
+													supportedReason={replayCaptureUnsupportedReason()}
+													crossOriginIsolated={capabilities().crossOriginIsolated}
+													initiallyExpanded={false}
+												/>
 												<RecordPanel
 													probe={capabilityProbeV2()}
 													status={recorderStatus()}
@@ -5364,7 +5527,10 @@ export function App() {
 													}}
 													onSourceEnded={(sourceId) => {
 														capturePushInFlight.delete(sourceId);
-														bridge?.send({ type: 'capture-source-ended', sourceId });
+														bridge?.send({
+															type: 'capture-source-ended',
+															sourceId
+														});
 													}}
 													onStart={(settings, writerPort, activeRetakeClipId, transfer) => {
 														setRecorderLandedSessionId(null);
@@ -5382,7 +5548,11 @@ export function App() {
 													onResume={() => bridge?.send({ type: 'capture-resume' })}
 													onStop={() => bridge?.send({ type: 'capture-stop' })}
 													onApplyRegion={(sourceId, mode) =>
-														bridge?.send({ type: 'capture-apply-region', sourceId, mode })
+														bridge?.send({
+															type: 'capture-apply-region',
+															sourceId,
+															mode
+														})
 													}
 													onRetakeCleared={() => setRetakeClipId(null)}
 												/>
@@ -5417,29 +5587,6 @@ export function App() {
 													onStart={startProgramSession}
 													onStop={stopProgramSession}
 													onSwitchScene={switchProgramScene}
-												/>
-											</SecondaryRailPanel>
-											<SecondaryRailPanel
-												idPrefix="capture"
-												tab="replay"
-												value={activeCaptureSideRailTab()}
-												keepMounted
-											>
-												<ReplayBufferPanel
-													captureState={captureSession()}
-													ringBufferState={replayBufferState()}
-													onStartCapture={() => void startReplayCapture()}
-													onStopCapture={stopReplayCapture}
-													onSaveLastN={(nSeconds) => {
-														if (!bridge) return;
-														setReplaySaveInProgress(true);
-														bridge.send({ type: 'replay-save-last-n', nSeconds });
-													}}
-													saveInProgress={replaySaveInProgress()}
-													isSupported={replayCaptureSupported()}
-													supportedReason={replayCaptureUnsupportedReason()}
-													crossOriginIsolated={capabilities().crossOriginIsolated}
-													initiallyExpanded={true}
 												/>
 											</SecondaryRailPanel>
 											<SecondaryRailPanel
@@ -5486,7 +5633,10 @@ export function App() {
 												<LiveAudioChainPanel
 													config={liveChainConfig()}
 													onConfigChange={(partial) =>
-														bridge?.send({ type: 'update-live-chain-config', config: partial })
+														bridge?.send({
+															type: 'update-live-chain-config',
+															config: partial
+														})
 													}
 													latencyMs={liveChainLatencyMs()}
 													crossOriginIsolated={capabilities().crossOriginIsolated}
@@ -5510,7 +5660,10 @@ export function App() {
 													}
 													onSettingsChange={(settings) => {
 														setVoiceCleanupSettings(settings);
-														bridge?.send({ type: 'voice-cleanup-update-settings', settings });
+														bridge?.send({
+															type: 'voice-cleanup-update-settings',
+															settings
+														});
 													}}
 													onAnalyseLoudness={(targetLufs) => {
 														setVoiceCleanupAnalysisState('running');
@@ -5524,7 +5677,9 @@ export function App() {
 														});
 													}}
 													onCancelAnalysis={() => {
-														bridge?.send({ type: 'voice-cleanup-cancel-analysis' });
+														bridge?.send({
+															type: 'voice-cleanup-cancel-analysis'
+														});
 													}}
 													onApplyNormalisation={(gainDb) => {
 														setVoiceCleanupSettings((s) => ({
@@ -5586,7 +5741,11 @@ export function App() {
 						onSelectTransition={(transitionId, fromClipId, toClipId, trackId) => {
 							const transition = transitions().find((t) => t.id === transitionId);
 							if (transition) {
-								transitionMeta.set(transitionId, { trackId, fromClipId, toClipId });
+								transitionMeta.set(transitionId, {
+									trackId,
+									fromClipId,
+									toClipId
+								});
 								setSelectedTransitionId(transitionId);
 							}
 						}}
@@ -5629,7 +5788,11 @@ export function App() {
 							bridge?.send({ type: 'set-track-sync-lock', trackId, syncLocked })
 						}
 						onSetTrackEditTarget={(trackId, editTarget) =>
-							bridge?.send({ type: 'set-track-edit-target', trackId, editTarget })
+							bridge?.send({
+								type: 'set-track-edit-target',
+								trackId,
+								editTarget
+							})
 						}
 						getThumbnail={(sourceId, timestamp) => thumbnailStore.get(sourceId, timestamp)}
 						thumbnailVersion={thumbnailVersion}
