@@ -1,6 +1,6 @@
 # Requirements: Design-system foundation and editor-chrome hardening
 
-> Status: **Implementation complete; final verification pending.** This feature
+> Status: **Implemented and verified.** This feature
 > is limited to the application shell and user-facing chrome. It must not alter
 > media-render output, persisted engine defaults, or the accelerated pipeline.
 

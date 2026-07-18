@@ -1,6 +1,6 @@
 # Design: Design-system foundation and editor-chrome hardening
 
-> Status: **Implementation complete; final verification pending.**
+> Status: **Implemented and verified.**
 
 ## Intent
 

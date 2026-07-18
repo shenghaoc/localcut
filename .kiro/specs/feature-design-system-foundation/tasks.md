@@ -1,6 +1,6 @@
 # Tasks: Design-system foundation and editor-chrome hardening
 
-> Status: **Implementation complete; final verification pending.** Tasks map to
+> Status: **Implemented and verified.** Tasks map to
 > [`requirements.md`](./requirements.md) and [`design.md`](./design.md).
 
 ## T1 — Canonical context and artifact policy
@@ -51,5 +51,5 @@
 - [x] **T5.2** Complete and inspect a live-browser screenshot/measurement sweep.
 - [x] **T5.3** Run focused tests, the full browser suite, E2E, `git diff --check`,
   and `vp run check` on the final head.
-- [ ] **T5.4** Update PR metadata with the actual diff, exact commands, and honest
+- [x] **T5.4** Update PR metadata with the actual diff, exact commands, and honest
   gaps; push and verify required checks on that SHA.
