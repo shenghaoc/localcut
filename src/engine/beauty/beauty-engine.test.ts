@@ -1,6 +1,6 @@
 /** Phase 32b: BeautyEngine decode helpers + per-frame solve orchestration. */
 
-import { describe, expect, it } from 'vite-plus/test';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import {
 	BeautyEngine,
 	decodeCandidates,
@@ -13,6 +13,14 @@ import { LANDMARK_FLOATS } from './beauty-params';
 import { DEFAULT_BEAUTY_EFFECT } from '../../protocol';
 
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+afterEach(() => {
+	vi.restoreAllMocks();
+});
+
+function templateManifestResponse(): Response {
+	return new Response(JSON.stringify({ template: true }));
+}
 
 /** Counts close() calls so we can assert close-exactly-once per frame. */
 function makeFrame(): { frame: VideoFrame; closes: () => number } {
@@ -85,6 +93,60 @@ describe('mapRoiToFull', () => {
 		expect(out[0]).toBeCloseTo(0.2 + 0.5 * 0.4); // 0.4
 		expect(out[1]).toBeCloseTo(0.4 + 0.5 * 0.4); // 0.6
 		expect(out[2]).toBeCloseTo(0.1);
+	});
+});
+
+describe('BeautyEngine model lifecycle', () => {
+	it('stays lazy until model loading is explicitly requested', () => {
+		const fetchSpy = vi.spyOn(globalThis, 'fetch');
+		const statuses: string[] = [];
+		const engine = new BeautyEngine({ onStatus: (status) => statuses.push(status) });
+
+		expect(engine.getStatus()).toBe('not-loaded');
+		expect(engine.getModelManifest()).toBeNull();
+		expect(engine.getExecutionProvider()).toBeNull();
+		expect(statuses).toEqual([]);
+		expect(fetchSpy).not.toHaveBeenCalled();
+	});
+
+	it('never reports loaded for the shipped template-manifest state', async () => {
+		vi.spyOn(globalThis, 'fetch').mockResolvedValue(templateManifestResponse());
+		const statuses: string[] = [];
+		const engine = new BeautyEngine({ onStatus: (status) => statuses.push(status) });
+
+		await engine.ensureModelLoaded();
+
+		expect(engine.getStatus()).toBe('failed');
+		expect(engine.getModelManifest()).toBeNull();
+		expect(engine.getExecutionProvider()).toBeNull();
+		expect(statuses).toEqual(['loading', 'failed']);
+		expect(statuses).not.toContain('loaded');
+	});
+
+	it('maps a template manifest to a clear unavailable message', async () => {
+		vi.spyOn(globalThis, 'fetch').mockResolvedValue(templateManifestResponse());
+		const failures: Array<string | undefined> = [];
+		const engine = new BeautyEngine({
+			onStatus: (status, error) => {
+				if (status === 'failed') failures.push(error);
+			}
+		});
+
+		await engine.ensureModelLoaded();
+
+		expect(failures).toEqual(['No compatible beauty model configured.']);
+	});
+
+	it('allows an explicit retry after template-manifest rejection', async () => {
+		const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(templateManifestResponse());
+		const statuses: string[] = [];
+		const engine = new BeautyEngine({ onStatus: (status) => statuses.push(status) });
+
+		await engine.ensureModelLoaded();
+		await engine.ensureModelLoaded();
+
+		expect(fetchSpy).toHaveBeenCalledTimes(2);
+		expect(statuses).toEqual(['loading', 'failed', 'loading', 'failed']);
 	});
 });
 

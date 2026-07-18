@@ -66,15 +66,6 @@ export {
 } from './model-manifest';
 
 export {
-	resolveExecutionProvider,
-	createBeautySession,
-	type BeautyRuntimeOptions,
-	type BeautyRuntimeStatus,
-	type BeautyInferenceResult,
-	type BeautySession
-} from './beauty-runtime';
-
-export {
 	DETECTOR_SIZE,
 	DETECTOR_FLOATS,
 	LANDMARK_INPUT_SIZE,

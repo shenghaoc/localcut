@@ -1,11 +1,11 @@
 ---
 name: solid-patterns
-description: SolidJS conventions for browser-editor main-thread UI. Use when editing src/ui/, wiring worker commands, or implementing reactive timeline/inspector controls.
+description: SolidJS conventions for LocalCut main-thread UI. Use when editing src/ui/, wiring worker commands, or implementing reactive timeline/inspector controls.
 metadata:
   version: "1.0.0"
 ---
 
-# SolidJS Patterns — browser-editor
+# SolidJS Patterns — LocalCut
 
 This project uses SolidJS on the **main thread only**. All media work lives in `src/engine/worker.ts`.
 
