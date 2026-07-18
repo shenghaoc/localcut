@@ -846,7 +846,7 @@ body {
 .diagnostics-section h2 {
   margin: 0 0 0.45rem;
   font-size: var(--text-sm);
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .diagnostics-section p {
@@ -969,7 +969,7 @@ body {
 .asr-progress-label {
   color: var(--text);
   font-size: var(--text-sm);
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .asr-progress-value {
@@ -2235,6 +2235,7 @@ body {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  contain: layout style;
 }
 
 .program-panel {
@@ -3178,7 +3179,7 @@ body {
   cursor: pointer;
   font-family: var(--font-ui);
   font-size: var(--text-2xs);
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.06em;
   line-height: 1;
   text-transform: uppercase;
@@ -6730,6 +6731,7 @@ button.status-badge:hover {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  contain: layout style;
 }
 
 /* ── Panel chrome — flat, hairline, no glass blur ── */
@@ -6738,6 +6740,7 @@ button.status-badge:hover {
   border: 1px solid var(--edge);
   border-radius: var(--radius-md);
   box-shadow: none;
+  contain: layout style;
 }
 .panel-title {
   margin: 0 0 0.65rem;
@@ -8131,6 +8134,7 @@ body::-webkit-scrollbar-thumb:hover,
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  contain: layout style;
 }
 
 .dock-left .side-rail-secondary-tabs {
