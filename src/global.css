@@ -127,13 +127,27 @@
     monospace;
   --font-mono: var(--font-mono-stack);
 
-  --text-2xs: 10.5px;
-  --text-xs: 11.5px;
-  --text-sm: 12.5px;
-  --text-base: 13.5px;
-  --text-md: 16px;
-  --text-lg: 20px;
-  --text-xl: 28px;
+  --text-2xs: 0.65625rem;
+  --text-xs: 0.71875rem;
+  --text-sm: 0.78125rem;
+  --text-base: 0.84375rem;
+  --text-md: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.75rem;
+
+  /* Semantic type-scale aliases so consumers don't couple to size names */
+  --text-caption: var(--text-2xs);
+  --text-label: var(--text-xs);
+  --text-ui: var(--text-sm);
+  --text-body: var(--text-base);
+  --text-subhead: var(--text-md);
+  --text-heading: var(--text-lg);
+  --text-display: var(--text-xl);
+
+  /* Line-heights */
+  --leading-heading: 1.15;
+  --leading-body: 1.5;
+  --leading-compact: 1.3;
 
   --tracking-eyebrow: 0.12em;
   --tracking-wide: 0.08em;
@@ -234,8 +248,9 @@ body {
   padding-left: var(--safe-left);
   padding-right: var(--safe-right);
   font-family: var(--font-ui);
-  font-size: var(--text-base);
+  font-size: var(--text-body);
   font-feature-settings: "ss01", "cv11";
+  font-kerning: normal;
   /* Restore the pre-Tailwind default; preflight sets 1.5, which can
 	   shift the dense timeline layout. */
   line-height: normal;
@@ -1233,7 +1248,7 @@ body {
 .export-field {
   display: grid;
   gap: 0.25rem;
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--text-muted);
 }
 
@@ -1253,7 +1268,7 @@ body {
   align-items: center;
   gap: 0.45rem;
   margin-bottom: 0.55rem;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--text-muted);
 }
 
@@ -1315,13 +1330,13 @@ body {
 
 .export-estimate {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 
 .export-note,
 .export-error {
   margin: 0 0 0.75rem;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .export-note {
@@ -1387,7 +1402,7 @@ body {
   background: var(--secondary);
   color: var(--foreground);
   font: inherit;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .export-preset-delete {
@@ -1397,7 +1412,7 @@ body {
   background: var(--secondary);
   color: var(--danger);
   cursor: pointer;
-  font-size: 14px;
+  font-size: 0.875rem;
   line-height: 1;
 }
 
@@ -1442,7 +1457,7 @@ body {
   display: flex;
   align-items: center;
   gap: 0.3rem;
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--muted-foreground);
   cursor: pointer;
 }
@@ -1459,7 +1474,7 @@ body {
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--secondary) 86%, transparent);
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 
 .render-queue-job-main {
@@ -1496,7 +1511,7 @@ body {
 .render-queue-badge {
   padding: 0.1rem 0.4rem;
   border-radius: var(--radius-sm);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 600;
 }
 
@@ -1539,19 +1554,19 @@ body {
 .render-queue-job-error {
   margin: 0;
   color: var(--danger);
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 
 .render-queue-job-cover-warning {
   margin: 0;
   color: var(--warning);
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 
 .render-queue-job-output {
   margin: 0;
   color: var(--muted-foreground);
-  font-size: 10px;
+  font-size: 0.625rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1891,7 +1906,7 @@ body {
   padding: 2px 4px;
   overflow: hidden;
   color: inherit;
-  font-size: 11px;
+  font-size: 0.6875rem;
   text-overflow: ellipsis;
   background: var(--input-bg, #1a1d24);
   border: 1px solid rgb(255 255 255 / 14%);
@@ -1911,7 +1926,7 @@ body {
   max-width: 160px;
   overflow: hidden;
   color: var(--warning);
-  font-size: 11px;
+  font-size: 0.6875rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1919,13 +1934,13 @@ body {
 /* Phase 39: Export dimension/preset warnings */
 .export-aspect-warning {
   color: var(--warning);
-  font-size: 12px;
+  font-size: 0.75rem;
   margin: 4px 0;
 }
 
 .export-preset-blocked {
   color: var(--danger);
-  font-size: 12px;
+  font-size: 0.75rem;
   margin: 4px 0;
 }
 
@@ -1935,7 +1950,7 @@ body {
   right: 10px;
   z-index: 4;
   padding: 4px 8px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 500;
   color: rgb(236 237 245 / 70%);
   background: rgb(5 6 16 / 66%);
@@ -2117,7 +2132,7 @@ body {
 }
 
 .scope-panel__toggle {
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   color: var(--foreground);
   background: transparent;
@@ -2132,7 +2147,7 @@ body {
   flex: 0 0 auto;
   border-radius: 3px;
   padding: 2px 5px;
-  font-size: 9px;
+  font-size: 0.5625rem;
   font-weight: 700;
   letter-spacing: 0.03em;
   text-transform: uppercase;
@@ -2171,14 +2186,14 @@ body {
 }
 
 .scope-view__label {
-  font-size: 9px;
+  font-size: 0.5625rem;
   color: var(--muted-foreground);
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
 .scope-view__fullscreen-btn {
-  font-size: 11px;
+  font-size: 0.6875rem;
   background: transparent;
   border: 0;
   color: var(--muted-foreground);
@@ -4166,7 +4181,7 @@ body {
   border-radius: 2px;
   background: color-mix(in srgb, var(--primary) 30%, transparent);
   color: var(--primary);
-  font-size: 9px;
+  font-size: 0.5625rem;
   font-weight: 700;
   line-height: 1;
   pointer-events: none;
@@ -4393,7 +4408,7 @@ body {
   color: #fff;
   border-radius: var(--radius-xs);
   cursor: pointer;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
   line-height: 16px;
 }
@@ -6493,7 +6508,7 @@ button.status-badge:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--ink-100, var(--text));
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 650;
   line-height: 1.25;
 }
@@ -6502,7 +6517,7 @@ button.status-badge:hover {
   flex: 0 0 auto;
   color: var(--ink-600, var(--muted-foreground));
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 0.59375rem;
   line-height: 1.2;
   text-transform: uppercase;
   white-space: nowrap;
@@ -6529,14 +6544,14 @@ button.status-badge:hover {
   gap: 4px;
   min-width: 0;
   color: var(--ink-600, var(--muted-foreground));
-  font-size: 10px;
+  font-size: 0.625rem;
   line-height: 1.1;
 }
 
 .beat-panel-metric strong {
   color: var(--ink-100, var(--text));
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
 }
 
@@ -6586,7 +6601,7 @@ button.status-badge:hover {
   background: var(--bg-control, var(--secondary));
   color: var(--ink-100, var(--text));
   font-family: var(--font-ui);
-  font-size: 10.5px;
+  font-size: 0.65625rem;
   font-weight: 650;
   line-height: 1;
   white-space: nowrap;
@@ -6631,7 +6646,7 @@ button.status-badge:hover {
   flex-direction: column;
   gap: 6px;
   color: var(--ink-600, var(--muted-foreground));
-  font-size: 10.5px;
+  font-size: 0.65625rem;
 }
 
 .beat-panel-field-head {
@@ -6660,7 +6675,7 @@ button.status-badge:hover {
 .beat-panel-empty {
   margin: 0;
   color: var(--ink-500, var(--muted-foreground));
-  font-size: 11px;
+  font-size: 0.6875rem;
   line-height: 1.4;
 }
 /* =============================================================
@@ -6726,7 +6741,7 @@ button.status-badge:hover {
 }
 .panel-title {
   margin: 0 0 0.65rem;
-  font-size: 9.5px;
+  font-size: 0.59375rem;
   font-weight: 600;
   letter-spacing: 0.04em;
   color: var(--ink-400);
@@ -6798,7 +6813,7 @@ button.status-badge:hover {
 }
 .app-title {
   font-family: var(--font-display);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.02em;
   text-transform: none;
@@ -6806,7 +6821,7 @@ button.status-badge:hover {
 }
 .app-kicker {
   font-family: var(--font-ui);
-  font-size: 9.5px;
+  font-size: 0.59375rem;
   font-weight: 500;
   letter-spacing: 0.08em;
   color: var(--ink-700);
@@ -6822,7 +6837,7 @@ button.status-badge:hover {
   background: var(--well);
   color: var(--ink-300);
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: 0.71875rem;
   letter-spacing: 0.01em;
   max-width: min(36vw, 520px);
 }
@@ -6830,7 +6845,7 @@ button.status-badge:hover {
   content: "\25C9";
   margin-right: 8px;
   color: var(--ink-700);
-  font-size: 9px;
+  font-size: 0.5625rem;
   transform: translateY(-1px);
   display: inline-block;
 }
@@ -6856,13 +6871,13 @@ button.status-badge:hover {
 }
 .master-fader-label {
   font-family: var(--font-ui);
-  font-size: 9.5px;
+  font-size: 0.59375rem;
   letter-spacing: 0.04em;
   color: var(--ink-700);
 }
 .master-fader-value {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 0.6875rem;
   letter-spacing: 0.02em;
   color: var(--ink-300);
 }
@@ -6903,7 +6918,7 @@ button.status-badge:hover {
   background: transparent;
   color: var(--ink-500);
   font-family: var(--font-ui);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 600;
   letter-spacing: 0.03em;
 }
@@ -6942,7 +6957,7 @@ button.status-badge:hover {
 }
 .pipeline-chip.is-tool {
   font-family: var(--font-ui);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: none;
@@ -6966,7 +6981,7 @@ button.status-badge:hover {
 .pipeline-chip.is-tool.is-live::before {
   content: "\25CF";
   margin-right: 4px;
-  font-size: 8px;
+  font-size: 0.5rem;
   animation: pulse-live 1.6s ease-in-out infinite;
 }
 @keyframes pulse-live {
@@ -6990,7 +7005,7 @@ button.status-badge:hover {
   background: var(--plate);
   color: var(--ink-500);
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 0.65625rem;
   letter-spacing: 0.06em;
 }
 .status-bar > [role="status"] {
@@ -7003,7 +7018,7 @@ button.status-badge:hover {
   text-transform: none;
   color: var(--ink-300);
   font-family: var(--font-ui);
-  font-size: 11.5px;
+  font-size: 0.71875rem;
 }
 .status-meta {
   display: flex;
@@ -7023,7 +7038,7 @@ button.status-badge:hover {
   background: transparent;
   color: var(--ink-500);
   font-family: var(--font-ui);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 600;
   letter-spacing: 0.03em;
   cursor: pointer;
@@ -7043,14 +7058,14 @@ button.status-badge:hover {
   border-left: 1px solid var(--edge);
   color: var(--sage);
   font-family: var(--font-ui);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 600;
   letter-spacing: 0.03em;
 }
 .status-ok::before {
   content: "\25CF";
   margin-right: 6px;
-  font-size: 7px;
+  font-size: 0.4375rem;
 }
 
 /* ── Side rail — proper tab card on the right ── */
@@ -7085,7 +7100,7 @@ button.status-badge:hover {
   border-bottom: 1px solid transparent;
   color: var(--ink-500);
   font-family: var(--font-ui);
-  font-size: 9.5px;
+  font-size: 0.59375rem;
   font-weight: 600;
   letter-spacing: 0.02em;
   text-align: center;
@@ -7146,7 +7161,7 @@ button.status-badge:hover {
   background: var(--well);
   color: var(--ink-500);
   font-family: var(--font-ui);
-  font-size: 9.5px;
+  font-size: 0.59375rem;
   font-weight: 600;
   text-align: center;
   white-space: nowrap;
@@ -7301,7 +7316,7 @@ button.status-badge:hover {
 .preview-empty-eyebrow {
   margin: 0 0 0.6rem;
   font-family: var(--font-ui);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 600;
   letter-spacing: 0.12em;
   color: var(--amber);
@@ -7310,7 +7325,7 @@ button.status-badge:hover {
 }
 .preview-empty-title {
   font-family: var(--font-display);
-  font-size: 22px;
+  font-size: 1.375rem;
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--ink-100);
@@ -7318,7 +7333,7 @@ button.status-badge:hover {
 .preview-empty-copy {
   margin: 0.25rem 0 0;
   color: var(--ink-500);
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   max-width: 32ch;
 }
 .preview-empty .import-picker {
@@ -7332,7 +7347,7 @@ button.status-badge:hover {
   border-radius: var(--radius-sm);
   box-shadow: 0 0 0 1px rgb(212 168 83 / 15%);
   font-family: var(--font-ui);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.02em;
 }
@@ -7350,7 +7365,7 @@ button.status-badge:hover {
   background: rgb(7 7 10 / 75%);
   border-color: var(--edge);
   font-family: var(--font-ui);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 600;
   letter-spacing: 0.03em;
   color: var(--ink-300);
@@ -7378,7 +7393,7 @@ button.status-badge:hover {
   height: 22px;
   padding: 0 8px;
   font-family: var(--font-ui);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 600;
   letter-spacing: 0.03em;
 }
@@ -7399,14 +7414,14 @@ button.status-badge:hover {
 }
 .restore-banner-title {
   font-family: var(--font-ui);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   letter-spacing: 0.02em;
   color: var(--ink-100);
 }
 .restore-banner-detail {
   color: var(--ink-500);
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 
 /* ── Media bin ── */
@@ -7423,19 +7438,19 @@ button.status-badge:hover {
 }
 .media-bin-title {
   font-family: var(--font-ui);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 600;
   letter-spacing: 0.04em;
   color: var(--ink-100);
 }
 .media-bin-count {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 0.625rem;
   color: var(--ink-700);
 }
 .media-bin-empty {
   color: var(--ink-500);
-  font-size: 11.5px;
+  font-size: 0.71875rem;
   line-height: 1.5;
 }
 
@@ -7449,7 +7464,7 @@ button.status-badge:hover {
 .beat-panel h2,
 .beat-panel h3 {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -7463,7 +7478,7 @@ button.status-badge:hover {
 .edit-controls button {
   border-radius: var(--radius-sm);
   font-family: var(--font-ui);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   letter-spacing: 0.04em;
 }
@@ -7481,7 +7496,7 @@ button.status-badge:hover {
 }
 .timeline-header {
   font-family: var(--font-mono);
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 700;
   letter-spacing: 0.04em;
 }
@@ -7763,7 +7778,7 @@ body::-webkit-scrollbar-thumb:hover,
 .app-title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.03em;
   text-transform: none;
@@ -7772,7 +7787,7 @@ body::-webkit-scrollbar-thumb:hover,
 
 .app-kicker {
   font-family: var(--font-ui);
-  font-size: 9px;
+  font-size: 0.5625rem;
   font-weight: 500;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -7794,7 +7809,7 @@ body::-webkit-scrollbar-thumb:hover,
   background: transparent;
   color: #76778e;
   font-family: var(--font-ui);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 500;
   transition:
     color 160ms ease,
@@ -7852,7 +7867,7 @@ body::-webkit-scrollbar-thumb:hover,
 .toolbar-menu-action > small {
   color: var(--ink-500);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 0.625rem;
   letter-spacing: 0.04em;
 }
 
@@ -7877,7 +7892,7 @@ body::-webkit-scrollbar-thumb:hover,
   background: var(--well);
   color: var(--ink-500);
   font-family: var(--font-ui);
-  font-size: 11.5px;
+  font-size: 0.71875rem;
   text-align: left;
 }
 
@@ -7899,7 +7914,7 @@ body::-webkit-scrollbar-thumb:hover,
   background: var(--elevated);
   color: var(--ink-300);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 0.625rem;
 }
 
 .command-popover {
@@ -7921,7 +7936,7 @@ body::-webkit-scrollbar-thumb:hover,
   border-bottom: 1px solid var(--edge);
   color: var(--ink-300);
   font-family: var(--font-ui);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -7955,13 +7970,13 @@ body::-webkit-scrollbar-thumb:hover,
 }
 
 .command-action span {
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
 }
 
 .command-action small {
   color: var(--ink-500);
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 
 .toolbar-main {
@@ -8008,7 +8023,7 @@ body::-webkit-scrollbar-thumb:hover,
   background: var(--plate);
   color: var(--ink-500);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 500;
   letter-spacing: 0.04em;
   white-space: nowrap;
@@ -8026,7 +8041,7 @@ body::-webkit-scrollbar-thumb:hover,
   background: var(--plate);
   color: var(--ink-100);
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 800;
   letter-spacing: 0.04em;
   font-variant-numeric: tabular-nums lining-nums;
@@ -8034,7 +8049,7 @@ body::-webkit-scrollbar-thumb:hover,
 
 .toolbar-timecode small {
   color: var(--ink-700);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .timeline-toggles {
@@ -8059,7 +8074,7 @@ body::-webkit-scrollbar-thumb:hover,
   color: var(--ink-500);
   cursor: pointer;
   font-family: var(--font-ui);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 600;
   letter-spacing: 0.02em;
   line-height: 1;
@@ -8139,7 +8154,7 @@ body::-webkit-scrollbar-thumb:hover,
   background: transparent;
   color: var(--ink-300);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
