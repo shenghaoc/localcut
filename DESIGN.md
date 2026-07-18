@@ -41,6 +41,7 @@ typography:
     fontSize: '12.5px'
     fontFeature: 'tabular-nums lining-nums'
 rounded:
+  xxs: '1px'
   xs: '2px'
   sm: '3px'
   md: '4px'
@@ -221,10 +222,43 @@ This system uses **tonal layering**, not shadows, as its primary depth mechanism
 ### Don't:
 
 - **Don't** introduce a second accent colour. There is one amber. Sage, vermillion, and signal-amber are signals, not accents.
-- **Don't** use side-stripe borders (`border-left` > 1px) as coloured accents on cards or list items.
-- **Don't** use gradient text, glassmorphism, or decorative blur effects.
+- **Don't** use side-stripe borders (`border-left` > 1px) as coloured accents on cards or list items. Exception: 2px signal-coloured left borders on alert/status banners (`.restore-banner`, `.source-health-banner`) where the border carries severity information.
+- **Don't** use gradient text, glassmorphism, or decorative blur effects. Exception: `backdrop-filter: blur()` is permitted on floating overlay controls (safe-area toggles, preview overlays) where it serves legibility over video content — not as decoration on static surfaces.
 - **Don't** display timecodes in DM Sans. If it's a number an editor needs to read precisely, it's JetBrains Mono.
 - **Don't** add shadows to surfaces at rest. Shadows belong to floating elements (popovers, dialogs, tooltips).
 - **Don't** emulate kdenlive's cluttered panel layouts, Final Cut's magnetic timeline, CapCut's consumer-social chrome, or DaVinci Resolve's industrial density.
 - **Don't** use bold, italic, or uppercase as hierarchy tools. Weight and size carry the system.
 - **Don't** add an eyebrow label (small uppercase tracked text) above every section. Use only when scanning genuinely benefits.
+
+## 7. Permitted Exceptions
+
+The following deviations from the strict rules above are intentional and documented:
+
+### Functional glass blur
+
+`backdrop-filter: blur()` on floating overlay controls (safe-area toggles, preview HUD elements) is permitted. These are tiny controls overlaid on video content where the blur ensures legibility regardless of the underlying frame. This is not decorative glassmorphism on static surfaces.
+
+### Signal-banner side-stripes
+
+2px `border-left` in `var(--signal-amber)` on `.restore-banner` and `.source-health-banner` carries severity information — it's a signal indicator, not a decorative accent on a card or list item.
+
+### Custom dark scrollbar
+
+`::-webkit-scrollbar` styling matches the dark palette (ink/panel backgrounds, thin 6px width). This is palette-matching, not decorative scrollbar reinvention. The editor is a precision instrument on desktop Chromium; a bright native scrollbar would break the dark focused workspace.
+
+### Density-critical 10px font
+
+`font-size: 10px` appears on overlay controls (safe-area toggles, pipeline status chips, badge counts) where the DESIGN.md micro floor of 10.5px would cause overflow or layout breakage in tight spaces. These are always on dark backgrounds with high-contrast text or icons.
+
+### Engine-layer compute-domain colors
+
+Hard-coded colors in `src/engine/` (caption rendering, GPU passes, beauty effects, callout textures) are compute-domain values, not UI tokens. They represent render parameters, not interface chrome, and are exempt from the design token system.
+
+### Domain-specific visualization overlays
+
+Hard-coded colors in UI files that serve functional video-editing overlays — not interface chrome — are exempt:
+
+- `App.tsx` `#FFD700`: Callout annotation highlight color (user-facing visual markup tool).
+- `CaptionStyleInspector.tsx` `#ffffff`: Caption rendering fallback (domain render parameter).
+- `ReframeOverlay.tsx` `rgba(74,144,226,0.8)` / `rgba(255,255,255,0.5)`: Crop guide and safe-zone overlay on the preview surface (video-compositing guides, not UI chrome).
+- `Timeline.tsx` `#b06cff`: Beat-marker visualization on the timeline ruler (data-viz overlay, not UI chrome).

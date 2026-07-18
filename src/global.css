@@ -7693,6 +7693,7 @@ body::-webkit-scrollbar-thumb:hover,
 .command-action:focus-visible {
 	border-color: color-mix(in srgb, var(--amber) 32%, var(--edge));
 	background: var(--amber-soft);
+	box-shadow: var(--focus-ring);
 }
 
 .command-action span {

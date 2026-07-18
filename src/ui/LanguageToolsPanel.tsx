@@ -298,12 +298,12 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 									/>
 								</Show>
 								<Show when={translateJob()!.phase === 'done'}>
-									<p style={{ 'font-size': '0.85em', color: 'var(--color-success, #4ade80)' }}>
+									<p style={{ 'font-size': '0.85em', color: 'var(--sage)' }}>
 										✓ Translation complete ({formatDuration(translateJob()!.durationMs)})
 									</p>
 								</Show>
 								<Show when={translateJob()!.phase === 'error'}>
-									<p style={{ 'font-size': '0.85em', color: 'var(--color-error, #f87171)' }}>
+									<p style={{ 'font-size': '0.85em', color: 'var(--danger)' }}>
 										✗ {translateJob()!.error}
 									</p>
 								</Show>
@@ -370,7 +370,7 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 												overflow: 'auto',
 												'white-space': 'pre-wrap',
 												'word-break': 'break-word',
-												background: 'var(--color-surface, #1a1a2e)',
+												background: 'var(--elevated)',
 												padding: '8px',
 												'border-radius': '4px',
 												'margin-top': '4px'
@@ -381,7 +381,7 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 									</Show>
 								</Show>
 								<Show when={draftJob()!.phase === 'error'}>
-									<p style={{ 'font-size': '0.85em', color: 'var(--color-error, #f87171)' }}>
+									<p style={{ 'font-size': '0.85em', color: 'var(--danger)' }}>
 										✗ {draftJob()!.error}
 									</p>
 								</Show>
@@ -482,7 +482,7 @@ export const LanguageToolsPanel: Component<LanguageToolsPanelProps> = (props) =>
 									</div>
 								</Show>
 
-								<p style={{ 'font-size': '0.75em', color: 'var(--color-muted, #888)' }}>
+								<p style={{ 'font-size': '0.75em', color: 'var(--text-muted)' }}>
 									Completed in {formatDuration(draftJob()!.durationMs)}
 								</p>
 							</div>
