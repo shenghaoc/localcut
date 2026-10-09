@@ -18,6 +18,8 @@
  * this module costs nothing at runtime until a loader function is called.
  */
 
+import { ORT_WASM_BASE_PATH } from './ort-runtime-assets';
+
 /** The `onnxruntime-web` module namespace (all subpaths re-export the same API). */
 export type OrtModule = typeof import('onnxruntime-web');
 
@@ -25,12 +27,12 @@ export type OrtModule = typeof import('onnxruntime-web');
  * Same-origin path ORT's WASM runtime is served from. ORT's
  * `ort-wasm-simd-threaded.jsep.wasm` is ~26 MB — over Cloudflare Workers' 25 MiB
  * per-file static-asset limit, so it is not vendored. Instead the Worker reverse-proxies it from the jsDelivr npm CDN at
- * `/_ort/` (version-pinned); the session wrapper points `env.wasm.wasmPaths`
+ * `/_ort/<runtime-version>/`; the session wrapper points `env.wasm.wasmPaths`
  * here so ORT fetches its runtime same-origin (COEP: require-corp), never via a
  * direct cross-origin browser request. See `src/worker/index.ts`.
  */
 export function ortWasmBasePath(): string {
-	return '/_ort/';
+	return ORT_WASM_BASE_PATH;
 }
 
 /** Loads the WebGPU build (WebGPU EP, primary for full-frame/video models). */
