@@ -683,15 +683,13 @@ export async function probeCapabilities(): Promise<CapabilityProbeResult> {
 	// One transfer attempt feeds both the publish and capture probe groups, so
 	// the two diagnostics rows can never drift apart within a session.
 	const trackTransfer = probeTransferableMediaStreamTrack();
-	const livePublish = await probeLivePublish(trackTransfer).catch(
-		(): LivePublishProbeResult => ({
-			rtcPeerConnection: 'unknown',
-			trackGeneratorWorker: 'unknown',
-			trackTransfer: 'unknown',
-			generateKeyFrame: 'unknown',
-			hardwareH264Encode: 'unknown'
-		})
-	);
+	const livePublish = await probeLivePublish(trackTransfer).catch((): LivePublishProbeResult => ({
+		rtcPeerConnection: 'unknown',
+		trackGeneratorWorker: 'unknown',
+		trackTransfer: 'unknown',
+		generateKeyFrame: 'unknown',
+		hardwareH264Encode: 'unknown'
+	}));
 	const capture = await probeCaptureCapabilities(trackTransfer).catch(() => unknownCapture);
 	const captureUx = await probeCaptureUx().catch(() => unknownCaptureUx);
 	const probeWithoutTier: Omit<CapabilityProbeResult, 'tier'> = {

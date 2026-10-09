@@ -21,6 +21,7 @@ import epPolicySource from './ep-policy.ts?raw';
 import assetLoaderSource from './ort-asset-loader.ts?raw';
 import webnnSource from './webnn-context.ts?raw';
 import fixtureSource from './onnx-fixture.ts?raw';
+import runtimeAssetsSource from './ort-runtime-assets.ts?raw';
 
 /** Matches a static, top-level `import ... from 'onnxruntime-web[...]'` (not `import type`). */
 const STATIC_ORT_IMPORT = /^import\s+(?!type\b)[^;]*from\s+['"]onnxruntime-web/m;
@@ -71,6 +72,7 @@ describe('ORT runtime is lazy (module graph)', () => {
 		expect(assetLoaderSource).not.toMatch(ANY_ORT_IMPORT);
 		expect(webnnSource).not.toMatch(ANY_ORT_IMPORT);
 		expect(fixtureSource).not.toMatch(ANY_ORT_IMPORT);
+		expect(runtimeAssetsSource).not.toMatch(ANY_ORT_IMPORT);
 	});
 });
 

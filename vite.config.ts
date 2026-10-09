@@ -4,6 +4,11 @@ import { execSync } from 'node:child_process';
 import solid from 'vite-plugin-solid';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import {
+	ORT_RUNTIME_BASE,
+	ORT_RUNTIME_CACHE_NAME,
+	ORT_WASM_BASE_PATH
+} from './src/engine/ml/ort/ort-runtime-assets';
 
 function gitSha(): string {
 	try {
@@ -70,16 +75,20 @@ export default defineConfig({
 			'check:test': { command: 'vp test run' },
 			'check:build': {
 				command: 'vp build',
-				// BUILD_SHA is baked into the bundle via `define` but is not an input
-				// file, so list it in the cache fingerprint: a new commit (SHA,
-				// mirrored to env above) must re-run the build instead of replaying a
-				// stale bundle.
-				env: ['LOCALCUT_BUILD_SHA']
+				cache: {
+					// BUILD_SHA is baked into the bundle via `define` but is not an input
+					// file, so list it in the cache fingerprint: a new commit (SHA,
+					// mirrored to env above) must re-run the build instead of replaying a
+					// stale bundle.
+					env: ['LOCALCUT_BUILD_SHA']
+				}
 			}
 		}
 	},
 	lint: {
-		plugins: ['oxc', 'typescript', 'unicorn', 'react'],
+		// Solid components run once; React Compiler render rules do not apply.
+		// JSX and reactivity checks are supplied by eslint-plugin-solid below.
+		plugins: ['oxc', 'typescript', 'unicorn'],
 		categories: {
 			correctness: 'warn'
 		},
@@ -312,12 +321,13 @@ export default defineConfig({
 					},
 					{
 						// ORT WASM, proxied same-origin from jsDelivr via the Worker's
-						// `/_ort/` route (version-pinned upstream). ~26 MB; cached only after
-						// the first ORT feature use, so later loads work offline.
+						// `/_ort/<runtime-version>/` route. Both the path and cache name
+						// change on upgrades, avoiding stale immutable runtime assets.
+						// ~26 MB; cached only after first use, so later loads work offline.
 						urlPattern: /\/_ort\//,
 						handler: 'CacheFirst',
 						options: {
-							cacheName: 'ort-runtime-v1',
+							cacheName: ORT_RUNTIME_CACHE_NAME,
 							matchOptions: { ignoreVary: true }
 						}
 					},
@@ -352,12 +362,11 @@ export default defineConfig({
 				rewrite: (path) => path.replace(/^\/_model\/gcs\//, '/')
 			},
 			// ORT WASM runtime, proxied from the jsDelivr npm CDN (mirrors the
-			// Worker's `/_ort/` route). Keep the pinned version in sync with the
-			// onnxruntime-web version in package.json and src/worker/index.ts.
-			'/_ort': {
+			// Worker's versioned route and uses the same pinned CDN target).
+			[ORT_WASM_BASE_PATH]: {
 				target: 'https://cdn.jsdelivr.net',
 				changeOrigin: true,
-				rewrite: (path) => path.replace(/^\/_ort\//, '/npm/onnxruntime-web@1.26.0/dist/')
+				rewrite: (path) => ORT_RUNTIME_BASE + path.slice(ORT_WASM_BASE_PATH.length)
 			}
 		},
 		headers: {

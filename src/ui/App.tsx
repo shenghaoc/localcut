@@ -513,9 +513,10 @@ export function App() {
 	});
 
 	createEffect(() => {
-		const canvas = previewCanvasEl();
-		const aspect = previewAspectNum();
-		if (!canvas) {
+		// Observer callbacks belong to this effect run; cleanup replaces them on change.
+		const staticCanvas = previewCanvasEl();
+		const staticAspect = previewAspectNum();
+		if (!staticCanvas) {
 			setPreviewCanvasBox(null);
 			return;
 		}
@@ -525,11 +526,11 @@ export function App() {
 			if (frame) cancelAnimationFrame(frame);
 			frame = requestAnimationFrame(() => {
 				frame = 0;
-				const parent = canvas.parentElement;
+				const parent = staticCanvas.parentElement;
 				if (!parent) return;
 				const parentRect = parent.getBoundingClientRect();
-				const width = Math.min(parentRect.width, parentRect.height * aspect);
-				const height = width / aspect;
+				const width = Math.min(parentRect.width, parentRect.height * staticAspect);
+				const height = width / staticAspect;
 				const next = {
 					left: (parentRect.width - width) / 2,
 					top: (parentRect.height - height) / 2,
@@ -549,11 +550,11 @@ export function App() {
 		};
 
 		const updateCanvasBoxNow = () => {
-			const parent = canvas.parentElement;
+			const parent = staticCanvas.parentElement;
 			if (!parent) return;
 			const parentRect = parent.getBoundingClientRect();
-			const width = Math.min(parentRect.width, parentRect.height * aspect);
-			const height = width / aspect;
+			const width = Math.min(parentRect.width, parentRect.height * staticAspect);
+			const height = width / staticAspect;
 			setPreviewCanvasBox({
 				left: (parentRect.width - width) / 2,
 				top: (parentRect.height - height) / 2,
@@ -564,7 +565,7 @@ export function App() {
 
 		updateCanvasBoxNow();
 		const observer = new ResizeObserver(updateCanvasBox);
-		if (canvas.parentElement) observer.observe(canvas.parentElement);
+		if (staticCanvas.parentElement) observer.observe(staticCanvas.parentElement);
 		window.addEventListener('resize', updateCanvasBox);
 		onCleanup(() => {
 			if (frame) cancelAnimationFrame(frame);

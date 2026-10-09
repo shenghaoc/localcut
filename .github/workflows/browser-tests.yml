@@ -29,17 +29,17 @@ jobs:
     # mirror.
     #
     # Tag breakdown:
-    #   v1.61.0    — must match @playwright/test in package.json; Playwright's
+    #   v1.64.0    — must match @playwright/test in package.json; Playwright's
     #                JS API looks for binaries at a version-specific path.
     #   -resolute  — Ubuntu 26.04 LTS (Resolute Raccoon) base; newer glibc /
     #                fonts than `-noble` (24.04). Container OS does not need
     #                to match the runner host OS.
     #   -arm64     — explicit arch tag (pairs with the ARM64 runner above).
-    #                Could use the multi-arch `v1.61.0-resolute` tag instead,
+    #                Could use the multi-arch `v1.64.0-resolute` tag instead,
     #                but the explicit suffix matches the preference set in
     #                PR #126 review.
     container:
-      image: mcr.microsoft.com/playwright:v1.61.0-resolute-arm64
+      image: mcr.microsoft.com/playwright:v1.64.0-resolute-arm64
       # --ipc=host shares the runner's IPC namespace so Chromium's heavy
       # /dev/shm usage isn't capped by Docker's default 64 MB segment
       # (recommended by https://playwright.dev/docs/docker#recommended-docker-configuration;

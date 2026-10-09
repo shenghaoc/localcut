@@ -38,7 +38,7 @@ The rule is:
 - **WebGPU:** ORT owns the device (`deviceOwner: "ort-webgpu"`), and the renderer
   rebuilds on that device before compositing ORT output.
 - **WebNN:** a model may use a pre-created `MLContext` (`deviceOwner:
-"webnn-context"`) only when that model has explicit WebNN support proof.
+  "webnn-context"`) only when that model has explicit WebNN support proof.
 - **WASM:** CPU tensors are allowed only outside the frame-coupled preview/export
   hot path.
 

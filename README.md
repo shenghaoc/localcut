@@ -108,7 +108,7 @@ See [the detailed release and support boundary](docs/RELEASE.md) for the maintai
 
 ## Local development
 
-Prerequisites are a recent Node.js installation, pnpm/Vite+, and a modern desktop browser.
+Prerequisites are Node.js 24.11 or newer on the 24.x line (or Node.js 26+), pnpm/Vite+, and a modern desktop browser. `.node-version` pins the Node.js 24 release used by CI.
 
 ```bash
 git clone https://github.com/shenghaoc/localcut.git
@@ -121,7 +121,7 @@ Open [http://localhost:5173](http://localhost:5173). Development and production 
 
 ## Testing and quality gates
 
-The current baseline contains 2,504 passing Node tests across 225 files. Browser Mode runs 54 tests across 14 files: 49 pass and 5 capability-specific cases skip on the verified machine.
+The current baseline contains 2,504 passing Node tests across 225 files. Browser Mode runs 55 tests across 15 files: 50 pass and 5 capability-specific cases skip on the verified machine.
 
 ```bash
 vp test run          # Node Vitest unit tests

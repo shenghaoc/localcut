@@ -182,3 +182,4 @@ audits/
 # Impeccable session output (design/live configuration stays tracked)
 **/.impeccable/hook.cache.json
 .impeccable/critique/
+.vitest/

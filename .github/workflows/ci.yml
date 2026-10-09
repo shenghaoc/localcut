@@ -22,7 +22,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
+        uses: voidzero-dev/setup-vp@v1.21.1
         with:
           node-version-file: .node-version
           # Caches the dependency store (keyed by the lockfile) and runs

@@ -17,6 +17,12 @@
  * This file is bundled by Wrangler (`main` in wrangler.jsonc); Vite does not
  * import it, so it stays out of the app bundle.
  */
+import {
+	ORT_PROXY_ROOT,
+	ORT_RUNTIME_BASE,
+	ORT_WASM_BASE_PATH
+} from '../engine/ml/ort/ort-runtime-assets';
+
 interface Env {
 	ASSETS: { fetch: (request: Request) => Promise<Response> };
 }
@@ -38,17 +44,15 @@ const GCS_ORIGIN = 'https://storage.googleapis.com';
  * jsDelivr npm CDN. ORT's `ort-wasm-simd-threaded.jsep.wasm` is ~26 MB — over
  * Cloudflare Workers' 25 MiB per-file static-asset limit, so it is proxied
  * instead of being vendored. Proxying keeps the fetch same-origin
- * (COEP: require-corp) and pins the version. Keep `ORT_RUNTIME_BASE` in sync with
- * the `onnxruntime-web` version in package.json.
+ * (COEP: require-corp) and pins the version. The public URL includes that version
+ * so immutable HTTP and PWA caches cannot serve a previous runtime's bytes.
  *
  * `ORT_ALLOWED_FILES` pins the exact set the runtime may fetch at this version:
  * the `.mjs` glue modules plus their matching `.wasm` binaries. Any other path
  * under the pinned upstream is rejected — defence in depth against the proxy
  * becoming an open jsDelivr-bouncer.
  */
-const ORT_PROXY_PREFIX = '/_ort/';
 const JSDELIVR_ORIGIN = 'https://cdn.jsdelivr.net';
-const ORT_RUNTIME_BASE = '/npm/onnxruntime-web@1.26.0/dist/';
 const ORT_ALLOWED_FILES: ReadonlySet<string> = new Set([
 	'ort-wasm-simd-threaded.asyncify.mjs',
 	'ort-wasm-simd-threaded.asyncify.wasm',
@@ -81,12 +85,12 @@ export default {
 		if (url.pathname.startsWith(GCS_PROXY_PREFIX)) {
 			return proxyModel(url, request, GCS_PROXY_PREFIX, GCS_ORIGIN);
 		}
-		if (url.pathname.startsWith(ORT_PROXY_PREFIX)) {
-			const file = url.pathname.slice(ORT_PROXY_PREFIX.length);
-			if (!ORT_ALLOWED_FILES.has(file)) {
+		if (url.pathname.startsWith(ORT_PROXY_ROOT)) {
+			const file = url.pathname.slice(ORT_WASM_BASE_PATH.length);
+			if (!url.pathname.startsWith(ORT_WASM_BASE_PATH) || !ORT_ALLOWED_FILES.has(file)) {
 				return new Response('Not found', { status: 404 });
 			}
-			return proxyModel(url, request, ORT_PROXY_PREFIX, JSDELIVR_ORIGIN, ORT_RUNTIME_BASE);
+			return proxyModel(url, request, ORT_WASM_BASE_PATH, JSDELIVR_ORIGIN, ORT_RUNTIME_BASE);
 		}
 		return env.ASSETS.fetch(request);
 	}
