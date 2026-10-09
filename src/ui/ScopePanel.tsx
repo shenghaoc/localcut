@@ -75,15 +75,16 @@ export default function ScopePanel(props: ScopePanelProps) {
 	createEffect(() => {
 		// Re-arm whenever collapsed state flips or SAB swaps.
 		const collapsed = props.collapsed();
-		const view = sabView();
+		// This effect cancels and replaces the loop when the buffer changes.
+		const staticView = sabView();
 		if (rafHandle !== null) {
 			cancelAnimationFrame(rafHandle);
 			rafHandle = null;
 		}
-		if (collapsed || !view) return;
+		if (collapsed || !staticView) return;
 
 		const tick = () => {
-			paintFrame(view);
+			paintFrame(staticView);
 			rafHandle = requestAnimationFrame(tick);
 		};
 		rafHandle = requestAnimationFrame(tick);
