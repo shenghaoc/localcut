@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import worker from './index';
+import { dependencies } from '../../package.json';
 
 function env() {
 	return {
@@ -29,7 +30,7 @@ describe('Worker model proxy', () => {
 
 		expect(response.status).toBe(200);
 		expect(fetchSpy).toHaveBeenCalledWith(
-			'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0/dist/ort-wasm-simd-threaded.mjs',
+			`https://cdn.jsdelivr.net/npm/onnxruntime-web@${dependencies['onnxruntime-web']}/dist/ort-wasm-simd-threaded.mjs`,
 			{ method: 'GET', headers: {}, redirect: 'follow' }
 		);
 		expect(response.headers.get('Cross-Origin-Resource-Policy')).toBe('same-origin');

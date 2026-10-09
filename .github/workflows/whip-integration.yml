@@ -27,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: voidzero-dev/setup-vp@v1
+      - uses: voidzero-dev/setup-vp@v1.21.1
         with:
           node-version-file: .node-version
           # `cache: true` caches the dependency store and `run-install` runs

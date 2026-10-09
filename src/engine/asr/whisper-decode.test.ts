@@ -555,12 +555,9 @@ describe('transcribeWindow', () => {
 					logits[1] = 100;
 				} else {
 					// Later attempts: produce proper tokens
-					if (call === 20)
-						logits[50364] = 100; // timestamp
-					else if (call === 21)
-						logits[1] = 100; // "hello"
-					else if (call === 22)
-						logits[50414] = 100; // timestamp
+					if (call === 20) logits[50364] = 100; // timestamp
+					else if (call === 21) logits[1] = 100; // "hello"
+					else if (call === 22) logits[50414] = 100; // timestamp
 					else logits[50257] = 100; // endOfText
 				}
 				call++;

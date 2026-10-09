@@ -48,7 +48,7 @@ const GCS_ORIGIN = 'https://storage.googleapis.com';
  */
 const ORT_PROXY_PREFIX = '/_ort/';
 const JSDELIVR_ORIGIN = 'https://cdn.jsdelivr.net';
-const ORT_RUNTIME_BASE = '/npm/onnxruntime-web@1.26.0/dist/';
+const ORT_RUNTIME_BASE = '/npm/onnxruntime-web@1.30.0/dist/';
 const ORT_ALLOWED_FILES: ReadonlySet<string> = new Set([
 	'ort-wasm-simd-threaded.asyncify.mjs',
 	'ort-wasm-simd-threaded.asyncify.wasm',

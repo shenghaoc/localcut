@@ -70,16 +70,20 @@ export default defineConfig({
 			'check:test': { command: 'vp test run' },
 			'check:build': {
 				command: 'vp build',
-				// BUILD_SHA is baked into the bundle via `define` but is not an input
-				// file, so list it in the cache fingerprint: a new commit (SHA,
-				// mirrored to env above) must re-run the build instead of replaying a
-				// stale bundle.
-				env: ['LOCALCUT_BUILD_SHA']
+				cache: {
+					// BUILD_SHA is baked into the bundle via `define` but is not an input
+					// file, so list it in the cache fingerprint: a new commit (SHA,
+					// mirrored to env above) must re-run the build instead of replaying a
+					// stale bundle.
+					env: ['LOCALCUT_BUILD_SHA']
+				}
 			}
 		}
 	},
 	lint: {
-		plugins: ['oxc', 'typescript', 'unicorn', 'react'],
+		// Solid components run once; React Compiler render rules do not apply.
+		// JSX and reactivity checks are supplied by eslint-plugin-solid below.
+		plugins: ['oxc', 'typescript', 'unicorn'],
 		categories: {
 			correctness: 'warn'
 		},
@@ -357,7 +361,7 @@ export default defineConfig({
 			'/_ort': {
 				target: 'https://cdn.jsdelivr.net',
 				changeOrigin: true,
-				rewrite: (path) => path.replace(/^\/_ort\//, '/npm/onnxruntime-web@1.26.0/dist/')
+				rewrite: (path) => path.replace(/^\/_ort\//, '/npm/onnxruntime-web@1.30.0/dist/')
 			}
 		},
 		headers: {
