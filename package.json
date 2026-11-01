@@ -40,7 +40,7 @@
 	"devDependencies": {
 		"@playwright/test": "1.64.0",
 		"@tailwindcss/vite": "^4.3.3",
-		"@types/node": "^26.6.4",
+		"@types/node": "^26.6.6",
 		"@typescript/native": "npm:typescript@^7.0.2",
 		"@vitest/browser-playwright": "catalog:",
 		"@webgpu/types": "^0.1.74",
